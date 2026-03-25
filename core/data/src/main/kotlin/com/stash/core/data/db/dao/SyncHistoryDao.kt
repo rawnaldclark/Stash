@@ -42,6 +42,14 @@ interface SyncHistoryDao {
     @Query("SELECT * FROM sync_history ORDER BY started_at DESC")
     fun observeAll(): Flow<List<SyncHistoryEntity>>
 
+    /**
+     * Reactive stream of the N most recent sync records.
+     *
+     * @param limit Maximum number of records to observe.
+     */
+    @Query("SELECT * FROM sync_history ORDER BY started_at DESC LIMIT :limit")
+    fun getRecentSyncs(limit: Int = 20): Flow<List<SyncHistoryEntity>>
+
     /** Find a sync record by primary key. */
     @Query("SELECT * FROM sync_history WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): SyncHistoryEntity?
@@ -100,5 +108,35 @@ interface SyncHistoryDao {
         tracksDownloaded: Int,
         tracksFailed: Int,
         bytesDownloaded: Long,
+    )
+
+    /**
+     * Update the final result of a sync run in a single statement,
+     * setting status, completion timestamp, error message, and all tallies.
+     */
+    @Query(
+        """
+        UPDATE sync_history
+        SET status = :status,
+            completed_at = :completedAt,
+            error_message = :errorMessage,
+            playlists_checked = :playlistsChecked,
+            new_tracks_found = :newTracksFound,
+            tracks_downloaded = :tracksDownloaded,
+            tracks_failed = :tracksFailed,
+            bytes_downloaded = :bytesDownloaded
+        WHERE id = :id
+        """
+    )
+    suspend fun updateSyncResult(
+        id: Long,
+        status: SyncState,
+        completedAt: Long,
+        errorMessage: String? = null,
+        playlistsChecked: Int = 0,
+        newTracksFound: Int = 0,
+        tracksDownloaded: Int = 0,
+        tracksFailed: Int = 0,
+        bytesDownloaded: Long = 0,
     )
 }

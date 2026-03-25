@@ -44,4 +44,7 @@ data class PlaylistEntity(
 
     @ColumnInfo(name = "art_url")
     val artUrl: String? = null,
+
+    @ColumnInfo(name = "snapshot_id")
+    val snapshotId: String? = null,
 )

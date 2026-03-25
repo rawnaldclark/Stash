@@ -101,4 +101,18 @@ interface PlaylistDao {
     /** Mark a playlist as last synced at the given epoch-millis timestamp. */
     @Query("UPDATE playlists SET last_synced = :timestamp WHERE id = :playlistId")
     suspend fun updateLastSynced(playlistId: Long, timestamp: Long)
+
+    // ── Snapshot queries ─────────────────────────────────────────────────
+
+    /** Retrieve the snapshot ID for a playlist, used for change detection. */
+    @Query("SELECT snapshot_id FROM playlists WHERE id = :playlistId LIMIT 1")
+    suspend fun getSnapshotId(playlistId: Long): String?
+
+    /** Update the snapshot ID for a playlist after a successful sync. */
+    @Query("UPDATE playlists SET snapshot_id = :snapshotId WHERE id = :playlistId")
+    suspend fun updateSnapshotId(playlistId: Long, snapshotId: String?)
+
+    /** All active playlists from a specific music source. */
+    @Query("SELECT * FROM playlists WHERE source = :source AND is_active = 1 ORDER BY name ASC")
+    suspend fun getActivePlaylistsBySource(source: MusicSource): List<PlaylistEntity>
 }

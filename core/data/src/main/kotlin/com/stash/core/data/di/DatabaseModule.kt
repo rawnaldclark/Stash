@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
+import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SourceAccountDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
@@ -49,4 +50,7 @@ object DatabaseModule {
 
     @Provides
     fun provideSourceAccountDao(db: StashDatabase): SourceAccountDao = db.sourceAccountDao()
+
+    @Provides
+    fun provideRemoteSnapshotDao(db: StashDatabase): RemoteSnapshotDao = db.remoteSnapshotDao()
 }
