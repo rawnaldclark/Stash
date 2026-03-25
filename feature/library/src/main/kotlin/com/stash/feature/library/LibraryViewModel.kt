@@ -2,6 +2,8 @@ package com.stash.feature.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.auth.TokenManager
+import com.stash.core.auth.model.AuthState
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.Track
@@ -18,18 +20,32 @@ import javax.inject.Inject
 /**
  * ViewModel for the Library screen.
  *
- * Collects tracks, playlists, artists, and albums from [MusicRepository],
- * applies client-side search filtering and sort ordering, and exposes a
- * single [LibraryUiState] stream for the UI layer.
+ * Collects tracks, playlists, artists, albums, and auth state from
+ * [MusicRepository] and [TokenManager], applies client-side search filtering
+ * and sort ordering, and exposes a single [LibraryUiState] stream for the UI.
+ *
+ * Auth state is included so that empty-state messages can distinguish between
+ * "no services connected" and "connected but not yet synced".
  */
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val tokenManager: TokenManager,
 ) : ViewModel() {
 
     /** Local UI controls: tab, search query, and sort order. */
     private val _controls = MutableStateFlow(ControlState())
+
+    /**
+     * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
+     */
+    private val authStateFlow = combine(
+        tokenManager.spotifyAuthState,
+        tokenManager.youTubeAuthState,
+    ) { spotify, youtube ->
+        Pair(spotify is AuthState.Connected, youtube is AuthState.Connected)
+    }
 
     /**
      * Combined UI state that reacts to both data changes and user interactions.
@@ -41,6 +57,13 @@ class LibraryViewModel @Inject constructor(
         musicRepository.getAllArtists(),
         musicRepository.getAllAlbums(),
     ) { controls, allTracks, allPlaylists, allArtists, allAlbums ->
+        DataSnapshot(controls, allTracks, allPlaylists, allArtists, allAlbums)
+    }.combine(authStateFlow) { snapshot, authPair ->
+        val controls = snapshot.controls
+        val allTracks = snapshot.allTracks
+        val allPlaylists = snapshot.allPlaylists
+        val allArtists = snapshot.allArtists
+        val allAlbums = snapshot.allAlbums
 
         val query = controls.searchQuery.trim().lowercase()
 
@@ -96,6 +119,8 @@ class LibraryViewModel @Inject constructor(
             artists = sortedArtists,
             albums = sortedAlbums,
             isLoading = false,
+            spotifyConnected = authPair.first,
+            youTubeConnected = authPair.second,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -140,4 +165,17 @@ private data class ControlState(
     val activeTab: LibraryTab = LibraryTab.PLAYLISTS,
     val searchQuery: String = "",
     val sortOrder: SortOrder = SortOrder.RECENT,
+)
+
+/**
+ * Internal snapshot holder for the 5-flow combine, allowing us to chain
+ * a second [combine] with the auth flow while staying within Kotlin's
+ * 5-parameter combine limit.
+ */
+private data class DataSnapshot(
+    val controls: ControlState,
+    val allTracks: List<Track>,
+    val allPlaylists: List<com.stash.core.model.Playlist>,
+    val allArtists: List<com.stash.core.data.db.dao.ArtistSummary>,
+    val allAlbums: List<com.stash.core.data.db.dao.AlbumSummary>,
 )

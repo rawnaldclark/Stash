@@ -17,6 +17,9 @@ data class HomeUiState(
     val totalStorageBytes: Long = 0,
     val playlists: List<Playlist> = emptyList(),
     val isLoading: Boolean = true,
+    val spotifyConnected: Boolean = false,
+    val youTubeConnected: Boolean = false,
+    val hasEverSynced: Boolean = false,
 )
 
 /**

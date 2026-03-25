@@ -43,29 +43,33 @@ class YouTubeDeviceFlowManager @Inject constructor(
      *         to present to the user, or null if the request fails.
      */
     suspend fun requestDeviceCode(): DeviceCodeState? = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("client_id", YouTubeAuthConfig.CLIENT_ID)
-            .add("scope", YouTubeAuthConfig.SCOPE)
-            .build()
+        try {
+            val body = FormBody.Builder()
+                .add("client_id", YouTubeAuthConfig.CLIENT_ID)
+                .add("scope", YouTubeAuthConfig.SCOPE)
+                .build()
 
-        val request = Request.Builder()
-            .url(YouTubeAuthConfig.DEVICE_CODE_ENDPOINT)
-            .post(body)
-            .build()
+            val request = Request.Builder()
+                .url(YouTubeAuthConfig.DEVICE_CODE_ENDPOINT)
+                .post(body)
+                .build()
 
-        val response = okHttpClient.newCall(request).execute()
-        if (!response.isSuccessful) return@withContext null
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext null
 
-        val responseBody = response.body?.string() ?: return@withContext null
-        val deviceResponse = json.decodeFromString<DeviceCodeResponse>(responseBody)
+            val responseBody = response.body?.string() ?: return@withContext null
+            val deviceResponse = json.decodeFromString<DeviceCodeResponse>(responseBody)
 
-        DeviceCodeState(
-            deviceCode = deviceResponse.deviceCode,
-            userCode = deviceResponse.userCode,
-            verificationUrl = deviceResponse.verificationUrl,
-            expiresAtEpoch = Instant.now().epochSecond + deviceResponse.expiresIn,
-            intervalSeconds = deviceResponse.interval,
-        )
+            DeviceCodeState(
+                deviceCode = deviceResponse.deviceCode,
+                userCode = deviceResponse.userCode,
+                verificationUrl = deviceResponse.verificationUrl,
+                expiresAtEpoch = Instant.now().epochSecond + deviceResponse.expiresIn,
+                intervalSeconds = deviceResponse.interval,
+            )
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**

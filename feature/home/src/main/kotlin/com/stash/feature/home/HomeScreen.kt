@@ -88,6 +88,9 @@ fun HomeScreen(
         item {
             SyncStatusCard(
                 syncStatus = uiState.syncStatus,
+                spotifyConnected = uiState.spotifyConnected,
+                youTubeConnected = uiState.youTubeConnected,
+                hasEverSynced = uiState.hasEverSynced,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
         }
@@ -185,59 +188,119 @@ fun HomeScreen(
 @Composable
 private fun SyncStatusCard(
     syncStatus: SyncStatusInfo,
+    spotifyConnected: Boolean,
+    youTubeConnected: Boolean,
+    hasEverSynced: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
+    val anyServiceConnected = spotifyConnected || youTubeConnected
 
     GlassCard(modifier = modifier) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // -- Connection + sync status header --
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 PulseDot(
-                    color = when (syncStatus.state) {
-                        SyncState.COMPLETED, SyncState.IDLE -> extendedColors.success
-                        SyncState.FAILED -> Color(0xFFEF4444)
+                    color = when {
+                        !anyServiceConnected -> MaterialTheme.colorScheme.onSurfaceVariant
+                        !hasEverSynced -> extendedColors.warning
+                        syncStatus.state == SyncState.COMPLETED || syncStatus.state == SyncState.IDLE -> extendedColors.success
+                        syncStatus.state == SyncState.FAILED -> Color(0xFFEF4444)
                         else -> extendedColors.warning
                     },
                 )
                 Text(
-                    text = when (syncStatus.state) {
-                        SyncState.COMPLETED, SyncState.IDLE -> "Synced"
-                        SyncState.FAILED -> "Sync failed"
+                    text = when {
+                        !anyServiceConnected -> "No services connected"
+                        !hasEverSynced -> "Ready to sync"
+                        syncStatus.state == SyncState.COMPLETED || syncStatus.state == SyncState.IDLE -> "Synced"
+                        syncStatus.state == SyncState.FAILED -> "Sync failed"
                         else -> "Syncing..."
                     },
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                StatItem(
-                    label = "Tracks",
-                    value = syncStatus.totalTracks.toString(),
-                )
-                StatItem(
-                    label = "Playlists",
-                    value = syncStatus.totalPlaylists.toString(),
-                )
-                StatItem(
-                    label = "Storage",
-                    value = formatBytes(syncStatus.storageUsedBytes),
-                )
+
+            // -- Connected services row --
+            if (anyServiceConnected) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (spotifyConnected) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            SourceIndicator(source = MusicSource.SPOTIFY, size = 6.dp)
+                            Text(
+                                text = "Spotify",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (youTubeConnected) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            SourceIndicator(source = MusicSource.YOUTUBE, size = 6.dp)
+                            Text(
+                                text = "YouTube Music",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
-            if (syncStatus.lastSyncTime != null) {
+
+            // -- Prompt or stats depending on sync state --
+            if (!anyServiceConnected) {
                 Text(
-                    text = "Last sync ${formatRelativeTime(syncStatus.lastSyncTime)}",
+                    text = "Connect Spotify or YouTube Music in Settings to start syncing your library.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            } else if (!hasEverSynced) {
+                Text(
+                    text = "Tap Sync Now to download your playlists and tracks.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    StatItem(
+                        label = "Tracks",
+                        value = syncStatus.totalTracks.toString(),
+                    )
+                    StatItem(
+                        label = "Playlists",
+                        value = syncStatus.totalPlaylists.toString(),
+                    )
+                    StatItem(
+                        label = "Storage",
+                        value = formatBytes(syncStatus.storageUsedBytes),
+                    )
+                }
+                if (syncStatus.lastSyncTime != null) {
+                    Text(
+                        text = "Last sync ${formatRelativeTime(syncStatus.lastSyncTime)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

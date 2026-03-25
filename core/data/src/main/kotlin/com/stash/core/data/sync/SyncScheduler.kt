@@ -1,6 +1,7 @@
 package com.stash.core.data.sync
 
 import android.content.Context
+import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
@@ -21,19 +22,22 @@ import javax.inject.Singleton
  *
  * All sync work is enqueued as a unique work chain under [UNIQUE_WORK_NAME] so
  * that only one sync can run at a time. Scheduled syncs compute a delay to the
- * target hour/minute; manual syncs run immediately.
+ * target hour/minute; manual syncs run immediately with relaxed constraints.
  *
- * Constraints require an unmetered network and sufficient battery, matching
- * the expectation that sync involves large downloads.
+ * Manual sync only requires a network connection (any type) so the user's
+ * explicit intent is honored. Scheduled syncs may additionally require an
+ * unmetered network and sufficient battery.
  */
 @Singleton
 class SyncScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val syncStateManager: SyncStateManager,
 ) {
 
     companion object {
         /** Unique work name for the sync chain. Only one chain at a time. */
         const val UNIQUE_WORK_NAME = "stash_daily_sync"
+        private const val TAG = "SyncScheduler"
     }
 
     private val workManager: WorkManager
@@ -46,20 +50,39 @@ class SyncScheduler @Inject constructor(
      * enqueues the full worker chain with that initial delay. Uses
      * [ExistingWorkPolicy.REPLACE] so a new schedule replaces any pending one.
      *
-     * @param hour   Hour of day (0-23).
-     * @param minute Minute of hour (0-59).
+     * @param hour     Hour of day (0-23).
+     * @param minute   Minute of hour (0-59).
+     * @param wifiOnly When true, requires an unmetered (Wi-Fi) network; otherwise
+     *                 any network connection suffices.
      */
-    fun scheduleDailySync(hour: Int, minute: Int) {
+    fun scheduleDailySync(hour: Int, minute: Int, wifiOnly: Boolean = true) {
         val delayMs = computeDelayToNextSync(hour, minute)
-        enqueueChain(initialDelayMs = delayMs)
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(
+                if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED,
+            )
+            .setRequiresBatteryNotLow(true)
+            .build()
+        enqueueChain(initialDelayMs = delayMs, constraints = constraints)
     }
 
     /**
      * Triggers a sync immediately without any initial delay.
-     * Replaces any existing pending or running sync chain.
+     *
+     * Uses relaxed constraints (any network, no battery requirement) because
+     * the user explicitly requested this sync. Replaces any existing pending
+     * or running sync chain.
      */
     fun triggerManualSync() {
-        enqueueChain(initialDelayMs = 0)
+        Log.i(TAG, "Manual sync triggered by user")
+        // Immediately signal the UI that sync is starting so the button
+        // shows progress feedback even before WorkManager picks up the work.
+        syncStateManager.onAuthenticating()
+
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        enqueueChain(initialDelayMs = 0, constraints = constraints)
     }
 
     /**
@@ -67,6 +90,7 @@ class SyncScheduler @Inject constructor(
      */
     fun cancelSync() {
         workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
+        syncStateManager.reset()
     }
 
     /**
@@ -101,13 +125,11 @@ class SyncScheduler @Inject constructor(
      * Builds and enqueues the four-worker chain: Fetch -> Diff -> Download -> Finalize.
      *
      * @param initialDelayMs Delay before the first worker (PlaylistFetchWorker) starts.
+     * @param constraints    WorkManager constraints applied to the network-heavy workers
+     *                       (Fetch, Diff, Download). The Finalize worker uses no
+     *                       constraints since it only writes local state.
      */
-    private fun enqueueChain(initialDelayMs: Long) {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.UNMETERED)
-            .setRequiresBatteryNotLow(true)
-            .build()
-
+    private fun enqueueChain(initialDelayMs: Long, constraints: Constraints) {
         val fetchWork = OneTimeWorkRequestBuilder<PlaylistFetchWorker>()
             .setConstraints(constraints)
             .apply {
@@ -138,5 +160,7 @@ class SyncScheduler @Inject constructor(
             .then(downloadWork)
             .then(finalizeWork)
             .enqueue()
+
+        Log.d(TAG, "Sync chain enqueued (delay=${initialDelayMs}ms)")
     }
 }

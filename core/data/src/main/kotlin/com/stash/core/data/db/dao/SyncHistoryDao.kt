@@ -42,6 +42,10 @@ interface SyncHistoryDao {
     @Query("SELECT * FROM sync_history ORDER BY started_at DESC")
     fun observeAll(): Flow<List<SyncHistoryEntity>>
 
+    /** Reactive stream of the single most recent sync record, or null. */
+    @Query("SELECT * FROM sync_history ORDER BY started_at DESC LIMIT 1")
+    fun observeLatest(): Flow<SyncHistoryEntity?>
+
     /**
      * Reactive stream of the N most recent sync records.
      *

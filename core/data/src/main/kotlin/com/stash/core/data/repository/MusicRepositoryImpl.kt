@@ -92,6 +92,9 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun getLatestSync(): SyncHistoryEntity? =
         syncHistoryDao.getLatest()
 
+    override fun observeLatestSync(): Flow<SyncHistoryEntity?> =
+        syncHistoryDao.observeLatest()
+
     override fun getAllSyncHistory(): Flow<List<SyncHistoryEntity>> =
         syncHistoryDao.observeAll()
 }

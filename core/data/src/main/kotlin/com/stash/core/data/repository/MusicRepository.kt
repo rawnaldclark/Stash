@@ -72,6 +72,9 @@ interface MusicRepository {
     /** The most recent sync record, or null. */
     suspend fun getLatestSync(): SyncHistoryEntity?
 
+    /** Reactive stream of the most recent sync record. Emits null when no history exists. */
+    fun observeLatestSync(): Flow<SyncHistoryEntity?>
+
     /** Reactive stream of all sync history records. */
     fun getAllSyncHistory(): Flow<List<SyncHistoryEntity>>
 }

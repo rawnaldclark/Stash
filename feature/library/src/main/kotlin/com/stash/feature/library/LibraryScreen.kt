@@ -131,6 +131,7 @@ private fun LibraryContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         // -- Content area --
+        val anyServiceConnected = state.spotifyConnected || state.youTubeConnected
         if (state.isLoading) {
             Box(
                 modifier = Modifier
@@ -142,13 +143,23 @@ private fun LibraryContent(
             }
         } else {
             when (state.activeTab) {
-                LibraryTab.PLAYLISTS -> PlaylistsGrid(playlists = state.playlists)
+                LibraryTab.PLAYLISTS -> PlaylistsGrid(
+                    playlists = state.playlists,
+                    anyServiceConnected = anyServiceConnected,
+                )
                 LibraryTab.TRACKS -> TracksTab(
                     tracks = state.tracks,
                     onTrackClick = onTrackClick,
+                    anyServiceConnected = anyServiceConnected,
                 )
-                LibraryTab.ARTISTS -> ArtistsGrid(artists = state.artists)
-                LibraryTab.ALBUMS -> AlbumsGrid(albums = state.albums)
+                LibraryTab.ARTISTS -> ArtistsGrid(
+                    artists = state.artists,
+                    anyServiceConnected = anyServiceConnected,
+                )
+                LibraryTab.ALBUMS -> AlbumsGrid(
+                    albums = state.albums,
+                    anyServiceConnected = anyServiceConnected,
+                )
             }
         }
     }
@@ -313,9 +324,15 @@ private fun SortOrder.displayName(): String = when (this) {
 // ── Playlists tab (2-column grid) ────────────────────────────────────────────
 
 @Composable
-private fun PlaylistsGrid(playlists: List<Playlist>) {
+private fun PlaylistsGrid(
+    playlists: List<Playlist>,
+    anyServiceConnected: Boolean,
+) {
     if (playlists.isEmpty()) {
-        EmptyTabMessage("No playlists yet")
+        EmptyTabMessage(
+            if (anyServiceConnected) "Sync your playlists to see them here"
+            else "Connect a service in Settings to see your playlists",
+        )
         return
     }
     LazyVerticalGrid(
@@ -357,9 +374,13 @@ private fun PlaylistsGrid(playlists: List<Playlist>) {
 private fun TracksTab(
     tracks: List<com.stash.core.model.Track>,
     onTrackClick: (com.stash.core.model.Track) -> Unit,
+    anyServiceConnected: Boolean,
 ) {
     if (tracks.isEmpty()) {
-        EmptyTabMessage("No tracks yet")
+        EmptyTabMessage(
+            if (anyServiceConnected) "Sync your library to see tracks here"
+            else "Connect a service in Settings to see your tracks",
+        )
         return
     }
     LazyColumn {
@@ -375,9 +396,15 @@ private fun TracksTab(
 // ── Artists tab (2-column grid) ──────────────────────────────────────────────
 
 @Composable
-private fun ArtistsGrid(artists: List<ArtistInfo>) {
+private fun ArtistsGrid(
+    artists: List<ArtistInfo>,
+    anyServiceConnected: Boolean,
+) {
     if (artists.isEmpty()) {
-        EmptyTabMessage("No artists yet")
+        EmptyTabMessage(
+            if (anyServiceConnected) "Sync your library to see artists here"
+            else "Connect a service in Settings to see your artists",
+        )
         return
     }
     LazyVerticalGrid(
@@ -430,9 +457,15 @@ private fun ArtistsGrid(artists: List<ArtistInfo>) {
 // ── Albums tab (2-column grid) ───────────────────────────────────────────────
 
 @Composable
-private fun AlbumsGrid(albums: List<AlbumInfo>) {
+private fun AlbumsGrid(
+    albums: List<AlbumInfo>,
+    anyServiceConnected: Boolean,
+) {
     if (albums.isEmpty()) {
-        EmptyTabMessage("No albums yet")
+        EmptyTabMessage(
+            if (anyServiceConnected) "Sync your library to see albums here"
+            else "Connect a service in Settings to see your albums",
+        )
         return
     }
     LazyVerticalGrid(

@@ -89,7 +89,7 @@ class SyncViewModel @Inject constructor(
             syncPreferencesManager.setSyncTime(hour, minute)
             val prefs = _uiState.value.syncPreferences
             if (prefs.autoSyncEnabled) {
-                syncScheduler.scheduleDailySync(hour, minute)
+                syncScheduler.scheduleDailySync(hour, minute, wifiOnly = prefs.wifiOnly)
             }
         }
     }
@@ -102,7 +102,11 @@ class SyncViewModel @Inject constructor(
             syncPreferencesManager.setAutoSyncEnabled(newValue)
             if (newValue) {
                 val prefs = _uiState.value.syncPreferences
-                syncScheduler.scheduleDailySync(prefs.syncHour, prefs.syncMinute)
+                syncScheduler.scheduleDailySync(
+                    prefs.syncHour,
+                    prefs.syncMinute,
+                    wifiOnly = prefs.wifiOnly,
+                )
             } else {
                 syncScheduler.cancelSync()
             }

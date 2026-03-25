@@ -7,7 +7,8 @@ import com.stash.core.model.Track
  * UI state for the Library screen.
  *
  * Holds every piece of data that the composable tree needs to render,
- * including the active tab, search/sort state, and the four content lists.
+ * including the active tab, search/sort state, the four content lists,
+ * and service connection flags so empty states can show helpful prompts.
  */
 data class LibraryUiState(
     val activeTab: LibraryTab = LibraryTab.PLAYLISTS,
@@ -18,6 +19,8 @@ data class LibraryUiState(
     val artists: List<ArtistInfo> = emptyList(),
     val albums: List<AlbumInfo> = emptyList(),
     val isLoading: Boolean = true,
+    val spotifyConnected: Boolean = false,
+    val youTubeConnected: Boolean = false,
 )
 
 /** Tabs available in the library browser. */

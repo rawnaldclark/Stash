@@ -6,11 +6,13 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.UserInfo
+import com.stash.core.auth.youtube.YouTubeAuthConfig
 import com.stash.core.auth.youtube.YouTubeDeviceFlowManager
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
 import dagger.hilt.android.lifecycle.HiltViewModel
+import android.util.Log
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -76,6 +78,7 @@ class SettingsViewModel @Inject constructor(
             showSpotifyCookieDialog = local.showSpotifyCookieDialog,
             spotifyCookieError = local.spotifyCookieError,
             isSpotifyCookieValidating = local.isSpotifyCookieValidating,
+            youTubeError = local.youTubeError,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -172,32 +175,64 @@ class SettingsViewModel @Inject constructor(
      * dismissed and the auth state is updated.
      */
     fun onConnectYouTube() {
+        // Guard: credentials must be configured before attempting the device flow.
+        if (YouTubeAuthConfig.CLIENT_ID.isBlank() || YouTubeAuthConfig.CLIENT_SECRET.isBlank()) {
+            _localState.update {
+                it.copy(
+                    youTubeError = "YouTube Music connection requires a Google Cloud API key. " +
+                        "See README for setup instructions.",
+                )
+            }
+            return
+        }
+
         youTubePollingJob?.cancel()
         youTubePollingJob = viewModelScope.launch {
-            val deviceCode = youTubeDeviceFlowManager.requestDeviceCode()
-            if (deviceCode == null) {
-                return@launch
-            }
+            try {
+                val deviceCode = youTubeDeviceFlowManager.requestDeviceCode()
+                if (deviceCode == null) {
+                    _localState.update {
+                        it.copy(
+                            youTubeError = "Failed to start YouTube authorization. " +
+                                "Please check your internet connection and API credentials.",
+                        )
+                    }
+                    return@launch
+                }
 
-            _localState.update {
-                it.copy(deviceCodeState = deviceCode, showYouTubeDialog = true)
-            }
+                _localState.update {
+                    it.copy(
+                        deviceCodeState = deviceCode,
+                        showYouTubeDialog = true,
+                        youTubeError = null,
+                    )
+                }
 
-            val token = youTubeDeviceFlowManager.pollForToken(
-                deviceCode = deviceCode.deviceCode,
-                intervalSeconds = deviceCode.intervalSeconds,
-            )
-
-            if (token != null) {
-                val user = UserInfo(
-                    id = "youtube_user",
-                    displayName = "YouTube User",
+                val token = youTubeDeviceFlowManager.pollForToken(
+                    deviceCode = deviceCode.deviceCode,
+                    intervalSeconds = deviceCode.intervalSeconds,
                 )
-                tokenManager.saveYouTubeAuth(token, user)
-            }
 
-            _localState.update {
-                it.copy(deviceCodeState = null, showYouTubeDialog = false)
+                if (token != null) {
+                    val user = UserInfo(
+                        id = "youtube_user",
+                        displayName = "YouTube User",
+                    )
+                    tokenManager.saveYouTubeAuth(token, user)
+                }
+
+                _localState.update {
+                    it.copy(deviceCodeState = null, showYouTubeDialog = false)
+                }
+            } catch (e: Exception) {
+                Log.e("SettingsViewModel", "YouTube connect failed", e)
+                _localState.update {
+                    it.copy(
+                        deviceCodeState = null,
+                        showYouTubeDialog = false,
+                        youTubeError = "YouTube connection failed: ${e.localizedMessage ?: "Unknown error"}",
+                    )
+                }
             }
         }
     }
@@ -223,6 +258,13 @@ class SettingsViewModel @Inject constructor(
      */
     fun onDismissYouTubeDialog() {
         _localState.update { it.copy(showYouTubeDialog = false) }
+    }
+
+    /**
+     * Dismisses the YouTube error dialog.
+     */
+    fun onDismissYouTubeError() {
+        _localState.update { it.copy(youTubeError = null) }
     }
 
     // -- Quality --------------------------------------------------------------
@@ -251,5 +293,6 @@ class SettingsViewModel @Inject constructor(
         val showSpotifyCookieDialog: Boolean = false,
         val spotifyCookieError: String? = null,
         val isSpotifyCookieValidating: Boolean = false,
+        val youTubeError: String? = null,
     )
 }

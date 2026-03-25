@@ -30,6 +30,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.QualityTier
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SpotifyCookieDialog
 import com.stash.feature.settings.components.YouTubeDeviceCodeDialog
@@ -63,6 +65,34 @@ fun SettingsScreen(
         YouTubeDeviceCodeDialog(
             deviceCodeState = uiState.deviceCodeState!!,
             onDismiss = viewModel::onDismissYouTubeDialog,
+        )
+    }
+
+    // YouTube error dialog (missing credentials, network failure, etc.)
+    if (uiState.youTubeError != null) {
+        AlertDialog(
+            onDismissRequest = viewModel::onDismissYouTubeError,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = MaterialTheme.shapes.large,
+            title = {
+                Text(
+                    text = "YouTube Music",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Text(
+                    text = uiState.youTubeError!!,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::onDismissYouTubeError) {
+                    Text("OK")
+                }
+            },
         )
     }
 

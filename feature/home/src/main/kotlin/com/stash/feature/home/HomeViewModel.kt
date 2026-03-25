@@ -2,77 +2,112 @@ package com.stash.feature.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.auth.TokenManager
+import com.stash.core.auth.model.AuthState
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlaylistType
-import com.stash.core.model.SyncState
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel for the Home screen. Collects playlist, track, and sync data
- * from [MusicRepository] and combines them into a single [HomeUiState].
+ * ViewModel for the Home screen. Collects playlist, track, sync data,
+ * and authentication state from [MusicRepository] and [TokenManager],
+ * combining them into a single reactive [HomeUiState].
+ *
+ * All data sources are Flow-based so the UI updates automatically when:
+ * - New tracks/playlists are inserted after a sync
+ * - A sync completes and a new history record appears
+ * - Spotify or YouTube auth state changes (connect/disconnect)
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val tokenManager: TokenManager,
 ) : ViewModel() {
 
-    /** Holds the latest sync status information, updated once on init. */
-    private val _syncStatus = MutableStateFlow(SyncStatusInfo())
+    /**
+     * Derives [SyncStatusInfo] reactively from the latest sync history record.
+     * Emits a default (empty) status when no sync has ever run.
+     */
+    private val syncStatusFlow = musicRepository.observeLatestSync().map { latestSync ->
+        if (latestSync != null) {
+            SyncStatusInfo(
+                lastSyncTime = latestSync.startedAt.toEpochMilli(),
+                nextSyncTime = latestSync.completedAt?.toEpochMilli()?.plus(6 * 3_600_000L),
+                state = latestSync.status,
+            )
+        } else {
+            SyncStatusInfo()
+        }
+    }
 
-    val uiState: StateFlow<HomeUiState> = combine(
+    /**
+     * Combines the four Room-backed data flows into a single intermediate holder,
+     * keeping the top-level combine at 5 or fewer flows for type safety.
+     */
+    private val musicDataFlow = combine(
         musicRepository.getAllPlaylists(),
         musicRepository.getRecentlyAdded(20),
         musicRepository.getTrackCount(),
         musicRepository.getTotalStorageBytes(),
-        _syncStatus,
-    ) { playlists, recentlyAdded, trackCount, storageBytes, syncStatus ->
-        val dailyMixes = playlists.filter { it.type == PlaylistType.DAILY_MIX }
-        val likedSongs = playlists.filter { it.type == PlaylistType.LIKED_SONGS }
+    ) { playlists, recentlyAdded, trackCount, storageBytes ->
+        MusicData(playlists, recentlyAdded, trackCount, storageBytes)
+    }
+
+    /**
+     * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
+     */
+    private val authStateFlow = combine(
+        tokenManager.spotifyAuthState,
+        tokenManager.youTubeAuthState,
+    ) { spotify, youtube ->
+        AuthInfo(
+            spotifyConnected = spotify is AuthState.Connected,
+            youTubeConnected = youtube is AuthState.Connected,
+        )
+    }
+
+    val uiState: StateFlow<HomeUiState> = combine(
+        musicDataFlow,
+        syncStatusFlow,
+        authStateFlow,
+    ) { musicData, syncStatus, authInfo ->
+        val dailyMixes = musicData.playlists.filter { it.type == PlaylistType.DAILY_MIX }
+        val likedSongs = musicData.playlists.filter { it.type == PlaylistType.LIKED_SONGS }
         val likedCount = likedSongs.sumOf { it.trackCount }
-        val otherPlaylists = playlists.filter { it.type == PlaylistType.CUSTOM }
+        val otherPlaylists = musicData.playlists.filter { it.type == PlaylistType.CUSTOM }
 
         HomeUiState(
             syncStatus = syncStatus.copy(
-                totalTracks = trackCount,
-                totalPlaylists = playlists.size,
-                storageUsedBytes = storageBytes,
+                totalTracks = musicData.trackCount,
+                totalPlaylists = musicData.playlists.size,
+                storageUsedBytes = musicData.storageBytes,
             ),
             dailyMixes = dailyMixes,
-            recentlyAdded = recentlyAdded,
+            recentlyAdded = musicData.recentlyAdded,
             likedSongsCount = likedCount,
-            totalTracks = trackCount,
-            totalStorageBytes = storageBytes,
+            totalTracks = musicData.trackCount,
+            totalStorageBytes = musicData.storageBytes,
             playlists = otherPlaylists,
             isLoading = false,
+            spotifyConnected = authInfo.spotifyConnected,
+            youTubeConnected = authInfo.youTubeConnected,
+            hasEverSynced = syncStatus.lastSyncTime != null,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = HomeUiState(),
     )
-
-    init {
-        viewModelScope.launch {
-            val latestSync = musicRepository.getLatestSync()
-            if (latestSync != null) {
-                _syncStatus.value = SyncStatusInfo(
-                    lastSyncTime = latestSync.startedAt.toEpochMilli(),
-                    nextSyncTime = latestSync.completedAt?.toEpochMilli()?.plus(6 * 3_600_000L),
-                    state = latestSync.status,
-                )
-            }
-        }
-    }
 
     /**
      * Begins playback of the given track list starting at [index].
@@ -83,3 +118,23 @@ class HomeViewModel @Inject constructor(
         }
     }
 }
+
+/**
+ * Internal holder for the four music-data Room flows so we can combine
+ * them into a single upstream before the top-level combine.
+ */
+private data class MusicData(
+    val playlists: List<com.stash.core.model.Playlist>,
+    val recentlyAdded: List<Track>,
+    val trackCount: Int,
+    val storageBytes: Long,
+)
+
+/**
+ * Internal holder for auth state so it can participate in the combine
+ * as a single flow emission.
+ */
+private data class AuthInfo(
+    val spotifyConnected: Boolean,
+    val youTubeConnected: Boolean,
+)

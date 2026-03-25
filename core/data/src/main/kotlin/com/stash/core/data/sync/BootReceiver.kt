@@ -35,7 +35,11 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 val prefs = syncPreferencesManager.preferences.first()
                 if (prefs.autoSyncEnabled) {
-                    syncScheduler.scheduleDailySync(prefs.syncHour, prefs.syncMinute)
+                    syncScheduler.scheduleDailySync(
+                        prefs.syncHour,
+                        prefs.syncMinute,
+                        wifiOnly = prefs.wifiOnly,
+                    )
                 }
             } finally {
                 pendingResult.finish()

@@ -29,4 +29,5 @@ data class SettingsUiState(
     val showSpotifyCookieDialog: Boolean = false,
     val spotifyCookieError: String? = null,
     val isSpotifyCookieValidating: Boolean = false,
+    val youTubeError: String? = null,
 )
