@@ -1,0 +1,14 @@
+# Stash ProGuard Rules
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.AnnotationsKt
+-keep,includedescriptorclasses class com.stash.**$$serializer { *; }
+-keepclassmembers class com.stash.** { *** Companion; }
+-keepclasseswithmembers class com.stash.** { kotlinx.serialization.KSerializer serializer(...); }
+-keep class dagger.hilt.** { *; }
+-keep class javax.inject.** { *; }
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class *
+-dontwarn coil3.**
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keep class com.yausername.youtubedl_android.** { *; }
