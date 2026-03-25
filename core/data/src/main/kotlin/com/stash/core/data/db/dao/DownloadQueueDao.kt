@@ -41,6 +41,10 @@ interface DownloadQueueDao {
     @Query("SELECT * FROM download_queue WHERE track_id = :trackId LIMIT 1")
     suspend fun getByTrackId(trackId: Long): DownloadQueueEntity?
 
+    /** Retrieve all pending downloads for a specific sync run, ordered by creation time. */
+    @Query("SELECT * FROM download_queue WHERE sync_id = :syncId AND status = 'PENDING' ORDER BY created_at ASC")
+    suspend fun getPendingBySyncId(syncId: Long): List<DownloadQueueEntity>
+
     // ── Updates ─────────────────────────────────────────────────────────
 
     /**

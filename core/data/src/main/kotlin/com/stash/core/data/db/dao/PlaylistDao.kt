@@ -67,6 +67,10 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlists WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): PlaylistEntity?
 
+    /** Find a playlist by its remote source ID (e.g. Spotify playlist ID). */
+    @Query("SELECT * FROM playlists WHERE source_id = :sourceId LIMIT 1")
+    suspend fun findBySourceId(sourceId: String): PlaylistEntity?
+
     // ── Playlist with tracks ────────────────────────────────────────────
 
     /**

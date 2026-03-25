@@ -19,6 +19,7 @@ workManager = "2.10.1"
 coreKtx = "1.16.0"
 activityCompose = "1.10.1"
 lifecycleCompose = "2.9.0"
+hiltWork = "1.2.0"
 hiltNavigationCompose = "1.2.0"
 coroutines = "1.10.1"
 
@@ -48,6 +49,8 @@ navigation-compose = { group = "androidx.navigation", name = "navigation-compose
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-android-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
 hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
+hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "hiltWork" }
+hilt-work-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "hiltWork" }
 
 # Coil
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
