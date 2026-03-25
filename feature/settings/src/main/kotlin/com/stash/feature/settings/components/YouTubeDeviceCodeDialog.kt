@@ -188,10 +188,14 @@ private fun copyToClipboard(context: Context, text: String) {
 }
 
 /**
- * Launches the default browser to the given [url].
+ * Launches the default browser to the given [url] only if it points to a
+ * trusted Google domain. This prevents a compromised server response from
+ * redirecting the user to a phishing page.
  */
 private fun openBrowser(context: Context, url: String) {
     val fullUrl = if (url.startsWith("http")) url else "https://$url"
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fullUrl))
-    context.startActivity(intent)
+    val uri = Uri.parse(fullUrl)
+    if (uri.host?.endsWith("google.com") == true) {
+        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+    }
 }

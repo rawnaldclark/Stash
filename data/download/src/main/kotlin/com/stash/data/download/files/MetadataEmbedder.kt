@@ -22,6 +22,12 @@ class MetadataEmbedder @Inject constructor(
     private val fileOrganizer: FileOrganizer,
 ) {
     /**
+     * Strips control characters (0x00-0x1F) from metadata values to prevent
+     * ffmpeg command injection via crafted track names.
+     */
+    private fun sanitize(value: String): String = value.replace(Regex("[\\x00-\\x1f]"), "")
+
+    /**
      * Embeds metadata (title, artist, album, track number) into an audio file
      * using ffmpeg via the native .so bundled by youtubedl-android.
      * Also embeds album art if available.
@@ -57,12 +63,12 @@ class MetadataEmbedder @Inject constructor(
             }
 
             add("-metadata")
-            add("title=${track.title}")
+            add("title=${sanitize(track.title)}")
             add("-metadata")
-            add("artist=${track.artist}")
+            add("artist=${sanitize(track.artist)}")
             if (track.album.isNotEmpty()) {
                 add("-metadata")
-                add("album=${track.album}")
+                add("album=${sanitize(track.album)}")
             }
             add("-c")
             add("copy")

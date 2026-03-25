@@ -6,6 +6,7 @@ import com.stash.core.auth.model.ServiceToken
 import com.stash.core.auth.model.UserInfo
 import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.core.auth.store.EncryptedTokenStore
+import com.stash.core.auth.youtube.YouTubeDeviceFlowManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,6 +30,7 @@ import javax.inject.Singleton
 class TokenManagerImpl @Inject constructor(
     private val tokenStore: EncryptedTokenStore,
     private val spotifyAuthManager: SpotifyAuthManager,
+    private val youTubeDeviceFlowManager: YouTubeDeviceFlowManager,
 ) : TokenManager {
 
     /** Dedicated scope for collecting store flows; survives until the process dies. */
@@ -75,10 +77,25 @@ class TokenManagerImpl @Inject constructor(
         return refreshed.accessToken
     }
 
+    /**
+     * Returns a valid YouTube access token, auto-refreshing via the stored
+     * refresh token if the current token is expired or expiring soon.
+     */
     override suspend fun getYouTubeAccessToken(): String? {
         val token = tokenStore.youTubeToken.first() ?: return null
-        if (token.isExpired || token.isExpiringSoon) return null
-        return token.accessToken
+
+        // If the token is still fresh, return it immediately
+        if (!token.isExpired && !token.isExpiringSoon) {
+            return token.accessToken
+        }
+
+        // Token is expired or expiring soon -- refresh using the stored refresh token
+        val refreshToken = token.refreshToken
+        if (refreshToken.isEmpty()) return null
+
+        val refreshed = youTubeDeviceFlowManager.refreshAccessToken(refreshToken) ?: return null
+        tokenStore.saveYouTubeToken(refreshed)
+        return refreshed.accessToken
     }
 
     // -- Mutators -------------------------------------------------------------

@@ -11,6 +11,7 @@ import com.stash.core.data.mapper.toEntity
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
@@ -49,8 +50,11 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getMostPlayed(limit: Int): Flow<List<Track>> =
         trackDao.getMostPlayed(limit).map { entities -> entities.map { it.toDomain() } }
 
-    override fun search(query: String): Flow<List<Track>> =
-        trackDao.search(query).map { entities -> entities.map { it.toDomain() } }
+    override fun search(query: String): Flow<List<Track>> {
+        val sanitized = "\"${query.replace("\"", "").trim()}\""
+        if (sanitized == "\"\"") return flowOf(emptyList())
+        return trackDao.search(sanitized).map { entities -> entities.map { it.toDomain() } }
+    }
 
     override fun getTrackCount(): Flow<Int> =
         trackDao.getTotalCount()

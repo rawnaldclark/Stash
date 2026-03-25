@@ -87,21 +87,24 @@ class StashPlaybackService : MediaSessionService() {
         /**
          * Resolve media items from request metadata URIs so that the controller
          * can set items by URI rather than providing fully-resolved [MediaItem]s.
+         *
+         * Only allows file://, android.resource://, and content:// URI schemes
+         * to prevent external controllers from injecting arbitrary network URIs.
          */
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: List<MediaItem>,
         ): ListenableFuture<List<MediaItem>> {
-            val resolved = mediaItems.map { item ->
-                val uri = item.requestMetadata.mediaUri
-                if (uri != null) {
-                    item.buildUpon()
-                        .setUri(uri)
-                        .build()
-                } else {
-                    item
+            val resolved = mediaItems.mapNotNull { item ->
+                val uri = item.requestMetadata.mediaUri ?: return@mapNotNull null
+                val scheme = uri.scheme
+                if (scheme != "file" && scheme != "android.resource" && scheme != "content") {
+                    return@mapNotNull null
                 }
+                item.buildUpon()
+                    .setUri(uri)
+                    .build()
             }
             return Futures.immediateFuture(resolved)
         }
