@@ -1,6 +1,7 @@
 package com.stash.core.ui.components
 
 import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -11,7 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.RenderEffect
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -30,12 +31,10 @@ fun GlassCard(
             .clip(MaterialTheme.shapes.large)
             .then(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    Modifier.graphicsLayer {
-                        renderEffect = RenderEffect
-                            .createBlurEffect(blurRadius.toPx(), blurRadius.toPx(), android.graphics.Shader.TileMode.CLAMP)
-                            .asComposeRenderEffect()
-                    }
-                } else Modifier
+                    Modifier.blurEffect(blurRadius)
+                } else {
+                    Modifier
+                }
             ),
         color = extendedColors.glassBackground,
         shape = MaterialTheme.shapes.large,
@@ -43,4 +42,11 @@ fun GlassCard(
     ) {
         Box(modifier = Modifier.padding(16.dp), content = content)
     }
+}
+
+@RequiresApi(Build.VERSION_CODES.S)
+private fun Modifier.blurEffect(radius: Dp): Modifier = graphicsLayer {
+    renderEffect = android.graphics.RenderEffect
+        .createBlurEffect(radius.toPx(), radius.toPx(), android.graphics.Shader.TileMode.CLAMP)
+        .asComposeRenderEffect()
 }

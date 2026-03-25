@@ -1,0 +1,108 @@
+<h2>App Layout Direction</h2>
+<p class="subtitle">How should the main screen be organized?</p>
+
+<div class="cards">
+  <!-- Option A: Tab-based -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;border-radius:8px;overflow:hidden;font-family:sans-serif;color:#eee;font-size:12px;">
+        <!-- Status bar -->
+        <div style="background:#16213e;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:bold;font-size:14px;">MixSync</span>
+          <span style="font-size:10px;color:#4ecca3;">● Synced 2h ago</span>
+        </div>
+        <!-- Tabs -->
+        <div style="display:flex;background:#16213e;border-bottom:2px solid #4ecca3;">
+          <div style="flex:1;padding:10px;text-align:center;border-bottom:2px solid #4ecca3;margin-bottom:-2px;color:#4ecca3;font-weight:bold;">Home</div>
+          <div style="flex:1;padding:10px;text-align:center;color:#888;">Library</div>
+          <div style="flex:1;padding:10px;text-align:center;color:#888;">Settings</div>
+        </div>
+        <!-- Dashboard content -->
+        <div style="padding:12px;">
+          <div style="background:#16213e;border-radius:6px;padding:10px;margin-bottom:8px;">
+            <div style="color:#4ecca3;font-size:10px;margin-bottom:4px;">NEXT SYNC</div>
+            <div>Tomorrow at 6:00 AM</div>
+            <div style="font-size:10px;color:#888;margin-top:2px;">WiFi required</div>
+          </div>
+          <div style="background:#16213e;border-radius:6px;padding:10px;margin-bottom:8px;">
+            <div style="color:#4ecca3;font-size:10px;margin-bottom:4px;">YOUR LIBRARY</div>
+            <div>847 tracks · 3.2 GB</div>
+          </div>
+          <div style="background:#16213e;border-radius:6px;padding:10px;">
+            <div style="color:#4ecca3;font-size:10px;margin-bottom:4px;">LAST SYNC</div>
+            <div style="font-size:11px;">+12 new from Spotify Daily Mix</div>
+            <div style="font-size:11px;">+8 new from YT Music Mix</div>
+          </div>
+        </div>
+        <!-- Mini player -->
+        <div style="background:#0f3460;padding:10px 12px;display:flex;align-items:center;gap:8px;">
+          <div style="width:36px;height:36px;background:#4ecca3;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#1a1a2e;font-weight:bold;">ART</div>
+          <div style="flex:1;">
+            <div style="font-size:11px;">Song Title</div>
+            <div style="font-size:9px;color:#888;">Artist Name</div>
+          </div>
+          <div style="color:#4ecca3;">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A: Tab Navigation</h3>
+      <p>Top tabs for Home / Library / Settings. Dashboard landing with sync status. Mini player pinned to bottom.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Bottom nav -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;border-radius:8px;overflow:hidden;font-family:sans-serif;color:#eee;font-size:12px;">
+        <!-- Header -->
+        <div style="background:#16213e;padding:12px;text-align:center;">
+          <span style="font-weight:bold;font-size:14px;">MixSync</span>
+        </div>
+        <!-- Content area -->
+        <div style="padding:12px;">
+          <div style="display:flex;gap:8px;margin-bottom:10px;">
+            <div style="flex:1;background:#16213e;border-radius:6px;padding:10px;text-align:center;">
+              <div style="font-size:20px;color:#4ecca3;font-weight:bold;">847</div>
+              <div style="font-size:9px;color:#888;">TRACKS</div>
+            </div>
+            <div style="flex:1;background:#16213e;border-radius:6px;padding:10px;text-align:center;">
+              <div style="font-size:20px;color:#4ecca3;font-weight:bold;">3.2</div>
+              <div style="font-size:9px;color:#888;">GB USED</div>
+            </div>
+          </div>
+          <div style="font-size:10px;color:#888;margin-bottom:6px;">RECENTLY ADDED</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;margin-bottom:4px;display:flex;align-items:center;gap:8px;">
+            <div style="width:32px;height:32px;background:#e94560;border-radius:4px;font-size:8px;display:flex;align-items:center;justify-content:center;">SP</div>
+            <div><div style="font-size:11px;">Blinding Lights</div><div style="font-size:9px;color:#888;">The Weeknd</div></div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;margin-bottom:4px;display:flex;align-items:center;gap:8px;">
+            <div style="width:32px;height:32px;background:#ff0000;border-radius:4px;font-size:8px;display:flex;align-items:center;justify-content:center;">YT</div>
+            <div><div style="font-size:11px;">Levitating</div><div style="font-size:9px;color:#888;">Dua Lipa</div></div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;display:flex;align-items:center;gap:8px;">
+            <div style="width:32px;height:32px;background:#e94560;border-radius:4px;font-size:8px;display:flex;align-items:center;justify-content:center;">SP</div>
+            <div><div style="font-size:11px;">Heat Waves</div><div style="font-size:9px;color:#888;">Glass Animals</div></div>
+          </div>
+        </div>
+        <!-- Mini player -->
+        <div style="background:#0f3460;padding:8px 12px;display:flex;align-items:center;gap:8px;">
+          <div style="width:32px;height:32px;background:#4ecca3;border-radius:4px;font-size:8px;display:flex;align-items:center;justify-content:center;color:#1a1a2e;font-weight:bold;">ART</div>
+          <div style="flex:1;font-size:11px;">Song Title<br><span style="color:#888;font-size:9px;">Artist</span></div>
+          <div style="color:#4ecca3;">▶</div>
+        </div>
+        <!-- Bottom nav -->
+        <div style="background:#16213e;padding:10px;display:flex;justify-content:space-around;">
+          <div style="text-align:center;color:#4ecca3;"><div style="font-size:16px;">🏠</div><div style="font-size:8px;">Home</div></div>
+          <div style="text-align:center;color:#888;"><div style="font-size:16px;">🎵</div><div style="font-size:8px;">Library</div></div>
+          <div style="text-align:center;color:#888;"><div style="font-size:16px;">🔄</div><div style="font-size:8px;">Sync</div></div>
+          <div style="text-align:center;color:#888;"><div style="font-size:16px;">⚙️</div><div style="font-size:8px;">Settings</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B: Bottom Navigation</h3>
+      <p>Bottom nav bar (Home / Library / Sync / Settings). Dashboard shows stats + recent tracks. Mini player sits above the nav bar. More modern Android feel.</p>
+    </div>
+  </div>
+</div>

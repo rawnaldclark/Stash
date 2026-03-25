@@ -1,0 +1,2286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MixSync — Library</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  /* ========================================
+     DESIGN TOKENS
+     ======================================== */
+  :root {
+    /* Backgrounds */
+    --bg-primary: #0a0a0f;
+    --bg-secondary: #111118;
+    --bg-tertiary: #18181f;
+    --bg-elevated: #1e1e28;
+    --bg-card: rgba(255, 255, 255, 0.04);
+    --bg-card-hover: rgba(255, 255, 255, 0.07);
+    --bg-glass: rgba(255, 255, 255, 0.06);
+    --bg-glass-strong: rgba(255, 255, 255, 0.10);
+
+    /* Text */
+    --text-primary: #f0f0f5;
+    --text-secondary: rgba(240, 240, 245, 0.60);
+    --text-tertiary: rgba(240, 240, 245, 0.38);
+    --text-inverse: #0a0a0f;
+
+    /* Accents */
+    --accent-primary: #8b5cf6;
+    --accent-primary-dim: rgba(139, 92, 246, 0.15);
+    --accent-secondary: #06b6d4;
+    --accent-warm: #f59e0b;
+    --accent-gradient: linear-gradient(135deg, #8b5cf6, #06b6d4);
+    --accent-gradient-warm: linear-gradient(135deg, #f59e0b, #ef4444);
+
+    /* Source indicators — muted and tasteful */
+    --source-spotify: #1db954;
+    --source-spotify-bg: rgba(29, 185, 84, 0.12);
+    --source-spotify-text: rgba(29, 185, 84, 0.80);
+    --source-youtube: #ff4e45;
+    --source-youtube-bg: rgba(255, 78, 69, 0.12);
+    --source-youtube-text: rgba(255, 78, 69, 0.80);
+    --source-liked: #ec4899;
+    --source-liked-bg: rgba(236, 72, 153, 0.12);
+
+    /* Glass */
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-border-strong: rgba(255, 255, 255, 0.14);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.40);
+    --glass-blur: blur(20px);
+
+    /* Spacing */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 12px;
+    --space-lg: 16px;
+    --space-xl: 20px;
+    --space-2xl: 24px;
+    --space-3xl: 32px;
+    --space-4xl: 40px;
+
+    /* Radius */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    --radius-full: 999px;
+
+    /* Transitions */
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --transition-fast: 150ms var(--ease-out);
+    --transition-normal: 250ms var(--ease-out);
+    --transition-slow: 400ms var(--ease-out);
+  }
+
+  /* ========================================
+     RESET & BASE
+     ======================================== */
+  *, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+    line-height: 1.5;
+  }
+
+  /* ========================================
+     PHONE FRAME (for portfolio presentation)
+     ======================================== */
+  .phone-frame {
+    max-width: 375px;
+    margin: 0 auto;
+    min-height: 100vh;
+    position: relative;
+    background: var(--bg-primary);
+    overflow: hidden;
+  }
+
+  /* Ambient glow behind content */
+  .phone-frame::before {
+    content: '';
+    position: fixed;
+    top: -120px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ========================================
+     STATUS BAR
+     ======================================== */
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg-primary);
+  }
+
+  .status-bar .time { letter-spacing: 0.5px; }
+
+  .status-icons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .status-icons svg {
+    width: 16px;
+    height: 16px;
+    fill: var(--text-primary);
+  }
+
+  /* ========================================
+     HEADER
+     ======================================== */
+  .header {
+    padding: var(--space-lg) var(--space-xl) var(--space-md);
+    position: sticky;
+    top: 32px;
+    z-index: 90;
+    background: linear-gradient(to bottom, var(--bg-primary) 60%, transparent);
+  }
+
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-lg);
+  }
+
+  .header-title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: var(--space-sm);
+  }
+
+  .header-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--glass-border);
+    background: var(--bg-glass);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    backdrop-filter: var(--glass-blur);
+  }
+
+  .header-btn:hover,
+  .header-btn:active {
+    background: var(--bg-glass-strong);
+    border-color: var(--glass-border-strong);
+  }
+
+  .header-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--text-secondary);
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ========================================
+     SEARCH BAR
+     ======================================== */
+  .search-container {
+    position: relative;
+    margin-bottom: var(--space-lg);
+  }
+
+  .search-bar {
+    width: 100%;
+    height: 44px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--glass-border);
+    background: var(--bg-glass);
+    backdrop-filter: var(--glass-blur);
+    padding: 0 16px 0 42px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-primary);
+    outline: none;
+    transition: all var(--transition-normal);
+  }
+
+  .search-bar::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  .search-bar:focus {
+    border-color: rgba(139, 92, 246, 0.40);
+    background: rgba(139, 92, 246, 0.06);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.08);
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    stroke: var(--text-tertiary);
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    pointer-events: none;
+    transition: stroke var(--transition-fast);
+  }
+
+  .search-bar:focus ~ .search-icon {
+    stroke: var(--accent-primary);
+  }
+
+  /* ========================================
+     FILTER TABS
+     ======================================== */
+  .filter-tabs {
+    display: flex;
+    gap: var(--space-sm);
+    padding: 0 var(--space-xl);
+    margin-bottom: var(--space-xl);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .filter-tabs::-webkit-scrollbar { display: none; }
+
+  .filter-tab {
+    flex-shrink: 0;
+    height: 36px;
+    padding: 0 16px;
+    border-radius: var(--radius-full);
+    border: 1.5px solid var(--glass-border);
+    background: transparent;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .filter-tab:hover {
+    border-color: var(--glass-border-strong);
+    color: var(--text-primary);
+  }
+
+  .filter-tab.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+    font-weight: 600;
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.30);
+  }
+
+  .filter-tab .count {
+    font-size: 11px;
+    opacity: 0.7;
+    font-weight: 400;
+  }
+
+  /* ========================================
+     SORT BAR
+     ======================================== */
+  .sort-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 var(--space-xl);
+    margin-bottom: var(--space-lg);
+  }
+
+  .sort-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  .sort-select {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent-primary);
+    cursor: pointer;
+    background: none;
+    border: none;
+    font-family: inherit;
+  }
+
+  .sort-select svg {
+    width: 14px;
+    height: 14px;
+    stroke: var(--accent-primary);
+    fill: none;
+    stroke-width: 2;
+  }
+
+  .view-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-glass);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+    border: 1px solid var(--glass-border);
+  }
+
+  .view-btn {
+    width: 30px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+  }
+
+  .view-btn.active {
+    background: var(--accent-primary);
+    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.30);
+  }
+
+  .view-btn svg {
+    width: 14px;
+    height: 14px;
+    stroke: var(--text-tertiary);
+    fill: none;
+    stroke-width: 2;
+  }
+
+  .view-btn.active svg { stroke: white; }
+
+  /* ========================================
+     SCROLLABLE CONTENT
+     ======================================== */
+  .content {
+    padding-bottom: 160px; /* space for mini player + nav */
+  }
+
+  /* ========================================
+     PLAYLIST GRID VIEW
+     ======================================== */
+  .playlist-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-md);
+    padding: 0 var(--space-xl);
+    margin-bottom: var(--space-3xl);
+  }
+
+  .playlist-card {
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    position: relative;
+    aspect-ratio: 1 / 1.1;
+    cursor: pointer;
+    transition: all var(--transition-normal);
+    border: 1px solid var(--glass-border);
+  }
+
+  .playlist-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--glass-border-strong);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.40);
+  }
+
+  .playlist-card:active {
+    transform: scale(0.97);
+  }
+
+  .playlist-art {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* Gradient overlay on playlist cards */
+  .playlist-card .overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      transparent 30%,
+      rgba(0, 0, 0, 0.30) 55%,
+      rgba(0, 0, 0, 0.85) 100%
+    );
+    z-index: 1;
+  }
+
+  .playlist-card .card-content {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: var(--space-md);
+    z-index: 2;
+  }
+
+  .playlist-card .card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 3px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .playlist-card .card-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.60);
+  }
+
+  .source-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: var(--radius-full);
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+
+  .source-badge.spotify {
+    background: var(--source-spotify-bg);
+    color: var(--source-spotify-text);
+  }
+
+  .source-badge.youtube {
+    background: var(--source-youtube-bg);
+    color: var(--source-youtube-text);
+  }
+
+  .source-badge.liked {
+    background: var(--source-liked-bg);
+    color: var(--source-liked);
+  }
+
+  .source-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .source-dot.spotify { background: var(--source-spotify); }
+  .source-dot.youtube { background: var(--source-youtube); }
+  .source-dot.liked { background: var(--source-liked); }
+
+  /* Play button overlay on cards */
+  .playlist-card .play-btn {
+    position: absolute;
+    right: 10px;
+    bottom: 60px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3;
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all var(--transition-normal);
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.40);
+  }
+
+  .playlist-card:hover .play-btn {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .playlist-card .play-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: white;
+    stroke: none;
+    margin-left: 2px;
+  }
+
+  /* Featured / wide playlist card */
+  .playlist-card.featured {
+    grid-column: 1 / -1;
+    aspect-ratio: 2.2 / 1;
+  }
+
+  /* Colored gradient variants for art-less cards */
+  .card-gradient-1 {
+    background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+  }
+  .card-gradient-2 {
+    background: linear-gradient(135deg, #2d1b4e, #1a1a2e, #0d1b2a);
+  }
+  .card-gradient-3 {
+    background: linear-gradient(135deg, #1b2a1b, #1a2e1a, #0d2a1d);
+  }
+  .card-gradient-4 {
+    background: linear-gradient(135deg, #2e1a1a, #3e1621, #601a0f);
+  }
+  .card-gradient-5 {
+    background: linear-gradient(135deg, #1a2e2e, #162f3e, #0f4660);
+  }
+  .card-gradient-6 {
+    background: linear-gradient(135deg, #2e2a1a, #3e3216, #604a0f);
+  }
+
+  /* Abstract art patterns for cards */
+  .card-art {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  .card-art::before,
+  .card-art::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(40px);
+    opacity: 0.5;
+  }
+
+  .card-gradient-1 .card-art::before {
+    width: 120px; height: 120px;
+    background: #4361ee;
+    top: -20px; right: -20px;
+  }
+  .card-gradient-1 .card-art::after {
+    width: 80px; height: 80px;
+    background: #7209b7;
+    bottom: 10px; left: 20px;
+  }
+
+  .card-gradient-2 .card-art::before {
+    width: 100px; height: 100px;
+    background: #8b5cf6;
+    top: -10px; left: -10px;
+  }
+  .card-gradient-2 .card-art::after {
+    width: 90px; height: 90px;
+    background: #ec4899;
+    bottom: -10px; right: 10px;
+  }
+
+  .card-gradient-3 .card-art::before {
+    width: 110px; height: 110px;
+    background: #10b981;
+    top: -20px; right: 10px;
+  }
+  .card-gradient-3 .card-art::after {
+    width: 70px; height: 70px;
+    background: #06b6d4;
+    bottom: 20px; left: -10px;
+  }
+
+  .card-gradient-4 .card-art::before {
+    width: 90px; height: 90px;
+    background: #f43f5e;
+    top: 10px; left: 20px;
+  }
+  .card-gradient-4 .card-art::after {
+    width: 100px; height: 100px;
+    background: #f59e0b;
+    bottom: -20px; right: -10px;
+  }
+
+  .card-gradient-5 .card-art::before {
+    width: 130px; height: 130px;
+    background: #06b6d4;
+    top: -30px; left: 20px;
+  }
+  .card-gradient-5 .card-art::after {
+    width: 80px; height: 80px;
+    background: #8b5cf6;
+    bottom: 10px; right: 20px;
+  }
+
+  .card-gradient-6 .card-art::before {
+    width: 100px; height: 100px;
+    background: #f59e0b;
+    top: -15px; right: -15px;
+  }
+  .card-gradient-6 .card-art::after {
+    width: 75px; height: 75px;
+    background: #ef4444;
+    bottom: 0px; left: 10px;
+  }
+
+  /* Mosaic art for featured card */
+  .featured .card-art-mosaic {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 1px;
+    opacity: 0.25;
+  }
+
+  .mosaic-tile {
+    background-size: cover;
+    background-position: center;
+  }
+
+  /* ========================================
+     SECTION HEADERS
+     ======================================== */
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 var(--space-xl);
+    margin-bottom: var(--space-md);
+  }
+
+  .section-title {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+  }
+
+  .section-link {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-primary);
+    text-decoration: none;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+  }
+
+  .section-link:hover { opacity: 0.7; }
+
+  /* ========================================
+     TRACK LIST VIEW
+     ======================================== */
+  .track-list {
+    padding: 0 var(--space-xl);
+  }
+
+  .track-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 0 var(--space-md);
+    margin-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  .track-list-header span {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  .track-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-sm) 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    position: relative;
+  }
+
+  .track-item:hover {
+    background: var(--bg-glass);
+    margin: 0 calc(var(--space-sm) * -1);
+    padding-left: var(--space-sm);
+    padding-right: var(--space-sm);
+  }
+
+  .track-item:active {
+    background: var(--bg-glass-strong);
+  }
+
+  .track-item + .track-item {
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+  }
+
+  .track-art {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .track-art-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* Placeholder album art with gradients */
+  .track-art-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .track-art-placeholder svg {
+    width: 20px;
+    height: 20px;
+    stroke: rgba(255,255,255,0.3);
+    fill: none;
+    stroke-width: 1.5;
+  }
+
+  .track-number {
+    width: 20px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .track-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .track-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+
+  .track-title.now-playing {
+    color: var(--accent-primary);
+  }
+
+  .track-artist-album {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    line-height: 1.4;
+  }
+
+  .track-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-shrink: 0;
+  }
+
+  .track-duration {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+    min-width: 32px;
+    text-align: right;
+  }
+
+  .track-more {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-full);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+  }
+
+  .track-item:hover .track-more {
+    opacity: 1;
+  }
+
+  .track-more svg {
+    width: 16px;
+    height: 16px;
+    fill: var(--text-tertiary);
+  }
+
+  /* Now playing indicator */
+  .now-playing-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 14px;
+  }
+
+  .now-playing-bars span {
+    width: 3px;
+    background: var(--accent-primary);
+    border-radius: 1px;
+    animation: eq-bar 1s ease-in-out infinite;
+  }
+
+  .now-playing-bars span:nth-child(1) { height: 40%; animation-delay: 0s; }
+  .now-playing-bars span:nth-child(2) { height: 70%; animation-delay: 0.15s; }
+  .now-playing-bars span:nth-child(3) { height: 50%; animation-delay: 0.3s; }
+  .now-playing-bars span:nth-child(4) { height: 80%; animation-delay: 0.1s; }
+
+  @keyframes eq-bar {
+    0%, 100% { transform: scaleY(0.4); }
+    50% { transform: scaleY(1); }
+  }
+
+  /* Offline download indicator */
+  .offline-badge {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+
+  .offline-badge svg {
+    width: 14px;
+    height: 14px;
+    stroke: var(--accent-secondary);
+    fill: none;
+    stroke-width: 2;
+  }
+
+  /* ========================================
+     MINI PLAYER
+     ======================================== */
+  .mini-player {
+    position: fixed;
+    bottom: 68px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(375px - 16px);
+    max-width: calc(100vw - 16px);
+    height: 64px;
+    border-radius: var(--radius-lg);
+    background: rgba(30, 30, 40, 0.85);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--glass-border-strong);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-md);
+    gap: var(--space-md);
+    z-index: 200;
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.50),
+      0 0 0 0.5px rgba(255, 255, 255, 0.05) inset;
+    cursor: pointer;
+    transition: all var(--transition-normal);
+  }
+
+  .mini-player:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.60),
+      0 0 0 0.5px rgba(255, 255, 255, 0.08) inset;
+  }
+
+  /* Progress bar on mini player */
+  .mini-progress {
+    position: absolute;
+    top: 0;
+    left: 12px;
+    right: 12px;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .mini-progress-fill {
+    height: 100%;
+    width: 35%;
+    background: var(--accent-gradient);
+    border-radius: 1px;
+    transition: width 1s linear;
+  }
+
+  .mini-art {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .mini-art-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .mini-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mini-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+
+  .mini-artist {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mini-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+
+  .mini-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+  }
+
+  .mini-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .mini-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: var(--text-primary);
+    stroke: none;
+  }
+
+  .mini-btn.play-pause {
+    width: 40px;
+    height: 40px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+  }
+
+  .mini-btn.play-pause:hover {
+    background: #9d6ff8;
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.40);
+  }
+
+  .mini-btn.play-pause svg {
+    width: 18px;
+    height: 18px;
+    margin-left: 2px;
+  }
+
+  .mini-btn.skip svg {
+    width: 18px;
+    height: 18px;
+    fill: var(--text-secondary);
+  }
+
+  /* ========================================
+     BOTTOM NAVIGATION
+     ======================================== */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 375px;
+    max-width: 100vw;
+    height: 68px;
+    background: rgba(10, 10, 15, 0.92);
+    backdrop-filter: blur(30px) saturate(150%);
+    -webkit-backdrop-filter: blur(30px) saturate(150%);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    z-index: 300;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .nav-item svg {
+    width: 22px;
+    height: 22px;
+    stroke: var(--text-tertiary);
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: all var(--transition-fast);
+  }
+
+  .nav-item span {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    transition: color var(--transition-fast);
+  }
+
+  .nav-item.active svg {
+    stroke: var(--accent-primary);
+    fill: rgba(139, 92, 246, 0.15);
+  }
+
+  .nav-item.active span {
+    color: var(--accent-primary);
+    font-weight: 600;
+  }
+
+  .nav-item:hover:not(.active) svg {
+    stroke: var(--text-secondary);
+  }
+
+  .nav-item:hover:not(.active) span {
+    color: var(--text-secondary);
+  }
+
+  /* Active indicator dot */
+  .nav-item.active::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+  }
+
+  /* ========================================
+     SYNCED STATS BAR
+     ======================================== */
+  .sync-stats {
+    display: flex;
+    gap: var(--space-sm);
+    padding: 0 var(--space-xl);
+    margin-bottom: var(--space-2xl);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .sync-stats::-webkit-scrollbar { display: none; }
+
+  .stat-chip {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-md);
+    background: var(--bg-glass);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: var(--glass-blur);
+  }
+
+  .stat-chip .stat-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .stat-chip .stat-icon svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+
+  .stat-chip .stat-text {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stat-chip .stat-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+  }
+
+  .stat-chip .stat-label {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* ========================================
+     DIVIDER
+     ======================================== */
+  .divider {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--glass-border) 20%,
+      var(--glass-border) 80%,
+      transparent
+    );
+    margin: var(--space-2xl) var(--space-xl);
+  }
+
+  /* ========================================
+     TAB CONTENT SWITCHING
+     ======================================== */
+  .tab-content {
+    display: none;
+    animation: fadeIn 0.3s var(--ease-out);
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ========================================
+     ARTIST GRID
+     ======================================== */
+  .artist-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-lg);
+    padding: 0 var(--space-xl);
+  }
+
+  .artist-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .artist-card:active { transform: scale(0.95); }
+
+  .artist-avatar {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid var(--glass-border);
+    position: relative;
+    transition: border-color var(--transition-fast);
+  }
+
+  .artist-card:hover .artist-avatar {
+    border-color: var(--accent-primary);
+  }
+
+  .artist-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .artist-name {
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    color: var(--text-primary);
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .artist-tracks {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+  }
+
+  /* ========================================
+     ALBUM GRID
+     ======================================== */
+  .album-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-md);
+    padding: 0 var(--space-xl);
+  }
+
+  .album-card {
+    cursor: pointer;
+    transition: all var(--transition-normal);
+  }
+
+  .album-card:hover { transform: translateY(-2px); }
+  .album-card:active { transform: scale(0.97); }
+
+  .album-art {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-bottom: var(--space-sm);
+    position: relative;
+    border: 1px solid var(--glass-border);
+  }
+
+  .album-art-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .album-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+
+  .album-artist {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ========================================
+     RESPONSIVE
+     ======================================== */
+  @media (max-width: 374px) {
+    .playlist-grid { grid-template-columns: 1fr; }
+    .artist-grid { grid-template-columns: repeat(2, 1fr); }
+    .album-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (min-width: 768px) {
+    .phone-frame { max-width: 768px; }
+    .playlist-grid { grid-template-columns: repeat(3, 1fr); }
+    .artist-grid { grid-template-columns: repeat(4, 1fr); }
+    .album-grid { grid-template-columns: repeat(3, 1fr); }
+    .mini-player { width: calc(768px - 32px); }
+    .bottom-nav { width: 768px; }
+  }
+
+  @media (min-width: 1024px) {
+    .phone-frame { max-width: 1024px; }
+    .playlist-grid { grid-template-columns: repeat(4, 1fr); }
+    .artist-grid { grid-template-columns: repeat(6, 1fr); }
+    .album-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  /* ========================================
+     SCROLLBAR STYLING
+     ======================================== */
+  ::-webkit-scrollbar { width: 0; height: 0; }
+
+  /* ========================================
+     UTILITY: selection color
+     ======================================== */
+  ::selection {
+    background: rgba(139, 92, 246, 0.30);
+    color: white;
+  }
+</style>
+</head>
+<body>
+
+<div class="phone-frame">
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <span class="time">9:41</span>
+    <div class="status-icons">
+      <svg viewBox="0 0 24 24"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 00-6 0zm-4-4l2 2a7.074 7.074 0 0110 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.34C7 21.4 7.6 22 8.33 22h7.34c.73 0 1.33-.6 1.33-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-top">
+      <h1 class="header-title">Library</h1>
+      <div class="header-actions">
+        <button class="header-btn" aria-label="Sync">
+          <svg viewBox="0 0 24 24"><path d="M21 2v6h-6M3 12a9 9 0 0115.356-6.356L21 8M3 22v-6h6M21 12a9 9 0 01-15.356 6.356L3 16"/></svg>
+        </button>
+        <button class="header-btn" aria-label="Settings">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="search-container">
+      <input type="text" class="search-bar" placeholder="Search your library...">
+      <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    </div>
+  </div>
+
+  <!-- Sync Stats -->
+  <div class="sync-stats">
+    <div class="stat-chip">
+      <div class="stat-icon" style="background: var(--source-spotify-bg);">
+        <svg viewBox="0 0 24 24" style="stroke: var(--source-spotify); fill: none;">
+          <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/>
+          <path d="M8 15c3-1 6-1 9 1M7 12c4-1.5 8-1.5 12 1M6 9c5-2 10-2 15 1"/>
+        </svg>
+      </div>
+      <div class="stat-text">
+        <span class="stat-value">847</span>
+        <span class="stat-label">Spotify</span>
+      </div>
+    </div>
+    <div class="stat-chip">
+      <div class="stat-icon" style="background: var(--source-youtube-bg);">
+        <svg viewBox="0 0 24 24" style="stroke: var(--source-youtube); fill: none;">
+          <path d="M22.54 6.42a2.78 2.78 0 00-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 00-1.94 2A29 29 0 001 12a29 29 0 00.46 5.58A2.78 2.78 0 003.4 19.6C5.12 20 12 20 12 20s6.88 0 8.6-.46a2.78 2.78 0 001.94-2A29 29 0 0023 12a29 29 0 00-.46-5.58z"/>
+          <path d="M9.75 15.02l5.75-3.27-5.75-3.27v6.54z"/>
+        </svg>
+      </div>
+      <div class="stat-text">
+        <span class="stat-value">623</span>
+        <span class="stat-label">YouTube</span>
+      </div>
+    </div>
+    <div class="stat-chip">
+      <div class="stat-icon" style="background: rgba(139, 92, 246, 0.12);">
+        <svg viewBox="0 0 24 24" style="stroke: var(--accent-primary); fill: none;">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+      </div>
+      <div class="stat-text">
+        <span class="stat-value">2.4 GB</span>
+        <span class="stat-label">Offline</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter Tabs -->
+  <div class="filter-tabs" id="filterTabs">
+    <button class="filter-tab active" data-tab="playlists">
+      <span>Playlists</span>
+      <span class="count">14</span>
+    </button>
+    <button class="filter-tab" data-tab="tracks">
+      <span>All Tracks</span>
+      <span class="count">1,470</span>
+    </button>
+    <button class="filter-tab" data-tab="artists">
+      <span>Artists</span>
+      <span class="count">186</span>
+    </button>
+    <button class="filter-tab" data-tab="albums">
+      <span>Albums</span>
+      <span class="count">94</span>
+    </button>
+  </div>
+
+  <!-- Main Content -->
+  <div class="content">
+
+    <!-- ============ PLAYLISTS TAB ============ -->
+    <div class="tab-content active" id="tab-playlists">
+      <!-- Sort Bar -->
+      <div class="sort-bar">
+        <span class="sort-label">14 playlists</span>
+        <div style="display:flex; align-items:center; gap: 12px;">
+          <button class="sort-select">
+            Recently Updated
+            <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Playlist Grid -->
+      <div class="playlist-grid">
+        <!-- Featured Card: Liked Songs -->
+        <div class="playlist-card featured card-gradient-2">
+          <div class="card-art"></div>
+          <div class="overlay"></div>
+          <button class="play-btn" aria-label="Play" style="opacity:1; transform:none; bottom:48px;">
+            <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+          </button>
+          <div class="card-content" style="padding: 16px;">
+            <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+              <span class="source-badge liked">
+                <svg viewBox="0 0 24 24" style="width:10px; height:10px; fill:currentColor; stroke:none;">
+                  <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+                </svg>
+                Liked Songs
+              </span>
+            </div>
+            <div class="card-title" style="font-size:16px;">Your Liked Songs</div>
+            <div class="card-meta">
+              <span>342 tracks</span>
+              <span style="opacity:0.4;">|</span>
+              <span>Both sources</span>
+              <span style="opacity:0.4;">|</span>
+              <span>Updated 2h ago</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Spotify: Daily Mix 1 -->
+        <div class="playlist-card card-gradient-1">
+          <div class="card-art"></div>
+          <div class="overlay"></div>
+          <button class="play-btn" aria-label="Play">
+            <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+          </button>
+          <div class="card-content">
+            <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+              <div class="source-dot spotify"></div>
+            </div>
+            <div class="card-title">Daily Mix 1</div>
+            <div class="card-meta">
+              <span>50 tracks</span>
+              <span style="opacity:0.4;">&#183;</span>
+              <span>3h ago</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- YT Music: Supermix -->
+        <div class="playlist-card card-gradient-4">
+          <div class="card-art"></div>
+          <div class="overlay"></div>
+          <button class="play-btn" aria-label="Play">
+            <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+          </button>
+          <div class="card-content">
+            <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+              <div class="source-dot youtube"></div>
+            </div>
+            <div class="card-title">My Supermix</div>
+            <div class="card-meta">
+              <span>100 tracks</span>
+              <span style="opacity:0.4;">&#183;</span>
+              <span>5h ago</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Spotify: Discover Weekly -->
+        <div class="playlist-card card-gradient-5">
+          <div class="card-art"></div>
+          <div class="overlay"></div>
+          <button class="play-btn" aria-label="Play">
+            <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+          </button>
+          <div class="card-content">
+            <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+              <div class="source-dot spotify"></div>
+            </div>
+            <div class="card-title">Discover Weekly</div>
+            <div class="card-meta">
+              <span>30 tracks</span>
+              <span style="opacity:0.4;">&#183;</span>
+              <span>Mon</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- YT Music: Recap Mix -->
+        <div class="playlist-card card-gradient-6">
+          <div class="card-art"></div>
+          <div class="overlay"></div>
+          <button class="play-btn" aria-label="Play">
+            <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+          </button>
+          <div class="card-content">
+            <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+              <div class="source-dot youtube"></div>
+            </div>
+            <div class="card-title">Recap 2025</div>
+            <div class="card-meta">
+              <span>75 tracks</span>
+              <span style="opacity:0.4;">&#183;</span>
+              <span>1d ago</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Spotify: Daily Mix 2 -->
+        <div class="playlist-card card-gradient-3">
+          <div class="card-art"></div>
+          <div class="overlay"></div>
+          <button class="play-btn" aria-label="Play">
+            <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+          </button>
+          <div class="card-content">
+            <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+              <div class="source-dot spotify"></div>
+            </div>
+            <div class="card-title">Daily Mix 2</div>
+            <div class="card-meta">
+              <span>50 tracks</span>
+              <span style="opacity:0.4;">&#183;</span>
+              <span>3h ago</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- YT Music: Energize -->
+        <div class="playlist-card card-gradient-2">
+          <div class="card-art"></div>
+          <div class="overlay"></div>
+          <button class="play-btn" aria-label="Play">
+            <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+          </button>
+          <div class="card-content">
+            <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+              <div class="source-dot youtube"></div>
+            </div>
+            <div class="card-title">Energize Mix</div>
+            <div class="card-meta">
+              <span>50 tracks</span>
+              <span style="opacity:0.4;">&#183;</span>
+              <span>6h ago</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Spotify: Release Radar -->
+        <div class="playlist-card card-gradient-1">
+          <div class="card-art"></div>
+          <div class="overlay"></div>
+          <button class="play-btn" aria-label="Play">
+            <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+          </button>
+          <div class="card-content">
+            <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+              <div class="source-dot spotify"></div>
+            </div>
+            <div class="card-title">Release Radar</div>
+            <div class="card-meta">
+              <span>30 tracks</span>
+              <span style="opacity:0.4;">&#183;</span>
+              <span>Fri</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ ALL TRACKS TAB ============ -->
+    <div class="tab-content" id="tab-tracks">
+      <div class="sort-bar">
+        <span class="sort-label">1,470 tracks</span>
+        <div style="display:flex; align-items:center; gap: 12px;">
+          <button class="sort-select">
+            Recently Added
+            <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="view-toggle">
+            <button class="view-btn active" aria-label="List view">
+              <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </button>
+            <button class="view-btn" aria-label="Grid view">
+              <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="track-list">
+        <!-- Track 1 - Now Playing -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-2">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title now-playing">Blinding Lights</div>
+            <div class="track-artist-album">
+              <div class="source-dot spotify" style="width:5px; height:5px;"></div>
+              The Weeknd
+              <span style="color:var(--text-tertiary)">&#183; After Hours</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <div class="now-playing-bars">
+              <span></span><span></span><span></span><span></span>
+            </div>
+            <span class="track-duration">3:20</span>
+          </div>
+        </div>
+
+        <!-- Track 2 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-4">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">HUMBLE.</div>
+            <div class="track-artist-album">
+              <div class="source-dot spotify" style="width:5px; height:5px;"></div>
+              Kendrick Lamar
+              <span style="color:var(--text-tertiary)">&#183; DAMN.</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <div class="offline-badge">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <span class="track-duration">2:57</span>
+          </div>
+        </div>
+
+        <!-- Track 3 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-1">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">Bohemian Rhapsody</div>
+            <div class="track-artist-album">
+              <div class="source-dot youtube" style="width:5px; height:5px;"></div>
+              Queen
+              <span style="color:var(--text-tertiary)">&#183; A Night at the Opera</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <div class="offline-badge">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <span class="track-duration">5:55</span>
+          </div>
+        </div>
+
+        <!-- Track 4 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-5">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">Levitating</div>
+            <div class="track-artist-album">
+              <div class="source-dot spotify" style="width:5px; height:5px;"></div>
+              Dua Lipa
+              <span style="color:var(--text-tertiary)">&#183; Future Nostalgia</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <div class="offline-badge">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <span class="track-duration">3:23</span>
+          </div>
+        </div>
+
+        <!-- Track 5 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-3">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">Smells Like Teen Spirit</div>
+            <div class="track-artist-album">
+              <div class="source-dot youtube" style="width:5px; height:5px;"></div>
+              Nirvana
+              <span style="color:var(--text-tertiary)">&#183; Nevermind</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <span class="track-duration">5:01</span>
+          </div>
+        </div>
+
+        <!-- Track 6 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-6">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">Anti-Hero</div>
+            <div class="track-artist-album">
+              <div class="source-dot spotify" style="width:5px; height:5px;"></div>
+              Taylor Swift
+              <span style="color:var(--text-tertiary)">&#183; Midnights</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <div class="offline-badge">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <span class="track-duration">3:20</span>
+          </div>
+        </div>
+
+        <!-- Track 7 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-4">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">Starboy</div>
+            <div class="track-artist-album">
+              <div class="source-dot youtube" style="width:5px; height:5px;"></div>
+              The Weeknd ft. Daft Punk
+              <span style="color:var(--text-tertiary)">&#183; Starboy</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <span class="track-duration">3:50</span>
+          </div>
+        </div>
+
+        <!-- Track 8 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-2">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">Flowers</div>
+            <div class="track-artist-album">
+              <div class="source-dot spotify" style="width:5px; height:5px;"></div>
+              Miley Cyrus
+              <span style="color:var(--text-tertiary)">&#183; Endless Summer Vacation</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <div class="offline-badge">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <span class="track-duration">3:21</span>
+          </div>
+        </div>
+
+        <!-- Track 9 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-1">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">As It Was</div>
+            <div class="track-artist-album">
+              <div class="source-dot spotify" style="width:5px; height:5px;"></div>
+              Harry Styles
+              <span style="color:var(--text-tertiary)">&#183; Harry's House</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <span class="track-duration">2:47</span>
+          </div>
+        </div>
+
+        <!-- Track 10 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-3">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">Cruel Summer</div>
+            <div class="track-artist-album">
+              <div class="source-dot youtube" style="width:5px; height:5px;"></div>
+              Taylor Swift
+              <span style="color:var(--text-tertiary)">&#183; Lover</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <div class="offline-badge">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <span class="track-duration">2:58</span>
+          </div>
+        </div>
+
+        <!-- Track 11 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-5">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">Watermelon Sugar</div>
+            <div class="track-artist-album">
+              <div class="source-dot spotify" style="width:5px; height:5px;"></div>
+              Harry Styles
+              <span style="color:var(--text-tertiary)">&#183; Fine Line</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <span class="track-duration">2:54</span>
+          </div>
+        </div>
+
+        <!-- Track 12 -->
+        <div class="track-item">
+          <div class="track-art">
+            <div class="track-art-placeholder card-gradient-6">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="track-info">
+            <div class="track-title">Paint The Town Red</div>
+            <div class="track-artist-album">
+              <div class="source-dot youtube" style="width:5px; height:5px;"></div>
+              Doja Cat
+              <span style="color:var(--text-tertiary)">&#183; Single</span>
+            </div>
+          </div>
+          <div class="track-right">
+            <div class="offline-badge">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <span class="track-duration">3:51</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ ARTISTS TAB ============ -->
+    <div class="tab-content" id="tab-artists">
+      <div class="sort-bar">
+        <span class="sort-label">186 artists</span>
+        <button class="sort-select">
+          Most Played
+          <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <div class="artist-grid">
+        <div class="artist-card">
+          <div class="artist-avatar">
+            <div class="track-art-placeholder card-gradient-2" style="width:100%;height:100%;border-radius:50%;">
+              <svg viewBox="0 0 24 24" style="width:32px;height:32px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <span class="artist-name">The Weeknd</span>
+          <span class="artist-tracks">48 tracks</span>
+        </div>
+
+        <div class="artist-card">
+          <div class="artist-avatar">
+            <div class="track-art-placeholder card-gradient-4" style="width:100%;height:100%;border-radius:50%;">
+              <svg viewBox="0 0 24 24" style="width:32px;height:32px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <span class="artist-name">Taylor Swift</span>
+          <span class="artist-tracks">67 tracks</span>
+        </div>
+
+        <div class="artist-card">
+          <div class="artist-avatar">
+            <div class="track-art-placeholder card-gradient-1" style="width:100%;height:100%;border-radius:50%;">
+              <svg viewBox="0 0 24 24" style="width:32px;height:32px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <span class="artist-name">Kendrick Lamar</span>
+          <span class="artist-tracks">35 tracks</span>
+        </div>
+
+        <div class="artist-card">
+          <div class="artist-avatar">
+            <div class="track-art-placeholder card-gradient-3" style="width:100%;height:100%;border-radius:50%;">
+              <svg viewBox="0 0 24 24" style="width:32px;height:32px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <span class="artist-name">Dua Lipa</span>
+          <span class="artist-tracks">28 tracks</span>
+        </div>
+
+        <div class="artist-card">
+          <div class="artist-avatar">
+            <div class="track-art-placeholder card-gradient-5" style="width:100%;height:100%;border-radius:50%;">
+              <svg viewBox="0 0 24 24" style="width:32px;height:32px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <span class="artist-name">Harry Styles</span>
+          <span class="artist-tracks">22 tracks</span>
+        </div>
+
+        <div class="artist-card">
+          <div class="artist-avatar">
+            <div class="track-art-placeholder card-gradient-6" style="width:100%;height:100%;border-radius:50%;">
+              <svg viewBox="0 0 24 24" style="width:32px;height:32px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <span class="artist-name">Doja Cat</span>
+          <span class="artist-tracks">19 tracks</span>
+        </div>
+
+        <div class="artist-card">
+          <div class="artist-avatar">
+            <div class="track-art-placeholder card-gradient-4" style="width:100%;height:100%;border-radius:50%;">
+              <svg viewBox="0 0 24 24" style="width:32px;height:32px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <span class="artist-name">Queen</span>
+          <span class="artist-tracks">31 tracks</span>
+        </div>
+
+        <div class="artist-card">
+          <div class="artist-avatar">
+            <div class="track-art-placeholder card-gradient-2" style="width:100%;height:100%;border-radius:50%;">
+              <svg viewBox="0 0 24 24" style="width:32px;height:32px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <span class="artist-name">Miley Cyrus</span>
+          <span class="artist-tracks">14 tracks</span>
+        </div>
+
+        <div class="artist-card">
+          <div class="artist-avatar">
+            <div class="track-art-placeholder card-gradient-1" style="width:100%;height:100%;border-radius:50%;">
+              <svg viewBox="0 0 24 24" style="width:32px;height:32px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <span class="artist-name">Nirvana</span>
+          <span class="artist-tracks">17 tracks</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ ALBUMS TAB ============ -->
+    <div class="tab-content" id="tab-albums">
+      <div class="sort-bar">
+        <span class="sort-label">94 albums</span>
+        <button class="sort-select">
+          Alphabetical
+          <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <div class="album-grid">
+        <div class="album-card">
+          <div class="album-art">
+            <div class="track-art-placeholder card-gradient-2" style="width:100%;height:100%;">
+              <svg viewBox="0 0 24 24" style="width:40px;height:40px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="album-title">After Hours</div>
+          <div class="album-artist">
+            <span style="display:inline-flex;align-items:center;gap:4px;">
+              <span class="source-dot spotify" style="width:5px;height:5px;"></span>
+              The Weeknd
+            </span>
+          </div>
+        </div>
+
+        <div class="album-card">
+          <div class="album-art">
+            <div class="track-art-placeholder card-gradient-4" style="width:100%;height:100%;">
+              <svg viewBox="0 0 24 24" style="width:40px;height:40px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="album-title">DAMN.</div>
+          <div class="album-artist">
+            <span style="display:inline-flex;align-items:center;gap:4px;">
+              <span class="source-dot spotify" style="width:5px;height:5px;"></span>
+              Kendrick Lamar
+            </span>
+          </div>
+        </div>
+
+        <div class="album-card">
+          <div class="album-art">
+            <div class="track-art-placeholder card-gradient-5" style="width:100%;height:100%;">
+              <svg viewBox="0 0 24 24" style="width:40px;height:40px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="album-title">Future Nostalgia</div>
+          <div class="album-artist">
+            <span style="display:inline-flex;align-items:center;gap:4px;">
+              <span class="source-dot youtube" style="width:5px;height:5px;"></span>
+              Dua Lipa
+            </span>
+          </div>
+        </div>
+
+        <div class="album-card">
+          <div class="album-art">
+            <div class="track-art-placeholder card-gradient-6" style="width:100%;height:100%;">
+              <svg viewBox="0 0 24 24" style="width:40px;height:40px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="album-title">Midnights</div>
+          <div class="album-artist">
+            <span style="display:inline-flex;align-items:center;gap:4px;">
+              <span class="source-dot spotify" style="width:5px;height:5px;"></span>
+              Taylor Swift
+            </span>
+          </div>
+        </div>
+
+        <div class="album-card">
+          <div class="album-art">
+            <div class="track-art-placeholder card-gradient-1" style="width:100%;height:100%;">
+              <svg viewBox="0 0 24 24" style="width:40px;height:40px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="album-title">A Night at the Opera</div>
+          <div class="album-artist">
+            <span style="display:inline-flex;align-items:center;gap:4px;">
+              <span class="source-dot youtube" style="width:5px;height:5px;"></span>
+              Queen
+            </span>
+          </div>
+        </div>
+
+        <div class="album-card">
+          <div class="album-art">
+            <div class="track-art-placeholder card-gradient-3" style="width:100%;height:100%;">
+              <svg viewBox="0 0 24 24" style="width:40px;height:40px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+          </div>
+          <div class="album-title">Harry's House</div>
+          <div class="album-artist">
+            <span style="display:inline-flex;align-items:center;gap:4px;">
+              <span class="source-dot spotify" style="width:5px;height:5px;"></span>
+              Harry Styles
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+
+  <!-- Mini Player -->
+  <div class="mini-player">
+    <div class="mini-progress">
+      <div class="mini-progress-fill"></div>
+    </div>
+    <div class="mini-art">
+      <div class="track-art-placeholder card-gradient-2" style="width:100%;height:100%;">
+        <svg viewBox="0 0 24 24" style="width:20px;height:20px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      </div>
+    </div>
+    <div class="mini-info">
+      <div class="mini-title">Blinding Lights</div>
+      <div class="mini-artist">The Weeknd</div>
+    </div>
+    <div class="mini-controls">
+      <button class="mini-btn skip" aria-label="Previous">
+        <svg viewBox="0 0 24 24"><path d="M19 20L9 12l10-8v16zM5 19V5"/></svg>
+      </button>
+      <button class="mini-btn play-pause" aria-label="Pause">
+        <svg viewBox="0 0 24 24" style="margin-left:0;"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+      </button>
+      <button class="mini-btn skip" aria-label="Next">
+        <svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8V4zM19 5v14"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span>Home</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Explore</span>
+    </a>
+    <a class="nav-item active" href="#">
+      <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+      <span>Library</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span>Offline</span>
+    </a>
+  </nav>
+</div>
+
+<!-- Tab Switching Script -->
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const tabs = document.querySelectorAll('.filter-tab');
+    const contents = document.querySelectorAll('.tab-content');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        // Remove active from all tabs
+        tabs.forEach(t => t.classList.remove('active'));
+        // Add active to clicked tab
+        tab.classList.add('active');
+
+        // Hide all content
+        contents.forEach(c => c.classList.remove('active'));
+        // Show target content
+        const target = tab.getAttribute('data-tab');
+        const targetContent = document.getElementById('tab-' + target);
+        if (targetContent) {
+          targetContent.classList.add('active');
+        }
+      });
+    });
+
+    // Search functionality
+    const searchBar = document.querySelector('.search-bar');
+    searchBar.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase();
+      // Simple track filtering demo
+      const trackItems = document.querySelectorAll('.track-item');
+      trackItems.forEach(item => {
+        const title = item.querySelector('.track-title')?.textContent.toLowerCase() || '';
+        const artist = item.querySelector('.track-artist-album')?.textContent.toLowerCase() || '';
+        if (query === '' || title.includes(query) || artist.includes(query)) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    });
+
+    // Mini player progress animation
+    const progressFill = document.querySelector('.mini-progress-fill');
+    let progress = 35;
+    setInterval(() => {
+      progress += 0.1;
+      if (progress > 100) progress = 0;
+      progressFill.style.width = progress + '%';
+    }, 300);
+
+    // Play/pause toggle on mini player
+    const playPauseBtn = document.querySelector('.mini-btn.play-pause');
+    let isPlaying = true;
+    playPauseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isPlaying = !isPlaying;
+      const bars = document.querySelectorAll('.now-playing-bars span');
+      if (isPlaying) {
+        playPauseBtn.innerHTML = '<svg viewBox="0 0 24 24" style="margin-left:0;"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
+        bars.forEach(bar => bar.style.animationPlayState = 'running');
+      } else {
+        playPauseBtn.innerHTML = '<svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>';
+        bars.forEach(bar => bar.style.animationPlayState = 'paused');
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

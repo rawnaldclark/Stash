@@ -1,0 +1,1918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MixSync — Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ========================================
+   DESIGN TOKENS
+   ======================================== */
+:root {
+  /* Core palette */
+  --bg-primary: #06060c;
+  --bg-secondary: #0d0d18;
+  --bg-tertiary: #141422;
+  --bg-elevated: #1a1a2e;
+
+  /* Surface colors (glassmorphism) */
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-bg-hover: rgba(255, 255, 255, 0.07);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-border-light: rgba(255, 255, 255, 0.1);
+
+  /* Text */
+  --text-primary: #f0f0f5;
+  --text-secondary: rgba(240, 240, 245, 0.6);
+  --text-tertiary: rgba(240, 240, 245, 0.35);
+  --text-accent: #a78bfa;
+
+  /* Brand accents */
+  --accent-primary: #8b5cf6;
+  --accent-primary-soft: rgba(139, 92, 246, 0.15);
+  --accent-glow: rgba(139, 92, 246, 0.3);
+  --spotify-green: #1DB954;
+  --spotify-green-soft: rgba(29, 185, 84, 0.12);
+  --spotify-green-glow: rgba(29, 185, 84, 0.25);
+  --youtube-red: #FF0033;
+  --youtube-red-soft: rgba(255, 0, 51, 0.12);
+  --youtube-red-glow: rgba(255, 0, 51, 0.25);
+
+  /* Gradients */
+  --gradient-hero: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.1) 50%, rgba(6, 6, 12, 0) 100%);
+  --gradient-card: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%);
+  --gradient-mini-player: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(30, 30, 60, 0.95) 100%);
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-pill: 100px;
+
+  /* Typography */
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-glow-purple: 0 0 20px rgba(139, 92, 246, 0.15);
+  --shadow-glow-green: 0 0 15px rgba(29, 185, 84, 0.1);
+
+  /* Transitions */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+}
+
+/* ========================================
+   RESET & BASE
+   ======================================== */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow-x: hidden;
+  min-height: 100vh;
+  max-width: 430px;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* Ambient background glow */
+body::before {
+  content: '';
+  position: fixed;
+  top: -120px;
+  left: -60px;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  top: 200px;
+  right: -100px;
+  width: 250px;
+  height: 250px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; }
+
+/* ========================================
+   STATUS BAR (simulated)
+   ======================================== */
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: linear-gradient(to bottom, var(--bg-primary) 60%, transparent);
+}
+
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-bar-right svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ========================================
+   HEADER
+   ======================================== */
+.header {
+  padding: 4px 24px 16px;
+  position: sticky;
+  top: 40px;
+  z-index: 90;
+  background: linear-gradient(to bottom, var(--bg-primary) 40%, transparent);
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-logo {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, var(--accent-primary) 0%, #6d28d9 100%);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-glow-purple);
+}
+
+.header-logo svg {
+  width: 20px;
+  height: 20px;
+  fill: white;
+}
+
+.header-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  background: linear-gradient(135deg, #f0f0f5 0%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.header-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.header-btn:active {
+  transform: scale(0.92);
+  background: var(--glass-bg-hover);
+}
+
+.header-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: var(--text-secondary);
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.notification-dot {
+  position: relative;
+}
+
+.notification-dot::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  background: var(--youtube-red);
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-primary);
+}
+
+/* ========================================
+   SCROLLABLE CONTENT
+   ======================================== */
+.content {
+  padding-bottom: 180px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ========================================
+   SYNC STATUS CARD
+   ======================================== */
+.sync-card {
+  margin: 8px 20px 0;
+  padding: 18px 20px;
+  background: var(--gradient-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border-light);
+  border-radius: var(--radius-xl);
+  position: relative;
+  overflow: hidden;
+}
+
+.sync-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(139, 92, 246, 0.3) 50%, transparent 100%);
+}
+
+.sync-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.sync-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--spotify-green);
+}
+
+.sync-pulse {
+  width: 8px;
+  height: 8px;
+  background: var(--spotify-green);
+  border-radius: 50%;
+  position: relative;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(29, 185, 84, 0.4); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(29, 185, 84, 0); }
+}
+
+.sync-time {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.sync-details {
+  display: flex;
+  gap: 12px;
+}
+
+.sync-detail-item {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.sync-detail-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.sync-detail-value {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.sync-detail-value .unit {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-left: 2px;
+}
+
+.sync-detail-sub {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.sync-progress-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.sync-next {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.sync-next strong {
+  color: var(--text-accent);
+  font-weight: 600;
+}
+
+.sync-now-btn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  background: var(--accent-primary-soft);
+  border: none;
+  padding: 7px 16px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  font-family: var(--font-body);
+}
+
+.sync-now-btn:active {
+  transform: scale(0.95);
+  background: rgba(139, 92, 246, 0.25);
+}
+
+/* ========================================
+   QUICK STATS ROW
+   ======================================== */
+.stats-row {
+  display: flex;
+  gap: 10px;
+  padding: 16px 20px 0;
+}
+
+.stat-chip {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.stat-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stat-icon.purple { background: var(--accent-primary-soft); }
+.stat-icon.green { background: var(--spotify-green-soft); }
+.stat-icon.red { background: var(--youtube-red-soft); }
+
+.stat-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.stat-icon.purple svg { stroke: var(--accent-primary); }
+.stat-icon.green svg { stroke: var(--spotify-green); }
+.stat-icon.red svg { stroke: var(--youtube-red); }
+
+.stat-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stat-value {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.stat-label {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ========================================
+   SECTION HEADERS
+   ======================================== */
+.section {
+  margin-top: 28px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 24px;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.section-action {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+  font-family: var(--font-body);
+}
+
+/* ========================================
+   RECENTLY ADDED — LARGE CARDS
+   ======================================== */
+.recently-added-scroll {
+  display: flex;
+  gap: 12px;
+  padding: 0 24px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 24px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.recent-card {
+  flex-shrink: 0;
+  width: 155px;
+  scroll-snap-align: start;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.recent-card:active {
+  transform: scale(0.96);
+}
+
+.recent-art {
+  width: 155px;
+  height: 155px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-md);
+}
+
+.recent-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Gradient overlay on art */
+.recent-art::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.source-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.source-badge.spotify {
+  background: rgba(29, 185, 84, 0.2);
+  color: var(--spotify-green);
+  border: 1px solid rgba(29, 185, 84, 0.2);
+}
+
+.source-badge.youtube {
+  background: rgba(255, 0, 51, 0.2);
+  color: #ff4466;
+  border: 1px solid rgba(255, 0, 51, 0.2);
+}
+
+.source-badge svg {
+  width: 10px;
+  height: 10px;
+}
+
+.recent-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-artist {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-meta {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* ========================================
+   PLAYLIST SECTIONS
+   ======================================== */
+.playlist-scroll {
+  display: flex;
+  gap: 12px;
+  padding: 0 24px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 24px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.playlist-card {
+  flex-shrink: 0;
+  width: 140px;
+  scroll-snap-align: start;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.playlist-card:active {
+  transform: scale(0.96);
+}
+
+.playlist-art {
+  width: 140px;
+  height: 140px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.playlist-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 4-grid collage for playlists */
+.playlist-art.collage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  background: rgba(255,255,255,0.05);
+}
+
+.playlist-art.collage img {
+  border-radius: 0;
+}
+
+.playlist-source-indicator {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 2;
+}
+
+.playlist-source-indicator.spotify {
+  background: rgba(29, 185, 84, 0.3);
+  border: 1px solid rgba(29, 185, 84, 0.2);
+}
+
+.playlist-source-indicator.youtube {
+  background: rgba(255, 0, 51, 0.3);
+  border: 1px solid rgba(255, 0, 51, 0.2);
+}
+
+.playlist-source-indicator svg {
+  width: 12px;
+  height: 12px;
+}
+
+.playlist-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playlist-sub {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* ========================================
+   DAILY MIXES — FEATURED STYLE
+   ======================================== */
+.daily-mix-scroll {
+  display: flex;
+  gap: 12px;
+  padding: 0 24px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 24px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.daily-mix-card {
+  flex-shrink: 0;
+  width: 260px;
+  scroll-snap-align: start;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.daily-mix-card:active {
+  transform: scale(0.97);
+}
+
+.daily-mix-bg {
+  width: 100%;
+  height: 150px;
+  position: relative;
+}
+
+.daily-mix-bg img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.daily-mix-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.5) 0%, rgba(6, 6, 12, 0.85) 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 16px;
+}
+
+.daily-mix-card:nth-child(2) .daily-mix-overlay {
+  background: linear-gradient(135deg, rgba(29, 185, 84, 0.4) 0%, rgba(6, 6, 12, 0.85) 100%);
+}
+
+.daily-mix-card:nth-child(3) .daily-mix-overlay {
+  background: linear-gradient(135deg, rgba(255, 0, 51, 0.4) 0%, rgba(6, 6, 12, 0.85) 100%);
+}
+
+.daily-mix-number {
+  font-family: var(--font-display);
+  font-size: 42px;
+  font-weight: 900;
+  line-height: 1;
+  opacity: 0.15;
+  position: absolute;
+  top: 12px;
+  right: 16px;
+}
+
+.daily-mix-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.daily-mix-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.daily-mix-sources {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.daily-mix-source-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.daily-mix-source-tag.spotify {
+  background: rgba(29, 185, 84, 0.2);
+  color: var(--spotify-green);
+}
+
+.daily-mix-source-tag.youtube {
+  background: rgba(255, 0, 51, 0.2);
+  color: #ff4466;
+}
+
+/* ========================================
+   QUICK PLAY LIST (vertical)
+   ======================================== */
+.quick-play-list {
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.quick-play-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.quick-play-item:active {
+  background: var(--glass-bg-hover);
+}
+
+.quick-play-art {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.quick-play-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.quick-play-source-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-primary);
+}
+
+.quick-play-source-dot.spotify { background: var(--spotify-green); }
+.quick-play-source-dot.youtube { background: var(--youtube-red); }
+
+.quick-play-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.quick-play-title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.quick-play-artist {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-play-duration {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.quick-play-more {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.quick-play-more svg {
+  width: 16px;
+  height: 16px;
+  fill: var(--text-tertiary);
+}
+
+/* ========================================
+   MINI PLAYER
+   ======================================== */
+.mini-player {
+  position: fixed;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 24px);
+  max-width: 406px;
+  z-index: 200;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background: rgba(20, 20, 40, 0.85);
+  backdrop-filter: blur(40px) saturate(1.5);
+  -webkit-backdrop-filter: blur(40px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 0.5px rgba(255,255,255,0.05) inset;
+}
+
+.mini-player-progress {
+  height: 2.5px;
+  background: rgba(255, 255, 255, 0.08);
+  position: relative;
+}
+
+.mini-player-progress-fill {
+  height: 100%;
+  width: 62%;
+  background: linear-gradient(90deg, var(--accent-primary), #a78bfa);
+  border-radius: 0 2px 2px 0;
+  position: relative;
+}
+
+.mini-player-progress-fill::after {
+  content: '';
+  position: absolute;
+  right: -3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(139, 92, 246, 0.5);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.mini-player:hover .mini-player-progress-fill::after,
+.mini-player:active .mini-player-progress-fill::after {
+  opacity: 1;
+}
+
+.mini-player-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px 12px;
+}
+
+.mini-player-art {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.mini-player-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mini-player-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mini-player-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.mini-player-artist {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mini-player-source-icon {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+
+.mini-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.mp-control-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.mp-control-btn:active {
+  transform: scale(0.88);
+  background: rgba(255,255,255,0.06);
+}
+
+.mp-control-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: var(--text-primary);
+}
+
+.mp-control-btn.play {
+  width: 40px;
+  height: 40px;
+  background: var(--text-primary);
+  border-radius: 50%;
+}
+
+.mp-control-btn.play svg {
+  fill: var(--bg-primary);
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+}
+
+.mp-control-btn.play:active {
+  background: rgba(240, 240, 245, 0.85);
+}
+
+/* ========================================
+   BOTTOM NAVIGATION
+   ======================================== */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 430px;
+  z-index: 300;
+  background: rgba(6, 6, 12, 0.92);
+  backdrop-filter: blur(30px) saturate(1.2);
+  -webkit-backdrop-filter: blur(30px) saturate(1.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: env(safe-area-inset-bottom, 8px);
+}
+
+.bottom-nav-inner {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  height: 60px;
+  padding: 0 8px;
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 6px 16px;
+  border-radius: var(--radius-md);
+  transition: all var(--duration-fast) var(--ease-out);
+  position: relative;
+}
+
+.nav-item:active {
+  transform: scale(0.9);
+}
+
+.nav-item svg {
+  width: 22px;
+  height: 22px;
+  stroke: var(--text-tertiary);
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.nav-item span {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.nav-item.active svg {
+  stroke: var(--accent-primary);
+}
+
+.nav-item.active span {
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 2px;
+  background: var(--accent-primary);
+  border-radius: 0 0 2px 2px;
+}
+
+/* Sync nav button special styling */
+.nav-item.sync-btn svg {
+  stroke: none;
+}
+
+.nav-sync-icon {
+  width: 38px;
+  height: 38px;
+  background: linear-gradient(135deg, var(--accent-primary) 0%, #6d28d9 100%);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  margin-top: -12px;
+  margin-bottom: -2px;
+}
+
+.nav-sync-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: white;
+  stroke-width: 2.2;
+}
+
+/* ========================================
+   PLACEHOLDER IMAGES (generated art)
+   ======================================== */
+.art-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.art-1 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+.art-2 { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+.art-3 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+.art-4 { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+.art-5 { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+.art-6 { background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); }
+.art-7 { background: linear-gradient(135deg, #fccb90 0%, #d57eeb 100%); }
+.art-8 { background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%); }
+.art-9 { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); }
+.art-10 { background: linear-gradient(135deg, #667eea 0%, #f093fb 100%); }
+.art-11 { background: linear-gradient(135deg, #0c3483 0%, #a2b6df 100%); }
+.art-12 { background: linear-gradient(135deg, #c471f5 0%, #fa71cd 100%); }
+.art-13 { background: linear-gradient(135deg, #48c6ef 0%, #6f86d6 100%); }
+.art-14 { background: linear-gradient(135deg, #feada6 0%, #f5efef 100%); }
+.art-15 { background: linear-gradient(135deg, #d299c2 0%, #fef9d7 100%); }
+
+.art-placeholder .art-icon {
+  width: 32px;
+  height: 32px;
+  opacity: 0.3;
+}
+
+/* ========================================
+   ANIMATIONS
+   ======================================== */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.content > * {
+  animation: fadeInUp 0.5s var(--ease-out) both;
+}
+
+.content > *:nth-child(1) { animation-delay: 0s; }
+.content > *:nth-child(2) { animation-delay: 0.05s; }
+.content > *:nth-child(3) { animation-delay: 0.1s; }
+.content > *:nth-child(4) { animation-delay: 0.15s; }
+.content > *:nth-child(5) { animation-delay: 0.2s; }
+.content > *:nth-child(6) { animation-delay: 0.25s; }
+.content > *:nth-child(7) { animation-delay: 0.3s; }
+.content > *:nth-child(8) { animation-delay: 0.35s; }
+
+/* ========================================
+   GREETING
+   ======================================== */
+.greeting {
+  padding: 4px 24px 0;
+  margin-bottom: 4px;
+}
+
+.greeting-text {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.greeting-name {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin-top: 2px;
+}
+
+/* ========================================
+   SOURCE FILTER PILLS
+   ======================================== */
+.source-filters {
+  display: flex;
+  gap: 8px;
+  padding: 12px 24px 0;
+}
+
+.source-pill {
+  padding: 7px 16px;
+  border-radius: var(--radius-pill);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  border: 1px solid transparent;
+  font-family: var(--font-body);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.source-pill:active {
+  transform: scale(0.95);
+}
+
+.source-pill.all {
+  background: var(--accent-primary-soft);
+  color: var(--accent-primary);
+  border-color: rgba(139, 92, 246, 0.2);
+}
+
+.source-pill.spotify-pill {
+  background: var(--glass-bg);
+  color: var(--text-secondary);
+  border-color: var(--glass-border);
+}
+
+.source-pill.youtube-pill {
+  background: var(--glass-bg);
+  color: var(--text-secondary);
+  border-color: var(--glass-border);
+}
+
+.source-pill svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ========================================
+   LIKED SONGS FEATURED CARD
+   ======================================== */
+.liked-songs-card {
+  margin: 0 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.06) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.1);
+  border-radius: var(--radius-xl);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  position: relative;
+  overflow: hidden;
+}
+
+.liked-songs-card:active {
+  transform: scale(0.98);
+}
+
+.liked-songs-card::before {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 100px;
+  height: 100px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.liked-songs-icon {
+  width: 52px;
+  height: 52px;
+  background: linear-gradient(135deg, var(--accent-primary) 0%, #ec4899 100%);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.25);
+}
+
+.liked-songs-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: white;
+}
+
+.liked-songs-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.liked-songs-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.liked-songs-meta {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.liked-songs-play {
+  width: 42px;
+  height: 42px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.liked-songs-play svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--text-primary);
+  margin-left: 2px;
+}
+
+</style>
+</head>
+<body>
+
+<!-- Status Bar (simulated Android) -->
+<div class="status-bar">
+  <span>9:41</span>
+  <div class="status-bar-right">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3c-1.65-1.66-4.34-1.66-6 0zm-4-4l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
+  </div>
+</div>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-top">
+    <div class="header-brand">
+      <div class="header-logo">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l7 3.5v7.64l-7 3.5-7-3.5V7.68l7-3.5z"/><path d="M12 8v8M8 10v4M16 10v4" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+      </div>
+      <span class="header-title">MixSync</span>
+    </div>
+    <div class="header-actions">
+      <button class="header-btn" aria-label="Search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+      </button>
+      <button class="header-btn notification-dot" aria-label="Notifications">
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Content -->
+<div class="content">
+
+  <!-- Greeting -->
+  <div class="greeting">
+    <div class="greeting-text">Good evening</div>
+    <div class="greeting-name">Welcome back</div>
+  </div>
+
+  <!-- Source Filter Pills -->
+  <div class="source-filters">
+    <button class="source-pill all">All Sources</button>
+    <button class="source-pill spotify-pill">
+      <svg viewBox="0 0 24 24" fill="#1DB954"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381C8.64 5.801 15.6 6.081 20.1 8.82c.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.439.3z"/></svg>
+      Spotify
+    </button>
+    <button class="source-pill youtube-pill">
+      <svg viewBox="0 0 24 24" fill="#FF0033"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+      YouTube
+    </button>
+  </div>
+
+  <!-- Sync Status Card -->
+  <div class="sync-card">
+    <div class="sync-card-header">
+      <div class="sync-status-badge">
+        <div class="sync-pulse"></div>
+        All synced
+      </div>
+      <span class="sync-time">Updated 2h ago</span>
+    </div>
+    <div class="sync-details">
+      <div class="sync-detail-item">
+        <div class="sync-detail-label">Tracks</div>
+        <div class="sync-detail-value">2,847</div>
+        <div class="sync-detail-sub">+23 today</div>
+      </div>
+      <div class="sync-detail-item">
+        <div class="sync-detail-label">Storage</div>
+        <div class="sync-detail-value">14.2<span class="unit">GB</span></div>
+        <div class="sync-detail-sub">of 32 GB</div>
+      </div>
+      <div class="sync-detail-item">
+        <div class="sync-detail-label">Playlists</div>
+        <div class="sync-detail-value">38</div>
+        <div class="sync-detail-sub">6 sources</div>
+      </div>
+    </div>
+    <div class="sync-progress-row">
+      <span class="sync-next">Next sync <strong>4:00 AM</strong></span>
+      <button class="sync-now-btn">Sync Now</button>
+    </div>
+  </div>
+
+  <!-- Quick Stats Row -->
+  <div class="stats-row">
+    <div class="stat-chip">
+      <div class="stat-icon green">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/></svg>
+      </div>
+      <div class="stat-text">
+        <span class="stat-value">1,624</span>
+        <span class="stat-label">From Spotify</span>
+      </div>
+    </div>
+    <div class="stat-chip">
+      <div class="stat-icon red">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/></svg>
+      </div>
+      <div class="stat-text">
+        <span class="stat-value">1,223</span>
+        <span class="stat-label">From YouTube</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Daily Mixes -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">Daily Mixes</h2>
+      <button class="section-action">See all</button>
+    </div>
+    <div class="daily-mix-scroll">
+      <div class="daily-mix-card">
+        <div class="daily-mix-bg">
+          <div class="art-placeholder art-1"></div>
+          <div class="daily-mix-overlay">
+            <span class="daily-mix-number">01</span>
+            <div class="daily-mix-title">Daily Mix 1</div>
+            <div class="daily-mix-desc">Radiohead, Tame Impala, Arctic Monkeys, Alt-J, Glass Animals</div>
+            <div class="daily-mix-sources">
+              <span class="daily-mix-source-tag spotify">Spotify</span>
+              <span class="daily-mix-source-tag youtube">YouTube</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="daily-mix-card">
+        <div class="daily-mix-bg">
+          <div class="art-placeholder art-4"></div>
+          <div class="daily-mix-overlay">
+            <span class="daily-mix-number">02</span>
+            <div class="daily-mix-title">Daily Mix 2</div>
+            <div class="daily-mix-desc">Daft Punk, Disclosure, Kaytranada, Jamie xx, Bonobo</div>
+            <div class="daily-mix-sources">
+              <span class="daily-mix-source-tag spotify">Spotify</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="daily-mix-card">
+        <div class="daily-mix-bg">
+          <div class="art-placeholder art-2"></div>
+          <div class="daily-mix-overlay">
+            <span class="daily-mix-number">03</span>
+            <div class="daily-mix-title">Daily Mix 3</div>
+            <div class="daily-mix-desc">Kendrick Lamar, Tyler, the Creator, Frank Ocean, SZA</div>
+            <div class="daily-mix-sources">
+              <span class="daily-mix-source-tag youtube">YouTube</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recently Added -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">Recently Added</h2>
+      <button class="section-action">See all</button>
+    </div>
+    <div class="recently-added-scroll">
+      <div class="recent-card">
+        <div class="recent-art">
+          <div class="art-placeholder art-5"></div>
+          <div class="source-badge spotify">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02z"/></svg>
+            SP
+          </div>
+        </div>
+        <div class="recent-title">Espresso</div>
+        <div class="recent-artist">Sabrina Carpenter</div>
+        <div class="recent-meta">Added 2h ago</div>
+      </div>
+      <div class="recent-card">
+        <div class="recent-art">
+          <div class="art-placeholder art-7"></div>
+          <div class="source-badge youtube">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+            YT
+          </div>
+        </div>
+        <div class="recent-title">Lunch</div>
+        <div class="recent-artist">Billie Eilish</div>
+        <div class="recent-meta">Added 3h ago</div>
+      </div>
+      <div class="recent-card">
+        <div class="recent-art">
+          <div class="art-placeholder art-3"></div>
+          <div class="source-badge spotify">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02z"/></svg>
+            SP
+          </div>
+        </div>
+        <div class="recent-title">360</div>
+        <div class="recent-artist">Charli XCX</div>
+        <div class="recent-meta">Added 5h ago</div>
+      </div>
+      <div class="recent-card">
+        <div class="recent-art">
+          <div class="art-placeholder art-6"></div>
+          <div class="source-badge youtube">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+            YT
+          </div>
+        </div>
+        <div class="recent-title">Not Like Us</div>
+        <div class="recent-artist">Kendrick Lamar</div>
+        <div class="recent-meta">Added 6h ago</div>
+      </div>
+      <div class="recent-card">
+        <div class="recent-art">
+          <div class="art-placeholder art-10"></div>
+          <div class="source-badge spotify">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02z"/></svg>
+            SP
+          </div>
+        </div>
+        <div class="recent-title">Beautiful Things</div>
+        <div class="recent-artist">Benson Boone</div>
+        <div class="recent-meta">Added 8h ago</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Liked Songs Card -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">Your Collection</h2>
+    </div>
+    <div class="liked-songs-card">
+      <div class="liked-songs-icon">
+        <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      </div>
+      <div class="liked-songs-info">
+        <div class="liked-songs-title">Liked Songs</div>
+        <div class="liked-songs-meta">847 songs from both sources</div>
+      </div>
+      <div class="liked-songs-play">
+        <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Spotify Playlists -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">Spotify Playlists</h2>
+      <button class="section-action">See all</button>
+    </div>
+    <div class="playlist-scroll">
+      <div class="playlist-card">
+        <div class="playlist-art collage">
+          <div class="art-placeholder art-1"></div>
+          <div class="art-placeholder art-5"></div>
+          <div class="art-placeholder art-3"></div>
+          <div class="art-placeholder art-7"></div>
+          <div class="playlist-source-indicator spotify">
+            <svg viewBox="0 0 24 24" fill="#1DB954"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02z"/></svg>
+          </div>
+        </div>
+        <div class="playlist-title">Indie Vibes</div>
+        <div class="playlist-sub">127 songs</div>
+      </div>
+      <div class="playlist-card">
+        <div class="playlist-art">
+          <div class="art-placeholder art-8"></div>
+          <div class="playlist-source-indicator spotify">
+            <svg viewBox="0 0 24 24" fill="#1DB954"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02z"/></svg>
+          </div>
+        </div>
+        <div class="playlist-title">Late Night Coding</div>
+        <div class="playlist-sub">89 songs</div>
+      </div>
+      <div class="playlist-card">
+        <div class="playlist-art collage">
+          <div class="art-placeholder art-9"></div>
+          <div class="art-placeholder art-2"></div>
+          <div class="art-placeholder art-11"></div>
+          <div class="art-placeholder art-4"></div>
+          <div class="playlist-source-indicator spotify">
+            <svg viewBox="0 0 24 24" fill="#1DB954"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02z"/></svg>
+          </div>
+        </div>
+        <div class="playlist-title">Chill Electronic</div>
+        <div class="playlist-sub">204 songs</div>
+      </div>
+      <div class="playlist-card">
+        <div class="playlist-art">
+          <div class="art-placeholder art-12"></div>
+          <div class="playlist-source-indicator spotify">
+            <svg viewBox="0 0 24 24" fill="#1DB954"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02z"/></svg>
+          </div>
+        </div>
+        <div class="playlist-title">Workout Bangers</div>
+        <div class="playlist-sub">156 songs</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- YouTube Playlists -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">YouTube Music</h2>
+      <button class="section-action">See all</button>
+    </div>
+    <div class="playlist-scroll">
+      <div class="playlist-card">
+        <div class="playlist-art">
+          <div class="art-placeholder art-13"></div>
+          <div class="playlist-source-indicator youtube">
+            <svg viewBox="0 0 24 24" fill="#FF0033"><path d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+          </div>
+        </div>
+        <div class="playlist-title">Discover Weekly</div>
+        <div class="playlist-sub">50 songs</div>
+      </div>
+      <div class="playlist-card">
+        <div class="playlist-art collage">
+          <div class="art-placeholder art-14"></div>
+          <div class="art-placeholder art-6"></div>
+          <div class="art-placeholder art-10"></div>
+          <div class="art-placeholder art-15"></div>
+          <div class="playlist-source-indicator youtube">
+            <svg viewBox="0 0 24 24" fill="#FF0033"><path d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+          </div>
+        </div>
+        <div class="playlist-title">Hip Hop Essentials</div>
+        <div class="playlist-sub">312 songs</div>
+      </div>
+      <div class="playlist-card">
+        <div class="playlist-art">
+          <div class="art-placeholder art-11"></div>
+          <div class="playlist-source-indicator youtube">
+            <svg viewBox="0 0 24 24" fill="#FF0033"><path d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+          </div>
+        </div>
+        <div class="playlist-title">Lo-Fi Beats</div>
+        <div class="playlist-sub">73 songs</div>
+      </div>
+      <div class="playlist-card">
+        <div class="playlist-art collage">
+          <div class="art-placeholder art-2"></div>
+          <div class="art-placeholder art-8"></div>
+          <div class="art-placeholder art-5"></div>
+          <div class="art-placeholder art-13"></div>
+          <div class="playlist-source-indicator youtube">
+            <svg viewBox="0 0 24 24" fill="#FF0033"><path d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+          </div>
+        </div>
+        <div class="playlist-title">R&B Vibes</div>
+        <div class="playlist-sub">98 songs</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recently Played (Vertical List) -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">Recently Played</h2>
+      <button class="section-action">History</button>
+    </div>
+    <div class="quick-play-list">
+      <div class="quick-play-item">
+        <div class="quick-play-art">
+          <div class="art-placeholder art-5"></div>
+          <div class="quick-play-source-dot spotify"></div>
+        </div>
+        <div class="quick-play-info">
+          <div class="quick-play-title">Espresso</div>
+          <div class="quick-play-artist">Sabrina Carpenter</div>
+        </div>
+        <span class="quick-play-duration">2:55</span>
+        <div class="quick-play-more">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        </div>
+      </div>
+      <div class="quick-play-item">
+        <div class="quick-play-art">
+          <div class="art-placeholder art-3"></div>
+          <div class="quick-play-source-dot spotify"></div>
+        </div>
+        <div class="quick-play-info">
+          <div class="quick-play-title">360</div>
+          <div class="quick-play-artist">Charli XCX</div>
+        </div>
+        <span class="quick-play-duration">2:12</span>
+        <div class="quick-play-more">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        </div>
+      </div>
+      <div class="quick-play-item">
+        <div class="quick-play-art">
+          <div class="art-placeholder art-6"></div>
+          <div class="quick-play-source-dot youtube"></div>
+        </div>
+        <div class="quick-play-info">
+          <div class="quick-play-title">Not Like Us</div>
+          <div class="quick-play-artist">Kendrick Lamar</div>
+        </div>
+        <span class="quick-play-duration">4:34</span>
+        <div class="quick-play-more">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        </div>
+      </div>
+      <div class="quick-play-item">
+        <div class="quick-play-art">
+          <div class="art-placeholder art-7"></div>
+          <div class="quick-play-source-dot youtube"></div>
+        </div>
+        <div class="quick-play-info">
+          <div class="quick-play-title">Lunch</div>
+          <div class="quick-play-artist">Billie Eilish</div>
+        </div>
+        <span class="quick-play-duration">2:59</span>
+        <div class="quick-play-more">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        </div>
+      </div>
+      <div class="quick-play-item">
+        <div class="quick-play-art">
+          <div class="art-placeholder art-10"></div>
+          <div class="quick-play-source-dot spotify"></div>
+        </div>
+        <div class="quick-play-info">
+          <div class="quick-play-title">Beautiful Things</div>
+          <div class="quick-play-artist">Benson Boone</div>
+        </div>
+        <span class="quick-play-duration">3:00</span>
+        <div class="quick-play-more">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end content -->
+
+<!-- Mini Player -->
+<div class="mini-player">
+  <div class="mini-player-progress">
+    <div class="mini-player-progress-fill"></div>
+  </div>
+  <div class="mini-player-content">
+    <div class="mini-player-art">
+      <div class="art-placeholder art-5"></div>
+    </div>
+    <div class="mini-player-info">
+      <div class="mini-player-title">Espresso</div>
+      <div class="mini-player-artist">
+        <svg class="mini-player-source-icon" viewBox="0 0 24 24" fill="#1DB954"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02z"/></svg>
+        Sabrina Carpenter
+      </div>
+    </div>
+    <div class="mini-player-controls">
+      <button class="mp-control-btn" aria-label="Previous">
+        <svg viewBox="0 0 24 24"><polygon points="19,20 9,12 19,4"/><line x1="5" y1="4" x2="5" y2="20" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+      <button class="mp-control-btn play" aria-label="Pause">
+        <svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+      </button>
+      <button class="mp-control-btn" aria-label="Next">
+        <svg viewBox="0 0 24 24"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="4" x2="19" y2="20" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom Navigation -->
+<nav class="bottom-nav" aria-label="Main navigation">
+  <div class="bottom-nav-inner">
+    <div class="nav-item active" role="button" tabindex="0">
+      <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span>Home</span>
+    </div>
+    <div class="nav-item" role="button" tabindex="0">
+      <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      <span>Library</span>
+    </div>
+    <div class="nav-item sync-btn" role="button" tabindex="0">
+      <div class="nav-sync-icon">
+        <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      </div>
+      <span>Sync</span>
+    </div>
+    <div class="nav-item" role="button" tabindex="0">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>Settings</span>
+    </div>
+  </div>
+</nav>
+
+</body>
+</html>
