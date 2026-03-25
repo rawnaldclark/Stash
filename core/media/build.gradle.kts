@@ -2,10 +2,16 @@ plugins {
     id("stash.android.library")
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
+    // Compose compiler plugin required for compose-ui-graphics Color usage in ColorExtractor.
+    alias(libs.plugins.compose.compiler)
 }
 
 android {
     namespace = "com.stash.core.media"
+
+    buildFeatures {
+        compose = true
+    }
 }
 
 dependencies {
@@ -26,4 +32,13 @@ dependencies {
 
     // DataStore
     implementation(libs.datastore.preferences)
+
+    // Compose BOM + ui-graphics + runtime — needed for androidx.compose.ui.graphics.Color in ColorExtractor.
+    // The runtime artifact satisfies the Compose compiler's classpath requirement.
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.runtime)
+    implementation(libs.compose.ui.graphics)
+
+    // Palette — color extraction from album artwork bitmaps.
+    implementation(libs.palette.ktx)
 }
