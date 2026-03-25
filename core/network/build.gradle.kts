@@ -5,6 +5,7 @@ plugins {
 }
 android {
     namespace = "com.stash.core.network"
+    buildFeatures { buildConfig = true }
 }
 dependencies {
     implementation(project(":core:common"))
