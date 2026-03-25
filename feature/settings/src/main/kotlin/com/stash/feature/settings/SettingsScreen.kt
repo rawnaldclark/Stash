@@ -1,29 +1,269 @@
 package com.stash.feature.settings
 
-import androidx.compose.foundation.layout.*
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.model.QualityTier
+import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.settings.components.AccountConnectionCard
+import com.stash.feature.settings.components.YouTubeDeviceCodeDialog
+import net.openid.appauth.AuthorizationService
 
+/**
+ * Top-level Settings screen composable.
+ *
+ * Provides account connection management for Spotify and YouTube Music,
+ * audio quality selection, storage statistics, and app information.
+ * The Spotify OAuth flow is launched via an [ActivityResultLauncher] that
+ * is wired to the ViewModel's event channel.
+ */
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    modifier: Modifier = Modifier,
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    // Spotify OAuth activity result launcher
+    val spotifyLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            viewModel.onSpotifyAuthResult(result.data!!)
+        }
+    }
+
+    // Observe one-shot Spotify auth events and launch the OAuth intent
+    LaunchedEffect(Unit) {
+        viewModel.spotifyAuthEvent.collect { authRequest ->
+            val authService = AuthorizationService(context)
+            val intent = authService.getAuthorizationRequestIntent(authRequest)
+            spotifyLauncher.launch(intent)
+        }
+    }
+
+    // YouTube device-code dialog
+    if (uiState.showYouTubeDialog && uiState.deviceCodeState != null) {
+        YouTubeDeviceCodeDialog(
+            deviceCodeState = uiState.deviceCodeState!!,
+            onDismiss = viewModel::onDismissYouTubeDialog,
+        )
+    }
+
+    SettingsContent(
+        uiState = uiState,
+        onConnectSpotify = viewModel::onConnectSpotify,
+        onDisconnectSpotify = viewModel::onDisconnectSpotify,
+        onConnectYouTube = viewModel::onConnectYouTube,
+        onDisconnectYouTube = viewModel::onDisconnectYouTube,
+        onQualityChanged = viewModel::onQualityChanged,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Stateless inner content for [SettingsScreen], accepting all state and
+ * callbacks as parameters for testability and preview support.
+ */
+@Composable
+private fun SettingsContent(
+    uiState: SettingsUiState,
+    onConnectSpotify: () -> Unit,
+    onDisconnectSpotify: () -> Unit,
+    onConnectYouTube: () -> Unit,
+    onDisconnectYouTube: () -> Unit,
+    onQualityChanged: (QualityTier) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
+        // ── Header ───────────────────────────────────────────────────────
         Text(
             text = "Settings",
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
+
+        // ── Accounts section ─────────────────────────────────────────────
+        SectionHeader(title = "Accounts")
+
+        AccountConnectionCard(
+            serviceName = "Spotify",
+            icon = Icons.Rounded.MusicNote,
+            accentColor = extendedColors.spotifyGreen,
+            authState = uiState.spotifyAuthState,
+            onConnect = onConnectSpotify,
+            onDisconnect = onDisconnectSpotify,
+        )
+
+        AccountConnectionCard(
+            serviceName = "YouTube Music",
+            icon = Icons.Rounded.PlayCircle,
+            accentColor = extendedColors.youtubeRed,
+            authState = uiState.youTubeAuthState,
+            onConnect = onConnectYouTube,
+            onDisconnect = onDisconnectYouTube,
+        )
+
+        // ── Audio Quality section ────────────────────────────────────────
+        SectionHeader(title = "Audio Quality")
+
+        GlassCard {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
+            ) {
+                Text(
+                    text = "Download quality",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                QualityTier.entries.forEach { tier ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = uiState.audioQuality == tier,
+                                onClick = { onQualityChanged(tier) },
+                                role = Role.RadioButton,
+                            )
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = uiState.audioQuality == tier,
+                            onClick = null, // handled by Row's selectable
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(
+                                text = tier.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = "${tier.bitrateKbps} kbps",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Storage section ──────────────────────────────────────────────
+        SectionHeader(title = "Storage")
+
+        GlassCard {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                StorageRow(label = "Total tracks", value = "${uiState.totalTracks}")
+                Spacer(modifier = Modifier.height(8.dp))
+                StorageRow(label = "Storage used", value = formatBytes(uiState.totalStorageBytes))
+            }
+        }
+
+        // ── About section ────────────────────────────────────────────────
+        SectionHeader(title = "About")
+
+        GlassCard {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                StorageRow(label = "Version", value = "1.0.0")
+                Spacer(modifier = Modifier.height(8.dp))
+                StorageRow(label = "Licenses", value = "Open-source licenses")
+            }
+        }
+
+        // Bottom padding for navigation bar clearance
+        Spacer(modifier = Modifier.height(80.dp))
+    }
+}
+
+/**
+ * A styled section header label.
+ */
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+/**
+ * A horizontal row displaying a label on the left and a value on the right.
+ */
+@Composable
+private fun StorageRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
         Text(
-            text = "App settings and preferences will appear here.",
+            text = label,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
+}
+
+/**
+ * Formats a byte count into a human-readable string (B, KB, MB, GB).
+ */
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
+    val safeIndex = digitGroups.coerceIn(0, units.lastIndex)
+    return "%.1f %s".format(bytes / Math.pow(1024.0, safeIndex.toDouble()), units[safeIndex])
 }
