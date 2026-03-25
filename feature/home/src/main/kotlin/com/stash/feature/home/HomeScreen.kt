@@ -1,32 +1,546 @@
 package com.stash.feature.home
 
-import androidx.compose.foundation.layout.*
+import android.text.format.DateUtils
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.model.MusicSource
+import com.stash.core.model.Playlist
+import com.stash.core.model.SyncState
+import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.components.SectionHeader
+import com.stash.core.ui.components.SourceIndicator
+import com.stash.core.ui.theme.StashTheme
 
+/**
+ * Home screen composable displaying a premium dark dashboard with sync
+ * status, daily mixes, recently added tracks, liked songs, and playlists.
+ */
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier) {
-    Column(
+fun HomeScreen(
+    modifier: Modifier = Modifier,
+    viewModel: HomeViewModel = hiltViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .statusBarsPadding(),
+        contentPadding = PaddingValues(bottom = 120.dp),
     ) {
-        Text(
-            text = "Home",
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        GlassCard {
+        // ── App title ────────────────────────────────────────────────
+        item {
             Text(
-                text = "Your music overview will appear here.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = "Stash",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
             )
         }
+
+        // ── Sync status card ─────────────────────────────────────────
+        item {
+            SyncStatusCard(
+                syncStatus = uiState.syncStatus,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
+
+        // ── Daily Mixes ──────────────────────────────────────────────
+        if (uiState.dailyMixes.isNotEmpty()) {
+            item {
+                SectionHeader(title = "Daily Mixes")
+            }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(uiState.dailyMixes, key = { it.id }) { playlist ->
+                        DailyMixCard(playlist = playlist)
+                    }
+                }
+            }
+        }
+
+        // ── Recently Added ───────────────────────────────────────────
+        if (uiState.recentlyAdded.isNotEmpty()) {
+            item {
+                SectionHeader(title = "Recently Added")
+            }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    itemsIndexed(
+                        uiState.recentlyAdded,
+                        key = { _, track -> track.id },
+                    ) { index, track ->
+                        CompactTrackCard(
+                            track = track,
+                            onClick = {
+                                viewModel.playTrack(uiState.recentlyAdded, index)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Liked Songs card ─────────────────────────────────────────
+        if (uiState.likedSongsCount > 0) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                LikedSongsCard(
+                    count = uiState.likedSongsCount,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
+
+        // ── Playlists grid ───────────────────────────────────────────
+        if (uiState.playlists.isNotEmpty()) {
+            item {
+                SectionHeader(title = "Playlists")
+            }
+            // Render a non-scrollable 2-column grid inside the LazyColumn
+            item {
+                val rows = uiState.playlists.chunked(2)
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    rows.forEach { rowItems ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            rowItems.forEach { playlist ->
+                                PlaylistGridCard(
+                                    playlist = playlist,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            // Pad single-item rows with a spacer
+                            if (rowItems.size == 1) {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+// ── Sync status card ─────────────────────────────────────────────────────
+
+@Composable
+private fun SyncStatusCard(
+    syncStatus: SyncStatusInfo,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+
+    GlassCard(modifier = modifier) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PulseDot(
+                    color = when (syncStatus.state) {
+                        SyncState.COMPLETED, SyncState.IDLE -> extendedColors.success
+                        SyncState.FAILED -> Color(0xFFEF4444)
+                        else -> extendedColors.warning
+                    },
+                )
+                Text(
+                    text = when (syncStatus.state) {
+                        SyncState.COMPLETED, SyncState.IDLE -> "Synced"
+                        SyncState.FAILED -> "Sync failed"
+                        else -> "Syncing..."
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                StatItem(
+                    label = "Tracks",
+                    value = syncStatus.totalTracks.toString(),
+                )
+                StatItem(
+                    label = "Playlists",
+                    value = syncStatus.totalPlaylists.toString(),
+                )
+                StatItem(
+                    label = "Storage",
+                    value = formatBytes(syncStatus.storageUsedBytes),
+                )
+            }
+            if (syncStatus.lastSyncTime != null) {
+                Text(
+                    text = "Last sync ${formatRelativeTime(syncStatus.lastSyncTime)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatItem(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun PulseDot(color: Color, modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "pulseAlpha",
+    )
+    Box(
+        modifier = modifier
+            .size(8.dp)
+            .alpha(alpha)
+            .clip(CircleShape)
+            .background(color),
+    )
+}
+
+// ── Daily mix card ───────────────────────────────────────────────────────
+
+@Composable
+private fun DailyMixCard(
+    playlist: Playlist,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+    val gradientColors = if (playlist.source == MusicSource.SPOTIFY) {
+        listOf(
+            extendedColors.spotifyGreen.copy(alpha = 0.4f),
+            Color.Transparent,
+        )
+    } else {
+        listOf(
+            extendedColors.youtubeRed.copy(alpha = 0.4f),
+            Color.Transparent,
+        )
+    }
+
+    Surface(
+        modifier = modifier
+            .width(180.dp)
+            .height(120.dp),
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.verticalGradient(gradientColors)),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                SourceIndicator(source = playlist.source, size = 8.dp)
+                Column {
+                    Text(
+                        text = playlist.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${playlist.trackCount} tracks",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Compact track card ───────────────────────────────────────────────────
+
+@Composable
+private fun CompactTrackCard(
+    track: Track,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+
+    Surface(
+        modifier = modifier
+            .width(140.dp)
+            .clickable(onClick = onClick),
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // Album art placeholder
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(extendedColors.elevatedSurface),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                SourceIndicator(source = track.source, size = 5.dp)
+                Text(
+                    text = track.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+// ── Liked songs card ─────────────────────────────────────────────────────
+
+@Composable
+private fun LikedSongsCard(
+    count: Int,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            Color.Transparent,
+                        )
+                    )
+                )
+                .padding(20.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    extendedColors.purpleDark,
+                                )
+                            )
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Favorite,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Liked Songs",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "$count tracks",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Playlist grid card ───────────────────────────────────────────────────
+
+@Composable
+private fun PlaylistGridCard(
+    playlist: Playlist,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+
+    Surface(
+        modifier = modifier.height(100.dp),
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                SourceIndicator(source = playlist.source, size = 6.dp)
+            }
+            Column {
+                Text(
+                    text = playlist.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${playlist.trackCount} tracks",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────
+
+/**
+ * Formats a byte count into a human-readable string (e.g. "45.2 MB").
+ */
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
+    val safeIndex = digitGroups.coerceIn(0, units.lastIndex)
+    return "%.1f %s".format(bytes / Math.pow(1024.0, safeIndex.toDouble()), units[safeIndex])
+}
+
+/**
+ * Formats an epoch-millis timestamp into a relative time string (e.g. "2 hours ago").
+ */
+private fun formatRelativeTime(epochMillis: Long): String {
+    return DateUtils.getRelativeTimeSpanString(
+        epochMillis,
+        System.currentTimeMillis(),
+        DateUtils.MINUTE_IN_MILLIS,
+    ).toString()
 }

@@ -42,6 +42,12 @@ interface MusicRepository {
     /** Full-text search across title, artist, and album. */
     fun search(query: String): Flow<List<Track>>
 
+    /** Total number of tracks (reactive). */
+    fun getTrackCount(): Flow<Int>
+
+    /** Total storage used by all tracks in bytes (reactive). */
+    fun getTotalStorageBytes(): Flow<Long>
+
     // ── Playlist queries ────────────────────────────────────────────────
 
     /** All active playlists. */

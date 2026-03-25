@@ -152,6 +152,20 @@ interface TrackDao {
     )
     fun search(query: String): Flow<List<TrackEntity>>
 
+    // ── Count / storage queries ─────────────────────────────────────────
+
+    /** Total number of tracks in the database (reactive). */
+    @Query("SELECT COUNT(*) FROM tracks")
+    fun getTotalCount(): Flow<Int>
+
+    /** Total number of tracks in the database (one-shot). */
+    @Query("SELECT COUNT(*) FROM tracks")
+    suspend fun getCount(): Int
+
+    /** Sum of all track file sizes in bytes (reactive). */
+    @Query("SELECT COALESCE(SUM(file_size_bytes), 0) FROM tracks")
+    fun getTotalStorageBytes(): Flow<Long>
+
     // ── Aggregate queries ───────────────────────────────────────────────
 
     /**

@@ -52,6 +52,12 @@ class MusicRepositoryImpl @Inject constructor(
     override fun search(query: String): Flow<List<Track>> =
         trackDao.search(query).map { entities -> entities.map { it.toDomain() } }
 
+    override fun getTrackCount(): Flow<Int> =
+        trackDao.getTotalCount()
+
+    override fun getTotalStorageBytes(): Flow<Long> =
+        trackDao.getTotalStorageBytes()
+
     // ── Playlist queries ────────────────────────────────────────────────
 
     override fun getAllPlaylists(): Flow<List<Playlist>> =
