@@ -6,7 +6,7 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.UserInfo
-import com.stash.core.auth.youtube.YouTubeAuthConfig
+import com.stash.core.auth.youtube.YouTubeCredentialsStore
 import com.stash.core.auth.youtube.YouTubeDeviceFlowManager
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.repository.MusicRepository
@@ -37,6 +37,7 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val tokenManager: TokenManager,
     private val youTubeDeviceFlowManager: YouTubeDeviceFlowManager,
+    private val youTubeCredentialsStore: YouTubeCredentialsStore,
     private val musicRepository: MusicRepository,
     private val qualityPreference: QualityPreference,
 ) : ViewModel() {
@@ -75,6 +76,7 @@ class SettingsViewModel @Inject constructor(
             totalTracks = trackCount,
             deviceCodeState = local.deviceCodeState,
             showYouTubeDialog = local.showYouTubeDialog,
+            showYouTubeCredentialsDialog = local.showYouTubeCredentialsDialog,
             showSpotifyCookieDialog = local.showSpotifyCookieDialog,
             spotifyCookieError = local.spotifyCookieError,
             isSpotifyCookieValidating = local.isSpotifyCookieValidating,
@@ -167,25 +169,64 @@ class SettingsViewModel @Inject constructor(
     // -- YouTube actions ------------------------------------------------------
 
     /**
-     * Initiates the YouTube device-code authorization flow.
+     * Initiates the YouTube connection flow.
+     *
+     * If OAuth credentials (Client ID + Client Secret) are not yet stored,
+     * the credentials input dialog is shown first. Otherwise the device-code
+     * authorization flow is started directly.
+     */
+    fun onConnectYouTube() {
+        viewModelScope.launch {
+            if (youTubeCredentialsStore.hasCredentials()) {
+                startYouTubeDeviceFlow()
+            } else {
+                _localState.update {
+                    it.copy(showYouTubeCredentialsDialog = true, youTubeError = null)
+                }
+            }
+        }
+    }
+
+    /**
+     * Called when the user submits credentials from the [YouTubeCredentialsDialog].
+     *
+     * Saves the credentials to [YouTubeCredentialsStore], dismisses the credentials
+     * dialog, and starts the device-code authorization flow.
+     *
+     * @param clientId     The Google Cloud OAuth Client ID.
+     * @param clientSecret The Google Cloud OAuth Client Secret.
+     */
+    fun onSaveYouTubeCredentials(clientId: String, clientSecret: String) {
+        if (clientId.isBlank() || clientSecret.isBlank()) {
+            _localState.update {
+                it.copy(youTubeError = "Client ID and Client Secret cannot be empty.")
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            youTubeCredentialsStore.saveCredentials(clientId, clientSecret)
+            _localState.update { it.copy(showYouTubeCredentialsDialog = false) }
+            startYouTubeDeviceFlow()
+        }
+    }
+
+    /**
+     * Dismisses the YouTube credentials input dialog.
+     */
+    fun onDismissYouTubeCredentialsDialog() {
+        _localState.update { it.copy(showYouTubeCredentialsDialog = false) }
+    }
+
+    /**
+     * Starts the YouTube device-code authorization flow.
      *
      * Requests a device code, displays the dialog with the user code and
      * verification URL, then starts polling for token issuance in a background
      * coroutine. When the user approves (or the code expires), the dialog is
      * dismissed and the auth state is updated.
      */
-    fun onConnectYouTube() {
-        // Guard: credentials must be configured before attempting the device flow.
-        if (YouTubeAuthConfig.CLIENT_ID.isBlank() || YouTubeAuthConfig.CLIENT_SECRET.isBlank()) {
-            _localState.update {
-                it.copy(
-                    youTubeError = "YouTube Music connection requires a Google Cloud API key. " +
-                        "See README for setup instructions.",
-                )
-            }
-            return
-        }
-
+    private fun startYouTubeDeviceFlow() {
         youTubePollingJob?.cancel()
         youTubePollingJob = viewModelScope.launch {
             try {
@@ -290,6 +331,7 @@ class SettingsViewModel @Inject constructor(
     private data class LocalState(
         val deviceCodeState: com.stash.core.auth.model.DeviceCodeState? = null,
         val showYouTubeDialog: Boolean = false,
+        val showYouTubeCredentialsDialog: Boolean = false,
         val showSpotifyCookieDialog: Boolean = false,
         val spotifyCookieError: String? = null,
         val isSpotifyCookieValidating: Boolean = false,

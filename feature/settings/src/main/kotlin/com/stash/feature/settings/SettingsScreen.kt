@@ -34,6 +34,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SpotifyCookieDialog
+import com.stash.feature.settings.components.YouTubeCredentialsDialog
 import com.stash.feature.settings.components.YouTubeDeviceCodeDialog
 
 /**
@@ -57,6 +58,14 @@ fun SettingsScreen(
             errorMessage = uiState.spotifyCookieError,
             onConnect = viewModel::onConnectSpotifyWithCookie,
             onDismiss = viewModel::onDismissSpotifyCookieDialog,
+        )
+    }
+
+    // YouTube credentials input dialog (shown when no credentials are stored)
+    if (uiState.showYouTubeCredentialsDialog) {
+        YouTubeCredentialsDialog(
+            onConfirm = viewModel::onSaveYouTubeCredentials,
+            onDismiss = viewModel::onDismissYouTubeCredentialsDialog,
         )
     }
 

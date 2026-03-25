@@ -17,6 +17,7 @@ import com.stash.core.model.QualityTier
  * @property showSpotifyCookieDialog Whether the Spotify sp_dc cookie input dialog should be visible.
  * @property spotifyCookieError Error message to display in the cookie dialog, or null if none.
  * @property isSpotifyCookieValidating Whether the sp_dc cookie is currently being validated.
+ * @property showYouTubeCredentialsDialog Whether the YouTube credentials input dialog should be visible.
  */
 data class SettingsUiState(
     val spotifyAuthState: AuthState = AuthState.NotConnected,
@@ -26,6 +27,7 @@ data class SettingsUiState(
     val totalTracks: Int = 0,
     val deviceCodeState: DeviceCodeState? = null,
     val showYouTubeDialog: Boolean = false,
+    val showYouTubeCredentialsDialog: Boolean = false,
     val showSpotifyCookieDialog: Boolean = false,
     val spotifyCookieError: String? = null,
     val isSpotifyCookieValidating: Boolean = false,

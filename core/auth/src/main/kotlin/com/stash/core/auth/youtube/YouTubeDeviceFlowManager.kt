@@ -33,6 +33,7 @@ import javax.inject.Singleton
 @Singleton
 class YouTubeDeviceFlowManager @Inject constructor(
     private val okHttpClient: OkHttpClient,
+    private val credentialsStore: YouTubeCredentialsStore,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -44,8 +45,11 @@ class YouTubeDeviceFlowManager @Inject constructor(
      */
     suspend fun requestDeviceCode(): DeviceCodeState? = withContext(Dispatchers.IO) {
         try {
+            val clientId = credentialsStore.getClientId()
+            if (clientId.isBlank()) return@withContext null
+
             val body = FormBody.Builder()
-                .add("client_id", YouTubeAuthConfig.CLIENT_ID)
+                .add("client_id", clientId)
                 .add("scope", YouTubeAuthConfig.SCOPE)
                 .build()
 
@@ -94,13 +98,15 @@ class YouTubeDeviceFlowManager @Inject constructor(
         intervalSeconds: Int,
     ): ServiceToken? = withContext(Dispatchers.IO) {
         var currentInterval = intervalSeconds.toLong()
+        val clientId = credentialsStore.getClientId()
+        val clientSecret = credentialsStore.getClientSecret()
 
         while (true) {
             delay(currentInterval * 1000)
 
             val body = FormBody.Builder()
-                .add("client_id", YouTubeAuthConfig.CLIENT_ID)
-                .add("client_secret", YouTubeAuthConfig.CLIENT_SECRET)
+                .add("client_id", clientId)
+                .add("client_secret", clientSecret)
                 .add("device_code", deviceCode)
                 .add("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
                 .build()
@@ -146,9 +152,12 @@ class YouTubeDeviceFlowManager @Inject constructor(
      */
     suspend fun refreshAccessToken(refreshToken: String): ServiceToken? {
         return withContext(Dispatchers.IO) {
+            val clientId = credentialsStore.getClientId()
+            val clientSecret = credentialsStore.getClientSecret()
+
             val body = FormBody.Builder()
-                .add("client_id", YouTubeAuthConfig.CLIENT_ID)
-                .add("client_secret", YouTubeAuthConfig.CLIENT_SECRET)
+                .add("client_id", clientId)
+                .add("client_secret", clientSecret)
                 .add("refresh_token", refreshToken)
                 .add("grant_type", "refresh_token")
                 .build()

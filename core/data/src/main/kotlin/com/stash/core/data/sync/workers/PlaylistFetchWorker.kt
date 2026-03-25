@@ -19,6 +19,7 @@ import com.stash.core.model.PlaylistType
 import com.stash.core.model.SyncState
 import com.stash.core.model.SyncTrigger
 import com.stash.data.spotify.SpotifyApiClient
+import com.stash.data.spotify.SpotifyApiException
 import com.stash.data.ytmusic.YTMusicApiClient
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -90,6 +91,18 @@ class PlaylistFetchWorker @AssistedInject constructor(
             }
 
             return Result.success(workDataOf(KEY_SYNC_ID to syncId))
+        } catch (e: SpotifyApiException) {
+            // Transient Spotify API failure (e.g. 429 rate limit exhausted) --
+            // ask WorkManager to schedule a retry so the sync can succeed later.
+            Log.w(TAG, "Spotify API error (HTTP ${e.httpCode}), scheduling retry", e)
+            syncHistoryDao.updateStatus(
+                id = syncId,
+                status = SyncState.FAILED,
+                completedAt = System.currentTimeMillis(),
+                errorMessage = "Spotify rate limited (HTTP ${e.httpCode}), will retry",
+            )
+            syncStateManager.onError("Spotify API rate limited, retrying...", e)
+            return Result.retry()
         } catch (e: Exception) {
             Log.e(TAG, "Playlist fetch failed", e)
             syncHistoryDao.updateStatus(
@@ -105,80 +118,80 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
     /**
      * Fetches Daily Mixes and Liked Songs from Spotify and writes snapshot rows.
+     *
+     * @throws SpotifyApiException if the Spotify API returns an unrecoverable error
+     *         (e.g. 429 exhausting all retries). This is intentionally not caught here
+     *         so that [doWork] can return [Result.retry] for transient API failures.
      */
     private suspend fun fetchSpotifyPlaylists(syncId: Long) {
-        try {
-            // Fetch Daily Mixes.
-            val dailyMixes = spotifyApiClient.getDailyMixes()
-            for (mix in dailyMixes) {
-                val mixNumber = Regex("""\d+""").find(mix.name)?.value?.toIntOrNull()
-                val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
-                    RemotePlaylistSnapshotEntity(
-                        syncId = syncId,
-                        source = MusicSource.SPOTIFY,
-                        sourcePlaylistId = mix.id,
-                        playlistName = mix.name,
-                        playlistType = PlaylistType.DAILY_MIX,
-                        mixNumber = mixNumber,
-                        trackCount = mix.tracks?.total ?: 0,
-                        artUrl = mix.images?.firstOrNull()?.url,
-                    )
+        // Fetch Daily Mixes.
+        val dailyMixes = spotifyApiClient.getDailyMixes()
+        for (mix in dailyMixes) {
+            val mixNumber = Regex("""\d+""").find(mix.name)?.value?.toIntOrNull()
+            val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
+                RemotePlaylistSnapshotEntity(
+                    syncId = syncId,
+                    source = MusicSource.SPOTIFY,
+                    sourcePlaylistId = mix.id,
+                    playlistName = mix.name,
+                    playlistType = PlaylistType.DAILY_MIX,
+                    mixNumber = mixNumber,
+                    trackCount = mix.tracks?.total ?: 0,
+                    artUrl = mix.images?.firstOrNull()?.url,
                 )
+            )
 
-                val tracks = spotifyApiClient.getPlaylistTracks(mix.id)
-                val trackSnapshots = tracks.mapIndexedNotNull { index, item ->
-                    val track = item.track ?: return@mapIndexedNotNull null
-                    RemoteTrackSnapshotEntity(
-                        syncId = syncId,
-                        snapshotPlaylistId = playlistSnapshotId,
-                        title = track.name,
-                        artist = track.artists.joinToString(", ") { it.name },
-                        album = track.album?.name,
-                        durationMs = track.duration_ms,
-                        spotifyUri = track.uri,
-                        albumArtUrl = track.album?.images?.firstOrNull()?.url,
-                        position = index,
-                    )
-                }
-                if (trackSnapshots.isNotEmpty()) {
-                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
-                }
-            }
-
-            // Fetch Liked Songs.
-            val likedSongs = spotifyApiClient.getLikedSongs()
-            if (likedSongs.isNotEmpty()) {
-                val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
-                    RemotePlaylistSnapshotEntity(
-                        syncId = syncId,
-                        source = MusicSource.SPOTIFY,
-                        sourcePlaylistId = "spotify_liked_songs",
-                        playlistName = "Liked Songs",
-                        playlistType = PlaylistType.LIKED_SONGS,
-                        trackCount = likedSongs.size,
-                    )
+            val tracks = spotifyApiClient.getPlaylistTracks(mix.id)
+            val trackSnapshots = tracks.mapIndexedNotNull { index, item ->
+                val track = item.track ?: return@mapIndexedNotNull null
+                RemoteTrackSnapshotEntity(
+                    syncId = syncId,
+                    snapshotPlaylistId = playlistSnapshotId,
+                    title = track.name,
+                    artist = track.artists.joinToString(", ") { it.name },
+                    album = track.album?.name,
+                    durationMs = track.duration_ms,
+                    spotifyUri = track.uri,
+                    albumArtUrl = track.album?.images?.firstOrNull()?.url,
+                    position = index,
                 )
-
-                val trackSnapshots = likedSongs.mapIndexedNotNull { index, item ->
-                    val track = item.track ?: return@mapIndexedNotNull null
-                    RemoteTrackSnapshotEntity(
-                        syncId = syncId,
-                        snapshotPlaylistId = likedPlaylistId,
-                        title = track.name,
-                        artist = track.artists.joinToString(", ") { it.name },
-                        album = track.album?.name,
-                        durationMs = track.duration_ms,
-                        spotifyUri = track.uri,
-                        albumArtUrl = track.album?.images?.firstOrNull()?.url,
-                        position = index,
-                    )
-                }
-                if (trackSnapshots.isNotEmpty()) {
-                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
-                }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Spotify fetch failed, continuing with other services", e)
+            if (trackSnapshots.isNotEmpty()) {
+                remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+            }
+        }
+
+        // Fetch Liked Songs.
+        val likedSongs = spotifyApiClient.getLikedSongs()
+        if (likedSongs.isNotEmpty()) {
+            val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
+                RemotePlaylistSnapshotEntity(
+                    syncId = syncId,
+                    source = MusicSource.SPOTIFY,
+                    sourcePlaylistId = "spotify_liked_songs",
+                    playlistName = "Liked Songs",
+                    playlistType = PlaylistType.LIKED_SONGS,
+                    trackCount = likedSongs.size,
+                )
+            )
+
+            val trackSnapshots = likedSongs.mapIndexedNotNull { index, item ->
+                val track = item.track ?: return@mapIndexedNotNull null
+                RemoteTrackSnapshotEntity(
+                    syncId = syncId,
+                    snapshotPlaylistId = likedPlaylistId,
+                    title = track.name,
+                    artist = track.artists.joinToString(", ") { it.name },
+                    album = track.album?.name,
+                    durationMs = track.duration_ms,
+                    spotifyUri = track.uri,
+                    albumArtUrl = track.album?.images?.firstOrNull()?.url,
+                    position = index,
+                )
+            }
+            if (trackSnapshots.isNotEmpty()) {
+                remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+            }
         }
     }
 
