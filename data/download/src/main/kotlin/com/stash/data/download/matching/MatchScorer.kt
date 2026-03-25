@@ -1,0 +1,182 @@
+package com.stash.data.download.matching
+
+import com.stash.core.data.sync.TrackMatcher
+import com.stash.data.download.model.MatchResult
+import com.stash.data.download.ytdlp.YtDlpSearchResult
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.math.abs
+import kotlin.math.log10
+
+/**
+ * Scores YouTube search results against a target track using a weighted
+ * composite of title similarity, artist similarity, duration closeness,
+ * and popularity.
+ *
+ * Delegates canonical normalisation and Jaro-Winkler computation to
+ * [TrackMatcher] (from :core:data) to avoid logic duplication.
+ *
+ * Scoring formula:
+ *   score = titleSim * 0.35 + artistSim * 0.25 + durationSim * 0.25
+ *           + popularitySim * 0.15 + topicBonus - penalty
+ *
+ * Results are returned sorted by descending score.
+ */
+@Singleton
+class MatchScorer @Inject constructor(
+    private val trackMatcher: TrackMatcher,
+) {
+    companion object {
+        /** Weight given to title similarity in the composite score. */
+        const val TITLE_WEIGHT = 0.35f
+
+        /** Weight given to artist similarity in the composite score. */
+        const val ARTIST_WEIGHT = 0.25f
+
+        /** Weight given to duration closeness in the composite score. */
+        const val DURATION_WEIGHT = 0.25f
+
+        /** Weight given to relative popularity (view count) in the composite score. */
+        const val POPULARITY_WEIGHT = 0.15f
+
+        /** Minimum score to auto-accept a match without manual review. */
+        const val AUTO_ACCEPT_THRESHOLD = 0.75f
+
+        /** Scores below this value are discarded as unlikely matches. */
+        const val REJECT_THRESHOLD = 0.50f
+    }
+
+    /**
+     * Score every [YtDlpSearchResult] against the target track metadata.
+     *
+     * @param targetTitle      Track title from the library/playlist.
+     * @param targetArtist     Track artist from the library/playlist.
+     * @param targetDurationMs Track duration in milliseconds.
+     * @param results          Raw search results from YouTube.
+     * @return Scored [MatchResult] list, sorted best-first.
+     */
+    fun scoreResults(
+        targetTitle: String,
+        targetArtist: String,
+        targetDurationMs: Long,
+        results: List<YtDlpSearchResult>,
+    ): List<MatchResult> {
+        if (results.isEmpty()) return emptyList()
+
+        val maxViewCount = results.maxOf { it.viewCount }.coerceAtLeast(1L)
+
+        return results.map { result ->
+            val titleScore = computeTitleScore(targetTitle, result.title)
+            val artistScore = computeArtistScore(targetArtist, result.uploader)
+            val durationScore = computeDurationScore(targetDurationMs, result.duration)
+            val popularityScore = computePopularityScore(result.viewCount, maxViewCount)
+            val penalty = computePenalty(targetTitle, result.title)
+            val topicBonus = computeTopicBonus(result.uploader, result.channel)
+
+            val finalScore = (
+                titleScore * TITLE_WEIGHT +
+                    artistScore * ARTIST_WEIGHT +
+                    durationScore * DURATION_WEIGHT +
+                    popularityScore * POPULARITY_WEIGHT +
+                    topicBonus - penalty
+                ).coerceIn(0f, 1f)
+
+            MatchResult(
+                youtubeUrl = result.webpageUrl.ifEmpty {
+                    "https://www.youtube.com/watch?v=${result.id}"
+                },
+                videoId = result.id,
+                title = result.title,
+                uploader = result.uploader,
+                durationSeconds = result.duration,
+                viewCount = result.viewCount,
+                matchScore = finalScore,
+            )
+        }.sortedByDescending { it.matchScore }
+    }
+
+    /**
+     * Return the best match from a scored list if it exceeds [AUTO_ACCEPT_THRESHOLD].
+     *
+     * @param results Scored and sorted match results.
+     * @return The top result if its score is high enough, null otherwise.
+     */
+    fun bestMatch(results: List<MatchResult>): MatchResult? {
+        return results.firstOrNull { it.matchScore >= AUTO_ACCEPT_THRESHOLD }
+    }
+
+    // -- Private scoring helpers --------------------------------------------------
+
+    /**
+     * Jaro-Winkler similarity between canonical titles.
+     */
+    private fun computeTitleScore(target: String, candidate: String): Float {
+        return trackMatcher.jaroWinklerSimilarity(
+            trackMatcher.canonicalTitle(target),
+            trackMatcher.canonicalTitle(candidate),
+        ).toFloat()
+    }
+
+    /**
+     * Jaro-Winkler similarity between canonical artist names.
+     * Strips YouTube's " - Topic" suffix from auto-generated channels.
+     */
+    private fun computeArtistScore(target: String, candidateUploader: String): Float {
+        val cleanUploader = candidateUploader.replace(" - Topic", "")
+        return trackMatcher.jaroWinklerSimilarity(
+            trackMatcher.canonicalArtist(target),
+            trackMatcher.canonicalArtist(cleanUploader),
+        ).toFloat()
+    }
+
+    /**
+     * Duration closeness score using tiered thresholds.
+     *
+     * - Within 3 seconds: perfect (1.0)
+     * - Within 10 seconds: good (0.8)
+     * - Within 30 seconds: fair (0.4)
+     * - Beyond 30 seconds: no match (0.0)
+     */
+    private fun computeDurationScore(targetDurationMs: Long, candidateDurationSec: Long): Float {
+        val durationDiffSec = abs((targetDurationMs / 1000) - candidateDurationSec)
+        return when {
+            durationDiffSec <= 3 -> 1.0f
+            durationDiffSec <= 10 -> 0.8f
+            durationDiffSec <= 30 -> 0.4f
+            else -> 0.0f
+        }
+    }
+
+    /**
+     * Log-scaled popularity relative to the most-viewed result in the set.
+     */
+    private fun computePopularityScore(viewCount: Long, maxViewCount: Long): Float {
+        if (maxViewCount <= 0 || viewCount <= 0) return 0f
+        return (log10(viewCount.toDouble()) / log10(maxViewCount.toDouble())).toFloat()
+    }
+
+    /**
+     * Penalty for content variants (covers, remixes, live, karaoke, instrumental)
+     * when the target title does not contain the same keyword.
+     */
+    private fun computePenalty(targetTitle: String, candidateTitle: String): Float {
+        val targetLower = targetTitle.lowercase()
+        val candidateLower = candidateTitle.lowercase()
+        return when {
+            "karaoke" in candidateLower -> 0.5f
+            "cover" in candidateLower && "cover" !in targetLower -> 0.3f
+            "remix" in candidateLower && "remix" !in targetLower -> 0.3f
+            "instrumental" in candidateLower && "instrumental" !in targetLower -> 0.3f
+            "live" in candidateLower && "live" !in targetLower -> 0.2f
+            else -> 0f
+        }
+    }
+
+    /**
+     * Small bonus for YouTube's auto-generated "Artist - Topic" channels,
+     * which tend to carry the official audio.
+     */
+    private fun computeTopicBonus(uploader: String, channel: String): Float {
+        return if (uploader.endsWith(" - Topic") || channel.endsWith(" - Topic")) 0.1f else 0f
+    }
+}
