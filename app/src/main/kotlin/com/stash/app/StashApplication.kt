@@ -5,6 +5,8 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.stash.core.data.seed.DatabaseSeeder
 import com.stash.core.data.sync.SyncNotificationManager
+import com.stash.data.download.ytdlp.YtDlpManager
+import com.stash.data.download.ytdlp.YtDlpUpdateWorker
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +35,9 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var syncNotificationManager: SyncNotificationManager
 
+    @Inject
+    lateinit var ytDlpManager: YtDlpManager
+
     /** Application-scoped coroutine scope for one-shot startup tasks. */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -52,5 +57,9 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch {
             databaseSeeder.seedIfEmpty()
         }
+        applicationScope.launch {
+            ytDlpManager.initialize()
+        }
+        YtDlpUpdateWorker.schedulePeriodicUpdate(this)
     }
 }

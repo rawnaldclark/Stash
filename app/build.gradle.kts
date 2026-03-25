@@ -54,6 +54,7 @@ dependencies {
     implementation(project(":feature:nowplaying"))
     implementation(project(":feature:sync"))
     implementation(project(":feature:settings"))
+    implementation(project(":data:download"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
