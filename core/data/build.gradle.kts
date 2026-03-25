@@ -1,0 +1,19 @@
+plugins {
+    id("stash.android.library")
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
+}
+android {
+    namespace = "com.stash.core.data"
+}
+dependencies {
+    implementation(project(":core:model"))
+    implementation(project(":core:common"))
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+    implementation(libs.datastore.preferences)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.android.compiler)
+    implementation(libs.kotlinx.coroutines.android)
+}
