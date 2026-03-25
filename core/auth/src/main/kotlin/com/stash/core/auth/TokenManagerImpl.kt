@@ -4,6 +4,7 @@ import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.ServiceToken
 import com.stash.core.auth.model.UserInfo
+import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.core.auth.store.EncryptedTokenStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,24 +22,24 @@ import javax.inject.Singleton
  * Default [TokenManager] implementation backed by [EncryptedTokenStore].
  *
  * Observes the encrypted token and user flows for each service and maps them into
- * reactive [AuthState] values. Access-token getters perform expiry checks so callers
- * receive null when a refresh is needed (the refresh itself is handled by each
- * service-specific auth manager).
+ * reactive [AuthState] values. The Spotify access-token getter automatically refreshes
+ * expired tokens using the stored sp_dc cookie via [SpotifyAuthManager].
  */
 @Singleton
 class TokenManagerImpl @Inject constructor(
     private val tokenStore: EncryptedTokenStore,
+    private val spotifyAuthManager: SpotifyAuthManager,
 ) : TokenManager {
 
     /** Dedicated scope for collecting store flows; survives until the process dies. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    // ── Spotify state ────────────────────────────────────────────────────
+    // -- Spotify state --------------------------------------------------------
 
     private val _spotifyAuthState = MutableStateFlow<AuthState>(AuthState.NotConnected)
     override val spotifyAuthState: StateFlow<AuthState> = _spotifyAuthState.asStateFlow()
 
-    // ── YouTube Music state ──────────────────────────────────────────────
+    // -- YouTube Music state --------------------------------------------------
 
     private val _youTubeAuthState = MutableStateFlow<AuthState>(AuthState.NotConnected)
     override val youTubeAuthState: StateFlow<AuthState> = _youTubeAuthState.asStateFlow()
@@ -48,12 +49,30 @@ class TokenManagerImpl @Inject constructor(
         observeYouTube()
     }
 
-    // ── Access-token getters ─────────────────────────────────────────────
+    // -- Access-token getters -------------------------------------------------
 
+    /**
+     * Returns a valid Spotify access token, auto-refreshing via the stored sp_dc
+     * cookie if the current token is expired or expiring soon.
+     *
+     * The sp_dc cookie is stored in [ServiceToken.refreshToken].
+     */
     override suspend fun getSpotifyAccessToken(): String? {
         val token = tokenStore.spotifyToken.first() ?: return null
-        if (token.isExpired || token.isExpiringSoon) return null
-        return token.accessToken
+        val spDcCookie = token.refreshToken
+
+        // If the token is still fresh, return it immediately
+        if (!token.isExpired && !token.isExpiringSoon) {
+            return token.accessToken
+        }
+
+        // Token is expired or expiring soon -- refresh using the sp_dc cookie
+        if (spDcCookie.isEmpty()) return null
+        val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return null
+
+        // Preserve the existing user info by only updating the token
+        tokenStore.saveSpotifyToken(refreshed)
+        return refreshed.accessToken
     }
 
     override suspend fun getYouTubeAccessToken(): String? {
@@ -62,7 +81,7 @@ class TokenManagerImpl @Inject constructor(
         return token.accessToken
     }
 
-    // ── Mutators ─────────────────────────────────────────────────────────
+    // -- Mutators -------------------------------------------------------------
 
     override suspend fun saveSpotifyAuth(token: ServiceToken, user: UserInfo) {
         tokenStore.saveSpotifyToken(token, user)
@@ -86,7 +105,26 @@ class TokenManagerImpl @Inject constructor(
         }
     }
 
-    // ── Internal observers ───────────────────────────────────────────────
+    /**
+     * Validates the sp_dc cookie by attempting to obtain an access token,
+     * then persists the credentials with a placeholder user profile.
+     *
+     * The full user profile (display name, image) can be fetched later by
+     * the sync layer using [SpotifyApiClient.getCurrentUserProfile].
+     */
+    override suspend fun connectSpotifyWithCookie(spDcCookie: String): Boolean {
+        val token = spotifyAuthManager.getAccessToken(spDcCookie) ?: return false
+
+        // Save with a placeholder user; the sync layer will fetch the real profile
+        val user = UserInfo(
+            id = "spotify_user",
+            displayName = "Spotify User",
+        )
+        tokenStore.saveSpotifyToken(token, user)
+        return true
+    }
+
+    // -- Internal observers ---------------------------------------------------
 
     /**
      * Combines the Spotify token and user flows to derive the current [AuthState].

@@ -1,37 +1,30 @@
 package com.stash.core.auth.spotify
 
-import android.net.Uri
 import com.stash.core.auth.model.ServiceToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import net.openid.appauth.AuthorizationRequest
-import net.openid.appauth.AuthorizationResponse
-import net.openid.appauth.AuthorizationServiceConfiguration
-import net.openid.appauth.CodeVerifierUtil
-import net.openid.appauth.ResponseTypeValues
-import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Manages the Spotify OAuth 2.0 Authorization Code flow with PKCE.
+ * Manages Spotify authentication using the sp_dc cookie approach.
  *
- * Uses the AppAuth library to build standards-compliant authorization requests and
- * OkHttp for the token exchange / refresh calls (AppAuth's built-in token service
- * can be unreliable on some Android versions).
+ * Instead of OAuth PKCE (which requires a Spotify Developer account with Premium),
+ * this manager exchanges the user's sp_dc browser cookie for a short-lived web-player
+ * access token. The sp_dc cookie itself acts as the long-lived credential (stored in
+ * the [ServiceToken.refreshToken] field) and can be reused to obtain fresh access
+ * tokens whenever they expire.
  *
  * Typical usage:
- * 1. Call [buildAuthRequest] to get an [AuthorizationRequest] and launch it via
- *    an AppAuth [net.openid.appauth.AuthorizationService].
- * 2. When the redirect returns, parse the result with [AuthorizationResponse.fromIntent]
- *    and pass it to [exchangeCodeForToken].
- * 3. Later, call [refreshAccessToken] when the access token expires.
+ * 1. The user extracts their sp_dc cookie from their browser's DevTools.
+ * 2. Call [getAccessToken] to validate the cookie and obtain an access token.
+ * 3. When the access token expires, call [refreshAccessToken] with the stored sp_dc
+ *    cookie to get a new one.
  */
 @Singleton
 class SpotifyAuthManager @Inject constructor(
@@ -39,124 +32,77 @@ class SpotifyAuthManager @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val serviceConfig = AuthorizationServiceConfiguration(
-        Uri.parse(SpotifyAuthConfig.AUTH_ENDPOINT),
-        Uri.parse(SpotifyAuthConfig.TOKEN_ENDPOINT),
-    )
-
     /**
-     * Builds an AppAuth [AuthorizationRequest] configured for Spotify PKCE.
+     * Exchange an sp_dc cookie for a web-player access token.
      *
-     * The returned request includes a cryptographically random code verifier and
-     * S256 challenge so that the authorization code cannot be intercepted and
-     * replayed without the verifier.
-     */
-    fun buildAuthRequest(): AuthorizationRequest {
-        val codeVerifier = CodeVerifierUtil.generateRandomCodeVerifier()
-        val codeChallenge = CodeVerifierUtil.deriveCodeVerifierChallenge(codeVerifier)
-
-        return AuthorizationRequest.Builder(
-            serviceConfig,
-            SpotifyAuthConfig.CLIENT_ID,
-            ResponseTypeValues.CODE,
-            Uri.parse(SpotifyAuthConfig.REDIRECT_URI),
-        )
-            .setCodeVerifier(
-                codeVerifier,
-                codeChallenge,
-                CodeVerifierUtil.getCodeVerifierChallengeMethod(),
-            )
-            .setScope(SpotifyAuthConfig.SCOPES.joinToString(" "))
-            .build()
-    }
-
-    /**
-     * Exchanges the authorization code from [response] for an access + refresh token pair.
+     * The sp_dc cookie is obtained by the user from their browser DevTools:
+     * 1. Log into open.spotify.com
+     * 2. Open DevTools (F12) > Application > Cookies
+     * 3. Copy the value of the "sp_dc" cookie
      *
-     * @return A [ServiceToken] on success, or null if the exchange fails.
+     * @param spDcCookie The raw sp_dc cookie value from the user's browser.
+     * @return A [ServiceToken] on success (with the sp_dc stored as the refresh token),
+     *         or null if the cookie is invalid, expired, or the request fails.
      */
-    suspend fun exchangeCodeForToken(response: AuthorizationResponse): ServiceToken? {
+    suspend fun getAccessToken(spDcCookie: String): ServiceToken? {
         return withContext(Dispatchers.IO) {
-            val codeVerifier = response.request.codeVerifier ?: return@withContext null
-            val authCode = response.authorizationCode ?: return@withContext null
+            try {
+                val request = Request.Builder()
+                    .url(SpotifyAuthConfig.ACCESS_TOKEN_ENDPOINT)
+                    .header("Cookie", "${SpotifyAuthConfig.SP_DC_COOKIE_NAME}=$spDcCookie")
+                    .header(
+                        "User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    )
+                    .get()
+                    .build()
 
-            val body = FormBody.Builder()
-                .add("grant_type", "authorization_code")
-                .add("code", authCode)
-                .add("redirect_uri", SpotifyAuthConfig.REDIRECT_URI)
-                .add("client_id", SpotifyAuthConfig.CLIENT_ID)
-                .add("code_verifier", codeVerifier)
-                .build()
+                val response = okHttpClient.newCall(request).execute()
+                if (!response.isSuccessful) return@withContext null
 
-            executeTokenRequest(body)
+                val body = response.body?.string() ?: return@withContext null
+                val tokenResponse = json.decodeFromString<SpDcTokenResponse>(body)
+
+                // Anonymous tokens mean the cookie was invalid or expired
+                if (tokenResponse.isAnonymous) return@withContext null
+
+                ServiceToken(
+                    accessToken = tokenResponse.accessToken,
+                    // Store sp_dc as the "refresh token" -- it IS the long-lived credential
+                    refreshToken = spDcCookie,
+                    expiresAtEpoch = tokenResponse.accessTokenExpirationTimestampMs / 1000,
+                    scope = "",
+                )
+            } catch (_: Exception) {
+                null
+            }
         }
     }
 
     /**
-     * Exchanges a refresh token for a fresh access token.
+     * Refresh the access token using the stored sp_dc cookie.
      *
-     * Spotify may optionally rotate the refresh token, so the returned [ServiceToken]
-     * always carries the latest refresh token (falling back to the original if the
-     * response does not include a new one).
+     * Functionally identical to [getAccessToken] -- the sp_dc cookie IS the refresh
+     * mechanism. A new short-lived access token is fetched from the same endpoint.
      *
-     * @return A [ServiceToken] on success, or null if the refresh fails.
+     * @param spDcCookie The stored sp_dc cookie value.
+     * @return A fresh [ServiceToken], or null on failure.
      */
-    suspend fun refreshAccessToken(refreshToken: String): ServiceToken? {
-        return withContext(Dispatchers.IO) {
-            val body = FormBody.Builder()
-                .add("grant_type", "refresh_token")
-                .add("refresh_token", refreshToken)
-                .add("client_id", SpotifyAuthConfig.CLIENT_ID)
-                .build()
-
-            executeTokenRequest(body, fallbackRefreshToken = refreshToken)
-        }
-    }
-
-    // ── Internal helpers ─────────────────────────────────────────────────
-
-    /**
-     * Sends a POST request to the Spotify token endpoint and parses the JSON response.
-     *
-     * @param formBody         The form-encoded request body (grant_type, code, etc.).
-     * @param fallbackRefreshToken Optional refresh token to use when the response does not
-     *                             include one (common during refresh flows).
-     */
-    private fun executeTokenRequest(
-        formBody: FormBody,
-        fallbackRefreshToken: String = "",
-    ): ServiceToken? {
-        val request = Request.Builder()
-            .url(SpotifyAuthConfig.TOKEN_ENDPOINT)
-            .post(formBody)
-            .build()
-
-        val httpResponse = okHttpClient.newCall(request).execute()
-        if (!httpResponse.isSuccessful) return null
-
-        val responseBody = httpResponse.body?.string() ?: return null
-        val tokenResponse = json.decodeFromString<SpotifyTokenResponse>(responseBody)
-
-        return ServiceToken(
-            accessToken = tokenResponse.accessToken,
-            refreshToken = tokenResponse.refreshToken ?: fallbackRefreshToken,
-            expiresAtEpoch = Instant.now().epochSecond + tokenResponse.expiresIn,
-            scope = tokenResponse.scope ?: "",
-        )
+    suspend fun refreshAccessToken(spDcCookie: String): ServiceToken? {
+        return getAccessToken(spDcCookie)
     }
 }
 
 /**
- * JSON shape returned by Spotify's `/api/token` endpoint.
+ * JSON shape returned by Spotify's `/get_access_token` endpoint.
  *
- * Uses [SerialName] annotations so that Kotlin property names follow conventions
- * while still mapping to the snake_case JSON keys.
+ * When a valid sp_dc cookie is provided, the endpoint returns a non-anonymous
+ * access token with its expiration timestamp in milliseconds.
  */
 @Serializable
-private data class SpotifyTokenResponse(
-    @SerialName("access_token") val accessToken: String,
-    @SerialName("token_type") val tokenType: String = "",
-    @SerialName("expires_in") val expiresIn: Long = 3600,
-    @SerialName("refresh_token") val refreshToken: String? = null,
-    @SerialName("scope") val scope: String? = null,
+private data class SpDcTokenResponse(
+    @SerialName("accessToken") val accessToken: String = "",
+    @SerialName("accessTokenExpirationTimestampMs") val accessTokenExpirationTimestampMs: Long = 0,
+    @SerialName("isAnonymous") val isAnonymous: Boolean = true,
+    @SerialName("clientId") val clientId: String = "",
 )

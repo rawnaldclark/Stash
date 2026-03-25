@@ -15,7 +15,6 @@ dependencies {
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
-    implementation(libs.appauth)
     implementation(libs.tink.android)
     implementation(libs.datastore.preferences)
     implementation(libs.okhttp)

@@ -1,40 +1,32 @@
 package com.stash.feature.settings
 
-import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.UserInfo
-import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.core.auth.youtube.YouTubeDeviceFlowManager
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import net.openid.appauth.AuthorizationRequest
-import net.openid.appauth.AuthorizationResponse
 import javax.inject.Inject
 
 /**
  * ViewModel for the Settings screen.
  *
- * Orchestrates Spotify OAuth (PKCE), YouTube device-code auth, quality selection,
- * and library storage stats. The Spotify flow exposes an [AuthorizationRequest] via
- * [spotifyAuthEvent] so the UI can launch it through an ActivityResultLauncher;
- * YouTube auth is fully managed in-process via the device-code grant.
+ * Orchestrates Spotify sp_dc cookie auth, YouTube device-code auth, quality selection,
+ * and library storage stats. The Spotify flow displays a dialog for the user to paste
+ * their sp_dc cookie; YouTube auth is fully managed in-process via the device-code grant.
  *
  * Audio quality changes are persisted to DataStore via [QualityPreference] so they
  * survive app restarts and are picked up by the download pipeline.
@@ -42,7 +34,6 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val tokenManager: TokenManager,
-    private val spotifyAuthManager: SpotifyAuthManager,
     private val youTubeDeviceFlowManager: YouTubeDeviceFlowManager,
     private val musicRepository: MusicRepository,
     private val qualityPreference: QualityPreference,
@@ -50,10 +41,6 @@ class SettingsViewModel @Inject constructor(
 
     /** Internal mutable UI state that is combined with token-manager flows. */
     private val _localState = MutableStateFlow(LocalState())
-
-    /** One-shot event channel for launching the Spotify OAuth intent. */
-    private val _spotifyAuthEvent = MutableSharedFlow<AuthorizationRequest>(extraBufferCapacity = 1)
-    val spotifyAuthEvent: SharedFlow<AuthorizationRequest> = _spotifyAuthEvent.asSharedFlow()
 
     /** Active YouTube polling coroutine, cancelled on disconnect or dialog dismissal. */
     private var youTubePollingJob: Job? = null
@@ -86,6 +73,9 @@ class SettingsViewModel @Inject constructor(
             totalTracks = trackCount,
             deviceCodeState = local.deviceCodeState,
             showYouTubeDialog = local.showYouTubeDialog,
+            showSpotifyCookieDialog = local.showSpotifyCookieDialog,
+            spotifyCookieError = local.spotifyCookieError,
+            isSpotifyCookieValidating = local.isSpotifyCookieValidating,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -93,48 +83,72 @@ class SettingsViewModel @Inject constructor(
         initialValue = SettingsUiState(),
     )
 
-    // ── Spotify actions ──────────────────────────────────────────────────
+    // -- Spotify actions ------------------------------------------------------
 
     /**
-     * Initiates the Spotify OAuth PKCE flow.
-     *
-     * Builds an [AuthorizationRequest] and emits it to [spotifyAuthEvent] so the
-     * UI layer can launch it via an [androidx.activity.result.ActivityResultLauncher].
+     * Opens the sp_dc cookie input dialog so the user can paste their cookie.
      */
     fun onConnectSpotify() {
-        val request = spotifyAuthManager.buildAuthRequest()
-        _spotifyAuthEvent.tryEmit(request)
+        _localState.update {
+            it.copy(
+                showSpotifyCookieDialog = true,
+                spotifyCookieError = null,
+                isSpotifyCookieValidating = false,
+            )
+        }
     }
 
     /**
-     * Handles the result intent returned from the Spotify OAuth redirect.
+     * Validates the user-provided sp_dc cookie and connects their Spotify account.
      *
-     * Extracts the authorization code, exchanges it for tokens, fetches the
-     * user profile from the token response, and persists everything via
-     * [TokenManager]. On failure, the auth state is set to [AuthState.Error].
+     * Calls [TokenManager.connectSpotifyWithCookie] which exchanges the cookie for
+     * an access token. On success the dialog is dismissed; on failure an error
+     * message is displayed in the dialog.
      *
-     * @param intent The result [Intent] from the AppAuth authorization activity.
+     * @param cookie The raw sp_dc cookie value pasted by the user.
      */
-    fun onSpotifyAuthResult(intent: Intent) {
+    fun onConnectSpotifyWithCookie(cookie: String) {
+        if (cookie.isBlank()) {
+            _localState.update { it.copy(spotifyCookieError = "Cookie cannot be empty") }
+            return
+        }
+
         viewModelScope.launch {
-            val response = AuthorizationResponse.fromIntent(intent)
-            if (response == null) {
-                // User cancelled or an error occurred
-                return@launch
+            _localState.update {
+                it.copy(isSpotifyCookieValidating = true, spotifyCookieError = null)
             }
 
-            val token = spotifyAuthManager.exchangeCodeForToken(response)
-            if (token == null) {
-                return@launch
-            }
+            val success = tokenManager.connectSpotifyWithCookie(cookie)
 
-            // Use a basic UserInfo derived from the token; the full profile
-            // can be fetched later by the sync layer via SpotifyApiClient.
-            val user = UserInfo(
-                id = "spotify_user",
-                displayName = "Spotify User",
+            if (success) {
+                _localState.update {
+                    it.copy(
+                        showSpotifyCookieDialog = false,
+                        spotifyCookieError = null,
+                        isSpotifyCookieValidating = false,
+                    )
+                }
+            } else {
+                _localState.update {
+                    it.copy(
+                        spotifyCookieError = "Invalid or expired sp_dc cookie. Please try again.",
+                        isSpotifyCookieValidating = false,
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Dismisses the Spotify cookie input dialog without connecting.
+     */
+    fun onDismissSpotifyCookieDialog() {
+        _localState.update {
+            it.copy(
+                showSpotifyCookieDialog = false,
+                spotifyCookieError = null,
+                isSpotifyCookieValidating = false,
             )
-            tokenManager.saveSpotifyAuth(token, user)
         }
     }
 
@@ -147,7 +161,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ── YouTube actions ──────────────────────────────────────────────────
+    // -- YouTube actions ------------------------------------------------------
 
     /**
      * Initiates the YouTube device-code authorization flow.
@@ -211,7 +225,7 @@ class SettingsViewModel @Inject constructor(
         _localState.update { it.copy(showYouTubeDialog = false) }
     }
 
-    // ── Quality ──────────────────────────────────────────────────────────
+    // -- Quality --------------------------------------------------------------
 
     /**
      * Updates the preferred audio quality tier and persists it to DataStore.
@@ -224,7 +238,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ── Internal state ───────────────────────────────────────────────────
+    // -- Internal state -------------------------------------------------------
 
     /**
      * Local (non-persisted) state that is combined with reactive flows from
@@ -234,5 +248,8 @@ class SettingsViewModel @Inject constructor(
     private data class LocalState(
         val deviceCodeState: com.stash.core.auth.model.DeviceCodeState? = null,
         val showYouTubeDialog: Boolean = false,
+        val showSpotifyCookieDialog: Boolean = false,
+        val spotifyCookieError: String? = null,
+        val isSpotifyCookieValidating: Boolean = false,
     )
 }

@@ -32,7 +32,7 @@ interface TokenManager {
      */
     suspend fun getYouTubeAccessToken(): String?
 
-    /** Persists Spotify OAuth credentials and user profile information. */
+    /** Persists Spotify credentials and user profile information. */
     suspend fun saveSpotifyAuth(token: ServiceToken, user: UserInfo)
 
     /** Persists YouTube Music OAuth credentials and user profile information. */
@@ -43,4 +43,13 @@ interface TokenManager {
 
     /** Returns true if valid (non-expired) credentials exist for the given [service]. */
     suspend fun isAuthenticated(service: AuthService): Boolean
+
+    /**
+     * Validates an sp_dc cookie against the Spotify web-player token endpoint,
+     * fetches the user profile, and persists all credentials on success.
+     *
+     * @param spDcCookie The raw sp_dc cookie value from the user's browser.
+     * @return true if the cookie was valid and auth was saved, false otherwise.
+     */
+    suspend fun connectSpotifyWithCookie(spDcCookie: String): Boolean
 }

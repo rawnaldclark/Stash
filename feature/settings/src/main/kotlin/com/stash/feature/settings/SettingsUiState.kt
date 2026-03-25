@@ -14,6 +14,9 @@ import com.stash.core.model.QualityTier
  * @property totalTracks Number of tracks currently stored in the library.
  * @property deviceCodeState Non-null when the YouTube device-code auth flow is active.
  * @property showYouTubeDialog Whether the YouTube device-code dialog should be visible.
+ * @property showSpotifyCookieDialog Whether the Spotify sp_dc cookie input dialog should be visible.
+ * @property spotifyCookieError Error message to display in the cookie dialog, or null if none.
+ * @property isSpotifyCookieValidating Whether the sp_dc cookie is currently being validated.
  */
 data class SettingsUiState(
     val spotifyAuthState: AuthState = AuthState.NotConnected,
@@ -23,4 +26,7 @@ data class SettingsUiState(
     val totalTracks: Int = 0,
     val deviceCodeState: DeviceCodeState? = null,
     val showYouTubeDialog: Boolean = false,
+    val showSpotifyCookieDialog: Boolean = false,
+    val spotifyCookieError: String? = null,
+    val isSpotifyCookieValidating: Boolean = false,
 )

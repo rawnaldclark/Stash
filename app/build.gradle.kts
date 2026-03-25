@@ -17,7 +17,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        manifestPlaceholders["appAuthRedirectScheme"] = "com.stash.app"
+        // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
     }
     buildTypes {
         release {

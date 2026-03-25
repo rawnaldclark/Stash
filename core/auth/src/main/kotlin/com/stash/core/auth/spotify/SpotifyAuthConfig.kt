@@ -1,39 +1,22 @@
 package com.stash.core.auth.spotify
 
 /**
- * Static configuration for the Spotify OAuth 2.0 PKCE authorization flow.
+ * Static configuration for the Spotify sp_dc cookie-based authentication flow.
  *
- * The [CLIENT_ID] must be set to a valid Spotify Developer application client ID
- * before authentication will work. Register an app at
- * https://developer.spotify.com/dashboard and add [REDIRECT_URI] as an allowed
- * redirect URI.
+ * Instead of requiring a Spotify Developer account and OAuth client credentials,
+ * this approach uses the sp_dc cookie extracted from the user's browser session
+ * to obtain web-player access tokens. This is the same mechanism used by open-source
+ * tools such as Spotube and SpotDL.
  */
 object SpotifyAuthConfig {
 
-    /** Spotify Developer application client ID. Must be filled in by the developer. */
-    const val CLIENT_ID = "" // TODO: set your Spotify app client ID
+    /** Endpoint that returns a short-lived web-player access token when given a valid sp_dc cookie. */
+    const val ACCESS_TOKEN_ENDPOINT =
+        "https://open.spotify.com/get_access_token?reason=transport&productType=web_player"
 
-    /** Deep-link URI registered in AndroidManifest for the OAuth callback. */
-    const val REDIRECT_URI = "com.stash.app://spotify-callback"
+    /** Base URL for the Spotify Web API v1. */
+    const val WEB_API_BASE = "https://api.spotify.com/v1"
 
-    /** Spotify Accounts authorization endpoint. */
-    const val AUTH_ENDPOINT = "https://accounts.spotify.com/authorize"
-
-    /** Spotify Accounts token exchange endpoint. */
-    const val TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token"
-
-    /**
-     * OAuth scopes requested during authorization.
-     *
-     * - `user-read-private`        Read the user's subscription and profile info.
-     * - `user-library-read`        Read the user's saved tracks / albums.
-     * - `playlist-read-private`    Read private playlists.
-     * - `user-read-recently-played` Read recently played tracks.
-     */
-    val SCOPES: List<String> = listOf(
-        "user-read-private",
-        "user-library-read",
-        "playlist-read-private",
-        "user-read-recently-played",
-    )
+    /** Name of the browser cookie that acts as the long-lived authentication credential. */
+    const val SP_DC_COOKIE_NAME = "sp_dc"
 }

@@ -1,8 +1,5 @@
 package com.stash.feature.settings
 
-import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,11 +20,9 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -36,16 +31,15 @@ import com.stash.core.model.QualityTier
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.components.AccountConnectionCard
+import com.stash.feature.settings.components.SpotifyCookieDialog
 import com.stash.feature.settings.components.YouTubeDeviceCodeDialog
-import net.openid.appauth.AuthorizationService
 
 /**
  * Top-level Settings screen composable.
  *
  * Provides account connection management for Spotify and YouTube Music,
  * audio quality selection, storage statistics, and app information.
- * The Spotify OAuth flow is launched via an [ActivityResultLauncher] that
- * is wired to the ViewModel's event channel.
+ * Spotify authentication uses the sp_dc cookie approach via [SpotifyCookieDialog].
  */
 @Composable
 fun SettingsScreen(
@@ -53,24 +47,15 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
 
-    // Spotify OAuth activity result launcher
-    val spotifyLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            viewModel.onSpotifyAuthResult(result.data!!)
-        }
-    }
-
-    // Observe one-shot Spotify auth events and launch the OAuth intent
-    LaunchedEffect(Unit) {
-        viewModel.spotifyAuthEvent.collect { authRequest ->
-            val authService = AuthorizationService(context)
-            val intent = authService.getAuthorizationRequestIntent(authRequest)
-            spotifyLauncher.launch(intent)
-        }
+    // Spotify sp_dc cookie input dialog
+    if (uiState.showSpotifyCookieDialog) {
+        SpotifyCookieDialog(
+            isValidating = uiState.isSpotifyCookieValidating,
+            errorMessage = uiState.spotifyCookieError,
+            onConnect = viewModel::onConnectSpotifyWithCookie,
+            onDismiss = viewModel::onDismissSpotifyCookieDialog,
+        )
     }
 
     // YouTube device-code dialog
@@ -115,14 +100,14 @@ private fun SettingsContent(
             .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        // ── Header ───────────────────────────────────────────────────────
+        // -- Header -----------------------------------------------------------
         Text(
             text = "Settings",
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
 
-        // ── Accounts section ─────────────────────────────────────────────
+        // -- Accounts section -------------------------------------------------
         SectionHeader(title = "Accounts")
 
         AccountConnectionCard(
@@ -143,7 +128,7 @@ private fun SettingsContent(
             onDisconnect = onDisconnectYouTube,
         )
 
-        // ── Audio Quality section ────────────────────────────────────────
+        // -- Audio Quality section --------------------------------------------
         SectionHeader(title = "Audio Quality")
 
         GlassCard {
@@ -196,7 +181,7 @@ private fun SettingsContent(
             }
         }
 
-        // ── Storage section ──────────────────────────────────────────────
+        // -- Storage section --------------------------------------------------
         SectionHeader(title = "Storage")
 
         GlassCard {
@@ -207,7 +192,7 @@ private fun SettingsContent(
             }
         }
 
-        // ── About section ────────────────────────────────────────────────
+        // -- About section ----------------------------------------------------
         SectionHeader(title = "About")
 
         GlassCard {
