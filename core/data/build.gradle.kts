@@ -6,6 +6,11 @@ plugins {
 android {
     namespace = "com.stash.core.data"
 }
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.incremental", "true")
+    arg("room.generateKotlin", "true")
+}
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:common"))
