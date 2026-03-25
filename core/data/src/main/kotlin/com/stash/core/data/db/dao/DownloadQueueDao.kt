@@ -1,14 +1,79 @@
 package com.stash.core.data.db.dao
 
 import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.stash.core.data.db.entity.DownloadQueueEntity
+import com.stash.core.model.DownloadStatus
 import kotlinx.coroutines.flow.Flow
 
-/** Data-access object for [DownloadQueueEntity]. */
+/**
+ * Data-access object for [DownloadQueueEntity].
+ *
+ * Manages the download work queue with insert, status updates,
+ * retry tracking, and cleanup operations.
+ */
 @Dao
 interface DownloadQueueDao {
 
+    // ── Inserts ─────────────────────────────────────────────────────────
+
+    /** Insert a single download queue entry. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entry: DownloadQueueEntity): Long
+
+    /** Insert multiple download queue entries. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entries: List<DownloadQueueEntity>): List<Long>
+
+    // ── Queries ─────────────────────────────────────────────────────────
+
+    /** Reactive stream of pending downloads, ordered by creation time. */
     @Query("SELECT * FROM download_queue WHERE status = 'PENDING' ORDER BY created_at ASC")
-    fun observePending(): Flow<List<DownloadQueueEntity>>
+    fun getPending(): Flow<List<DownloadQueueEntity>>
+
+    /** Reactive stream of downloads filtered by [status]. */
+    @Query("SELECT * FROM download_queue WHERE status = :status ORDER BY created_at ASC")
+    fun getByStatus(status: DownloadStatus): Flow<List<DownloadQueueEntity>>
+
+    /** Find a download queue entry by the associated track ID. */
+    @Query("SELECT * FROM download_queue WHERE track_id = :trackId LIMIT 1")
+    suspend fun getByTrackId(trackId: Long): DownloadQueueEntity?
+
+    // ── Updates ─────────────────────────────────────────────────────────
+
+    /**
+     * Update the status of a download queue entry.
+     *
+     * @param id            Row ID of the queue entry.
+     * @param status        New [DownloadStatus].
+     * @param errorMessage  Error description when status is FAILED, null otherwise.
+     * @param completedAt   Epoch-millis timestamp when the download finished, or null.
+     */
+    @Query(
+        """
+        UPDATE download_queue
+        SET status = :status,
+            error_message = :errorMessage,
+            completed_at = :completedAt
+        WHERE id = :id
+        """
+    )
+    suspend fun updateStatus(
+        id: Long,
+        status: DownloadStatus,
+        errorMessage: String? = null,
+        completedAt: Long? = null,
+    )
+
+    /** Increment the retry count for a download queue entry. */
+    @Query("UPDATE download_queue SET retry_count = retry_count + 1 WHERE id = :id")
+    suspend fun incrementRetryCount(id: Long)
+
+    // ── Cleanup ─────────────────────────────────────────────────────────
+
+    /** Delete all completed download entries to free up space. */
+    @Query("DELETE FROM download_queue WHERE status = 'COMPLETED'")
+    suspend fun deleteCompleted()
 }

@@ -1,14 +1,104 @@
 package com.stash.core.data.db.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
 import com.stash.core.data.db.entity.PlaylistEntity
+import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.model.MusicSource
 import kotlinx.coroutines.flow.Flow
 
-/** Data-access object for [PlaylistEntity]. */
+/**
+ * Projection holding a playlist together with its associated tracks.
+ *
+ * @property playlist  The playlist metadata.
+ * @property tracks    Ordered list of tracks belonging to the playlist.
+ */
+data class PlaylistWithTracks(
+    val playlist: PlaylistEntity,
+    val tracks: List<TrackEntity>,
+)
+
+/**
+ * Data-access object for [PlaylistEntity] and the
+ * [PlaylistTrackCrossRef] join table.
+ */
 @Dao
 interface PlaylistDao {
 
+    // ── Inserts ─────────────────────────────────────────────────────────
+
+    /** Insert a playlist, replacing on conflict (e.g. same source_id). */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(playlist: PlaylistEntity): Long
+
+    /** Insert a cross-reference linking a track to a playlist. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCrossRef(crossRef: PlaylistTrackCrossRef)
+
+    // ── Update / Delete ─────────────────────────────────────────────────
+
+    /** Update an existing playlist entity. */
+    @Update
+    suspend fun update(playlist: PlaylistEntity)
+
+    /** Delete a playlist entity. Cascades to playlist_tracks rows. */
+    @Delete
+    suspend fun delete(playlist: PlaylistEntity)
+
+    // ── List queries ────────────────────────────────────────────────────
+
+    /** All active (non-hidden) playlists ordered alphabetically. */
     @Query("SELECT * FROM playlists WHERE is_active = 1 ORDER BY name ASC")
-    fun observeActive(): Flow<List<PlaylistEntity>>
+    fun getAllActive(): Flow<List<PlaylistEntity>>
+
+    /** All playlists from a specific music source. */
+    @Query("SELECT * FROM playlists WHERE source = :source ORDER BY name ASC")
+    fun getBySource(source: MusicSource): Flow<List<PlaylistEntity>>
+
+    // ── Single-item lookups ─────────────────────────────────────────────
+
+    /** Find a playlist by primary key. */
+    @Query("SELECT * FROM playlists WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): PlaylistEntity?
+
+    // ── Playlist with tracks ────────────────────────────────────────────
+
+    /**
+     * Load a playlist alongside all its non-removed tracks.
+     *
+     * Runs inside a single transaction to guarantee a consistent snapshot.
+     */
+    @Transaction
+    suspend fun getPlaylistWithTracks(playlistId: Long): PlaylistWithTracks? {
+        val playlist = getById(playlistId) ?: return null
+        val tracks = getTracksForPlaylist(playlistId)
+        return PlaylistWithTracks(playlist, tracks)
+    }
+
+    /** Internal helper: fetch ordered tracks for a playlist. */
+    @Query(
+        """
+        SELECT t.* FROM tracks t
+        INNER JOIN playlist_tracks pt ON t.id = pt.track_id
+        WHERE pt.playlist_id = :playlistId AND pt.removed_at IS NULL
+        ORDER BY pt.position ASC
+        """
+    )
+    suspend fun getTracksForPlaylist(playlistId: Long): List<TrackEntity>
+
+    // ── Metadata updates ────────────────────────────────────────────────
+
+    /** Update the cached track count for a playlist. */
+    @Query("UPDATE playlists SET track_count = :count WHERE id = :playlistId")
+    suspend fun updateTrackCount(playlistId: Long, count: Int)
+
+    /** Mark a playlist as last synced at the given epoch-millis timestamp. */
+    @Query("UPDATE playlists SET last_synced = :timestamp WHERE id = :playlistId")
+    suspend fun updateLastSynced(playlistId: Long, timestamp: Long)
 }
