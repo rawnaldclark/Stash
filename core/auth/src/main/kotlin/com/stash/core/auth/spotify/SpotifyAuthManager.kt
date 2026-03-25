@@ -8,6 +8,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,6 +22,9 @@ import javax.inject.Singleton
  * access token. The sp_dc cookie itself acts as the long-lived credential (stored in
  * the [ServiceToken.refreshToken] field) and can be reused to obtain fresh access
  * tokens whenever they expire.
+ *
+ * As of 2025, Spotify's token endpoint requires a TOTP code derived from a fixed
+ * cipher. This manager handles TOTP generation automatically via [SpotifyTotp].
  *
  * Typical usage:
  * 1. The user extracts their sp_dc cookie from their browser's DevTools.
@@ -40,6 +46,9 @@ class SpotifyAuthManager @Inject constructor(
      * 2. Open DevTools (F12) > Application > Cookies
      * 3. Copy the value of the "sp_dc" cookie
      *
+     * This method fetches Spotify's server time, generates the required TOTP code,
+     * and exchanges the cookie for a short-lived access token.
+     *
      * @param spDcCookie The raw sp_dc cookie value from the user's browser.
      * @return A [ServiceToken] on success (with the sp_dc stored as the refresh token),
      *         or null if the cookie is invalid, expired, or the request fails.
@@ -47,13 +56,31 @@ class SpotifyAuthManager @Inject constructor(
     suspend fun getAccessToken(spDcCookie: String): ServiceToken? {
         return withContext(Dispatchers.IO) {
             try {
+                // Step 1: Fetch Spotify's server time to avoid clock-skew TOTP failures
+                val serverTime = getServerTime() ?: (System.currentTimeMillis() / 1000)
+
+                // Step 2: Generate the TOTP code required by the token endpoint
+                val totp = SpotifyTotp.generate(serverTime)
+
+                // Step 3: Build the token request with TOTP query parameters
+                val url = "${SpotifyAuthConfig.TOKEN_ENDPOINT}" +
+                    "?reason=transport" +
+                    "&productType=web-player" +
+                    "&totp=$totp" +
+                    "&totpServer=$totp" +
+                    "&totpVer=${SpotifyAuthConfig.TOTP_VERSION}"
+
                 val request = Request.Builder()
-                    .url(SpotifyAuthConfig.ACCESS_TOKEN_ENDPOINT)
+                    .url(url)
                     .header("Cookie", "${SpotifyAuthConfig.SP_DC_COOKIE_NAME}=$spDcCookie")
                     .header(
                         "User-Agent",
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" +
+                            " (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
                     )
+                    .header("Accept", "application/json")
+                    .header("App-Platform", "WebPlayer")
+                    .header("Referer", "https://open.spotify.com/")
                     .get()
                     .build()
 
@@ -91,13 +118,41 @@ class SpotifyAuthManager @Inject constructor(
     suspend fun refreshAccessToken(spDcCookie: String): ServiceToken? {
         return getAccessToken(spDcCookie)
     }
+
+    /**
+     * Fetch Spotify's server time from the HTTP Date header.
+     *
+     * Using the server's time rather than the device clock prevents TOTP failures
+     * caused by clock skew on the user's device.
+     *
+     * @return The server time in epoch seconds, or null if the request fails.
+     */
+    private fun getServerTime(): Long? {
+        return try {
+            val request = Request.Builder()
+                .url("https://open.spotify.com/")
+                .head()
+                .header("User-Agent", "Mozilla/5.0")
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            val dateHeader = response.header("Date") ?: return null
+            response.close()
+
+            val sdf = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US)
+            sdf.timeZone = TimeZone.getTimeZone("GMT")
+            val date = sdf.parse(dateHeader) ?: return null
+            date.time / 1000
+        } catch (_: Exception) {
+            null // Fall back to local time in the caller
+        }
+    }
 }
 
 /**
- * JSON shape returned by Spotify's `/get_access_token` endpoint.
+ * JSON shape returned by Spotify's `/api/token` endpoint.
  *
- * When a valid sp_dc cookie is provided, the endpoint returns a non-anonymous
- * access token with its expiration timestamp in milliseconds.
+ * When a valid sp_dc cookie and TOTP code are provided, the endpoint returns a
+ * non-anonymous access token with its expiration timestamp in milliseconds.
  */
 @Serializable
 private data class SpDcTokenResponse(
