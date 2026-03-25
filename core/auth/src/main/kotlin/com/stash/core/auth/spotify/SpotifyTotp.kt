@@ -16,8 +16,12 @@ import kotlin.math.pow
  * 1. XOR each cipher byte with a positional key: `(index % 33) + 9`
  * 2. Concatenate the string representations of the transformed integers
  * 3. Hex-encode the concatenated string's UTF-8 bytes
- * 4. Treat the hex string as a Base32-encoded value and decode it to get the HMAC secret
+ * 4. Decode the hex string back to raw bytes — these bytes ARE the HMAC secret
  * 5. Standard HMAC-SHA1 TOTP with 6 digits and a 30-second interval
+ *
+ * Note: The Python reference implementations (spotcast, spotify_monitor) pass the hex
+ * string through `b32encode` and then into pyotp, which internally `b32decode`s it.
+ * These two operations cancel out — the actual HMAC key is simply `bytes.fromhex(hexStr)`.
  */
 object SpotifyTotp {
 
@@ -52,8 +56,16 @@ object SpotifyTotp {
             String.format("%02x", it)
         }
 
-        // Step 4: Base32-decode the hex string to produce the HMAC secret
-        return base32Decode(hexStr.uppercase())
+        // Step 4: Decode the hex string to raw bytes — this IS the HMAC secret.
+        //
+        // The Python implementations do b32encode(bytes.fromhex(hex_str)) and pass the
+        // result to pyotp.TOTP(), which internally b32-decodes it. The encode/decode
+        // round-trip cancels out, so the real HMAC key is just bytes.fromhex(hex_str).
+        //
+        // The previous Kotlin code incorrectly treated the hex string as a Base32-encoded
+        // value and tried to Base32-decode it. Hex digits '0', '1', '8', '9' are not in
+        // the Base32 alphabet and were silently dropped, producing a wrong HMAC key.
+        return hexStringToByteArray(hexStr)
     }
 
     /**
@@ -83,31 +95,18 @@ object SpotifyTotp {
     }
 
     /**
-     * Decode a Base32-encoded string (RFC 4648) into raw bytes.
+     * Convert a hex string to a byte array.
      *
-     * @param input The Base32 string (padding characters are stripped automatically).
+     * @param hex The hex string (must have even length, lowercase or uppercase).
      * @return The decoded byte array.
      */
-    private fun base32Decode(input: String): ByteArray {
-        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-        val cleanInput = input.replace("=", "").uppercase()
-
-        val output = mutableListOf<Byte>()
-        var buffer = 0
-        var bitsLeft = 0
-
-        for (char in cleanInput) {
-            val value = alphabet.indexOf(char)
-            if (value < 0) continue
-            buffer = (buffer shl 5) or value
-            bitsLeft += 5
-            if (bitsLeft >= 8) {
-                bitsLeft -= 8
-                output.add((buffer shr bitsLeft).toByte())
-                buffer = buffer and ((1 shl bitsLeft) - 1)
-            }
+    private fun hexStringToByteArray(hex: String): ByteArray {
+        val len = hex.length
+        val data = ByteArray(len / 2)
+        for (i in 0 until len step 2) {
+            data[i / 2] = ((Character.digit(hex[i], 16) shl 4) +
+                Character.digit(hex[i + 1], 16)).toByte()
         }
-
-        return output.toByteArray()
+        return data
     }
 }
