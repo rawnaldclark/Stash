@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.model.QualityTier
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -21,24 +22,25 @@ private val Context.qualityDataStore: DataStore<Preferences> by preferencesDataS
 /**
  * Persists the user's preferred audio quality tier via DataStore.
  *
- * Exposes the current selection as a [Flow] and provides a suspend function
- * to update it. The tier is stored by its enum name so it survives across
- * app versions even if the ordinal changes.
+ * Implements [QualityPreference] so feature modules can depend on the
+ * abstraction in `:core:data` without pulling in `:data:download`.
+ * The tier is stored by its enum name so it survives across app versions
+ * even if the ordinal changes.
  */
 @Singleton
 class QualityPreferencesManager @Inject constructor(
     @ApplicationContext private val context: Context,
-) {
+) : QualityPreference {
     private val qualityKey = stringPreferencesKey("quality_tier")
 
     /** Emits the current [QualityTier], defaulting to [QualityTier.BEST]. */
-    val qualityTier: Flow<QualityTier> = context.qualityDataStore.data.map { prefs ->
+    override val qualityTier: Flow<QualityTier> = context.qualityDataStore.data.map { prefs ->
         val name = prefs[qualityKey]
         name?.let { runCatching { QualityTier.valueOf(it) }.getOrNull() } ?: QualityTier.BEST
     }
 
     /** Persists the selected [tier]. */
-    suspend fun setQualityTier(tier: QualityTier) {
+    override suspend fun setQualityTier(tier: QualityTier) {
         context.qualityDataStore.edit { prefs ->
             prefs[qualityKey] = tier.name
         }

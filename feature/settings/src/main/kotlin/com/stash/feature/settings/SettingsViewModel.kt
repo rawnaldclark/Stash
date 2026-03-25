@@ -9,6 +9,7 @@ import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.UserInfo
 import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.core.auth.youtube.YouTubeDeviceFlowManager
+import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,6 +35,9 @@ import javax.inject.Inject
  * and library storage stats. The Spotify flow exposes an [AuthorizationRequest] via
  * [spotifyAuthEvent] so the UI can launch it through an ActivityResultLauncher;
  * YouTube auth is fully managed in-process via the device-code grant.
+ *
+ * Audio quality changes are persisted to DataStore via [QualityPreference] so they
+ * survive app restarts and are picked up by the download pipeline.
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -41,6 +45,7 @@ class SettingsViewModel @Inject constructor(
     private val spotifyAuthManager: SpotifyAuthManager,
     private val youTubeDeviceFlowManager: YouTubeDeviceFlowManager,
     private val musicRepository: MusicRepository,
+    private val qualityPreference: QualityPreference,
 ) : ViewModel() {
 
     /** Internal mutable UI state that is combined with token-manager flows. */
@@ -54,20 +59,29 @@ class SettingsViewModel @Inject constructor(
     private var youTubePollingJob: Job? = null
 
     /**
-     * The main UI state, combining reactive auth states from [TokenManager] with
-     * local UI state (quality, dialog visibility, device code).
+     * The main UI state, combining reactive auth states from [TokenManager],
+     * the persisted quality tier, and local UI state.
      */
     val uiState: StateFlow<SettingsUiState> = combine(
         tokenManager.spotifyAuthState,
         tokenManager.youTubeAuthState,
         musicRepository.getTrackCount(),
         musicRepository.getTotalStorageBytes(),
+        qualityPreference.qualityTier,
         _localState,
-    ) { spotifyAuth, youTubeAuth, trackCount, storageBytes, local ->
+    ) { values ->
+        @Suppress("UNCHECKED_CAST")
+        val spotifyAuth = values[0] as AuthState
+        val youTubeAuth = values[1] as AuthState
+        val trackCount = values[2] as Int
+        val storageBytes = values[3] as Long
+        val quality = values[4] as QualityTier
+        val local = values[5] as LocalState
+
         SettingsUiState(
             spotifyAuthState = spotifyAuth,
             youTubeAuthState = youTubeAuth,
-            audioQuality = local.audioQuality,
+            audioQuality = quality,
             totalStorageBytes = storageBytes,
             totalTracks = trackCount,
             deviceCodeState = local.deviceCodeState,
@@ -200,22 +214,24 @@ class SettingsViewModel @Inject constructor(
     // ── Quality ──────────────────────────────────────────────────────────
 
     /**
-     * Updates the preferred audio quality tier.
+     * Updates the preferred audio quality tier and persists it to DataStore.
      *
      * @param tier The new [QualityTier] to use for future downloads.
      */
     fun onQualityChanged(tier: QualityTier) {
-        _localState.update { it.copy(audioQuality = tier) }
+        viewModelScope.launch {
+            qualityPreference.setQualityTier(tier)
+        }
     }
 
     // ── Internal state ───────────────────────────────────────────────────
 
     /**
      * Local (non-persisted) state that is combined with reactive flows from
-     * [TokenManager] and [MusicRepository] to produce [SettingsUiState].
+     * [TokenManager], [MusicRepository], and [QualityPreference] to produce
+     * [SettingsUiState].
      */
     private data class LocalState(
-        val audioQuality: QualityTier = QualityTier.BEST,
         val deviceCodeState: com.stash.core.auth.model.DeviceCodeState? = null,
         val showYouTubeDialog: Boolean = false,
     )

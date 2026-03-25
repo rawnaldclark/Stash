@@ -125,6 +125,26 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getById(trackId: Long): TrackEntity?
 
+    // ── Download tracking ────────────────────────────────────────────────
+
+    /**
+     * Atomically marks a track as downloaded and records its file path and size.
+     *
+     * @param trackId       Primary key of the track.
+     * @param filePath      Absolute path to the downloaded audio file on disk.
+     * @param fileSizeBytes Size of the downloaded file in bytes.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET is_downloaded = 1,
+            file_path = :filePath,
+            file_size_bytes = :fileSizeBytes
+        WHERE id = :trackId
+        """
+    )
+    suspend fun markAsDownloaded(trackId: Long, filePath: String, fileSizeBytes: Long)
+
     // ── Play tracking ───────────────────────────────────────────────────
 
     /** Atomically increment [play_count] for the given track. */

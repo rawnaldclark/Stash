@@ -186,7 +186,7 @@ private fun SettingsContent(
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
-                                text = "${tier.bitrateKbps} kbps",
+                                text = "${tier.bitrateKbps} kbps  ~${tier.sizeMbPerMinute} MB/min",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

@@ -10,12 +10,15 @@ import androidx.work.workDataOf
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncStateManager
+import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.SyncState
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import java.io.File
 
 /**
  * Third worker in the sync chain. Downloads new tracks discovered by [DiffWorker].
@@ -23,8 +26,8 @@ import dagger.assisted.AssistedInject
  * Promotes itself to a foreground service with an ongoing progress notification
  * so the system does not kill the work during lengthy downloads.
  *
- * NOTE: Actual yt-dlp download integration is deferred to Phase 6. For now
- * this worker marks each queued track as COMPLETED to validate the chain.
+ * Each track is downloaded through the [TrackDownloader] abstraction which
+ * delegates to the full yt-dlp pipeline (search, download, tag, organize).
  *
  * Outputs [KEY_SYNC_ID], [KEY_DOWNLOADED], and [KEY_FAILED] counts.
  */
@@ -37,6 +40,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val syncHistoryDao: SyncHistoryDao,
     private val syncStateManager: SyncStateManager,
     private val syncNotificationManager: SyncNotificationManager,
+    private val trackDownloader: TrackDownloader,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -77,6 +81,7 @@ class TrackDownloadWorker @AssistedInject constructor(
 
             var downloadedCount = 0
             var failedCount = 0
+            var totalBytesDownloaded = 0L
 
             for ((index, queueItem) in pendingItems.withIndex()) {
                 try {
@@ -86,22 +91,62 @@ class TrackDownloadWorker @AssistedInject constructor(
                         status = DownloadStatus.IN_PROGRESS,
                     )
 
-                    // TODO Phase 6: Actual yt-dlp download.
-                    // For now, mark as completed to validate the worker chain.
-                    downloadQueueDao.updateStatus(
-                        id = queueItem.id,
-                        status = DownloadStatus.COMPLETED,
-                        completedAt = System.currentTimeMillis(),
-                    )
-
-                    // Mark the track as downloaded in the tracks table.
-                    trackDao.getById(queueItem.trackId)?.let { track ->
-                        trackDao.update(track.copy(isDownloaded = true))
+                    // Resolve the track entity to a domain model for the downloader.
+                    val trackEntity = trackDao.getById(queueItem.trackId)
+                    if (trackEntity == null) {
+                        Log.w(TAG, "Track ${queueItem.trackId} not found in DB, skipping")
+                        downloadQueueDao.updateStatus(
+                            id = queueItem.id,
+                            status = DownloadStatus.FAILED,
+                            errorMessage = "Track not found in database",
+                        )
+                        failedCount++
+                        continue
                     }
 
-                    downloadedCount++
+                    val track = trackEntity.toDomain()
+
+                    // Download through the full pipeline (search -> download -> tag -> organize).
+                    val filePath = trackDownloader.downloadTrack(
+                        track = track,
+                        preResolvedUrl = queueItem.youtubeUrl,
+                    )
+
+                    if (filePath != null) {
+                        // Determine file size for storage tracking.
+                        val fileSize = try {
+                            File(filePath).length()
+                        } catch (_: Exception) {
+                            0L
+                        }
+
+                        // Mark the track as downloaded in the tracks table.
+                        trackDao.markAsDownloaded(
+                            trackId = queueItem.trackId,
+                            filePath = filePath,
+                            fileSizeBytes = fileSize,
+                        )
+
+                        // Mark the queue entry as completed.
+                        downloadQueueDao.updateStatus(
+                            id = queueItem.id,
+                            status = DownloadStatus.COMPLETED,
+                            completedAt = System.currentTimeMillis(),
+                        )
+
+                        totalBytesDownloaded += fileSize
+                        downloadedCount++
+                    } else {
+                        // Download pipeline returned null — track was unmatched or failed.
+                        downloadQueueDao.updateStatus(
+                            id = queueItem.id,
+                            status = DownloadStatus.FAILED,
+                            errorMessage = "Download pipeline returned no file",
+                        )
+                        failedCount++
+                    }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to process track ${queueItem.trackId}", e)
+                    Log.e(TAG, "Failed to download track ${queueItem.trackId}", e)
                     downloadQueueDao.updateStatus(
                         id = queueItem.id,
                         status = DownloadStatus.FAILED,
@@ -129,7 +174,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                 newTracksFound = total,
                 tracksDownloaded = downloadedCount,
                 tracksFailed = failedCount,
-                bytesDownloaded = 0, // Phase 6 will track actual bytes.
+                bytesDownloaded = totalBytesDownloaded,
             )
 
             return Result.success(
