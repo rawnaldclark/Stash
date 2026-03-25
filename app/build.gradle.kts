@@ -69,5 +69,9 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
     implementation(libs.hilt.navigation.compose)
+    // Hilt WorkManager integration: provides HiltWorkerFactory for @HiltWorker classes.
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
+    implementation(libs.work.runtime.ktx)
     implementation(libs.kotlinx.serialization.json)
 }
