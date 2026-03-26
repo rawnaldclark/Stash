@@ -176,12 +176,48 @@ class SpotifyApiClient @Inject constructor(
     // ── Internal ─────────────────────────────────────────────────────────
 
     /**
+     * Builds a GET request with all required Spotify Web Player headers.
+     *
+     * The sp_dc-derived access token is a web player session token, so we must
+     * present headers that identify the request as coming from the official
+     * Spotify Web Player (open.spotify.com). Without these headers the standard
+     * Web API endpoints reject sp_dc tokens with HTTP 429/403.
+     *
+     * @param url         The full request URL including query parameters.
+     * @param accessToken A valid Bearer access token obtained from the sp_dc cookie.
+     * @return A fully constructed [Request] ready for execution.
+     */
+    private fun buildRequest(url: String, accessToken: String): Request {
+        return Request.Builder()
+            .url(url)
+            .get()
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", "application/json")
+            .header("App-Platform", "WebPlayer")
+            .header("Origin", "https://open.spotify.com")
+            .header("Referer", "https://open.spotify.com/")
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+            )
+            .header("spotify-app-version", "1.2.52.442.g0e1a5ca5")
+            .build()
+    }
+
+    /**
      * Executes an authenticated GET request against the Spotify API with
-     * automatic retry handling for HTTP 429 (Too Many Requests).
+     * automatic retry handling for HTTP 429 (Too Many Requests) and automatic
+     * token refresh on HTTP 401 (Unauthorized).
      *
      * On a 429 response the method reads the `Retry-After` header (seconds),
-     * waits that duration, and retries up to [MAX_RETRIES] times. A small
+     * waits that duration, and retries up to [MAX_RETRIES] times. On a 401
+     * response the method forces a token refresh and retries once. A small
      * inter-request delay is also enforced to prevent burst-triggering rate limits.
+     *
+     * All requests include Web Player headers (Origin, Referer, App-Platform,
+     * User-Agent, spotify-app-version) so that sp_dc-derived tokens are accepted
+     * by the Spotify API gateway.
      *
      * @param url The full request URL including query parameters.
      * @return The response body as a String, or null if the access token is unavailable.
@@ -189,7 +225,8 @@ class SpotifyApiClient @Inject constructor(
      *         code or if all retry attempts for a 429 are exhausted.
      */
     private suspend fun executeGet(url: String): String? {
-        val accessToken = tokenManager.getSpotifyAccessToken() ?: return null
+        var accessToken = tokenManager.getSpotifyAccessToken() ?: return null
+        var hasRetriedAuth = false
 
         // Enforce minimum spacing between consecutive requests.
         val elapsed = System.currentTimeMillis() - lastRequestTimeMs
@@ -199,11 +236,7 @@ class SpotifyApiClient @Inject constructor(
 
         var lastResponseCode = 0
         for (attempt in 0..MAX_RETRIES) {
-            val request = Request.Builder()
-                .url(url)
-                .get()
-                .header("Authorization", "Bearer $accessToken")
-                .build()
+            val request = buildRequest(url, accessToken)
 
             val response = okHttpClient.newCall(request).execute()
             lastRequestTimeMs = System.currentTimeMillis()
@@ -211,6 +244,19 @@ class SpotifyApiClient @Inject constructor(
 
             if (response.isSuccessful) {
                 return response.body?.string()
+            }
+
+            // Handle 401 by forcing a token refresh (once).
+            if (response.code == 401 && !hasRetriedAuth) {
+                hasRetriedAuth = true
+                response.body?.close()
+                Log.w(TAG, "401 Unauthorized on $url, forcing token refresh")
+                val refreshedToken = tokenManager.getSpotifyAccessToken()
+                if (refreshedToken != null && refreshedToken != accessToken) {
+                    accessToken = refreshedToken
+                    continue
+                }
+                // Refresh returned the same token or null -- fall through to throw
             }
 
             // Handle 429 rate limiting with Retry-After header.
@@ -231,7 +277,7 @@ class SpotifyApiClient @Inject constructor(
                 continue
             }
 
-            // Non-429 error or final 429 attempt -- close and throw.
+            // Non-recoverable error or final retry attempt -- close and throw.
             response.body?.close()
             throw SpotifyApiException(
                 httpCode = response.code,
