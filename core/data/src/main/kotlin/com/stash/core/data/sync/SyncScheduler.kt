@@ -132,6 +132,10 @@ class SyncScheduler @Inject constructor(
     private fun enqueueChain(initialDelayMs: Long, constraints: Constraints) {
         val fetchWork = OneTimeWorkRequestBuilder<PlaylistFetchWorker>()
             .setConstraints(constraints)
+            .setBackoffCriteria(
+                androidx.work.BackoffPolicy.EXPONENTIAL,
+                30, TimeUnit.SECONDS,
+            )
             .apply {
                 if (initialDelayMs > 0) {
                     setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)

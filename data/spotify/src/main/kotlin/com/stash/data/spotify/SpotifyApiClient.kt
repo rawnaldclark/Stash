@@ -185,16 +185,39 @@ class SpotifyApiClient @Inject constructor(
             val url = "$WEB_API_BASE/users/$username/playlists?limit=$limit&offset=$offset"
             Log.d(TAG, "getUserPlaylists: GET $url")
 
-            val request = Request.Builder()
-                .url(url)
-                .get()
-                .header("Authorization", "Bearer $token")
-                .header("Accept", "application/json")
-                .build()
+            // Retry with backoff for 429
+            var lastResponse: okhttp3.Response? = null
+            for (attempt in 0..3) {
+                if (attempt > 0) {
+                    val waitMs = (attempt * 2000L)
+                    Log.d(TAG, "getUserPlaylists: retry attempt $attempt, waiting ${waitMs}ms")
+                    kotlinx.coroutines.delay(waitMs)
+                }
 
-            val response = okHttpClient.newCall(request).execute()
+                val request = Request.Builder()
+                    .url(url)
+                    .get()
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json")
+                    .build()
+
+                lastResponse = okHttpClient.newCall(request).execute()
+                Log.d(TAG, "getUserPlaylists: attempt $attempt HTTP ${lastResponse.code}")
+
+                if (lastResponse.isSuccessful) break
+                if (lastResponse.code == 429) {
+                    val retryAfter = lastResponse.header("Retry-After")?.toLongOrNull() ?: 2L
+                    Log.w(TAG, "getUserPlaylists: 429, Retry-After=$retryAfter")
+                    lastResponse.body?.close()
+                    kotlinx.coroutines.delay(retryAfter * 1000)
+                    continue
+                }
+                break // non-429 error, don't retry
+            }
+
+            val response = lastResponse ?: return@withContext emptyList()
             val responseBody = response.body?.string()
-            Log.d(TAG, "getUserPlaylists: HTTP ${response.code}, body length=${responseBody?.length ?: 0}")
+            Log.d(TAG, "getUserPlaylists: final HTTP ${response.code}, body length=${responseBody?.length ?: 0}")
 
             if (!response.isSuccessful || responseBody == null) {
                 Log.e(TAG, "getUserPlaylists: failed HTTP ${response.code}, body=${responseBody?.take(300)}")
