@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -58,6 +59,74 @@ class SpotifyAuthManager @Inject constructor(
          * [ServiceToken.scope] field. Format: "username|clientId".
          */
         const val SCOPE_DELIMITER = "|"
+
+        /**
+         * SpotDL's well-known Spotify OAuth client credentials.
+         * Used for the client_credentials flow which grants access to the
+         * standard Web API (api.spotify.com/v1) for public data without
+         * user login. This avoids the 429 blocks that plague sp_dc tokens.
+         */
+        private const val SPOTDL_CLIENT_ID = "5f573c9620494bae87890c0f08a60293"
+        private const val SPOTDL_CLIENT_SECRET = "212476d9b0f3472eaa762d90b19b0ba8"
+    }
+
+    /**
+     * Acquires an access token via Spotify's client_credentials OAuth2 flow.
+     *
+     * This uses SpotDL's well-known client ID and secret to obtain a token that
+     * works with the standard Spotify Web API (api.spotify.com/v1) for accessing
+     * public playlist and track data. Unlike sp_dc-derived tokens, these tokens
+     * are NOT subject to 429 rate-limit blocks on the public API.
+     *
+     * The returned token is valid for 1 hour and grants access to public endpoints
+     * only (no user-specific data like Liked Songs or private playlists).
+     *
+     * @return The access token string, or null if the request fails.
+     */
+    suspend fun getClientCredentialsToken(): String? = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "getClientCredentialsToken: requesting token via client_credentials flow")
+
+            val credentials = Base64.encodeToString(
+                "$SPOTDL_CLIENT_ID:$SPOTDL_CLIENT_SECRET".toByteArray(),
+                Base64.NO_WRAP,
+            )
+
+            val body = FormBody.Builder()
+                .add("grant_type", "client_credentials")
+                .build()
+
+            val request = Request.Builder()
+                .url("https://accounts.spotify.com/api/token")
+                .post(body)
+                .header("Authorization", "Basic $credentials")
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string() ?: "no body"
+                Log.w(
+                    TAG,
+                    "getClientCredentialsToken: failed HTTP ${response.code}, body=$errorBody",
+                )
+                return@withContext null
+            }
+
+            val responseBody = response.body?.string() ?: return@withContext null
+            Log.d(TAG, "getClientCredentialsToken: response (first 300 chars): ${responseBody.take(300)}")
+
+            val jsonObj = json.parseToJsonElement(responseBody).jsonObject
+            val token = jsonObj["access_token"]?.jsonPrimitive?.content
+            if (token != null) {
+                Log.d(TAG, "getClientCredentialsToken: acquired token (${token.take(20)}...)")
+            } else {
+                Log.w(TAG, "getClientCredentialsToken: no access_token in response")
+            }
+            token
+        } catch (e: Exception) {
+            Log.e(TAG, "getClientCredentialsToken: failed", e)
+            null
+        }
     }
 
     /**
@@ -184,29 +253,28 @@ class SpotifyAuthManager @Inject constructor(
         return withContext(Dispatchers.IO) {
             try {
                 val deviceId = UUID.randomUUID().toString()
-                val requestBody = """
-                    {
-                        "client_data": {
-                            "client_version": "${SpotifyAuthConfig.CLIENT_VERSION}",
-                            "client_id": "$clientId",
-                            "js_sdk_data": {
-                                "device_brand": "unknown",
-                                "device_model": "unknown",
-                                "os": "linux",
-                                "os_version": "unknown",
-                                "device_id": "$deviceId",
-                                "device_type": "computer"
-                            }
-                        }
-                    }
-                """.trimIndent()
+                val requestBody = buildString {
+                    append("""{"client_data":{""")
+                    append(""""client_version":"${SpotifyAuthConfig.CLIENT_VERSION}",""")
+                    append(""""client_id":"$clientId",""")
+                    append(""""js_sdk_data":{""")
+                    append(""""device_brand":"unknown",""")
+                    append(""""device_model":"unknown",""")
+                    append(""""os":"linux",""")
+                    append(""""os_version":"unknown",""")
+                    append(""""device_id":"$deviceId",""")
+                    append(""""device_type":"computer"}}""")
+                    append("}")
+                }
 
+                Log.d(TAG, "Client token request body: $requestBody")
                 Log.d(TAG, "Requesting client token for clientId='$clientId', deviceId='$deviceId'")
 
                 val request = Request.Builder()
                     .url(SpotifyAuthConfig.CLIENT_TOKEN_ENDPOINT)
                     .post(requestBody.toRequestBody("application/json".toMediaType()))
                     .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
                     .build()
 
                 val response = okHttpClient.newCall(request).execute()

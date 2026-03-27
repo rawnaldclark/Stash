@@ -119,83 +119,120 @@ class PlaylistFetchWorker @AssistedInject constructor(
     /**
      * Fetches Daily Mixes and Liked Songs from Spotify and writes snapshot rows.
      *
-     * @throws SpotifyApiException if the Spotify API returns an unrecoverable error
-     *         (e.g. 429 exhausting all retries). This is intentionally not caught here
-     *         so that [doWork] can return [Result.retry] for transient API failures.
+     * Uses the two-pronged approach:
+     * - Daily Mixes enumeration uses sp_dc/GraphQL (may fail gracefully)
+     * - Track fetching uses client_credentials/Web API (reliable)
+     * - Liked Songs uses sp_dc/GraphQL (may fail gracefully)
+     *
+     * Partial failures are logged but do NOT cause the entire sync to fail.
+     * For example, if Daily Mixes can't be enumerated (sp_dc issue) but
+     * Liked Songs work, the sync still succeeds with whatever data was fetched.
+     *
+     * @throws SpotifyApiException only if a critical, retryable API error occurs
+     *         during track fetching (e.g., client_credentials token endpoint down).
      */
     private suspend fun fetchSpotifyPlaylists(syncId: Long) {
         Log.d(TAG, "fetchSpotifyPlaylists: starting for syncId=$syncId")
-        // Fetch Daily Mixes.
-        val dailyMixes = spotifyApiClient.getDailyMixes()
-        Log.d(TAG, "fetchSpotifyPlaylists: found ${dailyMixes.size} daily mixes")
-        for (mix in dailyMixes) {
-            val mixNumber = Regex("""\d+""").find(mix.name)?.value?.toIntOrNull()
-            val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
-                RemotePlaylistSnapshotEntity(
-                    syncId = syncId,
-                    source = MusicSource.SPOTIFY,
-                    sourcePlaylistId = mix.id,
-                    playlistName = mix.name,
-                    playlistType = PlaylistType.DAILY_MIX,
-                    mixNumber = mixNumber,
-                    trackCount = mix.tracks?.total ?: 0,
-                    artUrl = mix.images?.firstOrNull()?.url,
-                )
-            )
+        var dailyMixCount = 0
+        var likedSongCount = 0
 
-            val tracks = spotifyApiClient.getPlaylistTracks(mix.id)
-            val trackSnapshots = tracks.mapIndexedNotNull { index, item ->
-                val track = item.track ?: return@mapIndexedNotNull null
-                RemoteTrackSnapshotEntity(
-                    syncId = syncId,
-                    snapshotPlaylistId = playlistSnapshotId,
-                    title = track.name,
-                    artist = track.artists.joinToString(", ") { it.name },
-                    album = track.album?.name,
-                    durationMs = track.duration_ms,
-                    spotifyUri = track.uri,
-                    albumArtUrl = track.album?.images?.firstOrNull()?.url,
-                    position = index,
-                )
+        // Fetch Daily Mixes (sp_dc dependent -- may return empty if GraphQL fails).
+        try {
+            val dailyMixes = spotifyApiClient.getDailyMixes()
+            Log.d(TAG, "fetchSpotifyPlaylists: found ${dailyMixes.size} daily mixes")
+
+            for (mix in dailyMixes) {
+                try {
+                    val mixNumber = Regex("""\d+""").find(mix.name)?.value?.toIntOrNull()
+                    val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
+                        RemotePlaylistSnapshotEntity(
+                            syncId = syncId,
+                            source = MusicSource.SPOTIFY,
+                            sourcePlaylistId = mix.id,
+                            playlistName = mix.name,
+                            playlistType = PlaylistType.DAILY_MIX,
+                            mixNumber = mixNumber,
+                            trackCount = mix.tracks?.total ?: 0,
+                            artUrl = mix.images?.firstOrNull()?.url,
+                        )
+                    )
+
+                    // Track fetching uses client_credentials (Prong 1) -- reliable
+                    val tracks = spotifyApiClient.getPlaylistTracks(mix.id)
+                    val trackSnapshots = tracks.mapIndexedNotNull { index, item ->
+                        val track = item.track ?: return@mapIndexedNotNull null
+                        RemoteTrackSnapshotEntity(
+                            syncId = syncId,
+                            snapshotPlaylistId = playlistSnapshotId,
+                            title = track.name,
+                            artist = track.artists.joinToString(", ") { it.name },
+                            album = track.album?.name,
+                            durationMs = track.duration_ms,
+                            spotifyUri = track.uri,
+                            albumArtUrl = track.album?.images?.firstOrNull()?.url,
+                            position = index,
+                        )
+                    }
+                    if (trackSnapshots.isNotEmpty()) {
+                        remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                        dailyMixCount++
+                    }
+                    Log.d(TAG, "fetchSpotifyPlaylists: saved ${trackSnapshots.size} tracks for '${mix.name}'")
+                } catch (e: SpotifyApiException) {
+                    // Re-throw SpotifyApiException so doWork() can decide to retry
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "fetchSpotifyPlaylists: failed to fetch tracks for mix '${mix.name}'", e)
+                    // Continue with next mix rather than aborting
+                }
             }
-            if (trackSnapshots.isNotEmpty()) {
-                remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
-            }
+        } catch (e: SpotifyApiException) {
+            throw e // Let doWork handle retries
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchSpotifyPlaylists: daily mixes enumeration failed (sp_dc issue), continuing", e)
         }
 
-        // Fetch Liked Songs.
-        val likedSongs = spotifyApiClient.getLikedSongs()
-        Log.d(TAG, "fetchSpotifyPlaylists: found ${likedSongs.size} liked songs")
-        if (likedSongs.isNotEmpty()) {
-            val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
-                RemotePlaylistSnapshotEntity(
-                    syncId = syncId,
-                    source = MusicSource.SPOTIFY,
-                    sourcePlaylistId = "spotify_liked_songs",
-                    playlistName = "Liked Songs",
-                    playlistType = PlaylistType.LIKED_SONGS,
-                    trackCount = likedSongs.size,
-                )
-            )
+        // Fetch Liked Songs (sp_dc dependent -- may return empty if GraphQL fails).
+        try {
+            val likedSongs = spotifyApiClient.getLikedSongs()
+            Log.d(TAG, "fetchSpotifyPlaylists: found ${likedSongs.size} liked songs")
 
-            val trackSnapshots = likedSongs.mapIndexedNotNull { index, item ->
-                val track = item.track ?: return@mapIndexedNotNull null
-                RemoteTrackSnapshotEntity(
-                    syncId = syncId,
-                    snapshotPlaylistId = likedPlaylistId,
-                    title = track.name,
-                    artist = track.artists.joinToString(", ") { it.name },
-                    album = track.album?.name,
-                    durationMs = track.duration_ms,
-                    spotifyUri = track.uri,
-                    albumArtUrl = track.album?.images?.firstOrNull()?.url,
-                    position = index,
+            if (likedSongs.isNotEmpty()) {
+                val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
+                    RemotePlaylistSnapshotEntity(
+                        syncId = syncId,
+                        source = MusicSource.SPOTIFY,
+                        sourcePlaylistId = "spotify_liked_songs",
+                        playlistName = "Liked Songs",
+                        playlistType = PlaylistType.LIKED_SONGS,
+                        trackCount = likedSongs.size,
+                    )
                 )
+
+                val trackSnapshots = likedSongs.mapIndexedNotNull { index, item ->
+                    val track = item.track ?: return@mapIndexedNotNull null
+                    RemoteTrackSnapshotEntity(
+                        syncId = syncId,
+                        snapshotPlaylistId = likedPlaylistId,
+                        title = track.name,
+                        artist = track.artists.joinToString(", ") { it.name },
+                        album = track.album?.name,
+                        durationMs = track.duration_ms,
+                        spotifyUri = track.uri,
+                        albumArtUrl = track.album?.images?.firstOrNull()?.url,
+                        position = index,
+                    )
+                }
+                if (trackSnapshots.isNotEmpty()) {
+                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                    likedSongCount = trackSnapshots.size
+                }
             }
-            if (trackSnapshots.isNotEmpty()) {
-                remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchSpotifyPlaylists: liked songs fetch failed (sp_dc issue), continuing", e)
         }
+
+        Log.d(TAG, "fetchSpotifyPlaylists: completed -- $dailyMixCount daily mixes, $likedSongCount liked songs")
     }
 
     /**
