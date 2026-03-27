@@ -6,6 +6,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.text.SimpleDateFormat
@@ -98,7 +100,10 @@ class SpotifyAuthManager @Inject constructor(
                     // Store sp_dc as the "refresh token" -- it IS the long-lived credential
                     refreshToken = spDcCookie,
                     expiresAtEpoch = tokenResponse.accessTokenExpirationTimestampMs / 1000,
-                    scope = "",
+                    // Store the Spotify username in the scope field (unused for sp_dc auth).
+                    // This allows the API client to resolve the user ID without an extra
+                    // API call, which is critical since api.spotify.com/v1/me is rate-limited.
+                    scope = tokenResponse.username,
                 )
             } catch (_: Exception) {
                 null
@@ -117,6 +122,55 @@ class SpotifyAuthManager @Inject constructor(
      */
     suspend fun refreshAccessToken(spDcCookie: String): ServiceToken? {
         return getAccessToken(spDcCookie)
+    }
+
+    /**
+     * Fetches the Spotify user profile using the given access token.
+     *
+     * Makes a single call to api.spotify.com/v1/me using web player headers.
+     * This should be called immediately after obtaining a fresh token, before
+     * any rate limits have been triggered.
+     *
+     * @param accessToken A valid Bearer access token.
+     * @return The Spotify user ID, or null if the request fails.
+     */
+    suspend fun fetchUserId(accessToken: String): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val request = Request.Builder()
+                    .url("https://api.spotify.com/v1/me")
+                    .get()
+                    .header("Authorization", "Bearer $accessToken")
+                    .header("Accept", "application/json")
+                    .header("App-Platform", "WebPlayer")
+                    .header("Origin", "https://open.spotify.com")
+                    .header("Referer", "https://open.spotify.com/")
+                    .header(
+                        "User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" +
+                            " (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+                    )
+                    .header("spotify-app-version", "1.2.52.442.g0e1a5ca5")
+                    .build()
+
+                val response = okHttpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    android.util.Log.w("SpotifyAuthManager", "Profile fetch failed: HTTP ${response.code}")
+                    response.body?.close()
+                    return@withContext null
+                }
+
+                val body = response.body?.string() ?: return@withContext null
+                // Parse just the "id" field from the response.
+                val jsonObj = Json { ignoreUnknownKeys = true }
+                    .parseToJsonElement(body)
+                    .jsonObject
+                jsonObj["id"]?.jsonPrimitive?.content
+            } catch (e: Exception) {
+                android.util.Log.w("SpotifyAuthManager", "Profile fetch exception: ${e.message}")
+                null
+            }
+        }
     }
 
     /**
@@ -160,4 +214,5 @@ private data class SpDcTokenResponse(
     @SerialName("accessTokenExpirationTimestampMs") val accessTokenExpirationTimestampMs: Long = 0,
     @SerialName("isAnonymous") val isAnonymous: Boolean = true,
     @SerialName("clientId") val clientId: String = "",
+    @SerialName("username") val username: String = "",
 )

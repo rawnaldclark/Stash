@@ -3,15 +3,29 @@ package com.stash.data.spotify
 import android.util.Log
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.UserInfo
+import com.stash.data.spotify.model.SpotifyAlbum
+import com.stash.data.spotify.model.SpotifyArtist
+import com.stash.data.spotify.model.SpotifyImage
+import com.stash.data.spotify.model.SpotifyOwner
 import com.stash.data.spotify.model.SpotifyPlaylistItem
 import com.stash.data.spotify.model.SpotifyPlaylistsResponse
 import com.stash.data.spotify.model.SpotifyTrackItem
+import com.stash.data.spotify.model.SpotifyTrackObject
+import com.stash.data.spotify.model.SpotifyTracksRef
 import com.stash.data.spotify.model.SpotifyTracksResponse
 import com.stash.data.spotify.model.SpotifyUser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import kotlinx.serialization.json.longOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -32,15 +46,22 @@ class SpotifyApiException(
 /**
  * High-level client for the Spotify Web API.
  *
- * All methods automatically retrieve a valid access token from [TokenManager]
- * and attach it as a Bearer token in the Authorization header. Requests that
- * receive HTTP 429 (rate limited) are automatically retried up to [MAX_RETRIES]
- * times, respecting the server's `Retry-After` header. A small delay is inserted
- * between consecutive requests to avoid triggering rate limits in the first place.
+ * Uses Spotify's internal spclient endpoints (resolved via apresolve.spotify.com)
+ * for playlist and track operations, since sp_dc-derived web player tokens are
+ * blocked from the public api.spotify.com/v1 playlist endpoints with persistent
+ * HTTP 429 errors (rate limit by design, not by usage).
  *
- * If the token is unavailable the method returns null (or throws). If the API
- * returns a non-recoverable error after retries, a [SpotifyApiException] is thrown
- * so callers can distinguish "no data" from "API failure."
+ * The spclient endpoints are the same ones used by the official Spotify web player
+ * and are designed to work with sp_dc-derived access tokens. They return JSON when
+ * the Accept: application/json header is set.
+ *
+ * Falls back to api.spotify.com/v1 only for the user profile endpoint (/me) which
+ * is lighter and less restricted.
+ *
+ * All methods automatically retrieve a valid access token from [TokenManager]
+ * and attach it as a Bearer token. Requests that receive HTTP 429 are retried
+ * up to [MAX_RETRIES] times respecting the Retry-After header. A small delay is
+ * inserted between consecutive requests to avoid triggering rate limits.
  */
 @Singleton
 class SpotifyApiClient @Inject constructor(
@@ -58,10 +79,21 @@ class SpotifyApiClient @Inject constructor(
         private const val MAX_RETRIES = 3
 
         /** Default wait time (ms) when 429 has no Retry-After header. */
-        private const val DEFAULT_RETRY_AFTER_MS = 1000L
+        private const val DEFAULT_RETRY_AFTER_MS = 5000L
 
         /** Minimum delay (ms) between consecutive API requests to avoid bursts. */
-        private const val INTER_REQUEST_DELAY_MS = 100L
+        private const val INTER_REQUEST_DELAY_MS = 500L
+
+        /**
+         * Extra padding (ms) added on top of the Retry-After value.
+         */
+        private const val RETRY_AFTER_PADDING_MS = 3000L
+
+        /**
+         * URL for resolving spclient access points. Returns JSON with a list
+         * of hostnames:ports that serve the internal Spotify API.
+         */
+        private const val AP_RESOLVE_URL = "https://apresolve.spotify.com/?type=spclient"
 
         private val DAILY_MIX_REGEX = Regex("""Daily Mix \d+""")
     }
@@ -72,30 +104,59 @@ class SpotifyApiClient @Inject constructor(
      */
     private var lastRequestTimeMs = 0L
 
+    /**
+     * Cached spclient base URL, resolved from apresolve.spotify.com.
+     * Lazily populated on first use and reused thereafter.
+     */
+    @Volatile
+    private var spClientBaseUrl: String? = null
+
     // ── Profile ──────────────────────────────────────────────────────────
 
     /**
      * Fetches the current user's Spotify profile.
      *
+     * Tries the public API first; if rate-limited, falls back to extracting
+     * the user ID from the JWT access token.
+     *
      * @return A [UserInfo] with the user's ID, display name, and optional profile image,
-     *         or null if the request fails (e.g. auth expired).
+     *         or null if the request fails.
      */
     suspend fun getCurrentUserProfile(): UserInfo? = withContext(Dispatchers.IO) {
-        val body = executeGet("$BASE_URL/me") ?: return@withContext null
-        val user = json.decodeFromString<SpotifyUser>(body)
+        // Try public API first (may work for profile endpoint).
+        try {
+            val body = executeGet("$BASE_URL/me") ?: return@withContext null
+            val user = json.decodeFromString<SpotifyUser>(body)
+            // Cache the user ID for later spclient calls.
+            cachedUserId = user.id
+            return@withContext UserInfo(
+                id = user.id,
+                displayName = user.display_name ?: user.id,
+                imageUrl = user.images?.firstOrNull()?.url,
+            )
+        } catch (e: SpotifyApiException) {
+            Log.w(TAG, "Public API profile failed (HTTP ${e.httpCode}), trying spclient")
+        }
+
+        // Fallback: resolve user ID via spclient.
+        val userId = resolveUserId() ?: return@withContext null
         UserInfo(
-            id = user.id,
-            displayName = user.display_name ?: user.id,
-            imageUrl = user.images?.firstOrNull()?.url,
+            id = userId,
+            displayName = userId,
+            imageUrl = null,
         )
     }
 
     // ── Playlists ────────────────────────────────────────────────────────
 
     /**
-     * Fetches a page of the current user's playlists.
+     * Fetches the current user's playlists via the spclient rootlist endpoint.
      *
-     * @param limit  Maximum number of playlists to return (1..50, default 50).
+     * The spclient endpoint at /playlist/v2/user/{userId}/rootlist returns the
+     * user's playlist library in JSON format. We parse it and convert to the
+     * same [SpotifyPlaylistItem] model used by the rest of the app.
+     *
+     * @param limit  Maximum number of playlists to return (default 50).
      * @param offset Zero-based index of the first playlist to return.
      * @return List of [SpotifyPlaylistItem].
      * @throws SpotifyApiException if the API request fails after retries.
@@ -104,14 +165,53 @@ class SpotifyApiClient @Inject constructor(
         limit: Int = DEFAULT_LIMIT,
         offset: Int = 0,
     ): List<SpotifyPlaylistItem> = withContext(Dispatchers.IO) {
-        val url = "$BASE_URL/me/playlists?limit=$limit&offset=$offset"
-        val body = executeGet(url)
-            ?: throw SpotifyApiException(0, url, "No access token available for Spotify")
-        json.decodeFromString<SpotifyPlaylistsResponse>(body).items
+        val spClientBase = getSpClientBaseUrl()
+            ?: throw SpotifyApiException(0, "", "Cannot resolve spclient host")
+
+        // Try to resolve user ID for the rootlist endpoint.
+        val userId = resolveUserId()
+        if (userId != null) {
+            val url = "$spClientBase/playlist/v2/user/$userId/rootlist" +
+                "?decorate=revision%2Clength%2Cattributes%2Ctimestamp%2Cowner"
+            Log.d(TAG, "Fetching playlists via spclient rootlist: $url")
+
+            val body = executeGet(url)
+                ?: throw SpotifyApiException(0, url, "No access token available for Spotify")
+
+            Log.d(TAG, "spclient rootlist response (first 2000 chars): ${body.take(2000)}")
+            return@withContext parseRootlistResponse(body, limit, offset)
+        }
+
+        // Fallback: Try the spclient library endpoint which may not need a user ID.
+        // Also try the spclient equivalent of /v1/me/playlists with different paths.
+        val fallbackUrls = listOf(
+            "$spClientBase/playlist/v2/me/rootlist?decorate=revision%2Clength%2Cattributes%2Ctimestamp%2Cowner",
+            "$spClientBase/your-library/v2/me/playlists?limit=$limit&offset=$offset",
+        )
+
+        for (url in fallbackUrls) {
+            try {
+                Log.d(TAG, "Trying fallback playlist URL: $url")
+                val body = executeGet(url) ?: continue
+                Log.d(TAG, "Fallback response (first 2000 chars): ${body.take(2000)}")
+
+                // Try rootlist format first, then raw list.
+                val rootlistResult = parseRootlistResponse(body, limit, offset)
+                if (rootlistResult.isNotEmpty()) return@withContext rootlistResult
+
+                // Try standard API format.
+                val parsed = json.decodeFromString<SpotifyPlaylistsResponse>(body)
+                if (parsed.items.isNotEmpty()) return@withContext parsed.items
+            } catch (e: Exception) {
+                Log.d(TAG, "Fallback URL $url failed: ${e.message}")
+            }
+        }
+
+        throw SpotifyApiException(0, "", "Cannot fetch playlists: user ID unknown and fallback endpoints failed")
     }
 
     /**
-     * Fetches all tracks in a specific playlist, paginating automatically.
+     * Fetches all tracks in a specific playlist via the spclient endpoint.
      *
      * @param playlistId The Spotify playlist ID.
      * @return List of [SpotifyTrackItem].
@@ -119,22 +219,19 @@ class SpotifyApiClient @Inject constructor(
      */
     suspend fun getPlaylistTracks(playlistId: String): List<SpotifyTrackItem> {
         return withContext(Dispatchers.IO) {
-            val allTracks = mutableListOf<SpotifyTrackItem>()
-            var offset = 0
+            val spClientBase = getSpClientBaseUrl()
+                ?: throw SpotifyApiException(0, "", "Cannot resolve spclient host")
 
-            while (true) {
-                val url = "$BASE_URL/playlists/$playlistId/tracks?limit=$DEFAULT_LIMIT&offset=$offset"
-                val body = executeGet(url)
-                    ?: throw SpotifyApiException(0, url, "No access token available for Spotify")
+            val uri = "spotify:playlist:$playlistId"
+            val url = "$spClientBase/playlist/v2/playlist/$uri"
+            Log.d(TAG, "Fetching playlist tracks via spclient: $url")
 
-                val page = json.decodeFromString<SpotifyTracksResponse>(body)
-                allTracks.addAll(page.items)
+            val body = executeGet(url)
+                ?: throw SpotifyApiException(0, url, "No access token available for Spotify")
 
-                if (allTracks.size >= page.total || page.items.isEmpty()) break
-                offset += page.items.size
-            }
+            Log.d(TAG, "spclient playlist response (first 2000 chars): ${body.take(2000)}")
 
-            allTracks
+            parsePlaylistTracksResponse(body)
         }
     }
 
@@ -158,6 +255,8 @@ class SpotifyApiClient @Inject constructor(
     /**
      * Fetches a page of the user's Liked Songs (saved tracks).
      *
+     * Uses the spclient collection endpoint for liked songs.
+     *
      * @param limit  Maximum number of tracks to return (1..50, default 50).
      * @param offset Zero-based index of the first track to return.
      * @return List of [SpotifyTrackItem].
@@ -167,21 +266,465 @@ class SpotifyApiClient @Inject constructor(
         limit: Int = DEFAULT_LIMIT,
         offset: Int = 0,
     ): List<SpotifyTrackItem> = withContext(Dispatchers.IO) {
-        val url = "$BASE_URL/me/tracks?limit=$limit&offset=$offset"
+        val spClientBase = getSpClientBaseUrl()
+            ?: throw SpotifyApiException(0, "", "Cannot resolve spclient host")
+
+        val url = "$spClientBase/collection/v2/paging?folderUri=spotify%3Acollection%3Atracks" +
+            "&limit=$limit&offset=$offset"
+        Log.d(TAG, "Fetching liked songs via spclient: $url")
+
         val body = executeGet(url)
             ?: throw SpotifyApiException(0, url, "No access token available for Spotify")
-        json.decodeFromString<SpotifyTracksResponse>(body).items
+
+        Log.d(TAG, "spclient liked songs response (first 2000 chars): ${body.take(2000)}")
+
+        parseLikedSongsResponse(body)
     }
 
-    // ── Internal ─────────────────────────────────────────────────────────
+    // ── spclient resolution ──────────────────────────────────────────────
+
+    /**
+     * Resolves an spclient hostname from Spotify's access-point resolver.
+     *
+     * @return The base URL (e.g. "https://gue1-spclient.spotify.com"), or null on failure.
+     */
+    private fun resolveSpClientHost(): String? {
+        return try {
+            val request = Request.Builder()
+                .url(AP_RESOLVE_URL)
+                .get()
+                .header("Accept", "application/json")
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful) {
+                Log.w(TAG, "apresolve returned HTTP ${response.code}")
+                response.body?.close()
+                return null
+            }
+            val body = response.body?.string() ?: return null
+
+            val jsonObj = json.parseToJsonElement(body)
+            val hosts = jsonObj.jsonObject["spclient"]?.jsonArray
+            val firstHost = hosts?.firstOrNull()?.jsonPrimitive?.content ?: return null
+
+            // The host comes as "hostname:port"; strip the :443 for HTTPS.
+            val hostname = firstHost.substringBefore(":")
+            val baseUrl = "https://$hostname"
+            Log.d(TAG, "Resolved spclient base URL: $baseUrl")
+            baseUrl
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to resolve spclient host", e)
+            null
+        }
+    }
+
+    /**
+     * Returns the cached spclient base URL, resolving it on first call.
+     */
+    private fun getSpClientBaseUrl(): String? {
+        spClientBaseUrl?.let { return it }
+        val resolved = resolveSpClientHost()
+        spClientBaseUrl = resolved
+        return resolved
+    }
+
+    // ── User ID resolution ──────────────────────────────────────────────
+
+    /**
+     * Cached Spotify user ID, resolved on first use.
+     */
+    @Volatile
+    private var cachedUserId: String? = null
+
+    /**
+     * Resolves the current Spotify user ID by trying multiple approaches:
+     * 1. Return cached value if available
+     * 2. Read the stored user ID from the encrypted token store
+     * 3. Try spclient identity endpoints
+     * 4. Try the token endpoint for user metadata
+     * 5. Try api.spotify.com/v1/me (may be rate-limited)
+     *
+     * @return The Spotify user ID, or null if it cannot be determined.
+     */
+    private suspend fun resolveUserId(): String? {
+        cachedUserId?.let { return it }
+
+        // Approach 1: Read from stored token metadata.
+        val username = tokenManager.getSpotifyUsername()
+        if (!username.isNullOrEmpty()) {
+            Log.i(TAG, "Resolved user ID from token metadata: $username")
+            cachedUserId = username
+            return username
+        }
+
+        // Approach 2: Try spclient endpoints that may return user identity.
+        val spClientBase = getSpClientBaseUrl()
+        if (spClientBase != null) {
+            val identityUrls = listOf(
+                "$spClientBase/v1/me",
+                "$spClientBase/identity/v1/user",
+            )
+            for (url in identityUrls) {
+                try {
+                    val body = executeGet(url) ?: continue
+                    Log.d(TAG, "Identity response from $url: ${body.take(500)}")
+                    val jsonObj = json.parseToJsonElement(body).jsonObject
+                    val userId = jsonObj["id"]?.jsonPrimitive?.content
+                        ?: jsonObj["username"]?.jsonPrimitive?.content
+                        ?: jsonObj["user"]?.jsonPrimitive?.content
+                        ?: jsonObj["uri"]?.jsonPrimitive?.content
+                            ?.takeIf { it.startsWith("spotify:user:") }
+                            ?.removePrefix("spotify:user:")
+                    if (!userId.isNullOrEmpty()) {
+                        Log.i(TAG, "Resolved user ID from $url: $userId")
+                        cachedUserId = userId
+                        return userId
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Identity endpoint $url failed: ${e.message}")
+                }
+            }
+        }
+
+        // Approach 3: Fetch the token endpoint and look for user ID in the response.
+        try {
+            val userId = fetchUserIdFromTokenEndpoint()
+            if (userId != null) {
+                Log.i(TAG, "Resolved user ID from token endpoint: $userId")
+                cachedUserId = userId
+                return userId
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Token endpoint user ID extraction failed: ${e.message}")
+        }
+
+        // Approach 4: Try the public API /v1/me as a last resort.
+        // This will likely 429 if we have been making requests recently,
+        // but may succeed if enough time has passed since the last request.
+        try {
+            Log.d(TAG, "Trying api.spotify.com/v1/me for user ID")
+            val body = executeGet("$BASE_URL/me")
+            if (body != null) {
+                val user = json.decodeFromString<SpotifyUser>(body)
+                Log.i(TAG, "Resolved user ID via /v1/me: ${user.id}")
+                cachedUserId = user.id
+                return user.id
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "/v1/me failed: ${e.message}")
+        }
+
+        Log.e(TAG, "All user ID resolution approaches failed")
+        return null
+    }
+
+    /**
+     * Fetches the Spotify token endpoint directly with the sp_dc cookie
+     * to get the full token response, which may include additional user info.
+     *
+     * We call the same endpoint as SpotifyAuthManager but parse the full
+     * JSON response including any extra fields not in our serialized model.
+     */
+    private suspend fun fetchUserIdFromTokenEndpoint(): String? {
+        val spDcCookie = tokenManager.getSpDcCookie() ?: return null
+
+        val request = Request.Builder()
+            .url("https://open.spotify.com/api/token?reason=transport&productType=web-player")
+            .get()
+            .header("Cookie", "sp_dc=$spDcCookie")
+            .header("Accept", "application/json")
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+            )
+            .build()
+
+        val response = okHttpClient.newCall(request).execute()
+        if (!response.isSuccessful) {
+            Log.w(TAG, "Token endpoint fetch for user ID failed: HTTP ${response.code}")
+            response.body?.close()
+            return null
+        }
+
+        val body = response.body?.string() ?: return null
+        Log.d(TAG, "Token endpoint full response: $body")
+
+        // Parse the full JSON and look for any user-identifying field.
+        try {
+            val jsonObj = json.parseToJsonElement(body).jsonObject
+            val allKeys = jsonObj.keys.joinToString(", ")
+            Log.d(TAG, "Token response keys: $allKeys")
+
+            // Check common fields for user identity.
+            return jsonObj["username"]?.jsonPrimitive?.content?.takeIf { it.isNotEmpty() }
+                ?: jsonObj["user"]?.jsonPrimitive?.content?.takeIf { it.isNotEmpty() }
+                ?: jsonObj["userId"]?.jsonPrimitive?.content?.takeIf { it.isNotEmpty() }
+                ?: jsonObj["displayName"]?.jsonPrimitive?.content?.takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse token response for user ID", e)
+            return null
+        }
+    }
+
+    // ── spclient response parsing ────────────────────────────────────────
+
+    /**
+     * Parses the spclient rootlist response into [SpotifyPlaylistItem] objects.
+     *
+     * The rootlist response has a structure like:
+     * ```json
+     * {
+     *   "revision": "...",
+     *   "contents": {
+     *     "items": [
+     *       {
+     *         "uri": "spotify:playlist:xxx",
+     *         "attributes": {
+     *           "name": "...",
+     *           "picture": "...",
+     *           "timestamp": ...
+     *         },
+     *         "ownerUsername": "...",
+     *         "length": 42
+     *       }
+     *     ],
+     *     "metaItems": [...]
+     *   }
+     * }
+     * ```
+     */
+    private fun parseRootlistResponse(
+        responseBody: String,
+        limit: Int,
+        offset: Int,
+    ): List<SpotifyPlaylistItem> {
+        return try {
+            val root = json.parseToJsonElement(responseBody).jsonObject
+            val contents = root["contents"]?.jsonObject ?: return emptyList()
+            val items = contents["items"]?.jsonArray ?: return emptyList()
+
+            items.drop(offset).take(limit).mapNotNull { element ->
+                val item = element.jsonObject
+                val uri = item["uri"]?.jsonPrimitive?.content ?: return@mapNotNull null
+
+                // Only include playlists, not folders or other items.
+                if (!uri.startsWith("spotify:playlist:")) return@mapNotNull null
+
+                val playlistId = uri.removePrefix("spotify:playlist:")
+                val attributes = item["attributes"]?.jsonObject
+                val name = attributes?.get("name")?.jsonPrimitive?.content ?: "Untitled"
+                val ownerUsername = item["ownerUsername"]?.jsonPrimitive?.content ?: ""
+                val length = item["length"]?.jsonPrimitive?.intOrNull ?: 0
+
+                // Construct an image URL from the picture field if present.
+                // spclient may return a Spotify image ID rather than a full URL.
+                val picture = attributes?.get("picture")?.jsonPrimitive?.content
+                val images = if (picture != null) {
+                    val imageUrl = if (picture.startsWith("http")) {
+                        picture
+                    } else {
+                        "https://i.scdn.co/image/$picture"
+                    }
+                    listOf(SpotifyImage(url = imageUrl))
+                } else {
+                    null
+                }
+
+                SpotifyPlaylistItem(
+                    id = playlistId,
+                    name = name,
+                    owner = SpotifyOwner(id = ownerUsername),
+                    images = images,
+                    tracks = SpotifyTracksRef(total = length),
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse rootlist response", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Parses the spclient playlist response into [SpotifyTrackItem] objects.
+     *
+     * The playlist response has a structure like:
+     * ```json
+     * {
+     *   "revision": "...",
+     *   "contents": {
+     *     "items": [
+     *       {
+     *         "uri": "spotify:track:xxx",
+     *         "attributes": {
+     *           "added_by": "...",
+     *           "timestamp": ...
+     *         }
+     *       }
+     *     ],
+     *     "metaItems": [
+     *       {
+     *         "uri": "spotify:track:xxx",
+     *         "attributes": {
+     *           "title": "...",
+     *           "artist_name": "...",
+     *           "album_title": "...",
+     *           "duration": ...,
+     *           "album_cover": "..."
+     *         }
+     *       }
+     *     ]
+     *   }
+     * }
+     * ```
+     *
+     * Note: The exact metadata fields may vary. If metaItems is not populated,
+     * we construct minimal track objects from the URIs alone.
+     */
+    private fun parsePlaylistTracksResponse(responseBody: String): List<SpotifyTrackItem> {
+        return try {
+            val root = json.parseToJsonElement(responseBody).jsonObject
+            val contents = root["contents"]?.jsonObject ?: return emptyList()
+            val items = contents["items"]?.jsonArray ?: return emptyList()
+
+            // Try to build a metadata lookup from metaItems if available.
+            val metaItems = contents["metaItems"]?.jsonArray
+            val metaMap = mutableMapOf<String, JsonObject>()
+            metaItems?.forEach { meta ->
+                val metaObj = meta.jsonObject
+                val uri = metaObj["uri"]?.jsonPrimitive?.content
+                if (uri != null) {
+                    metaMap[uri] = metaObj
+                }
+            }
+
+            items.mapNotNull { element ->
+                val item = element.jsonObject
+                val uri = item["uri"]?.jsonPrimitive?.content ?: return@mapNotNull null
+
+                // Only include tracks.
+                if (!uri.startsWith("spotify:track:")) return@mapNotNull null
+
+                val trackId = uri.removePrefix("spotify:track:")
+                val attributes = item["attributes"]?.jsonObject
+                val meta = metaMap[uri]?.get("attributes")?.jsonObject
+
+                // Extract track metadata from attributes or metaItems.
+                val title = meta?.get("title")?.jsonPrimitive?.content
+                    ?: attributes?.get("title")?.jsonPrimitive?.content
+                    ?: "Unknown"
+                val artistName = meta?.get("artist_name")?.jsonPrimitive?.content
+                    ?: attributes?.get("artist_name")?.jsonPrimitive?.content
+                    ?: ""
+                val albumTitle = meta?.get("album_title")?.jsonPrimitive?.content
+                    ?: attributes?.get("album_title")?.jsonPrimitive?.content
+                val durationMs = meta?.get("duration")?.jsonPrimitive?.longOrNull
+                    ?: attributes?.get("duration")?.jsonPrimitive?.longOrNull
+                    ?: 0L
+                val albumCover = meta?.get("album_cover")?.jsonPrimitive?.content
+                    ?: attributes?.get("album_cover")?.jsonPrimitive?.content
+
+                val albumImages = if (albumCover != null) {
+                    val imageUrl = if (albumCover.startsWith("http")) {
+                        albumCover
+                    } else {
+                        "https://i.scdn.co/image/$albumCover"
+                    }
+                    listOf(SpotifyImage(url = imageUrl))
+                } else {
+                    null
+                }
+
+                SpotifyTrackItem(
+                    track = SpotifyTrackObject(
+                        id = trackId,
+                        name = title,
+                        artists = if (artistName.isNotEmpty()) {
+                            listOf(SpotifyArtist(id = "", name = artistName))
+                        } else {
+                            emptyList()
+                        },
+                        album = if (albumTitle != null || albumImages != null) {
+                            SpotifyAlbum(
+                                id = "",
+                                name = albumTitle ?: "",
+                                images = albumImages,
+                            )
+                        } else {
+                            null
+                        },
+                        duration_ms = durationMs,
+                        uri = uri,
+                    ),
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse playlist tracks response", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Parses the spclient liked songs / collection response.
+     *
+     * This is a best-effort parser; the exact format of the collection
+     * endpoint may differ. We log the response and parse what we can.
+     */
+    private fun parseLikedSongsResponse(responseBody: String): List<SpotifyTrackItem> {
+        return try {
+            val root = json.parseToJsonElement(responseBody).jsonObject
+
+            // The collection endpoint may return items directly or nested.
+            val items = root["items"]?.jsonArray
+                ?: root["contents"]?.jsonObject?.get("items")?.jsonArray
+                ?: return emptyList()
+
+            items.mapNotNull { element ->
+                val item = element.jsonObject
+                val uri = item["uri"]?.jsonPrimitive?.content
+                    ?: item["trackUri"]?.jsonPrimitive?.content
+                    ?: return@mapNotNull null
+
+                if (!uri.startsWith("spotify:track:")) return@mapNotNull null
+
+                val trackId = uri.removePrefix("spotify:track:")
+                val attributes = item["attributes"]?.jsonObject
+                val title = attributes?.get("title")?.jsonPrimitive?.content
+                    ?: item["name"]?.jsonPrimitive?.content
+                    ?: "Unknown"
+                val artistName = attributes?.get("artist_name")?.jsonPrimitive?.content ?: ""
+                val albumTitle = attributes?.get("album_title")?.jsonPrimitive?.content
+                val durationMs = attributes?.get("duration")?.jsonPrimitive?.longOrNull ?: 0L
+
+                SpotifyTrackItem(
+                    track = SpotifyTrackObject(
+                        id = trackId,
+                        name = title,
+                        artists = if (artistName.isNotEmpty()) {
+                            listOf(SpotifyArtist(id = "", name = artistName))
+                        } else {
+                            emptyList()
+                        },
+                        album = if (albumTitle != null) {
+                            SpotifyAlbum(id = "", name = albumTitle, images = null)
+                        } else {
+                            null
+                        },
+                        duration_ms = durationMs,
+                        uri = uri,
+                    ),
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse liked songs response", e)
+            emptyList()
+        }
+    }
+
+    // ── Internal HTTP ────────────────────────────────────────────────────
 
     /**
      * Builds a GET request with all required Spotify Web Player headers.
-     *
-     * The sp_dc-derived access token is a web player session token, so we must
-     * present headers that identify the request as coming from the official
-     * Spotify Web Player (open.spotify.com). Without these headers the standard
-     * Web API endpoints reject sp_dc tokens with HTTP 429/403.
      *
      * @param url         The full request URL including query parameters.
      * @param accessToken A valid Bearer access token obtained from the sp_dc cookie.
@@ -193,6 +736,7 @@ class SpotifyApiClient @Inject constructor(
             .get()
             .header("Authorization", "Bearer $accessToken")
             .header("Accept", "application/json")
+            .header("Accept-Language", "en-US")
             .header("App-Platform", "WebPlayer")
             .header("Origin", "https://open.spotify.com")
             .header("Referer", "https://open.spotify.com/")
@@ -206,18 +750,8 @@ class SpotifyApiClient @Inject constructor(
     }
 
     /**
-     * Executes an authenticated GET request against the Spotify API with
-     * automatic retry handling for HTTP 429 (Too Many Requests) and automatic
-     * token refresh on HTTP 401 (Unauthorized).
-     *
-     * On a 429 response the method reads the `Retry-After` header (seconds),
-     * waits that duration, and retries up to [MAX_RETRIES] times. On a 401
-     * response the method forces a token refresh and retries once. A small
-     * inter-request delay is also enforced to prevent burst-triggering rate limits.
-     *
-     * All requests include Web Player headers (Origin, Referer, App-Platform,
-     * User-Agent, spotify-app-version) so that sp_dc-derived tokens are accepted
-     * by the Spotify API gateway.
+     * Executes an authenticated GET request with automatic retry handling
+     * for HTTP 429 (Too Many Requests) and token refresh on HTTP 401.
      *
      * @param url The full request URL including query parameters.
      * @return The response body as a String, or null if the access token is unavailable.
@@ -251,34 +785,36 @@ class SpotifyApiClient @Inject constructor(
                 hasRetriedAuth = true
                 response.body?.close()
                 Log.w(TAG, "401 Unauthorized on $url, forcing token refresh")
-                val refreshedToken = tokenManager.getSpotifyAccessToken()
+                val refreshedToken = tokenManager.forceRefreshSpotifyAccessToken()
                 if (refreshedToken != null && refreshedToken != accessToken) {
                     accessToken = refreshedToken
                     continue
                 }
-                // Refresh returned the same token or null -- fall through to throw
             }
 
-            // Handle 429 rate limiting with Retry-After header.
+            // Handle 429 rate limiting with Retry-After header + padding.
             if (response.code == 429 && attempt < MAX_RETRIES) {
+                val errorBody = response.body?.string() ?: "no body"
                 val retryAfterSeconds = response.header("Retry-After")?.toLongOrNull()
-                val waitMs = if (retryAfterSeconds != null && retryAfterSeconds > 0) {
-                    retryAfterSeconds * 1000
-                } else {
-                    DEFAULT_RETRY_AFTER_MS * (attempt + 1) // linear backoff fallback
-                }
                 Log.w(
                     TAG,
                     "429 rate limited on $url (attempt ${attempt + 1}/$MAX_RETRIES), " +
-                        "retrying after ${waitMs}ms",
+                        "Retry-After: ${retryAfterSeconds}s, body: $errorBody",
                 )
-                response.body?.close()
+
+                val waitMs = if (retryAfterSeconds != null && retryAfterSeconds > 0) {
+                    (retryAfterSeconds * 1000) + RETRY_AFTER_PADDING_MS
+                } else {
+                    DEFAULT_RETRY_AFTER_MS * (attempt + 1)
+                }
+                Log.i(TAG, "Waiting ${waitMs / 1000}s before retry")
                 delay(waitMs)
                 continue
             }
 
-            // Non-recoverable error or final retry attempt -- close and throw.
-            response.body?.close()
+            // Non-recoverable error or final retry attempt.
+            val finalBody = response.body?.string() ?: "no body"
+            Log.e(TAG, "Spotify error HTTP ${response.code} on $url, body: $finalBody")
             throw SpotifyApiException(
                 httpCode = response.code,
                 url = url,
@@ -287,7 +823,6 @@ class SpotifyApiClient @Inject constructor(
             )
         }
 
-        // Should not reach here, but satisfy the compiler.
         throw SpotifyApiException(
             httpCode = lastResponseCode,
             url = url,

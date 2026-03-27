@@ -27,6 +27,37 @@ interface TokenManager {
     suspend fun getSpotifyAccessToken(): String?
 
     /**
+     * Forces a token refresh for Spotify regardless of whether the current token
+     * is still valid. Useful when persistent 429 errors suggest the rate limit is
+     * tied to the specific access token rather than the IP/account.
+     *
+     * @return A fresh access token, or null if refresh fails.
+     */
+    suspend fun forceRefreshSpotifyAccessToken(): String?
+
+    /**
+     * Returns the stored Spotify username from the token metadata.
+     *
+     * The username is extracted from the sp_dc token response and stored
+     * in the [ServiceToken.scope] field. It is needed by the spclient
+     * endpoints which require the user ID in the URL path.
+     *
+     * @return The Spotify username, or null if not available.
+     */
+    suspend fun getSpotifyUsername(): String?
+
+    /**
+     * Returns the stored sp_dc cookie value.
+     *
+     * The sp_dc cookie is the long-lived credential used to obtain
+     * short-lived access tokens. It is also needed for fetching the
+     * Spotify homepage to extract the user ID.
+     *
+     * @return The sp_dc cookie string, or null if not available.
+     */
+    suspend fun getSpDcCookie(): String?
+
+    /**
      * Returns a valid YouTube Music access token, or null if the user is not authenticated
      * or the token has expired / is expiring soon.
      */

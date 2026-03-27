@@ -78,6 +78,49 @@ class TokenManagerImpl @Inject constructor(
     }
 
     /**
+     * Returns the stored Spotify username/user ID.
+     *
+     * Checks the stored user profile first (populated during initial connection),
+     * then falls back to the token's scope field (where the username from the
+     * token response would be stored, if it were available).
+     */
+    override suspend fun getSpotifyUsername(): String? {
+        // Try the stored user profile (set during connectSpotifyWithCookie).
+        val user = tokenStore.spotifyUser.first()
+        if (user != null && user.id.isNotEmpty() && user.id != "spotify_user") {
+            return user.id
+        }
+        // Fall back to the scope field (token response username, usually empty).
+        val token = tokenStore.spotifyToken.first() ?: return null
+        val username = token.scope
+        return if (username.isNotEmpty()) username else null
+    }
+
+    /**
+     * Returns the stored sp_dc cookie from the token's refreshToken field.
+     */
+    override suspend fun getSpDcCookie(): String? {
+        val token = tokenStore.spotifyToken.first() ?: return null
+        val spDc = token.refreshToken
+        return if (spDc.isNotEmpty()) spDc else null
+    }
+
+    /**
+     * Forces a Spotify token refresh regardless of expiry status.
+     * This obtains a completely new access token from the sp_dc cookie,
+     * which should have a fresh rate-limit window on the Spotify side.
+     */
+    override suspend fun forceRefreshSpotifyAccessToken(): String? {
+        val token = tokenStore.spotifyToken.first() ?: return null
+        val spDcCookie = token.refreshToken
+        if (spDcCookie.isEmpty()) return null
+
+        val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return null
+        tokenStore.saveSpotifyToken(refreshed)
+        return refreshed.accessToken
+    }
+
+    /**
      * Returns a valid YouTube access token, auto-refreshing via the stored
      * refresh token if the current token is expired or expiring soon.
      */
@@ -132,10 +175,13 @@ class TokenManagerImpl @Inject constructor(
     override suspend fun connectSpotifyWithCookie(spDcCookie: String): Boolean {
         val token = spotifyAuthManager.getAccessToken(spDcCookie) ?: return false
 
-        // Save with a placeholder user; the sync layer will fetch the real profile
+        // Immediately fetch the real user profile using the fresh token.
+        // This must happen now, before any other API calls trigger rate limits
+        // on api.spotify.com. The user ID is needed later for spclient endpoints.
+        val userId = spotifyAuthManager.fetchUserId(token.accessToken)
         val user = UserInfo(
-            id = "spotify_user",
-            displayName = "Spotify User",
+            id = userId ?: "spotify_user",
+            displayName = userId ?: "Spotify User",
         )
         tokenStore.saveSpotifyToken(token, user)
         return true
