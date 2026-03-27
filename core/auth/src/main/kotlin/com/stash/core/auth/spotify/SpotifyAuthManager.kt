@@ -260,8 +260,8 @@ class SpotifyAuthManager @Inject constructor(
                     append(""""js_sdk_data":{""")
                     append(""""device_brand":"unknown",""")
                     append(""""device_model":"unknown",""")
-                    append(""""os":"linux",""")
-                    append(""""os_version":"unknown",""")
+                    append(""""os":"windows",""")
+                    append(""""os_version":"NT 10.0",""")
                     append(""""device_id":"$deviceId",""")
                     append(""""device_type":"computer"}}""")
                     append("}")
@@ -274,7 +274,9 @@ class SpotifyAuthManager @Inject constructor(
                     .url(SpotifyAuthConfig.CLIENT_TOKEN_ENDPOINT)
                     .post(requestBody.toRequestBody("application/json".toMediaType()))
                     .header("Accept", "application/json")
-                    .header("Content-Type", "application/json")
+                    .header("User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" +
+                            " (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
                     .build()
 
                 val response = okHttpClient.newCall(request).execute()
