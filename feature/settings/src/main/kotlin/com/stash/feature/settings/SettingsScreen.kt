@@ -56,7 +56,7 @@ fun SettingsScreen(
         SpotifyCookieDialog(
             isValidating = uiState.isSpotifyCookieValidating,
             errorMessage = uiState.spotifyCookieError,
-            onConnect = viewModel::onConnectSpotifyWithCookie,
+            onConnect = { cookie, username -> viewModel.onConnectSpotifyWithCookie(cookie, username) },
             onDismiss = viewModel::onDismissSpotifyCookieDialog,
         )
     }

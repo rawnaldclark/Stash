@@ -39,10 +39,11 @@ import androidx.compose.ui.unit.dp
 fun SpotifyCookieDialog(
     isValidating: Boolean,
     errorMessage: String?,
-    onConnect: (String) -> Unit,
+    onConnect: (String, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var cookieValue by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = { if (!isValidating) onDismiss() },
@@ -55,9 +56,30 @@ fun SpotifyCookieDialog(
         text = {
             Column {
                 Text(
-                    text = "To connect your Spotify account, paste your sp_dc cookie below.",
+                    text = "Enter your Spotify username and sp_dc cookie to connect.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Spotify username") },
+                    placeholder = { Text("Your Spotify username") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !isValidating,
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "Find at spotify.com/account under 'Username'",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp),
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -80,7 +102,7 @@ fun SpotifyCookieDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
                     value = cookieValue,
@@ -115,8 +137,8 @@ fun SpotifyCookieDialog(
                 )
             } else {
                 Button(
-                    onClick = { onConnect(cookieValue.trim()) },
-                    enabled = cookieValue.isNotBlank(),
+                    onClick = { onConnect(cookieValue.trim(), username.trim()) },
+                    enabled = cookieValue.isNotBlank() && username.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),

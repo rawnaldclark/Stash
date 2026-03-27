@@ -112,7 +112,7 @@ class SettingsViewModel @Inject constructor(
      *
      * @param cookie The raw sp_dc cookie value pasted by the user.
      */
-    fun onConnectSpotifyWithCookie(cookie: String) {
+    fun onConnectSpotifyWithCookie(cookie: String, username: String = "") {
         if (cookie.isBlank()) {
             _localState.update { it.copy(spotifyCookieError = "Cookie cannot be empty") }
             return
@@ -123,7 +123,7 @@ class SettingsViewModel @Inject constructor(
                 it.copy(isSpotifyCookieValidating = true, spotifyCookieError = null)
             }
 
-            val success = tokenManager.connectSpotifyWithCookie(cookie)
+            val success = tokenManager.connectSpotifyWithCookie(cookie, username)
 
             if (success) {
                 _localState.update {

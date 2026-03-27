@@ -93,5 +93,5 @@ interface TokenManager {
      * @param spDcCookie The raw sp_dc cookie value from the user's browser.
      * @return true if the cookie was valid and auth was saved, false otherwise.
      */
-    suspend fun connectSpotifyWithCookie(spDcCookie: String): Boolean
+    suspend fun connectSpotifyWithCookie(spDcCookie: String, username: String = ""): Boolean
 }
