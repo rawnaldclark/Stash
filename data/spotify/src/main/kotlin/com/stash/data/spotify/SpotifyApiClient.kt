@@ -1,5 +1,6 @@
 package com.stash.data.spotify
 
+import android.util.Base64
 import android.util.Log
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.UserInfo
@@ -71,7 +72,7 @@ class SpotifyApiClient @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     companion object {
-        private const val TAG = "SpotifyApiClient"
+        private const val TAG = "StashSync"
         private const val BASE_URL = "https://api.spotify.com/v1"
         private const val DEFAULT_LIMIT = 50
 
@@ -114,37 +115,28 @@ class SpotifyApiClient @Inject constructor(
     // ── Profile ──────────────────────────────────────────────────────────
 
     /**
-     * Fetches the current user's Spotify profile.
+     * Returns the current user's Spotify profile.
      *
-     * Tries the public API first; if rate-limited, falls back to extracting
-     * the user ID from the JWT access token.
+     * IMPORTANT: Does NOT call api.spotify.com/v1/me, which permanently
+     * 429-blocks sp_dc tokens. Instead resolves the user ID from:
+     * 1. Stored username in token metadata (extracted from JWT during auth)
+     * 2. JWT decode of the current access token
+     * 3. spclient identity endpoints as a last resort
      *
-     * @return A [UserInfo] with the user's ID, display name, and optional profile image,
-     *         or null if the request fails.
+     * @return A [UserInfo] with the user's ID, or null if resolution fails.
      */
     suspend fun getCurrentUserProfile(): UserInfo? = withContext(Dispatchers.IO) {
-        // Try public API first (may work for profile endpoint).
-        try {
-            val body = executeGet("$BASE_URL/me") ?: return@withContext null
-            val user = json.decodeFromString<SpotifyUser>(body)
-            // Cache the user ID for later spclient calls.
-            cachedUserId = user.id
+        val userId = resolveUserId()
+        if (userId != null) {
+            Log.d(TAG, "getCurrentUserProfile: resolved userId='$userId'")
             return@withContext UserInfo(
-                id = user.id,
-                displayName = user.display_name ?: user.id,
-                imageUrl = user.images?.firstOrNull()?.url,
+                id = userId,
+                displayName = userId,
+                imageUrl = null,
             )
-        } catch (e: SpotifyApiException) {
-            Log.w(TAG, "Public API profile failed (HTTP ${e.httpCode}), trying spclient")
         }
-
-        // Fallback: resolve user ID via spclient.
-        val userId = resolveUserId() ?: return@withContext null
-        UserInfo(
-            id = userId,
-            displayName = userId,
-            imageUrl = null,
-        )
+        Log.e(TAG, "getCurrentUserProfile: could not resolve user ID")
+        null
     }
 
     // ── Playlists ────────────────────────────────────────────────────────
@@ -290,6 +282,7 @@ class SpotifyApiClient @Inject constructor(
      */
     private fun resolveSpClientHost(): String? {
         return try {
+            Log.d(TAG, "Resolving spclient host from $AP_RESOLVE_URL")
             val request = Request.Builder()
                 .url(AP_RESOLVE_URL)
                 .get()
@@ -302,6 +295,7 @@ class SpotifyApiClient @Inject constructor(
                 return null
             }
             val body = response.body?.string() ?: return null
+            Log.d(TAG, "apresolve response: ${body.take(500)}")
 
             val jsonObj = json.parseToJsonElement(body)
             val hosts = jsonObj.jsonObject["spclient"]?.jsonArray
@@ -340,24 +334,53 @@ class SpotifyApiClient @Inject constructor(
      * Resolves the current Spotify user ID by trying multiple approaches:
      * 1. Return cached value if available
      * 2. Read the stored user ID from the encrypted token store
-     * 3. Try spclient identity endpoints
-     * 4. Try the token endpoint for user metadata
-     * 5. Try api.spotify.com/v1/me (may be rate-limited)
+     * 3. Decode the JWT access token payload (no network call)
+     * 4. Try the token endpoint for the username field
+     * 5. Try spclient identity endpoints
+     *
+     * IMPORTANT: We NEVER call api.spotify.com/v1/me here. That endpoint
+     * permanently 429-blocks sp_dc tokens (not rate limiting -- policy).
      *
      * @return The Spotify user ID, or null if it cannot be determined.
      */
     private suspend fun resolveUserId(): String? {
-        cachedUserId?.let { return it }
+        cachedUserId?.let {
+            Log.d(TAG, "resolveUserId: returning cached='$it'")
+            return it
+        }
 
-        // Approach 1: Read from stored token metadata.
+        // Approach 1: Read from stored token metadata (set during connectSpotifyWithCookie).
         val username = tokenManager.getSpotifyUsername()
         if (!username.isNullOrEmpty()) {
-            Log.i(TAG, "Resolved user ID from token metadata: $username")
+            Log.d(TAG, "resolveUserId: from stored metadata='$username'")
             cachedUserId = username
             return username
         }
 
-        // Approach 2: Try spclient endpoints that may return user identity.
+        // Approach 2: Decode the JWT access token (zero network calls).
+        val accessToken = tokenManager.getSpotifyAccessToken()
+        if (accessToken != null) {
+            val jwtUsername = extractUsernameFromJwt(accessToken)
+            if (jwtUsername != null) {
+                Log.d(TAG, "resolveUserId: from JWT='$jwtUsername'")
+                cachedUserId = jwtUsername
+                return jwtUsername
+            }
+        }
+
+        // Approach 3: Fetch the token endpoint and look for username field.
+        try {
+            val userId = fetchUserIdFromTokenEndpoint()
+            if (userId != null) {
+                Log.d(TAG, "resolveUserId: from token endpoint='$userId'")
+                cachedUserId = userId
+                return userId
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Token endpoint user ID extraction failed: ${e.message}")
+        }
+
+        // Approach 4: Try spclient identity endpoints as a last resort.
         val spClientBase = getSpClientBaseUrl()
         if (spClientBase != null) {
             val identityUrls = listOf(
@@ -376,7 +399,7 @@ class SpotifyApiClient @Inject constructor(
                             ?.takeIf { it.startsWith("spotify:user:") }
                             ?.removePrefix("spotify:user:")
                     if (!userId.isNullOrEmpty()) {
-                        Log.i(TAG, "Resolved user ID from $url: $userId")
+                        Log.d(TAG, "resolveUserId: from spclient identity='$userId'")
                         cachedUserId = userId
                         return userId
                     }
@@ -386,35 +409,7 @@ class SpotifyApiClient @Inject constructor(
             }
         }
 
-        // Approach 3: Fetch the token endpoint and look for user ID in the response.
-        try {
-            val userId = fetchUserIdFromTokenEndpoint()
-            if (userId != null) {
-                Log.i(TAG, "Resolved user ID from token endpoint: $userId")
-                cachedUserId = userId
-                return userId
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Token endpoint user ID extraction failed: ${e.message}")
-        }
-
-        // Approach 4: Try the public API /v1/me as a last resort.
-        // This will likely 429 if we have been making requests recently,
-        // but may succeed if enough time has passed since the last request.
-        try {
-            Log.d(TAG, "Trying api.spotify.com/v1/me for user ID")
-            val body = executeGet("$BASE_URL/me")
-            if (body != null) {
-                val user = json.decodeFromString<SpotifyUser>(body)
-                Log.i(TAG, "Resolved user ID via /v1/me: ${user.id}")
-                cachedUserId = user.id
-                return user.id
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "/v1/me failed: ${e.message}")
-        }
-
-        Log.e(TAG, "All user ID resolution approaches failed")
+        Log.e(TAG, "resolveUserId: ALL approaches failed")
         return null
     }
 
@@ -464,6 +459,39 @@ class SpotifyApiClient @Inject constructor(
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse token response for user ID", e)
             return null
+        }
+    }
+
+    // ── JWT utility ────────────────────────────────────────────────────────
+
+    /**
+     * Extracts the Spotify username from a JWT access token without any network call.
+     *
+     * Spotify sp_dc-derived access tokens are JWTs whose base64url-encoded payload
+     * contains a "sub" or "username" field with the Spotify user ID.
+     *
+     * @param accessToken A JWT access token.
+     * @return The Spotify username/user ID, or null if extraction fails.
+     */
+    private fun extractUsernameFromJwt(accessToken: String): String? {
+        return try {
+            val parts = accessToken.split(".")
+            if (parts.size < 2) {
+                Log.w(TAG, "extractUsernameFromJwt: not a JWT (${parts.size} parts)")
+                return null
+            }
+            val payload = String(
+                Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
+            )
+            Log.d(TAG, "JWT payload (first 500 chars): ${payload.take(500)}")
+            val jsonObj = json.parseToJsonElement(payload).jsonObject
+            val username = jsonObj["sub"]?.jsonPrimitive?.content
+                ?: jsonObj["username"]?.jsonPrimitive?.content
+            Log.d(TAG, "JWT extracted username: '$username'")
+            username?.takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            Log.w(TAG, "extractUsernameFromJwt failed", e)
+            null
         }
     }
 
@@ -759,7 +787,10 @@ class SpotifyApiClient @Inject constructor(
      *         code or if all retry attempts for a 429 are exhausted.
      */
     private suspend fun executeGet(url: String): String? {
-        var accessToken = tokenManager.getSpotifyAccessToken() ?: return null
+        var accessToken = tokenManager.getSpotifyAccessToken() ?: run {
+            Log.w(TAG, "executeGet: no access token available for $url")
+            return null
+        }
         var hasRetriedAuth = false
 
         // Enforce minimum spacing between consecutive requests.
@@ -770,6 +801,7 @@ class SpotifyApiClient @Inject constructor(
 
         var lastResponseCode = 0
         for (attempt in 0..MAX_RETRIES) {
+            Log.d(TAG, "executeGet: $url (attempt ${attempt + 1}/${MAX_RETRIES + 1})")
             val request = buildRequest(url, accessToken)
 
             val response = okHttpClient.newCall(request).execute()
@@ -777,7 +809,9 @@ class SpotifyApiClient @Inject constructor(
             lastResponseCode = response.code
 
             if (response.isSuccessful) {
-                return response.body?.string()
+                val body = response.body?.string()
+                Log.d(TAG, "executeGet: $url -> HTTP ${response.code}, body length=${body?.length ?: 0}")
+                return body
             }
 
             // Handle 401 by forcing a token refresh (once).

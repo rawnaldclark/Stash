@@ -1,5 +1,7 @@
 package com.stash.core.auth.spotify
 
+import android.util.Base64
+import android.util.Log
 import com.stash.core.auth.model.ServiceToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -40,6 +42,10 @@ class SpotifyAuthManager @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    companion object {
+        private const val TAG = "StashSync"
+    }
+
     /**
      * Exchange an sp_dc cookie for a web-player access token.
      *
@@ -60,6 +66,7 @@ class SpotifyAuthManager @Inject constructor(
             try {
                 // Step 1: Fetch Spotify's server time to avoid clock-skew TOTP failures
                 val serverTime = getServerTime() ?: (System.currentTimeMillis() / 1000)
+                Log.d(TAG, "Server time resolved: $serverTime")
 
                 // Step 2: Generate the TOTP code required by the token endpoint
                 val totp = SpotifyTotp.generate(serverTime)
@@ -87,13 +94,31 @@ class SpotifyAuthManager @Inject constructor(
                     .build()
 
                 val response = okHttpClient.newCall(request).execute()
-                if (!response.isSuccessful) return@withContext null
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Token endpoint returned HTTP ${response.code}")
+                    return@withContext null
+                }
 
                 val body = response.body?.string() ?: return@withContext null
                 val tokenResponse = json.decodeFromString<SpDcTokenResponse>(body)
+                Log.d(TAG, "Token response: isAnonymous=${tokenResponse.isAnonymous}, " +
+                    "username='${tokenResponse.username}', clientId='${tokenResponse.clientId}'")
 
                 // Anonymous tokens mean the cookie was invalid or expired
-                if (tokenResponse.isAnonymous) return@withContext null
+                if (tokenResponse.isAnonymous) {
+                    Log.w(TAG, "Token is anonymous -- sp_dc cookie is invalid or expired")
+                    return@withContext null
+                }
+
+                // Resolve the Spotify username using multiple strategies:
+                // 1. Decode the JWT access token payload (no network call needed)
+                // 2. Fall back to the username field in the token response
+                val jwtUsername = extractUsernameFromJwt(tokenResponse.accessToken)
+                val resolvedUsername = jwtUsername
+                    ?: tokenResponse.username.takeIf { it.isNotEmpty() }
+                    ?: ""
+                Log.d(TAG, "Resolved username: '$resolvedUsername' " +
+                    "(jwt='$jwtUsername', response='${tokenResponse.username}')")
 
                 ServiceToken(
                     accessToken = tokenResponse.accessToken,
@@ -102,10 +127,12 @@ class SpotifyAuthManager @Inject constructor(
                     expiresAtEpoch = tokenResponse.accessTokenExpirationTimestampMs / 1000,
                     // Store the Spotify username in the scope field (unused for sp_dc auth).
                     // This allows the API client to resolve the user ID without an extra
-                    // API call, which is critical since api.spotify.com/v1/me is rate-limited.
-                    scope = tokenResponse.username,
+                    // API call, which is critical since api.spotify.com/v1/me is permanently
+                    // 429-blocked for sp_dc tokens.
+                    scope = resolvedUsername,
                 )
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.e(TAG, "getAccessToken failed", e)
                 null
             }
         }
@@ -125,51 +152,37 @@ class SpotifyAuthManager @Inject constructor(
     }
 
     /**
-     * Fetches the Spotify user profile using the given access token.
+     * Extracts the Spotify username from a JWT access token without any network call.
      *
-     * Makes a single call to api.spotify.com/v1/me using web player headers.
-     * This should be called immediately after obtaining a fresh token, before
-     * any rate limits have been triggered.
+     * Spotify sp_dc-derived access tokens are JWTs. The payload (second segment,
+     * base64url-encoded) contains a "sub" or "username" field with the Spotify user ID.
+     * This is critical because api.spotify.com/v1/me permanently 429-blocks sp_dc tokens.
      *
-     * @param accessToken A valid Bearer access token.
-     * @return The Spotify user ID, or null if the request fails.
+     * @param accessToken A JWT access token from the sp_dc token exchange.
+     * @return The Spotify username/user ID, or null if extraction fails.
      */
-    suspend fun fetchUserId(accessToken: String): String? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val request = Request.Builder()
-                    .url("https://api.spotify.com/v1/me")
-                    .get()
-                    .header("Authorization", "Bearer $accessToken")
-                    .header("Accept", "application/json")
-                    .header("App-Platform", "WebPlayer")
-                    .header("Origin", "https://open.spotify.com")
-                    .header("Referer", "https://open.spotify.com/")
-                    .header(
-                        "User-Agent",
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" +
-                            " (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-                    )
-                    .header("spotify-app-version", "1.2.52.442.g0e1a5ca5")
-                    .build()
-
-                val response = okHttpClient.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    android.util.Log.w("SpotifyAuthManager", "Profile fetch failed: HTTP ${response.code}")
-                    response.body?.close()
-                    return@withContext null
-                }
-
-                val body = response.body?.string() ?: return@withContext null
-                // Parse just the "id" field from the response.
-                val jsonObj = Json { ignoreUnknownKeys = true }
-                    .parseToJsonElement(body)
-                    .jsonObject
-                jsonObj["id"]?.jsonPrimitive?.content
-            } catch (e: Exception) {
-                android.util.Log.w("SpotifyAuthManager", "Profile fetch exception: ${e.message}")
-                null
+    fun extractUsernameFromJwt(accessToken: String): String? {
+        return try {
+            val parts = accessToken.split(".")
+            if (parts.size < 2) {
+                Log.w(TAG, "Access token is not a JWT (${parts.size} parts)")
+                return null
             }
+            val payload = String(
+                Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
+            )
+            Log.d(TAG, "JWT payload (first 500 chars): ${payload.take(500)}")
+            val jsonObj = json.parseToJsonElement(payload).jsonObject
+            val allKeys = jsonObj.keys.joinToString(", ")
+            Log.d(TAG, "JWT payload keys: $allKeys")
+
+            val username = jsonObj["sub"]?.jsonPrimitive?.content
+                ?: jsonObj["username"]?.jsonPrimitive?.content
+            Log.d(TAG, "JWT extracted username: '$username'")
+            username?.takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            Log.w(TAG, "JWT username extraction failed", e)
+            null
         }
     }
 

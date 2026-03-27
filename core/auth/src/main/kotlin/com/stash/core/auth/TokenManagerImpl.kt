@@ -167,22 +167,33 @@ class TokenManagerImpl @Inject constructor(
 
     /**
      * Validates the sp_dc cookie by attempting to obtain an access token,
-     * then persists the credentials with a placeholder user profile.
+     * extracts the user ID from the JWT (no network call), and persists
+     * the credentials.
      *
-     * The full user profile (display name, image) can be fetched later by
-     * the sync layer using [SpotifyApiClient.getCurrentUserProfile].
+     * IMPORTANT: We do NOT call api.spotify.com/v1/me here. That endpoint
+     * permanently 429-blocks sp_dc tokens. Instead, the username is extracted
+     * from the JWT access token payload and/or the token endpoint response.
      */
     override suspend fun connectSpotifyWithCookie(spDcCookie: String): Boolean {
         val token = spotifyAuthManager.getAccessToken(spDcCookie) ?: return false
 
-        // Immediately fetch the real user profile using the fresh token.
-        // This must happen now, before any other API calls trigger rate limits
-        // on api.spotify.com. The user ID is needed later for spclient endpoints.
-        val userId = spotifyAuthManager.fetchUserId(token.accessToken)
-        val user = UserInfo(
-            id = userId ?: "spotify_user",
-            displayName = userId ?: "Spotify User",
-        )
+        // The username is already resolved in getAccessToken() and stored in
+        // ServiceToken.scope (from JWT decode or token response username field).
+        // Also try JWT extraction as a direct fallback.
+        val username = token.scope.takeIf { it.isNotEmpty() }
+            ?: spotifyAuthManager.extractUsernameFromJwt(token.accessToken)
+            ?: ""
+
+        android.util.Log.d("StashSync", "connectSpotifyWithCookie: resolved username='$username'")
+
+        val user = if (username.isNotEmpty()) {
+            UserInfo(id = username, displayName = username)
+        } else {
+            // Last resort: store a placeholder. The resolveUserId() in SpotifyApiClient
+            // will try additional strategies at sync time.
+            android.util.Log.w("StashSync", "Could not extract username from JWT or token response!")
+            UserInfo(id = "spotify_user", displayName = "Spotify User")
+        }
         tokenStore.saveSpotifyToken(token, user)
         return true
     }

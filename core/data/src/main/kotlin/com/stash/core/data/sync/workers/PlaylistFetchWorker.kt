@@ -46,7 +46,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
     companion object {
         const val KEY_SYNC_ID = "sync_id"
-        private const val TAG = "PlaylistFetchWorker"
+        private const val TAG = "StashSync"
     }
 
     override suspend fun doWork(): Result {
@@ -124,8 +124,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
      *         so that [doWork] can return [Result.retry] for transient API failures.
      */
     private suspend fun fetchSpotifyPlaylists(syncId: Long) {
+        Log.d(TAG, "fetchSpotifyPlaylists: starting for syncId=$syncId")
         // Fetch Daily Mixes.
         val dailyMixes = spotifyApiClient.getDailyMixes()
+        Log.d(TAG, "fetchSpotifyPlaylists: found ${dailyMixes.size} daily mixes")
         for (mix in dailyMixes) {
             val mixNumber = Regex("""\d+""").find(mix.name)?.value?.toIntOrNull()
             val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
@@ -163,6 +165,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
         // Fetch Liked Songs.
         val likedSongs = spotifyApiClient.getLikedSongs()
+        Log.d(TAG, "fetchSpotifyPlaylists: found ${likedSongs.size} liked songs")
         if (likedSongs.isNotEmpty()) {
             val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
                 RemotePlaylistSnapshotEntity(
