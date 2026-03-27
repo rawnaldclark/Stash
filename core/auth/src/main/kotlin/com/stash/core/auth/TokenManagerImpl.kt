@@ -1,5 +1,6 @@
 package com.stash.core.auth
 
+import android.util.Log
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.ServiceToken
@@ -81,8 +82,7 @@ class TokenManagerImpl @Inject constructor(
      * Returns the stored Spotify username/user ID.
      *
      * Checks the stored user profile first (populated during initial connection),
-     * then falls back to the token's scope field (where the username from the
-     * token response would be stored, if it were available).
+     * then falls back to the token's scope field which contains "username|clientId".
      */
     override suspend fun getSpotifyUsername(): String? {
         // Try the stored user profile (set during connectSpotifyWithCookie).
@@ -90,10 +90,29 @@ class TokenManagerImpl @Inject constructor(
         if (user != null && user.id.isNotEmpty() && user.id != "spotify_user") {
             return user.id
         }
-        // Fall back to the scope field (token response username, usually empty).
+        // Fall back to the scope field which now contains "username|clientId".
         val token = tokenStore.spotifyToken.first() ?: return null
-        val username = token.scope
-        return if (username.isNotEmpty()) username else null
+        val scope = token.scope
+        if (scope.isEmpty()) return null
+        // Extract username (before the delimiter)
+        val username = scope.split(SpotifyAuthManager.SCOPE_DELIMITER).firstOrNull() ?: scope
+        return username.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Returns the stored Spotify client ID from the token's scope field.
+     *
+     * The scope field contains "username|clientId" as packed by [SpotifyAuthManager].
+     * The client ID is needed for acquiring client tokens for the GraphQL Partner API.
+     */
+    override suspend fun getSpotifyClientId(): String? {
+        val token = tokenStore.spotifyToken.first() ?: return null
+        val scope = token.scope
+        if (scope.isEmpty()) return null
+        val parts = scope.split(SpotifyAuthManager.SCOPE_DELIMITER)
+        val clientId = if (parts.size >= 2) parts[1] else null
+        Log.d("StashSync", "getSpotifyClientId: scope='$scope', clientId='$clientId'")
+        return clientId?.takeIf { it.isNotEmpty() }
     }
 
     /**
@@ -177,14 +196,16 @@ class TokenManagerImpl @Inject constructor(
     override suspend fun connectSpotifyWithCookie(spDcCookie: String): Boolean {
         val token = spotifyAuthManager.getAccessToken(spDcCookie) ?: return false
 
-        // The username is already resolved in getAccessToken() and stored in
-        // ServiceToken.scope (from JWT decode or token response username field).
-        // Also try JWT extraction as a direct fallback.
-        val username = token.scope.takeIf { it.isNotEmpty() }
+        // The scope field now contains "username|clientId" (packed by SpotifyAuthManager).
+        // Extract just the username part for the user profile.
+        val scopeParts = token.scope.split(SpotifyAuthManager.SCOPE_DELIMITER)
+        val username = scopeParts.firstOrNull()?.takeIf { it.isNotEmpty() }
             ?: spotifyAuthManager.extractUsernameFromJwt(token.accessToken)
             ?: ""
 
-        android.util.Log.d("StashSync", "connectSpotifyWithCookie: resolved username='$username'")
+        Log.d("StashSync", "connectSpotifyWithCookie: resolved username='$username', " +
+            "clientId='${scopeParts.getOrNull(1) ?: "none"}'")
+
 
         val user = if (username.isNotEmpty()) {
             UserInfo(id = username, displayName = username)

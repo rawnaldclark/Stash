@@ -58,6 +58,17 @@ interface TokenManager {
     suspend fun getSpDcCookie(): String?
 
     /**
+     * Returns the stored Spotify client ID from the token metadata.
+     *
+     * The client ID is extracted from the sp_dc token response and stored
+     * alongside the username in the [ServiceToken.scope] field. It is needed
+     * by the GraphQL Partner API client token acquisition flow.
+     *
+     * @return The Spotify client ID, or null if not available.
+     */
+    suspend fun getSpotifyClientId(): String?
+
+    /**
      * Returns a valid YouTube Music access token, or null if the user is not authenticated
      * or the token has expired / is expiring soon.
      */

@@ -1,6 +1,7 @@
 package com.stash.data.spotify.di
 
 import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.data.spotify.SpotifyApiClient
 import dagger.Module
 import dagger.Provides
@@ -14,6 +15,9 @@ import javax.inject.Singleton
  *
  * The client is scoped to [SingletonComponent] so that a single instance is
  * shared across the entire application, avoiding redundant OkHttp connections.
+ *
+ * The [SpotifyAuthManager] is injected to provide client token acquisition
+ * for the GraphQL Partner API.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -24,5 +28,6 @@ object SpotifyDataModule {
     fun provideSpotifyApiClient(
         okHttpClient: OkHttpClient,
         tokenManager: TokenManager,
-    ): SpotifyApiClient = SpotifyApiClient(okHttpClient, tokenManager)
+        spotifyAuthManager: SpotifyAuthManager,
+    ): SpotifyApiClient = SpotifyApiClient(okHttpClient, tokenManager, spotifyAuthManager)
 }
