@@ -7,7 +7,7 @@ import com.stash.core.auth.model.ServiceToken
 import com.stash.core.auth.model.UserInfo
 import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.core.auth.store.EncryptedTokenStore
-import com.stash.core.auth.youtube.YouTubeDeviceFlowManager
+import com.stash.core.auth.youtube.YouTubeCookieHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,7 +31,7 @@ import javax.inject.Singleton
 class TokenManagerImpl @Inject constructor(
     private val tokenStore: EncryptedTokenStore,
     private val spotifyAuthManager: SpotifyAuthManager,
-    private val youTubeDeviceFlowManager: YouTubeDeviceFlowManager,
+    private val youTubeCookieHelper: YouTubeCookieHelper,
 ) : TokenManager {
 
     /** Dedicated scope for collecting store flows; survives until the process dies. */
@@ -140,24 +140,12 @@ class TokenManagerImpl @Inject constructor(
     }
 
     /**
-     * Returns a valid YouTube access token, auto-refreshing via the stored
-     * refresh token if the current token is expired or expiring soon.
+     * Returns the stored YouTube Music cookie string for InnerTube authentication.
+     * The cookie is stored in the ServiceToken's refreshToken field.
      */
-    override suspend fun getYouTubeAccessToken(): String? {
+    override suspend fun getYouTubeCookie(): String? {
         val token = tokenStore.youTubeToken.first() ?: return null
-
-        // If the token is still fresh, return it immediately
-        if (!token.isExpired && !token.isExpiringSoon) {
-            return token.accessToken
-        }
-
-        // Token is expired or expiring soon -- refresh using the stored refresh token
-        val refreshToken = token.refreshToken
-        if (refreshToken.isEmpty()) return null
-
-        val refreshed = youTubeDeviceFlowManager.refreshAccessToken(refreshToken) ?: return null
-        tokenStore.saveYouTubeToken(refreshed)
-        return refreshed.accessToken
+        return token.refreshToken.takeIf { it.isNotEmpty() }
     }
 
     // -- Mutators -------------------------------------------------------------
@@ -166,8 +154,24 @@ class TokenManagerImpl @Inject constructor(
         tokenStore.saveSpotifyToken(token, user)
     }
 
-    override suspend fun saveYouTubeAuth(token: ServiceToken, user: UserInfo) {
+    /**
+     * Validates a YouTube Music cookie and stores it for InnerTube authentication.
+     * The cookie must contain SAPISID or __Secure-3PAPISID for SAPISIDHASH auth.
+     */
+    override suspend fun connectYouTubeWithCookie(cookie: String): Boolean {
+        if (cookie.isBlank()) return false
+        val sapiSid = youTubeCookieHelper.extractSapiSid(cookie) ?: return false
+        if (sapiSid.isBlank()) return false
+
+        // Store the cookie in a ServiceToken: refreshToken = cookie, accessToken = placeholder
+        val token = ServiceToken(
+            accessToken = "cookie_auth",
+            refreshToken = cookie.trim(),
+            expiresAtEpoch = java.time.Instant.now().epochSecond + 365L * 24 * 3600,
+        )
+        val user = UserInfo(id = "youtube_user", displayName = "YouTube User")
         tokenStore.saveYouTubeToken(token, user)
+        return true
     }
 
     override suspend fun clearAuth(service: AuthService) {
@@ -179,8 +183,12 @@ class TokenManagerImpl @Inject constructor(
 
     override suspend fun isAuthenticated(service: AuthService): Boolean {
         return when (service) {
-            AuthService.SPOTIFY -> tokenStore.spotifyToken.first()?.let { !it.isExpired } ?: false
-            AuthService.YOUTUBE_MUSIC -> tokenStore.youTubeToken.first()?.let { !it.isExpired } ?: false
+            AuthService.SPOTIFY -> tokenStore.spotifyToken.first()?.let {
+                it.refreshToken.isNotEmpty()  // sp_dc cookie is the long-lived credential
+            } ?: false
+            AuthService.YOUTUBE_MUSIC -> tokenStore.youTubeToken.first()?.let {
+                it.refreshToken.isNotEmpty()
+            } ?: false
         }
     }
 
