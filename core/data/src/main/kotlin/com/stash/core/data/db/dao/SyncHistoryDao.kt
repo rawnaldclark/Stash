@@ -115,6 +115,15 @@ interface SyncHistoryDao {
     )
 
     /**
+     * Update the diagnostics JSON for a sync run.
+     *
+     * @param id          Row ID of the sync record.
+     * @param diagnostics JSON-serialized list of [SyncStepResult], or null.
+     */
+    @Query("UPDATE sync_history SET diagnostics = :diagnostics WHERE id = :id")
+    suspend fun updateDiagnostics(id: Long, diagnostics: String?)
+
+    /**
      * Update the final result of a sync run in a single statement,
      * setting status, completion timestamp, error message, and all tallies.
      */

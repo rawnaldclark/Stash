@@ -1,5 +1,6 @@
 package com.stash.data.ytmusic
 
+import com.stash.core.model.SyncResult
 import com.stash.data.ytmusic.model.YTMusicPlaylist
 import com.stash.data.ytmusic.model.YTMusicTrack
 import kotlinx.serialization.json.JsonArray
@@ -47,9 +48,17 @@ class YTMusicApiClient @Inject constructor(
      *
      * @return List of [YTMusicTrack] representing liked songs.
      */
-    suspend fun getLikedSongs(): List<YTMusicTrack> {
-        val response = innerTubeClient.browse(BROWSE_LIKED_SONGS) ?: return emptyList()
-        return parseTracksFromBrowse(response)
+    suspend fun getLikedSongs(): SyncResult<List<YTMusicTrack>> {
+        val response = innerTubeClient.browse(BROWSE_LIKED_SONGS)
+        if (response == null) {
+            return SyncResult.Error("InnerTube browse($BROWSE_LIKED_SONGS) returned null")
+        }
+        val tracks = parseTracksFromBrowse(response)
+        return if (tracks.isEmpty()) {
+            SyncResult.Empty("Liked songs returned no tracks")
+        } else {
+            SyncResult.Success(tracks)
+        }
     }
 
     /**
@@ -61,9 +70,17 @@ class YTMusicApiClient @Inject constructor(
      *
      * @return List of [YTMusicPlaylist] representing discovered mixes.
      */
-    suspend fun getHomeMixes(): List<YTMusicPlaylist> {
-        val response = innerTubeClient.browse(BROWSE_HOME) ?: return emptyList()
-        return parseMixesFromHome(response)
+    suspend fun getHomeMixes(): SyncResult<List<YTMusicPlaylist>> {
+        val response = innerTubeClient.browse(BROWSE_HOME)
+        if (response == null) {
+            return SyncResult.Error("InnerTube browse($BROWSE_HOME) returned null — check CLIENT_VERSION or cookie")
+        }
+        val mixes = parseMixesFromHome(response)
+        return if (mixes.isEmpty()) {
+            SyncResult.Empty("Home feed returned no mixes")
+        } else {
+            SyncResult.Success(mixes)
+        }
     }
 
     /**
@@ -74,10 +91,18 @@ class YTMusicApiClient @Inject constructor(
      * @param playlistId The playlist ID (without the `VL` prefix).
      * @return List of [YTMusicTrack] in the playlist.
      */
-    suspend fun getPlaylistTracks(playlistId: String): List<YTMusicTrack> {
+    suspend fun getPlaylistTracks(playlistId: String): SyncResult<List<YTMusicTrack>> {
         val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
-        val response = innerTubeClient.browse(browseId) ?: return emptyList()
-        return parseTracksFromBrowse(response)
+        val response = innerTubeClient.browse(browseId)
+        if (response == null) {
+            return SyncResult.Error("InnerTube browse($browseId) returned null")
+        }
+        val tracks = parseTracksFromBrowse(response)
+        return if (tracks.isEmpty()) {
+            SyncResult.Empty("Playlist $playlistId returned no tracks")
+        } else {
+            SyncResult.Success(tracks)
+        }
     }
 
     // ── InnerTube response parsers ───────────────────────────────────────

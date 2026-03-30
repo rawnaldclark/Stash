@@ -23,6 +23,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import com.stash.core.model.SyncResult
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URLEncoder
@@ -209,28 +210,30 @@ class SpotifyApiClient @Inject constructor(
      * @return List of [SpotifyTrackItem].
      * @throws SpotifyApiException if all approaches fail.
      */
-    suspend fun getPlaylistTracks(playlistId: String): List<SpotifyTrackItem> {
-        return withContext(Dispatchers.IO) {
-            Log.d(TAG, "getPlaylistTracks: playlistId=$playlistId (trying client_credentials first)")
+    suspend fun getPlaylistTracks(playlistId: String): SyncResult<List<SpotifyTrackItem>> {
+        Log.d(TAG, "getPlaylistTracks: playlistId=$playlistId")
 
-            // Prong 1: Try client_credentials + public Web API
-            val clientCredsTracks = tryGetPlaylistTracksViaWebApi(playlistId)
-            if (clientCredsTracks != null) {
-                Log.d(TAG, "getPlaylistTracks: got ${clientCredsTracks.size} tracks via Web API")
-                return@withContext clientCredsTracks
+        try {
+            // Prong 1: Try client credentials + Web API first
+            val webApiTracks = tryGetPlaylistTracksViaWebApi(playlistId)
+            if (webApiTracks != null) {
+                Log.d(TAG, "getPlaylistTracks: got ${webApiTracks.size} tracks via Web API")
+                return SyncResult.Success(webApiTracks)
             }
 
             // Prong 2: Fall back to sp_dc GraphQL
-            Log.w(TAG, "getPlaylistTracks: Web API failed, falling back to GraphQL for $playlistId")
+            Log.d(TAG, "getPlaylistTracks: Web API failed, trying GraphQL fallback")
             val graphqlTracks = tryGetPlaylistTracksViaGraphQL(playlistId)
             if (graphqlTracks != null) {
-                Log.d(TAG, "getPlaylistTracks: got ${graphqlTracks.size} tracks via GraphQL fallback")
-                return@withContext graphqlTracks
+                Log.d(TAG, "getPlaylistTracks: got ${graphqlTracks.size} tracks via GraphQL")
+                return SyncResult.Success(graphqlTracks)
             }
 
-            Log.e(TAG, "getPlaylistTracks: both Web API and GraphQL failed for $playlistId")
-            throw SpotifyApiException(0, "$WEB_API_BASE/playlists/$playlistId/tracks",
-                "Failed to fetch tracks for playlist $playlistId via both Web API and GraphQL")
+            return SyncResult.Error("getPlaylistTracks: both Web API and GraphQL failed for $playlistId")
+        } catch (e: SpotifyApiException) {
+            throw e  // Preserve for doWork() 429 retry handling
+        } catch (e: Exception) {
+            return SyncResult.Error("getPlaylistTracks failed: ${e.message}", cause = e)
         }
     }
 
@@ -247,7 +250,7 @@ class SpotifyApiClient @Inject constructor(
     suspend fun getLikedSongs(
         limit: Int = DEFAULT_LIMIT,
         offset: Int = 0,
-    ): List<SpotifyTrackItem> = withContext(Dispatchers.IO) {
+    ): SyncResult<List<SpotifyTrackItem>> = withContext(Dispatchers.IO) {
         Log.d(TAG, "getLikedSongs: limit=$limit, offset=$offset (via sp_dc GraphQL)")
 
         try {
@@ -268,14 +271,17 @@ class SpotifyApiClient @Inject constructor(
             if (responseJson != null) {
                 val tracks = parsePlaylistTracksGraphQLResponse(responseJson)
                 Log.d(TAG, "getLikedSongs: got ${tracks.size} liked songs")
-                return@withContext tracks
+                if (tracks.isEmpty()) {
+                    SyncResult.Empty("GraphQL returned empty liked songs")
+                } else {
+                    SyncResult.Success(tracks)
+                }
+            } else {
+                SyncResult.Error("getLikedSongs: GraphQL returned null (sp_dc may be expired)")
             }
-
-            Log.w(TAG, "getLikedSongs: GraphQL returned null, returning empty list")
-            emptyList()
         } catch (e: Exception) {
-            Log.e(TAG, "getLikedSongs: sp_dc/GraphQL failed, returning empty list", e)
-            emptyList()
+            Log.e(TAG, "getLikedSongs: failed", e)
+            SyncResult.Error("getLikedSongs failed: ${e.message}", e)
         }
     }
 
@@ -289,16 +295,25 @@ class SpotifyApiClient @Inject constructor(
      *
      * @return List of [SpotifyPlaylistItem] representing Daily Mixes.
      */
-    suspend fun getDailyMixes(): List<SpotifyPlaylistItem> {
+    suspend fun getDailyMixes(): SyncResult<List<SpotifyPlaylistItem>> {
         return try {
-            getUserPlaylists().filter { playlist ->
-                playlist.owner.id == "spotify" && DAILY_MIX_REGEX.matches(playlist.name)
-            }.also { mixes ->
+            val playlists = getUserPlaylists()
+            if (playlists.isEmpty()) {
+                SyncResult.Empty("No playlists returned from libraryV3")
+            } else {
+                val mixes = playlists.filter { playlist ->
+                    playlist.owner.id == "spotify" && DAILY_MIX_REGEX.matches(playlist.name)
+                }
                 Log.d(TAG, "getDailyMixes: found ${mixes.size} daily mixes: ${mixes.map { it.name }}")
+                if (mixes.isEmpty()) {
+                    SyncResult.Empty("No Daily Mix playlists found in ${playlists.size} playlists")
+                } else {
+                    SyncResult.Success(mixes)
+                }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "getDailyMixes: failed to enumerate daily mixes, returning empty list", e)
-            emptyList()
+            Log.e(TAG, "getDailyMixes: failed", e)
+            SyncResult.Error("getDailyMixes failed: ${e.message}", e)
         }
     }
 

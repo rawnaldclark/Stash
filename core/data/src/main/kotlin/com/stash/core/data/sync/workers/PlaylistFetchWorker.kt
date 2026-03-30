@@ -16,13 +16,18 @@ import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
+import com.stash.core.model.StepStatus
+import com.stash.core.model.SyncResult
 import com.stash.core.model.SyncState
+import com.stash.core.model.SyncStepResult
 import com.stash.core.model.SyncTrigger
 import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.spotify.SpotifyApiException
 import com.stash.data.ytmusic.YTMusicApiClient
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.time.Instant
 
 /**
@@ -57,6 +62,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             startedAt = Instant.now(),
         )
         val syncId = syncHistoryDao.insert(syncEntry)
+        val diagnostics = mutableListOf<SyncStepResult>()
 
         try {
             // Step 2: Authenticating phase.
@@ -82,12 +88,28 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
             // Step 4: Fetch Spotify playlists and tracks.
             if (isSpotifyAuthenticated) {
-                fetchSpotifyPlaylists(syncId)
+                fetchSpotifyPlaylists(syncId, diagnostics)
             }
 
             // Step 5: Fetch YouTube Music playlists and tracks.
             if (isYouTubeAuthenticated) {
-                fetchYouTubePlaylists(syncId)
+                fetchYouTubePlaylists(syncId, diagnostics)
+            }
+
+            // Persist diagnostics.
+            syncHistoryDao.updateDiagnostics(syncId, Json.encodeToString(diagnostics.toList()))
+
+            // If ALL diagnostics entries errored, the sync produced no data -- fail.
+            if (diagnostics.isNotEmpty() && diagnostics.all { it.status == StepStatus.ERROR }) {
+                val summary = diagnostics.joinToString("; ") { "${it.service}/${it.step}: ${it.errorMessage}" }
+                syncHistoryDao.updateStatus(
+                    id = syncId,
+                    status = SyncState.FAILED,
+                    completedAt = System.currentTimeMillis(),
+                    errorMessage = "All API calls failed: $summary",
+                )
+                syncStateManager.onError("All API calls failed")
+                return Result.failure(workDataOf(KEY_SYNC_ID to syncId))
             }
 
             return Result.success(workDataOf(KEY_SYNC_ID to syncId))
@@ -95,6 +117,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // Transient Spotify API failure (e.g. 429 rate limit exhausted) --
             // ask WorkManager to schedule a retry so the sync can succeed later.
             Log.w(TAG, "Spotify API error (HTTP ${e.httpCode}), scheduling retry", e)
+            syncHistoryDao.updateDiagnostics(syncId, Json.encodeToString(diagnostics.toList()))
             syncHistoryDao.updateStatus(
                 id = syncId,
                 status = SyncState.FAILED,
@@ -105,6 +128,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             return Result.retry()
         } catch (e: Exception) {
             Log.e(TAG, "Playlist fetch failed", e)
+            syncHistoryDao.updateDiagnostics(syncId, Json.encodeToString(diagnostics.toList()))
             syncHistoryDao.updateStatus(
                 id = syncId,
                 status = SyncState.FAILED,
@@ -131,39 +155,118 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * @throws SpotifyApiException only if a critical, retryable API error occurs
      *         during track fetching (e.g., client_credentials token endpoint down).
      */
-    private suspend fun fetchSpotifyPlaylists(syncId: Long) {
+    private suspend fun fetchSpotifyPlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>) {
         Log.d(TAG, "fetchSpotifyPlaylists: starting for syncId=$syncId")
         var dailyMixCount = 0
         var likedSongCount = 0
 
         // Fetch Daily Mixes (sp_dc dependent -- may return empty if GraphQL fails).
         try {
-            val dailyMixes = spotifyApiClient.getDailyMixes()
-            Log.d(TAG, "fetchSpotifyPlaylists: found ${dailyMixes.size} daily mixes")
+            when (val result = spotifyApiClient.getDailyMixes()) {
+                is SyncResult.Success -> {
+                    val dailyMixes = result.data
+                    diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.SUCCESS, dailyMixes.size))
+                    Log.d(TAG, "fetchSpotifyPlaylists: found ${dailyMixes.size} daily mixes")
 
-            for (mix in dailyMixes) {
-                try {
-                    val mixNumber = Regex("""\d+""").find(mix.name)?.value?.toIntOrNull()
-                    val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
+                    for (mix in dailyMixes) {
+                        try {
+                            val mixNumber = Regex("""\d+""").find(mix.name)?.value?.toIntOrNull()
+                            val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
+                                RemotePlaylistSnapshotEntity(
+                                    syncId = syncId,
+                                    source = MusicSource.SPOTIFY,
+                                    sourcePlaylistId = mix.id,
+                                    playlistName = mix.name,
+                                    playlistType = PlaylistType.DAILY_MIX,
+                                    mixNumber = mixNumber,
+                                    trackCount = mix.tracks?.total ?: 0,
+                                    artUrl = mix.images?.firstOrNull()?.url,
+                                )
+                            )
+
+                            // Track fetching uses client_credentials (Prong 1) -- reliable
+                            when (val tracksResult = spotifyApiClient.getPlaylistTracks(mix.id)) {
+                                is SyncResult.Success -> {
+                                    val tracks = tracksResult.data
+                                    val trackSnapshots = tracks.mapIndexedNotNull { index, item ->
+                                        val track = item.track ?: return@mapIndexedNotNull null
+                                        RemoteTrackSnapshotEntity(
+                                            syncId = syncId,
+                                            snapshotPlaylistId = playlistSnapshotId,
+                                            title = track.name,
+                                            artist = track.artists.joinToString(", ") { it.name },
+                                            album = track.album?.name,
+                                            durationMs = track.duration_ms,
+                                            spotifyUri = track.uri,
+                                            albumArtUrl = track.album?.images?.firstOrNull()?.url,
+                                            position = index,
+                                        )
+                                    }
+                                    if (trackSnapshots.isNotEmpty()) {
+                                        remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                                        dailyMixCount++
+                                    }
+                                    Log.d(TAG, "fetchSpotifyPlaylists: saved ${trackSnapshots.size} tracks for '${mix.name}'")
+                                }
+                                is SyncResult.Empty -> {
+                                    Log.d(TAG, "fetchSpotifyPlaylists: no tracks for '${mix.name}': ${tracksResult.reason}")
+                                }
+                                is SyncResult.Error -> {
+                                    if (tracksResult.cause is SpotifyApiException) {
+                                        throw tracksResult.cause as SpotifyApiException
+                                    }
+                                    Log.e(TAG, "fetchSpotifyPlaylists: failed to fetch tracks for '${mix.name}': ${tracksResult.message}")
+                                }
+                            }
+                        } catch (e: SpotifyApiException) {
+                            // Re-throw SpotifyApiException so doWork() can decide to retry
+                            throw e
+                        } catch (e: Exception) {
+                            Log.e(TAG, "fetchSpotifyPlaylists: failed to fetch tracks for mix '${mix.name}'", e)
+                            // Continue with next mix rather than aborting
+                        }
+                    }
+                }
+                is SyncResult.Empty -> {
+                    diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.EMPTY, errorMessage = result.reason))
+                    Log.d(TAG, "fetchSpotifyPlaylists: daily mixes empty: ${result.reason}")
+                }
+                is SyncResult.Error -> {
+                    diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.ERROR, errorMessage = result.message))
+                    Log.e(TAG, "fetchSpotifyPlaylists: daily mixes error: ${result.message}")
+                }
+            }
+        } catch (e: SpotifyApiException) {
+            throw e // Let doWork handle retries
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchSpotifyPlaylists: daily mixes enumeration failed (sp_dc issue), continuing", e)
+            diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.ERROR, errorMessage = e.message))
+        }
+
+        // Fetch Liked Songs (sp_dc dependent -- may return empty if GraphQL fails).
+        try {
+            when (val result = spotifyApiClient.getLikedSongs()) {
+                is SyncResult.Success -> {
+                    val likedSongs = result.data
+                    diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SUCCESS, likedSongs.size))
+                    Log.d(TAG, "fetchSpotifyPlaylists: found ${likedSongs.size} liked songs")
+
+                    val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
                         RemotePlaylistSnapshotEntity(
                             syncId = syncId,
                             source = MusicSource.SPOTIFY,
-                            sourcePlaylistId = mix.id,
-                            playlistName = mix.name,
-                            playlistType = PlaylistType.DAILY_MIX,
-                            mixNumber = mixNumber,
-                            trackCount = mix.tracks?.total ?: 0,
-                            artUrl = mix.images?.firstOrNull()?.url,
+                            sourcePlaylistId = "spotify_liked_songs",
+                            playlistName = "Liked Songs",
+                            playlistType = PlaylistType.LIKED_SONGS,
+                            trackCount = likedSongs.size,
                         )
                     )
 
-                    // Track fetching uses client_credentials (Prong 1) -- reliable
-                    val tracks = spotifyApiClient.getPlaylistTracks(mix.id)
-                    val trackSnapshots = tracks.mapIndexedNotNull { index, item ->
+                    val trackSnapshots = likedSongs.mapIndexedNotNull { index, item ->
                         val track = item.track ?: return@mapIndexedNotNull null
                         RemoteTrackSnapshotEntity(
                             syncId = syncId,
-                            snapshotPlaylistId = playlistSnapshotId,
+                            snapshotPlaylistId = likedPlaylistId,
                             title = track.name,
                             artist = track.artists.joinToString(", ") { it.name },
                             album = track.album?.name,
@@ -175,61 +278,21 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     }
                     if (trackSnapshots.isNotEmpty()) {
                         remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
-                        dailyMixCount++
+                        likedSongCount = trackSnapshots.size
                     }
-                    Log.d(TAG, "fetchSpotifyPlaylists: saved ${trackSnapshots.size} tracks for '${mix.name}'")
-                } catch (e: SpotifyApiException) {
-                    // Re-throw SpotifyApiException so doWork() can decide to retry
-                    throw e
-                } catch (e: Exception) {
-                    Log.e(TAG, "fetchSpotifyPlaylists: failed to fetch tracks for mix '${mix.name}'", e)
-                    // Continue with next mix rather than aborting
                 }
-            }
-        } catch (e: SpotifyApiException) {
-            throw e // Let doWork handle retries
-        } catch (e: Exception) {
-            Log.e(TAG, "fetchSpotifyPlaylists: daily mixes enumeration failed (sp_dc issue), continuing", e)
-        }
-
-        // Fetch Liked Songs (sp_dc dependent -- may return empty if GraphQL fails).
-        try {
-            val likedSongs = spotifyApiClient.getLikedSongs()
-            Log.d(TAG, "fetchSpotifyPlaylists: found ${likedSongs.size} liked songs")
-
-            if (likedSongs.isNotEmpty()) {
-                val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
-                    RemotePlaylistSnapshotEntity(
-                        syncId = syncId,
-                        source = MusicSource.SPOTIFY,
-                        sourcePlaylistId = "spotify_liked_songs",
-                        playlistName = "Liked Songs",
-                        playlistType = PlaylistType.LIKED_SONGS,
-                        trackCount = likedSongs.size,
-                    )
-                )
-
-                val trackSnapshots = likedSongs.mapIndexedNotNull { index, item ->
-                    val track = item.track ?: return@mapIndexedNotNull null
-                    RemoteTrackSnapshotEntity(
-                        syncId = syncId,
-                        snapshotPlaylistId = likedPlaylistId,
-                        title = track.name,
-                        artist = track.artists.joinToString(", ") { it.name },
-                        album = track.album?.name,
-                        durationMs = track.duration_ms,
-                        spotifyUri = track.uri,
-                        albumArtUrl = track.album?.images?.firstOrNull()?.url,
-                        position = index,
-                    )
+                is SyncResult.Empty -> {
+                    diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.EMPTY, errorMessage = result.reason))
+                    Log.d(TAG, "fetchSpotifyPlaylists: liked songs empty: ${result.reason}")
                 }
-                if (trackSnapshots.isNotEmpty()) {
-                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
-                    likedSongCount = trackSnapshots.size
+                is SyncResult.Error -> {
+                    diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = result.message))
+                    Log.e(TAG, "fetchSpotifyPlaylists: liked songs error: ${result.message}")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchSpotifyPlaylists: liked songs fetch failed (sp_dc issue), continuing", e)
+            diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message))
         }
 
         Log.d(TAG, "fetchSpotifyPlaylists: completed -- $dailyMixCount daily mixes, $likedSongCount liked songs")
@@ -238,76 +301,116 @@ class PlaylistFetchWorker @AssistedInject constructor(
     /**
      * Fetches Home Mixes and Liked Songs from YouTube Music and writes snapshot rows.
      */
-    private suspend fun fetchYouTubePlaylists(syncId: Long) {
+    private suspend fun fetchYouTubePlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>) {
         try {
-            // Fetch Home Mixes.
-            val homeMixes = ytMusicApiClient.getHomeMixes()
-            for ((index, mix) in homeMixes.withIndex()) {
-                val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
-                    RemotePlaylistSnapshotEntity(
-                        syncId = syncId,
-                        source = MusicSource.YOUTUBE,
-                        sourcePlaylistId = mix.playlistId,
-                        playlistName = mix.title,
-                        playlistType = PlaylistType.DAILY_MIX,
-                        mixNumber = index + 1,
-                        trackCount = mix.trackCount ?: 0,
-                        artUrl = mix.thumbnailUrl,
-                    )
-                )
+            Log.d(TAG, "fetchYouTubePlaylists: starting for syncId=$syncId")
 
-                val tracks = ytMusicApiClient.getPlaylistTracks(mix.playlistId)
-                val trackSnapshots = tracks.mapIndexed { position, track ->
-                    RemoteTrackSnapshotEntity(
-                        syncId = syncId,
-                        snapshotPlaylistId = playlistSnapshotId,
-                        title = track.title,
-                        artist = track.artists,
-                        album = track.album,
-                        durationMs = track.durationMs ?: 0L,
-                        youtubeId = track.videoId,
-                        albumArtUrl = track.thumbnailUrl,
-                        position = position,
-                    )
+            // Fetch Home Mixes.
+            when (val result = ytMusicApiClient.getHomeMixes()) {
+                is SyncResult.Success -> {
+                    val homeMixes = result.data
+                    diagnostics.add(SyncStepResult("YOUTUBE", "getHomeMixes", StepStatus.SUCCESS, homeMixes.size))
+                    Log.d(TAG, "fetchYouTubePlaylists: found ${homeMixes.size} home mixes")
+
+                    for ((index, mix) in homeMixes.withIndex()) {
+                        val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
+                            RemotePlaylistSnapshotEntity(
+                                syncId = syncId,
+                                source = MusicSource.YOUTUBE,
+                                sourcePlaylistId = mix.playlistId,
+                                playlistName = mix.title,
+                                playlistType = PlaylistType.DAILY_MIX,
+                                mixNumber = index + 1,
+                                trackCount = mix.trackCount ?: 0,
+                                artUrl = mix.thumbnailUrl,
+                            )
+                        )
+
+                        when (val tracksResult = ytMusicApiClient.getPlaylistTracks(mix.playlistId)) {
+                            is SyncResult.Success -> {
+                                val tracks = tracksResult.data
+                                val trackSnapshots = tracks.mapIndexed { position, track ->
+                                    RemoteTrackSnapshotEntity(
+                                        syncId = syncId,
+                                        snapshotPlaylistId = playlistSnapshotId,
+                                        title = track.title,
+                                        artist = track.artists,
+                                        album = track.album,
+                                        durationMs = track.durationMs ?: 0L,
+                                        youtubeId = track.videoId,
+                                        albumArtUrl = track.thumbnailUrl,
+                                        position = position,
+                                    )
+                                }
+                                if (trackSnapshots.isNotEmpty()) {
+                                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                                }
+                            }
+                            is SyncResult.Empty -> {
+                                Log.d(TAG, "fetchYouTubePlaylists: no tracks for '${mix.title}': ${tracksResult.reason}")
+                            }
+                            is SyncResult.Error -> {
+                                Log.e(TAG, "fetchYouTubePlaylists: failed to fetch tracks for '${mix.title}': ${tracksResult.message}")
+                            }
+                        }
+                    }
                 }
-                if (trackSnapshots.isNotEmpty()) {
-                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                is SyncResult.Empty -> {
+                    diagnostics.add(SyncStepResult("YOUTUBE", "getHomeMixes", StepStatus.EMPTY, errorMessage = result.reason))
+                    Log.d(TAG, "fetchYouTubePlaylists: home mixes empty: ${result.reason}")
+                }
+                is SyncResult.Error -> {
+                    diagnostics.add(SyncStepResult("YOUTUBE", "getHomeMixes", StepStatus.ERROR, errorMessage = result.message))
+                    Log.e(TAG, "fetchYouTubePlaylists: home mixes error: ${result.message}")
                 }
             }
 
             // Fetch Liked Songs.
-            val likedSongs = ytMusicApiClient.getLikedSongs()
-            if (likedSongs.isNotEmpty()) {
-                val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
-                    RemotePlaylistSnapshotEntity(
-                        syncId = syncId,
-                        source = MusicSource.YOUTUBE,
-                        sourcePlaylistId = "youtube_liked_songs",
-                        playlistName = "Liked Songs",
-                        playlistType = PlaylistType.LIKED_SONGS,
-                        trackCount = likedSongs.size,
-                    )
-                )
+            when (val result = ytMusicApiClient.getLikedSongs()) {
+                is SyncResult.Success -> {
+                    val likedSongs = result.data
+                    diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.SUCCESS, likedSongs.size))
 
-                val trackSnapshots = likedSongs.mapIndexed { position, track ->
-                    RemoteTrackSnapshotEntity(
-                        syncId = syncId,
-                        snapshotPlaylistId = likedPlaylistId,
-                        title = track.title,
-                        artist = track.artists,
-                        album = track.album,
-                        durationMs = track.durationMs ?: 0L,
-                        youtubeId = track.videoId,
-                        albumArtUrl = track.thumbnailUrl,
-                        position = position,
+                    val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
+                        RemotePlaylistSnapshotEntity(
+                            syncId = syncId,
+                            source = MusicSource.YOUTUBE,
+                            sourcePlaylistId = "youtube_liked_songs",
+                            playlistName = "Liked Songs",
+                            playlistType = PlaylistType.LIKED_SONGS,
+                            trackCount = likedSongs.size,
+                        )
                     )
+
+                    val trackSnapshots = likedSongs.mapIndexed { position, track ->
+                        RemoteTrackSnapshotEntity(
+                            syncId = syncId,
+                            snapshotPlaylistId = likedPlaylistId,
+                            title = track.title,
+                            artist = track.artists,
+                            album = track.album,
+                            durationMs = track.durationMs ?: 0L,
+                            youtubeId = track.videoId,
+                            albumArtUrl = track.thumbnailUrl,
+                            position = position,
+                        )
+                    }
+                    if (trackSnapshots.isNotEmpty()) {
+                        remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                    }
                 }
-                if (trackSnapshots.isNotEmpty()) {
-                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                is SyncResult.Empty -> {
+                    diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.EMPTY, errorMessage = result.reason))
+                    Log.d(TAG, "fetchYouTubePlaylists: liked songs empty: ${result.reason}")
+                }
+                is SyncResult.Error -> {
+                    diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.ERROR, errorMessage = result.message))
+                    Log.e(TAG, "fetchYouTubePlaylists: liked songs error: ${result.message}")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "YouTube Music fetch failed, continuing with other services", e)
+            diagnostics.add(SyncStepResult("YOUTUBE", "fetchYouTubePlaylists", StepStatus.ERROR, errorMessage = e.message))
         }
     }
 }
