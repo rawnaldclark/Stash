@@ -38,7 +38,7 @@ import com.stash.core.data.db.entity.TrackFts
         RemotePlaylistSnapshotEntity::class,
         RemoteTrackSnapshotEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

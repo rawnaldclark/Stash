@@ -41,5 +41,8 @@ data class SyncHistoryEntity(
     @ColumnInfo(name = "error_message")
     val errorMessage: String? = null,
 
+    @ColumnInfo(name = "diagnostics")
+    val diagnostics: String? = null,
+
     val trigger: SyncTrigger = SyncTrigger.MANUAL,
 )
