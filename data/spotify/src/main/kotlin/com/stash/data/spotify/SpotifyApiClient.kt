@@ -154,109 +154,44 @@ class SpotifyApiClient @Inject constructor(
     /**
      * Fetches the current user's playlists via the GraphQL `libraryV3` operation.
      *
-     * This is a sp_dc-dependent operation (Prong 2). If the GraphQL request fails,
-     * returns an empty list rather than throwing -- the user can still manually
-     * sync individual playlists by ID.
-     *
-     * @param limit  Maximum number of playlists to return (default 50).
-     * @param offset Zero-based index of the first playlist to return.
-     * @return List of [SpotifyPlaylistItem].
+     * Uses sp_dc-derived access token + client token (Prong 2).
+     * The previous Web API endpoint (/v1/users/{id}/playlists) was removed
+     * by Spotify in February 2026.
      */
     suspend fun getUserPlaylists(
         limit: Int = DEFAULT_LIMIT,
         offset: Int = 0,
     ): List<SpotifyPlaylistItem> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "getUserPlaylists: limit=$limit, offset=$offset")
-
-        // Use client_credentials + public Web API to fetch user's playlists
-        val token = getClientCredentialsToken()
-        if (token == null) {
-            Log.e(TAG, "getUserPlaylists: no client_credentials token available")
-            return@withContext emptyList()
-        }
-
-        val username = tokenManager.getSpotifyUsername()
-        if (username.isNullOrEmpty()) {
-            Log.e(TAG, "getUserPlaylists: no Spotify username stored, cannot fetch playlists")
-            return@withContext emptyList()
-        }
+        Log.d(TAG, "getUserPlaylists: limit=$limit, offset=$offset (via GraphQL libraryV3)")
 
         try {
-            val url = "$WEB_API_BASE/users/$username/playlists?limit=$limit&offset=$offset"
-            Log.d(TAG, "getUserPlaylists: GET $url")
-
-            // Retry with backoff for 429
-            var lastResponse: okhttp3.Response? = null
-            for (attempt in 0..3) {
-                if (attempt > 0) {
-                    val waitMs = (attempt * 2000L)
-                    Log.d(TAG, "getUserPlaylists: retry attempt $attempt, waiting ${waitMs}ms")
-                    kotlinx.coroutines.delay(waitMs)
+            val variables = """
+                {
+                    "filters": ["Playlists"],
+                    "order": null,
+                    "textFilter": "",
+                    "features": ["LIKED_SONGS","YOUR_EPISODES"],
+                    "limit": $limit,
+                    "offset": $offset
                 }
+            """.trimIndent()
 
-                val request = Request.Builder()
-                    .url(url)
-                    .get()
-                    .header("Authorization", "Bearer $token")
-                    .header("Accept", "application/json")
-                    .build()
+            val responseJson = executeGraphQL(
+                operationName = "libraryV3",
+                variables = variables,
+                hash = SpotifyAuthConfig.HASH_LIBRARY_V3,
+            )
 
-                lastResponse = okHttpClient.newCall(request).execute()
-                Log.d(TAG, "getUserPlaylists: attempt $attempt HTTP ${lastResponse.code}")
-
-                if (lastResponse.isSuccessful) break
-                if (lastResponse.code == 429) {
-                    val retryAfter = lastResponse.header("Retry-After")?.toLongOrNull() ?: 2L
-                    Log.w(TAG, "getUserPlaylists: 429, Retry-After=$retryAfter")
-                    lastResponse.body?.close()
-                    kotlinx.coroutines.delay(retryAfter * 1000)
-                    continue
-                }
-                break // non-429 error, don't retry
+            if (responseJson != null) {
+                val playlists = parseLibraryResponse(responseJson)
+                Log.d(TAG, "getUserPlaylists: parsed ${playlists.size} playlists from libraryV3")
+                playlists
+            } else {
+                Log.w(TAG, "getUserPlaylists: GraphQL returned null")
+                emptyList()
             }
-
-            val response = lastResponse ?: return@withContext emptyList()
-            val responseBody = response.body?.string()
-            Log.d(TAG, "getUserPlaylists: final HTTP ${response.code}, body length=${responseBody?.length ?: 0}")
-
-            if (!response.isSuccessful || responseBody == null) {
-                Log.e(TAG, "getUserPlaylists: failed HTTP ${response.code}, body=${responseBody?.take(300)}")
-                return@withContext emptyList()
-            }
-
-            val root = json.parseToJsonElement(responseBody).jsonObject
-            val items = root["items"]?.jsonArray ?: return@withContext emptyList()
-
-            val playlists = items.mapNotNull { element ->
-                try {
-                    val obj = element.jsonObject
-                    val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                    val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "Unknown"
-                    val ownerObj = obj["owner"]?.jsonObject
-                    val ownerId = ownerObj?.get("id")?.jsonPrimitive?.contentOrNull ?: ""
-                    val ownerName = ownerObj?.get("display_name")?.jsonPrimitive?.contentOrNull
-                    val images = obj["images"]?.jsonArray?.mapNotNull { imgEl ->
-                        imgEl.jsonObject["url"]?.jsonPrimitive?.contentOrNull?.let { SpotifyImage(url = it) }
-                    }
-                    val trackCount = obj["tracks"]?.jsonObject?.get("total")?.jsonPrimitive?.intOrNull
-
-                    SpotifyPlaylistItem(
-                        id = id,
-                        name = name,
-                        owner = SpotifyOwner(id = ownerId, display_name = ownerName),
-                        images = images,
-                        tracks = trackCount?.let { SpotifyTracksRef(total = it) },
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "getUserPlaylists: failed to parse playlist item", e)
-                    null
-                }
-            }
-
-            Log.d(TAG, "getUserPlaylists: parsed ${playlists.size} playlists")
-            playlists
         } catch (e: Exception) {
-            Log.e(TAG, "getUserPlaylists: failed", e)
+            Log.e(TAG, "getUserPlaylists: GraphQL libraryV3 failed", e)
             emptyList()
         }
     }
