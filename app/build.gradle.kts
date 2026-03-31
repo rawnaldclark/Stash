@@ -37,11 +37,9 @@ android {
     buildFeatures { compose = true; buildConfig = true }
     packaging {
         jniLibs {
+            // Must extract native libs to disk so ffmpeg/ffprobe executables and
+            // libc++_shared.so are in the same directory and can be linked at runtime.
             useLegacyPackaging = true
-            // Exclude ffmpeg/ffprobe wrapper executables from APK — they can't find
-            // libc++_shared.so from the APK's lib dir. FFmpeg.init() extracts the real
-            // binaries (from .zip.so) to the app's data dir where libc++_shared.so lives.
-            excludes += setOf("lib/*/libffmpeg.so", "lib/*/libffprobe.so")
         }
     }
 }

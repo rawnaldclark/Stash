@@ -46,16 +46,15 @@ class DownloadExecutor @Inject constructor(
         try {
             val outputTemplate = File(outputDir, "$filename.%(ext)s").absolutePath
 
-            // Point yt-dlp to the extracted ffmpeg binaries (FFmpeg.init extracts them here)
-            val ffmpegDir = File(context.noBackupFilesDir, "youtubedl-android/packages/ffmpeg/usr/lib")
+            // Point yt-dlp to the app's native lib dir where both ffmpeg executables
+            // and libc++_shared.so are extracted together by useLegacyPackaging=true
+            val nativeLibDir = context.applicationInfo.nativeLibraryDir
 
             val request = YoutubeDLRequest(url).apply {
                 qualityArgs.forEach { addOption(it) }
                 addOption("-o", outputTemplate)
                 addOption("--no-playlist")
-                if (ffmpegDir.exists()) {
-                    addOption("--ffmpeg-location", ffmpegDir.absolutePath)
-                }
+                addOption("--ffmpeg-location", nativeLibDir)
             }
 
             Log.d("StashDL", "download: starting url=$url, output=$outputTemplate, args=$qualityArgs")
