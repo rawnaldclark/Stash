@@ -1,6 +1,7 @@
 package com.stash.data.download.ytdlp
 
 import android.content.Context
+import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +34,7 @@ class YtDlpManager @Inject constructor(
             if (initialized) return
             withContext(Dispatchers.IO) {
                 YoutubeDL.getInstance().init(context)
-                // FFmpeg is bundled via the youtubedl-ffmpeg dependency — no separate init needed.
+                FFmpeg.getInstance().init(context)
             }
             initialized = true
         }
