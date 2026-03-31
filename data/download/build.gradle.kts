@@ -13,6 +13,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:common"))
     implementation(project(":core:data"))
+    implementation(project(":core:auth"))
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
