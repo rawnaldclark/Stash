@@ -1,8 +1,11 @@
 package com.stash.data.download
 
+import android.content.Context
+import android.util.Log
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -19,6 +22,7 @@ import javax.inject.Singleton
 @Singleton
 class DownloadExecutor @Inject constructor(
     private val ytDlpManager: YtDlpManager,
+    @ApplicationContext private val context: Context,
 ) {
     /**
      * Downloads audio from a YouTube URL using yt-dlp.
@@ -42,22 +46,35 @@ class DownloadExecutor @Inject constructor(
         try {
             val outputTemplate = File(outputDir, "$filename.%(ext)s").absolutePath
 
+            // Point yt-dlp to the extracted ffmpeg binaries (FFmpeg.init extracts them here)
+            val ffmpegDir = File(context.noBackupFilesDir, "youtubedl-android/packages/ffmpeg/usr/lib")
+
             val request = YoutubeDLRequest(url).apply {
                 qualityArgs.forEach { addOption(it) }
                 addOption("-o", outputTemplate)
                 addOption("--no-playlist")
+                if (ffmpegDir.exists()) {
+                    addOption("--ffmpeg-location", ffmpegDir.absolutePath)
+                }
             }
 
-            YoutubeDL.getInstance().execute(
+            Log.d("StashDL", "download: starting url=$url, output=$outputTemplate, args=$qualityArgs")
+
+            val response = YoutubeDL.getInstance().execute(
                 request,
                 url, // processId for cancellation
             ) { progress, _, _ ->
                 onProgress((progress / 100f).coerceIn(0f, 1f))
             }
 
+            Log.d("StashDL", "download: yt-dlp exit=${response.exitCode}, stdout=${response.out?.take(500)}, stderr=${response.err?.take(500)}")
+
             // Find the output file (extension may vary depending on format conversion)
-            outputDir.listFiles()?.firstOrNull { it.nameWithoutExtension == filename }
-        } catch (_: Exception) {
+            val result = outputDir.listFiles()?.firstOrNull { it.nameWithoutExtension == filename }
+            Log.d("StashDL", "download: outputFile=${result?.absolutePath}, exists=${result?.exists()}")
+            result
+        } catch (e: Exception) {
+            Log.e("StashDL", "download: FAILED url=$url", e)
             null
         }
     }
