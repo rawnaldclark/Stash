@@ -1,6 +1,7 @@
 package com.stash.core.data.sync.workers
 
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
@@ -217,6 +218,7 @@ class TrackDownloadWorker @AssistedInject constructor(
         return ForegroundInfo(
             SyncNotificationManager.NOTIFICATION_ID_PROGRESS,
             notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
     }
 }
