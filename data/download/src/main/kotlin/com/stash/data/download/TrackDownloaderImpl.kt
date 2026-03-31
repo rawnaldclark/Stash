@@ -1,5 +1,6 @@
 package com.stash.data.download
 
+import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.model.Track
 import javax.inject.Inject
@@ -17,6 +18,11 @@ class TrackDownloaderImpl @Inject constructor(
     private val downloadManager: DownloadManager,
 ) : TrackDownloader {
 
-    override suspend fun downloadTrack(track: Track, preResolvedUrl: String?): String? =
-        downloadManager.downloadTrack(track, preResolvedUrl)
+    override suspend fun downloadTrack(track: Track, preResolvedUrl: String?): TrackDownloadOutcome {
+        return when (val result = downloadManager.downloadTrack(track, preResolvedUrl)) {
+            is TrackDownloadResult.Success -> TrackDownloadOutcome.Success(result.filePath)
+            is TrackDownloadResult.Unmatched -> TrackDownloadOutcome.Unmatched
+            is TrackDownloadResult.Failed -> TrackDownloadOutcome.Failed(result.error)
+        }
+    }
 }

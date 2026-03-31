@@ -51,6 +51,18 @@ class SpotifyAuthManager @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** Cached client version scraped from open.spotify.com. */
+    @Volatile
+    private var cachedClientVersion: String? = null
+
+    /**
+     * The sp_t cookie value captured from the token endpoint response.
+     * Used as device_id in client token requests (Spotify ties sessions together
+     * using this value — random UUIDs get rejected with HTTP 400).
+     */
+    @Volatile
+    private var spTDeviceId: String? = null
+
     companion object {
         private const val TAG = "StashSync"
 
@@ -68,6 +80,62 @@ class SpotifyAuthManager @Inject constructor(
          */
         private const val SPOTDL_CLIENT_ID = "5f573c9620494bae87890c0f08a60293"
         private const val SPOTDL_CLIENT_SECRET = "212476d9b0f3472eaa762d90b19b0ba8"
+
+        /** Regex to extract clientVersion from the Spotify web player HTML/config. */
+        private val CLIENT_VERSION_REGEX = Regex(""""clientVersion"\s*:\s*"([^"]+)"""")
+    }
+
+    /**
+     * Scrapes the current Spotify web player client version from open.spotify.com.
+     *
+     * The client token endpoint rejects outdated version strings with HTTP 400.
+     * This fetches the live page and extracts the version from the embedded config.
+     * Falls back to [SpotifyAuthConfig.CLIENT_VERSION_FALLBACK] if scraping fails.
+     *
+     * Public so [SpotifyApiClient] can use it for GraphQL request headers.
+     */
+    fun getClientVersion(): String {
+        cachedClientVersion?.let { return it }
+
+        return try {
+            val request = Request.Builder()
+                .url("https://open.spotify.com")
+                .header("User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" +
+                        " (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
+                .get()
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+
+            // Also capture sp_t cookie from the main page if available
+            response.headers("Set-Cookie").forEach { setCookie ->
+                if (setCookie.startsWith("sp_t=")) {
+                    val value = setCookie.substringAfter("sp_t=").substringBefore(";")
+                    if (value.isNotBlank() && spTDeviceId == null) {
+                        spTDeviceId = value
+                        Log.d(TAG, "Captured sp_t from page: ${value.take(20)}...")
+                    }
+                }
+            }
+            response.close()
+
+            val match = CLIENT_VERSION_REGEX.find(body)
+            val version = match?.groupValues?.get(1)
+
+            if (version != null) {
+                Log.i(TAG, "Scraped Spotify client version: $version")
+                cachedClientVersion = version
+                version
+            } else {
+                Log.w(TAG, "Could not scrape client version, using fallback")
+                SpotifyAuthConfig.CLIENT_VERSION_FALLBACK
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to scrape client version: ${e.message}")
+            SpotifyAuthConfig.CLIENT_VERSION_FALLBACK
+        }
     }
 
     /**
@@ -185,6 +253,18 @@ class SpotifyAuthManager @Inject constructor(
                     return@withContext null
                 }
 
+                // Capture sp_t cookie — used as device_id for client token requests.
+                // Spotify uses sp_t to tie the session together; random UUIDs get rejected.
+                response.headers("Set-Cookie").forEach { setCookie ->
+                    if (setCookie.startsWith("sp_t=")) {
+                        val value = setCookie.substringAfter("sp_t=").substringBefore(";")
+                        if (value.isNotBlank()) {
+                            spTDeviceId = value
+                            Log.d(TAG, "Captured sp_t device ID: ${value.take(20)}...")
+                        }
+                    }
+                }
+
                 val body = response.body?.string() ?: return@withContext null
                 val tokenResponse = json.decodeFromString<SpDcTokenResponse>(body)
                 Log.d(TAG, "Token response: isAnonymous=${tokenResponse.isAnonymous}, " +
@@ -252,10 +332,14 @@ class SpotifyAuthManager @Inject constructor(
     suspend fun getClientToken(clientId: String): String? {
         return withContext(Dispatchers.IO) {
             try {
-                val deviceId = UUID.randomUUID().toString()
+                val clientVersion = getClientVersion()
+                // Use sp_t cookie as device_id if available, fall back to random UUID.
+                // Spotify's backend expects the sp_t value to tie the session together.
+                val deviceId = spTDeviceId ?: UUID.randomUUID().toString()
+                Log.d(TAG, "getClientToken: using deviceId source=${if (spTDeviceId != null) "sp_t" else "random"}")
                 val requestBody = buildString {
                     append("""{"client_data":{""")
-                    append(""""client_version":"${SpotifyAuthConfig.CLIENT_VERSION}",""")
+                    append(""""client_version":"$clientVersion",""")
                     append(""""client_id":"$clientId",""")
                     append(""""js_sdk_data":{""")
                     append(""""device_brand":"unknown",""")
@@ -270,24 +354,34 @@ class SpotifyAuthManager @Inject constructor(
                 Log.d(TAG, "Client token request body: $requestBody")
                 Log.d(TAG, "Requesting client token for clientId='$clientId', deviceId='$deviceId'")
 
-                val request = Request.Builder()
-                    .url(SpotifyAuthConfig.CLIENT_TOKEN_ENDPOINT)
-                    .post(requestBody.toRequestBody("application/json".toMediaType()))
-                    .header("Accept", "application/json")
-                    .header("User-Agent",
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" +
-                            " (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
-                    .build()
+                // Use HttpURLConnection instead of OkHttp for this endpoint.
+                // Spotify fingerprints TLS ClientHello (JA3/JA4) and rejects OkHttp's
+                // fingerprint with HTTP 400. Android's HttpURLConnection uses the
+                // system BoringSSL which has a Chrome-like TLS fingerprint.
+                val url = java.net.URL(SpotifyAuthConfig.CLIENT_TOKEN_ENDPOINT)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Accept", "application/json")
+                conn.setRequestProperty("User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" +
+                        " (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
-                val response = okHttpClient.newCall(request).execute()
-                val responseCode = response.code
-                if (!response.isSuccessful) {
-                    val errorBody = response.body?.string() ?: "no body"
+                conn.outputStream.use { it.write(requestBody.toByteArray()) }
+
+                val responseCode = conn.responseCode
+                if (responseCode != 200) {
+                    val errorBody = try {
+                        conn.errorStream?.bufferedReader()?.readText() ?: "no body"
+                    } catch (_: Exception) { "no body" }
                     Log.w(TAG, "Client token request failed: HTTP $responseCode, body=$errorBody")
+                    conn.disconnect()
                     return@withContext null
                 }
 
-                val responseBody = response.body?.string() ?: return@withContext null
+                val responseBody = conn.inputStream.bufferedReader().readText()
+                conn.disconnect()
                 Log.d(TAG, "Client token response (first 500 chars): ${responseBody.take(500)}")
 
                 val jsonObj = json.parseToJsonElement(responseBody).jsonObject

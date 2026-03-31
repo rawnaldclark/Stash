@@ -34,8 +34,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SpotifyCookieDialog
-import com.stash.feature.settings.components.YouTubeCredentialsDialog
-import com.stash.feature.settings.components.YouTubeDeviceCodeDialog
+import com.stash.feature.settings.components.YouTubeCookieDialog
 
 /**
  * Top-level Settings screen composable.
@@ -61,19 +60,13 @@ fun SettingsScreen(
         )
     }
 
-    // YouTube credentials input dialog (shown when no credentials are stored)
-    if (uiState.showYouTubeCredentialsDialog) {
-        YouTubeCredentialsDialog(
-            onConfirm = viewModel::onSaveYouTubeCredentials,
-            onDismiss = viewModel::onDismissYouTubeCredentialsDialog,
-        )
-    }
-
-    // YouTube device-code dialog
-    if (uiState.showYouTubeDialog && uiState.deviceCodeState != null) {
-        YouTubeDeviceCodeDialog(
-            deviceCodeState = uiState.deviceCodeState!!,
-            onDismiss = viewModel::onDismissYouTubeDialog,
+    // YouTube Music cookie input dialog
+    if (uiState.showYouTubeCookieDialog) {
+        YouTubeCookieDialog(
+            isValidating = uiState.isYouTubeCookieValidating,
+            errorMessage = uiState.youTubeCookieError,
+            onConnect = viewModel::onConnectYouTubeWithCookie,
+            onDismiss = viewModel::onDismissYouTubeCookieDialog,
         )
     }
 

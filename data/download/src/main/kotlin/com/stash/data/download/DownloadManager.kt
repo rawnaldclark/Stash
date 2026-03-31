@@ -1,5 +1,6 @@
 package com.stash.data.download
 
+import android.util.Log
 import com.stash.core.model.Track
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
@@ -17,6 +18,20 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * Result of the full download pipeline for a single track.
+ */
+sealed class TrackDownloadResult {
+    /** Download succeeded. [filePath] is the absolute path on disk. */
+    data class Success(val filePath: String) : TrackDownloadResult()
+
+    /** No YouTube match found for the track. */
+    data object Unmatched : TrackDownloadResult()
+
+    /** Download failed. [error] describes why. */
+    data class Failed(val error: String) : TrackDownloadResult()
+}
 
 /**
  * Orchestrates the full download pipeline for a single track:
@@ -48,20 +63,21 @@ class DownloadManager @Inject constructor(
     /** Emits real-time progress snapshots for all in-flight downloads. */
     val progress: SharedFlow<DownloadProgress> = _progress.asSharedFlow()
 
+    companion object {
+        private const val TAG = "DownloadManager"
+    }
+
     /**
      * Downloads a single track through the full pipeline.
      *
-     * Acquires a concurrency permit before starting, ensuring no more than
-     * 3 downloads run simultaneously.
-     *
      * @param track          The track to download.
      * @param preResolvedUrl Optional YouTube URL if already known (skips search).
-     * @return The absolute path of the final downloaded file, or null on failure.
+     * @return A [TrackDownloadResult] with either the file path or a detailed error.
      */
     suspend fun downloadTrack(
         track: Track,
         preResolvedUrl: String? = null,
-    ): String? {
+    ): TrackDownloadResult {
         concurrencySemaphore.acquire()
         try {
             return executeDownload(track, preResolvedUrl)
@@ -73,13 +89,14 @@ class DownloadManager @Inject constructor(
     /**
      * Executes the download pipeline for a single track.
      */
-    private suspend fun executeDownload(track: Track, preResolvedUrl: String?): String? {
+    private suspend fun executeDownload(track: Track, preResolvedUrl: String?): TrackDownloadResult {
         emitProgress(track.id, 0f, DownloadStatus.MATCHING)
 
         // Step 1: Resolve YouTube URL
-        val youtubeUrl = preResolvedUrl ?: resolveUrl(track) ?: run {
+        val youtubeUrl = preResolvedUrl ?: resolveUrl(track)
+        if (youtubeUrl == null) {
             emitProgress(track.id, 0f, DownloadStatus.UNMATCHED)
-            return null
+            return TrackDownloadResult.Unmatched
         }
 
         emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)
@@ -92,7 +109,7 @@ class DownloadManager @Inject constructor(
         val tempDir = fileOrganizer.getTempDir()
         val tempFilename = "dl_${track.id}"
 
-        val downloadedFile = downloadExecutor.download(
+        val dlResult = downloadExecutor.download(
             url = youtubeUrl,
             outputDir = tempDir,
             filename = tempFilename,
@@ -100,9 +117,26 @@ class DownloadManager @Inject constructor(
             onProgress = { progress ->
                 emitProgress(track.id, 0.1f + progress * 0.7f, DownloadStatus.DOWNLOADING)
             },
-        ) ?: run {
-            emitProgress(track.id, 0f, DownloadStatus.FAILED)
-            return null
+        )
+
+        val downloadedFile = when (dlResult) {
+            is DownloadResult.Success -> dlResult.file
+            is DownloadResult.YtDlpError -> {
+                emitProgress(track.id, 0f, DownloadStatus.FAILED)
+                return TrackDownloadResult.Failed("yt-dlp: ${dlResult.message.take(500)}")
+            }
+            is DownloadResult.NoOutput -> {
+                emitProgress(track.id, 0f, DownloadStatus.FAILED)
+                val detail = buildString {
+                    append("yt-dlp produced no output file.")
+                    dlResult.stderr?.let { append(" stderr: ${it.take(300)}") }
+                }
+                return TrackDownloadResult.Failed(detail)
+            }
+            is DownloadResult.Error -> {
+                emitProgress(track.id, 0f, DownloadStatus.FAILED)
+                return TrackDownloadResult.Failed("Error: ${dlResult.message}")
+            }
         }
 
         emitProgress(track.id, 0.8f, DownloadStatus.PROCESSING)
@@ -122,8 +156,9 @@ class DownloadManager @Inject constructor(
         downloadedFile.copyTo(finalFile, overwrite = true)
         downloadedFile.delete()
 
+        Log.i(TAG, "Downloaded: ${track.artist} - ${track.title} → ${finalFile.absolutePath}")
         emitProgress(track.id, 1f, DownloadStatus.COMPLETED)
-        return finalFile.absolutePath
+        return TrackDownloadResult.Success(finalFile.absolutePath)
     }
 
     /**
@@ -138,7 +173,10 @@ class DownloadManager @Inject constructor(
         // Search YouTube for the track
         val query = "${track.artist} - ${track.title} official audio"
         val results = searchExecutor.search(query, maxResults = 5)
-        if (results.isEmpty()) return null
+        if (results.isEmpty()) {
+            Log.w(TAG, "resolveUrl: search returned 0 results for '${track.artist} - ${track.title}'")
+            return null
+        }
 
         // Score all results against the target track
         val scored = matchScorer.scoreResults(

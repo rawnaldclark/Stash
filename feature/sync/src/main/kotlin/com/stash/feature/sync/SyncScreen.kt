@@ -3,6 +3,7 @@ package com.stash.feature.sync
 import android.text.format.DateUtils
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -455,71 +456,118 @@ private fun SyncHistoryRow(sync: SyncHistoryInfo) {
     val isCompleted = sync.status == "COMPLETED"
     val isFailed = sync.status == "FAILED"
     val extendedColors = StashTheme.extendedColors
+    var expanded by remember { mutableStateOf(false) }
 
-    GlassCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = if (isCompleted) Icons.Filled.CheckCircle else Icons.Filled.Error,
-                    contentDescription = null,
-                    tint = when {
+    GlassCard(
+        modifier = Modifier.clickable { expanded = !expanded },
+    ) {
+        Column(modifier = Modifier.animateContentSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(
+                        imageVector = if (isCompleted) Icons.Filled.CheckCircle else Icons.Filled.Error,
+                        contentDescription = null,
+                        tint = when {
+                            isCompleted -> extendedColors.success
+                            isFailed -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = DateUtils.getRelativeTimeSpanString(
+                                sync.startedAt,
+                                System.currentTimeMillis(),
+                                DateUtils.MINUTE_IN_MILLIS,
+                            ).toString(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = buildString {
+                                append("Found ${sync.newTracksFound}")
+                                append(" / ${sync.tracksDownloaded} downloaded")
+                                if (sync.tracksFailed > 0) append(" / ${sync.tracksFailed} failed")
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                // Status badge
+                Text(
+                    text = when {
+                        isCompleted -> "Completed"
+                        isFailed -> "Failed"
+                        else -> sync.status.lowercase().replaceFirstChar { it.uppercase() }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = when {
                         isCompleted -> extendedColors.success
                         isFailed -> MaterialTheme.colorScheme.error
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    modifier = Modifier.size(20.dp),
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            when {
+                                isCompleted -> extendedColors.success.copy(alpha = 0.12f)
+                                isFailed -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            },
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                 )
-                Spacer(Modifier.width(10.dp))
-                Column {
+            }
+
+            // Expanded details: show error and diagnostics so user can debug on-device
+            if (expanded) {
+                Spacer(Modifier.height(8.dp))
+
+                if (!sync.errorMessage.isNullOrBlank()) {
                     Text(
-                        text = DateUtils.getRelativeTimeSpanString(
-                            sync.startedAt,
-                            System.currentTimeMillis(),
-                            DateUtils.MINUTE_IN_MILLIS,
-                        ).toString(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        text = "Error: ${sync.errorMessage}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
                     )
+                    Spacer(Modifier.height(4.dp))
+                }
+
+                if (!sync.diagnostics.isNullOrBlank()) {
                     Text(
-                        text = buildString {
-                            append("${sync.tracksDownloaded} downloaded")
-                            if (sync.tracksFailed > 0) append(" / ${sync.tracksFailed} failed")
-                        },
+                        text = "Diagnostics:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = sync.diagnostics,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 20,
+                    )
+                }
+
+                if (sync.errorMessage.isNullOrBlank() && sync.diagnostics.isNullOrBlank()) {
+                    Text(
+                        text = "No additional details available",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-
-            // Status badge
-            Text(
-                text = when {
-                    isCompleted -> "Completed"
-                    isFailed -> "Failed"
-                    else -> sync.status.lowercase().replaceFirstChar { it.uppercase() }
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = when {
-                    isCompleted -> extendedColors.success
-                    isFailed -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(
-                        when {
-                            isCompleted -> extendedColors.success.copy(alpha = 0.12f)
-                            isFailed -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        },
-                    )
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            )
         }
     }
 }

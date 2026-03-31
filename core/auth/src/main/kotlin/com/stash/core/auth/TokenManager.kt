@@ -69,16 +69,24 @@ interface TokenManager {
     suspend fun getSpotifyClientId(): String?
 
     /**
-     * Returns a valid YouTube Music access token, or null if the user is not authenticated
-     * or the token has expired / is expiring soon.
+     * Returns the stored YouTube Music cookie string for InnerTube authentication,
+     * or null if the user has not connected YouTube Music.
      */
-    suspend fun getYouTubeAccessToken(): String?
+    suspend fun getYouTubeCookie(): String?
 
     /** Persists Spotify credentials and user profile information. */
     suspend fun saveSpotifyAuth(token: ServiceToken, user: UserInfo)
 
-    /** Persists YouTube Music OAuth credentials and user profile information. */
-    suspend fun saveYouTubeAuth(token: ServiceToken, user: UserInfo)
+    /**
+     * Validates and stores a YouTube Music cookie for InnerTube authentication.
+     *
+     * The cookie must contain a SAPISID or __Secure-3PAPISID value which is
+     * used to generate SAPISIDHASH authorization headers.
+     *
+     * @param cookie The full cookie string from the user's browser session on music.youtube.com.
+     * @return true if the cookie was valid and saved, false otherwise.
+     */
+    suspend fun connectYouTubeWithCookie(cookie: String): Boolean
 
     /** Removes all stored credentials for the given [service]. */
     suspend fun clearAuth(service: AuthService)

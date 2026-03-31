@@ -32,22 +32,32 @@ object SpotifyAuthConfig {
     /** Base endpoint for all GraphQL persisted queries (Spotify web player backend). */
     const val GRAPHQL_ENDPOINT = "https://api-partner.spotify.com/pathfinder/v1/query"
 
-    /** Web player client version sent in headers and the client token request body. */
-    const val CLIENT_VERSION = "1.2.52.442.g4d59ad7c"
+    /**
+     * Fallback web player client version. Used only if scraping the live version
+     * from open.spotify.com fails. Updated manually as a last resort.
+     */
+    const val CLIENT_VERSION_FALLBACK = "1.2.87.311.g2db0c2c4"
 
     /**
      * Persisted query hash for the `libraryV3` operation.
      * Returns the user's library including playlists, liked songs, and episodes.
      * Scraped from the Spotify web player JS bundles; stable for weeks at a time.
      */
-    const val HASH_LIBRARY_V3 = "17d801ba20f3ed89d12cc33cf0e46e9c766bdb12efb0b08e7f2b1a5a59fbd744"
+    const val HASH_LIBRARY_V3 = "973e511ca44261fda7eebac8b653155e7caee3675abb4fb110cc1b8c78b091c3"
 
     /**
      * Persisted query hash for the `fetchPlaylist` operation.
      * Returns track contents of a specific playlist by URI.
      * Scraped from the Spotify web player JS bundles; stable for weeks at a time.
      */
-    const val HASH_FETCH_PLAYLIST = "089509c02fd5b944eabcb464dce2a2a048e2ffcfed1f8a36a0b98127efb15e36"
+    const val HASH_FETCH_PLAYLIST = "32b05e92e438438408674f95d0fdad8082865dc32acd55bd97f5113b8579092b"
+
+    /**
+     * Persisted query hash for the `fetchLibraryTracks` operation.
+     * Returns the user's Liked Songs (collection:tracks). This is different from
+     * fetchPlaylist because Liked Songs isn't a real playlist — it's a "collection".
+     */
+    const val HASH_FETCH_LIBRARY_TRACKS = "087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240"
 
     // -- Legacy (kept for reference, no longer used by API client) -------------
 

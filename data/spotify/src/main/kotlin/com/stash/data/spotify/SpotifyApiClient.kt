@@ -256,20 +256,19 @@ class SpotifyApiClient @Inject constructor(
         try {
             val variables = """
                 {
-                    "uri": "spotify:collection:tracks",
                     "offset": $offset,
                     "limit": $limit
                 }
             """.trimIndent()
 
             val responseJson = executeGraphQL(
-                operationName = "fetchPlaylist",
+                operationName = "fetchLibraryTracks",
                 variables = variables,
-                hash = SpotifyAuthConfig.HASH_FETCH_PLAYLIST,
+                hash = SpotifyAuthConfig.HASH_FETCH_LIBRARY_TRACKS,
             )
 
             if (responseJson != null) {
-                val tracks = parsePlaylistTracksGraphQLResponse(responseJson)
+                val tracks = parseLibraryTracksResponse(responseJson)
                 Log.d(TAG, "getLikedSongs: got ${tracks.size} liked songs")
                 if (tracks.isEmpty()) {
                     SyncResult.Empty("GraphQL returned empty liked songs")
@@ -493,7 +492,8 @@ class SpotifyApiClient @Inject constructor(
                 {
                     "uri": "$uri",
                     "offset": $currentOffset,
-                    "limit": $pageSize
+                    "limit": $pageSize,
+                    "enableWatchFeedEntrypoint": false
                 }
             """.trimIndent()
 
@@ -567,7 +567,7 @@ class SpotifyApiClient @Inject constructor(
             .header("Client-Token", clientToken)
             .header("Accept", "application/json")
             .header("App-Platform", "WebPlayer")
-            .header("Spotify-App-Version", SpotifyAuthConfig.CLIENT_VERSION)
+            .header("Spotify-App-Version", spotifyAuthManager.getClientVersion())
             .header("Origin", "https://open.spotify.com")
             .header("Referer", "https://open.spotify.com/")
             .header(
@@ -653,7 +653,7 @@ class SpotifyApiClient @Inject constructor(
             .header("Client-Token", clientToken)
             .header("Accept", "application/json")
             .header("App-Platform", "WebPlayer")
-            .header("Spotify-App-Version", SpotifyAuthConfig.CLIENT_VERSION)
+            .header("Spotify-App-Version", spotifyAuthManager.getClientVersion())
             .header("Origin", "https://open.spotify.com")
             .header("Referer", "https://open.spotify.com/")
             .header(
@@ -910,6 +910,127 @@ class SpotifyApiClient @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "parsePlaylistTracksGraphQLResponse: failed to parse response", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Parses the `fetchLibraryTracks` GraphQL response into [SpotifyTrackItem] objects.
+     *
+     * Response shape: `data.me.library.tracks.items[].item.data` where each item
+     * contains track metadata in the same format as fetchPlaylist.
+     */
+    private fun parseLibraryTracksResponse(responseJson: JsonObject): List<SpotifyTrackItem> {
+        return try {
+            // Log top-level keys for debugging
+            val dataObj = responseJson["data"]?.jsonObject
+            if (dataObj == null) {
+                Log.w(TAG, "parseLibraryTracksResponse: no 'data' key, full response: ${responseJson.toString().take(2000)}")
+                return emptyList()
+            }
+            Log.d(TAG, "parseLibraryTracksResponse: data keys: ${dataObj.keys}")
+
+            // Try multiple possible response paths
+            val items = dataObj["me"]
+                ?.jsonObject?.get("library")
+                ?.jsonObject?.get("tracks")
+                ?.jsonObject?.get("items")
+                ?.jsonArray
+                ?: dataObj["me"]
+                    ?.jsonObject?.get("libraryTracks")
+                    ?.jsonObject?.get("items")
+                    ?.jsonArray
+
+            if (items == null) {
+                // Log what we DID find so we can fix the path
+                val meKeys = dataObj["me"]?.jsonObject?.keys
+                Log.w(TAG, "parseLibraryTracksResponse: items not found. me keys: $meKeys")
+                val meObj = dataObj["me"]?.jsonObject
+                meObj?.keys?.forEach { key ->
+                    val subKeys = meObj[key]?.jsonObject?.keys
+                    Log.d(TAG, "parseLibraryTracksResponse: me.$key keys: $subKeys")
+                }
+                return emptyList()
+            }
+
+            Log.d(TAG, "parseLibraryTracksResponse: found ${items.size} items")
+
+            items.mapNotNull { element ->
+                try {
+                    val wrapper = element.jsonObject
+                    // Response shape: items[].track.data (with _uri on the track wrapper)
+                    val trackData = wrapper["track"]?.jsonObject?.get("data")?.jsonObject
+                        ?: wrapper["item"]?.jsonObject?.get("data")?.jsonObject
+                        ?: wrapper["itemV2"]?.jsonObject?.get("data")?.jsonObject
+                        ?: return@mapNotNull null
+
+                    val uri = trackData["uri"]?.jsonPrimitive?.contentOrNull
+                        ?: wrapper["track"]?.jsonObject?.get("_uri")?.jsonPrimitive?.contentOrNull
+                        ?: return@mapNotNull null
+                    if (!uri.startsWith("spotify:track:")) return@mapNotNull null
+
+                    val trackId = uri.removePrefix("spotify:track:")
+                    val name = trackData["name"]?.jsonPrimitive?.contentOrNull ?: "Unknown"
+
+                    val durationMs = trackData["trackDuration"]
+                        ?.jsonObject?.get("totalMilliseconds")
+                        ?.jsonPrimitive?.longOrNull
+                        ?: trackData["duration"]
+                            ?.jsonObject?.get("totalMilliseconds")
+                            ?.jsonPrimitive?.longOrNull
+                        ?: 0L
+
+                    val artistItems = trackData["artists"]
+                        ?.jsonObject?.get("items")
+                        ?.jsonArray
+
+                    val artists = artistItems?.mapNotNull { artistElement ->
+                        val artistObj = artistElement.jsonObject
+                        val artistName = artistObj["profile"]
+                            ?.jsonObject?.get("name")
+                            ?.jsonPrimitive?.contentOrNull
+                            ?: return@mapNotNull null
+                        val artistUri = artistObj["uri"]?.jsonPrimitive?.contentOrNull ?: ""
+                        val artistId = artistUri.removePrefix("spotify:artist:")
+                        SpotifyArtist(id = artistId, name = artistName)
+                    } ?: emptyList()
+
+                    val albumData = trackData["albumOfTrack"]?.jsonObject
+                    val album = if (albumData != null) {
+                        val albumUri = albumData["uri"]?.jsonPrimitive?.contentOrNull ?: ""
+                        val albumId = albumUri.removePrefix("spotify:album:")
+                        val albumName = albumData["name"]?.jsonPrimitive?.contentOrNull ?: ""
+                        val coverArtUrl = albumData["coverArt"]
+                            ?.jsonObject?.get("sources")
+                            ?.jsonArray?.firstOrNull()
+                            ?.jsonObject?.get("url")
+                            ?.jsonPrimitive?.contentOrNull
+                        SpotifyAlbum(
+                            id = albumId,
+                            name = albumName,
+                            images = if (coverArtUrl != null) listOf(SpotifyImage(url = coverArtUrl)) else null,
+                        )
+                    } else null
+
+                    SpotifyTrackItem(
+                        track = SpotifyTrackObject(
+                            id = trackId,
+                            name = name,
+                            artists = artists,
+                            album = album,
+                            duration_ms = durationMs,
+                            uri = uri,
+                        ),
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "parseLibraryTracksResponse: failed to parse item", e)
+                    null
+                }
+            }.also { tracks ->
+                Log.d(TAG, "parseLibraryTracksResponse: parsed ${tracks.size} tracks")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "parseLibraryTracksResponse: failed", e)
             emptyList()
         }
     }

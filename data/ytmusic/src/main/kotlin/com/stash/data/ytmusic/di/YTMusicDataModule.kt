@@ -1,6 +1,7 @@
 package com.stash.data.ytmusic.di
 
 import com.stash.core.auth.TokenManager
+import com.stash.core.auth.youtube.YouTubeCookieHelper
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.YTMusicApiClient
 import dagger.Module
@@ -25,7 +26,8 @@ object YTMusicDataModule {
     fun provideInnerTubeClient(
         okHttpClient: OkHttpClient,
         tokenManager: TokenManager,
-    ): InnerTubeClient = InnerTubeClient(okHttpClient, tokenManager)
+        cookieHelper: YouTubeCookieHelper,
+    ): InnerTubeClient = InnerTubeClient(okHttpClient, tokenManager, cookieHelper)
 
     @Provides
     @Singleton

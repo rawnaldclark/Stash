@@ -5,15 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
-import com.stash.core.auth.model.UserInfo
-import com.stash.core.auth.youtube.YouTubeCredentialsStore
-import com.stash.core.auth.youtube.YouTubeDeviceFlowManager
+import com.stash.core.auth.youtube.YouTubeCookieHelper
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
 import dagger.hilt.android.lifecycle.HiltViewModel
-import android.util.Log
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,9 +22,9 @@ import javax.inject.Inject
 /**
  * ViewModel for the Settings screen.
  *
- * Orchestrates Spotify sp_dc cookie auth, YouTube device-code auth, quality selection,
- * and library storage stats. The Spotify flow displays a dialog for the user to paste
- * their sp_dc cookie; YouTube auth is fully managed in-process via the device-code grant.
+ * Orchestrates Spotify sp_dc cookie auth, YouTube Music cookie auth, quality selection,
+ * and library storage stats. Both Spotify and YouTube use a cookie-paste flow where
+ * the user copies cookies from their browser.
  *
  * Audio quality changes are persisted to DataStore via [QualityPreference] so they
  * survive app restarts and are picked up by the download pipeline.
@@ -36,17 +32,13 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val tokenManager: TokenManager,
-    private val youTubeDeviceFlowManager: YouTubeDeviceFlowManager,
-    private val youTubeCredentialsStore: YouTubeCredentialsStore,
     private val musicRepository: MusicRepository,
     private val qualityPreference: QualityPreference,
+    private val youTubeCookieHelper: YouTubeCookieHelper,
 ) : ViewModel() {
 
     /** Internal mutable UI state that is combined with token-manager flows. */
     private val _localState = MutableStateFlow(LocalState())
-
-    /** Active YouTube polling coroutine, cancelled on disconnect or dialog dismissal. */
-    private var youTubePollingJob: Job? = null
 
     /**
      * The main UI state, combining reactive auth states from [TokenManager],
@@ -74,12 +66,12 @@ class SettingsViewModel @Inject constructor(
             audioQuality = quality,
             totalStorageBytes = storageBytes,
             totalTracks = trackCount,
-            deviceCodeState = local.deviceCodeState,
-            showYouTubeDialog = local.showYouTubeDialog,
-            showYouTubeCredentialsDialog = local.showYouTubeCredentialsDialog,
+            showYouTubeCookieDialog = local.showYouTubeCookieDialog,
             showSpotifyCookieDialog = local.showSpotifyCookieDialog,
             spotifyCookieError = local.spotifyCookieError,
             isSpotifyCookieValidating = local.isSpotifyCookieValidating,
+            youTubeCookieError = local.youTubeCookieError,
+            isYouTubeCookieValidating = local.isYouTubeCookieValidating,
             youTubeError = local.youTubeError,
         )
     }.stateIn(
@@ -169,109 +161,76 @@ class SettingsViewModel @Inject constructor(
     // -- YouTube actions ------------------------------------------------------
 
     /**
-     * Initiates the YouTube connection flow.
-     *
-     * If OAuth credentials (Client ID + Client Secret) are not yet stored,
-     * the credentials input dialog is shown first. Otherwise the device-code
-     * authorization flow is started directly.
+     * Opens the YouTube Music cookie input dialog.
      */
     fun onConnectYouTube() {
-        viewModelScope.launch {
-            if (youTubeCredentialsStore.hasCredentials()) {
-                startYouTubeDeviceFlow()
-            } else {
-                _localState.update {
-                    it.copy(showYouTubeCredentialsDialog = true, youTubeError = null)
-                }
-            }
+        _localState.update {
+            it.copy(
+                showYouTubeCookieDialog = true,
+                youTubeCookieError = null,
+                isYouTubeCookieValidating = false,
+            )
         }
     }
 
     /**
-     * Called when the user submits credentials from the [YouTubeCredentialsDialog].
+     * Validates the user-provided YouTube Music cookie and connects their account.
      *
-     * Saves the credentials to [YouTubeCredentialsStore], dismisses the credentials
-     * dialog, and starts the device-code authorization flow.
+     * The cookie must contain a SAPISID or __Secure-3PAPISID value which is
+     * used for SAPISIDHASH authentication with the InnerTube API.
      *
-     * @param clientId     The Google Cloud OAuth Client ID.
-     * @param clientSecret The Google Cloud OAuth Client Secret.
+     * @param cookie The full cookie string from the user's music.youtube.com browser session.
      */
-    fun onSaveYouTubeCredentials(clientId: String, clientSecret: String) {
-        if (clientId.isBlank() || clientSecret.isBlank()) {
+    fun onConnectYouTubeWithCookie(cookie: String) {
+        if (cookie.isBlank()) {
+            _localState.update { it.copy(youTubeCookieError = "Cookie cannot be empty") }
+            return
+        }
+
+        // Pre-validate before sending to TokenManager
+        val sapiSid = youTubeCookieHelper.extractSapiSid(cookie)
+        if (sapiSid == null) {
             _localState.update {
-                it.copy(youTubeError = "Client ID and Client Secret cannot be empty.")
+                it.copy(
+                    youTubeCookieError = "Missing SAPISID cookie. Make sure you copied the FULL " +
+                        "cookie header from music.youtube.com (Network tab > any request > Cookie header).",
+                )
+            }
+            return
+        }
+
+        if (!youTubeCookieHelper.hasLoginInfo(cookie)) {
+            _localState.update {
+                it.copy(
+                    youTubeCookieError = "Missing LOGIN_INFO cookie. yt-dlp requires LOGIN_INFO " +
+                        "to download. Make sure you're copying the complete Cookie header, not " +
+                        "individual cookies. The header should be one long string with many values " +
+                        "separated by semicolons.",
+                )
             }
             return
         }
 
         viewModelScope.launch {
-            youTubeCredentialsStore.saveCredentials(clientId, clientSecret)
-            _localState.update { it.copy(showYouTubeCredentialsDialog = false) }
-            startYouTubeDeviceFlow()
-        }
-    }
+            _localState.update {
+                it.copy(isYouTubeCookieValidating = true, youTubeCookieError = null)
+            }
 
-    /**
-     * Dismisses the YouTube credentials input dialog.
-     */
-    fun onDismissYouTubeCredentialsDialog() {
-        _localState.update { it.copy(showYouTubeCredentialsDialog = false) }
-    }
+            val success = tokenManager.connectYouTubeWithCookie(cookie)
 
-    /**
-     * Starts the YouTube device-code authorization flow.
-     *
-     * Requests a device code, displays the dialog with the user code and
-     * verification URL, then starts polling for token issuance in a background
-     * coroutine. When the user approves (or the code expires), the dialog is
-     * dismissed and the auth state is updated.
-     */
-    private fun startYouTubeDeviceFlow() {
-        youTubePollingJob?.cancel()
-        youTubePollingJob = viewModelScope.launch {
-            try {
-                val deviceCode = youTubeDeviceFlowManager.requestDeviceCode()
-                if (deviceCode == null) {
-                    _localState.update {
-                        it.copy(
-                            youTubeError = "Failed to start YouTube authorization. " +
-                                "Please check your internet connection and API credentials.",
-                        )
-                    }
-                    return@launch
-                }
-
+            if (success) {
                 _localState.update {
                     it.copy(
-                        deviceCodeState = deviceCode,
-                        showYouTubeDialog = true,
-                        youTubeError = null,
+                        showYouTubeCookieDialog = false,
+                        youTubeCookieError = null,
+                        isYouTubeCookieValidating = false,
                     )
                 }
-
-                val token = youTubeDeviceFlowManager.pollForToken(
-                    deviceCode = deviceCode.deviceCode,
-                    intervalSeconds = deviceCode.intervalSeconds,
-                )
-
-                if (token != null) {
-                    val user = UserInfo(
-                        id = "youtube_user",
-                        displayName = "YouTube User",
-                    )
-                    tokenManager.saveYouTubeAuth(token, user)
-                }
-
-                _localState.update {
-                    it.copy(deviceCodeState = null, showYouTubeDialog = false)
-                }
-            } catch (e: Exception) {
-                Log.e("SettingsViewModel", "YouTube connect failed", e)
+            } else {
                 _localState.update {
                     it.copy(
-                        deviceCodeState = null,
-                        showYouTubeDialog = false,
-                        youTubeError = "YouTube connection failed: ${e.localizedMessage ?: "Unknown error"}",
+                        youTubeCookieError = "Failed to save cookie. Please try again.",
+                        isYouTubeCookieValidating = false,
                     )
                 }
             }
@@ -279,26 +238,25 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * Disconnects the YouTube account by clearing stored credentials and
-     * cancelling any active device-code polling.
+     * Dismisses the YouTube cookie input dialog without connecting.
      */
-    fun onDisconnectYouTube() {
-        youTubePollingJob?.cancel()
-        youTubePollingJob = null
+    fun onDismissYouTubeCookieDialog() {
         _localState.update {
-            it.copy(deviceCodeState = null, showYouTubeDialog = false)
-        }
-        viewModelScope.launch {
-            tokenManager.clearAuth(AuthService.YOUTUBE_MUSIC)
+            it.copy(
+                showYouTubeCookieDialog = false,
+                youTubeCookieError = null,
+                isYouTubeCookieValidating = false,
+            )
         }
     }
 
     /**
-     * Dismisses the YouTube device-code dialog without disconnecting.
-     * Polling continues in the background so the user can still approve.
+     * Disconnects the YouTube account by clearing stored credentials.
      */
-    fun onDismissYouTubeDialog() {
-        _localState.update { it.copy(showYouTubeDialog = false) }
+    fun onDisconnectYouTube() {
+        viewModelScope.launch {
+            tokenManager.clearAuth(AuthService.YOUTUBE_MUSIC)
+        }
     }
 
     /**
@@ -329,12 +287,12 @@ class SettingsViewModel @Inject constructor(
      * [SettingsUiState].
      */
     private data class LocalState(
-        val deviceCodeState: com.stash.core.auth.model.DeviceCodeState? = null,
-        val showYouTubeDialog: Boolean = false,
-        val showYouTubeCredentialsDialog: Boolean = false,
+        val showYouTubeCookieDialog: Boolean = false,
         val showSpotifyCookieDialog: Boolean = false,
         val spotifyCookieError: String? = null,
         val isSpotifyCookieValidating: Boolean = false,
+        val youTubeCookieError: String? = null,
+        val isYouTubeCookieValidating: Boolean = false,
         val youTubeError: String? = null,
     )
 }

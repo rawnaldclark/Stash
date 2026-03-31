@@ -31,6 +31,9 @@ data class SyncHistoryInfo(
     val status: String,
     val tracksDownloaded: Int,
     val tracksFailed: Int,
+    val newTracksFound: Int = 0,
+    val errorMessage: String? = null,
+    val diagnostics: String? = null,
 )
 
 /**
@@ -182,5 +185,8 @@ class SyncViewModel @Inject constructor(
         status = status.name,
         tracksDownloaded = tracksDownloaded,
         tracksFailed = tracksFailed,
+        newTracksFound = newTracksFound,
+        errorMessage = errorMessage,
+        diagnostics = diagnostics,
     )
 }

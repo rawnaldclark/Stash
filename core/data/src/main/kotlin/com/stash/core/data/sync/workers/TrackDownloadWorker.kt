@@ -14,6 +14,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncStateManager
+import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.SyncState
@@ -77,12 +78,20 @@ class TrackDownloadWorker @AssistedInject constructor(
             }
 
             // Promote to foreground with an initial progress notification.
+            // This can fail if the app is in the background (Android 12+ restriction).
             syncStateManager.onDownloading(downloaded = 0, total = total)
-            setForeground(createForegroundInfo(downloaded = 0, total = total))
+            try {
+                setForeground(createForegroundInfo(downloaded = 0, total = total))
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not start foreground service (app may be in background): ${e.message}")
+                // Continue anyway — downloads still work without foreground promotion,
+                // they're just more likely to be killed by the system for long sessions.
+            }
 
             var downloadedCount = 0
             var failedCount = 0
             var totalBytesDownloaded = 0L
+            var firstError: String? = null
 
             for ((index, queueItem) in pendingItems.withIndex()) {
                 try {
@@ -108,43 +117,55 @@ class TrackDownloadWorker @AssistedInject constructor(
                     val track = trackEntity.toDomain()
 
                     // Download through the full pipeline (search -> download -> tag -> organize).
-                    val filePath = trackDownloader.downloadTrack(
+                    val outcome = trackDownloader.downloadTrack(
                         track = track,
                         preResolvedUrl = queueItem.youtubeUrl,
                     )
 
-                    if (filePath != null) {
-                        // Determine file size for storage tracking.
-                        val fileSize = try {
-                            File(filePath).length()
-                        } catch (_: Exception) {
-                            0L
+                    when (outcome) {
+                        is TrackDownloadOutcome.Success -> {
+                            val fileSize = try {
+                                File(outcome.filePath).length()
+                            } catch (_: Exception) {
+                                0L
+                            }
+
+                            trackDao.markAsDownloaded(
+                                trackId = queueItem.trackId,
+                                filePath = outcome.filePath,
+                                fileSizeBytes = fileSize,
+                            )
+
+                            downloadQueueDao.updateStatus(
+                                id = queueItem.id,
+                                status = DownloadStatus.COMPLETED,
+                                completedAt = System.currentTimeMillis(),
+                            )
+
+                            totalBytesDownloaded += fileSize
+                            downloadedCount++
                         }
-
-                        // Mark the track as downloaded in the tracks table.
-                        trackDao.markAsDownloaded(
-                            trackId = queueItem.trackId,
-                            filePath = filePath,
-                            fileSizeBytes = fileSize,
-                        )
-
-                        // Mark the queue entry as completed.
-                        downloadQueueDao.updateStatus(
-                            id = queueItem.id,
-                            status = DownloadStatus.COMPLETED,
-                            completedAt = System.currentTimeMillis(),
-                        )
-
-                        totalBytesDownloaded += fileSize
-                        downloadedCount++
-                    } else {
-                        // Download pipeline returned null — track was unmatched or failed.
-                        downloadQueueDao.updateStatus(
-                            id = queueItem.id,
-                            status = DownloadStatus.FAILED,
-                            errorMessage = "Download pipeline returned no file",
-                        )
-                        failedCount++
+                        is TrackDownloadOutcome.Unmatched -> {
+                            val err = "No YouTube match for: ${track.artist} - ${track.title}"
+                            Log.w(TAG, err)
+                            downloadQueueDao.updateStatus(
+                                id = queueItem.id,
+                                status = DownloadStatus.FAILED,
+                                errorMessage = err,
+                            )
+                            if (firstError == null) firstError = err
+                            failedCount++
+                        }
+                        is TrackDownloadOutcome.Failed -> {
+                            Log.e(TAG, "Download failed for ${track.artist} - ${track.title}: ${outcome.error}")
+                            downloadQueueDao.updateStatus(
+                                id = queueItem.id,
+                                status = DownloadStatus.FAILED,
+                                errorMessage = outcome.error.take(500),
+                            )
+                            if (firstError == null) firstError = outcome.error.take(500)
+                            failedCount++
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to download track ${queueItem.trackId}", e)
@@ -177,6 +198,16 @@ class TrackDownloadWorker @AssistedInject constructor(
                 tracksFailed = failedCount,
                 bytesDownloaded = totalBytesDownloaded,
             )
+
+            // Store first download error in sync history for on-device debugging.
+            if (firstError != null) {
+                val summary = "$failedCount/$total downloads failed. First error: $firstError"
+                syncHistoryDao.updateStatus(
+                    id = syncId,
+                    status = SyncState.DOWNLOADING,
+                    errorMessage = summary.take(1000),
+                )
+            }
 
             return Result.success(
                 workDataOf(

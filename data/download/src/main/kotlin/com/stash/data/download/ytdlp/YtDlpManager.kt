@@ -1,6 +1,7 @@
 package com.stash.data.download.ytdlp
 
 import android.content.Context
+import android.util.Log
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -8,12 +9,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Manages the yt-dlp binary lifecycle: initialization, version queries, and
  * self-updates via the JunkFood02 youtubedl-android library.
+ *
+ * Also extracts and manages the QuickJS runtime binary, which yt-dlp needs
+ * to solve YouTube's JavaScript signature challenges.
  *
  * Thread-safe: concurrent callers of [initialize] will coalesce behind a mutex.
  */
@@ -24,9 +29,19 @@ class YtDlpManager @Inject constructor(
     private val initMutex = Mutex()
     private var initialized = false
 
+    /** Path to the extracted QuickJS binary, set during [initialize]. */
+    var quickJsPath: String? = null
+        private set
+
+    companion object {
+        private const val TAG = "YtDlpManager"
+        private const val QJS_LIB_NAME = "libqjs.so"
+    }
+
     /**
-     * Initializes the yt-dlp native binary. Safe to call multiple times;
-     * only the first invocation performs real work.
+     * Initializes the yt-dlp native binary, locates QuickJS, and attempts
+     * a self-update. Safe to call multiple times; only the first invocation
+     * performs real work.
      */
     suspend fun initialize() {
         if (initialized) return
@@ -35,8 +50,42 @@ class YtDlpManager @Inject constructor(
             withContext(Dispatchers.IO) {
                 YoutubeDL.getInstance().init(context)
                 FFmpeg.getInstance().init(context)
+                Log.i(TAG, "yt-dlp initialized, version: ${getVersion()}")
+
+                // Find QuickJS in nativeLibraryDir where Android extracts .so files.
+                // Must be here (not filesDir) because SELinux blocks execute_no_trans
+                // on app_data_file — only native libs have the apk_data_file context
+                // that allows process execution.
+                locateQuickJs()
+
+                // Auto-update to latest yt-dlp on first init to keep extractors current.
+                try {
+                    val status = YoutubeDL.getInstance().updateYoutubeDL(
+                        context,
+                        YoutubeDL.UpdateChannel._STABLE,
+                    )
+                    Log.i(TAG, "yt-dlp update: $status, new version: ${getVersion()}")
+                } catch (e: Exception) {
+                    Log.w(TAG, "yt-dlp auto-update failed (will use bundled version): ${e.message}")
+                }
             }
             initialized = true
+        }
+    }
+
+    /**
+     * Locates the QuickJS binary in the native library directory.
+     * The binary is bundled as libqjs.so in jniLibs/ and extracted by Android
+     * to nativeLibraryDir, where it has execute permission (apk_data_file SELinux context).
+     */
+    private fun locateQuickJs() {
+        val nativeDir = context.applicationInfo.nativeLibraryDir
+        val qjsFile = File(nativeDir, QJS_LIB_NAME)
+        if (qjsFile.exists() && qjsFile.canExecute()) {
+            quickJsPath = qjsFile.absolutePath
+            Log.i(TAG, "QuickJS found at $quickJsPath (${qjsFile.length()} bytes)")
+        } else {
+            Log.e(TAG, "QuickJS not found at ${qjsFile.absolutePath} exists=${qjsFile.exists()} exec=${qjsFile.canExecute()}")
         }
     }
 

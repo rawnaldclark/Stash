@@ -3,6 +3,20 @@ package com.stash.core.data.sync
 import com.stash.core.model.Track
 
 /**
+ * Result of downloading a single track through the pipeline.
+ */
+sealed class TrackDownloadOutcome {
+    /** Download succeeded. [filePath] is the absolute path on disk. */
+    data class Success(val filePath: String) : TrackDownloadOutcome()
+
+    /** No YouTube match found for the track. */
+    data object Unmatched : TrackDownloadOutcome()
+
+    /** Download failed. [error] describes exactly what went wrong. */
+    data class Failed(val error: String) : TrackDownloadOutcome()
+}
+
+/**
  * Abstraction over the download pipeline used by [workers.TrackDownloadWorker].
  *
  * The interface lives in `:core:data` so the worker can depend on it without
@@ -18,7 +32,7 @@ interface TrackDownloader {
      *
      * @param track          The track to download.
      * @param preResolvedUrl Optional YouTube URL if already resolved (skips search).
-     * @return The absolute path of the final downloaded file, or null on failure.
+     * @return A [TrackDownloadOutcome] with the file path or a detailed error message.
      */
-    suspend fun downloadTrack(track: Track, preResolvedUrl: String? = null): String?
+    suspend fun downloadTrack(track: Track, preResolvedUrl: String? = null): TrackDownloadOutcome
 }
