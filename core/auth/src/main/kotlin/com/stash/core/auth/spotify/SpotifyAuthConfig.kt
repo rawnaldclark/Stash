@@ -33,7 +33,7 @@ object SpotifyAuthConfig {
     const val GRAPHQL_ENDPOINT = "https://api-partner.spotify.com/pathfinder/v1/query"
 
     /** Web player client version sent in headers and the client token request body. */
-    const val CLIENT_VERSION = "1.2.87.214.g2ca7f4ab"
+    const val CLIENT_VERSION = "1.2.52.442.g4d59ad7c"
 
     /**
      * Persisted query hash for the `libraryV3` operation.

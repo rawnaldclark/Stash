@@ -1,5 +1,6 @@
 package com.stash.data.ytmusic
 
+import android.util.Log
 import com.stash.core.model.SyncResult
 import com.stash.data.ytmusic.model.YTMusicPlaylist
 import com.stash.data.ytmusic.model.YTMusicTrack
@@ -33,6 +34,8 @@ class YTMusicApiClient @Inject constructor(
 ) {
 
     companion object {
+        private const val TAG = "StashYTApi"
+
         /** InnerTube browse ID for the user's liked music videos. */
         private const val BROWSE_LIKED_SONGS = "FEmusic_liked_videos"
 
@@ -97,6 +100,7 @@ class YTMusicApiClient @Inject constructor(
         if (response == null) {
             return SyncResult.Error("InnerTube browse($browseId) returned null")
         }
+        Log.d(TAG, "getPlaylistTracks: response top-level keys: ${response.keys}")
         val tracks = parseTracksFromBrowse(response)
         return if (tracks.isEmpty()) {
             SyncResult.Empty("Playlist $playlistId returned no tracks")
@@ -110,14 +114,41 @@ class YTMusicApiClient @Inject constructor(
     /**
      * Extracts tracks from a browse response.
      *
-     * Looks for `musicShelfRenderer` objects in the tab contents and parses
-     * each `musicResponsiveListItemRenderer` item into a [YTMusicTrack].
+     * Tries two renderer paths:
+     * 1. **twoColumnBrowseResultsRenderer** (playlist pages via `VL{playlistId}`) —
+     *    tracks live under `secondaryContents -> sectionListRenderer -> contents[0]
+     *    -> musicPlaylistShelfRenderer -> contents`. This matches the path used by
+     *    ytmusicapi's `get_playlist()`.
+     * 2. **singleColumnBrowseResultsRenderer** (liked songs, home page) —
+     *    tracks live under `tabs[0] -> tabRenderer -> content -> sectionListRenderer
+     *    -> contents -> musicShelfRenderer -> contents`.
      */
     private fun parseTracksFromBrowse(response: JsonObject): List<YTMusicTrack> {
         val tracks = mutableListOf<YTMusicTrack>()
 
-        // Navigate: contents -> singleColumnBrowseResultsRenderer -> tabs[0]
-        //           -> tabRenderer -> content -> sectionListRenderer -> contents
+        // Path 1 (playlist pages): twoColumnBrowseResultsRenderer -> secondaryContents
+        // -> sectionListRenderer -> contents[0] -> musicPlaylistShelfRenderer -> contents
+        // This is the path ytmusicapi uses for get_playlist().
+        val twoColumnShelf = response.navigatePath(
+            "contents", "twoColumnBrowseResultsRenderer",
+            "secondaryContents", "sectionListRenderer", "contents",
+        )?.asArray()?.firstOrNull()?.asObject()
+            ?.get("musicPlaylistShelfRenderer")?.asObject()
+
+        if (twoColumnShelf != null) {
+            Log.d(TAG, "parseTracksFromBrowse: using twoColumnBrowseResultsRenderer path")
+            val items = twoColumnShelf["contents"]?.asArray() ?: return emptyList()
+            for (item in items) {
+                val renderer = item.asObject()
+                    ?.get("musicResponsiveListItemRenderer")?.asObject()
+                    ?: continue
+                parseTrackFromRenderer(renderer)?.let { tracks.add(it) }
+            }
+            return tracks
+        }
+
+        // Path 2 (home page, liked songs): singleColumnBrowseResultsRenderer -> tabs[0]
+        // -> tabRenderer -> content -> sectionListRenderer -> contents -> musicShelfRenderer
         val sections = response.navigatePath(
             "contents",
             "singleColumnBrowseResultsRenderer",
@@ -126,20 +157,22 @@ class YTMusicApiClient @Inject constructor(
             ?.asObject()
             ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
             ?.asArray()
-            ?: return emptyList()
 
-        for (section in sections) {
-            val shelf = section.asObject()?.get("musicShelfRenderer")?.asObject() ?: continue
-            val items = shelf["contents"]?.asArray() ?: continue
-
-            for (item in items) {
-                val renderer = item.asObject()
-                    ?.get("musicResponsiveListItemRenderer")?.asObject()
-                    ?: continue
-                parseTrackFromRenderer(renderer)?.let { tracks.add(it) }
+        if (sections != null) {
+            Log.d(TAG, "parseTracksFromBrowse: using singleColumnBrowseResultsRenderer path")
+            for (section in sections) {
+                val shelf = section.asObject()?.get("musicShelfRenderer")?.asObject() ?: continue
+                val items = shelf["contents"]?.asArray() ?: continue
+                for (item in items) {
+                    val renderer = item.asObject()
+                        ?.get("musicResponsiveListItemRenderer")?.asObject()
+                        ?: continue
+                    parseTrackFromRenderer(renderer)?.let { tracks.add(it) }
+                }
             }
         }
 
+        Log.d(TAG, "parseTracksFromBrowse: found ${tracks.size} tracks")
         return tracks
     }
 
