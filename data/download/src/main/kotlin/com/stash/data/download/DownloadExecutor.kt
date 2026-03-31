@@ -2,6 +2,7 @@ package com.stash.data.download
 
 import android.content.Context
 import android.util.Log
+import com.stash.core.auth.TokenManager
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -23,6 +24,7 @@ import javax.inject.Singleton
 class DownloadExecutor @Inject constructor(
     private val ytDlpManager: YtDlpManager,
     @ApplicationContext private val context: Context,
+    private val tokenManager: TokenManager,
 ) {
     /**
      * Downloads audio from a YouTube URL using yt-dlp.
@@ -43,11 +45,12 @@ class DownloadExecutor @Inject constructor(
     ): File? = withContext(Dispatchers.IO) {
         ytDlpManager.initialize()
 
+        // Write YouTube cookies to a temp file for yt-dlp authentication.
+        // Unique filename prevents collisions with concurrent downloads (Semaphore allows 3).
+        val cookieFile = File(context.noBackupFilesDir, "yt_cookies_${System.nanoTime()}.txt")
+
         try {
             val outputTemplate = File(outputDir, "$filename.%(ext)s").absolutePath
-
-            // Point yt-dlp to the app's native lib dir where both ffmpeg executables
-            // and libc++_shared.so are extracted together by useLegacyPackaging=true
             val nativeLibDir = context.applicationInfo.nativeLibraryDir
 
             val request = YoutubeDLRequest(url).apply {
@@ -57,24 +60,36 @@ class DownloadExecutor @Inject constructor(
                 addOption("--ffmpeg-location", nativeLibDir)
             }
 
+            // Add cookies if YouTube is authenticated
+            val cookie = tokenManager.getYouTubeCookie()
+            if (cookie != null) {
+                CookieFileWriter.write(cookie, cookieFile)
+                request.addOption("--cookies", cookieFile.absolutePath)
+                Log.d("StashDL", "download: using YouTube cookies")
+            }
+
             Log.d("StashDL", "download: starting url=$url, output=$outputTemplate, args=$qualityArgs")
 
             val response = YoutubeDL.getInstance().execute(
                 request,
-                url, // processId for cancellation
+                url,
             ) { progress, _, _ ->
                 onProgress((progress / 100f).coerceIn(0f, 1f))
             }
 
             Log.d("StashDL", "download: yt-dlp exit=${response.exitCode}, stdout=${response.out?.take(500)}, stderr=${response.err?.take(500)}")
 
-            // Find the output file (extension may vary depending on format conversion)
             val result = outputDir.listFiles()?.firstOrNull { it.nameWithoutExtension == filename }
             Log.d("StashDL", "download: outputFile=${result?.absolutePath}, exists=${result?.exists()}")
             result
         } catch (e: Exception) {
             Log.e("StashDL", "download: FAILED url=$url", e)
             null
+        } finally {
+            // Always delete the cookie file — cookies should not persist on disk
+            if (cookieFile.exists()) {
+                cookieFile.delete()
+            }
         }
     }
 }
