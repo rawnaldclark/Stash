@@ -62,8 +62,12 @@ class TrackDownloadWorker @AssistedInject constructor(
         try {
             syncHistoryDao.updateStatus(syncId, SyncState.DOWNLOADING)
 
-            val pendingItems = downloadQueueDao.getPendingBySyncId(syncId)
+            // Collect new items from this sync PLUS old failed items that need retry.
+            val newItems = downloadQueueDao.getPendingBySyncId(syncId)
+            val retryItems = downloadQueueDao.getRetryable()
+            val pendingItems = newItems + retryItems
             val total = pendingItems.size
+            Log.d(TAG, "Download queue: ${newItems.size} new + ${retryItems.size} retry = $total total")
 
             if (total == 0) {
                 // Nothing to download; pass through to finalize.
@@ -148,6 +152,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                         is TrackDownloadOutcome.Unmatched -> {
                             val err = "No YouTube match for: ${track.artist} - ${track.title}"
                             Log.w(TAG, err)
+                            downloadQueueDao.incrementRetryCount(queueItem.id)
                             downloadQueueDao.updateStatus(
                                 id = queueItem.id,
                                 status = DownloadStatus.FAILED,
@@ -158,6 +163,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                         }
                         is TrackDownloadOutcome.Failed -> {
                             Log.e(TAG, "Download failed for ${track.artist} - ${track.title}: ${outcome.error}")
+                            downloadQueueDao.incrementRetryCount(queueItem.id)
                             downloadQueueDao.updateStatus(
                                 id = queueItem.id,
                                 status = DownloadStatus.FAILED,
