@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,8 +24,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.stash.core.model.Track
 import com.stash.core.ui.theme.StashTheme
 
@@ -55,7 +58,8 @@ fun TrackListItem(
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // -- Album art placeholder (48 dp square, rounded corners) --
+        // -- Album art (48 dp square, rounded corners) --
+        val artUrl = track.albumArtPath ?: track.albumArtUrl
         Box(
             modifier = Modifier
                 .size(48.dp)
@@ -63,12 +67,21 @@ fun TrackListItem(
                 .background(extendedColors.elevatedSurface),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = Icons.Default.MusicNote,
-                contentDescription = null,
-                tint = extendedColors.textTertiary,
-                modifier = Modifier.size(24.dp),
-            )
+            if (artUrl != null) {
+                AsyncImage(
+                    model = artUrl,
+                    contentDescription = "${track.title} album art",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = extendedColors.textTertiary,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
 
         Spacer(modifier = Modifier.width(12.dp))

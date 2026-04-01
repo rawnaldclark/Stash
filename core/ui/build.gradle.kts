@@ -12,4 +12,5 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.animation)
     implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
 }
