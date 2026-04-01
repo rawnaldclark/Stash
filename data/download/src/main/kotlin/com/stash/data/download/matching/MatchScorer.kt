@@ -1,5 +1,6 @@
 package com.stash.data.download.matching
 
+import android.util.Log
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.data.download.model.MatchResult
 import com.stash.data.download.ytdlp.YtDlpSearchResult
@@ -40,7 +41,7 @@ class MatchScorer @Inject constructor(
         const val POPULARITY_WEIGHT = 0.10f
 
         /** Minimum score to auto-accept a match without manual review. */
-        const val AUTO_ACCEPT_THRESHOLD = 0.80f
+        const val AUTO_ACCEPT_THRESHOLD = 0.65f
 
         /** Scores below this value are discarded as unlikely matches. */
         const val REJECT_THRESHOLD = 0.50f
@@ -82,6 +83,11 @@ class MatchScorer @Inject constructor(
                     topicBonus - penalty - uploaderPenalty
                 ).coerceIn(0f, 1f)
 
+            Log.d("MatchScorer", "  ${result.title} by ${result.uploader} | " +
+                "title=%.2f art=%.2f dur=%.2f pop=%.2f topic=%.2f pen=%.2f uplPen=%.2f → %.2f".format(
+                    titleScore, artistScore, durationScore, popularityScore,
+                    topicBonus, penalty, uploaderPenalty, finalScore))
+
             MatchResult(
                 youtubeUrl = result.webpageUrl.ifEmpty {
                     "https://www.youtube.com/watch?v=${result.id}"
@@ -103,6 +109,11 @@ class MatchScorer @Inject constructor(
      * @return The top result if its score is high enough, null otherwise.
      */
     fun bestMatch(results: List<MatchResult>): MatchResult? {
+        val best = results.firstOrNull()
+        if (best != null && best.matchScore < AUTO_ACCEPT_THRESHOLD) {
+            Log.w("MatchScorer", "Best match rejected: ${best.title} score=%.2f (threshold=%.2f)".format(
+                best.matchScore, AUTO_ACCEPT_THRESHOLD))
+        }
         return results.firstOrNull { it.matchScore >= AUTO_ACCEPT_THRESHOLD }
     }
 
