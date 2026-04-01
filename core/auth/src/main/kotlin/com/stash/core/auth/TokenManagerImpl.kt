@@ -73,8 +73,10 @@ class TokenManagerImpl @Inject constructor(
         if (spDcCookie.isEmpty()) return null
         val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return null
 
-        // Preserve the existing user info by only updating the token
-        tokenStore.saveSpotifyToken(refreshed)
+        // Preserve the existing user info when saving the refreshed token.
+        // Without this, the user gets cleared and the UI shows "Not Connected".
+        val existingUser = tokenStore.spotifyUser.first()
+        tokenStore.saveSpotifyToken(refreshed, existingUser)
         return refreshed.accessToken
     }
 
@@ -135,7 +137,8 @@ class TokenManagerImpl @Inject constructor(
         if (spDcCookie.isEmpty()) return null
 
         val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return null
-        tokenStore.saveSpotifyToken(refreshed)
+        val existingUser = tokenStore.spotifyUser.first()
+        tokenStore.saveSpotifyToken(refreshed, existingUser)
         return refreshed.accessToken
     }
 
