@@ -94,4 +94,8 @@ interface DownloadQueueDao {
     /** Delete all completed download entries to free up space. */
     @Query("DELETE FROM download_queue WHERE status = 'COMPLETED'")
     suspend fun deleteCompleted()
+
+    /** Reset retry count for all failed entries so they can be retried after a bug fix. */
+    @Query("UPDATE download_queue SET retry_count = 0, status = 'FAILED' WHERE status = 'FAILED' AND retry_count >= 3")
+    suspend fun resetExhaustedRetries()
 }
