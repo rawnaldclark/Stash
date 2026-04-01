@@ -29,6 +29,8 @@ data class SyncStatusInfo(
     val lastSyncTime: Long? = null,
     val nextSyncTime: Long? = null,
     val totalTracks: Int = 0,
+    val spotifyTracks: Int = 0,
+    val youTubeTracks: Int = 0,
     val totalPlaylists: Int = 0,
     val storageUsedBytes: Long = 0,
     val state: SyncState = SyncState.IDLE,

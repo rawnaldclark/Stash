@@ -72,6 +72,12 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getTotalStorageBytes(): Flow<Long> =
         trackDao.getTotalStorageBytes()
 
+    override fun getSpotifyDownloadedCount(): Flow<Int> =
+        trackDao.getSpotifyDownloadedCount()
+
+    override fun getYouTubeDownloadedCount(): Flow<Int> =
+        trackDao.getYouTubeDownloadedCount()
+
     // ── Playlist queries ────────────────────────────────────────────────
 
     override fun getAllPlaylists(): Flow<List<Playlist>> =
@@ -93,6 +99,27 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun insertTrack(track: Track): Long =
         trackDao.insert(track.toEntity())
+
+    override suspend fun deleteTrack(track: Track): Boolean {
+        // Best-effort file deletion -- the file may already be gone.
+        track.filePath?.let { path ->
+            try {
+                java.io.File(path).delete()
+            } catch (_: Exception) {
+                // Ignore: file may not exist or may be unreadable.
+            }
+        }
+        // Also delete locally-stored album art.
+        track.albumArtPath?.let { path ->
+            try {
+                java.io.File(path).delete()
+            } catch (_: Exception) {
+                // Ignore.
+            }
+        }
+        trackDao.delete(track.toEntity())
+        return true
+    }
 
     override suspend fun insertPlaylist(playlist: Playlist): Long =
         playlistDao.insert(playlist.toEntity())

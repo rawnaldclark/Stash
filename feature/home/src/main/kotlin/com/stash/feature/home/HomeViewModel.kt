@@ -65,6 +65,11 @@ class HomeViewModel @Inject constructor(
         MusicData(playlists, recentlyAdded, trackCount, storageBytes)
     }
 
+    private val sourceCountsFlow = combine(
+        musicRepository.getSpotifyDownloadedCount(),
+        musicRepository.getYouTubeDownloadedCount(),
+    ) { spotify, youtube -> Pair(spotify, youtube) }
+
     /**
      * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
      */
@@ -82,7 +87,8 @@ class HomeViewModel @Inject constructor(
         musicDataFlow,
         syncStatusFlow,
         authStateFlow,
-    ) { musicData, syncStatus, authInfo ->
+        sourceCountsFlow,
+    ) { musicData, syncStatus, authInfo, sourceCounts ->
         val dailyMixes = musicData.playlists.filter { it.type == PlaylistType.DAILY_MIX }
         val likedSongs = musicData.playlists.filter { it.type == PlaylistType.LIKED_SONGS }
         val likedCount = likedSongs.sumOf { it.trackCount }
@@ -91,6 +97,8 @@ class HomeViewModel @Inject constructor(
         HomeUiState(
             syncStatus = syncStatus.copy(
                 totalTracks = musicData.trackCount,
+                spotifyTracks = sourceCounts.first,
+                youTubeTracks = sourceCounts.second,
                 totalPlaylists = musicData.playlists.size,
                 storageUsedBytes = musicData.storageBytes,
             ),

@@ -93,6 +93,17 @@ class PlayerRepositoryImpl @Inject constructor(
         controller.play()
     }
 
+    override suspend fun addNext(track: Track) {
+        val controller = ensureController() ?: return
+        val insertIndex = controller.currentMediaItemIndex + 1
+        controller.addMediaItem(insertIndex, track.toMediaItem())
+    }
+
+    override suspend fun addToQueue(track: Track) {
+        val controller = ensureController() ?: return
+        controller.addMediaItem(track.toMediaItem())
+    }
+
     override suspend fun toggleShuffle() {
         val controller = ensureController() ?: return
         controller.sendCustomCommand(

@@ -200,6 +200,14 @@ interface TrackDao {
     @Query("SELECT COALESCE(SUM(file_size_bytes), 0) FROM tracks WHERE is_downloaded = 1")
     fun getTotalStorageBytes(): Flow<Long>
 
+    /** Count of downloaded tracks from Spotify. */
+    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND source = 'SPOTIFY'")
+    fun getSpotifyDownloadedCount(): Flow<Int>
+
+    /** Count of downloaded tracks from YouTube. */
+    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND source = 'YOUTUBE'")
+    fun getYouTubeDownloadedCount(): Flow<Int>
+
     // ── Aggregate queries ───────────────────────────────────────────────
 
     /**

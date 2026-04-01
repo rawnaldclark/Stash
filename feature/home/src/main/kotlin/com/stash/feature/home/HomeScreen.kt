@@ -292,8 +292,12 @@ private fun SyncStatusCard(
                         value = syncStatus.totalTracks.toString(),
                     )
                     StatItem(
-                        label = "Playlists",
-                        value = syncStatus.totalPlaylists.toString(),
+                        label = "Spotify",
+                        value = syncStatus.spotifyTracks.toString(),
+                    )
+                    StatItem(
+                        label = "YouTube",
+                        value = syncStatus.youTubeTracks.toString(),
                     )
                     StatItem(
                         label = "Storage",

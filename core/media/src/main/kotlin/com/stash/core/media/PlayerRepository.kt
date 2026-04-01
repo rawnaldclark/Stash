@@ -40,6 +40,18 @@ interface PlayerRepository {
      */
     suspend fun setQueue(tracks: List<Track>, startIndex: Int = 0)
 
+    /**
+     * Insert [track] immediately after the currently-playing track in the queue.
+     * Playback continues uninterrupted; the inserted track will play next.
+     */
+    suspend fun addNext(track: Track)
+
+    /**
+     * Append [track] to the end of the current queue.
+     * Playback continues uninterrupted.
+     */
+    suspend fun addToQueue(track: Track)
+
     /** Toggle shuffle mode on/off. */
     suspend fun toggleShuffle()
 

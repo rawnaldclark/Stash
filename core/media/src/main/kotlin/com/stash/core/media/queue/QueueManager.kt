@@ -197,6 +197,41 @@ class QueueManager @Inject constructor() {
     // ---- Dynamic editing --------------------------------------------------------------------
 
     /**
+     * Inserts [track] immediately after the currently-playing track in the active queue.
+     *
+     * If the queue is empty the track becomes the only (and current) item.
+     * Both the active and inactive queue variants are kept in sync.
+     *
+     * @param track The track to insert next.
+     */
+    fun addNext(track: Track) {
+        _queueState.update { current ->
+            if (current.activeQueue.isEmpty()) {
+                // Empty queue -- just set the track as the sole item.
+                current.copy(
+                    originalQueue = listOf(track),
+                    shuffledQueue = if (current.isShuffled) listOf(track) else emptyList(),
+                    currentIndex = 0,
+                )
+            } else {
+                val insertPos = current.currentIndex + 1
+                if (current.isShuffled) {
+                    val newShuffled = current.shuffledQueue.toMutableList().apply {
+                        add(insertPos.coerceAtMost(size), track)
+                    }
+                    val newOriginal = current.originalQueue + track
+                    current.copy(originalQueue = newOriginal, shuffledQueue = newShuffled)
+                } else {
+                    val newOriginal = current.originalQueue.toMutableList().apply {
+                        add(insertPos.coerceAtMost(size), track)
+                    }
+                    current.copy(originalQueue = newOriginal)
+                }
+            }
+        }
+    }
+
+    /**
      * Appends [track] to the end of both the original queue and (if shuffle is active)
      * the shuffled queue, so it will eventually be reached in both modes.
      *

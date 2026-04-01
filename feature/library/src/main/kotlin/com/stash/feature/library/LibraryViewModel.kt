@@ -172,6 +172,34 @@ class LibraryViewModel @Inject constructor(
             playerRepository.setQueue(downloadedTracks, index)
         }
     }
+
+    /**
+     * Insert [track] immediately after the currently-playing track in the queue.
+     */
+    fun playNext(track: Track) {
+        viewModelScope.launch {
+            playerRepository.addNext(track)
+        }
+    }
+
+    /**
+     * Append [track] to the end of the current playback queue.
+     */
+    fun addToQueue(track: Track) {
+        viewModelScope.launch {
+            playerRepository.addToQueue(track)
+        }
+    }
+
+    /**
+     * Delete [track] from the library: removes the database record and the
+     * audio file from disk.
+     */
+    fun deleteTrack(track: Track) {
+        viewModelScope.launch {
+            musicRepository.deleteTrack(track)
+        }
+    }
 }
 
 /**

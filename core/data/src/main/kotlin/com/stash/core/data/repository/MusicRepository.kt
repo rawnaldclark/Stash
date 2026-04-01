@@ -48,6 +48,12 @@ interface MusicRepository {
     /** Total storage used by all tracks in bytes (reactive). */
     fun getTotalStorageBytes(): Flow<Long>
 
+    /** Count of downloaded tracks from Spotify. */
+    fun getSpotifyDownloadedCount(): Flow<Int>
+
+    /** Count of downloaded tracks from YouTube. */
+    fun getYouTubeDownloadedCount(): Flow<Int>
+
     // ── Playlist queries ────────────────────────────────────────────────
 
     /** All active playlists. */
@@ -63,6 +69,14 @@ interface MusicRepository {
 
     /** Insert or replace a track. Returns the row ID. */
     suspend fun insertTrack(track: Track): Long
+
+    /**
+     * Delete a track from the database and remove its audio file from disk.
+     *
+     * @param track The track to delete. Its [Track.filePath] is used to locate the file on disk.
+     * @return True if the database row was removed (file deletion is best-effort).
+     */
+    suspend fun deleteTrack(track: Track): Boolean
 
     /** Insert or replace a playlist. Returns the row ID. */
     suspend fun insertPlaylist(playlist: Playlist): Long

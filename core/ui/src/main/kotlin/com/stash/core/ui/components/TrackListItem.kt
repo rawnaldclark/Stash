@@ -1,7 +1,8 @@
 package com.stash.core.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,24 +38,30 @@ import com.stash.core.ui.theme.StashTheme
  * Displays a 48 dp album-art placeholder, title + artist column,
  * formatted duration, source indicator dot, and an overflow menu icon.
  *
- * @param track    The [Track] to display.
- * @param onClick  Callback invoked when the row is tapped.
- * @param modifier Optional [Modifier] applied to the root row.
+ * @param track       The [Track] to display.
+ * @param onClick     Callback invoked when the row is tapped.
+ * @param modifier    Optional [Modifier] applied to the root row.
  * @param onMoreClick Optional callback for the overflow (three-dot) button.
+ * @param onLongPress Optional callback invoked when the row is long-pressed.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TrackListItem(
     track: Track,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onMoreClick: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongPress,
+            )
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

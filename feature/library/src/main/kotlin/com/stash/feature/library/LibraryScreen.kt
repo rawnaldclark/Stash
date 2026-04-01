@@ -26,30 +26,44 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.Playlist
+import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackListItem
@@ -72,6 +86,9 @@ fun LibraryScreen(
         onSortOrderChanged = viewModel::setSortOrder,
         onSourceFilterChanged = viewModel::setSourceFilter,
         onTrackClick = { track -> viewModel.playTrack(track, state.tracks) },
+        onPlayNext = viewModel::playNext,
+        onAddToQueue = viewModel::addToQueue,
+        onDeleteTrack = viewModel::deleteTrack,
         modifier = modifier,
     )
 }
@@ -85,7 +102,10 @@ private fun LibraryContent(
     onSearchQueryChanged: (String) -> Unit,
     onSortOrderChanged: (SortOrder) -> Unit,
     onSourceFilterChanged: (SourceFilter) -> Unit,
-    onTrackClick: (com.stash.core.model.Track) -> Unit,
+    onTrackClick: (Track) -> Unit,
+    onPlayNext: (Track) -> Unit,
+    onAddToQueue: (Track) -> Unit,
+    onDeleteTrack: (Track) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -157,6 +177,9 @@ private fun LibraryContent(
                 LibraryTab.TRACKS -> TracksTab(
                     tracks = state.tracks,
                     onTrackClick = onTrackClick,
+                    onPlayNext = onPlayNext,
+                    onAddToQueue = onAddToQueue,
+                    onDeleteTrack = onDeleteTrack,
                     anyServiceConnected = anyServiceConnected,
                 )
                 LibraryTab.ARTISTS -> ArtistsGrid(
@@ -416,10 +439,14 @@ private fun PlaylistsGrid(
 
 // ── Tracks tab (lazy column of TrackListItems) ──────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TracksTab(
-    tracks: List<com.stash.core.model.Track>,
-    onTrackClick: (com.stash.core.model.Track) -> Unit,
+    tracks: List<Track>,
+    onTrackClick: (Track) -> Unit,
+    onPlayNext: (Track) -> Unit,
+    onAddToQueue: (Track) -> Unit,
+    onDeleteTrack: (Track) -> Unit,
     anyServiceConnected: Boolean,
 ) {
     if (tracks.isEmpty()) {
@@ -429,13 +456,151 @@ private fun TracksTab(
         )
         return
     }
+
+    // Track selected for the context-menu bottom sheet.
+    var selectedTrack by remember { mutableStateOf<Track?>(null) }
+    // Track pending delete confirmation.
+    var trackToDelete by remember { mutableStateOf<Track?>(null) }
+
     LazyColumn {
         items(tracks, key = { it.id }) { track ->
             TrackListItem(
                 track = track,
                 onClick = { onTrackClick(track) },
+                onLongPress = { selectedTrack = track },
             )
         }
+    }
+
+    // ── Context-menu bottom sheet ───────────────────────────────────────
+    selectedTrack?.let { track ->
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { selectedTrack = null },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            // Header: track title + artist
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 8.dp),
+            ) {
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = track.artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // Action rows
+            BottomSheetActionRow(
+                icon = Icons.Default.PlaylistPlay,
+                label = "Play Next",
+                onClick = {
+                    onPlayNext(track)
+                    selectedTrack = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.PlaylistAdd,
+                label = "Add to Queue",
+                onClick = {
+                    onAddToQueue(track)
+                    selectedTrack = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.Delete,
+                label = "Delete",
+                tint = MaterialTheme.colorScheme.error,
+                onClick = {
+                    trackToDelete = track
+                    selectedTrack = null
+                },
+            )
+
+            // Bottom padding for gesture navigation inset
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+
+    // ── Delete confirmation dialog ──────────────────────────────────────
+    trackToDelete?.let { track ->
+        AlertDialog(
+            onDismissRequest = { trackToDelete = null },
+            title = { Text("Delete track?") },
+            text = {
+                Text(
+                    "\"${track.title}\" by ${track.artist} will be removed from " +
+                        "your library and deleted from disk. This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteTrack(track)
+                        trackToDelete = null
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { trackToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+}
+
+/**
+ * A single action row inside the track context-menu bottom sheet.
+ *
+ * @param icon  Leading icon for the action.
+ * @param label Human-readable label.
+ * @param tint  Icon and label color. Defaults to [MaterialTheme.colorScheme.onSurface].
+ * @param onClick Callback when the row is tapped.
+ */
+@Composable
+private fun BottomSheetActionRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(24.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = tint,
+        )
     }
 }
 
