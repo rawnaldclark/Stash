@@ -90,8 +90,8 @@ interface TrackDao {
     )
     fun getByPlaylist(playlistId: Long): Flow<List<TrackEntity>>
 
-    /** Most-recently-added tracks, limited to [limit] results. */
-    @Query("SELECT * FROM tracks ORDER BY date_added DESC LIMIT :limit")
+    /** Most-recently-added downloaded tracks, limited to [limit] results. */
+    @Query("SELECT * FROM tracks WHERE is_downloaded = 1 ORDER BY date_added DESC LIMIT :limit")
     fun getRecentlyAdded(limit: Int): Flow<List<TrackEntity>>
 
     /** Most-played tracks, limited to [limit] results. */
@@ -174,16 +174,16 @@ interface TrackDao {
 
     // ── Count / storage queries ─────────────────────────────────────────
 
-    /** Total number of tracks in the database (reactive). */
-    @Query("SELECT COUNT(*) FROM tracks")
+    /** Total number of downloaded tracks (reactive). */
+    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1")
     fun getTotalCount(): Flow<Int>
 
-    /** Total number of tracks in the database (one-shot). */
-    @Query("SELECT COUNT(*) FROM tracks")
+    /** Total number of downloaded tracks (one-shot). */
+    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1")
     suspend fun getCount(): Int
 
-    /** Sum of all track file sizes in bytes (reactive). */
-    @Query("SELECT COALESCE(SUM(file_size_bytes), 0) FROM tracks")
+    /** Sum of all downloaded track file sizes in bytes (reactive). */
+    @Query("SELECT COALESCE(SUM(file_size_bytes), 0) FROM tracks WHERE is_downloaded = 1")
     fun getTotalStorageBytes(): Flow<Long>
 
     // ── Aggregate queries ───────────────────────────────────────────────
