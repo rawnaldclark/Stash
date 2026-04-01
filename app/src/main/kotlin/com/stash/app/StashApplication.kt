@@ -3,6 +3,7 @@ package com.stash.app
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.stash.core.data.repository.MusicRepositoryImpl
 import com.stash.core.data.seed.DatabaseSeeder
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.data.download.ytdlp.YtDlpManager
@@ -33,6 +34,9 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var databaseSeeder: DatabaseSeeder
 
     @Inject
+    lateinit var musicRepository: MusicRepositoryImpl
+
+    @Inject
     lateinit var syncNotificationManager: SyncNotificationManager
 
     @Inject
@@ -56,6 +60,7 @@ class StashApplication : Application(), Configuration.Provider {
         syncNotificationManager.createChannels()
         applicationScope.launch {
             databaseSeeder.seedIfEmpty()
+            musicRepository.runMigrations()
         }
         applicationScope.launch {
             ytDlpManager.initialize()

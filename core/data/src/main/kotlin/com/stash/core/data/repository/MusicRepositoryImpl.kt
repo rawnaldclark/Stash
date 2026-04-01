@@ -27,6 +27,11 @@ class MusicRepositoryImpl @Inject constructor(
     private val syncHistoryDao: SyncHistoryDao,
 ) : MusicRepository {
 
+    /** One-time backfill so existing downloaded tracks get correct date_added. */
+    suspend fun runMigrations() {
+        trackDao.backfillDateAddedFromDownloadQueue()
+    }
+
     // ── Track queries ───────────────────────────────────────────────────
 
     override fun getAllTracks(): Flow<List<Track>> =

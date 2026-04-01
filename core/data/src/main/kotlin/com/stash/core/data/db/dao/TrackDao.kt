@@ -156,6 +156,22 @@ interface TrackDao {
     @Query("UPDATE tracks SET last_played = :timestamp WHERE id = :trackId")
     suspend fun updateLastPlayed(trackId: Long, timestamp: Long)
 
+    /**
+     * Backfill date_added for downloaded tracks using their download_queue completed_at.
+     * This fixes tracks that were downloaded before the date_added-on-download fix.
+     */
+    @Query("""
+        UPDATE tracks SET date_added = (
+            SELECT dq.completed_at FROM download_queue dq
+            WHERE dq.track_id = tracks.id AND dq.completed_at IS NOT NULL
+            LIMIT 1
+        )
+        WHERE is_downloaded = 1 AND id IN (
+            SELECT dq2.track_id FROM download_queue dq2 WHERE dq2.completed_at IS NOT NULL
+        )
+    """)
+    suspend fun backfillDateAddedFromDownloadQueue()
+
     // ── Full-text search ────────────────────────────────────────────────
 
     /**
