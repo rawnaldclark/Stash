@@ -43,6 +43,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val syncStateManager: SyncStateManager,
     private val syncNotificationManager: SyncNotificationManager,
     private val trackDownloader: TrackDownloader,
+    private val tokenManager: com.stash.core.auth.TokenManager,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -62,9 +63,21 @@ class TrackDownloadWorker @AssistedInject constructor(
         try {
             syncHistoryDao.updateStatus(syncId, SyncState.DOWNLOADING)
 
-            // Collect new items from this sync PLUS old failed items that need retry.
+            // Determine which services are connected so we only retry their tracks.
+            val connectedSources = buildList {
+                if (tokenManager.isAuthenticated(com.stash.core.auth.model.AuthService.SPOTIFY)) add("SPOTIFY")
+                if (tokenManager.isAuthenticated(com.stash.core.auth.model.AuthService.YOUTUBE_MUSIC)) add("YOUTUBE")
+                add("BOTH") // tracks marked as BOTH belong to both services
+            }
+            Log.d(TAG, "Connected sources for retry: $connectedSources")
+
+            // Collect new items from this sync PLUS old failed items from connected services.
             val newItems = downloadQueueDao.getPendingBySyncId(syncId)
-            val retryItems = downloadQueueDao.getRetryable()
+            val retryItems = if (connectedSources.isNotEmpty()) {
+                downloadQueueDao.getRetryableBySources(connectedSources)
+            } else {
+                emptyList()
+            }
             val pendingItems = newItems + retryItems
             val total = pendingItems.size
             Log.d(TAG, "Download queue: ${newItems.size} new + ${retryItems.size} retry = $total total")
