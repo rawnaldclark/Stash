@@ -28,19 +28,19 @@ class MatchScorer @Inject constructor(
 ) {
     companion object {
         /** Weight given to title similarity in the composite score. */
-        const val TITLE_WEIGHT = 0.35f
+        const val TITLE_WEIGHT = 0.30f
 
         /** Weight given to artist similarity in the composite score. */
-        const val ARTIST_WEIGHT = 0.25f
+        const val ARTIST_WEIGHT = 0.30f
 
         /** Weight given to duration closeness in the composite score. */
-        const val DURATION_WEIGHT = 0.25f
+        const val DURATION_WEIGHT = 0.20f
 
         /** Weight given to relative popularity (view count) in the composite score. */
-        const val POPULARITY_WEIGHT = 0.15f
+        const val POPULARITY_WEIGHT = 0.10f
 
         /** Minimum score to auto-accept a match without manual review. */
-        const val AUTO_ACCEPT_THRESHOLD = 0.75f
+        const val AUTO_ACCEPT_THRESHOLD = 0.80f
 
         /** Scores below this value are discarded as unlikely matches. */
         const val REJECT_THRESHOLD = 0.50f
@@ -72,13 +72,14 @@ class MatchScorer @Inject constructor(
             val popularityScore = computePopularityScore(result.viewCount, maxViewCount)
             val penalty = computePenalty(targetTitle, result.title)
             val topicBonus = computeTopicBonus(result.uploader, result.channel)
+            val uploaderPenalty = computeUploaderMismatchPenalty(targetArtist, result.uploader, result.channel)
 
             val finalScore = (
                 titleScore * TITLE_WEIGHT +
                     artistScore * ARTIST_WEIGHT +
                     durationScore * DURATION_WEIGHT +
                     popularityScore * POPULARITY_WEIGHT +
-                    topicBonus - penalty
+                    topicBonus - penalty - uploaderPenalty
                 ).coerceIn(0f, 1f)
 
             MatchResult(
@@ -173,10 +174,40 @@ class MatchScorer @Inject constructor(
     }
 
     /**
-     * Small bonus for YouTube's auto-generated "Artist - Topic" channels,
-     * which tend to carry the official audio.
+     * Strong bonus for YouTube's auto-generated "Artist - Topic" channels.
+     * These carry the official audio from the label and are the most reliable
+     * source for correct tracks. A Topic channel match is the single strongest
+     * signal that this is the right version of the song.
      */
     private fun computeTopicBonus(uploader: String, channel: String): Float {
-        return if (uploader.endsWith(" - Topic") || channel.endsWith(" - Topic")) 0.1f else 0f
+        return if (uploader.endsWith(" - Topic") || channel.endsWith(" - Topic")) 0.25f else 0f
+    }
+
+    /**
+     * Penalty when the uploader clearly doesn't match the target artist.
+     * Catches covers and re-uploads by unrelated channels. A low artist score
+     * (<0.4 Jaro-Winkler) combined with NOT being a Topic channel means this
+     * is likely someone else's upload of the song (cover, tribute, etc).
+     */
+    private fun computeUploaderMismatchPenalty(
+        targetArtist: String,
+        uploader: String,
+        channel: String,
+    ): Float {
+        val isTopic = uploader.endsWith(" - Topic") || channel.endsWith(" - Topic")
+        if (isTopic) return 0f // Topic channels are always trusted
+
+        val cleanUploader = uploader.replace(" - Topic", "")
+        val similarity = trackMatcher.jaroWinklerSimilarity(
+            trackMatcher.canonicalArtist(targetArtist),
+            trackMatcher.canonicalArtist(cleanUploader),
+        ).toFloat()
+
+        // If the uploader name is very different from the artist, penalize
+        return when {
+            similarity >= 0.7f -> 0f        // close enough match
+            similarity >= 0.4f -> 0.1f      // somewhat different
+            else -> 0.2f                     // clearly different uploader
+        }
     }
 }

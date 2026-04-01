@@ -171,9 +171,11 @@ class DownloadManager @Inject constructor(
         // If we already have a YouTube ID, use it directly
         track.youtubeId?.let { return "https://www.youtube.com/watch?v=$it" }
 
-        // Search YouTube for the track
-        val query = "${track.artist} - ${track.title} official audio"
-        val results = searchExecutor.search(query, maxResults = 5)
+        // Search YouTube with two strategies for best results:
+        // 1. "Artist - Title" (targets Topic channels which have "Artist - Topic" as uploader)
+        // 2. Falls back to "Artist Title official audio" if first returns no good match
+        val query = "${track.artist} ${track.title}"
+        val results = searchExecutor.search(query, maxResults = 10)
         if (results.isEmpty()) {
             Log.w(TAG, "resolveUrl: search returned 0 results for '${track.artist} - ${track.title}'")
             return null
