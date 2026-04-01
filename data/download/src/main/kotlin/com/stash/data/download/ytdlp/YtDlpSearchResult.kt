@@ -28,7 +28,7 @@ data class YtDlpSearchResult(
     val uploader: String = "",
     @SerialName("uploader_id") val uploaderId: String = "",
     val channel: String = "",
-    val duration: Long = 0,
+    val duration: Double = 0.0,
     @SerialName("view_count") val viewCount: Long = 0,
     @SerialName("webpage_url") val webpageUrl: String = "",
     val url: String = "",

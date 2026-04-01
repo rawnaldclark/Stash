@@ -68,7 +68,7 @@ class MatchScorer @Inject constructor(
         return results.map { result ->
             val titleScore = computeTitleScore(targetTitle, result.title)
             val artistScore = computeArtistScore(targetArtist, result.uploader)
-            val durationScore = computeDurationScore(targetDurationMs, result.duration)
+            val durationScore = computeDurationScore(targetDurationMs, result.duration.toLong())
             val popularityScore = computePopularityScore(result.viewCount, maxViewCount)
             val penalty = computePenalty(targetTitle, result.title)
             val topicBonus = computeTopicBonus(result.uploader, result.channel)
@@ -88,7 +88,7 @@ class MatchScorer @Inject constructor(
                 videoId = result.id,
                 title = result.title,
                 uploader = result.uploader,
-                durationSeconds = result.duration,
+                durationSeconds = result.duration.toLong(),
                 viewCount = result.viewCount,
                 matchScore = finalScore,
             )
