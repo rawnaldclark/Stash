@@ -55,8 +55,9 @@ class DownloadManager @Inject constructor(
     private val metadataEmbedder: MetadataEmbedder,
     private val qualityPrefs: QualityPreferencesManager,
 ) {
-    /** Limits concurrent downloads to avoid overwhelming bandwidth and CPU. */
-    private val concurrencySemaphore = Semaphore(3)
+    /** Limits concurrent downloads. 5 is a good balance — each download is mostly
+     *  network-bound (waiting for data) so parallelism helps without overwhelming CPU. */
+    private val concurrencySemaphore = Semaphore(5)
 
     private val _progress = MutableSharedFlow<DownloadProgress>(replay = 1)
 
