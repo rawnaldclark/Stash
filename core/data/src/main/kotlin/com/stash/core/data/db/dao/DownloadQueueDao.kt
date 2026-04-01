@@ -45,8 +45,13 @@ interface DownloadQueueDao {
     @Query("SELECT * FROM download_queue WHERE sync_id = :syncId AND status = 'PENDING' ORDER BY created_at ASC")
     suspend fun getPendingBySyncId(syncId: Long): List<DownloadQueueEntity>
 
-    /** Retrieve all previously failed downloads that should be retried (max 3 attempts). */
-    @Query("SELECT * FROM download_queue WHERE status = 'FAILED' AND retry_count < 3 ORDER BY created_at ASC")
+    /** Retrieve all previously failed downloads that should be retried (max 3 attempts).
+     *  Items without a youtube_url (Spotify tracks needing search) are prioritized first. */
+    @Query("""
+        SELECT * FROM download_queue
+        WHERE status = 'FAILED' AND retry_count < 3
+        ORDER BY (CASE WHEN youtube_url IS NULL THEN 0 ELSE 1 END) ASC, created_at ASC
+    """)
     suspend fun getRetryable(): List<DownloadQueueEntity>
 
     // ── Updates ─────────────────────────────────────────────────────────

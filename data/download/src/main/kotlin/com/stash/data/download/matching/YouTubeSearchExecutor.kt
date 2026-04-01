@@ -25,7 +25,10 @@ import javax.inject.Singleton
 class YouTubeSearchExecutor @Inject constructor(
     private val ytDlpManager: YtDlpManager,
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true  // yt-dlp returns null for some fields (e.g. uploader_id)
+    }
 
     companion object {
         private const val TAG = "YouTubeSearchExecutor"
