@@ -1,5 +1,6 @@
 package com.stash.feature.library
 
+import kotlin.math.absoluteValue
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -59,14 +60,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.Playlist
+import coil3.compose.AsyncImage
 import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SourceIndicator
@@ -202,6 +207,7 @@ private fun LibraryContent(
                 )
                 LibraryTab.TRACKS -> TracksTab(
                     tracks = state.tracks,
+                    currentlyPlayingTrackId = state.currentlyPlayingTrackId,
                     onTrackClick = onTrackClick,
                     onPlayNext = onPlayNext,
                     onAddToQueue = onAddToQueue,
@@ -453,32 +459,94 @@ private fun PlaylistsGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(playlists, key = { it.id }) { playlist ->
-            GlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(
-                        onClick = { onPlayPlaylist(playlist) },
-                        onLongClick = { selectedPlaylist = playlist },
-                    ),
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = playlist.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+            if (playlist.artUrl != null) {
+                // Playlist with artwork: image background + dark overlay
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .combinedClickable(
+                            onClick = { onPlayPlaylist(playlist) },
+                            onLongClick = { selectedPlaylist = playlist },
+                        ),
+                ) {
+                    AsyncImage(
+                        model = playlist.artUrl,
+                        contentDescription = "${playlist.name} artwork",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    // Dark scrim overlay for text legibility
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.7f),
+                                    ),
+                                    startY = 40f,
+                                ),
+                            ),
+                    )
+                    // Text pinned to bottom
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        SourceIndicator(source = playlist.source)
                         Text(
-                            text = "${playlist.trackCount} tracks",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = playlist.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            SourceIndicator(source = playlist.source)
+                            Text(
+                                text = "${playlist.trackCount} tracks",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.8f),
+                            )
+                        }
+                    }
+                }
+            } else {
+                // No artwork: keep the original GlassCard look
+                GlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = { onPlayPlaylist(playlist) },
+                            onLongClick = { selectedPlaylist = playlist },
+                        ),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = playlist.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            SourceIndicator(source = playlist.source)
+                            Text(
+                                text = "${playlist.trackCount} tracks",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
@@ -590,6 +658,7 @@ private fun PlaylistsGrid(
 @Composable
 private fun TracksTab(
     tracks: List<Track>,
+    currentlyPlayingTrackId: Long?,
     onTrackClick: (Track) -> Unit,
     onPlayNext: (Track) -> Unit,
     onAddToQueue: (Track) -> Unit,
@@ -614,6 +683,7 @@ private fun TracksTab(
             TrackListItem(
                 track = track,
                 onClick = { onTrackClick(track) },
+                isPlaying = track.id == currentlyPlayingTrackId,
                 onLongPress = { selectedTrack = track },
             )
         }
@@ -792,19 +862,27 @@ private fun ArtistsGrid(
                         onLongClick = { selectedArtist = artist },
                     ),
             ) {
-                // Circular placeholder
+                // Gradient circle with artist initial (Google Contacts style)
+                val gradientColors = remember(artist.name) {
+                    artistGradient(artist.name)
+                }
                 Box(
                     modifier = Modifier
                         .size(72.dp)
                         .clip(CircleShape)
-                        .background(StashTheme.extendedColors.elevatedSurface),
+                        .background(
+                            Brush.linearGradient(gradientColors),
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = StashTheme.extendedColors.textTertiary,
-                        modifier = Modifier.size(32.dp),
+                    Text(
+                        text = artist.name.firstOrNull()
+                            ?.uppercaseChar()
+                            ?.toString()
+                            ?: "?",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
                     )
                 }
                 Text(
@@ -948,21 +1026,30 @@ private fun AlbumsGrid(
                         onLongClick = { selectedAlbum = album },
                     ),
             ) {
-                // Album art placeholder
+                // Album art with fallback icon
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .background(StashTheme.extendedColors.elevatedSurface),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Album,
-                        contentDescription = null,
-                        tint = StashTheme.extendedColors.textTertiary,
-                        modifier = Modifier.size(40.dp),
-                    )
+                    if (album.artPath != null) {
+                        AsyncImage(
+                            model = album.artPath,
+                            contentDescription = "${album.name} album art",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Album,
+                            contentDescription = null,
+                            tint = StashTheme.extendedColors.textTertiary,
+                            modifier = Modifier.size(40.dp),
+                        )
+                    }
                 }
                 Text(
                     text = album.name,
@@ -1035,6 +1122,33 @@ private fun AlbumsGrid(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+// ── Artist gradient helper ───────────────────────────────────────────────────
+
+/**
+ * Pre-defined gradient pairs used for artist avatar backgrounds.
+ * A deterministic pair is picked based on the hash of the artist name,
+ * giving each artist a unique-ish but consistent color.
+ */
+private val artistGradientPalette = listOf(
+    listOf(Color(0xFF6366F1), Color(0xFF8B5CF6)),  // Indigo -> Violet
+    listOf(Color(0xFFEC4899), Color(0xFFF43F5E)),  // Pink -> Rose
+    listOf(Color(0xFF14B8A6), Color(0xFF06B6D4)),  // Teal -> Cyan
+    listOf(Color(0xFFF97316), Color(0xFFEAB308)),  // Orange -> Yellow
+    listOf(Color(0xFF3B82F6), Color(0xFF6366F1)),  // Blue -> Indigo
+    listOf(Color(0xFF10B981), Color(0xFF14B8A6)),  // Emerald -> Teal
+    listOf(Color(0xFFE11D48), Color(0xFFDB2777)),  // Rose -> Pink
+    listOf(Color(0xFF8B5CF6), Color(0xFFA855F7)),  // Violet -> Purple
+)
+
+/**
+ * Returns a gradient color list for a given artist name.
+ * The selection is deterministic so the same artist always gets the same gradient.
+ */
+private fun artistGradient(name: String): List<Color> {
+    val index = name.hashCode().absoluteValue % artistGradientPalette.size
+    return artistGradientPalette[index]
 }
 
 // ── Empty state placeholder ──────────────────────────────────────────────────

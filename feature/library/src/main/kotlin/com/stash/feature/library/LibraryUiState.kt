@@ -22,6 +22,8 @@ data class LibraryUiState(
     val isLoading: Boolean = true,
     val spotifyConnected: Boolean = false,
     val youTubeConnected: Boolean = false,
+    /** ID of the track currently being played, or null if nothing is playing. */
+    val currentlyPlayingTrackId: Long? = null,
 )
 
 /** Tabs available in the library browser. */

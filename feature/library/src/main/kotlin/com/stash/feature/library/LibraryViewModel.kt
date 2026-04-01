@@ -133,6 +133,11 @@ class LibraryViewModel @Inject constructor(
             spotifyConnected = authPair.first,
             youTubeConnected = authPair.second,
         )
+    }.combine(playerRepository.playerState) { libraryState, playerState ->
+        // Overlay the currently-playing track ID so the UI can highlight it.
+        libraryState.copy(
+            currentlyPlayingTrackId = playerState.currentTrack?.id,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),

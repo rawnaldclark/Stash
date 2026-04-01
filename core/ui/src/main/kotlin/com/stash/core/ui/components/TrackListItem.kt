@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
@@ -41,6 +42,10 @@ import com.stash.core.ui.theme.StashTheme
  * @param track       The [Track] to display.
  * @param onClick     Callback invoked when the row is tapped.
  * @param modifier    Optional [Modifier] applied to the root row.
+ * @param isPlaying   Whether this track is the currently-playing track.
+ *                    When true, the title is tinted with the primary color,
+ *                    a "now playing" equalizer icon replaces the duration,
+ *                    and the row background gets a subtle primary highlight.
  * @param onMoreClick Optional callback for the overflow (three-dot) button.
  * @param onLongPress Optional callback invoked when the row is long-pressed.
  */
@@ -50,14 +55,24 @@ fun TrackListItem(
     track: Track,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isPlaying: Boolean = false,
     onMoreClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    // Subtle background highlight when this track is currently playing.
+    val rowBackground = if (isPlaying) {
+        primaryColor.copy(alpha = 0.06f)
+    } else {
+        androidx.compose.ui.graphics.Color.Transparent
+    }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .background(rowBackground)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongPress,
@@ -101,7 +116,7 @@ fun TrackListItem(
             Text(
                 text = track.title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = if (isPlaying) primaryColor else MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -116,17 +131,26 @@ fun TrackListItem(
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // -- Duration --
-        Text(
-            text = formatDuration(track.durationMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = extendedColors.textTertiary,
-        )
+        // -- Duration or now-playing indicator --
+        if (isPlaying) {
+            Icon(
+                imageVector = Icons.Default.GraphicEq,
+                contentDescription = "Now playing",
+                tint = primaryColor,
+                modifier = Modifier.size(18.dp),
+            )
+        } else {
+            Text(
+                text = formatDuration(track.durationMs),
+                style = MaterialTheme.typography.bodySmall,
+                color = extendedColors.textTertiary,
+            )
+        }
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // -- Source indicator dot --
-        SourceIndicator(source = track.source)
+        // -- Source indicator dot + label --
+        SourceIndicator(source = track.source, showLabel = true)
 
         // -- Overflow menu --
         if (onMoreClick != null) {

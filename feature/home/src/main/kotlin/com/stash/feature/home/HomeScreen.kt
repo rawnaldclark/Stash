@@ -70,6 +70,8 @@ import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -502,11 +504,27 @@ private fun DailyMixCard(
         shape = RoundedCornerShape(16.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Brush.verticalGradient(gradientColors)),
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Album art background (if available)
+            if (playlist.artUrl != null) {
+                AsyncImage(
+                    model = playlist.artUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+            // Gradient overlay for text readability
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Brush.verticalGradient(gradientColors))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
+                        )
+                    ),
+            )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -700,37 +718,58 @@ private fun PlaylistGridCard(
         shape = RoundedCornerShape(14.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Album art background (if available)
+            if (playlist.artUrl != null) {
+                AsyncImage(
+                    model = playlist.artUrl,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
                 )
-                SourceIndicator(source = playlist.source, size = 6.dp)
+                // Dark gradient overlay for text readability
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.7f)),
+                            )
+                        ),
+                )
             }
-            Column {
-                Text(
-                    text = playlist.name,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = "${playlist.trackCount} tracks",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = null,
+                        tint = if (playlist.artUrl != null) Color.White else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    SourceIndicator(source = playlist.source, size = 6.dp)
+                }
+                Column {
+                    Text(
+                        text = playlist.name,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (playlist.artUrl != null) Color.White else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${playlist.trackCount} tracks",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (playlist.artUrl != null) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
