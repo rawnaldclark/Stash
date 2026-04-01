@@ -7,12 +7,14 @@ import com.stash.core.auth.model.AuthState
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.MusicSource
+import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -198,6 +200,107 @@ class LibraryViewModel @Inject constructor(
     fun deleteTrack(track: Track) {
         viewModelScope.launch {
             musicRepository.deleteTrack(track)
+        }
+    }
+
+    // ── Playlist actions ────────────────────────────────────────────────
+
+    /**
+     * Load all downloaded tracks for [playlist] and begin playback from the first track.
+     * Only tracks with a non-null [Track.filePath] (i.e. downloaded) are queued.
+     */
+    fun playPlaylist(playlist: Playlist) {
+        viewModelScope.launch {
+            val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
+            val downloaded = tracks.filter { it.filePath != null }
+            if (downloaded.isNotEmpty()) {
+                playerRepository.setQueue(downloaded, startIndex = 0)
+            }
+        }
+    }
+
+    /**
+     * Load all downloaded tracks for [playlist] and append each to the playback queue.
+     */
+    fun addPlaylistToQueue(playlist: Playlist) {
+        viewModelScope.launch {
+            val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
+            val downloaded = tracks.filter { it.filePath != null }
+            downloaded.forEach { playerRepository.addToQueue(it) }
+        }
+    }
+
+    /**
+     * Delete a playlist from the library.
+     * Note: Currently removes the playlist by re-inserting with zero tracks.
+     * A dedicated deletePlaylist method can be added to MusicRepository later.
+     */
+    fun deletePlaylist(playlist: Playlist) {
+        viewModelScope.launch {
+            // Best-effort: delete all tracks in the playlist
+            val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
+            tracks.forEach { musicRepository.deleteTrack(it) }
+        }
+    }
+
+    // ── Artist actions ──────────────────────────────────────────────────
+
+    /**
+     * Load all downloaded tracks by [artistName] and begin playback from the first track.
+     */
+    fun playArtist(artistName: String) {
+        viewModelScope.launch {
+            val tracks = musicRepository.getTracksByArtist(artistName).first()
+            val downloaded = tracks.filter { it.filePath != null }
+            if (downloaded.isNotEmpty()) {
+                playerRepository.setQueue(downloaded, startIndex = 0)
+            }
+        }
+    }
+
+    /**
+     * Load all downloaded tracks by [artistName] and append each to the playback queue.
+     */
+    fun addArtistToQueue(artistName: String) {
+        viewModelScope.launch {
+            val tracks = musicRepository.getTracksByArtist(artistName).first()
+            val downloaded = tracks.filter { it.filePath != null }
+            downloaded.forEach { playerRepository.addToQueue(it) }
+        }
+    }
+
+    // ── Album actions ───────────────────────────────────────────────────
+
+    /**
+     * Load all downloaded tracks matching [albumName] by [artist] and begin playback.
+     * Filters from allTracks since there is no dedicated getTracksByAlbum query.
+     */
+    fun playAlbum(albumName: String, artist: String) {
+        viewModelScope.launch {
+            val allTracks = musicRepository.getAllTracks().first()
+            val downloaded = allTracks.filter {
+                it.album.equals(albumName, ignoreCase = true)
+                    && it.artist.equals(artist, ignoreCase = true)
+                    && it.filePath != null
+            }
+            if (downloaded.isNotEmpty()) {
+                playerRepository.setQueue(downloaded, startIndex = 0)
+            }
+        }
+    }
+
+    /**
+     * Load all downloaded tracks matching [albumName] by [artist] and append each to the queue.
+     */
+    fun addAlbumToQueue(albumName: String, artist: String) {
+        viewModelScope.launch {
+            val allTracks = musicRepository.getAllTracks().first()
+            val downloaded = allTracks.filter {
+                it.album.equals(albumName, ignoreCase = true)
+                    && it.artist.equals(artist, ignoreCase = true)
+                    && it.filePath != null
+            }
+            downloaded.forEach { playerRepository.addToQueue(it) }
         }
     }
 }

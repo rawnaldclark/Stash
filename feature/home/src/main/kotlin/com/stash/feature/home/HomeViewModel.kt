@@ -143,6 +143,18 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * Loads the downloaded tracks for [playlist] and appends each to the playback queue.
+     * Only tracks with a non-null [Track.filePath] (i.e. downloaded) are queued.
+     */
+    fun addPlaylistToQueue(playlist: Playlist) {
+        viewModelScope.launch {
+            val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
+            val downloaded = tracks.filter { it.filePath != null }
+            downloaded.forEach { playerRepository.addToQueue(it) }
+        }
+    }
+
+    /**
      * Loads all downloaded tracks and begins playback from the first track.
      * Only tracks with a non-null [Track.filePath] (i.e. downloaded) are queued.
      */

@@ -1,8 +1,10 @@
 package com.stash.feature.library
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
@@ -89,6 +92,13 @@ fun LibraryScreen(
         onPlayNext = viewModel::playNext,
         onAddToQueue = viewModel::addToQueue,
         onDeleteTrack = viewModel::deleteTrack,
+        onPlayPlaylist = viewModel::playPlaylist,
+        onAddPlaylistToQueue = viewModel::addPlaylistToQueue,
+        onDeletePlaylist = viewModel::deletePlaylist,
+        onPlayArtist = viewModel::playArtist,
+        onAddArtistToQueue = viewModel::addArtistToQueue,
+        onPlayAlbum = viewModel::playAlbum,
+        onAddAlbumToQueue = viewModel::addAlbumToQueue,
         modifier = modifier,
     )
 }
@@ -106,6 +116,13 @@ private fun LibraryContent(
     onPlayNext: (Track) -> Unit,
     onAddToQueue: (Track) -> Unit,
     onDeleteTrack: (Track) -> Unit,
+    onPlayPlaylist: (Playlist) -> Unit,
+    onAddPlaylistToQueue: (Playlist) -> Unit,
+    onDeletePlaylist: (Playlist) -> Unit,
+    onPlayArtist: (String) -> Unit,
+    onAddArtistToQueue: (String) -> Unit,
+    onPlayAlbum: (String, String) -> Unit,
+    onAddAlbumToQueue: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -173,6 +190,9 @@ private fun LibraryContent(
                 LibraryTab.PLAYLISTS -> PlaylistsGrid(
                     playlists = state.playlists,
                     anyServiceConnected = anyServiceConnected,
+                    onPlayPlaylist = onPlayPlaylist,
+                    onAddPlaylistToQueue = onAddPlaylistToQueue,
+                    onDeletePlaylist = onDeletePlaylist,
                 )
                 LibraryTab.TRACKS -> TracksTab(
                     tracks = state.tracks,
@@ -185,10 +205,14 @@ private fun LibraryContent(
                 LibraryTab.ARTISTS -> ArtistsGrid(
                     artists = state.artists,
                     anyServiceConnected = anyServiceConnected,
+                    onPlayArtist = onPlayArtist,
+                    onAddArtistToQueue = onAddArtistToQueue,
                 )
                 LibraryTab.ALBUMS -> AlbumsGrid(
                     albums = state.albums,
                     anyServiceConnected = anyServiceConnected,
+                    onPlayAlbum = onPlayAlbum,
+                    onAddAlbumToQueue = onAddAlbumToQueue,
                 )
             }
         }
@@ -392,10 +416,14 @@ private fun SourceFilter.displayName(): String = when (this) {
 
 // ── Playlists tab (2-column grid) ────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun PlaylistsGrid(
     playlists: List<Playlist>,
     anyServiceConnected: Boolean,
+    onPlayPlaylist: (Playlist) -> Unit,
+    onAddPlaylistToQueue: (Playlist) -> Unit,
+    onDeletePlaylist: (Playlist) -> Unit,
 ) {
     if (playlists.isEmpty()) {
         EmptyTabMessage(
@@ -404,6 +432,12 @@ private fun PlaylistsGrid(
         )
         return
     }
+
+    // Playlist selected for the context-menu bottom sheet.
+    var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
+    // Playlist pending delete confirmation.
+    var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
@@ -411,7 +445,14 @@ private fun PlaylistsGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(playlists, key = { it.id }) { playlist ->
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
+            GlassCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(
+                        onClick = { onPlayPlaylist(playlist) },
+                        onLongClick = { selectedPlaylist = playlist },
+                    ),
+            ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         text = playlist.name,
@@ -434,6 +475,96 @@ private fun PlaylistsGrid(
                 }
             }
         }
+    }
+
+    // ── Context-menu bottom sheet ───────────────────────────────────────
+    selectedPlaylist?.let { playlist ->
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { selectedPlaylist = null },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            // Header: playlist name + track count
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 8.dp),
+            ) {
+                Text(
+                    text = playlist.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${playlist.trackCount} tracks",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            BottomSheetActionRow(
+                icon = Icons.Default.PlayArrow,
+                label = "Play All",
+                onClick = {
+                    onPlayPlaylist(playlist)
+                    selectedPlaylist = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.PlaylistAdd,
+                label = "Add to Queue",
+                onClick = {
+                    onAddPlaylistToQueue(playlist)
+                    selectedPlaylist = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.Delete,
+                label = "Delete Playlist",
+                tint = MaterialTheme.colorScheme.error,
+                onClick = {
+                    playlistToDelete = playlist
+                    selectedPlaylist = null
+                },
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+
+    // ── Delete confirmation dialog ──────────────────────────────────────
+    playlistToDelete?.let { playlist ->
+        AlertDialog(
+            onDismissRequest = { playlistToDelete = null },
+            title = { Text("Delete playlist?") },
+            text = {
+                Text(
+                    "\"${playlist.name}\" and all its tracks will be removed from " +
+                        "your library and deleted from disk. This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeletePlaylist(playlist)
+                        playlistToDelete = null
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { playlistToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 
@@ -606,10 +737,13 @@ private fun BottomSheetActionRow(
 
 // ── Artists tab (2-column grid) ──────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun ArtistsGrid(
     artists: List<ArtistInfo>,
     anyServiceConnected: Boolean,
+    onPlayArtist: (String) -> Unit,
+    onAddArtistToQueue: (String) -> Unit,
 ) {
     if (artists.isEmpty()) {
         EmptyTabMessage(
@@ -618,6 +752,10 @@ private fun ArtistsGrid(
         )
         return
     }
+
+    // Artist selected for the context-menu bottom sheet.
+    var selectedArtist by remember { mutableStateOf<ArtistInfo?>(null) }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
@@ -630,7 +768,11 @@ private fun ArtistsGrid(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 8.dp)
+                    .combinedClickable(
+                        onClick = { onPlayArtist(artist.name) },
+                        onLongClick = { selectedArtist = artist },
+                    ),
             ) {
                 // Circular placeholder
                 Box(
@@ -663,14 +805,69 @@ private fun ArtistsGrid(
             }
         }
     }
+
+    // ── Context-menu bottom sheet ───────────────────────────────────────
+    selectedArtist?.let { artist ->
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { selectedArtist = null },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            // Header: artist name + track count
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 8.dp),
+            ) {
+                Text(
+                    text = artist.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${artist.trackCount} tracks",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            BottomSheetActionRow(
+                icon = Icons.Default.PlayArrow,
+                label = "Play All by Artist",
+                onClick = {
+                    onPlayArtist(artist.name)
+                    selectedArtist = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.PlaylistAdd,
+                label = "Add to Queue",
+                onClick = {
+                    onAddArtistToQueue(artist.name)
+                    selectedArtist = null
+                },
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
 }
 
 // ── Albums tab (2-column grid) ───────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun AlbumsGrid(
     albums: List<AlbumInfo>,
     anyServiceConnected: Boolean,
+    onPlayAlbum: (String, String) -> Unit,
+    onAddAlbumToQueue: (String, String) -> Unit,
 ) {
     if (albums.isEmpty()) {
         EmptyTabMessage(
@@ -679,6 +876,10 @@ private fun AlbumsGrid(
         )
         return
     }
+
+    // Album selected for the context-menu bottom sheet.
+    var selectedAlbum by remember { mutableStateOf<AlbumInfo?>(null) }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
@@ -690,7 +891,11 @@ private fun AlbumsGrid(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = 4.dp)
+                    .combinedClickable(
+                        onClick = { onPlayAlbum(album.name, album.artist) },
+                        onLongClick = { selectedAlbum = album },
+                    ),
             ) {
                 // Album art placeholder
                 Box(
@@ -723,6 +928,60 @@ private fun AlbumsGrid(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+
+    // ── Context-menu bottom sheet ───────────────────────────────────────
+    selectedAlbum?.let { album ->
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { selectedAlbum = null },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            // Header: album name + artist
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 8.dp),
+            ) {
+                Text(
+                    text = album.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = album.artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            BottomSheetActionRow(
+                icon = Icons.Default.PlayArrow,
+                label = "Play Album",
+                onClick = {
+                    onPlayAlbum(album.name, album.artist)
+                    selectedAlbum = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.PlaylistAdd,
+                label = "Add to Queue",
+                onClick = {
+                    onAddAlbumToQueue(album.name, album.artist)
+                    selectedAlbum = null
+                },
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

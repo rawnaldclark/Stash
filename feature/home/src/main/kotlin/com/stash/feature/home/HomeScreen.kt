@@ -7,8 +7,10 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,19 +34,29 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -62,12 +74,16 @@ import com.stash.core.ui.theme.StashTheme
  * Home screen composable displaying a premium dark dashboard with sync
  * status, daily mixes, recently added tracks, liked songs, and playlists.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // Playlist selected for the context-menu bottom sheet (shared across daily mixes + grid).
+    var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
 
     LazyColumn(
         modifier = modifier
@@ -110,6 +126,7 @@ fun HomeScreen(
                         DailyMixCard(
                             playlist = playlist,
                             onClick = { viewModel.playPlaylist(playlist) },
+                            onLongPress = { selectedPlaylist = playlist },
                         )
                     }
                 }
@@ -174,6 +191,7 @@ fun HomeScreen(
                                 PlaylistGridCard(
                                     playlist = playlist,
                                     onClick = { viewModel.playPlaylist(playlist) },
+                                    onLongPress = { selectedPlaylist = playlist },
                                     modifier = Modifier.weight(1f),
                                 )
                             }
@@ -185,6 +203,58 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+    }
+
+    // ── Playlist context-menu bottom sheet ──────────────────────────────
+    selectedPlaylist?.let { playlist ->
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { selectedPlaylist = null },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            // Header: playlist name + track count
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 8.dp),
+            ) {
+                Text(
+                    text = playlist.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${playlist.trackCount} tracks",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            HomeBottomSheetActionRow(
+                icon = Icons.Default.PlayArrow,
+                label = "Play All",
+                onClick = {
+                    viewModel.playPlaylist(playlist)
+                    selectedPlaylist = null
+                },
+            )
+            HomeBottomSheetActionRow(
+                icon = Icons.Default.PlaylistAdd,
+                label = "Add to Queue",
+                onClick = {
+                    viewModel.addPlaylistToQueue(playlist)
+                    selectedPlaylist = null
+                },
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -355,10 +425,12 @@ private fun PulseDot(color: Color, modifier: Modifier = Modifier) {
 
 // ── Daily mix card ───────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DailyMixCard(
     playlist: Playlist,
     onClick: () -> Unit,
+    onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -378,7 +450,10 @@ private fun DailyMixCard(
         modifier = modifier
             .width(180.dp)
             .height(120.dp)
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongPress,
+            ),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
@@ -560,10 +635,12 @@ private fun LikedSongsCard(
 
 // ── Playlist grid card ───────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PlaylistGridCard(
     playlist: Playlist,
     onClick: () -> Unit,
+    onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -571,7 +648,10 @@ private fun PlaylistGridCard(
     Surface(
         modifier = modifier
             .height(100.dp)
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongPress,
+            ),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(14.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
@@ -609,6 +689,45 @@ private fun PlaylistGridCard(
                 )
             }
         }
+    }
+}
+
+// ── Bottom sheet action row ──────────────────────────────────────────────
+
+/**
+ * A single action row inside a playlist context-menu bottom sheet.
+ *
+ * @param icon  Leading icon for the action.
+ * @param label Human-readable label.
+ * @param tint  Icon and label color. Defaults to [MaterialTheme.colorScheme.onSurface].
+ * @param onClick Callback when the row is tapped.
+ */
+@Composable
+private fun HomeBottomSheetActionRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(24.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = tint,
+        )
     }
 }
 
