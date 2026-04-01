@@ -221,13 +221,18 @@ class PlayerRepositoryImpl @Inject constructor(
             .setExtras(Bundle().apply { putLong(EXTRA_TRACK_ID, id) })
             .build()
 
+        // Ensure file:// scheme so StashPlaybackService's URI validation passes.
+        val fileUri = filePath?.let { path ->
+            if (path.startsWith("/")) Uri.parse("file://$path") else Uri.parse(path)
+        }
+
         val requestMetadata = MediaItem.RequestMetadata.Builder()
-            .setMediaUri(filePath?.let { Uri.parse(it) })
+            .setMediaUri(fileUri)
             .build()
 
         return MediaItem.Builder()
             .setMediaId(id.toString())
-            .setUri(filePath)
+            .setUri(fileUri)
             .setMediaMetadata(metadata)
             .setRequestMetadata(requestMetadata)
             .build()

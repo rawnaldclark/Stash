@@ -243,52 +243,65 @@ class PlaylistFetchWorker @AssistedInject constructor(
             diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.ERROR, errorMessage = e.message))
         }
 
-        // Fetch Liked Songs (sp_dc dependent -- may return empty if GraphQL fails).
+        // Fetch Liked Songs with pagination (sp_dc dependent).
+        // Spotify returns max 50 per page; we loop until we get all tracks.
         try {
-            when (val result = spotifyApiClient.getLikedSongs()) {
-                is SyncResult.Success -> {
-                    val likedSongs = result.data
-                    diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SUCCESS, likedSongs.size))
-                    Log.d(TAG, "fetchSpotifyPlaylists: found ${likedSongs.size} liked songs")
+            val allLikedSongs = mutableListOf<com.stash.data.spotify.model.SpotifyTrackItem>()
+            var likedOffset = 0
+            val likedPageSize = 50
 
-                    val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
-                        RemotePlaylistSnapshotEntity(
-                            syncId = syncId,
-                            source = MusicSource.SPOTIFY,
-                            sourcePlaylistId = "spotify_liked_songs",
-                            playlistName = "Liked Songs",
-                            playlistType = PlaylistType.LIKED_SONGS,
-                            trackCount = likedSongs.size,
-                        )
+            while (true) {
+                when (val result = spotifyApiClient.getLikedSongs(limit = likedPageSize, offset = likedOffset)) {
+                    is SyncResult.Success -> {
+                        allLikedSongs.addAll(result.data)
+                        Log.d(TAG, "fetchSpotifyPlaylists: liked songs page offset=$likedOffset, got ${result.data.size}")
+                        if (result.data.size < likedPageSize) break
+                        likedOffset += likedPageSize
+                    }
+                    is SyncResult.Empty -> break
+                    is SyncResult.Error -> {
+                        Log.e(TAG, "fetchSpotifyPlaylists: liked songs page error at offset=$likedOffset: ${result.message}")
+                        break
+                    }
+                }
+            }
+
+            if (allLikedSongs.isNotEmpty()) {
+                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SUCCESS, allLikedSongs.size))
+                Log.d(TAG, "fetchSpotifyPlaylists: found ${allLikedSongs.size} liked songs total")
+
+                val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
+                    RemotePlaylistSnapshotEntity(
+                        syncId = syncId,
+                        source = MusicSource.SPOTIFY,
+                        sourcePlaylistId = "spotify_liked_songs",
+                        playlistName = "Liked Songs",
+                        playlistType = PlaylistType.LIKED_SONGS,
+                        trackCount = allLikedSongs.size,
                     )
+                )
 
-                    val trackSnapshots = likedSongs.mapIndexedNotNull { index, item ->
-                        val track = item.track ?: return@mapIndexedNotNull null
-                        RemoteTrackSnapshotEntity(
-                            syncId = syncId,
-                            snapshotPlaylistId = likedPlaylistId,
-                            title = track.name,
-                            artist = track.artists.joinToString(", ") { it.name },
-                            album = track.album?.name,
-                            durationMs = track.duration_ms,
-                            spotifyUri = track.uri,
-                            albumArtUrl = track.album?.images?.firstOrNull()?.url,
-                            position = index,
-                        )
-                    }
-                    if (trackSnapshots.isNotEmpty()) {
-                        remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
-                        likedSongCount = trackSnapshots.size
-                    }
+                val trackSnapshots = allLikedSongs.mapIndexedNotNull { index, item ->
+                    val track = item.track ?: return@mapIndexedNotNull null
+                    RemoteTrackSnapshotEntity(
+                        syncId = syncId,
+                        snapshotPlaylistId = likedPlaylistId,
+                        title = track.name,
+                        artist = track.artists.joinToString(", ") { it.name },
+                        album = track.album?.name,
+                        durationMs = track.duration_ms,
+                        spotifyUri = track.uri,
+                        albumArtUrl = track.album?.images?.firstOrNull()?.url,
+                        position = index,
+                    )
                 }
-                is SyncResult.Empty -> {
-                    diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.EMPTY, errorMessage = result.reason))
-                    Log.d(TAG, "fetchSpotifyPlaylists: liked songs empty: ${result.reason}")
+                if (trackSnapshots.isNotEmpty()) {
+                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                    likedSongCount = trackSnapshots.size
                 }
-                is SyncResult.Error -> {
-                    diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = result.message))
-                    Log.e(TAG, "fetchSpotifyPlaylists: liked songs error: ${result.message}")
-                }
+            } else {
+                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.EMPTY, errorMessage = "No liked songs found"))
+                Log.d(TAG, "fetchSpotifyPlaylists: liked songs empty after pagination")
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchSpotifyPlaylists: liked songs fetch failed (sp_dc issue), continuing", e)
