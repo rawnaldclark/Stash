@@ -124,6 +124,10 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun insertPlaylist(playlist: Playlist): Long =
         playlistDao.insert(playlist.toEntity())
 
+    override suspend fun removePlaylist(playlist: Playlist) {
+        playlistDao.delete(playlist.toEntity())
+    }
+
     // ── Sync history ────────────────────────────────────────────────────
 
     override suspend fun getLatestSync(): SyncHistoryEntity? =

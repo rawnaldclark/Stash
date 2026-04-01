@@ -161,6 +161,14 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
             tracks.forEach { musicRepository.deleteTrack(it) }
+            musicRepository.removePlaylist(playlist)
+        }
+    }
+
+    /** Remove playlist from library without deleting its downloaded tracks. */
+    fun removePlaylist(playlist: Playlist) {
+        viewModelScope.launch {
+            musicRepository.removePlaylist(playlist)
         }
     }
 

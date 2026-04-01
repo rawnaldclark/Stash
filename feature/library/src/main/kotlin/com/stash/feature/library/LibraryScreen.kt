@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -94,6 +95,7 @@ fun LibraryScreen(
         onDeleteTrack = viewModel::deleteTrack,
         onPlayPlaylist = viewModel::playPlaylist,
         onAddPlaylistToQueue = viewModel::addPlaylistToQueue,
+        onRemovePlaylist = viewModel::removePlaylist,
         onDeletePlaylist = viewModel::deletePlaylist,
         onPlayArtist = viewModel::playArtist,
         onAddArtistToQueue = viewModel::addArtistToQueue,
@@ -119,6 +121,7 @@ private fun LibraryContent(
     onDeleteTrack: (Track) -> Unit,
     onPlayPlaylist: (Playlist) -> Unit,
     onAddPlaylistToQueue: (Playlist) -> Unit,
+    onRemovePlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist) -> Unit,
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
@@ -194,6 +197,7 @@ private fun LibraryContent(
                     anyServiceConnected = anyServiceConnected,
                     onPlayPlaylist = onPlayPlaylist,
                     onAddPlaylistToQueue = onAddPlaylistToQueue,
+                    onRemovePlaylist = onRemovePlaylist,
                     onDeletePlaylist = onDeletePlaylist,
                 )
                 LibraryTab.TRACKS -> TracksTab(
@@ -426,6 +430,7 @@ private fun PlaylistsGrid(
     anyServiceConnected: Boolean,
     onPlayPlaylist: (Playlist) -> Unit,
     onAddPlaylistToQueue: (Playlist) -> Unit,
+    onRemovePlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist) -> Unit,
 ) {
     if (playlists.isEmpty()) {
@@ -528,8 +533,16 @@ private fun PlaylistsGrid(
                 },
             )
             BottomSheetActionRow(
+                icon = Icons.Default.RemoveCircleOutline,
+                label = "Remove Playlist",
+                onClick = {
+                    onRemovePlaylist(playlist)
+                    selectedPlaylist = null
+                },
+            )
+            BottomSheetActionRow(
                 icon = Icons.Default.Delete,
-                label = "Delete Playlist",
+                label = "Delete Playlist & Songs",
                 tint = MaterialTheme.colorScheme.error,
                 onClick = {
                     playlistToDelete = playlist

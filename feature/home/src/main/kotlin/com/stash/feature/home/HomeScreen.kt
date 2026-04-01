@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -252,6 +253,14 @@ fun HomeScreen(
                 label = "Add to Queue",
                 onClick = {
                     viewModel.addPlaylistToQueue(playlist)
+                    selectedPlaylist = null
+                },
+            )
+            HomeBottomSheetActionRow(
+                icon = Icons.Default.RemoveCircleOutline,
+                label = "Remove Playlist",
+                onClick = {
+                    viewModel.removePlaylist(playlist)
                     selectedPlaylist = null
                 },
             )

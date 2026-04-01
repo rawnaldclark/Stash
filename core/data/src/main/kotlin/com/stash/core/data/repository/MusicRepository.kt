@@ -81,6 +81,9 @@ interface MusicRepository {
     /** Insert or replace a playlist. Returns the row ID. */
     suspend fun insertPlaylist(playlist: Playlist): Long
 
+    /** Remove a playlist from the library without deleting its tracks from disk. */
+    suspend fun removePlaylist(playlist: Playlist)
+
     // ── Sync history ────────────────────────────────────────────────────
 
     /** The most recent sync record, or null. */
