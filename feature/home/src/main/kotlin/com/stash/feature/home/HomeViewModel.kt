@@ -6,12 +6,14 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -117,6 +119,34 @@ class HomeViewModel @Inject constructor(
             playerRepository.setQueue(tracks, index)
         }
     }
+
+    /**
+     * Loads the downloaded tracks for [playlist] and begins playback from the first track.
+     * Only tracks with a non-null [Track.filePath] (i.e. downloaded) are queued.
+     */
+    fun playPlaylist(playlist: Playlist) {
+        viewModelScope.launch {
+            val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
+            val downloaded = tracks.filter { it.filePath != null }
+            if (downloaded.isNotEmpty()) {
+                playerRepository.setQueue(downloaded, startIndex = 0)
+            }
+        }
+    }
+
+    /**
+     * Loads all downloaded tracks and begins playback from the first track.
+     * Only tracks with a non-null [Track.filePath] (i.e. downloaded) are queued.
+     */
+    fun playLikedSongs() {
+        viewModelScope.launch {
+            val tracks = musicRepository.getAllTracks().first()
+            val downloaded = tracks.filter { it.filePath != null }
+            if (downloaded.isNotEmpty()) {
+                playerRepository.setQueue(downloaded, startIndex = 0)
+            }
+        }
+    }
 }
 
 /**
@@ -124,7 +154,7 @@ class HomeViewModel @Inject constructor(
  * them into a single upstream before the top-level combine.
  */
 private data class MusicData(
-    val playlists: List<com.stash.core.model.Playlist>,
+    val playlists: List<Playlist>,
     val recentlyAdded: List<Track>,
     val trackCount: Int,
     val storageBytes: Long,

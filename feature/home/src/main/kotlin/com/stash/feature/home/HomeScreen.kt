@@ -106,7 +106,10 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(uiState.dailyMixes, key = { it.id }) { playlist ->
-                        DailyMixCard(playlist = playlist)
+                        DailyMixCard(
+                            playlist = playlist,
+                            onClick = { viewModel.playPlaylist(playlist) },
+                        )
                     }
                 }
             }
@@ -143,6 +146,7 @@ fun HomeScreen(
                 Spacer(Modifier.height(8.dp))
                 LikedSongsCard(
                     count = uiState.likedSongsCount,
+                    onClick = { viewModel.playLikedSongs() },
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -168,6 +172,7 @@ fun HomeScreen(
                             rowItems.forEach { playlist ->
                                 PlaylistGridCard(
                                     playlist = playlist,
+                                    onClick = { viewModel.playPlaylist(playlist) },
                                     modifier = Modifier.weight(1f),
                                 )
                             }
@@ -348,6 +353,7 @@ private fun PulseDot(color: Color, modifier: Modifier = Modifier) {
 @Composable
 private fun DailyMixCard(
     playlist: Playlist,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -366,7 +372,8 @@ private fun DailyMixCard(
     Surface(
         modifier = modifier
             .width(180.dp)
-            .height(120.dp),
+            .height(120.dp)
+            .clickable(onClick = onClick),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
@@ -468,12 +475,15 @@ private fun CompactTrackCard(
 @Composable
 private fun LikedSongsCard(
     count: Int,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
 
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
@@ -538,12 +548,15 @@ private fun LikedSongsCard(
 @Composable
 private fun PlaylistGridCard(
     playlist: Playlist,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
 
     Surface(
-        modifier = modifier.height(100.dp),
+        modifier = modifier
+            .height(100.dp)
+            .clickable(onClick = onClick),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(14.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
