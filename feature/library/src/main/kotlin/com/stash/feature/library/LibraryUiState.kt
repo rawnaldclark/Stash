@@ -14,6 +14,7 @@ data class LibraryUiState(
     val activeTab: LibraryTab = LibraryTab.PLAYLISTS,
     val searchQuery: String = "",
     val sortOrder: SortOrder = SortOrder.RECENT,
+    val sourceFilter: SourceFilter = SourceFilter.ALL,
     val tracks: List<Track> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
     val artists: List<ArtistInfo> = emptyList(),
@@ -28,6 +29,9 @@ enum class LibraryTab { PLAYLISTS, TRACKS, ARTISTS, ALBUMS }
 
 /** Sort options applicable to every content tab. */
 enum class SortOrder { RECENT, ALPHABETICAL, MOST_PLAYED }
+
+/** Source filter for showing tracks from a specific service. */
+enum class SourceFilter { ALL, YOUTUBE, SPOTIFY }
 
 /**
  * Lightweight projection of an artist for the Artists tab.

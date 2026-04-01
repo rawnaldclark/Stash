@@ -6,6 +6,7 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,8 +72,15 @@ class LibraryViewModel @Inject constructor(
         val artists = allArtists.map { ArtistInfo(it.artist, it.trackCount, it.totalDurationMs) }
         val albums = allAlbums.map { AlbumInfo(it.album, it.artist, it.trackCount, it.artPath) }
 
+        // -- Apply source filter --
+        val sourceFiltered = when (controls.sourceFilter) {
+            SourceFilter.ALL -> allTracks
+            SourceFilter.YOUTUBE -> allTracks.filter { it.source == MusicSource.YOUTUBE }
+            SourceFilter.SPOTIFY -> allTracks.filter { it.source == MusicSource.SPOTIFY || it.source == MusicSource.BOTH }
+        }
+
         // -- Apply client-side search filter --
-        val filteredTracks = if (query.isEmpty()) allTracks else allTracks.filter {
+        val filteredTracks = if (query.isEmpty()) sourceFiltered else sourceFiltered.filter {
             it.title.lowercase().contains(query)
                     || it.artist.lowercase().contains(query)
                     || it.album.lowercase().contains(query)
@@ -114,6 +122,7 @@ class LibraryViewModel @Inject constructor(
             activeTab = controls.activeTab,
             searchQuery = controls.searchQuery,
             sortOrder = controls.sortOrder,
+            sourceFilter = controls.sourceFilter,
             tracks = sortedTracks,
             playlists = sortedPlaylists,
             artists = sortedArtists,
@@ -145,6 +154,11 @@ class LibraryViewModel @Inject constructor(
         _controls.update { it.copy(sortOrder = order) }
     }
 
+    /** Filter tracks by source (All / YouTube / Spotify). */
+    fun setSourceFilter(filter: SourceFilter) {
+        _controls.update { it.copy(sourceFilter = filter) }
+    }
+
     /**
      * Begin playback by replacing the queue with [allTracks] and starting
      * at the position of [track].
@@ -168,6 +182,7 @@ private data class ControlState(
     val activeTab: LibraryTab = LibraryTab.PLAYLISTS,
     val searchQuery: String = "",
     val sortOrder: SortOrder = SortOrder.RECENT,
+    val sourceFilter: SourceFilter = SourceFilter.ALL,
 )
 
 /**

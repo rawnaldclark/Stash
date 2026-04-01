@@ -70,6 +70,7 @@ fun LibraryScreen(
         onTabSelected = viewModel::selectTab,
         onSearchQueryChanged = viewModel::setSearchQuery,
         onSortOrderChanged = viewModel::setSortOrder,
+        onSourceFilterChanged = viewModel::setSourceFilter,
         onTrackClick = { track -> viewModel.playTrack(track, state.tracks) },
         modifier = modifier,
     )
@@ -83,6 +84,7 @@ private fun LibraryContent(
     onTabSelected: (LibraryTab) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onSortOrderChanged: (SortOrder) -> Unit,
+    onSourceFilterChanged: (SourceFilter) -> Unit,
     onTrackClick: (com.stash.core.model.Track) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -123,6 +125,14 @@ private fun LibraryContent(
         SortChipRow(
             activeSort = state.sortOrder,
             onSortSelected = onSortOrderChanged,
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // -- Source filter chips --
+        SourceFilterChipRow(
+            activeFilter = state.sourceFilter,
+            onFilterSelected = onSourceFilterChanged,
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -307,6 +317,54 @@ private fun SortOrder.displayName(): String = when (this) {
     SortOrder.RECENT -> "Recently Added"
     SortOrder.ALPHABETICAL -> "A-Z"
     SortOrder.MOST_PLAYED -> "Most Played"
+}
+
+// ── Source filter chips ─────────────────────────────────────────────────────
+
+@Composable
+private fun SourceFilterChipRow(
+    activeFilter: SourceFilter,
+    onFilterSelected: (SourceFilter) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SourceFilter.entries.forEach { filter ->
+            val isSelected = filter == activeFilter
+            FilterChip(
+                selected = isSelected,
+                onClick = { onFilterSelected(filter) },
+                label = {
+                    Text(
+                        text = filter.displayName(),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = StashTheme.extendedColors.elevatedSurface,
+                    selectedLabelColor = MaterialTheme.colorScheme.onBackground,
+                    containerColor = Color.Transparent,
+                    labelColor = StashTheme.extendedColors.textTertiary,
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    borderColor = Color.Transparent,
+                    selectedBorderColor = StashTheme.extendedColors.glassBorderBright,
+                    enabled = true,
+                    selected = isSelected,
+                ),
+            )
+        }
+    }
+}
+
+private fun SourceFilter.displayName(): String = when (this) {
+    SourceFilter.ALL -> "All"
+    SourceFilter.YOUTUBE -> "YouTube"
+    SourceFilter.SPOTIFY -> "Spotify"
 }
 
 // ── Playlists tab (2-column grid) ────────────────────────────────────────────
