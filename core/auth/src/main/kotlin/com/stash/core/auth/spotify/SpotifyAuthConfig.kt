@@ -59,6 +59,13 @@ object SpotifyAuthConfig {
      */
     const val HASH_FETCH_LIBRARY_TRACKS = "087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240"
 
+    /**
+     * Persisted query hash for the `home` operation.
+     * Returns the Spotify home feed with personalized sections including
+     * Daily Mixes, Discover Weekly, Release Radar, etc.
+     */
+    const val HASH_HOME = "23e37f2e58d82d567f27080101d36609009d8c3676457b1086cb0acc55b72a5d"
+
     // -- Legacy (kept for reference, no longer used by API client) -------------
 
     /** Base URL for the Spotify Web API v1 (blocked for sp_dc tokens). */

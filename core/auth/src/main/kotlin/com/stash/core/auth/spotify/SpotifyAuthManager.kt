@@ -63,6 +63,9 @@ class SpotifyAuthManager @Inject constructor(
     @Volatile
     private var spTDeviceId: String? = null
 
+    /** Returns the captured sp_t cookie value, or null if not yet acquired. */
+    fun getSpT(): String? = spTDeviceId
+
     companion object {
         private const val TAG = "StashSync"
 

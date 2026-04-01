@@ -140,11 +140,16 @@ interface TrackDao {
         SET is_downloaded = 1,
             file_path = :filePath,
             file_size_bytes = :fileSizeBytes,
-            date_added = strftime('%s', 'now') * 1000
+            date_added = :downloadedAt
         WHERE id = :trackId
         """
     )
-    suspend fun markAsDownloaded(trackId: Long, filePath: String, fileSizeBytes: Long)
+    suspend fun markAsDownloaded(
+        trackId: Long,
+        filePath: String,
+        fileSizeBytes: Long,
+        downloadedAt: Long = System.currentTimeMillis(),
+    )
 
     // ── Play tracking ───────────────────────────────────────────────────
 
