@@ -30,7 +30,9 @@ class MusicRepositoryImpl @Inject constructor(
     // ── Track queries ───────────────────────────────────────────────────
 
     override fun getAllTracks(): Flow<List<Track>> =
-        trackDao.getAllByDateAdded().map { entities -> entities.map { it.toDomain() } }
+        trackDao.getAllByDateAdded().map { entities ->
+            entities.filter { it.isDownloaded }.map { it.toDomain() }
+        }
 
     override fun getTracksByArtist(artist: String): Flow<List<Track>> =
         trackDao.getByArtist(artist).map { entities -> entities.map { it.toDomain() } }

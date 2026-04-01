@@ -150,12 +150,11 @@ class LibraryViewModel @Inject constructor(
      * at the position of [track].
      */
     fun playTrack(track: Track, allTracks: List<Track>) {
+        if (track.filePath == null) return // not downloaded yet
         viewModelScope.launch {
-            // Only queue tracks that have been downloaded (have a file on disk).
-            // Non-downloaded tracks have null filePath — ExoPlayer can't play them
-            // and silently skips to the next item, causing the wrong song to play.
             val downloadedTracks = allTracks.filter { it.filePath != null }
-            val index = downloadedTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            val index = downloadedTracks.indexOfFirst { it.id == track.id }
+            if (index < 0) return@launch // shouldn't happen, but guard against it
             playerRepository.setQueue(downloadedTracks, index)
         }
     }
