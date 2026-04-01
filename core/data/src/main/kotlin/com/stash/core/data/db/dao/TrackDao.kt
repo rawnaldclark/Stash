@@ -157,20 +157,12 @@ interface TrackDao {
     suspend fun updateLastPlayed(trackId: Long, timestamp: Long)
 
     /**
-     * Backfill date_added for downloaded tracks using their download_queue completed_at.
-     * This fixes tracks that were downloaded before the date_added-on-download fix.
+     * Backfill: set date_added to now for all downloaded Spotify tracks.
+     * These tracks had date_added set at sync time (when discovered), not
+     * download time. This one-time fix makes them appear in Recently Added.
      */
-    @Query("""
-        UPDATE tracks SET date_added = (
-            SELECT dq.completed_at FROM download_queue dq
-            WHERE dq.track_id = tracks.id AND dq.completed_at IS NOT NULL
-            LIMIT 1
-        )
-        WHERE is_downloaded = 1 AND id IN (
-            SELECT dq2.track_id FROM download_queue dq2 WHERE dq2.completed_at IS NOT NULL
-        )
-    """)
-    suspend fun backfillDateAddedFromDownloadQueue()
+    @Query("UPDATE tracks SET date_added = :now WHERE is_downloaded = 1 AND source = 'SPOTIFY'")
+    suspend fun backfillSpotifyDateAdded(now: Long = System.currentTimeMillis())
 
     // ── Full-text search ────────────────────────────────────────────────
 
