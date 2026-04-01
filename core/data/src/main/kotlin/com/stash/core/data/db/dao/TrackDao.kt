@@ -139,7 +139,8 @@ interface TrackDao {
         UPDATE tracks
         SET is_downloaded = 1,
             file_path = :filePath,
-            file_size_bytes = :fileSizeBytes
+            file_size_bytes = :fileSizeBytes,
+            date_added = strftime('%s', 'now') * 1000
         WHERE id = :trackId
         """
     )
