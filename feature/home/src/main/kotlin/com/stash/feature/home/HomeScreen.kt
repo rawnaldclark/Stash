@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -84,6 +85,7 @@ fun HomeScreen(
 
     // Playlist selected for the context-menu bottom sheet (shared across daily mixes + grid).
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
+    var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
 
     LazyColumn(
         modifier = modifier
@@ -253,9 +255,42 @@ fun HomeScreen(
                     selectedPlaylist = null
                 },
             )
+            HomeBottomSheetActionRow(
+                icon = Icons.Default.Delete,
+                label = "Delete Playlist & Songs",
+                tint = MaterialTheme.colorScheme.error,
+                onClick = {
+                    playlistToDelete = playlist
+                    selectedPlaylist = null
+                },
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    // ── Delete playlist confirmation dialog ──────────────────────────────
+    playlistToDelete?.let { playlist ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { playlistToDelete = null },
+            title = { Text("Delete ${playlist.name}?") },
+            text = { Text("This will delete all downloaded songs in this playlist from your device.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        viewModel.deletePlaylistAndSongs(playlist)
+                        playlistToDelete = null
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { playlistToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 

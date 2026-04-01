@@ -269,6 +269,14 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    /** Delete all downloaded tracks by [artistName] from disk and DB. */
+    fun deleteArtist(artistName: String) {
+        viewModelScope.launch {
+            val tracks = musicRepository.getTracksByArtist(artistName).first()
+            tracks.forEach { musicRepository.deleteTrack(it) }
+        }
+    }
+
     // ── Album actions ───────────────────────────────────────────────────
 
     /**

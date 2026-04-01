@@ -155,6 +155,16 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * Deletes a playlist and all its downloaded songs from disk.
+     */
+    fun deletePlaylistAndSongs(playlist: Playlist) {
+        viewModelScope.launch {
+            val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
+            tracks.forEach { musicRepository.deleteTrack(it) }
+        }
+    }
+
+    /**
      * Loads all downloaded tracks and begins playback from the first track.
      * Only tracks with a non-null [Track.filePath] (i.e. downloaded) are queued.
      */

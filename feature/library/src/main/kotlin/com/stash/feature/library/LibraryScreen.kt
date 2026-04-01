@@ -97,6 +97,7 @@ fun LibraryScreen(
         onDeletePlaylist = viewModel::deletePlaylist,
         onPlayArtist = viewModel::playArtist,
         onAddArtistToQueue = viewModel::addArtistToQueue,
+        onDeleteArtist = viewModel::deleteArtist,
         onPlayAlbum = viewModel::playAlbum,
         onAddAlbumToQueue = viewModel::addAlbumToQueue,
         modifier = modifier,
@@ -121,6 +122,7 @@ private fun LibraryContent(
     onDeletePlaylist: (Playlist) -> Unit,
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
+    onDeleteArtist: (String) -> Unit,
     onPlayAlbum: (String, String) -> Unit,
     onAddAlbumToQueue: (String, String) -> Unit,
     modifier: Modifier = Modifier,
@@ -207,6 +209,7 @@ private fun LibraryContent(
                     anyServiceConnected = anyServiceConnected,
                     onPlayArtist = onPlayArtist,
                     onAddArtistToQueue = onAddArtistToQueue,
+                    onDeleteArtist = onDeleteArtist,
                 )
                 LibraryTab.ALBUMS -> AlbumsGrid(
                     albums = state.albums,
@@ -744,6 +747,7 @@ private fun ArtistsGrid(
     anyServiceConnected: Boolean,
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
+    onDeleteArtist: (String) -> Unit,
 ) {
     if (artists.isEmpty()) {
         EmptyTabMessage(
@@ -754,6 +758,7 @@ private fun ArtistsGrid(
     }
 
     // Artist selected for the context-menu bottom sheet.
+    var artistToDelete by remember { mutableStateOf<ArtistInfo?>(null) }
     var selectedArtist by remember { mutableStateOf<ArtistInfo?>(null) }
 
     LazyVerticalGrid(
@@ -853,9 +858,42 @@ private fun ArtistsGrid(
                     selectedArtist = null
                 },
             )
+            BottomSheetActionRow(
+                icon = Icons.Default.Delete,
+                label = "Delete All by Artist",
+                tint = MaterialTheme.colorScheme.error,
+                onClick = {
+                    artistToDelete = artist
+                    selectedArtist = null
+                },
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    // Delete artist confirmation
+    artistToDelete?.let { artist ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { artistToDelete = null },
+            title = { Text("Delete all by ${artist.name}?") },
+            text = { Text("This will delete all ${artist.trackCount} downloaded songs by this artist from your device.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        onDeleteArtist(artist.name)
+                        artistToDelete = null
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { artistToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 
