@@ -40,8 +40,11 @@ class MatchScorer @Inject constructor(
         /** Weight given to relative popularity (view count) in the composite score. */
         const val POPULARITY_WEIGHT = 0.10f
 
-        /** Minimum score to auto-accept a match without manual review. */
-        const val AUTO_ACCEPT_THRESHOLD = 0.65f
+        /** Minimum score to auto-accept a match. Lower values accept more matches
+         *  at the risk of wrong versions; higher values reject legitimate matches.
+         *  The uploader mismatch penalty (-0.2) protects against covers even at
+         *  lower thresholds. */
+        const val AUTO_ACCEPT_THRESHOLD = 0.55f
 
         /** Scores below this value are discarded as unlikely matches. */
         const val REJECT_THRESHOLD = 0.50f
