@@ -23,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -71,6 +73,7 @@ fun QueueBottomSheet(
     onDismiss: () -> Unit,
     onTrackClick: (index: Int) -> Unit,
     onRemoveTrack: (index: Int) -> Unit,
+    onMoveTrack: (from: Int, to: Int) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -123,10 +126,14 @@ fun QueueBottomSheet(
                     key = { listIdx, track -> "${track.id}_${currentIndex + 1 + listIdx}" },
                 ) { listIdx, track ->
                     val queueIndex = currentIndex + 1 + listIdx
+                    val isFirst = listIdx == 0
+                    val isLast = listIdx == upcomingTracks.lastIndex
                     SwipeableQueueRow(
                         track = track,
                         onClick = { onTrackClick(queueIndex) },
                         onRemove = { onRemoveTrack(queueIndex) },
+                        onMoveUp = if (!isFirst) {{ onMoveTrack(queueIndex, queueIndex - 1) }} else null,
+                        onMoveDown = if (!isLast) {{ onMoveTrack(queueIndex, queueIndex + 1) }} else null,
                     )
                 }
             }
@@ -261,6 +268,8 @@ private fun SwipeableQueueRow(
     track: Track,
     onClick: () -> Unit,
     onRemove: () -> Unit,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
 ) {
     @Suppress("DEPRECATION")
     val dismissState = rememberSwipeToDismissBoxState(
@@ -308,25 +317,29 @@ private fun SwipeableQueueRow(
         QueueTrackRow(
             track = track,
             onClick = onClick,
+            onMoveUp = onMoveUp,
+            onMoveDown = onMoveDown,
         )
     }
 }
 
 /**
- * Standard queue row showing album art, title, and artist.
+ * Standard queue row showing album art, title, artist, and move up/down controls.
  * Tapping the row jumps playback to that track.
  */
 @Composable
 private fun QueueTrackRow(
     track: Track,
     onClick: () -> Unit,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(start = 20.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Album art
@@ -352,6 +365,36 @@ private fun QueueTrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+
+        // Move up/down buttons
+        Column {
+            IconButton(
+                onClick = { onMoveUp?.invoke() },
+                enabled = onMoveUp != null,
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowUp,
+                    contentDescription = "Move up",
+                    tint = if (onMoveUp != null) MaterialTheme.colorScheme.onSurfaceVariant
+                           else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            IconButton(
+                onClick = { onMoveDown?.invoke() },
+                enabled = onMoveDown != null,
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Move down",
+                    tint = if (onMoveDown != null) MaterialTheme.colorScheme.onSurfaceVariant
+                           else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }

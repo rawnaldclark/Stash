@@ -91,6 +91,7 @@ fun NowPlayingScreen(
                 showQueue = false
             },
             onRemoveTrack = viewModel::onRemoveFromQueue,
+            onMoveTrack = viewModel::onMoveInQueue,
         )
     }
 
