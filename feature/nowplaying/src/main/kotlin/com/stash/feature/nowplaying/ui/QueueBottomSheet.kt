@@ -1,9 +1,9 @@
 package com.stash.feature.nowplaying.ui
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,18 +13,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -38,31 +39,33 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
+import kotlin.math.roundToInt
 
 /**
- * Modal bottom sheet that displays the current playback queue.
+ * Queue visualizer bottom sheet with drag-to-reorder and swipe-to-remove.
  *
- * Shows the currently playing track at the top (highlighted, non-dismissible)
- * followed by all upcoming tracks. Each upcoming track can be tapped to jump
- * to it, or swiped to remove it from the queue.
- *
- * @param queue         The full list of tracks in the queue.
- * @param currentIndex  Index of the currently playing track within [queue].
- * @param accentColor   Accent color derived from album art palette for highlights.
- * @param onDismiss     Called when the bottom sheet is dismissed.
- * @param onTrackClick  Called with the queue index when a track is tapped.
- * @param onRemoveTrack Called with the queue index when a track is swiped away.
+ * Long-press a track to start dragging it through the list.
+ * Swipe left or right to remove a track from the queue.
+ * Tap a track to jump to it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,14 +92,13 @@ fun QueueBottomSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding(),
         ) {
-            // -- Header --
             QueueHeader(
                 trackCount = queue.size,
                 currentIndex = currentIndex,
                 onClose = onDismiss,
             )
 
-            // -- Currently playing track (pinned, not swipeable) --
+            // Currently playing track (pinned, not draggable)
             if (currentIndex in queue.indices) {
                 CurrentTrackRow(
                     track = queue[currentIndex],
@@ -104,9 +106,9 @@ fun QueueBottomSheet(
                 )
             }
 
-            // -- Divider label for upcoming tracks --
-            val upcomingCount = queue.size - currentIndex - 1
-            if (upcomingCount > 0) {
+            // "Up Next" label
+            val upcomingTracks = queue.drop(currentIndex + 1)
+            if (upcomingTracks.isNotEmpty()) {
                 Text(
                     text = "Up Next",
                     style = MaterialTheme.typography.labelMedium,
@@ -115,31 +117,111 @@ fun QueueBottomSheet(
                 )
             }
 
-            // -- Upcoming tracks with swipe-to-remove --
+            // Drag-to-reorder list
+            val listState = rememberLazyListState()
+            var draggedIndex by remember { mutableIntStateOf(-1) }
+            var dragOffset by remember { mutableFloatStateOf(0f) }
+
             LazyColumn(
-                modifier = Modifier.weight(1f, fill = false),
+                state = listState,
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .pointerInput(upcomingTracks.size) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { offset ->
+                                // Find which item we started dragging
+                                val item = listState.layoutInfo.visibleItemsInfo
+                                    .firstOrNull { info ->
+                                        offset.y.toInt() in info.offset..(info.offset + info.size)
+                                    }
+                                draggedIndex = item?.index ?: -1
+                                dragOffset = 0f
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragOffset += dragAmount.y
+
+                                if (draggedIndex < 0) return@detectDragGesturesAfterLongPress
+
+                                // Check if we need to swap with neighbor
+                                val currentItem = listState.layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.index == draggedIndex }
+                                    ?: return@detectDragGesturesAfterLongPress
+
+                                val itemCenter = currentItem.offset + currentItem.size / 2 + dragOffset.toInt()
+
+                                // Check item above
+                                if (dragOffset < 0 && draggedIndex > 0) {
+                                    val above = listState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { it.index == draggedIndex - 1 }
+                                    if (above != null && itemCenter < above.offset + above.size / 2) {
+                                        val fromQueue = currentIndex + 1 + draggedIndex
+                                        val toQueue = currentIndex + 1 + draggedIndex - 1
+                                        onMoveTrack(fromQueue, toQueue)
+                                        draggedIndex -= 1
+                                        dragOffset += currentItem.size.toFloat()
+                                    }
+                                }
+                                // Check item below
+                                if (dragOffset > 0 && draggedIndex < upcomingTracks.lastIndex) {
+                                    val below = listState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { it.index == draggedIndex + 1 }
+                                    if (below != null && itemCenter > below.offset + below.size / 2) {
+                                        val fromQueue = currentIndex + 1 + draggedIndex
+                                        val toQueue = currentIndex + 1 + draggedIndex + 1
+                                        onMoveTrack(fromQueue, toQueue)
+                                        draggedIndex += 1
+                                        dragOffset -= currentItem.size.toFloat()
+                                    }
+                                }
+                            },
+                            onDragEnd = {
+                                draggedIndex = -1
+                                dragOffset = 0f
+                            },
+                            onDragCancel = {
+                                draggedIndex = -1
+                                dragOffset = 0f
+                            },
+                        )
+                    },
             ) {
-                // Show tracks after the current index
-                val upcomingTracks = queue.drop(currentIndex + 1)
                 itemsIndexed(
                     items = upcomingTracks,
                     key = { listIdx, track -> "${track.id}_${currentIndex + 1 + listIdx}" },
                 ) { listIdx, track ->
                     val queueIndex = currentIndex + 1 + listIdx
-                    val isFirst = listIdx == 0
-                    val isLast = listIdx == upcomingTracks.lastIndex
-                    SwipeableQueueRow(
-                        track = track,
-                        onClick = { onTrackClick(queueIndex) },
-                        onRemove = { onRemoveTrack(queueIndex) },
-                        onMoveUp = if (!isFirst) {{ onMoveTrack(queueIndex, queueIndex - 1) }} else null,
-                        onMoveDown = if (!isLast) {{ onMoveTrack(queueIndex, queueIndex + 1) }} else null,
+                    val isDragging = listIdx == draggedIndex
+
+                    val elevation by animateDpAsState(
+                        targetValue = if (isDragging) 8.dp else 0.dp,
+                        label = "drag-elevation",
                     )
+
+                    Box(
+                        modifier = Modifier
+                            .then(
+                                if (isDragging) {
+                                    Modifier
+                                        .zIndex(1f)
+                                        .offset { IntOffset(0, dragOffset.roundToInt()) }
+                                        .shadow(elevation, RoundedCornerShape(8.dp))
+                                } else {
+                                    Modifier
+                                }
+                            ),
+                    ) {
+                        SwipeableQueueRow(
+                            track = track,
+                            isDragging = isDragging,
+                            onClick = { onTrackClick(queueIndex) },
+                            onRemove = { onRemoveTrack(queueIndex) },
+                        )
+                    }
                 }
             }
 
-            // -- Empty state if no upcoming tracks --
-            if (upcomingCount <= 0) {
+            if (upcomingTracks.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -160,12 +242,7 @@ fun QueueBottomSheet(
 }
 
 // ---------------------------------------------------------------------------
-// Private composables
-// ---------------------------------------------------------------------------
 
-/**
- * Header row showing "Queue" title, track position indicator, and a close button.
- */
 @Composable
 private fun QueueHeader(
     trackCount: Int,
@@ -192,7 +269,11 @@ private fun QueueHeader(
                 )
             }
         }
-
+        Text(
+            text = "Hold & drag to reorder",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        )
         IconButton(onClick = onClose) {
             Icon(
                 imageVector = Icons.Default.Close,
@@ -203,11 +284,6 @@ private fun QueueHeader(
     }
 }
 
-/**
- * Highlighted row for the currently-playing track. This row is not swipeable
- * and is visually distinguished with an accent-tinted background and an
- * animated equalizer icon.
- */
 @Composable
 private fun CurrentTrackRow(
     track: Track,
@@ -220,12 +296,8 @@ private fun CurrentTrackRow(
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Album art
         QueueTrackArt(track = track)
-
         Spacer(modifier = Modifier.width(12.dp))
-
-        // Track info
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = track.title,
@@ -243,10 +315,7 @@ private fun CurrentTrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-
         Spacer(modifier = Modifier.width(8.dp))
-
-        // Animated equalizer icon
         Icon(
             imageVector = Icons.Default.GraphicEq,
             contentDescription = "Now playing",
@@ -256,25 +325,19 @@ private fun CurrentTrackRow(
     }
 }
 
-/**
- * A single queue row wrapped in [SwipeToDismissBox] for swipe-to-remove.
- *
- * Swiping from end-to-start reveals a red delete background. When the swipe
- * is confirmed, [onRemove] fires to remove the track from the queue.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeableQueueRow(
     track: Track,
+    isDragging: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit,
-    onMoveUp: (() -> Unit)? = null,
-    onMoveDown: (() -> Unit)? = null,
 ) {
     @Suppress("DEPRECATION")
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
+            if (value == SwipeToDismissBoxValue.EndToStart ||
+                value == SwipeToDismissBoxValue.StartToEnd) {
                 onRemove()
                 true
             } else {
@@ -286,127 +349,79 @@ private fun SwipeableQueueRow(
     SwipeToDismissBox(
         state = dismissState,
         backgroundContent = {
-            // Red background with delete icon revealed on swipe
-            val backgroundColor by animateColorAsState(
-                targetValue = when (dismissState.targetValue) {
-                    SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
-                    else -> Color.Transparent
-                },
-                animationSpec = tween(200),
-                label = "swipe-bg",
-            )
+            val isActive = dismissState.targetValue != SwipeToDismissBoxValue.Settled
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(backgroundColor)
+                    .background(
+                        if (isActive) MaterialTheme.colorScheme.errorContainer
+                        else Color.Transparent,
+                    )
                     .padding(horizontal = 20.dp),
-                contentAlignment = Alignment.CenterEnd,
+                contentAlignment = when (dismissState.targetValue) {
+                    SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
+                    else -> Alignment.CenterEnd
+                },
             ) {
-                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Remove from queue",
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                if (isActive) {
+                    Text(
+                        text = "Remove",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
             }
         },
-        enableDismissFromStartToEnd = false,
+        enableDismissFromStartToEnd = true,
         enableDismissFromEndToStart = true,
     ) {
-        QueueTrackRow(
-            track = track,
-            onClick = onClick,
-            onMoveUp = onMoveUp,
-            onMoveDown = onMoveDown,
-        )
-    }
-}
-
-/**
- * Standard queue row showing album art, title, artist, and move up/down controls.
- * Tapping the row jumps playback to that track.
- */
-@Composable
-private fun QueueTrackRow(
-    track: Track,
-    onClick: () -> Unit,
-    onMoveUp: (() -> Unit)? = null,
-    onMoveDown: (() -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
-            .padding(start = 20.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Album art
-        QueueTrackArt(track = track)
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        // Track info
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    if (isDragging) MaterialTheme.colorScheme.surfaceVariant
+                    else MaterialTheme.colorScheme.surface,
+                )
+                .clickable(onClick = onClick)
+                .padding(start = 20.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = track.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        // Move up/down buttons
-        Column {
-            IconButton(
-                onClick = { onMoveUp?.invoke() },
-                enabled = onMoveUp != null,
-                modifier = Modifier.size(32.dp),
+            QueueTrackArt(track = track)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowUp,
-                    contentDescription = "Move up",
-                    tint = if (onMoveUp != null) MaterialTheme.colorScheme.onSurfaceVariant
-                           else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-                    modifier = Modifier.size(20.dp),
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = track.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            IconButton(
-                onClick = { onMoveDown?.invoke() },
-                enabled = onMoveDown != null,
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Move down",
-                    tint = if (onMoveDown != null) MaterialTheme.colorScheme.onSurfaceVariant
-                           else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+            Spacer(modifier = Modifier.width(8.dp))
+            // Drag handle visual hint
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = "Drag to reorder",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }
 
-/**
- * 48dp rounded album art thumbnail used in queue rows.
- * Falls back to a music note icon when no art is available.
- */
 @Composable
 private fun QueueTrackArt(track: Track) {
     val artUrl = track.albumArtPath ?: track.albumArtUrl
-
     Box(
         modifier = Modifier
             .size(48.dp)
