@@ -71,6 +71,10 @@ class DownloadExecutor @Inject constructor(
     ): DownloadResult = withContext(Dispatchers.IO) {
         ytDlpManager.initialize()
 
+        // SECURITY: Cookie file contains sensitive YouTube session cookies (SAPISID,
+        // LOGIN_INFO, etc.). It is written only for the duration of the yt-dlp call and
+        // deleted in the finally block. File permissions are restricted to owner-only
+        // read/write to prevent other apps on rooted devices from reading it.
         val cookieFile = File(context.noBackupFilesDir, "yt_cookies_${System.nanoTime()}.txt")
 
         try {
@@ -96,6 +100,11 @@ class DownloadExecutor @Inject constructor(
             val cookie = tokenManager.getYouTubeCookie()
             if (cookie != null) {
                 CookieFileWriter.write(cookie, cookieFile)
+                // Restrict file permissions to owner-only (prevents access by other apps)
+                cookieFile.setReadable(false, false)
+                cookieFile.setReadable(true, true)
+                cookieFile.setWritable(false, false)
+                cookieFile.setWritable(true, true)
                 request.addOption("--cookies", cookieFile.absolutePath)
             }
 
@@ -110,9 +119,8 @@ class DownloadExecutor @Inject constructor(
 
             val stdout = response.out.orEmpty()
             val stderr = response.err.orEmpty()
-            Log.d(TAG, "download: yt-dlp exit=${response.exitCode}")
-            Log.d(TAG, "download: stdout=${stdout.take(1000)}")
-            Log.d(TAG, "download: stderr=${stderr.take(1000)}")
+            Log.d(TAG, "download: yt-dlp exit=${response.exitCode}, " +
+                "stdoutLen=${stdout.length}, stderrLen=${stderr.length}")
 
             // Find the output file — yt-dlp determines the extension based on format
             val result = outputDir.listFiles()?.firstOrNull { it.nameWithoutExtension == filename }

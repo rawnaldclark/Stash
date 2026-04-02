@@ -25,6 +25,15 @@ import com.stash.core.data.db.entity.TrackFts
  *
  * Version 2 — adds remote playlist/track snapshot entities and
  * a snapshot_id column on the playlists table.
+ *
+ * **Security note:** This database stores track metadata, playlists, sync
+ * diagnostics, and download queue state. It does NOT store authentication
+ * credentials (OAuth tokens, sp_dc cookies, etc.) — those live in
+ * [com.stash.core.auth.EncryptedTokenStore] backed by EncryptedSharedPreferences.
+ * The app manifest disables backups (`allowBackup=false`, `fullBackupContent=false`)
+ * to prevent database extraction via `adb backup`. On rooted devices the
+ * unencrypted SQLite file is still readable; adding SQLCipher encryption is a
+ * future enhancement tracked separately.
  */
 @Database(
     entities = [

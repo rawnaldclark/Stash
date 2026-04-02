@@ -16,13 +16,18 @@ import com.stash.data.spotify.model.SpotifyTracksRef
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.add
 import com.stash.core.model.SyncResult
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -141,7 +146,7 @@ class SpotifyApiClient @Inject constructor(
     suspend fun getCurrentUserProfile(): UserInfo? = withContext(Dispatchers.IO) {
         val username = tokenManager.getSpotifyUsername()
         if (username != null) {
-            Log.d(TAG, "getCurrentUserProfile: resolved userId='$username'")
+            Log.d(TAG, "getCurrentUserProfile: userId resolved (${username.length} chars)")
             return@withContext UserInfo(
                 id = username,
                 displayName = username,
@@ -166,16 +171,14 @@ class SpotifyApiClient @Inject constructor(
         Log.d(TAG, "getUserPlaylists: limit=$limit, offset=$offset (via GraphQL libraryV3)")
 
         try {
-            val variables = """
-                {
-                    "filters": ["Playlists"],
-                    "order": null,
-                    "textFilter": "",
-                    "features": ["LIKED_SONGS","YOUR_EPISODES"],
-                    "limit": $limit,
-                    "offset": $offset
-                }
-            """.trimIndent()
+            val variables = buildJsonObject {
+                putJsonArray("filters") { add("Playlists") }
+                put("order", JsonNull)
+                put("textFilter", "")
+                putJsonArray("features") { add("LIKED_SONGS"); add("YOUR_EPISODES") }
+                put("limit", limit)
+                put("offset", offset)
+            }.toString()
 
             val responseJson = executeGraphQL(
                 operationName = "libraryV3",
@@ -254,12 +257,10 @@ class SpotifyApiClient @Inject constructor(
         Log.d(TAG, "getLikedSongs: limit=$limit, offset=$offset (via sp_dc GraphQL)")
 
         try {
-            val variables = """
-                {
-                    "offset": $offset,
-                    "limit": $limit
-                }
-            """.trimIndent()
+            val variables = buildJsonObject {
+                put("offset", offset)
+                put("limit", limit)
+            }.toString()
 
             val responseJson = executeGraphQL(
                 operationName = "fetchLibraryTracks",
@@ -301,15 +302,13 @@ class SpotifyApiClient @Inject constructor(
 
         try {
             val spT = spotifyAuthManager.getSpT() ?: ""
-            val variables = """
-                {
-                    "homeEndUserIntegration": "INTEGRATION_WEB_PLAYER",
-                    "timeZone": "${java.util.TimeZone.getDefault().id}",
-                    "sp_t": "$spT",
-                    "facet": null,
-                    "sectionItemsLimit": 20
-                }
-            """.trimIndent()
+            val variables = buildJsonObject {
+                put("homeEndUserIntegration", "INTEGRATION_WEB_PLAYER")
+                put("timeZone", java.util.TimeZone.getDefault().id)
+                put("sp_t", spT)
+                put("facet", JsonNull)
+                put("sectionItemsLimit", 20)
+            }.toString()
 
             val responseJson = executeGraphQL(
                 operationName = "home",
@@ -464,8 +463,8 @@ class SpotifyApiClient @Inject constructor(
                 "body length=${responseBody?.length ?: 0}")
 
             if (!response.isSuccessful) {
-                Log.e(TAG, "tryGetPlaylistTracksViaWebApi: HTTP $responseCode for $playlistId")
-                Log.e(TAG, "tryGetPlaylistTracksViaWebApi: body (first 500): ${responseBody?.take(500)}")
+                Log.e(TAG, "tryGetPlaylistTracksViaWebApi: HTTP $responseCode for $playlistId, " +
+                    "bodyLen=${responseBody?.length ?: 0}")
 
                 // If 404, the playlist might be private -- return null to try GraphQL
                 if (responseCode == 404) return null
@@ -596,14 +595,12 @@ class SpotifyApiClient @Inject constructor(
         val pageSize = 100
 
         while (true) {
-            val variables = """
-                {
-                    "uri": "$uri",
-                    "offset": $currentOffset,
-                    "limit": $pageSize,
-                    "enableWatchFeedEntrypoint": false
-                }
-            """.trimIndent()
+            val variables = buildJsonObject {
+                put("uri", uri)
+                put("offset", currentOffset)
+                put("limit", pageSize)
+                put("enableWatchFeedEntrypoint", false)
+            }.toString()
 
             val responseJson = executeGraphQL(
                 operationName = "fetchPlaylist",
@@ -658,7 +655,12 @@ class SpotifyApiClient @Inject constructor(
         }
 
         val encodedVariables = URLEncoder.encode(variables, "UTF-8")
-        val extensions = """{"persistedQuery":{"version":1,"sha256Hash":"$hash"}}"""
+        val extensions = buildJsonObject {
+            put("persistedQuery", buildJsonObject {
+                put("version", 1)
+                put("sha256Hash", hash)
+            })
+        }.toString()
         val encodedExtensions = URLEncoder.encode(extensions, "UTF-8")
 
         val url = "${SpotifyAuthConfig.GRAPHQL_ENDPOINT}" +
@@ -693,8 +695,8 @@ class SpotifyApiClient @Inject constructor(
             "body length=${responseBody?.length ?: 0}")
 
         if (!response.isSuccessful) {
-            Log.e(TAG, "executeGraphQL: HTTP $responseCode for $operationName")
-            Log.e(TAG, "executeGraphQL: response body (first 1000 chars): ${responseBody?.take(1000)}")
+            Log.e(TAG, "executeGraphQL: HTTP $responseCode for $operationName, " +
+                "bodyLen=${responseBody?.length ?: 0}")
 
             // If we get 401, try refreshing the access token and retrying once
             if (responseCode == 401) {
@@ -727,7 +729,7 @@ class SpotifyApiClient @Inject constructor(
             return null
         }
 
-        Log.d(TAG, "executeGraphQL: $operationName response (first 2000 chars): ${responseBody.take(2000)}")
+        Log.d(TAG, "executeGraphQL: $operationName response: ${responseBody.length} chars")
 
         return try {
             val parsed = json.parseToJsonElement(responseBody).jsonObject
@@ -778,7 +780,7 @@ class SpotifyApiClient @Inject constructor(
 
         if (!retryResponse.isSuccessful || retryBody == null) {
             Log.e(TAG, "retryGraphQL: retry also failed for $operationName: " +
-                "HTTP ${retryResponse.code}, body=${retryBody?.take(500)}")
+                "HTTP ${retryResponse.code}, bodyLen=${retryBody?.length ?: 0}")
             return null
         }
 
@@ -811,10 +813,10 @@ class SpotifyApiClient @Inject constructor(
             return null
         }
 
-        Log.d(TAG, "ensureClientToken: acquiring client token for clientId='$clientId'")
+        Log.d(TAG, "ensureClientToken: acquiring client token (clientId ${clientId.length} chars)")
         val token = spotifyAuthManager.getClientToken(clientId)
         if (token != null) {
-            Log.d(TAG, "ensureClientToken: acquired client token (${token.take(20)}...)")
+            Log.d(TAG, "ensureClientToken: acquired client token (${token.length} chars)")
             cachedClientToken = token
         } else {
             Log.e(TAG, "ensureClientToken: failed to acquire client token")
@@ -1033,7 +1035,7 @@ class SpotifyApiClient @Inject constructor(
             // Log top-level keys for debugging
             val dataObj = responseJson["data"]?.jsonObject
             if (dataObj == null) {
-                Log.w(TAG, "parseLibraryTracksResponse: no 'data' key, full response: ${responseJson.toString().take(2000)}")
+                Log.w(TAG, "parseLibraryTracksResponse: no 'data' key, responseKeys=${responseJson.keys}")
                 return emptyList()
             }
             Log.d(TAG, "parseLibraryTracksResponse: data keys: ${dataObj.keys}")

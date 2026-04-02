@@ -156,8 +156,8 @@ class InnerTubeClient @Inject constructor(
         val response = okHttpClient.newCall(requestBuilder.build()).execute()
         return response.use { resp ->
             if (!resp.isSuccessful) {
-                val errorBody = resp.body?.string()
-                Log.e(TAG, "executeRequest: HTTP ${resp.code} - $errorBody")
+                val errorBodyLen = resp.body?.string()?.length ?: 0
+                Log.e(TAG, "executeRequest: HTTP ${resp.code}, errorBodyLen=$errorBodyLen")
                 return@use null
             }
 

@@ -113,7 +113,7 @@ class TokenManagerImpl @Inject constructor(
         if (scope.isEmpty()) return null
         val parts = scope.split(SpotifyAuthManager.SCOPE_DELIMITER)
         val clientId = if (parts.size >= 2) parts[1] else null
-        Log.d("StashSync", "getSpotifyClientId: scope='$scope', clientId='$clientId'")
+        Log.d("StashSync", "getSpotifyClientId: hasScope=${scope.isNotEmpty()}, hasClientId=${clientId?.isNotEmpty() == true}")
         return clientId?.takeIf { it.isNotEmpty() }
     }
 
@@ -214,8 +214,8 @@ class TokenManagerImpl @Inject constructor(
             ?: spotifyAuthManager.extractUsernameFromJwt(token.accessToken)
             ?: ""
 
-        Log.d("StashSync", "connectSpotifyWithCookie: resolvedUsername='$resolvedUsername' " +
-            "(provided='$username', scope='${scopeParts.firstOrNull()}')")
+        Log.d("StashSync", "connectSpotifyWithCookie: hasResolvedUsername=${resolvedUsername.isNotEmpty()}, " +
+            "hasProvidedUsername=${username.isNotEmpty()}")
 
         // Re-pack the scope with the resolved username + clientId
         val clientId = scopeParts.getOrNull(1) ?: ""

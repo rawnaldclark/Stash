@@ -118,7 +118,7 @@ class SpotifyAuthManager @Inject constructor(
                     val value = setCookie.substringAfter("sp_t=").substringBefore(";")
                     if (value.isNotBlank() && spTDeviceId == null) {
                         spTDeviceId = value
-                        Log.d(TAG, "Captured sp_t from page: ${value.take(20)}...")
+                        Log.d(TAG, "Captured sp_t from page")
                     }
                 }
             }
@@ -175,21 +175,16 @@ class SpotifyAuthManager @Inject constructor(
 
             val response = okHttpClient.newCall(request).execute()
             if (!response.isSuccessful) {
-                val errorBody = response.body?.string() ?: "no body"
-                Log.w(
-                    TAG,
-                    "getClientCredentialsToken: failed HTTP ${response.code}, body=$errorBody",
-                )
+                Log.w(TAG, "getClientCredentialsToken: failed HTTP ${response.code}")
+                response.body?.close()
                 return@withContext null
             }
 
             val responseBody = response.body?.string() ?: return@withContext null
-            Log.d(TAG, "getClientCredentialsToken: response (first 300 chars): ${responseBody.take(300)}")
-
             val jsonObj = json.parseToJsonElement(responseBody).jsonObject
             val token = jsonObj["access_token"]?.jsonPrimitive?.content
             if (token != null) {
-                Log.d(TAG, "getClientCredentialsToken: acquired token (${token.take(20)}...)")
+                Log.d(TAG, "getClientCredentialsToken: acquired token (${token.length} chars)")
             } else {
                 Log.w(TAG, "getClientCredentialsToken: no access_token in response")
             }
@@ -263,7 +258,7 @@ class SpotifyAuthManager @Inject constructor(
                         val value = setCookie.substringAfter("sp_t=").substringBefore(";")
                         if (value.isNotBlank()) {
                             spTDeviceId = value
-                            Log.d(TAG, "Captured sp_t device ID: ${value.take(20)}...")
+                            Log.d(TAG, "Captured sp_t device ID (${value.length} chars)")
                         }
                     }
                 }
@@ -271,7 +266,8 @@ class SpotifyAuthManager @Inject constructor(
                 val body = response.body?.string() ?: return@withContext null
                 val tokenResponse = json.decodeFromString<SpDcTokenResponse>(body)
                 Log.d(TAG, "Token response: isAnonymous=${tokenResponse.isAnonymous}, " +
-                    "username='${tokenResponse.username}', clientId='${tokenResponse.clientId}'")
+                    "hasUsername=${tokenResponse.username.isNotEmpty()}, " +
+                    "hasClientId=${tokenResponse.clientId.isNotEmpty()}")
 
                 // Anonymous tokens mean the cookie was invalid or expired
                 if (tokenResponse.isAnonymous) {
@@ -286,13 +282,13 @@ class SpotifyAuthManager @Inject constructor(
                 val resolvedUsername = jwtUsername
                     ?: tokenResponse.username.takeIf { it.isNotEmpty() }
                     ?: ""
-                Log.d(TAG, "Resolved username: '$resolvedUsername' " +
-                    "(jwt='$jwtUsername', response='${tokenResponse.username}')")
+                Log.d(TAG, "Resolved username: present=${resolvedUsername.isNotEmpty()} " +
+                    "(fromJwt=${jwtUsername != null}, fromResponse=${tokenResponse.username.isNotEmpty()})")
 
                 // Pack both username and clientId into the scope field so we can
                 // recover the clientId later for client token acquisition.
                 val scopeValue = "$resolvedUsername$SCOPE_DELIMITER${tokenResponse.clientId}"
-                Log.d(TAG, "Packed scope: '$scopeValue'")
+                Log.d(TAG, "Packed scope: ${scopeValue.length} chars")
 
                 ServiceToken(
                     accessToken = tokenResponse.accessToken,
@@ -354,8 +350,8 @@ class SpotifyAuthManager @Inject constructor(
                     append("}")
                 }
 
-                Log.d(TAG, "Client token request body: $requestBody")
-                Log.d(TAG, "Requesting client token for clientId='$clientId', deviceId='$deviceId'")
+                Log.d(TAG, "Requesting client token: clientIdLen=${clientId.length}, " +
+                    "deviceIdSource=${if (spTDeviceId != null) "sp_t" else "random"}")
 
                 // Use HttpURLConnection instead of OkHttp for this endpoint.
                 // Spotify fingerprints TLS ClientHello (JA3/JA4) and rejects OkHttp's
@@ -375,17 +371,14 @@ class SpotifyAuthManager @Inject constructor(
 
                 val responseCode = conn.responseCode
                 if (responseCode != 200) {
-                    val errorBody = try {
-                        conn.errorStream?.bufferedReader()?.readText() ?: "no body"
-                    } catch (_: Exception) { "no body" }
-                    Log.w(TAG, "Client token request failed: HTTP $responseCode, body=$errorBody")
+                    Log.w(TAG, "Client token request failed: HTTP $responseCode")
                     conn.disconnect()
                     return@withContext null
                 }
 
                 val responseBody = conn.inputStream.bufferedReader().readText()
                 conn.disconnect()
-                Log.d(TAG, "Client token response (first 500 chars): ${responseBody.take(500)}")
+                Log.d(TAG, "Client token response: ${responseBody.length} chars")
 
                 val jsonObj = json.parseToJsonElement(responseBody).jsonObject
                 val responseType = jsonObj["response_type"]?.jsonPrimitive?.content
@@ -395,7 +388,7 @@ class SpotifyAuthManager @Inject constructor(
                     val token = jsonObj["granted_token"]
                         ?.jsonObject?.get("token")
                         ?.jsonPrimitive?.content
-                    Log.d(TAG, "Client token acquired: ${token?.take(20)}...")
+                    Log.d(TAG, "Client token acquired: ${token?.length ?: 0} chars")
                     token
                 } else {
                     Log.w(TAG, "Unexpected client token response_type: '$responseType'")
@@ -428,14 +421,12 @@ class SpotifyAuthManager @Inject constructor(
             val payload = String(
                 Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
             )
-            Log.d(TAG, "JWT payload (first 500 chars): ${payload.take(500)}")
+            Log.d(TAG, "JWT payload decoded, extracting username")
             val jsonObj = json.parseToJsonElement(payload).jsonObject
-            val allKeys = jsonObj.keys.joinToString(", ")
-            Log.d(TAG, "JWT payload keys: $allKeys")
 
             val username = jsonObj["sub"]?.jsonPrimitive?.content
                 ?: jsonObj["username"]?.jsonPrimitive?.content
-            Log.d(TAG, "JWT extracted username: '$username'")
+            Log.d(TAG, "JWT username extraction: found=${username?.isNotEmpty() == true}")
             username?.takeIf { it.isNotEmpty() }
         } catch (e: Exception) {
             Log.w(TAG, "JWT username extraction failed", e)
