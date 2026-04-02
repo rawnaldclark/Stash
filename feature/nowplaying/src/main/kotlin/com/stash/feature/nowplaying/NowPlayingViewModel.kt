@@ -61,6 +61,7 @@ class NowPlayingViewModel @Inject constructor(
                     repeatMode = state.repeatMode,
                     queueSize = state.queue.size,
                     currentIndex = state.currentIndex,
+                    queue = state.queue,
                 )
             }
         }.launchIn(viewModelScope)
@@ -109,6 +110,29 @@ class NowPlayingViewModel @Inject constructor(
     /** Cycle repeat mode: OFF -> ALL -> ONE -> OFF. */
     fun onCycleRepeatMode() {
         viewModelScope.launch { playerRepository.cycleRepeatMode() }
+    }
+
+    /**
+     * Remove the track at [index] from the playback queue.
+     * The currently-playing track cannot be removed through this action.
+     */
+    fun onRemoveFromQueue(index: Int) {
+        if (index == _uiState.value.currentIndex) return
+        viewModelScope.launch { playerRepository.removeFromQueue(index) }
+    }
+
+    /**
+     * Move a track within the queue from position [from] to position [to].
+     */
+    fun onMoveInQueue(from: Int, to: Int) {
+        viewModelScope.launch { playerRepository.moveInQueue(from, to) }
+    }
+
+    /**
+     * Jump playback to the track at [index] in the queue.
+     */
+    fun onSkipToQueueIndex(index: Int) {
+        viewModelScope.launch { playerRepository.skipToQueueIndex(index) }
     }
 
     // ------------------------------------------------------------------

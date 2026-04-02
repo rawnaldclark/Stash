@@ -20,6 +20,8 @@ data class NowPlayingUiState(
     val isBuffering: Boolean = false,
     val queueSize: Int = 0,
     val currentIndex: Int = 0,
+    /** Full list of tracks in the playback queue (including the currently playing track). */
+    val queue: List<Track> = emptyList(),
     /** Dominant color extracted from the album art via Palette API. */
     val dominantColor: Color = Color(0xFF6750A4),
     /** Vibrant color extracted from the album art via Palette API. */

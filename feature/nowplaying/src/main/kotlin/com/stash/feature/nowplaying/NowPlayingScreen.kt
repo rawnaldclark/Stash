@@ -1,6 +1,5 @@
 package com.stash.feature.nowplaying
 
-import android.graphics.drawable.BitmapDrawable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,8 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
@@ -26,12 +25,16 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +58,7 @@ import coil3.toBitmap
 import com.stash.core.model.RepeatMode
 import com.stash.feature.nowplaying.ui.AmbientBackground
 import com.stash.feature.nowplaying.ui.GlowingProgressBar
+import com.stash.feature.nowplaying.ui.QueueBottomSheet
 
 /**
  * Full-screen Now Playing screen with premium visual design.
@@ -65,6 +69,7 @@ import com.stash.feature.nowplaying.ui.GlowingProgressBar
  * @param onDismiss Callback invoked when the user taps the dismiss (down arrow) button.
  * @param viewModel The [NowPlayingViewModel] provided by Hilt.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowPlayingScreen(
     onDismiss: () -> Unit,
@@ -72,6 +77,22 @@ fun NowPlayingScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val track = uiState.currentTrack
+    var showQueue by remember { mutableStateOf(false) }
+
+    // Queue bottom sheet
+    if (showQueue) {
+        QueueBottomSheet(
+            queue = uiState.queue,
+            currentIndex = uiState.currentIndex,
+            accentColor = uiState.vibrantColor,
+            onDismiss = { showQueue = false },
+            onTrackClick = { index ->
+                viewModel.onSkipToQueueIndex(index)
+                showQueue = false
+            },
+            onRemoveTrack = viewModel::onRemoveFromQueue,
+        )
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Ambient animated background behind everything.
@@ -89,8 +110,12 @@ fun NowPlayingScreen(
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // -- Top bar: dismiss, label, more --
-            TopBar(onDismiss = onDismiss)
+            // -- Top bar: dismiss, label, queue --
+            TopBar(
+                onDismiss = onDismiss,
+                onQueueClick = { showQueue = true },
+                queueSize = uiState.queueSize,
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -173,10 +198,18 @@ fun NowPlayingScreen(
 // ---------------------------------------------------------------------------
 
 /**
- * Top bar with dismiss, "NOW PLAYING" label, and overflow menu button.
+ * Top bar with dismiss button, "NOW PLAYING" label, and queue button.
+ *
+ * @param onDismiss    Callback when the down-arrow is tapped.
+ * @param onQueueClick Callback when the queue icon is tapped.
+ * @param queueSize    Number of tracks in the queue, shown as a badge hint.
  */
 @Composable
-private fun TopBar(onDismiss: () -> Unit) {
+private fun TopBar(
+    onDismiss: () -> Unit,
+    onQueueClick: () -> Unit,
+    queueSize: Int,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -200,10 +233,10 @@ private fun TopBar(onDismiss: () -> Unit) {
             modifier = Modifier.weight(1f),
         )
 
-        IconButton(onClick = { /* TODO: overflow menu */ }) {
+        IconButton(onClick = onQueueClick) {
             Icon(
-                imageVector = Icons.Default.MoreVert,
-                contentDescription = "More",
+                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                contentDescription = "Queue ($queueSize tracks)",
                 tint = Color.White,
                 modifier = Modifier.size(24.dp),
             )

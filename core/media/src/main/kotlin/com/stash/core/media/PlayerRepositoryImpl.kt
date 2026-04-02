@@ -120,6 +120,28 @@ class PlayerRepositoryImpl @Inject constructor(
         )
     }
 
+    override suspend fun removeFromQueue(index: Int) {
+        val controller = ensureController() ?: return
+        if (index in 0 until controller.mediaItemCount) {
+            controller.removeMediaItem(index)
+        }
+    }
+
+    override suspend fun moveInQueue(from: Int, to: Int) {
+        val controller = ensureController() ?: return
+        val count = controller.mediaItemCount
+        if (from in 0 until count && to in 0 until count && from != to) {
+            controller.moveMediaItem(from, to)
+        }
+    }
+
+    override suspend fun skipToQueueIndex(index: Int) {
+        val controller = ensureController() ?: return
+        if (index in 0 until controller.mediaItemCount) {
+            controller.seekToDefaultPosition(index)
+        }
+    }
+
     // ---- Internals ----
 
     /**

@@ -57,4 +57,22 @@ interface PlayerRepository {
 
     /** Cycle repeat mode: OFF -> ALL -> ONE -> OFF. */
     suspend fun cycleRepeatMode()
+
+    /**
+     * Remove the track at [index] from the playback queue.
+     * Silently ignored if the index is out of bounds.
+     */
+    suspend fun removeFromQueue(index: Int)
+
+    /**
+     * Move the track at position [from] to position [to] within the playback queue.
+     * Both indices refer to the current MediaController item list.
+     */
+    suspend fun moveInQueue(from: Int, to: Int)
+
+    /**
+     * Jump playback to the track at [index] in the queue.
+     * Starts from the beginning of that track.
+     */
+    suspend fun skipToQueueIndex(index: Int)
 }
