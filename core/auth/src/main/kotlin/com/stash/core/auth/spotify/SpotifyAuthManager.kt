@@ -8,8 +8,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -336,19 +339,20 @@ class SpotifyAuthManager @Inject constructor(
                 // Spotify's backend expects the sp_t value to tie the session together.
                 val deviceId = spTDeviceId ?: UUID.randomUUID().toString()
                 Log.d(TAG, "getClientToken: using deviceId source=${if (spTDeviceId != null) "sp_t" else "random"}")
-                val requestBody = buildString {
-                    append("""{"client_data":{""")
-                    append(""""client_version":"$clientVersion",""")
-                    append(""""client_id":"$clientId",""")
-                    append(""""js_sdk_data":{""")
-                    append(""""device_brand":"unknown",""")
-                    append(""""device_model":"unknown",""")
-                    append(""""os":"windows",""")
-                    append(""""os_version":"NT 10.0",""")
-                    append(""""device_id":"$deviceId",""")
-                    append(""""device_type":"computer"}}""")
-                    append("}")
-                }
+                val requestBody = buildJsonObject {
+                    putJsonObject("client_data") {
+                        put("client_version", clientVersion)
+                        put("client_id", clientId)
+                        putJsonObject("js_sdk_data") {
+                            put("device_brand", "unknown")
+                            put("device_model", "unknown")
+                            put("os", "windows")
+                            put("os_version", "NT 10.0")
+                            put("device_id", deviceId)
+                            put("device_type", "computer")
+                        }
+                    }
+                }.toString()
 
                 Log.d(TAG, "Requesting client token: clientIdLen=${clientId.length}, " +
                     "deviceIdSource=${if (spTDeviceId != null) "sp_t" else "random"}")
