@@ -1,6 +1,5 @@
 package com.stash.feature.nowplaying.ui
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -34,11 +33,14 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
+import java.util.Collections
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,6 +70,23 @@ fun QueueBottomSheet(
     onMoveTrack: (from: Int, to: Int) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // Local mutable copy of upcoming tracks for drag reordering.
+    // Swaps happen here visually during drag; committed to player on drag end.
+    val upcomingSource = queue.drop(currentIndex + 1)
+    val localQueue = remember { mutableStateListOf<Track>() }
+
+    // Sync local queue with source when not dragging
+    var draggedIdx by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(upcomingSource) {
+        if (draggedIdx < 0) {
+            localQueue.clear()
+            localQueue.addAll(upcomingSource)
+        }
+    }
+
+    // Track cumulative moves during a drag so we can commit them
+    val pendingMoves = remember { mutableStateListOf<Pair<Int, Int>>() }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -87,14 +107,10 @@ fun QueueBottomSheet(
             )
 
             if (currentIndex in queue.indices) {
-                CurrentTrackRow(
-                    track = queue[currentIndex],
-                    accentColor = accentColor,
-                )
+                CurrentTrackRow(queue[currentIndex], accentColor)
             }
 
-            val upcomingTracks = queue.drop(currentIndex + 1)
-            if (upcomingTracks.isNotEmpty()) {
+            if (localQueue.isNotEmpty()) {
                 Text(
                     text = "Up Next",
                     style = MaterialTheme.typography.labelMedium,
@@ -103,93 +119,144 @@ fun QueueBottomSheet(
                 )
             }
 
-            // -- Reorderable queue list --
-            // Drag state is tracked here; the gesture is on each row's drag handle.
             val listState = rememberLazyListState()
-            var draggedListIndex by remember { mutableIntStateOf(-1) }
             var dragOffsetY by remember { mutableFloatStateOf(0f) }
-            val itemHeightPx = remember { mutableIntStateOf(0) }
+            var itemHeight by remember { mutableIntStateOf(0) }
 
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f, fill = false),
-                // Disable LazyColumn scroll while dragging to prevent conflicts
-                userScrollEnabled = draggedListIndex < 0,
+                userScrollEnabled = draggedIdx < 0,
             ) {
-                itemsIndexed(
-                    items = upcomingTracks,
-                    key = { listIdx, track -> "${track.id}_$listIdx" },
-                ) { listIdx, track ->
-                    val queueIndex = currentIndex + 1 + listIdx
-                    val isDragging = listIdx == draggedListIndex
-
-                    val elevation by animateDpAsState(
-                        targetValue = if (isDragging) 8.dp else 0.dp,
-                        label = "drag-elev",
-                    )
+                itemsIndexed(localQueue) { idx, track ->
+                    val isDragging = idx == draggedIdx
 
                     Box(
                         modifier = Modifier
                             .then(
-                                if (isDragging) {
-                                    Modifier
-                                        .zIndex(10f)
-                                        .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-                                        .shadow(elevation, RoundedCornerShape(8.dp))
-                                } else {
-                                    Modifier.zIndex(0f)
-                                }
+                                if (isDragging) Modifier
+                                    .zIndex(10f)
+                                    .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+                                    .shadow(8.dp, RoundedCornerShape(8.dp))
+                                else Modifier.zIndex(0f)
                             ),
                     ) {
-                        QueueTrackRowWithDrag(
-                            track = track,
-                            isDragging = isDragging,
-                            onClick = { onTrackClick(queueIndex) },
-                            onDragStart = {
-                                draggedListIndex = listIdx
-                                dragOffsetY = 0f
-                            },
-                            onDrag = { deltaY ->
-                                dragOffsetY += deltaY
-
-                                if (draggedListIndex < 0) return@QueueTrackRowWithDrag
-
-                                // Estimate item height from layout info
-                                val currentItemInfo = listState.layoutInfo.visibleItemsInfo
-                                    .firstOrNull { it.index == draggedListIndex }
-                                if (currentItemInfo != null) {
-                                    itemHeightPx.intValue = currentItemInfo.size
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (isDragging) MaterialTheme.colorScheme.surfaceVariant
+                                    else MaterialTheme.colorScheme.surface,
+                                )
+                                .clickable {
+                                    onTrackClick(currentIndex + 1 + idx)
                                 }
+                                .padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            QueueTrackArt(track)
+                            Spacer(Modifier.width(12.dp))
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = track.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = track.artist,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            // Drag handle
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .pointerInput(idx) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = {
+                                                draggedIdx = idx
+                                                dragOffsetY = 0f
+                                                pendingMoves.clear()
+                                                // Measure item height
+                                                val info = listState.layoutInfo.visibleItemsInfo
+                                                    .firstOrNull { it.index == idx }
+                                                if (info != null) itemHeight = info.size
+                                            },
+                                            onDrag = { change, amount ->
+                                                change.consume()
+                                                dragOffsetY += amount.y
 
-                                val halfItem = itemHeightPx.intValue / 2
+                                                if (draggedIdx < 0 || itemHeight <= 0) return@detectDragGesturesAfterLongPress
 
-                                // Swap with item above
-                                if (dragOffsetY < -halfItem && draggedListIndex > 0) {
-                                    val from = currentIndex + 1 + draggedListIndex
-                                    val to = from - 1
-                                    onMoveTrack(from, to)
-                                    draggedListIndex -= 1
-                                    dragOffsetY += itemHeightPx.intValue.toFloat()
-                                }
-                                // Swap with item below
-                                else if (dragOffsetY > halfItem && draggedListIndex < upcomingTracks.lastIndex) {
-                                    val from = currentIndex + 1 + draggedListIndex
-                                    val to = from + 1
-                                    onMoveTrack(from, to)
-                                    draggedListIndex += 1
-                                    dragOffsetY -= itemHeightPx.intValue.toFloat()
-                                }
-                            },
-                            onDragEnd = {
-                                draggedListIndex = -1
-                                dragOffsetY = 0f
-                            },
-                        )
+                                                val half = itemHeight / 2
+
+                                                // Move up
+                                                while (dragOffsetY < -half && draggedIdx > 0) {
+                                                    val from = draggedIdx
+                                                    val to = draggedIdx - 1
+                                                    Collections.swap(localQueue, from, to)
+                                                    pendingMoves.add(Pair(
+                                                        currentIndex + 1 + from,
+                                                        currentIndex + 1 + to,
+                                                    ))
+                                                    draggedIdx = to
+                                                    dragOffsetY += itemHeight
+                                                }
+                                                // Move down
+                                                while (dragOffsetY > half && draggedIdx < localQueue.lastIndex) {
+                                                    val from = draggedIdx
+                                                    val to = draggedIdx + 1
+                                                    Collections.swap(localQueue, from, to)
+                                                    pendingMoves.add(Pair(
+                                                        currentIndex + 1 + from,
+                                                        currentIndex + 1 + to,
+                                                    ))
+                                                    draggedIdx = to
+                                                    dragOffsetY -= itemHeight
+                                                }
+                                            },
+                                            onDragEnd = {
+                                                // Commit all moves to the actual player queue
+                                                pendingMoves.forEach { (from, to) ->
+                                                    onMoveTrack(from, to)
+                                                }
+                                                pendingMoves.clear()
+                                                draggedIdx = -1
+                                                dragOffsetY = 0f
+                                            },
+                                            onDragCancel = {
+                                                // Revert: resync local queue from source
+                                                localQueue.clear()
+                                                localQueue.addAll(upcomingSource)
+                                                pendingMoves.clear()
+                                                draggedIdx = -1
+                                                dragOffsetY = 0f
+                                            },
+                                        )
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DragHandle,
+                                    contentDescription = "Drag to reorder",
+                                    tint = if (isDragging) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
 
-            if (upcomingTracks.isEmpty()) {
+            if (localQueue.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -204,7 +271,7 @@ fun QueueBottomSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -212,42 +279,30 @@ fun QueueBottomSheet(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun QueueHeader(
-    trackCount: Int,
-    currentIndex: Int,
-    onClose: () -> Unit,
-) {
+private fun QueueHeader(trackCount: Int, currentIndex: Int, onClose: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 20.dp, end = 8.dp, top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Queue",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
+        Column(Modifier.weight(1f)) {
+            Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             if (trackCount > 0) {
                 Text(
-                    text = "${currentIndex + 1} of $trackCount tracks",
+                    "${currentIndex + 1} of $trackCount tracks",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
         Text(
-            text = "Hold to drag",
+            "Hold ≡ to drag",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
         )
         IconButton(onClick = onClose) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Close queue",
-                modifier = Modifier.size(24.dp),
-            )
+            Icon(Icons.Default.Close, "Close", Modifier.size(24.dp))
         }
     }
 }
@@ -265,7 +320,7 @@ private fun CurrentTrackRow(track: Track, accentColor: Color) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = track.title,
+                track.title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = accentColor,
@@ -273,7 +328,7 @@ private fun CurrentTrackRow(track: Track, accentColor: Color) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = track.artist,
+                track.artist,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -281,85 +336,7 @@ private fun CurrentTrackRow(track: Track, accentColor: Color) {
             )
         }
         Spacer(Modifier.width(8.dp))
-        Icon(
-            imageVector = Icons.Default.GraphicEq,
-            contentDescription = "Now playing",
-            tint = accentColor,
-            modifier = Modifier.size(20.dp),
-        )
-    }
-}
-
-/**
- * Queue row with a drag handle that initiates long-press drag.
- * The drag gesture lives on the drag handle icon only, so it doesn't
- * conflict with the row's tap or the LazyColumn's scroll.
- */
-@Composable
-private fun QueueTrackRowWithDrag(
-    track: Track,
-    isDragging: Boolean,
-    onClick: () -> Unit,
-    onDragStart: () -> Unit,
-    onDrag: (deltaY: Float) -> Unit,
-    onDragEnd: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                if (isDragging) MaterialTheme.colorScheme.surfaceVariant
-                else MaterialTheme.colorScheme.surface,
-            )
-            .clickable(onClick = onClick)
-            .padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        QueueTrackArt(track)
-        Spacer(Modifier.width(12.dp))
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = track.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        // Drag handle — long press HERE to start dragging
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .pointerInput(Unit) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = { onDragStart() },
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            onDrag(dragAmount.y)
-                        },
-                        onDragEnd = onDragEnd,
-                        onDragCancel = onDragEnd,
-                    )
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Default.DragHandle,
-                contentDescription = "Drag to reorder",
-                tint = if (isDragging) MaterialTheme.colorScheme.primary
-                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(24.dp),
-            )
-        }
+        Icon(Icons.Default.GraphicEq, "Now playing", tint = accentColor, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -374,19 +351,9 @@ private fun QueueTrackArt(track: Track) {
         contentAlignment = Alignment.Center,
     ) {
         if (artUrl != null) {
-            AsyncImage(
-                model = artUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
+            AsyncImage(artUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         } else {
-            Icon(
-                imageVector = Icons.Default.MusicNote,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
+            Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
         }
     }
 }
