@@ -161,6 +161,17 @@ class TrackDownloadWorker @AssistedInject constructor(
                         continue
                     }
 
+                    // Skip if already downloaded (prevents re-downloading)
+                    if (trackEntity.isDownloaded && trackEntity.filePath != null) {
+                        downloadQueueDao.updateStatus(
+                            id = queueItem.id,
+                            status = DownloadStatus.COMPLETED,
+                            completedAt = System.currentTimeMillis(),
+                        )
+                        downloadedCount++
+                        continue
+                    }
+
                     val track = trackEntity.toDomain()
 
                     // Download through the full pipeline (search -> download -> tag -> organize).
