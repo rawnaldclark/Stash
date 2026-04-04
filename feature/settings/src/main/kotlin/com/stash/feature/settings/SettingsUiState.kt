@@ -17,6 +17,12 @@ import com.stash.core.model.QualityTier
  * @property isSpotifyCookieValidating Whether the sp_dc cookie is currently being validated.
  * @property youTubeCookieError Error message to display in the YouTube cookie dialog, or null if none.
  * @property isYouTubeCookieValidating Whether the YouTube cookie is currently being validated.
+ * @property eqEnabled Whether the equalizer effect chain is active.
+ * @property eqPreset Name of the currently selected equalizer preset.
+ * @property eqBandFrequencies Display labels for each EQ band (e.g. "60Hz").
+ * @property eqBandGains Normalized gain (0.0..1.0) for each band; 0.5 is flat.
+ * @property eqBassBoost Normalized bass boost strength (0.0..1.0).
+ * @property eqVirtualizer Normalized virtualizer / surround strength (0.0..1.0).
  */
 data class SettingsUiState(
     val spotifyAuthState: AuthState = AuthState.NotConnected,
@@ -31,4 +37,10 @@ data class SettingsUiState(
     val youTubeCookieError: String? = null,
     val isYouTubeCookieValidating: Boolean = false,
     val youTubeError: String? = null,
+    val eqEnabled: Boolean = false,
+    val eqPreset: String = "Flat",
+    val eqBandFrequencies: List<String> = listOf("60Hz", "250Hz", "1kHz", "4kHz", "16kHz"),
+    val eqBandGains: List<Float> = listOf(0.5f, 0.5f, 0.5f, 0.5f, 0.5f),
+    val eqBassBoost: Float = 0f,
+    val eqVirtualizer: Float = 0f,
 )

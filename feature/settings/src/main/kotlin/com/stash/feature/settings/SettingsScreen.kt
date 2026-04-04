@@ -34,6 +34,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SpotifyCookieDialog
+import com.stash.feature.settings.components.EqualizerSection
 import com.stash.feature.settings.components.YouTubeCookieDialog
 
 /**
@@ -105,6 +106,11 @@ fun SettingsScreen(
         onConnectYouTube = viewModel::onConnectYouTube,
         onDisconnectYouTube = viewModel::onDisconnectYouTube,
         onQualityChanged = viewModel::onQualityChanged,
+        onEqEnabledChanged = viewModel::setEqEnabled,
+        onEqPresetSelected = viewModel::setEqPreset,
+        onEqBandGainChanged = viewModel::setEqBandGain,
+        onBassBoostChanged = viewModel::setBassBoost,
+        onVirtualizerChanged = viewModel::setVirtualizer,
         modifier = modifier,
     )
 }
@@ -121,6 +127,11 @@ private fun SettingsContent(
     onConnectYouTube: () -> Unit,
     onDisconnectYouTube: () -> Unit,
     onQualityChanged: (QualityTier) -> Unit,
+    onEqEnabledChanged: (Boolean) -> Unit,
+    onEqPresetSelected: (String) -> Unit,
+    onEqBandGainChanged: (Int, Float) -> Unit,
+    onBassBoostChanged: (Float) -> Unit,
+    onVirtualizerChanged: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -212,6 +223,23 @@ private fun SettingsContent(
                 }
             }
         }
+
+        // -- Audio Effects section --------------------------------------------
+        SectionHeader(title = "Audio Effects")
+
+        EqualizerSection(
+            enabled = uiState.eqEnabled,
+            currentPreset = uiState.eqPreset,
+            bandFrequencies = uiState.eqBandFrequencies,
+            bandGains = uiState.eqBandGains,
+            bassBoost = uiState.eqBassBoost,
+            virtualizer = uiState.eqVirtualizer,
+            onEnabledChanged = onEqEnabledChanged,
+            onPresetSelected = onEqPresetSelected,
+            onBandGainChanged = onEqBandGainChanged,
+            onBassBoostChanged = onBassBoostChanged,
+            onVirtualizerChanged = onVirtualizerChanged,
+        )
 
         // -- Storage section --------------------------------------------------
         SectionHeader(title = "Storage")

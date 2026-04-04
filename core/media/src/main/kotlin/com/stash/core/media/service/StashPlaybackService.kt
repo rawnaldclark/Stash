@@ -14,7 +14,9 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.stash.core.media.equalizer.EqualizerManager
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * Background playback service that hosts an [ExoPlayer] and exposes a [MediaSession]
@@ -26,6 +28,8 @@ import dagger.hilt.android.AndroidEntryPoint
  */
 @AndroidEntryPoint
 class StashPlaybackService : MediaSessionService() {
+
+    @Inject lateinit var equalizerManager: EqualizerManager
 
     companion object {
         /** Custom command action for toggling shuffle mode. */
@@ -52,6 +56,10 @@ class StashPlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
+        // Initialise audio effects (equalizer, bass boost, virtualizer, loudness)
+        // with the player's audio session ID so they process this player's output.
+        equalizerManager.initialize(player.audioSessionId)
+
         val session = MediaSession.Builder(this, player)
             .setCallback(StashSessionCallback())
             .build()
@@ -72,6 +80,7 @@ class StashPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        equalizerManager.release()
         mediaSession?.run {
             player.release()
             release()
