@@ -16,8 +16,8 @@ import javax.inject.Singleton
  * into [YtDlpSearchResult] DTOs.
  *
  * Uses the `ytsearchN:` prefix to request up to N results from YouTube,
- * combined with `--dump-json --no-download --flat-playlist` to retrieve
- * metadata without downloading any media.
+ * combined with `--dump-json --no-download` to retrieve metadata without
+ * downloading any media.
  *
  * Thread-safe: all IO is dispatched to [Dispatchers.IO].
  */
@@ -52,7 +52,6 @@ class YouTubeSearchExecutor @Inject constructor(
                 val request = YoutubeDLRequest("ytsearch$clampedMax:$query")
                 request.addOption("--dump-json")
                 request.addOption("--no-download")
-                request.addOption("--flat-playlist")
 
                 val response = YoutubeDL.getInstance().execute(request)
                 val output = response.out

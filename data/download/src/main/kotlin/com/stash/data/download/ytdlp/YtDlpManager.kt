@@ -5,7 +5,9 @@ import android.util.Log
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -28,6 +30,7 @@ class YtDlpManager @Inject constructor(
 ) {
     private val initMutex = Mutex()
     private var initialized = false
+    private val backgroundScope = CoroutineScope(Dispatchers.IO)
 
     /** Path to the extracted QuickJS binary, set during [initialize]. */
     var quickJsPath: String? = null
@@ -58,15 +61,18 @@ class YtDlpManager @Inject constructor(
                 // that allows process execution.
                 locateQuickJs()
 
-                // Auto-update to latest yt-dlp on first init to keep extractors current.
-                try {
-                    val status = YoutubeDL.getInstance().updateYoutubeDL(
-                        context,
-                        YoutubeDL.UpdateChannel._STABLE,
-                    )
-                    Log.i(TAG, "yt-dlp update: $status, new version: ${getVersion()}")
-                } catch (e: Exception) {
-                    Log.w(TAG, "yt-dlp auto-update failed (will use bundled version): ${e.message}")
+                // Schedule non-blocking background update check so initialization
+                // is not held up by network latency.
+                backgroundScope.launch {
+                    try {
+                        val status = YoutubeDL.getInstance().updateYoutubeDL(
+                            context,
+                            YoutubeDL.UpdateChannel._STABLE,
+                        )
+                        Log.i(TAG, "yt-dlp background update: $status")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "yt-dlp background update failed: ${e.message}")
+                    }
                 }
             }
             initialized = true

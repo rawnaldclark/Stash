@@ -38,11 +38,10 @@ sealed class TrackDownloadResult {
  *
  * 1. Search YouTube for the track (or use a pre-resolved URL).
  * 2. Score results and select the best match.
- * 3. Download audio via yt-dlp.
- * 4. Embed metadata (title, artist, album) using ffmpeg.
- * 5. Move the file to the organized artist/album directory.
+ * 3. Download native Opus audio via yt-dlp (metadata embedded via --embed-metadata).
+ * 4. Move the file to the organized artist/album directory.
  *
- * Concurrency is limited to 3 simultaneous downloads via a [Semaphore].
+ * Concurrency is limited to 8 simultaneous downloads via a [Semaphore].
  * Real-time progress is emitted through the [progress] shared flow.
  */
 @Singleton
@@ -55,9 +54,9 @@ class DownloadManager @Inject constructor(
     private val metadataEmbedder: MetadataEmbedder,
     private val qualityPrefs: QualityPreferencesManager,
 ) {
-    /** Limits concurrent downloads. 5 is a good balance — each download is mostly
-     *  network-bound (waiting for data) so parallelism helps without overwhelming CPU. */
-    private val concurrencySemaphore = Semaphore(5)
+    /** Limits concurrent downloads. 8 parallel slots — with native opus (no FFmpeg
+     *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
+    private val concurrencySemaphore = Semaphore(8)
 
     private val _progress = MutableSharedFlow<DownloadProgress>(replay = 1)
 
@@ -140,14 +139,12 @@ class DownloadManager @Inject constructor(
             }
         }
 
-        emitProgress(track.id, 0.8f, DownloadStatus.PROCESSING)
+        // Metadata is now embedded by yt-dlp via --embed-metadata flag.
+        // No separate ffmpeg step needed.
 
-        // Step 4: Embed metadata tags
-        metadataEmbedder.embedMetadata(downloadedFile, track)
+        emitProgress(track.id, 0.9f, DownloadStatus.PROCESSING)
 
-        emitProgress(track.id, 0.9f, DownloadStatus.TAGGING)
-
-        // Step 5: Move to organized directory
+        // Step 4: Move to organized directory
         val finalFile = fileOrganizer.getTrackFile(
             artist = track.artist,
             album = track.album.ifEmpty { null },
