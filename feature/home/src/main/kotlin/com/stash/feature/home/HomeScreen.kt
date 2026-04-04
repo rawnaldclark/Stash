@@ -107,7 +107,7 @@ fun HomeScreen(
                     text = "Stash",
                     style = MaterialTheme.typography.headlineLarge.copy(
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                        letterSpacing = 5.sp,
+                        letterSpacing = 1.sp,
                     ),
                     color = MaterialTheme.colorScheme.onBackground,
                 )
