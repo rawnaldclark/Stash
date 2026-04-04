@@ -28,11 +28,13 @@ class MusicRepositoryImpl @Inject constructor(
     private val downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao,
 ) : MusicRepository {
 
-    /** One-time migrations and fixups. */
+    /** Startup fixups — resets exhausted download retries. */
     suspend fun runMigrations() {
-        trackDao.backfillSpotifyDateAdded()
-        // Reset exhausted retries so tracks failed due to now-fixed bugs get another chance.
+        // Reset exhausted retries so tracks get another chance each app session.
         downloadQueueDao.resetExhaustedRetries()
+        // NOTE: backfillSpotifyDateAdded() was removed — it ran on every startup and
+        // overwrote all Spotify tracks' date_added with the same timestamp, making
+        // "Recently Added" show arbitrary tracks instead of actual recent downloads.
     }
 
     // ── Track queries ───────────────────────────────────────────────────
