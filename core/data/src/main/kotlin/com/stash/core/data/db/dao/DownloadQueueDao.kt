@@ -4,9 +4,22 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.ColumnInfo
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.model.DownloadStatus
 import kotlinx.coroutines.flow.Flow
+
+/** Room projection for status count diagnostic query. */
+data class StatusCount(
+    val status: String,
+    @ColumnInfo(name = "COUNT(*)") val count: Int,
+)
+
+/** Room projection for source count diagnostic query. */
+data class SourceCount(
+    val source: String,
+    val cnt: Int,
+)
 
 /**
  * Data-access object for [DownloadQueueEntity].
@@ -44,6 +57,17 @@ interface DownloadQueueDao {
     /** Retrieve all pending downloads for a specific sync run, ordered by creation time. */
     @Query("SELECT * FROM download_queue WHERE sync_id = :syncId AND status = 'PENDING' ORDER BY created_at ASC")
     suspend fun getPendingBySyncId(syncId: Long): List<DownloadQueueEntity>
+
+    /** Retrieve ALL pending downloads from any sync, filtered by connected sources.
+     *  Spotify tracks (no youtube_url) are prioritized. */
+    @Query("""
+        SELECT dq.* FROM download_queue dq
+        INNER JOIN tracks t ON t.id = dq.track_id
+        WHERE dq.status = 'PENDING'
+          AND t.source IN (:sources)
+        ORDER BY (CASE WHEN dq.youtube_url IS NULL THEN 0 ELSE 1 END) ASC, dq.created_at ASC
+    """)
+    suspend fun getAllPendingBySources(sources: List<String>): List<DownloadQueueEntity>
 
     /**
      * Retrieve failed downloads that should be retried (max 3 attempts),
@@ -98,6 +122,22 @@ interface DownloadQueueDao {
     /** Reset retry count for all failed entries so they can be retried after a bug fix. */
     @Query("UPDATE download_queue SET retry_count = 0, status = 'FAILED' WHERE status = 'FAILED' AND retry_count >= 3")
     suspend fun resetExhaustedRetries()
+
+    /** Diagnostic: count queue entries by status. */
+    @Query("SELECT status, COUNT(*) FROM download_queue GROUP BY status")
+    suspend fun getStatusCounts(): List<StatusCount>
+
+    /** Diagnostic: count undownloaded tracks with no active queue entry by source. */
+    @Query("""
+        SELECT t.source, COUNT(*) as cnt FROM tracks t
+        WHERE t.is_downloaded = 0
+          AND t.id NOT IN (
+              SELECT dq.track_id FROM download_queue dq
+              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED')
+          )
+        GROUP BY t.source
+    """)
+    suspend fun getOrphanedTrackCounts(): List<SourceCount>
 
     /**
      * Find tracks that need downloading but have no active queue entry.

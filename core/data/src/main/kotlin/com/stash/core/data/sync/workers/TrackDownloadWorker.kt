@@ -71,6 +71,12 @@ class TrackDownloadWorker @AssistedInject constructor(
             }
             Log.d(TAG, "Connected sources for retry: $connectedSources")
 
+            // Diagnostic: log the actual queue state before any changes
+            val statusCounts = downloadQueueDao.getStatusCounts()
+            Log.i(TAG, "Queue status breakdown: ${statusCounts.map { "${it.status}=${it.count}" }}")
+            val orphanCounts = downloadQueueDao.getOrphanedTrackCounts()
+            Log.i(TAG, "Orphaned undownloaded tracks (no active queue entry): ${orphanCounts.map { "${it.source}=${it.cnt}" }}")
+
             // Reset exhausted retries so tracks get another chance each sync.
             downloadQueueDao.resetExhaustedRetries()
 
@@ -89,16 +95,22 @@ class TrackDownloadWorker @AssistedInject constructor(
                 downloadQueueDao.insertAll(newEntries)
             }
 
-            // Collect new items from this sync PLUS retryable failed items.
-            val newItems = downloadQueueDao.getPendingBySyncId(syncId)
+            // Collect ALL pending items (from any sync) plus retryable failed items.
+            val allPending = if (connectedSources.isNotEmpty()) {
+                downloadQueueDao.getAllPendingBySources(connectedSources)
+            } else {
+                downloadQueueDao.getPendingBySyncId(syncId)
+            }
             val retryItems = if (connectedSources.isNotEmpty()) {
                 downloadQueueDao.getRetryableBySources(connectedSources)
             } else {
                 emptyList()
             }
-            val pendingItems = newItems + retryItems
+            // Deduplicate (a track could appear in both lists)
+            val seen = mutableSetOf<Long>()
+            val pendingItems = (allPending + retryItems).filter { seen.add(it.trackId) }
             val total = pendingItems.size
-            Log.d(TAG, "Download queue: ${newItems.size} new + ${retryItems.size} retry = $total total")
+            Log.d(TAG, "Download queue: ${allPending.size} pending + ${retryItems.size} retry = $total total (deduped)")
 
             if (total == 0) {
                 // Nothing to download; pass through to finalize.
