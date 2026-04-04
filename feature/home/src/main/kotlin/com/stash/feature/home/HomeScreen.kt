@@ -75,6 +75,7 @@ import com.stash.core.ui.components.SourceIndicator
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.home.components.StashVinylLogo
 
 /**
  * Home screen composable displaying a premium dark dashboard with sync
@@ -98,40 +99,45 @@ fun HomeScreen(
             .statusBarsPadding(),
         contentPadding = PaddingValues(bottom = 120.dp),
     ) {
-        // ── App title with checkerboard underline ─────────────────────
+        // ── App title with vinyl logo and checkerboard underline ─────
         item {
-            Column(
+            Row(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                val purple = StashTheme.extendedColors.purpleLight
-                val white = MaterialTheme.colorScheme.onBackground
-                val stashText = androidx.compose.ui.text.buildAnnotatedString {
-                    append(androidx.compose.ui.text.AnnotatedString("S", androidx.compose.ui.text.SpanStyle(color = purple)))
-                    append(androidx.compose.ui.text.AnnotatedString("ta", androidx.compose.ui.text.SpanStyle(color = white)))
-                    append(androidx.compose.ui.text.AnnotatedString("s", androidx.compose.ui.text.SpanStyle(color = purple)))
-                    append(androidx.compose.ui.text.AnnotatedString("h", androidx.compose.ui.text.SpanStyle(color = purple)))
-                }
-                Text(
-                    text = stashText,
-                    style = MaterialTheme.typography.headlineLarge.copy(
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                    ),
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                // Checkerboard underline bar
-                Row(modifier = Modifier.width(120.dp).height(4.dp)) {
-                    val colors = listOf(
-                        StashTheme.extendedColors.purpleLight,
-                        StashTheme.extendedColors.purpleDark,
+                StashVinylLogo(size = 56.dp)
+                Spacer(modifier = Modifier.width(14.dp))
+                Column {
+                    val purple = StashTheme.extendedColors.purpleLight
+                    val white = MaterialTheme.colorScheme.onBackground
+                    val stashText = androidx.compose.ui.text.buildAnnotatedString {
+                        append(androidx.compose.ui.text.AnnotatedString("S", androidx.compose.ui.text.SpanStyle(color = purple)))
+                        append(androidx.compose.ui.text.AnnotatedString("ta", androidx.compose.ui.text.SpanStyle(color = white)))
+                        append(androidx.compose.ui.text.AnnotatedString("s", androidx.compose.ui.text.SpanStyle(color = purple)))
+                        append(androidx.compose.ui.text.AnnotatedString("h", androidx.compose.ui.text.SpanStyle(color = purple)))
+                    }
+                    Text(
+                        text = stashText,
+                        style = MaterialTheme.typography.headlineLarge.copy(
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            letterSpacing = 1.sp,
+                        ),
                     )
-                    repeat(10) { i ->
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .background(colors[i % 2]),
+                    Spacer(modifier = Modifier.height(6.dp))
+                    // Checkerboard underline bar
+                    Row(modifier = Modifier.width(90.dp).height(4.dp)) {
+                        val colors = listOf(
+                            StashTheme.extendedColors.purpleLight,
+                            StashTheme.extendedColors.purpleDark,
                         )
+                        repeat(10) { i ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(colors[i % 2]),
+                            )
+                        }
                     }
                 }
             }
