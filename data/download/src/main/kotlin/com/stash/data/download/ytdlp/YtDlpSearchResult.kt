@@ -34,4 +34,6 @@ data class YtDlpSearchResult(
     val url: String = "",
     @SerialName("like_count") val likeCount: Long? = null,
     val description: String = "",
+    /** Thumbnail URL (populated by InnerTube search, not by yt-dlp --flat-playlist). */
+    val thumbnail: String? = null,
 )

@@ -324,7 +324,7 @@ private fun SearchResultRow(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Album art placeholder: music note icon in a rounded box
+        // Album art or fallback music note
         Box(
             modifier = Modifier
                 .size(48.dp)
@@ -332,12 +332,21 @@ private fun SearchResultRow(
                 .background(extendedColors.elevatedSurface),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = Icons.Default.MusicNote,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            if (item.thumbnailUrl != null) {
+                coil3.compose.AsyncImage(
+                    model = item.thumbnailUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
 
         Spacer(modifier = Modifier.width(12.dp))

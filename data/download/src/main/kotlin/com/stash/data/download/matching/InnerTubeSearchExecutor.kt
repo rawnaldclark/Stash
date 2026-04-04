@@ -156,6 +156,12 @@ class InnerTubeSearchExecutor @Inject constructor(
 
         val durationSeconds = parseDurationToSeconds(durationText)
 
+        // Extract thumbnail URL — pick the largest available
+        val thumbnailUrl = renderer.navigatePath("thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails")
+            ?.jsonArray
+            ?.maxByOrNull { it.jsonObject["width"]?.jsonPrimitive?.intOrNull ?: 0 }
+            ?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+
         return YtDlpSearchResult(
             id = videoId,
             title = title,
@@ -167,6 +173,7 @@ class InnerTubeSearchExecutor @Inject constructor(
             webpageUrl = "https://www.youtube.com/watch?v=$videoId",
             url = "",
             likeCount = null,
+            thumbnail = thumbnailUrl,
             description = "",
         )
     }

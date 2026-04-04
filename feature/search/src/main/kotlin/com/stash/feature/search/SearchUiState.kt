@@ -32,4 +32,5 @@ data class SearchResultItem(
     val title: String,
     val artist: String,
     val durationSeconds: Double,
+    val thumbnailUrl: String? = null,
 )

@@ -97,6 +97,7 @@ class SearchViewModel @Inject constructor(
                     title = result.title,
                     artist = result.uploader,
                     durationSeconds = result.duration,
+                    thumbnailUrl = result.thumbnail,
                 )
             }
 
@@ -195,6 +196,7 @@ class SearchViewModel @Inject constructor(
             filePath = finalFile.absolutePath,
             fileSizeBytes = finalFile.length(),
             isDownloaded = true,
+            albumArtUrl = item.thumbnailUrl,
         )
         musicRepository.insertTrack(track)
 
