@@ -103,19 +103,13 @@ fun HomeScreen(
             Column(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
             ) {
+                val purple = StashTheme.extendedColors.purpleLight
+                val white = MaterialTheme.colorScheme.onBackground
                 val stashText = androidx.compose.ui.text.buildAnnotatedString {
-                    append(
-                        androidx.compose.ui.text.AnnotatedString(
-                            "S",
-                            androidx.compose.ui.text.SpanStyle(color = StashTheme.extendedColors.purpleLight),
-                        )
-                    )
-                    append(
-                        androidx.compose.ui.text.AnnotatedString(
-                            "tash",
-                            androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.onBackground),
-                        )
-                    )
+                    append(androidx.compose.ui.text.AnnotatedString("S", androidx.compose.ui.text.SpanStyle(color = purple)))
+                    append(androidx.compose.ui.text.AnnotatedString("ta", androidx.compose.ui.text.SpanStyle(color = white)))
+                    append(androidx.compose.ui.text.AnnotatedString("s", androidx.compose.ui.text.SpanStyle(color = purple)))
+                    append(androidx.compose.ui.text.AnnotatedString("h", androidx.compose.ui.text.SpanStyle(color = purple)))
                 }
                 Text(
                     text = stashText,
