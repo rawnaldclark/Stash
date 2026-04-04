@@ -4,7 +4,31 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- 4x4 Purple checkerboard in the safe zone (24-84dp) -->
+    <!-- Row 1: light squares at (24,24) and (54,24) -->
+    <path android:fillColor="#A78BFA" android:pathData="M24,24h15v15h-15z" />
+    <path android:fillColor="#A78BFA" android:pathData="M54,24h15v15h-15z" />
+    <!-- Row 2: light squares at (39,39) and (69,39) -->
+    <path android:fillColor="#A78BFA" android:pathData="M39,39h15v15h-15z" />
+    <path android:fillColor="#A78BFA" android:pathData="M69,39h15v15h-15z" />
+    <!-- Row 3: light squares at (24,54) and (54,54) -->
+    <path android:fillColor="#A78BFA" android:pathData="M24,54h15v15h-15z" />
+    <path android:fillColor="#A78BFA" android:pathData="M54,54h15v15h-15z" />
+    <!-- Row 4: light squares at (39,69) and (69,69) -->
+    <path android:fillColor="#A78BFA" android:pathData="M39,69h15v15h-15z" />
+    <path android:fillColor="#A78BFA" android:pathData="M69,69h15v15h-15z" />
+
+    <!-- White "S" stroke overlaid on checkerboard -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M63,38 C63,38 58,32 52,32 C46,32 41,36 41,41 C41,46 46,48 52,50 C58,52 63,54 63,59 C63,65 58,69 52,69 C46,69 41,65 41,65" />
+
+    <!-- Small music note flag at top of S -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,30 C40.745,30 30,40.745 30,54 C30,67.255 40.745,78 54,78 C67.255,78 78,67.255 78,54 C78,40.745 67.255,30 54,30Z M48,44 L48,64 L66,54 Z" />
+        android:pathData="M63,32 L63,38 C63,38 68,30 68,33 C68,36 64,37 63,36" />
 </vector>
