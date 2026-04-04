@@ -52,6 +52,7 @@ class YouTubeSearchExecutor @Inject constructor(
                 val request = YoutubeDLRequest("ytsearch$clampedMax:$query")
                 request.addOption("--dump-json")
                 request.addOption("--no-download")
+                request.addOption("--flat-playlist")  // Required: without this, yt-dlp fetches full metadata per result (~15s vs ~3s)
 
                 val response = YoutubeDL.getInstance().execute(request)
                 val output = response.out

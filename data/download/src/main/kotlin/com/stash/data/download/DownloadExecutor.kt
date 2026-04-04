@@ -84,7 +84,6 @@ class DownloadExecutor @Inject constructor(
                 qualityArgs.forEach { addOption(it) }
                 addOption("-o", outputTemplate)
                 addOption("--no-playlist")
-                addOption("--concurrent-fragments", "4")
 
                 // Tell yt-dlp to use QuickJS for YouTube's JS signature challenges.
                 // Without a JS runtime, yt-dlp can't decrypt stream URLs and
