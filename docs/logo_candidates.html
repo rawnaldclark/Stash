@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stash Logo — Round 2</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:40px}
+h1{text-align:center;font-size:2rem;margin-bottom:10px;color:#A78BFA}
+h2{text-align:center;font-size:1rem;color:#666;margin-bottom:40px;font-weight:400}
+h3{font-size:1.4rem;margin:40px 0 20px;color:#A78BFA;border-bottom:1px solid #222;padding-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:30px;margin-bottom:40px}
+.card{background:#141414;border-radius:16px;padding:30px;text-align:center;border:1px solid #222;transition:border-color 0.3s}
+.card:hover{border-color:#7C3AED}
+.card h4{margin-top:16px;font-size:1.1rem;color:#ccc}
+.card p{margin-top:8px;font-size:0.85rem;color:#666;line-height:1.5}
+.label{font-size:0.7rem;color:#555;margin-top:6px}
+.sizes{display:flex;gap:24px;align-items:end;justify-content:center;margin:20px 0;flex-wrap:wrap}
+.wordmark-row{display:flex;align-items:center;gap:30px;flex-wrap:wrap;justify-content:center;margin:20px 0}
+.wm{padding:24px 40px;border-radius:12px;background:#111;border:1px solid #222;transition:border-color 0.3s}
+.wm:hover{border-color:#7C3AED}
+
+/* ============ VINYL + CHECKERBOARD ITERATIONS ============ */
+
+/* Base icon container */
+.icon{border-radius:28px;position:relative;overflow:hidden;display:inline-flex;align-items:center;justify-content:center}
+
+/* Variant A: 3x3 board, detailed vinyl with grooves */
+.va{width:140px;height:140px;background:linear-gradient(145deg,#4C1D95,#7C3AED)}
+.va .board{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);opacity:0.3}
+.va .board div:nth-child(1),.va .board div:nth-child(3),.va .board div:nth-child(5),.va .board div:nth-child(7),.va .board div:nth-child(9){background:#A78BFA}
+.va .record{position:relative;z-index:2;width:80px;height:80px;border-radius:50%;background:conic-gradient(from 0deg,#1a1a1a 0deg,#2a2a2a 30deg,#1a1a1a 60deg,#2d2d2d 90deg,#1a1a1a 120deg,#2a2a2a 150deg,#1a1a1a 180deg,#2d2d2d 210deg,#1a1a1a 240deg,#2a2a2a 270deg,#1a1a1a 300deg,#2d2d2d 330deg,#1a1a1a 360deg);box-shadow:0 4px 20px rgba(0,0,0,0.6),inset 0 0 0 2px rgba(255,255,255,0.08)}
+.va .record::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;background:radial-gradient(circle,#A78BFA 4px,#7C3AED 5px,#6D28D9 8px,#A78BFA 9px,transparent 10px);z-index:3}
+.va .record::after{content:'';position:absolute;inset:8px;border-radius:50%;border:1px solid rgba(255,255,255,0.05);box-shadow:inset 0 0 0 6px rgba(255,255,255,0.02),inset 0 0 0 14px rgba(255,255,255,0.03),inset 0 0 0 22px rgba(255,255,255,0.02)}
+.spin{animation:spin 6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Variant B: 4x4 board, bigger vinyl with label */
+.vb{width:140px;height:140px;background:linear-gradient(135deg,#581C87,#7C3AED)}
+.vb .board{position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,1fr);opacity:0.25}
+.vb .board div:nth-child(1),.vb .board div:nth-child(3),.vb .board div:nth-child(6),.vb .board div:nth-child(8),.vb .board div:nth-child(9),.vb .board div:nth-child(11),.vb .board div:nth-child(14),.vb .board div:nth-child(16){background:#A78BFA}
+.vb .record{position:relative;z-index:2;width:85px;height:85px;border-radius:50%;background:#111;box-shadow:0 4px 20px rgba(0,0,0,0.7),0 0 0 3px rgba(139,92,246,0.2)}
+.vb .record .grooves{position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle at center,transparent 0px,transparent 2px,rgba(255,255,255,0.04) 2.5px,transparent 3px);z-index:1}
+.vb .record .label-circle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#A78BFA);z-index:2;display:flex;align-items:center;justify-content:center}
+.vb .record .label-circle .hole{width:6px;height:6px;border-radius:50%;background:#111}
+.vb .record .shine{position:absolute;inset:0;border-radius:50%;background:linear-gradient(135deg,rgba(255,255,255,0.08) 0%,transparent 50%);z-index:3}
+
+/* Variant C: 5x5 board, vinyl offset to bottom-right */
+.vc{width:140px;height:140px;background:#1a0a30}
+.vc .board{position:absolute;inset:0;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,1fr);opacity:0.4}
+.vc .board div:nth-child(odd){background:rgba(139,92,246,0.3)}
+.vc .record{position:relative;z-index:2;width:75px;height:75px;border-radius:50%;background:#111;box-shadow:0 4px 16px rgba(0,0,0,0.7),0 0 0 2px rgba(139,92,246,0.15);margin-top:10px;margin-left:10px}
+.vc .record .grooves{position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle at center,transparent 0px,transparent 1.5px,rgba(255,255,255,0.03) 2px,transparent 2.5px)}
+.vc .record .label-circle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#A78BFA);display:flex;align-items:center;justify-content:center;z-index:2}
+.vc .record .label-circle .hole{width:5px;height:5px;border-radius:50%;background:#111}
+
+/* Variant D: 3x3 board, large vinyl with thick grooves, more pronounced board */
+.vd{width:140px;height:140px;background:linear-gradient(150deg,#2d1065,#7C3AED)}
+.vd .board{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);opacity:0.45}
+.vd .board div:nth-child(1),.vd .board div:nth-child(3),.vd .board div:nth-child(5),.vd .board div:nth-child(7),.vd .board div:nth-child(9){background:#A78BFA}
+.vd .record{position:relative;z-index:2;width:90px;height:90px;border-radius:50%;overflow:hidden;box-shadow:0 6px 25px rgba(0,0,0,0.7),0 0 0 2px rgba(167,139,250,0.2)}
+.vd .record .vinyl-base{position:absolute;inset:0;background:radial-gradient(circle,#222 35%,#111 36%,#1a1a1a 100%)}
+.vd .record .groove1{position:absolute;inset:6px;border-radius:50%;border:1px solid rgba(255,255,255,0.06)}
+.vd .record .groove2{position:absolute;inset:12px;border-radius:50%;border:1px solid rgba(255,255,255,0.05)}
+.vd .record .groove3{position:absolute;inset:18px;border-radius:50%;border:1px solid rgba(255,255,255,0.06)}
+.vd .record .groove4{position:absolute;inset:24px;border-radius:50%;border:1px solid rgba(255,255,255,0.04)}
+.vd .record .groove5{position:absolute;inset:28px;border-radius:50%;border:1px solid rgba(255,255,255,0.05)}
+.vd .record .label-area{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#C4B5FD);z-index:2;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 2px rgba(0,0,0,0.3)}
+.vd .record .label-area .spindle{width:7px;height:7px;border-radius:50%;background:#222;box-shadow:inset 0 1px 1px rgba(0,0,0,0.5)}
+.vd .record .reflection{position:absolute;inset:0;border-radius:50%;background:linear-gradient(160deg,rgba(255,255,255,0.1) 0%,transparent 40%,transparent 60%,rgba(255,255,255,0.03) 100%);z-index:3}
+
+/* Variant E: Alternating opacity board, vinyl with color-shifting grooves */
+.ve{width:140px;height:140px;background:#0f0520;border-radius:28px}
+.ve .board{position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,1fr)}
+.ve .board div:nth-child(1),.ve .board div:nth-child(3),.ve .board div:nth-child(6),.ve .board div:nth-child(8),.ve .board div:nth-child(9),.ve .board div:nth-child(11),.ve .board div:nth-child(14),.ve .board div:nth-child(16){background:rgba(124,58,237,0.35)}
+.ve .board div:nth-child(2),.ve .board div:nth-child(4),.ve .board div:nth-child(5),.ve .board div:nth-child(7),.ve .board div:nth-child(10),.ve .board div:nth-child(12),.ve .board div:nth-child(13),.ve .board div:nth-child(15){background:rgba(124,58,237,0.12)}
+.ve .record{position:relative;z-index:2;width:82px;height:82px;border-radius:50%;background:conic-gradient(from 0deg,#181818,#252525,#181818,#222,#181818,#252525,#181818,#222,#181818,#252525,#181818,#222);box-shadow:0 5px 20px rgba(0,0,0,0.7),0 0 0 2px rgba(167,139,250,0.15)}
+.ve .record::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#A78BFA);z-index:2;box-shadow:inset 0 1px 3px rgba(0,0,0,0.4)}
+.ve .record::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:7px;height:7px;border-radius:50%;background:#0f0520;z-index:3}
+.ve .record .ring1{position:absolute;inset:5px;border-radius:50%;border:1px solid rgba(167,139,250,0.08)}
+.ve .record .ring2{position:absolute;inset:10px;border-radius:50%;border:1px solid rgba(167,139,250,0.06)}
+.ve .record .ring3{position:absolute;inset:16px;border-radius:50%;border:1px solid rgba(167,139,250,0.08)}
+
+/* Variant F: Bold board, detailed realistic vinyl with S label */
+.vf{width:140px;height:140px;background:linear-gradient(140deg,#3b0764,#6D28D9);border-radius:28px}
+.vf .board{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);opacity:0.5}
+.vf .board div:nth-child(2),.vf .board div:nth-child(4),.vf .board div:nth-child(6),.vf .board div:nth-child(8){background:#A78BFA}
+.vf .record-wrap{position:relative;z-index:2;margin-top:-5px}
+.vf .record{width:88px;height:88px;border-radius:50%;box-shadow:0 4px 20px rgba(0,0,0,0.6),0 0 0 2px rgba(167,139,250,0.12);position:relative;overflow:hidden;background:radial-gradient(circle at center,#333 33%,#111 34%,#1a1a1a 100%)}
+/* Outer rim */
+.vf .record .rim{position:absolute;inset:0;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,0.06)}
+/* Conic groove texture — simulates actual vinyl ridges */
+.vf .record .groove-texture{position:absolute;inset:2px;border-radius:50%;background:conic-gradient(from 0deg,rgba(40,40,40,1) 0deg,rgba(50,50,50,1) 15deg,rgba(35,35,35,1) 30deg,rgba(48,48,48,1) 45deg,rgba(38,38,38,1) 60deg,rgba(52,52,52,1) 75deg,rgba(36,36,36,1) 90deg,rgba(46,46,46,1) 105deg,rgba(34,34,34,1) 120deg,rgba(50,50,50,1) 135deg,rgba(38,38,38,1) 150deg,rgba(48,48,48,1) 165deg,rgba(35,35,35,1) 180deg,rgba(52,52,52,1) 195deg,rgba(36,36,36,1) 210deg,rgba(46,46,46,1) 225deg,rgba(34,34,34,1) 240deg,rgba(50,50,50,1) 255deg,rgba(40,40,40,1) 270deg,rgba(48,48,48,1) 285deg,rgba(36,36,36,1) 300deg,rgba(52,52,52,1) 315deg,rgba(38,38,38,1) 330deg,rgba(46,46,46,1) 345deg,rgba(40,40,40,1) 360deg)}
+/* Concentric ring grooves */
+.vf .record .ring-grooves{position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle at center,transparent 0px,transparent 2px,rgba(255,255,255,0.04) 2.5px,transparent 3px,transparent 4.5px,rgba(255,255,255,0.03) 5px,transparent 5.5px)}
+/* Dead wax zone — slightly shinier area before the label */
+.vf .record .dead-wax{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;background:radial-gradient(circle,transparent 48%,rgba(255,255,255,0.04) 49%,rgba(255,255,255,0.02) 55%,transparent 56%)}
+/* Purple label with gradient */
+.vf .record .label-circle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#A78BFA,#7C3AED);display:flex;align-items:center;justify-content:center;z-index:2;font-size:12px;font-weight:800;color:#fff;font-family:Georgia,serif;letter-spacing:1px;box-shadow:inset 0 1px 2px rgba(0,0,0,0.3),0 0 0 1px rgba(255,255,255,0.1)}
+/* Spindle hole removed — S label is cleaner without it */
+/* Light reflection across the record surface */
+.vf .record .shine{position:absolute;inset:0;border-radius:50%;background:linear-gradient(150deg,rgba(255,255,255,0.12) 0%,rgba(255,255,255,0.04) 20%,transparent 45%,transparent 70%,rgba(255,255,255,0.02) 100%);z-index:3}
+/* Subtle rainbow refraction like real vinyl under light */
+.vf .record .refraction{position:absolute;inset:8px;border-radius:50%;background:conic-gradient(from 200deg,transparent 0deg,rgba(139,92,246,0.06) 30deg,transparent 60deg,rgba(99,102,241,0.04) 120deg,transparent 150deg,rgba(139,92,246,0.05) 240deg,transparent 280deg);z-index:2}
+
+/* ============ WORDMARK V2 ============ */
+
+.wm-a{display:flex;align-items:center;gap:14px}
+.wm-a .checker-icon{width:36px;height:36px;border-radius:8px;display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;overflow:hidden;background:#7C3AED}
+.wm-a .checker-icon div:nth-child(1),.wm-a .checker-icon div:nth-child(3),.wm-a .checker-icon div:nth-child(5),.wm-a .checker-icon div:nth-child(7),.wm-a .checker-icon div:nth-child(9){background:#A78BFA}
+.wm-a .text{font-size:34px;font-weight:700;letter-spacing:4px;color:#fff;font-family:-apple-system,sans-serif}
+
+.wm-b{font-size:38px;font-weight:200;letter-spacing:10px;color:#fff;font-family:-apple-system,sans-serif}
+.wm-b span{font-weight:700;background:linear-gradient(135deg,#A78BFA,#7C3AED);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+
+.wm-c{display:flex;align-items:center;gap:10px}
+.wm-c .disc{width:28px;height:28px;border-radius:50%;background:conic-gradient(from 0deg,#222,#333,#222,#2a2a2a);box-shadow:0 0 0 2px rgba(139,92,246,0.3);position:relative}
+.wm-c .disc::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border-radius:50%;background:#A78BFA}
+.wm-c .text{font-size:32px;font-weight:800;letter-spacing:2px;color:#fff;font-family:Georgia,serif}
+
+.wm-d{font-size:36px;font-weight:800;letter-spacing:3px;font-family:-apple-system,sans-serif}
+.wm-d .s{color:#A78BFA}
+.wm-d .t{color:#9375e0}
+.wm-d .a{color:#8B5CF6}
+.wm-d .sh{color:#7C3AED}
+
+.wm-e{position:relative;font-size:36px;font-weight:700;letter-spacing:5px;color:#fff;font-family:-apple-system,sans-serif}
+.wm-e .checker-underline{height:4px;margin-top:6px;display:flex;gap:0}
+.wm-e .checker-underline div{flex:1;height:4px}
+.wm-e .checker-underline div:nth-child(odd){background:#A78BFA}
+.wm-e .checker-underline div:nth-child(even){background:#7C3AED}
+
+.wm-f{display:flex;align-items:center;gap:0}
+.wm-f .letter{font-size:38px;font-weight:800;font-family:Georgia,serif;width:36px;height:44px;display:flex;align-items:center;justify-content:center}
+.wm-f .letter:nth-child(odd){background:rgba(139,92,246,0.15);color:#A78BFA}
+.wm-f .letter:nth-child(even){color:#fff}
+</style>
+</head>
+<body>
+<h1>Stash Logo — Round 2</h1>
+<h2>Refining #3: Vinyl record on purple checkerboard</h2>
+
+<h3>Vinyl + Checkerboard Variations (6 iterations)</h3>
+<div class="grid">
+  <div class="card">
+    <div class="icon va"><div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div><div class="record spin"></div></div>
+    <h4>A. 3x3 Board, Conic Grooves</h4>
+    <p>Conic gradient creates visible groove lines. Purple label center. Subtle 3x3 board at 30% opacity.</p>
+  </div>
+  <div class="card">
+    <div class="icon vb"><div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div><div class="record spin"><div class="grooves"></div><div class="label-circle"><div class="hole"></div></div><div class="shine"></div></div></div>
+    <h4>B. 4x4 Board, Label + Grooves</h4>
+    <p>Radial groove lines, glossy purple label with spindle hole, light reflection. More squares at 25% opacity.</p>
+  </div>
+  <div class="card">
+    <div class="icon vc"><div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div><div class="record spin"><div class="grooves"></div><div class="label-circle"><div class="hole"></div></div></div></div>
+    <h4>C. 5x5 Board, Dark Base</h4>
+    <p>Very pronounced 5x5 board at 40% opacity. Dark navy base. Record slightly offset. Maximum chess energy.</p>
+  </div>
+  <div class="card">
+    <div class="icon vd"><div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div><div class="record spin"><div class="vinyl-base"></div><div class="groove1"></div><div class="groove2"></div><div class="groove3"></div><div class="groove4"></div><div class="groove5"></div><div class="label-area"><div class="spindle"></div></div><div class="reflection"></div></div></div>
+    <h4>D. 3x3 Bold Board, Detailed Vinyl</h4>
+    <p>Most realistic vinyl: visible individual grooves, purple label with spindle, light reflection. Board at 45%.</p>
+  </div>
+  <div class="card">
+    <div class="icon ve"><div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div><div class="record spin"><div class="ring1"></div><div class="ring2"></div><div class="ring3"></div></div></div>
+    <h4>E. 4x4 Two-Tone Board, Color Grooves</h4>
+    <p>Board uses two purple opacities (35%/12%) for depth. Vinyl has purple-tinted groove rings. Deepest dark base.</p>
+  </div>
+  <div class="card">
+    <div class="icon vf"><div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div><div class="record-wrap"><div class="record spin"><div class="rim"></div><div class="groove-texture"></div><div class="ring-grooves"></div><div class="dead-wax"></div><div class="refraction"></div><div class="label-circle">S</div><div class="shine"></div></div></div></div>
+    <h4>F. 3x3 Bold Board, S Label</h4>
+    <p>Record label has "S" branding. Board at 50% opacity — most pronounced. Glossy reflection. Inverted checker pattern.</p>
+  </div>
+</div>
+
+<h3>Size Preview (Variant D)</h3>
+<div class="sizes">
+  <div><div class="icon vd" style="width:48px;height:48px;border-radius:12px"><div class="board" style="opacity:0.45"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div><div class="record" style="width:30px;height:30px"><div class="vinyl-base"></div><div class="label-area" style="width:12px;height:12px"><div class="spindle" style="width:3px;height:3px"></div></div><div class="reflection"></div></div></div><div class="label">48dp</div></div>
+  <div><div class="icon vd" style="width:72px;height:72px;border-radius:18px"><div class="board" style="opacity:0.45"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div><div class="record" style="width:46px;height:46px"><div class="vinyl-base"></div><div class="groove1"></div><div class="groove2"></div><div class="label-area" style="width:16px;height:16px"><div class="spindle" style="width:4px;height:4px"></div></div><div class="reflection"></div></div></div><div class="label">72dp</div></div>
+  <div><div class="icon vd" style="width:120px;height:120px;border-radius:28px"><div class="board" style="opacity:0.45"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div><div class="record spin" style="width:76px;height:76px"><div class="vinyl-base"></div><div class="groove1"></div><div class="groove2"></div><div class="groove3"></div><div class="groove4"></div><div class="label-area" style="width:26px;height:26px"><div class="spindle" style="width:6px;height:6px"></div></div><div class="reflection"></div></div></div><div class="label">120dp</div></div>
+  <div><div class="icon vd" style="width:192px;height:192px;border-radius:44px"><div class="board" style="opacity:0.45"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div><div class="record spin"><div class="vinyl-base"></div><div class="groove1"></div><div class="groove2"></div><div class="groove3"></div><div class="groove4"></div><div class="groove5"></div><div class="label-area"><div class="spindle"></div></div><div class="reflection"></div></div></div><div class="label">192dp (Play Store)</div></div>
+</div>
+
+<h3 style="margin-top:50px">In-App Wordmark — Round 2 (6 new options)</h3>
+<p style="color:#666;margin-bottom:20px;text-align:center">Fresh directions for the Home screen title.</p>
+
+<div class="wordmark-row"><div class="wm"><span class="wm-a"><span class="checker-icon"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></span><span class="text">STASH</span></span><br><span class="label">A. 3x3 checker icon + clean sans-serif</span></div></div>
+
+<div class="wordmark-row"><div class="wm"><span class="wm-b"><span>S</span>TASH</span><br><span class="label">B. Gradient bold S, ultralight rest — contrast play</span></div></div>
+
+<div class="wordmark-row"><div class="wm"><span class="wm-c"><span class="disc"></span><span class="text">Stash</span></span><br><span class="label">C. Mini vinyl disc + serif wordmark</span></div></div>
+
+<div class="wordmark-row"><div class="wm"><span class="wm-d"><span class="s">S</span><span class="t">T</span><span class="a">A</span><span class="sh">S</span><span class="sh">H</span></span><br><span class="label">D. Gradient per letter — purple fade left to right</span></div></div>
+
+<div class="wordmark-row"><div class="wm"><div class="wm-e">STASH<div class="checker-underline"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></div><br><span class="label">E. Clean text + checkerboard underline bar</span></div></div>
+
+<div class="wordmark-row"><div class="wm"><span class="wm-f"><span class="letter">S</span><span class="letter">T</span><span class="letter">A</span><span class="letter">S</span><span class="letter">H</span></span><br><span class="label">F. Letters on alternating checker squares</span></div></div>
+
+</body>
+</html>

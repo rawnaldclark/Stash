@@ -13,8 +13,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.MusicSource
@@ -96,14 +98,36 @@ fun HomeScreen(
             .statusBarsPadding(),
         contentPadding = PaddingValues(bottom = 120.dp),
     ) {
-        // ── App title ────────────────────────────────────────────────
+        // ── App title with checkerboard underline ─────────────────────
         item {
-            Text(
-                text = "Stash",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onBackground,
+            Column(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-            )
+            ) {
+                Text(
+                    text = "STASH",
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        letterSpacing = 5.sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                // Checkerboard underline bar
+                Row(modifier = Modifier.width(120.dp).height(4.dp)) {
+                    val colors = listOf(
+                        StashTheme.extendedColors.purpleLight,
+                        StashTheme.extendedColors.purpleDark,
+                    )
+                    repeat(10) { i ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .background(colors[i % 2]),
+                        )
+                    }
+                }
+            }
         }
 
         // ── Sync status card ─────────────────────────────────────────
