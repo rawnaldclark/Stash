@@ -32,6 +32,8 @@ enum class EqPreset(val displayName: String, val gains: IntArray) {
          * Safely resolve a preset by name, falling back to [FLAT] for unknown values.
          */
         fun fromName(name: String): EqPreset =
-            entries.firstOrNull { it.name == name } ?: FLAT
+            entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                ?: entries.firstOrNull { it.displayName.equals(name, ignoreCase = true) }
+                ?: FLAT
     }
 }
