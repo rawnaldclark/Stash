@@ -104,7 +104,7 @@ fun HomeScreen(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
             ) {
                 Text(
-                    text = "STASH",
+                    text = "Stash",
                     style = MaterialTheme.typography.headlineLarge.copy(
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                         letterSpacing = 5.sp,
