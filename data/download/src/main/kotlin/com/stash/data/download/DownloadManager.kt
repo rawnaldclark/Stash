@@ -6,7 +6,7 @@ import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
 import com.stash.data.download.matching.DuplicateDetectionService
 import com.stash.data.download.matching.MatchScorer
-import com.stash.data.download.matching.YouTubeSearchExecutor
+import com.stash.data.download.matching.HybridSearchExecutor
 import com.stash.data.download.model.DownloadProgress
 import com.stash.data.download.model.DownloadStatus
 import com.stash.data.download.prefs.QualityPreferencesManager
@@ -47,7 +47,7 @@ sealed class TrackDownloadResult {
 @Singleton
 class DownloadManager @Inject constructor(
     private val downloadExecutor: DownloadExecutor,
-    private val searchExecutor: YouTubeSearchExecutor,
+    private val searchExecutor: HybridSearchExecutor,
     private val matchScorer: MatchScorer,
     private val duplicateDetection: DuplicateDetectionService,
     private val fileOrganizer: FileOrganizer,
