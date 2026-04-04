@@ -67,11 +67,29 @@ class TrackDownloadWorker @AssistedInject constructor(
             val connectedSources = buildList {
                 if (tokenManager.isAuthenticated(com.stash.core.auth.model.AuthService.SPOTIFY)) add("SPOTIFY")
                 if (tokenManager.isAuthenticated(com.stash.core.auth.model.AuthService.YOUTUBE_MUSIC)) add("YOUTUBE")
-                add("BOTH") // tracks marked as BOTH belong to both services
+                add("BOTH")
             }
             Log.d(TAG, "Connected sources for retry: $connectedSources")
 
-            // Collect new items from this sync PLUS old failed items from connected services.
+            // Reset exhausted retries so tracks get another chance each sync.
+            downloadQueueDao.resetExhaustedRetries()
+
+            // Re-queue tracks that are undownloaded but have no active queue entry.
+            // This catches tracks whose retries were all exhausted and entries cleaned up,
+            // or tracks that somehow never got queued.
+            val unqueuedTrackIds = downloadQueueDao.getUnqueuedTrackIds(connectedSources)
+            if (unqueuedTrackIds.isNotEmpty()) {
+                Log.i(TAG, "Re-queuing ${unqueuedTrackIds.size} undownloaded tracks with no active queue entry")
+                val newEntries = unqueuedTrackIds.map { trackId ->
+                    com.stash.core.data.db.entity.DownloadQueueEntity(
+                        trackId = trackId,
+                        syncId = syncId,
+                    )
+                }
+                downloadQueueDao.insertAll(newEntries)
+            }
+
+            // Collect new items from this sync PLUS retryable failed items.
             val newItems = downloadQueueDao.getPendingBySyncId(syncId)
             val retryItems = if (connectedSources.isNotEmpty()) {
                 downloadQueueDao.getRetryableBySources(connectedSources)

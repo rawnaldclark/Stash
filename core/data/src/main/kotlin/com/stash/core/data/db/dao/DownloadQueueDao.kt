@@ -98,4 +98,25 @@ interface DownloadQueueDao {
     /** Reset retry count for all failed entries so they can be retried after a bug fix. */
     @Query("UPDATE download_queue SET retry_count = 0, status = 'FAILED' WHERE status = 'FAILED' AND retry_count >= 3")
     suspend fun resetExhaustedRetries()
+
+    /**
+     * Find tracks that need downloading but have no active queue entry.
+     * These are tracks where is_downloaded=0 AND there's no PENDING/IN_PROGRESS
+     * queue entry. Returns track IDs that need fresh queue entries.
+     *
+     * This covers tracks that:
+     * - Had all their retries exhausted and queue entries cleaned up
+     * - Were added by sync but never got queue entries (edge case)
+     * - Had their queue entries deleted
+     */
+    @Query("""
+        SELECT t.id FROM tracks t
+        WHERE t.is_downloaded = 0
+          AND t.source IN (:sources)
+          AND t.id NOT IN (
+              SELECT dq.track_id FROM download_queue dq
+              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED')
+          )
+    """)
+    suspend fun getUnqueuedTrackIds(sources: List<String>): List<Long>
 }
