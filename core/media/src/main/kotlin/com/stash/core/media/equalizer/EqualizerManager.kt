@@ -79,6 +79,7 @@ class EqualizerManager @Inject constructor(
      * Safe to call multiple times -- any existing effects are released first.
      */
     fun initialize(audioSessionId: Int) {
+        Log.i(TAG, "initialize: audioSessionId=$audioSessionId")
         release()
 
         // Equalizer
@@ -117,9 +118,13 @@ class EqualizerManager @Inject constructor(
             Log.w(TAG, "Failed to create LoudnessEnhancer", e)
         }
 
+        Log.i(TAG, "initialize: eq=${equalizer != null}, bass=${bassBoost != null}, " +
+            "virt=${virtualizer != null}, loud=${loudnessEnhancer != null}, bands=$bandCount")
+
         // Restore persisted settings asynchronously
         scope.launch {
             val settings = equalizerStore.getSettings()
+            Log.i(TAG, "Restoring settings: preset=${settings.preset}, enabled=${settings.enabled}")
             applySettings(settings)
         }
     }
@@ -151,6 +156,7 @@ class EqualizerManager @Inject constructor(
      * built-in gain curve.
      */
     fun applyPreset(preset: EqPreset) {
+        Log.d(TAG, "applyPreset: ${preset.name}, eq=${equalizer != null}")
         val eq = equalizer ?: return
         val gains = if (preset == EqPreset.CUSTOM) {
             // Use the last-known custom gains; fall back to flat if none stored
@@ -191,6 +197,7 @@ class EqualizerManager @Inject constructor(
      * @param gainMb Gain in millibels, clamped to [bandRange].
      */
     fun setBandGain(band: Int, gainMb: Int) {
+        Log.d(TAG, "setBandGain: band=$band, gain=$gainMb mB, eq=${equalizer != null}")
         val eq = equalizer ?: return
         if (band < 0 || band >= bandCount) return
 

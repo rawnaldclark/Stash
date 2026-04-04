@@ -50,15 +50,26 @@ class StashPlaybackService : MediaSessionService() {
             .setUsage(C.USAGE_MEDIA)
             .build()
 
+        // Generate an explicit audio session ID BEFORE building the player.
+        // ExoPlayer.audioSessionId returns 0 (global mix) by default until playback starts,
+        // which causes audio effect creation to fail with Error -3.
+        // By generating our own ID and passing it to the builder, the effects can attach immediately.
+        // Generate a dedicated audio session ID so audio effects can attach immediately.
+        val audioManager = getSystemService(android.media.AudioManager::class.java)
+        val audioSessionId = audioManager.generateAudioSessionId()
+        android.util.Log.i("StashPlayback", "Generated audio session ID: $audioSessionId")
+
         val player = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
-        // Initialise audio effects (equalizer, bass boost, virtualizer, loudness)
-        // with the player's audio session ID so they process this player's output.
-        equalizerManager.initialize(player.audioSessionId)
+        // Set the pre-generated session ID on the player
+        player.audioSessionId = audioSessionId
+
+        // Initialise audio effects with the pre-generated session ID.
+        equalizerManager.initialize(audioSessionId)
 
         val session = MediaSession.Builder(this, player)
             .setCallback(StashSessionCallback())
