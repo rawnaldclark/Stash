@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body{margin:0;background:#000;display:flex;flex-wrap:wrap;gap:20px;padding:40px;align-items:start}
+.size-label{color:#fff;font-family:sans-serif;font-size:12px;text-align:center;margin-top:8px}
+
+.icon{border-radius:0;position:relative;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(140deg,#3b0764,#6D28D9)}
+.icon .board{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);opacity:0.5}
+.icon .board div:nth-child(2),.icon .board div:nth-child(4),.icon .board div:nth-child(6),.icon .board div:nth-child(8){background:#A78BFA}
+.icon .record-wrap{position:relative;z-index:2;margin-top:-3%}
+.icon .record{width:63%;height:0;padding-bottom:63%;border-radius:50%;position:relative;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.6),0 0 0 2px rgba(167,139,250,0.12)}
+.icon .record .base{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at center,#333 33%,#111 34%,#1a1a1a 100%)}
+.icon .record .rim{position:absolute;inset:0;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,0.06)}
+.icon .record .groove-texture{position:absolute;inset:2%;border-radius:50%;background:conic-gradient(from 0deg,rgba(40,40,40,1) 0deg,rgba(50,50,50,1) 15deg,rgba(35,35,35,1) 30deg,rgba(48,48,48,1) 45deg,rgba(38,38,38,1) 60deg,rgba(52,52,52,1) 75deg,rgba(36,36,36,1) 90deg,rgba(46,46,46,1) 105deg,rgba(34,34,34,1) 120deg,rgba(50,50,50,1) 135deg,rgba(38,38,38,1) 150deg,rgba(48,48,48,1) 165deg,rgba(35,35,35,1) 180deg,rgba(52,52,52,1) 195deg,rgba(36,36,36,1) 210deg,rgba(46,46,46,1) 225deg,rgba(34,34,34,1) 240deg,rgba(50,50,50,1) 255deg,rgba(40,40,40,1) 270deg,rgba(48,48,48,1) 285deg,rgba(36,36,36,1) 300deg,rgba(52,52,52,1) 315deg,rgba(38,38,38,1) 330deg,rgba(46,46,46,1) 345deg,rgba(40,40,40,1) 360deg)}
+.icon .record .ring-grooves{position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle at center,transparent 0px,transparent 2px,rgba(255,255,255,0.04) 2.5px,transparent 3px,transparent 4.5px,rgba(255,255,255,0.03) 5px,transparent 5.5px)}
+.icon .record .dead-wax{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:43%;height:43%;border-radius:50%;background:radial-gradient(circle,transparent 48%,rgba(255,255,255,0.04) 49%,rgba(255,255,255,0.02) 55%,transparent 56%)}
+.icon .record .label-circle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34%;height:34%;border-radius:50%;background:linear-gradient(135deg,#A78BFA,#7C3AED);display:flex;align-items:center;justify-content:center;z-index:2;font-weight:800;color:#fff;font-family:Georgia,serif;box-shadow:inset 0 1px 2px rgba(0,0,0,0.3),0 0 0 1px rgba(255,255,255,0.1)}
+.icon .record .shine{position:absolute;inset:0;border-radius:50%;background:linear-gradient(150deg,rgba(255,255,255,0.12) 0%,rgba(255,255,255,0.04) 20%,transparent 45%,transparent 70%,rgba(255,255,255,0.02) 100%);z-index:3}
+.icon .record .refraction{position:absolute;inset:9%;border-radius:50%;background:conic-gradient(from 200deg,transparent 0deg,rgba(139,92,246,0.06) 30deg,transparent 60deg,rgba(99,102,241,0.04) 120deg,transparent 150deg,rgba(139,92,246,0.05) 240deg,transparent 280deg);z-index:2}
+</style>
+</head>
+<body>
+<div>
+  <p style="color:#A78BFA;font-family:sans-serif;margin-bottom:20px;font-size:18px">Right-click each icon → "Save image as" to get the PNG at each density.</p>
+  <p style="color:#666;font-family:sans-serif;margin-bottom:30px;font-size:14px">These are the exact variant F logo. Save all 4 sizes.</p>
+</div>
+
+<div style="display:flex;flex-wrap:wrap;gap:40px;align-items:start">
+  <!-- mdpi 48x48 -->
+  <div>
+    <div class="icon" id="icon-48" style="width:48px;height:48px">
+      <div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+      <div class="record-wrap"><div class="record"><div class="base"></div><div class="groove-texture"></div><div class="ring-grooves"></div><div class="dead-wax"></div><div class="refraction"></div><div class="label-circle" style="font-size:7px">S</div><div class="shine"></div></div></div>
+    </div>
+    <div class="size-label">48px (mdpi)</div>
+  </div>
+
+  <!-- hdpi 72x72 -->
+  <div>
+    <div class="icon" id="icon-72" style="width:72px;height:72px">
+      <div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+      <div class="record-wrap"><div class="record"><div class="base"></div><div class="groove-texture"></div><div class="ring-grooves"></div><div class="dead-wax"></div><div class="refraction"></div><div class="label-circle" style="font-size:10px">S</div><div class="shine"></div></div></div>
+    </div>
+    <div class="size-label">72px (hdpi)</div>
+  </div>
+
+  <!-- xhdpi 96x96 -->
+  <div>
+    <div class="icon" id="icon-96" style="width:96px;height:96px">
+      <div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+      <div class="record-wrap"><div class="record"><div class="base"></div><div class="groove-texture"></div><div class="ring-grooves"></div><div class="dead-wax"></div><div class="refraction"></div><div class="label-circle" style="font-size:13px">S</div><div class="shine"></div></div></div>
+    </div>
+    <div class="size-label">96px (xhdpi)</div>
+  </div>
+
+  <!-- xxhdpi 144x144 -->
+  <div>
+    <div class="icon" id="icon-144" style="width:144px;height:144px">
+      <div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+      <div class="record-wrap"><div class="record"><div class="base"></div><div class="groove-texture"></div><div class="ring-grooves"></div><div class="dead-wax"></div><div class="refraction"></div><div class="label-circle" style="font-size:19px">S</div><div class="shine"></div></div></div>
+    </div>
+    <div class="size-label">144px (xxhdpi)</div>
+  </div>
+
+  <!-- xxxhdpi 192x192 -->
+  <div>
+    <div class="icon" id="icon-192" style="width:192px;height:192px">
+      <div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+      <div class="record-wrap"><div class="record"><div class="base"></div><div class="groove-texture"></div><div class="ring-grooves"></div><div class="dead-wax"></div><div class="refraction"></div><div class="label-circle" style="font-size:25px">S</div><div class="shine"></div></div></div>
+    </div>
+    <div class="size-label">192px (xxxhdpi / Play Store)</div>
+  </div>
+
+  <!-- 512x512 for Play Store -->
+  <div>
+    <div class="icon" id="icon-512" style="width:512px;height:512px">
+      <div class="board"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+      <div class="record-wrap"><div class="record"><div class="base"></div><div class="groove-texture"></div><div class="ring-grooves"></div><div class="dead-wax"></div><div class="refraction"></div><div class="label-circle" style="font-size:66px;letter-spacing:2px">S</div><div class="shine"></div></div></div>
+    </div>
+    <div class="size-label">512px (Play Store hi-res)</div>
+  </div>
+</div>
+
+<script>
+// Auto-render each icon to canvas and create downloadable PNGs
+async function renderIcon(elementId, size) {
+  const el = document.getElementById(elementId);
+  const html2canvas = await import('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.esm.js');
+  const canvas = await html2canvas.default(el, {
+    width: size, height: size, scale: 1, backgroundColor: null,
+    useCORS: true, logging: false
+  });
+
+  const link = document.createElement('a');
+  link.download = `stash_icon_${size}x${size}.png`;
+  link.href = canvas.toDataURL('image/png');
+
+  const btn = document.createElement('button');
+  btn.textContent = `Download ${size}px PNG`;
+  btn.style.cssText = 'display:block;margin-top:8px;padding:6px 12px;background:#7C3AED;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px';
+  btn.onclick = () => link.click();
+  el.parentElement.appendChild(btn);
+}
+
+// Render all sizes
+['48','72','96','144','192','512'].forEach(size => {
+  renderIcon(`icon-${size}`, parseInt(size));
+});
+</script>
+</body>
+</html>
