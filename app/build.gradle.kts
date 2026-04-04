@@ -61,6 +61,7 @@ dependencies {
     implementation(project(":feature:nowplaying"))
     implementation(project(":feature:sync"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:search"))
     implementation(project(":data:download"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import com.stash.feature.home.HomeScreen
 import com.stash.feature.library.LibraryScreen
 import com.stash.feature.nowplaying.NowPlayingScreen
+import com.stash.feature.search.SearchScreen
 import com.stash.feature.settings.SettingsScreen
 import com.stash.feature.sync.SyncScreen
 
@@ -34,6 +35,7 @@ fun StashNavHost(
     ) {
         composable<HomeRoute> { HomeScreen() }
         composable<LibraryRoute> { LibraryScreen() }
+        composable<SearchRoute> { SearchScreen() }
         composable<SyncRoute> { SyncScreen() }
         composable<SettingsRoute> { SettingsScreen() }
 
