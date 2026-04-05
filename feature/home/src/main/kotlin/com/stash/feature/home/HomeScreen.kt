@@ -116,10 +116,13 @@ fun HomeScreen(
                         append(androidx.compose.ui.text.AnnotatedString("s", androidx.compose.ui.text.SpanStyle(color = purple)))
                         append(androidx.compose.ui.text.AnnotatedString("h", androidx.compose.ui.text.SpanStyle(color = purple)))
                     }
+                    val righteousFont = androidx.compose.ui.text.font.FontFamily(
+                        androidx.compose.ui.text.font.Font(com.stash.core.ui.R.font.righteous)
+                    )
                     Text(
                         text = stashText,
                         style = MaterialTheme.typography.headlineLarge.copy(
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            fontFamily = righteousFont,
                             letterSpacing = 1.sp,
                         ),
                     )

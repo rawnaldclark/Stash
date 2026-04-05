@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@fontsource/righteous": "^5.2.7",
     "puppeteer": "^24.40.0"
   }
 }
