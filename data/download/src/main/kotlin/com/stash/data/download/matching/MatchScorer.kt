@@ -119,6 +119,14 @@ class MatchScorer @Inject constructor(
         return results.firstOrNull { it.matchScore >= AUTO_ACCEPT_THRESHOLD }
     }
 
+    /**
+     * Computes the raw artist similarity for a result (used by the caller
+     * to enforce a minimum artist match independently of the weighted score).
+     */
+    fun artistSimilarity(targetArtist: String, resultUploader: String): Float {
+        return computeArtistScore(targetArtist, resultUploader)
+    }
+
     // -- Private scoring helpers --------------------------------------------------
 
     /**

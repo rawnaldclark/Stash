@@ -193,7 +193,13 @@ class DownloadManager @Inject constructor(
 
             val best = matchScorer.bestMatch(scored)
             if (best != null) {
-                Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl}")
+                // Verify the artist actually matches — prevents "Gloria" by wrong artist
+                val artistSim = matchScorer.artistSimilarity(track.artist, best.uploader)
+                if (artistSim < 0.55f) {
+                    Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — artist similarity ${String.format("%.2f", artistSim)} too low for '${track.artist}'")
+                    continue // Try next search strategy
+                }
+                Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} (artist=%.2f)".format(artistSim))
                 return best.youtubeUrl
             }
         }
