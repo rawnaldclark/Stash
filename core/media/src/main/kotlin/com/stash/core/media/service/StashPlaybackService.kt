@@ -71,9 +71,22 @@ class StashPlaybackService : MediaSessionService() {
         // Initialise audio effects with the pre-generated session ID.
         equalizerManager.initialize(audioSessionId)
 
-        val session = MediaSession.Builder(this, player)
+        // Set session activity so tapping the media notification opens the app.
+        // The intent targets the app's launcher activity via the package's launch intent.
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        val sessionActivity = if (launchIntent != null) {
+            android.app.PendingIntent.getActivity(
+                this, 0, launchIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+            )
+        } else null
+
+        val sessionBuilder = MediaSession.Builder(this, player)
             .setCallback(StashSessionCallback())
-            .build()
+        if (sessionActivity != null) {
+            sessionBuilder.setSessionActivity(sessionActivity)
+        }
+        val session = sessionBuilder.build()
 
         mediaSession = session
     }
