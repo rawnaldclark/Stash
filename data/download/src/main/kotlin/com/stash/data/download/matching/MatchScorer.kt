@@ -40,11 +40,12 @@ class MatchScorer @Inject constructor(
         /** Weight given to relative popularity (view count) in the composite score. */
         const val POPULARITY_WEIGHT = 0.10f
 
-        /** Minimum score to auto-accept a match. Lower values accept more matches
-         *  at the risk of wrong versions; higher values reject legitimate matches.
-         *  The uploader mismatch penalty (-0.2) protects against covers even at
-         *  lower thresholds. */
-        const val AUTO_ACCEPT_THRESHOLD = 0.55f
+        /** Minimum score to auto-accept a match. Lowered from 0.55 to 0.50 because
+         *  the multi-strategy search in DownloadManager provides accuracy protection —
+         *  if a bad match scores 0.50 with one query, other strategies' results will
+         *  likely score higher if a better match exists. The uploader mismatch penalty
+         *  (-0.15) still protects against covers. */
+        const val AUTO_ACCEPT_THRESHOLD = 0.50f
 
         /** Scores below this value are discarded as unlikely matches. */
         const val REJECT_THRESHOLD = 0.50f
@@ -67,7 +68,7 @@ class MatchScorer @Inject constructor(
     ): List<MatchResult> {
         if (results.isEmpty()) return emptyList()
 
-        val maxViewCount = results.maxOf { it.viewCount }.coerceAtLeast(1L)
+        val maxViewCount = results.maxOf { it.viewCount }
 
         return results.map { result ->
             val titleScore = computeTitleScore(targetTitle, result.title)
@@ -166,7 +167,11 @@ class MatchScorer @Inject constructor(
      * Log-scaled popularity relative to the most-viewed result in the set.
      */
     private fun computePopularityScore(viewCount: Long, maxViewCount: Long): Float {
-        if (maxViewCount <= 0 || viewCount <= 0) return 0f
+        // When all results have viewCount=0 (common with InnerTube/YouTube Music),
+        // return a neutral score instead of 0. This prevents InnerTube results from
+        // being penalized for lacking view data.
+        if (maxViewCount <= 0) return 0.5f
+        if (viewCount <= 0) return 0.1f
         return (log10(viewCount.toDouble()) / log10(maxViewCount.toDouble())).toFloat()
     }
 
@@ -178,11 +183,11 @@ class MatchScorer @Inject constructor(
         val targetLower = targetTitle.lowercase()
         val candidateLower = candidateTitle.lowercase()
         return when {
-            "karaoke" in candidateLower -> 0.5f
-            "cover" in candidateLower && "cover" !in targetLower -> 0.3f
-            "remix" in candidateLower && "remix" !in targetLower -> 0.3f
-            "instrumental" in candidateLower && "instrumental" !in targetLower -> 0.3f
-            "live" in candidateLower && "live" !in targetLower -> 0.2f
+            "karaoke" in candidateLower -> 0.4f
+            "cover" in candidateLower && "cover" !in targetLower -> 0.25f
+            "remix" in candidateLower && "remix" !in targetLower -> 0.25f
+            "instrumental" in candidateLower && "instrumental" !in targetLower -> 0.2f
+            "live" in candidateLower && "live" !in targetLower -> 0.15f
             else -> 0f
         }
     }
@@ -220,8 +225,8 @@ class MatchScorer @Inject constructor(
         // If the uploader name is very different from the artist, penalize
         return when {
             similarity >= 0.7f -> 0f        // close enough match
-            similarity >= 0.4f -> 0.1f      // somewhat different
-            else -> 0.2f                     // clearly different uploader
+            similarity >= 0.4f -> 0.05f     // somewhat different
+            else -> 0.15f                    // clearly different uploader
         }
     }
 }

@@ -160,7 +160,15 @@ class DownloadManager @Inject constructor(
     }
 
     /**
-     * Resolves a YouTube URL for the given track by searching and scoring results.
+     * Resolves a YouTube URL for the given track by trying multiple search
+     * strategies in order of expected quality. Stops as soon as one produces
+     * a match above the auto-accept threshold.
+     *
+     * Strategies (in order):
+     * 1. Original full query: "Artist Title (feat. X) [Remaster]"
+     * 2. Without parentheticals: "Artist Title"
+     * 3. Without remaster/deluxe suffixes: "Artist Title"
+     * 4. With dash separator: "Artist - Title"
      *
      * @return The best-matching YouTube URL, or null if no acceptable match is found.
      */
@@ -168,29 +176,59 @@ class DownloadManager @Inject constructor(
         // If we already have a YouTube ID, use it directly
         track.youtubeId?.let { return "https://www.youtube.com/watch?v=$it" }
 
-        // Search YouTube with two strategies for best results:
-        // 1. "Artist - Title" (targets Topic channels which have "Artist - Topic" as uploader)
-        // 2. Falls back to "Artist Title official audio" if first returns no good match
-        val query = "${track.artist} ${track.title}".trim()
-        if (query.isBlank()) {
-            Log.w(TAG, "resolveUrl: empty artist+title for track ${track.id}, skipping")
-            return null
-        }
-        val results = searchExecutor.search(query, maxResults = 10)
-        if (results.isEmpty()) {
-            Log.w(TAG, "resolveUrl: search returned 0 results for '${track.artist} - ${track.title}'")
-            return null
+        // Try multiple search strategies in order of expected quality
+        val strategies = buildSearchQueries(track)
+
+        for (query in strategies) {
+            if (query.isBlank()) continue
+            val results = searchExecutor.search(query, maxResults = 10)
+            if (results.isEmpty()) continue
+
+            val scored = matchScorer.scoreResults(
+                targetTitle = track.title,
+                targetArtist = track.artist,
+                targetDurationMs = track.durationMs,
+                results = results,
+            )
+
+            val best = matchScorer.bestMatch(scored)
+            if (best != null) {
+                Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl}")
+                return best.youtubeUrl
+            }
         }
 
-        // Score all results against the target track
-        val scored = matchScorer.scoreResults(
-            targetTitle = track.title,
-            targetArtist = track.artist,
-            targetDurationMs = track.durationMs,
-            results = results,
-        )
+        Log.w(TAG, "resolveUrl: all strategies failed for '${track.artist} - ${track.title}'")
+        return null
+    }
 
-        return matchScorer.bestMatch(scored)?.youtubeUrl
+    /**
+     * Builds a list of progressively simplified search queries for a track.
+     * Each query strips more noise (feat. credits, remaster tags, etc.) to
+     * increase the chance of finding a match on YouTube.
+     *
+     * @param track The track to build queries for.
+     * @return Deduplicated list of search queries, ordered from most specific to simplest.
+     */
+    private fun buildSearchQueries(track: Track): List<String> {
+        val artist = track.artist
+        val title = track.title
+        // Strip parenthetical content: (feat. X), [Remaster], (Deluxe), etc.
+        val cleanTitle = title
+            .replace(Regex("""\s*[\(\[][^)\]]*[\)\]]"""), "")
+            .replace(Regex("""\s*(feat\.?|ft\.?|featuring)\s+.*""", RegexOption.IGNORE_CASE), "")
+            .trim()
+        // Strip "- Remaster", "- Single Version", etc.
+        val simpleTitle = cleanTitle
+            .replace(Regex("""\s*-\s*(Remaster|Remastered|Single Version|Deluxe|Bonus Track).*""", RegexOption.IGNORE_CASE), "")
+            .trim()
+
+        return listOf(
+            "$artist $title",           // Original full query
+            "$artist $cleanTitle",      // Without parentheticals
+            "$artist $simpleTitle",     // Without remaster/deluxe suffixes
+            "$artist - $simpleTitle",   // With dash separator
+        ).distinct()  // Remove duplicates if cleaning didn't change anything
     }
 
     /**
