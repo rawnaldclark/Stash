@@ -40,12 +40,10 @@ class MatchScorer @Inject constructor(
         /** Weight given to relative popularity (view count) in the composite score. */
         const val POPULARITY_WEIGHT = 0.10f
 
-        /** Minimum score to auto-accept a match. Lowered from 0.55 to 0.50 because
-         *  the multi-strategy search in DownloadManager provides accuracy protection —
-         *  if a bad match scores 0.50 with one query, other strategies' results will
-         *  likely score higher if a better match exists. The uploader mismatch penalty
-         *  (-0.15) still protects against covers. */
-        const val AUTO_ACCEPT_THRESHOLD = 0.50f
+        /** Minimum score to auto-accept a match. Set at 0.60 to avoid accepting
+         *  wrong versions. The multi-strategy search (4 query variations) handles
+         *  hard-to-find tracks by producing cleaner queries, not by lowering standards. */
+        const val AUTO_ACCEPT_THRESHOLD = 0.60f
 
         /** Scores below this value are discarded as unlikely matches. */
         const val REJECT_THRESHOLD = 0.50f
