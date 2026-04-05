@@ -147,6 +147,7 @@ class InnerTubeSearchExecutor @Inject constructor(
             ?: ""
 
         // Extract duration from fixedColumns[0] — format "M:SS" or "H:MM:SS"
+        // Some results have duration in flexColumns[1] runs (after artist, album, duration)
         val durationText = renderer["fixedColumns"]?.jsonArray
             ?.firstOrNull()?.jsonObject
             ?.navigatePath(
@@ -154,7 +155,19 @@ class InnerTubeSearchExecutor @Inject constructor(
             )?.jsonArray?.firstOrNull()
             ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
 
-        val durationSeconds = parseDurationToSeconds(durationText)
+        // Fallback: duration might be in flexColumns[1] as the last run (after artist info)
+        val durationFallback = if (durationText == null) {
+            artistRuns
+                ?.mapNotNull { it.jsonObject["text"]?.jsonPrimitive?.contentOrNull }
+                ?.lastOrNull { it.matches(Regex("\\d+:\\d+")) }
+        } else null
+
+        val finalDurationText = durationText ?: durationFallback
+        val durationSeconds = parseDurationToSeconds(finalDurationText)
+
+        if (durationSeconds == 0.0) {
+            Log.d(TAG, "No duration for '$title' — fixedColumns=${renderer["fixedColumns"]?.toString()?.take(200)}")
+        }
 
         // Extract thumbnail URL — pick the largest available
         val thumbnailUrl = renderer.navigatePath("thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails")

@@ -152,6 +152,10 @@ class MatchScorer @Inject constructor(
      * - Beyond 30 seconds: no match (0.0)
      */
     private fun computeDurationScore(targetDurationMs: Long, candidateDurationSec: Long): Float {
+        // When duration is unknown (0), return neutral score instead of penalizing.
+        // InnerTube music search often doesn't include duration data.
+        if (candidateDurationSec <= 0 || targetDurationMs <= 0) return 0.5f
+
         val durationDiffSec = abs((targetDurationMs / 1000) - candidateDurationSec)
         return when {
             durationDiffSec <= 3 -> 1.0f
