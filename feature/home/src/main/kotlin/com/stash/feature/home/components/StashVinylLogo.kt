@@ -41,7 +41,11 @@ fun StashVinylLogo(modifier: Modifier = Modifier, size: Dp = 64.dp) {
         contentDescription = "Stash logo",
         modifier = modifier
             .size(size)
-            .graphicsLayer { rotationZ = rotation },
+            .graphicsLayer {
+                rotationZ = rotation
+                // Force hardware layer for smooth animation
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+            },
         contentScale = ContentScale.Fit,
     )
 }
