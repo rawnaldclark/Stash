@@ -40,28 +40,43 @@ class HybridSearchExecutor @Inject constructor(
      * @return List of search results from whichever source succeeded first.
      */
     suspend fun search(query: String, maxResults: Int = 10): List<YtDlpSearchResult> {
-        // Get results from BOTH sources and merge them.
-        // InnerTube (YouTube Music) has album data for better scoring.
-        // yt-dlp (regular YouTube) has more reliable video IDs.
-        // Merging gives the scorer the best candidates from both worlds.
+        // Fast path: try InnerTube first (~0.2s)
         val innerTubeResults = innerTubeSearch.search(query, maxResults)
+
+        if (innerTubeResults.isNotEmpty()) {
+            // Check if InnerTube results look trustworthy:
+            // - Has at least one result with a non-empty album (YouTube Music indexed it properly)
+            // - Title words appear in the results (not completely unrelated)
+            val hasAlbumData = innerTubeResults.any { !it.album.isNullOrBlank() }
+            val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
+            val titleRelevant = innerTubeResults.any { result ->
+                val resultLower = result.title.lowercase()
+                queryWords.count { it in resultLower } >= (queryWords.size / 2).coerceAtLeast(1)
+            }
+
+            if (hasAlbumData && titleRelevant) {
+                // InnerTube results look good — use them (fast path)
+                return innerTubeResults
+            }
+
+            // InnerTube results look sketchy — merge with yt-dlp for safety
+            Log.d(TAG, "InnerTube results look unreliable (album=$hasAlbumData, relevant=$titleRelevant), merging with yt-dlp for: $query")
+        }
+
+        // Slow path: get yt-dlp results and merge
         val ytDlpResults = try {
             ytDlpSearch.search(query, maxResults = 5)
         } catch (e: Exception) {
-            Log.w(TAG, "yt-dlp search failed, using InnerTube only", e)
+            Log.w(TAG, "yt-dlp search failed", e)
             emptyList()
         }
 
-        // Merge: deduplicate by video ID, yt-dlp results take priority
-        // (their video IDs are more reliable for actual audio content)
+        if (innerTubeResults.isEmpty()) return ytDlpResults
+
+        // Merge: deduplicate by video ID, yt-dlp first (more reliable IDs)
         val seen = mutableSetOf<String>()
         val merged = (ytDlpResults + innerTubeResults).filter { it.id.isNotBlank() && seen.add(it.id) }
-
-        if (merged.isEmpty() && innerTubeResults.isNotEmpty()) {
-            return innerTubeResults  // InnerTube-only if yt-dlp returned nothing
-        }
-
-        Log.d(TAG, "Merged search: ${ytDlpResults.size} yt-dlp + ${innerTubeResults.size} innertube = ${merged.size} unique for '$query'")
+        Log.d(TAG, "Merged: ${ytDlpResults.size} yt-dlp + ${innerTubeResults.size} innertube = ${merged.size} unique")
         return merged.take(maxResults)
     }
 }
