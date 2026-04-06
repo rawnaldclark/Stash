@@ -49,7 +49,6 @@ sealed class TrackDownloadResult {
 class DownloadManager @Inject constructor(
     private val downloadExecutor: DownloadExecutor,
     private val searchExecutor: HybridSearchExecutor,
-    private val ytDlpSearchExecutor: YouTubeSearchExecutor,
     private val matchScorer: MatchScorer,
     private val duplicateDetection: DuplicateDetectionService,
     private val fileOrganizer: FileOrganizer,
@@ -216,36 +215,6 @@ class DownloadManager @Inject constructor(
                 }
                 Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} (artist=%.2f)".format(artistSim))
                 return best.youtubeUrl
-            }
-        }
-
-        // Last resort: try yt-dlp directly (searches regular YouTube, not YouTube Music).
-        // Some tracks exist on YouTube but not YouTube Music (especially indie/small artists).
-        val fallbackQuery = "${track.artist} ${track.title}".trim()
-        if (fallbackQuery.isNotBlank()) {
-            Log.d(TAG, "resolveUrl: trying yt-dlp fallback for '${track.artist} - ${track.title}'")
-            try {
-                val ytResults = ytDlpSearchExecutor.search(fallbackQuery, maxResults = 5)
-                if (ytResults.isNotEmpty()) {
-                    val scored = matchScorer.scoreResults(
-                        targetTitle = track.title,
-                        targetArtist = track.artist,
-                        targetDurationMs = track.durationMs,
-                        results = ytResults,
-                        targetAlbum = track.album,
-                    )
-                    val best = matchScorer.bestMatch(scored)
-                    if (best != null) {
-                        val titleSim = matchScorer.titleSimilarity(track.title, best.title)
-                        val artistSim = matchScorer.artistSimilarity(track.artist, best.uploader)
-                        if (titleSim >= 0.6f && artistSim >= 0.65f && artistWordsMatch(track.artist, best.uploader)) {
-                            Log.d(TAG, "resolveUrl: yt-dlp fallback matched '${track.artist} - ${track.title}' → ${best.youtubeUrl}")
-                            return best.youtubeUrl
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "resolveUrl: yt-dlp fallback failed", e)
             }
         }
 
