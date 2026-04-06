@@ -129,6 +129,10 @@ class MatchScorer @Inject constructor(
         return computeArtistScore(targetArtist, resultUploader)
     }
 
+    fun titleSimilarity(targetTitle: String, resultTitle: String): Float {
+        return computeTitleScore(targetTitle, resultTitle)
+    }
+
     // -- Private scoring helpers --------------------------------------------------
 
     /**

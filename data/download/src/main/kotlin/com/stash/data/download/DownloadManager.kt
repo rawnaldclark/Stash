@@ -194,9 +194,15 @@ class DownloadManager @Inject constructor(
 
             val best = matchScorer.bestMatch(scored)
             if (best != null) {
-                // Two-level artist verification:
-                // 1. Jaro-Winkler fuzzy similarity must be >= 0.65
-                // 2. Key words must overlap (prevents "Jimi Hendrix" vs "Jim Hendricks")
+                // Three-level verification — all must pass:
+                // 1. Title similarity >= 0.6 (prevents wrong song by same artist)
+                // 2. Artist Jaro-Winkler >= 0.65 (prevents wrong artist)
+                // 3. Artist words overlap (prevents near-name mismatches)
+                val titleSim = matchScorer.titleSimilarity(track.title, best.title)
+                if (titleSim < 0.6f) {
+                    Log.w(TAG, "resolveUrl: rejecting '${best.title}' — title sim ${String.format("%.2f", titleSim)} too low for '${track.title}'")
+                    continue
+                }
                 val artistSim = matchScorer.artistSimilarity(track.artist, best.uploader)
                 if (artistSim < 0.65f) {
                     Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — fuzzy artist sim ${String.format("%.2f", artistSim)} too low for '${track.artist}'")
