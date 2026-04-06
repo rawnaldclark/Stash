@@ -198,12 +198,20 @@ class MatchScorer @Inject constructor(
     private fun computePenalty(targetTitle: String, candidateTitle: String): Float {
         val targetLower = targetTitle.lowercase()
         val candidateLower = candidateTitle.lowercase()
+
+        // Live/concert indicators (many live versions don't say "live" explicitly)
+        val liveIndicators = listOf("live", "concert", "woodstock", "festival", "session",
+            "unplugged", "acoustic version", "radio session", "bbc session", "peel session",
+            "music video", "official video", "mtv", "letterman", "snl", "tonight show")
+        val isLikelyLive = liveIndicators.any { it in candidateLower } &&
+            liveIndicators.none { it in targetLower }
+
         return when {
             "karaoke" in candidateLower -> 0.4f
             "cover" in candidateLower && "cover" !in targetLower -> 0.25f
             "remix" in candidateLower && "remix" !in targetLower -> 0.25f
             "instrumental" in candidateLower && "instrumental" !in targetLower -> 0.2f
-            "live" in candidateLower && "live" !in targetLower -> 0.15f
+            isLikelyLive -> 0.15f
             else -> 0f
         }
     }

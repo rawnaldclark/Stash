@@ -140,11 +140,17 @@ class InnerTubeSearchExecutor @Inject constructor(
                 "musicResponsiveListItemFlexColumnRenderer", "text", "runs"
             )?.jsonArray
 
-        val artist = artistRuns
+        val allArtistTexts = artistRuns
             ?.mapNotNull { it.jsonObject["text"]?.jsonPrimitive?.contentOrNull }
-            ?.filterNot { it == " & " || it == ", " || it == " • " || it == " x " || it == " · " }
-            ?.joinToString(", ")
-            ?: ""
+            ?: emptyList()
+
+        // First text in flexColumns[1] is the result type: "Song", "Video", "Album", etc.
+        val resultType = allArtistTexts.firstOrNull() ?: ""
+        val isSongType = resultType.equals("Song", ignoreCase = true)
+
+        val artist = allArtistTexts
+            .filterNot { it == " & " || it == ", " || it == " • " || it == " x " || it == " · " || it == "Song" || it == "Video" || it == "Album" || it == "EP" || it == "Single" }
+            .joinToString(", ")
 
         // Extract album from flexColumns[2] (if present)
         val albumName = flexColumns.getOrNull(2)?.jsonObject
@@ -187,7 +193,10 @@ class InnerTubeSearchExecutor @Inject constructor(
             title = title,
             uploader = artist,
             uploaderId = "",
-            channel = artist,
+            // "Song" type results from YouTube Music are official studio recordings
+            // — equivalent to Topic channels. Flag via " - Topic" suffix so the
+            // scorer gives them the +0.25 Topic bonus over live/video results.
+            channel = if (isSongType) "$artist - Topic" else artist,
             duration = durationSeconds,
             viewCount = 0,
             webpageUrl = "https://www.youtube.com/watch?v=$videoId",
