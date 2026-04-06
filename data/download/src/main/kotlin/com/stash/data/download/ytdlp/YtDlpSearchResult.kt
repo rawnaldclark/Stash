@@ -36,4 +36,6 @@ data class YtDlpSearchResult(
     val description: String = "",
     /** Thumbnail URL (populated by InnerTube search, not by yt-dlp --flat-playlist). */
     val thumbnail: String? = null,
+    /** Album name (populated by InnerTube search from flexColumns[2]). */
+    val album: String? = null,
 )

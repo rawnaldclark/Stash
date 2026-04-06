@@ -63,6 +63,7 @@ class MatchScorer @Inject constructor(
         targetArtist: String,
         targetDurationMs: Long,
         results: List<YtDlpSearchResult>,
+        targetAlbum: String = "",
     ): List<MatchResult> {
         if (results.isEmpty()) return emptyList()
 
@@ -76,19 +77,20 @@ class MatchScorer @Inject constructor(
             val penalty = computePenalty(targetTitle, result.title)
             val topicBonus = computeTopicBonus(result.uploader, result.channel)
             val uploaderPenalty = computeUploaderMismatchPenalty(targetArtist, result.uploader, result.channel)
+            val albumBonus = computeAlbumBonus(targetAlbum, result.album, result.title)
 
             val finalScore = (
                 titleScore * TITLE_WEIGHT +
                     artistScore * ARTIST_WEIGHT +
                     durationScore * DURATION_WEIGHT +
                     popularityScore * POPULARITY_WEIGHT +
-                    topicBonus - penalty - uploaderPenalty
+                    topicBonus + albumBonus - penalty - uploaderPenalty
                 ).coerceIn(0f, 1f)
 
-            Log.d("MatchScorer", "  ${result.title} by ${result.uploader} | " +
-                "title=%.2f art=%.2f dur=%.2f pop=%.2f topic=%.2f pen=%.2f uplPen=%.2f → %.2f".format(
+            Log.d("MatchScorer", "  ${result.title} by ${result.uploader} (album=${result.album ?: "?"}) | " +
+                "title=%.2f art=%.2f dur=%.2f pop=%.2f topic=%.2f alb=%.2f pen=%.2f uplPen=%.2f → %.2f".format(
                     titleScore, artistScore, durationScore, popularityScore,
-                    topicBonus, penalty, uploaderPenalty, finalScore))
+                    topicBonus, albumBonus, penalty, uploaderPenalty, finalScore))
 
             MatchResult(
                 youtubeUrl = result.webpageUrl.ifEmpty {
@@ -200,6 +202,32 @@ class MatchScorer @Inject constructor(
             "live" in candidateLower && "live" !in targetLower -> 0.15f
             else -> 0f
         }
+    }
+
+    /**
+     * Bonus when the YouTube result's album matches the Spotify track's album.
+     * This is the strongest signal for correct matching — if album matches,
+     * it's almost certainly the right recording.
+     */
+    private fun computeAlbumBonus(targetAlbum: String, resultAlbum: String?, resultTitle: String): Float {
+        if (targetAlbum.isBlank()) return 0f
+        val target = trackMatcher.canonicalTitle(targetAlbum)
+        if (target.isBlank()) return 0f
+
+        // Check result's album field (from InnerTube)
+        if (resultAlbum != null) {
+            val candidate = trackMatcher.canonicalTitle(resultAlbum)
+            val similarity = trackMatcher.jaroWinklerSimilarity(target, candidate).toFloat()
+            if (similarity >= 0.8f) return 0.15f  // Strong album match
+            if (similarity >= 0.6f) return 0.08f  // Partial album match
+        }
+
+        // Check if album name appears in the video title
+        val titleLower = resultTitle.lowercase()
+        val albumLower = targetAlbum.lowercase()
+        if (albumLower.length > 3 && albumLower in titleLower) return 0.05f
+
+        return 0f
     }
 
     /**

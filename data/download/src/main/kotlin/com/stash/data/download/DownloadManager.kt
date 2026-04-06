@@ -189,13 +189,14 @@ class DownloadManager @Inject constructor(
                 targetArtist = track.artist,
                 targetDurationMs = track.durationMs,
                 results = results,
+                targetAlbum = track.album,
             )
 
             val best = matchScorer.bestMatch(scored)
             if (best != null) {
                 // Verify the artist actually matches — prevents "Gloria" by wrong artist
                 val artistSim = matchScorer.artistSimilarity(track.artist, best.uploader)
-                if (artistSim < 0.55f) {
+                if (artistSim < 0.65f) {
                     Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — artist similarity ${String.format("%.2f", artistSim)} too low for '${track.artist}'")
                     continue // Try next search strategy
                 }
@@ -229,12 +230,15 @@ class DownloadManager @Inject constructor(
             .replace(Regex("""\s*-\s*(Remaster|Remastered|Single Version|Deluxe|Bonus Track).*""", RegexOption.IGNORE_CASE), "")
             .trim()
 
-        return listOf(
-            "$artist $title",           // Original full query
-            "$artist $cleanTitle",      // Without parentheticals
-            "$artist $simpleTitle",     // Without remaster/deluxe suffixes
-            "$artist - $simpleTitle",   // With dash separator
-        ).distinct()  // Remove duplicates if cleaning didn't change anything
+        val album = track.album.takeIf { it.isNotBlank() }
+
+        return listOfNotNull(
+            "$artist $simpleTitle $album",  // Most specific: artist + clean title + album
+            "$artist $title",               // Original full query
+            "$artist $cleanTitle",          // Without parentheticals
+            "$artist $simpleTitle",         // Without remaster/deluxe suffixes
+            "$artist - $simpleTitle",       // With dash separator
+        ).map { it.trim() }.filter { it.isNotBlank() }.distinct()
     }
 
     /**

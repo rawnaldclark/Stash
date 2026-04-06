@@ -146,6 +146,13 @@ class InnerTubeSearchExecutor @Inject constructor(
             ?.joinToString(", ")
             ?: ""
 
+        // Extract album from flexColumns[2] (if present)
+        val albumName = flexColumns.getOrNull(2)?.jsonObject
+            ?.navigatePath(
+                "musicResponsiveListItemFlexColumnRenderer", "text", "runs"
+            )?.jsonArray?.firstOrNull()
+            ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
+
         // Extract duration from fixedColumns[0] — format "M:SS" or "H:MM:SS"
         // Some results have duration in flexColumns[1] runs (after artist, album, duration)
         val durationText = renderer["fixedColumns"]?.jsonArray
@@ -187,6 +194,7 @@ class InnerTubeSearchExecutor @Inject constructor(
             url = "",
             likeCount = null,
             thumbnail = thumbnailUrl,
+            album = albumName,
             description = "",
         )
     }
