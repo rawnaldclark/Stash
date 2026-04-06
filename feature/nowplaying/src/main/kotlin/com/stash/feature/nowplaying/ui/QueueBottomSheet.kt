@@ -150,12 +150,14 @@ fun QueueBottomSheet(
                         val dismissState = rememberSwipeToDismissBoxState(
                             confirmValueChange = { value ->
                                 if (value != SwipeToDismissBoxValue.Settled && draggedIdx < 0) {
-                                    // Remove from local queue and notify parent
+                                    // Remove from local queue and notify parent.
+                                    // Return false so the dismiss box resets — the item
+                                    // disappears because we remove it from localQueue.
                                     if (idx in localQueue.indices) {
                                         localQueue.removeAt(idx)
                                         onRemoveTrack(queueIndex)
                                     }
-                                    true
+                                    false
                                 } else false
                             },
                         )
@@ -163,29 +165,16 @@ fun QueueBottomSheet(
                         SwipeToDismissBox(
                             state = dismissState,
                             backgroundContent = {
-                                val isActive = dismissState.targetValue != SwipeToDismissBoxValue.Settled
+                                val progress = dismissState.progress
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .background(
-                                            if (isActive) MaterialTheme.colorScheme.errorContainer
-                                            else Color.Transparent,
-                                        )
-                                        .padding(horizontal = 20.dp),
-                                    contentAlignment = when (dismissState.targetValue) {
-                                        SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
-                                        else -> Alignment.CenterEnd
-                                    },
-                                ) {
-                                    if (isActive) {
-                                        Text(
-                                            text = "Remove",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onErrorContainer,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                    }
-                                }
+                                            MaterialTheme.colorScheme.errorContainer.copy(
+                                                alpha = progress.coerceIn(0f, 1f)
+                                            )
+                                        ),
+                                )
                             },
                             enableDismissFromStartToEnd = draggedIdx < 0,
                             enableDismissFromEndToStart = draggedIdx < 0,
