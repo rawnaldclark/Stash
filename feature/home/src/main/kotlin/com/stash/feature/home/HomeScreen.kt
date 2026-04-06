@@ -126,22 +126,6 @@ fun HomeScreen(
                             letterSpacing = 1.sp,
                         ),
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    // Checkerboard underline bar
-                    Row(modifier = Modifier.width(90.dp).height(4.dp)) {
-                        val colors = listOf(
-                            StashTheme.extendedColors.purpleLight,
-                            StashTheme.extendedColors.purpleDark,
-                        )
-                        repeat(10) { i ->
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .background(colors[i % 2]),
-                            )
-                        }
-                    }
                 }
             }
         }
