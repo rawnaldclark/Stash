@@ -194,11 +194,17 @@ class DownloadManager @Inject constructor(
 
             val best = matchScorer.bestMatch(scored)
             if (best != null) {
-                // Verify the artist actually matches — prevents "Gloria" by wrong artist
+                // Two-level artist verification:
+                // 1. Jaro-Winkler fuzzy similarity must be >= 0.65
+                // 2. Key words must overlap (prevents "Jimi Hendrix" vs "Jim Hendricks")
                 val artistSim = matchScorer.artistSimilarity(track.artist, best.uploader)
                 if (artistSim < 0.65f) {
-                    Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — artist similarity ${String.format("%.2f", artistSim)} too low for '${track.artist}'")
-                    continue // Try next search strategy
+                    Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — fuzzy artist sim ${String.format("%.2f", artistSim)} too low for '${track.artist}'")
+                    continue
+                }
+                if (!artistWordsMatch(track.artist, best.uploader)) {
+                    Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — artist words don't match '${track.artist}'")
+                    continue
                 }
                 Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} (artist=%.2f)".format(artistSim))
                 return best.youtubeUrl
@@ -239,6 +245,32 @@ class DownloadManager @Inject constructor(
             "$artist $simpleTitle",         // Without remaster/deluxe suffixes
             "$artist - $simpleTitle",       // With dash separator
         ).map { it.trim() }.filter { it.isNotBlank() }.distinct()
+    }
+
+    /**
+     * Checks that the significant words in the artist names actually match,
+     * not just that the characters are similar.
+     *
+     * Prevents "Jimi Hendrix" matching "Jim Hendricks" — Jaro-Winkler gives
+     * 0.77 similarity for these, but "Hendrix" ≠ "Hendricks" word-wise.
+     *
+     * At least one significant word (>3 chars) from the target must appear
+     * exactly (case-insensitive) in the candidate, or vice versa.
+     */
+    private fun artistWordsMatch(targetArtist: String, candidateArtist: String): Boolean {
+        val targetWords = targetArtist.lowercase().split(Regex("[\\s,&+]+"))
+            .filter { it.length > 3 }
+            .map { it.trim() }
+            .toSet()
+        val candidateWords = candidateArtist.lowercase().split(Regex("[\\s,&+]+"))
+            .filter { it.length > 3 }
+            .map { it.trim() }
+            .toSet()
+
+        if (targetWords.isEmpty() || candidateWords.isEmpty()) return true // Can't verify short names
+
+        // At least one significant word must match exactly
+        return targetWords.any { it in candidateWords } || candidateWords.any { it in targetWords }
     }
 
     /**
