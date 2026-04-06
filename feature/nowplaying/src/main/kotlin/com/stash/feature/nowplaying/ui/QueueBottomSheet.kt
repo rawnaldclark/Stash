@@ -26,6 +26,9 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -130,6 +133,7 @@ fun QueueBottomSheet(
             ) {
                 itemsIndexed(localQueue) { idx, track ->
                     val isDragging = idx == draggedIdx
+                    val queueIndex = currentIndex + 1 + idx
 
                     Box(
                         modifier = Modifier
@@ -141,6 +145,51 @@ fun QueueBottomSheet(
                                 else Modifier.zIndex(0f)
                             ),
                     ) {
+                        // Swipe-to-remove wrapper (disabled while dragging)
+                        @Suppress("DEPRECATION")
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = { value ->
+                                if (value != SwipeToDismissBoxValue.Settled && draggedIdx < 0) {
+                                    // Remove from local queue and notify parent
+                                    if (idx in localQueue.indices) {
+                                        localQueue.removeAt(idx)
+                                        onRemoveTrack(queueIndex)
+                                    }
+                                    true
+                                } else false
+                            },
+                        )
+
+                        SwipeToDismissBox(
+                            state = dismissState,
+                            backgroundContent = {
+                                val isActive = dismissState.targetValue != SwipeToDismissBoxValue.Settled
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            if (isActive) MaterialTheme.colorScheme.errorContainer
+                                            else Color.Transparent,
+                                        )
+                                        .padding(horizontal = 20.dp),
+                                    contentAlignment = when (dismissState.targetValue) {
+                                        SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
+                                        else -> Alignment.CenterEnd
+                                    },
+                                ) {
+                                    if (isActive) {
+                                        Text(
+                                            text = "Remove",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                }
+                            },
+                            enableDismissFromStartToEnd = draggedIdx < 0,
+                            enableDismissFromEndToStart = draggedIdx < 0,
+                        ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -149,7 +198,7 @@ fun QueueBottomSheet(
                                     else MaterialTheme.colorScheme.surface,
                                 )
                                 .clickable {
-                                    onTrackClick(currentIndex + 1 + idx)
+                                    onTrackClick(queueIndex)
                                 }
                                 .padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -252,6 +301,7 @@ fun QueueBottomSheet(
                                 )
                             }
                         }
+                        } // SwipeToDismissBox
                     }
                 }
             }
