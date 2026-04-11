@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -60,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,11 +69,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
+import com.stash.core.model.SyncDisplayStatus
 import com.stash.core.model.SyncState
 import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
+import com.stash.core.ui.theme.LocalIsDarkTheme
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
@@ -99,7 +103,7 @@ fun HomeScreen(
             .statusBarsPadding(),
         contentPadding = PaddingValues(bottom = 120.dp),
     ) {
-        // ── App title with vinyl logo and checkerboard underline ─────
+        // ── App title with vinyl logo and Bungee Shade wordmark ──────
         item {
             Row(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
@@ -107,26 +111,20 @@ fun HomeScreen(
             ) {
                 StashVinylLogo(size = 56.dp)
                 Spacer(modifier = Modifier.width(14.dp))
-                Column {
-                    val purple = StashTheme.extendedColors.purpleLight
-                    val white = MaterialTheme.colorScheme.onBackground
-                    val stashText = androidx.compose.ui.text.buildAnnotatedString {
-                        append(androidx.compose.ui.text.AnnotatedString("S", androidx.compose.ui.text.SpanStyle(color = purple)))
-                        append(androidx.compose.ui.text.AnnotatedString("ta", androidx.compose.ui.text.SpanStyle(color = white)))
-                        append(androidx.compose.ui.text.AnnotatedString("s", androidx.compose.ui.text.SpanStyle(color = purple)))
-                        append(androidx.compose.ui.text.AnnotatedString("h", androidx.compose.ui.text.SpanStyle(color = purple)))
-                    }
-                    val righteousFont = androidx.compose.ui.text.font.FontFamily(
-                        androidx.compose.ui.text.font.Font(com.stash.core.ui.R.font.righteous)
-                    )
-                    Text(
-                        text = stashText,
-                        style = MaterialTheme.typography.headlineLarge.copy(
-                            fontFamily = righteousFont,
-                            letterSpacing = 1.sp,
-                        ),
-                    )
-                }
+                // Bungee Shade "Stash" as a VectorDrawable. The light and
+                // dark variants are both in drawable/ and we pick via the
+                // LocalIsDarkTheme CompositionLocal, because the app theme
+                // is Compose-state driven (not OS ui-mode) so the
+                // drawable-night/ resource qualifier wouldn't flip with it.
+                val isDark = LocalIsDarkTheme.current
+                Image(
+                    painter = painterResource(
+                        id = if (isDark) R.drawable.wordmark_stash_dark
+                        else R.drawable.wordmark_stash_light,
+                    ),
+                    contentDescription = "Stash",
+                    modifier = Modifier.height(48.dp),
+                )
             }
         }
 
@@ -141,22 +139,61 @@ fun HomeScreen(
             )
         }
 
-        // ── Daily Mixes ──────────────────────────────────────────────
-        if (uiState.dailyMixes.isNotEmpty()) {
+        // ── Mixes (split by source, each with a Play All button) ─────
+        if (uiState.spotifyMixes.isNotEmpty() || uiState.youtubeMixes.isNotEmpty()) {
             item {
-                SectionHeader(title = "Daily Mixes")
+                MixesSectionHeader(
+                    showPlayBoth = uiState.hasBothMixSources,
+                    onPlayBoth = { viewModel.playAllMixes(source = null) },
+                )
             }
-            item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(uiState.dailyMixes, key = { it.id }) { playlist ->
-                        DailyMixCard(
-                            playlist = playlist,
-                            onClick = { viewModel.playPlaylist(playlist) },
-                            onLongPress = { selectedPlaylist = playlist },
-                        )
+
+            // Spotify mixes row — sub-header with Play All always present
+            if (uiState.spotifyMixes.isNotEmpty()) {
+                item {
+                    SourceSubHeader(
+                        label = "Spotify",
+                        source = MusicSource.SPOTIFY,
+                        onPlayAll = { viewModel.playAllMixes(MusicSource.SPOTIFY) },
+                    )
+                }
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(uiState.spotifyMixes, key = { it.id }) { playlist ->
+                            DailyMixCard(
+                                playlist = playlist,
+                                onClick = { viewModel.playPlaylist(playlist) },
+                                onLongPress = { selectedPlaylist = playlist },
+                            )
+                        }
+                    }
+                }
+            }
+
+            // YouTube mixes row — sub-header with Play All always present
+            if (uiState.youtubeMixes.isNotEmpty()) {
+                item {
+                    SourceSubHeader(
+                        label = "YouTube Music",
+                        source = MusicSource.YOUTUBE,
+                        onPlayAll = { viewModel.playAllMixes(MusicSource.YOUTUBE) },
+                    )
+                }
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(uiState.youtubeMixes, key = { it.id }) { playlist ->
+                            DailyMixCard(
+                                playlist = playlist,
+                                onClick = { viewModel.playPlaylist(playlist) },
+                                onLongPress = { selectedPlaylist = playlist },
+                            )
+                        }
                     }
                 }
             }
@@ -187,13 +224,19 @@ fun HomeScreen(
             }
         }
 
-        // ── Liked Songs card ─────────────────────────────────────────
-        if (uiState.likedSongsCount > 0) {
+        // ── Liked Songs card (with source split + smart collapse) ────
+        if (uiState.hasAnyLikedSongs) {
             item {
                 Spacer(Modifier.height(8.dp))
                 LikedSongsCard(
-                    count = uiState.likedSongsCount,
-                    onClick = { viewModel.playLikedSongs() },
+                    totalCount = uiState.totalLikedCount,
+                    spotifyCount = uiState.spotifyLikedCount,
+                    youtubeCount = uiState.youtubeLikedCount,
+                    showSourceChips = uiState.hasBothLikedSources,
+                    singleSource = uiState.singleLikedSource,
+                    onPlayAll = { viewModel.playLikedSongs(source = null) },
+                    onPlaySpotify = { viewModel.playLikedSongs(source = MusicSource.SPOTIFY) },
+                    onPlayYouTube = { viewModel.playLikedSongs(source = MusicSource.YOUTUBE) },
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -348,27 +391,15 @@ private fun SyncStatusCard(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // -- Connection + sync status header --
+            // Uses SyncDisplayStatus so "Completed with some failures" and
+            // "Interrupted mid-run" don't both read as a generic failure.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                PulseDot(
-                    color = when {
-                        !anyServiceConnected -> MaterialTheme.colorScheme.onSurfaceVariant
-                        !hasEverSynced -> extendedColors.warning
-                        syncStatus.state == SyncState.COMPLETED || syncStatus.state == SyncState.IDLE -> extendedColors.success
-                        syncStatus.state == SyncState.FAILED -> Color(0xFFEF4444)
-                        else -> extendedColors.warning
-                    },
-                )
+                PulseDot(color = syncStatusDotColor(syncStatus, anyServiceConnected, hasEverSynced))
                 Text(
-                    text = when {
-                        !anyServiceConnected -> "No services connected"
-                        !hasEverSynced -> "Ready to sync"
-                        syncStatus.state == SyncState.COMPLETED || syncStatus.state == SyncState.IDLE -> "Synced"
-                        syncStatus.state == SyncState.FAILED -> "Sync failed"
-                        else -> "Syncing..."
-                    },
+                    text = syncStatusLabel(syncStatus, anyServiceConnected, hasEverSynced),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -452,6 +483,57 @@ private fun SyncStatusCard(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Label shown next to the pulse dot in [SyncStatusCard]. Interprets
+ * [SyncStatusInfo.displayStatus] so partial / interrupted runs aren't
+ * misreported as generic failures.
+ */
+@Composable
+private fun syncStatusLabel(
+    syncStatus: SyncStatusInfo,
+    anyServiceConnected: Boolean,
+    hasEverSynced: Boolean,
+): String = when {
+    !anyServiceConnected -> "No services connected"
+    !hasEverSynced -> "Ready to sync"
+    else -> when (val s = syncStatus.displayStatus) {
+        SyncDisplayStatus.Idle -> "Ready to sync"
+        SyncDisplayStatus.Running -> "Syncing..."
+        SyncDisplayStatus.Success -> "Synced"
+        is SyncDisplayStatus.PartialSuccess ->
+            "Partially synced — ${s.downloaded} saved, ${s.failed} failed"
+        is SyncDisplayStatus.Interrupted ->
+            if (s.downloaded > 0) "Interrupted — ${s.downloaded} saved"
+            else "Interrupted"
+        is SyncDisplayStatus.Failed -> "Sync failed"
+    }
+}
+
+/**
+ * Color for the pulse dot in [SyncStatusCard]. Green = success-ish,
+ * amber = in-progress / warning, red = genuine failure, gray = idle.
+ */
+@Composable
+private fun syncStatusDotColor(
+    syncStatus: SyncStatusInfo,
+    anyServiceConnected: Boolean,
+    hasEverSynced: Boolean,
+): Color {
+    val extendedColors = StashTheme.extendedColors
+    return when {
+        !anyServiceConnected -> MaterialTheme.colorScheme.onSurfaceVariant
+        !hasEverSynced -> extendedColors.warning
+        else -> when (syncStatus.displayStatus) {
+            SyncDisplayStatus.Idle -> extendedColors.warning
+            SyncDisplayStatus.Running -> extendedColors.warning
+            SyncDisplayStatus.Success -> extendedColors.success
+            is SyncDisplayStatus.PartialSuccess -> extendedColors.warning
+            is SyncDisplayStatus.Interrupted -> extendedColors.warning
+            is SyncDisplayStatus.Failed -> Color(0xFFEF4444)
         }
     }
 }
@@ -557,17 +639,21 @@ private fun DailyMixCard(
             ) {
                 SourceIndicator(source = playlist.source, size = 8.dp)
                 Column {
+                    // Text always renders white because the card always has a
+                    // dark bottom gradient overlay (Black alpha 0.6) by design.
+                    // Using theme-aware onSurface would make the text disappear
+                    // on light theme where onSurface is near-black.
                     Text(
                         text = playlist.name,
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = "${playlist.trackCount} tracks",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color.White.copy(alpha = 0.75f),
                     )
                 }
             }
@@ -646,25 +732,190 @@ private fun CompactTrackCard(
     }
 }
 
-// ── Liked songs card ─────────────────────────────────────────────────────
+// ── Mixes section header with optional Play Both button ─────────────────
 
+/**
+ * Custom header for the "Your Mixes" section. Shows the title on the left
+ * and an optional "Play Both" pill button on the right that plays every
+ * mix from both Spotify and YouTube Music combined.
+ *
+ * The Play Both pill only renders when [showPlayBoth] is true, so users
+ * connected to only one service see a plain header instead.
+ *
+ * @param showPlayBoth Whether to render the Play Both pill. True when the
+ *   user has mixes from both sources.
+ * @param onPlayBoth Callback invoked when the Play Both pill is tapped.
+ */
+@Composable
+private fun MixesSectionHeader(
+    showPlayBoth: Boolean,
+    onPlayBoth: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Your Mixes",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        if (showPlayBoth) {
+            val accent = MaterialTheme.colorScheme.primary
+            Surface(
+                modifier = Modifier
+                    .height(32.dp)
+                    .clickable(onClick = onPlayBoth),
+                color = accent.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.4f)),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play mixes from both services",
+                        tint = accent,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = "Play Both",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accent,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Source sub-header (used for grouping mix rows by service) ────────────
+
+/**
+ * A row header used to separate mix rows by source. Contains a colored
+ * source indicator, a label (e.g. "Spotify" or "YouTube Music"), and an
+ * optional trailing "Play All" button that plays every track from every
+ * mix under that source, effectively merging them into one queue.
+ *
+ * @param label Display label for the source.
+ * @param source The source this header represents (for color/indicator).
+ * @param onPlayAll Optional callback. When non-null, renders a trailing
+ *   play-all button that invokes this lambda on tap.
+ */
+@Composable
+private fun SourceSubHeader(
+    label: String,
+    source: MusicSource,
+    modifier: Modifier = Modifier,
+    onPlayAll: (() -> Unit)? = null,
+) {
+    val extendedColors = StashTheme.extendedColors
+    val accent = when (source) {
+        MusicSource.SPOTIFY -> extendedColors.spotifyGreen
+        MusicSource.YOUTUBE -> extendedColors.youtubeRed
+        MusicSource.BOTH -> MaterialTheme.colorScheme.primary
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SourceIndicator(source = source, size = 8.dp)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        if (onPlayAll != null) {
+            Surface(
+                modifier = Modifier
+                    .height(32.dp)
+                    .clickable(onClick = onPlayAll),
+                color = accent.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play all $label mixes",
+                        tint = accent,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = "Play All",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accent,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Liked songs card (with source chips + smart collapse) ───────────────
+
+/**
+ * Featured card showing liked-songs across Spotify and YouTube Music.
+ *
+ * Layout:
+ * - Tappable main row plays the combined pool (both sources).
+ * - When [showSourceChips] is true (both sources have liked songs), a pair
+ *   of tappable chips below the main row plays only one source at a time.
+ * - When only one source contributes, chips are hidden and a small source
+ *   indicator appears next to the title to identify which service the
+ *   count represents.
+ *
+ * @param totalCount Combined liked-song count across both sources.
+ * @param spotifyCount Spotify liked-song count (0 if none).
+ * @param youtubeCount YouTube liked-song count (0 if none).
+ * @param showSourceChips Whether to render per-source chips.
+ * @param singleSource The sole contributing source when [showSourceChips] is
+ *   false, used to label the card; null when both or neither source contributes.
+ * @param onPlayAll Invoked when the main card body is tapped.
+ * @param onPlaySpotify Invoked when the Spotify chip is tapped.
+ * @param onPlayYouTube Invoked when the YouTube chip is tapped.
+ */
 @Composable
 private fun LikedSongsCard(
-    count: Int,
-    onClick: () -> Unit,
+    totalCount: Int,
+    spotifyCount: Int,
+    youtubeCount: Int,
+    showSourceChips: Boolean,
+    singleSource: MusicSource?,
+    onPlayAll: () -> Unit,
+    onPlaySpotify: () -> Unit,
+    onPlayYouTube: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
 
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+        modifier = modifier.fillMaxWidth(),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
@@ -674,10 +925,14 @@ private fun LikedSongsCard(
                             Color.Transparent,
                         )
                     )
-                )
-                .padding(20.dp),
+                ),
         ) {
+            // Main row — tapping plays combined (or single-source if only one)
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onPlayAll)
+                    .padding(20.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
@@ -702,19 +957,113 @@ private fun LikedSongsCard(
                         modifier = Modifier.size(24.dp),
                     )
                 }
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "Liked Songs",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        // Single-source indicator: surfaces the lone connected service
+                        // when the user only has one source populated with liked songs.
+                        if (singleSource != null) {
+                            SourceIndicator(source = singleSource, size = 6.dp)
+                        }
+                    }
                     Text(
-                        text = "Liked Songs",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = "$count tracks",
+                        text = when (singleSource) {
+                            MusicSource.SPOTIFY -> "$totalCount tracks on Spotify"
+                            MusicSource.YOUTUBE -> "$totalCount tracks on YouTube Music"
+                            else -> "$totalCount tracks"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
+
+            // Source chips row — only shown when both sources have liked songs
+            if (showSourceChips) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    SourceLikedChip(
+                        source = MusicSource.SPOTIFY,
+                        label = "Spotify",
+                        count = spotifyCount,
+                        onClick = onPlaySpotify,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SourceLikedChip(
+                        source = MusicSource.YOUTUBE,
+                        label = "YouTube",
+                        count = youtubeCount,
+                        onClick = onPlayYouTube,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A tappable pill chip showing a source-specific liked-songs count.
+ * Used inside [LikedSongsCard] to play one source's liked songs only.
+ *
+ * The touch target is kept at least 48dp tall for accessibility.
+ */
+@Composable
+private fun SourceLikedChip(
+    source: MusicSource,
+    label: String,
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+    val accent = when (source) {
+        MusicSource.SPOTIFY -> extendedColors.spotifyGreen
+        MusicSource.YOUTUBE -> extendedColors.youtubeRed
+        // BOTH is unreachable — SourceLikedChip is only called with SPOTIFY or YOUTUBE.
+        MusicSource.BOTH -> MaterialTheme.colorScheme.primary
+    }
+
+    Surface(
+        modifier = modifier
+            .height(48.dp)
+            .clickable(onClick = onClick),
+        color = accent.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SourceIndicator(source = source, size = 8.dp)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = accent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.QualityTier
+import com.stash.core.model.ThemeMode
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import androidx.compose.material3.AlertDialog
@@ -106,6 +107,7 @@ fun SettingsScreen(
         onConnectYouTube = viewModel::onConnectYouTube,
         onDisconnectYouTube = viewModel::onDisconnectYouTube,
         onQualityChanged = viewModel::onQualityChanged,
+        onThemeChanged = viewModel::onThemeChanged,
         onEqEnabledChanged = viewModel::setEqEnabled,
         onEqPresetSelected = viewModel::setEqPreset,
         onEqBandGainChanged = viewModel::setEqBandGain,
@@ -127,6 +129,7 @@ private fun SettingsContent(
     onConnectYouTube: () -> Unit,
     onDisconnectYouTube: () -> Unit,
     onQualityChanged: (QualityTier) -> Unit,
+    onThemeChanged: (ThemeMode) -> Unit,
     onEqEnabledChanged: (Boolean) -> Unit,
     onEqPresetSelected: (String) -> Unit,
     onEqBandGainChanged: (Int, Float) -> Unit,
@@ -219,6 +222,58 @@ private fun SettingsContent(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // -- Appearance section -----------------------------------------------
+        SectionHeader(title = "Appearance")
+
+        GlassCard {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
+            ) {
+                Text(
+                    text = "Theme",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val themeOptions = listOf(
+                    ThemeMode.LIGHT to "Light",
+                    ThemeMode.DARK to "Dark",
+                    ThemeMode.SYSTEM to "Follow system",
+                )
+                themeOptions.forEach { (mode, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = uiState.themeMode == mode,
+                                onClick = { onThemeChanged(mode) },
+                                role = Role.RadioButton,
+                            )
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = uiState.themeMode == mode,
+                            onClick = null,
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        )
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
                     }
                 }
             }

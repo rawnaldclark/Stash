@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stash Wordmark — Vector Path Test</title>
+<style>
+  :root { --bg: #0a0118; --card: #1a0533; --border: #3a1768; --text: #fdf4ff; --muted: #a78bfa; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+  }
+  h1 { font-size: 28px; margin: 0 0 8px; }
+  p.lead { color: var(--muted); margin: 0 0 32px; font-size: 14px; max-width: 680px; line-height: 1.5; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 32px;
+    margin-bottom: 20px;
+  }
+  .card.light { background: #f5f3ff; border-color: #c4b5fd; }
+  .card h2 {
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+  .row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .row img { display: block; }
+  .pixel-check {
+    background: #000;
+    padding: 4px;
+    display: inline-block;
+    border: 1px solid var(--border);
+  }
+  .size-label {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .lineup { display: flex; align-items: baseline; gap: 32px; flex-wrap: wrap; }
+  .lineup .item { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .h-48 { height: 48px; width: auto; }
+  .h-32 { height: 32px; width: auto; }
+  .h-24 { height: 24px; width: auto; }
+  .h-16 { height: 16px; width: auto; }
+  .h-12 { height: 12px; width: auto; }
+  .h-120 { height: 120px; width: auto; }
+  .h-80 { height: 80px; width: auto; }
+</style>
+</head>
+<body>
+
+  <h1>Stash Wordmark — Vector Path Test</h1>
+  <p class="lead">"Stash" converted from Bungee Shade font glyphs to pure SVG paths. No font rendering, no rasterization — just geometry. Verify it stays crisp at every size below, including the tiny ones that previously would have blurred.</p>
+
+  <div class="card">
+    <h2>Hero / marketing (120px)</h2>
+    <img src="wordmark-bungee-shade.svg" class="h-120" alt="Stash wordmark">
+  </div>
+
+  <div class="card">
+    <h2>Home screen header size (80px)</h2>
+    <img src="wordmark-bungee-shade.svg" class="h-80" alt="">
+  </div>
+
+  <div class="card">
+    <h2>Small-to-tiny scale test</h2>
+    <div class="lineup">
+      <div class="item">
+        <span class="size-label">48px</span>
+        <img src="wordmark-bungee-shade.svg" class="h-48" alt="">
+      </div>
+      <div class="item">
+        <span class="size-label">32px</span>
+        <img src="wordmark-bungee-shade.svg" class="h-32" alt="">
+      </div>
+      <div class="item">
+        <span class="size-label">24px</span>
+        <img src="wordmark-bungee-shade.svg" class="h-24" alt="">
+      </div>
+      <div class="item">
+        <span class="size-label">16px</span>
+        <img src="wordmark-bungee-shade.svg" class="h-16" alt="">
+      </div>
+      <div class="item">
+        <span class="size-label">12px</span>
+        <img src="wordmark-bungee-shade.svg" class="h-12" alt="">
+      </div>
+    </div>
+  </div>
+
+  <div class="card light">
+    <h2>Light background (light variant: "ta" is deep purple instead of white)</h2>
+    <img src="wordmark-bungee-shade-light.svg" class="h-120" alt="">
+  </div>
+
+  <div class="card">
+    <h2>Alongside the current vinyl (mock app header)</h2>
+    <div class="row">
+      <img src="../../feature/home/src/main/res/drawable/vinyl_record.png" style="width: 80px; height: 80px;">
+      <img src="wordmark-bungee-shade.svg" class="h-80" alt="">
+    </div>
+  </div>
+
+</body>
+</html>

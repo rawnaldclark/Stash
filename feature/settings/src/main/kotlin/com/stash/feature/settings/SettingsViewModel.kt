@@ -7,8 +7,10 @@ import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.youtube.YouTubeCookieHelper
 import com.stash.core.data.prefs.QualityPreference
+import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
+import com.stash.core.model.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -38,6 +40,7 @@ class SettingsViewModel @Inject constructor(
     private val tokenManager: TokenManager,
     private val musicRepository: MusicRepository,
     private val qualityPreference: QualityPreference,
+    private val themePreference: ThemePreference,
     private val youTubeCookieHelper: YouTubeCookieHelper,
     private val equalizerManager: com.stash.core.media.equalizer.EqualizerManager,
     private val equalizerStore: com.stash.core.media.equalizer.EqualizerStore,
@@ -56,6 +59,7 @@ class SettingsViewModel @Inject constructor(
         musicRepository.getTrackCount(),
         musicRepository.getTotalStorageBytes(),
         qualityPreference.qualityTier,
+        themePreference.themeMode,
         _localState,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -64,12 +68,14 @@ class SettingsViewModel @Inject constructor(
         val trackCount = values[2] as Int
         val storageBytes = values[3] as Long
         val quality = values[4] as QualityTier
-        val local = values[5] as LocalState
+        val theme = values[5] as ThemeMode
+        val local = values[6] as LocalState
 
         SettingsUiState(
             spotifyAuthState = spotifyAuth,
             youTubeAuthState = youTubeAuth,
             audioQuality = quality,
+            themeMode = theme,
             totalStorageBytes = storageBytes,
             totalTracks = trackCount,
             showYouTubeCookieDialog = local.showYouTubeCookieDialog,
@@ -287,6 +293,13 @@ class SettingsViewModel @Inject constructor(
     fun onQualityChanged(tier: QualityTier) {
         viewModelScope.launch {
             qualityPreference.setQualityTier(tier)
+        }
+    }
+
+    /** Persists the user's selected theme mode. Flows into MainActivity via Hilt. */
+    fun onThemeChanged(mode: ThemeMode) {
+        viewModelScope.launch {
+            themePreference.setThemeMode(mode)
         }
     }
 

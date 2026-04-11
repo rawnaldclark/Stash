@@ -5,9 +5,12 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.sync.toDisplayStatus
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
+import com.stash.core.model.SyncDisplayStatus
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,9 +49,10 @@ class HomeViewModel @Inject constructor(
                 lastSyncTime = latestSync.startedAt.toEpochMilli(),
                 nextSyncTime = latestSync.completedAt?.toEpochMilli()?.plus(6 * 3_600_000L),
                 state = latestSync.status,
+                displayStatus = latestSync.toDisplayStatus(),
             )
         } else {
-            SyncStatusInfo()
+            SyncStatusInfo(displayStatus = SyncDisplayStatus.Idle)
         }
     }
 
@@ -89,9 +93,18 @@ class HomeViewModel @Inject constructor(
         authStateFlow,
         sourceCountsFlow,
     ) { musicData, syncStatus, authInfo, sourceCounts ->
+        // Split daily mixes by source
         val dailyMixes = musicData.playlists.filter { it.type == PlaylistType.DAILY_MIX }
-        val likedSongs = musicData.playlists.filter { it.type == PlaylistType.LIKED_SONGS }
-        val likedCount = likedSongs.sumOf { it.trackCount }
+        val spotifyMixes = dailyMixes.filter { it.source == MusicSource.SPOTIFY }
+        val youtubeMixes = dailyMixes.filter { it.source == MusicSource.YOUTUBE }
+
+        // Split liked songs by source
+        val likedPlaylists = musicData.playlists.filter { it.type == PlaylistType.LIKED_SONGS }
+        val spotifyLikedPlaylists = likedPlaylists.filter { it.source == MusicSource.SPOTIFY }
+        val youtubeLikedPlaylists = likedPlaylists.filter { it.source == MusicSource.YOUTUBE }
+        val spotifyLikedCount = spotifyLikedPlaylists.sumOf { it.trackCount }
+        val youtubeLikedCount = youtubeLikedPlaylists.sumOf { it.trackCount }
+
         val otherPlaylists = musicData.playlists.filter { it.type == PlaylistType.CUSTOM }
 
         HomeUiState(
@@ -102,9 +115,13 @@ class HomeViewModel @Inject constructor(
                 totalPlaylists = musicData.playlists.size,
                 storageUsedBytes = musicData.storageBytes,
             ),
-            dailyMixes = dailyMixes,
+            spotifyMixes = spotifyMixes,
+            youtubeMixes = youtubeMixes,
             recentlyAdded = musicData.recentlyAdded,
-            likedSongsCount = likedCount,
+            spotifyLikedPlaylists = spotifyLikedPlaylists,
+            youtubeLikedPlaylists = youtubeLikedPlaylists,
+            spotifyLikedCount = spotifyLikedCount,
+            youtubeLikedCount = youtubeLikedCount,
             totalTracks = musicData.trackCount,
             totalStorageBytes = musicData.storageBytes,
             playlists = otherPlaylists,
@@ -173,15 +190,76 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Loads all downloaded tracks and begins playback from the first track.
-     * Only tracks with a non-null [Track.filePath] (i.e. downloaded) are queued.
+     * Plays every downloaded track across every daily mix from the given [source],
+     * effectively merging all of that source's mixes into one continuous queue.
+     * Passing null plays the combined pool from BOTH sources (Spotify first,
+     * then YouTube) with per-track deduplication.
+     *
+     * Duplicates are removed via [distinctBy] so tracks appearing in multiple
+     * mixes are only queued once. Tracks appear in the order their parent
+     * playlists are returned by the repository.
+     *
+     * @param source The source whose mixes to play, or null to combine both.
      */
-    fun playLikedSongs() {
+    fun playAllMixes(source: MusicSource?) {
         viewModelScope.launch {
-            val tracks = musicRepository.getAllTracks().first()
-            val downloaded = tracks.filter { it.filePath != null }
-            if (downloaded.isNotEmpty()) {
-                playerRepository.setQueue(downloaded, startIndex = 0)
+            val state = uiState.value
+            val mixes = when (source) {
+                MusicSource.SPOTIFY -> state.spotifyMixes
+                MusicSource.YOUTUBE -> state.youtubeMixes
+                null -> state.spotifyMixes + state.youtubeMixes
+                else -> return@launch
+            }
+            if (mixes.isEmpty()) return@launch
+
+            val allTracks = mixes
+                .flatMap { mix ->
+                    musicRepository.getTracksByPlaylist(mix.id).first()
+                }
+                .filter { it.filePath != null }
+                .distinctBy { it.id }
+
+            if (allTracks.isNotEmpty()) {
+                playerRepository.setQueue(allTracks, startIndex = 0)
+            }
+        }
+    }
+
+    /**
+     * Loads liked songs from the specified [source] (or both if null) and
+     * begins playback. Fetches actual playlist members from the join table
+     * rather than all downloaded tracks.
+     *
+     * **Play order:** When [source] is null, Spotify liked songs are queued
+     * first, then YouTube Music liked songs. Within each source, tracks are
+     * ordered by the liked-playlist's insertion order. Duplicates (same track
+     * ID appearing in both sources) are removed via `distinctBy`, keeping the
+     * first occurrence (Spotify wins).
+     *
+     * @param source Specific source to play from, or null for combined
+     *   Spotify + YouTube liked songs.
+     */
+    fun playLikedSongs(source: MusicSource? = null) {
+        viewModelScope.launch {
+            val state = uiState.value
+            val playlistsToPlay = when (source) {
+                MusicSource.SPOTIFY -> state.spotifyLikedPlaylists
+                MusicSource.YOUTUBE -> state.youtubeLikedPlaylists
+                else -> state.spotifyLikedPlaylists + state.youtubeLikedPlaylists
+            }
+
+            if (playlistsToPlay.isEmpty()) return@launch
+
+            // Fetch each liked playlist's tracks in parallel and flatten
+            val allTracks = playlistsToPlay
+                .flatMap { playlist ->
+                    musicRepository.getTracksByPlaylist(playlist.id).first()
+                }
+                .filter { it.filePath != null }
+                .distinctBy { it.id }
+
+            if (allTracks.isNotEmpty()) {
+                playerRepository.setQueue(allTracks, startIndex = 0)
             }
         }
     }

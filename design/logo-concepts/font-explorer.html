@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stash — Font Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Righteous&family=Bungee&family=Bungee+Shade&family=Monoton&family=Faster+One&family=Fugaz+One&family=Bowlby+One&family=Rubik+Mono+One&family=Staatliches&family=Alfa+Slab+One&family=Iceland&family=Audiowide&family=Anton&family=Major+Mono+Display&family=Ultra&family=Bungee+Inline&family=Russo+One&family=Orbitron:wght@900&family=Bebas+Neue&family=Michroma&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0118;
+    --card: #1a0533;
+    --border: #3a1768;
+    --text: #fdf4ff;
+    --muted: #a78bfa;
+    --purple-light: #c084fc;
+    --purple: #a855f7;
+    --purple-dark: #7c3aed;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+  }
+  h1 {
+    font-size: 32px;
+    margin: 0 0 8px;
+    letter-spacing: 1px;
+  }
+  p.lead {
+    color: var(--muted);
+    margin: 0 0 32px;
+    font-size: 15px;
+    max-width: 720px;
+    line-height: 1.5;
+  }
+
+  /* Hero row: new vinyl logo preview */
+  .vinyl-hero {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 40px;
+  }
+  .vinyl-hero img { width: 200px; height: 200px; }
+  .vinyl-hero .info h2 { margin: 0 0 6px; font-size: 22px; }
+  .vinyl-hero .info p { color: var(--muted); margin: 0; font-size: 14px; max-width: 360px; line-height: 1.5; }
+
+  /* Font grid */
+  .font-grid {
+    display: grid;
+    gap: 20px;
+  }
+  .font-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 32px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 24px;
+  }
+  .font-card .wordmark {
+    font-size: 88px;
+    line-height: 1;
+    white-space: nowrap;
+    letter-spacing: 2px;
+  }
+  .font-card .wordmark .purple { color: var(--purple); }
+  .font-card .wordmark .white { color: #ffffff; }
+  .font-card .meta {
+    text-align: right;
+    color: var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+  }
+  .font-card .meta .name {
+    display: block;
+    color: var(--text);
+    font-size: 14px;
+    margin-bottom: 2px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .font-card .meta .num {
+    font-size: 40px;
+    color: var(--purple-light);
+    font-weight: bold;
+    line-height: 1;
+    margin-top: 8px;
+  }
+
+  /* Individual font families */
+  .f-righteous  { font-family: 'Righteous', sans-serif; }
+  .f-bungee     { font-family: 'Bungee', sans-serif; }
+  .f-bungeeshad { font-family: 'Bungee Shade', sans-serif; }
+  .f-bungeeinl  { font-family: 'Bungee Inline', sans-serif; }
+  .f-monoton    { font-family: 'Monoton', sans-serif; }
+  .f-fasterone  { font-family: 'Faster One', sans-serif; }
+  .f-fugazone   { font-family: 'Fugaz One', sans-serif; }
+  .f-bowlby     { font-family: 'Bowlby One', sans-serif; }
+  .f-rubikmono  { font-family: 'Rubik Mono One', sans-serif; }
+  .f-staatlich  { font-family: 'Staatliches', sans-serif; }
+  .f-alfaslab   { font-family: 'Alfa Slab One', serif; }
+  .f-iceland    { font-family: 'Iceland', sans-serif; }
+  .f-audiowide  { font-family: 'Audiowide', sans-serif; }
+  .f-anton      { font-family: 'Anton', sans-serif; }
+  .f-majormono  { font-family: 'Major Mono Display', monospace; }
+  .f-ultra      { font-family: 'Ultra', serif; }
+  .f-russoone   { font-family: 'Russo One', sans-serif; }
+  .f-orbitron   { font-family: 'Orbitron', sans-serif; font-weight: 900; }
+  .f-bebas      { font-family: 'Bebas Neue', sans-serif; letter-spacing: 4px !important; }
+  .f-michroma   { font-family: 'Michroma', sans-serif; font-size: 64px !important; }
+
+  .tag {
+    display: inline-block;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 8px;
+    background: var(--purple-dark);
+    color: #fff;
+    margin-left: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+</style>
+</head>
+<body>
+
+  <h1>Stash — Font Explorer</h1>
+  <p class="lead">All-purple vinyl logo paired with 20 candidate fonts for the "Stash" wordmark. The wordmark uses the same coloring pattern as your current logo: purple S, white "ta", purple "sh". Scroll through and note which numbers you like — tell me the numbers and I'll refine.</p>
+
+  <div class="vinyl-hero">
+    <img src="vinyl-all-purple.svg" alt="All-purple vinyl logo">
+    <div class="info">
+      <h2>All-Purple Vinyl</h2>
+      <p>SVG replacement for <code>vinyl_record.png</code>. Deep purple gradient disc with crisp concentric grooves, bright violet center label, white S. Scales cleanly at any size (no more graininess on the splash screen).</p>
+    </div>
+  </div>
+
+  <div class="font-grid">
+
+    <div class="font-card">
+      <div class="wordmark f-righteous">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Righteous <span class="tag">CURRENT</span></span>
+        <span>geometric · rounded</span>
+        <div class="num">01</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-bungee">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Bungee</span>
+        <span>blocky · urban</span>
+        <div class="num">02</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-bungeeshad">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Bungee Shade</span>
+        <span>3D · retro signage</span>
+        <div class="num">03</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-bungeeinl">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Bungee Inline</span>
+        <span>outlined · retro</span>
+        <div class="num">04</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-monoton">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Monoton</span>
+        <span>art deco · 80s</span>
+        <div class="num">05</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-fasterone">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Faster One</span>
+        <span>speed · italic</span>
+        <div class="num">06</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-fugazone">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Fugaz One</span>
+        <span>bold · italic slab</span>
+        <div class="num">07</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-bowlby">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Bowlby One</span>
+        <span>chunky · cartoon-pop</span>
+        <div class="num">08</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-rubikmono">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Rubik Mono One</span>
+        <span>retro monospace · 70s</span>
+        <div class="num">09</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-staatlich">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Staatliches</span>
+        <span>condensed · modern</span>
+        <div class="num">10</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-alfaslab">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Alfa Slab One</span>
+        <span>heavy slab · bold</span>
+        <div class="num">11</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-iceland">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Iceland</span>
+        <span>geometric · sci-fi</span>
+        <div class="num">12</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-audiowide">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Audiowide</span>
+        <span>futuristic · vaporwave</span>
+        <div class="num">13</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-anton">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Anton</span>
+        <span>ultra condensed · tall</span>
+        <div class="num">14</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-majormono">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Major Mono Display</span>
+        <span>technical · minimal</span>
+        <div class="num">15</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-ultra">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Ultra</span>
+        <span>western · vintage poster</span>
+        <div class="num">16</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-russoone">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Russo One</span>
+        <span>industrial · bold</span>
+        <div class="num">17</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-orbitron">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Orbitron</span>
+        <span>futuristic · tech</span>
+        <div class="num">18</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-bebas">
+        <span class="purple">S</span><span class="white">TA</span><span class="purple">SH</span>
+      </div>
+      <div class="meta">
+        <span class="name">Bebas Neue</span>
+        <span>tall · editorial</span>
+        <div class="num">19</div>
+      </div>
+    </div>
+
+    <div class="font-card">
+      <div class="wordmark f-michroma">
+        <span class="purple">S</span><span class="white">ta</span><span class="purple">sh</span>
+      </div>
+      <div class="meta">
+        <span class="name">Michroma</span>
+        <span>sci-fi · wide</span>
+        <div class="num">20</div>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>

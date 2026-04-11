@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Vinyl body: deep purple with dark edge, slight radial sheen -->
+    <radialGradient id="vinylBody" cx="38%" cy="32%" r="78%">
+      <stop offset="0%" stop-color="#4c1d95"/>
+      <stop offset="40%" stop-color="#2e1065"/>
+      <stop offset="85%" stop-color="#180538"/>
+      <stop offset="100%" stop-color="#0d0222"/>
+    </radialGradient>
+
+    <!-- Center label: bright violet -->
+    <radialGradient id="labelBody" cx="40%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#c084fc"/>
+      <stop offset="55%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#6d28d9"/>
+    </radialGradient>
+
+    <!-- Rim highlight (top-left shine) -->
+    <linearGradient id="rimLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="70%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Soft shadow for the S -->
+    <filter id="sShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.55"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Outer disc -->
+  <circle cx="256" cy="256" r="244" fill="url(#vinylBody)"/>
+
+  <!-- Fine concentric grooves -->
+  <g fill="none" stroke="#5b21b6" stroke-width="0.6" opacity="0.55">
+    <circle cx="256" cy="256" r="236"/>
+    <circle cx="256" cy="256" r="228"/>
+    <circle cx="256" cy="256" r="220"/>
+    <circle cx="256" cy="256" r="212"/>
+    <circle cx="256" cy="256" r="204"/>
+    <circle cx="256" cy="256" r="196"/>
+    <circle cx="256" cy="256" r="188"/>
+    <circle cx="256" cy="256" r="180"/>
+    <circle cx="256" cy="256" r="172"/>
+    <circle cx="256" cy="256" r="164"/>
+    <circle cx="256" cy="256" r="156"/>
+    <circle cx="256" cy="256" r="148"/>
+    <circle cx="256" cy="256" r="140"/>
+    <circle cx="256" cy="256" r="132"/>
+    <circle cx="256" cy="256" r="124"/>
+  </g>
+
+  <!-- Accented deeper grooves -->
+  <g fill="none" stroke="#7c3aed" stroke-width="1" opacity="0.35">
+    <circle cx="256" cy="256" r="224"/>
+    <circle cx="256" cy="256" r="184"/>
+    <circle cx="256" cy="256" r="144"/>
+  </g>
+
+  <!-- Specular rim light -->
+  <circle cx="256" cy="256" r="244" fill="url(#rimLight)"/>
+
+  <!-- Subtle dark ring separating label from disc -->
+  <circle cx="256" cy="256" r="108" fill="#0d0222"/>
+
+  <!-- Center label -->
+  <circle cx="256" cy="256" r="104" fill="url(#labelBody)"/>
+
+  <!-- Label inner accent ring -->
+  <circle cx="256" cy="256" r="96" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.2"/>
+
+  <!-- S letter - bold, rounded sans (matches current Righteous-style wordmark) -->
+  <text x="256" y="304"
+        font-family="'Righteous', 'Bungee', 'Arial Black', sans-serif"
+        font-size="140"
+        font-weight="900"
+        fill="#ffffff"
+        text-anchor="middle"
+        filter="url(#sShadow)">S</text>
+
+  <!-- Spindle hole -->
+  <circle cx="256" cy="256" r="5" fill="#0d0222"/>
+</svg>

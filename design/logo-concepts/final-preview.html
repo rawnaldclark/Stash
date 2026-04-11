@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stash — Final Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee+Shade&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0118;
+    --card: #1a0533;
+    --border: #3a1768;
+    --text: #fdf4ff;
+    --muted: #a78bfa;
+    --purple-light: #c084fc;
+    --purple: #a855f7;
+    --purple-dark: #7c3aed;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+  }
+  h1 { font-size: 28px; margin: 0 0 8px; }
+  p.lead { color: var(--muted); margin: 0 0 40px; font-size: 15px; max-width: 720px; line-height: 1.5; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 36px;
+    margin-bottom: 28px;
+  }
+  .card h2 { margin: 0 0 20px; font-size: 18px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; }
+  .card.light { background: #f5f3ff; border-color: #c4b5fd; }
+  .card.light h2 { color: #7c3aed; }
+
+  /* Bungee Shade wordmark setup */
+  .bs { font-family: 'Bungee Shade', sans-serif; letter-spacing: 2px; line-height: 1; }
+  .bs .p { color: var(--purple); }
+  .bs .w { color: #ffffff; }
+  .card.light .bs .w { color: #1e0742; }
+
+  /* Layout A: horizontal pairing (logo + wordmark side-by-side) */
+  .layout-h {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .layout-h img { width: 96px; height: 96px; flex-shrink: 0; }
+  .layout-h .bs { font-size: 72px; }
+
+  /* Layout B: stacked (logo above wordmark) */
+  .layout-v {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .layout-v img { width: 160px; height: 160px; }
+  .layout-v .bs { font-size: 80px; }
+
+  /* Layout C: large hero */
+  .hero {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    padding: 40px 20px;
+  }
+  .hero img { width: 220px; height: 220px; }
+  .hero .bs { font-size: 140px; }
+
+  /* Layout D: current app header size (matches HomeScreen) */
+  .app-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    background: #0a0118;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+  .app-header img { width: 56px; height: 56px; }
+  .app-header .bs { font-size: 42px; }
+
+  /* Small sizes */
+  .small-row {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+    flex-wrap: wrap;
+  }
+  .small-row > div { display: flex; align-items: center; gap: 10px; }
+  .small-row img { display: block; }
+  .size-48 img { width: 48px; height: 48px; }
+  .size-32 img { width: 32px; height: 32px; }
+  .size-24 img { width: 24px; height: 24px; }
+  .small-row .bs-24 { font-size: 20px; }
+  .small-row .bs-16 { font-size: 14px; }
+  .small-row .bs-12 { font-size: 10px; }
+  .small-row .label { color: var(--muted); font-size: 11px; margin-right: 4px; }
+
+  /* Monochrome test (for splash screen / notification icon) */
+  .mono img {
+    filter: grayscale(1) brightness(1.1);
+  }
+
+  .note {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 12px;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+  <h1>Stash — Bungee Shade Pairing</h1>
+  <p class="lead">All-purple vinyl logo locked with Bungee Shade wordmark in five contexts. Confirm the layouts look right and I'll wire it all into the app.</p>
+
+  <!-- HERO -->
+  <div class="card">
+    <h2>01 · Hero (marketing / splash / Play Store)</h2>
+    <div class="hero">
+      <img src="vinyl-all-purple.svg" alt="Stash logo">
+      <div class="bs"><span class="p">S</span><span class="w">ta</span><span class="p">sh</span></div>
+    </div>
+  </div>
+
+  <!-- APP HEADER -->
+  <div class="card">
+    <h2>02 · Home screen header (current size)</h2>
+    <div class="app-header">
+      <img src="vinyl-all-purple.svg" alt="">
+      <div class="bs"><span class="p">S</span><span class="w">ta</span><span class="p">sh</span></div>
+    </div>
+    <p class="note">This matches the size used in HomeScreen.kt today (56dp logo, ~42sp text).</p>
+  </div>
+
+  <!-- HORIZONTAL -->
+  <div class="card">
+    <h2>03 · Horizontal lockup (medium)</h2>
+    <div class="layout-h">
+      <img src="vinyl-all-purple.svg" alt="">
+      <div class="bs"><span class="p">S</span><span class="w">ta</span><span class="p">sh</span></div>
+    </div>
+  </div>
+
+  <!-- STACKED -->
+  <div class="card">
+    <h2>04 · Stacked lockup (vertical)</h2>
+    <div class="layout-v">
+      <img src="vinyl-all-purple.svg" alt="">
+      <div class="bs"><span class="p">S</span><span class="w">ta</span><span class="p">sh</span></div>
+    </div>
+  </div>
+
+  <!-- LIGHT BG -->
+  <div class="card light">
+    <h2>05 · Light background test</h2>
+    <div class="layout-h">
+      <img src="vinyl-all-purple.svg" alt="">
+      <div class="bs"><span class="p">S</span><span class="w">ta</span><span class="p">sh</span></div>
+    </div>
+    <p class="note" style="color: #7c3aed;">Used for Play Store listings and light-mode previews.</p>
+  </div>
+
+  <!-- SMALL SIZES -->
+  <div class="card">
+    <h2>06 · Small size / notification / favicon</h2>
+    <div class="small-row">
+      <div class="size-48">
+        <span class="label">48dp</span>
+        <img src="vinyl-all-purple.svg" alt="">
+        <div class="bs bs-24"><span class="p">S</span><span class="w">ta</span><span class="p">sh</span></div>
+      </div>
+      <div class="size-32">
+        <span class="label">32dp</span>
+        <img src="vinyl-all-purple.svg" alt="">
+        <div class="bs bs-16"><span class="p">S</span><span class="w">ta</span><span class="p">sh</span></div>
+      </div>
+      <div class="size-24">
+        <span class="label">24dp</span>
+        <img src="vinyl-all-purple.svg" alt="">
+        <div class="bs bs-12"><span class="p">S</span><span class="w">ta</span><span class="p">sh</span></div>
+      </div>
+    </div>
+    <p class="note">Bungee Shade loses its 3D shadow below ~20px; consider a solid fallback font (like Righteous or plain Bungee) at small sizes. I'll wire this into the app.</p>
+  </div>
+
+  <!-- MONO -->
+  <div class="card">
+    <h2>07 · Monochrome (notification bar / themed icons)</h2>
+    <div class="layout-h mono">
+      <img src="vinyl-all-purple.svg" alt="">
+      <div class="bs"><span class="p">S</span><span class="w">ta</span><span class="p">sh</span></div>
+    </div>
+    <p class="note">Android requires monochrome variants for notification icons and Material You themed app icons. I'll generate a proper mono SVG when integrating.</p>
+  </div>
+
+</body>
+</html>

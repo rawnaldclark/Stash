@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="outerRing" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#4c1d95"/>
+      <stop offset="100%" stop-color="#1e0742"/>
+    </radialGradient>
+    <radialGradient id="innerField" cx="45%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="60%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#4c1d95"/>
+    </radialGradient>
+    <linearGradient id="sFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fdf4ff"/>
+      <stop offset="100%" stop-color="#e9d5ff"/>
+    </linearGradient>
+    <filter id="sShadow">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="0" dy="3" result="offsetblur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.6"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Outer enamel ring -->
+  <circle cx="256" cy="256" r="248" fill="url(#outerRing)"/>
+
+  <!-- Gold/cream accent ring -->
+  <circle cx="256" cy="256" r="236" fill="none" stroke="#e9d5ff" stroke-width="1.5" opacity="0.4"/>
+  <circle cx="256" cy="256" r="228" fill="none" stroke="#e9d5ff" stroke-width="0.8" opacity="0.25"/>
+
+  <!-- Tick marks around the ring (like a dial) -->
+  <g stroke="#e9d5ff" stroke-width="2" opacity="0.6">
+    <!-- 12 major ticks -->
+    <line x1="256" y1="14" x2="256" y2="26"/>
+    <line x1="256" y1="486" x2="256" y2="498"/>
+    <line x1="14" y1="256" x2="26" y2="256"/>
+    <line x1="486" y1="256" x2="498" y2="256"/>
+    <line x1="85" y1="85" x2="94" y2="94"/>
+    <line x1="418" y1="418" x2="427" y2="427"/>
+    <line x1="85" y1="427" x2="94" y2="418"/>
+    <line x1="418" y1="94" x2="427" y2="85"/>
+  </g>
+  <g stroke="#e9d5ff" stroke-width="1" opacity="0.35">
+    <!-- minor ticks -->
+    <line x1="382" y1="22" x2="378" y2="32"/>
+    <line x1="316" y1="18" x2="314" y2="30"/>
+    <line x1="196" y1="18" x2="198" y2="30"/>
+    <line x1="130" y1="22" x2="134" y2="32"/>
+    <line x1="382" y1="490" x2="378" y2="480"/>
+    <line x1="316" y1="494" x2="314" y2="482"/>
+    <line x1="196" y1="494" x2="198" y2="482"/>
+    <line x1="130" y1="490" x2="134" y2="480"/>
+    <line x1="22" y1="130" x2="32" y2="134"/>
+    <line x1="18" y1="196" x2="30" y2="198"/>
+    <line x1="18" y1="316" x2="30" y2="314"/>
+    <line x1="22" y1="382" x2="32" y2="378"/>
+    <line x1="490" y1="130" x2="480" y2="134"/>
+    <line x1="494" y1="196" x2="482" y2="198"/>
+    <line x1="494" y1="316" x2="482" y2="314"/>
+    <line x1="490" y1="382" x2="480" y2="378"/>
+  </g>
+
+  <!-- Inner field separator -->
+  <circle cx="256" cy="256" r="180" fill="#1e0742"/>
+  <circle cx="256" cy="256" r="176" fill="url(#innerField)"/>
+
+  <!-- Inner field accent ring -->
+  <circle cx="256" cy="256" r="168" fill="none" stroke="#e9d5ff" stroke-width="1.2" opacity="0.45"/>
+
+  <!-- Decorative dots at cardinal points on inner field -->
+  <circle cx="256" cy="92" r="3" fill="#fdf4ff" opacity="0.7"/>
+  <circle cx="256" cy="420" r="3" fill="#fdf4ff" opacity="0.7"/>
+  <circle cx="92" cy="256" r="3" fill="#fdf4ff" opacity="0.7"/>
+  <circle cx="420" cy="256" r="3" fill="#fdf4ff" opacity="0.7"/>
+
+  <!-- STASH arc text at top -->
+  <path id="topArc" d="M 116 256 A 140 140 0 0 1 396 256" fill="none"/>
+  <text font-family="Georgia, serif" font-size="22" font-weight="bold" fill="#e9d5ff" letter-spacing="8" opacity="0.8">
+    <textPath href="#topArc" startOffset="50%" text-anchor="middle">EST. 2026</textPath>
+  </text>
+
+  <!-- Bold italic serif S -->
+  <text x="256" y="320"
+        font-family="'Playfair Display', 'Bodoni 72', Georgia, serif"
+        font-size="220"
+        font-weight="900"
+        font-style="italic"
+        fill="url(#sFill)"
+        text-anchor="middle"
+        filter="url(#sShadow)">S</text>
+</svg>

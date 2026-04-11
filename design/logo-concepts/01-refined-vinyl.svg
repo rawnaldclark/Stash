@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="discGrad" cx="42%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#2a1049"/>
+      <stop offset="55%" stop-color="#120525"/>
+      <stop offset="100%" stop-color="#08021a"/>
+    </radialGradient>
+    <radialGradient id="labelGrad" cx="40%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#c084fc"/>
+      <stop offset="60%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#5b21b6"/>
+    </radialGradient>
+    <linearGradient id="rimLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="30%" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="70%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Outer disc -->
+  <circle cx="256" cy="256" r="240" fill="url(#discGrad)"/>
+
+  <!-- Grooves: many subtle concentric rings -->
+  <g fill="none" stroke="#3a1768" stroke-width="0.8" opacity="0.6">
+    <circle cx="256" cy="256" r="232"/>
+    <circle cx="256" cy="256" r="224"/>
+    <circle cx="256" cy="256" r="216"/>
+    <circle cx="256" cy="256" r="208"/>
+    <circle cx="256" cy="256" r="200"/>
+    <circle cx="256" cy="256" r="192"/>
+    <circle cx="256" cy="256" r="184"/>
+    <circle cx="256" cy="256" r="176"/>
+    <circle cx="256" cy="256" r="168"/>
+    <circle cx="256" cy="256" r="160"/>
+    <circle cx="256" cy="256" r="152"/>
+    <circle cx="256" cy="256" r="144"/>
+    <circle cx="256" cy="256" r="136"/>
+    <circle cx="256" cy="256" r="128"/>
+    <circle cx="256" cy="256" r="120"/>
+  </g>
+
+  <!-- Accented grooves -->
+  <g fill="none" stroke="#5b21b6" stroke-width="1.2" opacity="0.4">
+    <circle cx="256" cy="256" r="220"/>
+    <circle cx="256" cy="256" r="180"/>
+    <circle cx="256" cy="256" r="140"/>
+  </g>
+
+  <!-- Specular rim light -->
+  <circle cx="256" cy="256" r="240" fill="url(#rimLight)"/>
+
+  <!-- Label border ring -->
+  <circle cx="256" cy="256" r="104" fill="#08021a"/>
+
+  <!-- Center label -->
+  <circle cx="256" cy="256" r="100" fill="url(#labelGrad)"/>
+
+  <!-- Label groove (single ring near edge of label) -->
+  <circle cx="256" cy="256" r="92" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.25"/>
+
+  <!-- S letter - bold italic serif -->
+  <text x="256" y="298"
+        font-family="'Playfair Display', 'Bodoni 72', Georgia, serif"
+        font-size="140"
+        font-weight="900"
+        font-style="italic"
+        fill="#ffffff"
+        text-anchor="middle"
+        filter="url(#softShadow)">S</text>
+
+  <!-- Spindle hole -->
+  <circle cx="256" cy="256" r="6" fill="#08021a"/>
+  <circle cx="256" cy="256" r="6" fill="none" stroke="#c084fc" stroke-width="0.5" opacity="0.5"/>
+</svg>

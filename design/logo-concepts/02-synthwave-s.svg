@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#1a0533"/>
+      <stop offset="50%" stop-color="#2d0a52"/>
+      <stop offset="100%" stop-color="#0a0118"/>
+    </linearGradient>
+    <linearGradient id="sGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f0abfc"/>
+      <stop offset="30%" stop-color="#c084fc"/>
+      <stop offset="70%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="horizonGrad" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#ec4899" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="square">
+      <rect x="0" y="0" width="512" height="512" rx="96"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#square)">
+    <!-- Background -->
+    <rect width="512" height="512" fill="url(#bgGrad)"/>
+
+    <!-- Sun / horizon disc -->
+    <circle cx="256" cy="340" r="96" fill="url(#horizonGrad)"/>
+
+    <!-- Horizontal sun bands -->
+    <g fill="#0a0118">
+      <rect x="160" y="344" width="192" height="6"/>
+      <rect x="160" y="358" width="192" height="8"/>
+      <rect x="160" y="374" width="192" height="10"/>
+      <rect x="160" y="392" width="192" height="12"/>
+    </g>
+
+    <!-- Horizon line -->
+    <line x1="0" y1="340" x2="512" y2="340" stroke="#f0abfc" stroke-width="1.5" opacity="0.6"/>
+
+    <!-- Perspective gridlines (ground) -->
+    <g stroke="#a855f7" stroke-width="1" opacity="0.45" fill="none">
+      <!-- Horizontal lines receding -->
+      <line x1="0" y1="360" x2="512" y2="360"/>
+      <line x1="0" y1="385" x2="512" y2="385"/>
+      <line x1="0" y1="415" x2="512" y2="415"/>
+      <line x1="0" y1="450" x2="512" y2="450"/>
+      <line x1="0" y1="490" x2="512" y2="490"/>
+      <!-- Vertical lines converging at (256, 340) -->
+      <line x1="256" y1="340" x2="-50" y2="512"/>
+      <line x1="256" y1="340" x2="50" y2="512"/>
+      <line x1="256" y1="340" x2="150" y2="512"/>
+      <line x1="256" y1="340" x2="256" y2="512"/>
+      <line x1="256" y1="340" x2="362" y2="512"/>
+      <line x1="256" y1="340" x2="462" y2="512"/>
+      <line x1="256" y1="340" x2="562" y2="512"/>
+    </g>
+
+    <!-- Stars -->
+    <g fill="#f0abfc">
+      <circle cx="70" cy="80" r="1.5"/>
+      <circle cx="130" cy="50" r="1"/>
+      <circle cx="200" cy="100" r="1.2"/>
+      <circle cx="380" cy="60" r="1.5"/>
+      <circle cx="440" cy="90" r="1"/>
+      <circle cx="90" cy="150" r="1"/>
+      <circle cx="330" cy="120" r="1.2"/>
+      <circle cx="460" cy="180" r="1"/>
+    </g>
+
+    <!-- Bold geometric S with neon glow -->
+    <g filter="url(#neonGlow)">
+      <!-- Thick block S shape as path -->
+      <path d="M 340 130
+               L 175 130
+               Q 145 130 145 160
+               L 145 210
+               Q 145 240 175 240
+               L 305 240
+               Q 335 240 335 270
+               L 335 310
+               Q 335 340 305 340
+               L 140 340
+               L 140 300
+               L 300 300
+               L 300 280
+               L 175 280
+               Q 105 280 105 210
+               L 105 160
+               Q 105 90 175 90
+               L 340 90
+               Z"
+            fill="url(#sGrad)"
+            stroke="#ffffff"
+            stroke-width="2"/>
+    </g>
+  </g>
+</svg>

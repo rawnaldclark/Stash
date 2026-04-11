@@ -247,6 +247,21 @@ class TrackDownloadWorker @AssistedInject constructor(
                     text = "Downloading track $completed of $total",
                     progress = overallProgress,
                 )
+
+                // Flush sync history tallies every 10 tracks so if the process
+                // is killed (user force-close, phone die, OOM), the persisted
+                // record still reflects actual progress. Without this, the
+                // record would read "0 downloaded" until the final flush below.
+                if (completed % 10 == 0) {
+                    syncHistoryDao.updateCounts(
+                        id = syncId,
+                        playlistsChecked = inputData.getInt(DiffWorker.KEY_PLAYLISTS_CHECKED, 0),
+                        newTracksFound = total,
+                        tracksDownloaded = downloadedCount,
+                        tracksFailed = failedCount,
+                        bytesDownloaded = totalBytesDownloaded,
+                    )
+                }
             }
 
             // Update sync history tallies.

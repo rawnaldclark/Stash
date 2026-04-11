@@ -2,6 +2,7 @@ package com.stash.feature.settings
 
 import com.stash.core.auth.model.AuthState
 import com.stash.core.model.QualityTier
+import com.stash.core.model.ThemeMode
 
 /**
  * Immutable UI state for the Settings screen.
@@ -28,6 +29,7 @@ data class SettingsUiState(
     val spotifyAuthState: AuthState = AuthState.NotConnected,
     val youTubeAuthState: AuthState = AuthState.NotConnected,
     val audioQuality: QualityTier = QualityTier.BEST,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val totalStorageBytes: Long = 0,
     val totalTracks: Int = 0,
     val showYouTubeCookieDialog: Boolean = false,

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 180" width="600" height="180">
+  <defs>
+    <linearGradient id="sPurple" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="hPurple" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <filter id="glowSoft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Wordmark: S (purple, larger) + ta (white) + s (purple) + h (purple) -->
+  <!-- Uses Righteous-style spacing; for production, convert to paths -->
+  <g font-family="'Righteous', 'Bungee', 'Oswald', 'Arial Black', sans-serif"
+     font-size="140"
+     font-weight="400"
+     letter-spacing="2">
+    <text x="70" y="130" fill="url(#sPurple)" filter="url(#glowSoft)">S</text>
+    <text x="158" y="130" fill="#ffffff">ta</text>
+    <text x="320" y="130" fill="url(#hPurple)" filter="url(#glowSoft)">s</text>
+    <text x="400" y="130" fill="url(#hPurple)" filter="url(#glowSoft)">h</text>
+  </g>
+
+  <!-- Retro underline — thin chromatic line with offset duplicates -->
+  <g>
+    <rect x="60" y="152" width="440" height="2" fill="#ec4899" opacity="0.5"/>
+    <rect x="60" y="155" width="440" height="2" fill="#c084fc"/>
+    <rect x="60" y="158" width="440" height="2" fill="#8b5cf6" opacity="0.5"/>
+  </g>
+</svg>

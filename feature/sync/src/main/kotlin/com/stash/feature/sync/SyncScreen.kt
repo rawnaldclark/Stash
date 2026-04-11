@@ -23,8 +23,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,8 +55,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.sync.SyncPhase
+import com.stash.core.model.SyncDisplayStatus
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
+import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
  * Main Sync screen.
@@ -453,10 +457,42 @@ private fun TimePickerDialog(
 
 @Composable
 private fun SyncHistoryRow(sync: SyncHistoryInfo) {
-    val isCompleted = sync.status == "COMPLETED"
-    val isFailed = sync.status == "FAILED"
     val extendedColors = StashTheme.extendedColors
     var expanded by remember { mutableStateOf(false) }
+
+    // Derive icon, tint and label directly from the richer displayStatus so
+    // Partial and Interrupted outcomes don't read as a generic "Failed".
+    val icon: ImageVector = when (sync.displayStatus) {
+        SyncDisplayStatus.Success -> Icons.Filled.CheckCircle
+        is SyncDisplayStatus.PartialSuccess -> Icons.Filled.Warning
+        is SyncDisplayStatus.Interrupted -> Icons.Filled.PauseCircle
+        is SyncDisplayStatus.Failed -> Icons.Filled.Error
+        SyncDisplayStatus.Running -> Icons.Filled.Sync
+        SyncDisplayStatus.Idle -> Icons.Filled.Schedule
+    }
+    val tint: Color = when (sync.displayStatus) {
+        SyncDisplayStatus.Success -> extendedColors.success
+        is SyncDisplayStatus.PartialSuccess -> extendedColors.warning
+        is SyncDisplayStatus.Interrupted -> extendedColors.warning
+        is SyncDisplayStatus.Failed -> MaterialTheme.colorScheme.error
+        SyncDisplayStatus.Running,
+        SyncDisplayStatus.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val badgeLabel: String = when (sync.displayStatus) {
+        SyncDisplayStatus.Success -> "Completed"
+        is SyncDisplayStatus.PartialSuccess -> "Partial"
+        is SyncDisplayStatus.Interrupted -> "Interrupted"
+        is SyncDisplayStatus.Failed -> "Failed"
+        SyncDisplayStatus.Running -> "Running"
+        SyncDisplayStatus.Idle -> "Idle"
+    }
+    val badgeBg: Color = when (sync.displayStatus) {
+        SyncDisplayStatus.Success -> extendedColors.success.copy(alpha = 0.12f)
+        is SyncDisplayStatus.PartialSuccess -> extendedColors.warning.copy(alpha = 0.14f)
+        is SyncDisplayStatus.Interrupted -> extendedColors.warning.copy(alpha = 0.14f)
+        is SyncDisplayStatus.Failed -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
 
     GlassCard(
         modifier = Modifier.clickable { expanded = !expanded },
@@ -472,13 +508,9 @@ private fun SyncHistoryRow(sync: SyncHistoryInfo) {
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(
-                        imageVector = if (isCompleted) Icons.Filled.CheckCircle else Icons.Filled.Error,
+                        imageVector = icon,
                         contentDescription = null,
-                        tint = when {
-                            isCompleted -> extendedColors.success
-                            isFailed -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                        tint = tint,
                         modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.width(10.dp))
@@ -506,27 +538,13 @@ private fun SyncHistoryRow(sync: SyncHistoryInfo) {
 
                 // Status badge
                 Text(
-                    text = when {
-                        isCompleted -> "Completed"
-                        isFailed -> "Failed"
-                        else -> sync.status.lowercase().replaceFirstChar { it.uppercase() }
-                    },
+                    text = badgeLabel,
                     style = MaterialTheme.typography.labelSmall,
-                    color = when {
-                        isCompleted -> extendedColors.success
-                        isFailed -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color = tint,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            when {
-                                isCompleted -> extendedColors.success.copy(alpha = 0.12f)
-                                isFailed -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
-                                else -> MaterialTheme.colorScheme.surfaceVariant
-                            },
-                        )
+                        .background(badgeBg)
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                 )
             }

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stash Logo Concepts</title>
+<style>
+  :root {
+    --bg: #0a0118;
+    --bg-light: #f5f3ff;
+    --text: #e9d5ff;
+    --muted: #a78bfa;
+    --card: #1a0533;
+    --border: #3a1768;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+  }
+  h1 {
+    font-size: 32px;
+    margin: 0 0 8px;
+    color: #fdf4ff;
+    letter-spacing: 1px;
+  }
+  p.lead {
+    color: var(--muted);
+    margin: 0 0 40px;
+    font-size: 16px;
+  }
+  .concept {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    margin-bottom: 32px;
+  }
+  .concept h2 {
+    margin: 0 0 4px;
+    font-size: 22px;
+    color: #fdf4ff;
+  }
+  .concept .tag {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0 0 24px;
+  }
+  .size-row {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    padding: 20px 0;
+    border-top: 1px dashed var(--border);
+  }
+  .size-row:first-of-type { border-top: none; padding-top: 0; }
+  .size-row .label {
+    min-width: 120px;
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .size-row .swatches {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .swatch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .swatch .label-small {
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .swatch .box-dark,
+  .swatch .box-light {
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .swatch .box-dark {
+    background: #0a0118;
+    border: 1px solid #2a1049;
+  }
+  .swatch .box-light {
+    background: #f5f3ff;
+    border: 1px solid #c4b5fd;
+  }
+  .size-512 .box-dark,
+  .size-512 .box-light { width: 192px; height: 192px; padding: 12px; }
+  .size-512 .box-dark img,
+  .size-512 .box-light img { width: 100%; height: 100%; }
+
+  .size-108 .box-dark,
+  .size-108 .box-light { width: 108px; height: 108px; padding: 4px; }
+  .size-108 .box-dark img,
+  .size-108 .box-light img { width: 100%; height: 100%; }
+
+  .size-48 .box-dark,
+  .size-48 .box-light { width: 48px; height: 48px; padding: 2px; }
+  .size-48 .box-dark img,
+  .size-48 .box-light img { width: 100%; height: 100%; }
+
+  .wordmark-preview {
+    background: #0a0118;
+    padding: 40px 24px;
+    border-radius: 12px;
+    margin-top: 12px;
+  }
+  .wordmark-preview img { width: 100%; max-width: 600px; }
+  .wordmark-preview.light { background: #f5f3ff; }
+
+  .intro {
+    background: linear-gradient(135deg, #2d0a52, #1a0533);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    margin-bottom: 40px;
+  }
+  .intro h2 { margin-top: 0; color: #fdf4ff; }
+  .intro ul { margin: 12px 0 0; padding-left: 20px; }
+  .intro li { margin: 6px 0; }
+</style>
+</head>
+<body>
+
+  <h1>Stash — Logo Concepts</h1>
+  <p class="lead">Three directions. Each shown at launcher (512), adaptive (108), and notification (48) sizes, on both dark and light backgrounds.</p>
+
+  <div class="intro">
+    <h2>How to evaluate</h2>
+    <ul>
+      <li><strong>Scale test</strong>: look at the 48px column. If it's still readable and distinctive at that size, it'll work as an Android notification icon and favicon.</li>
+      <li><strong>Light background test</strong>: your app is dark-themed but the Play Store and user's home screen might not be. A good logo works on both.</li>
+      <li><strong>Symbol-only test</strong>: the logo must make sense without the "Stash" wordmark next to it. Check the standalone mark.</li>
+      <li><strong>Retro feeling</strong>: which one feels the most "vintage premium" vs "generic modern"?</li>
+    </ul>
+  </div>
+
+  <!-- ─── Concept 1: Refined Vinyl ─── -->
+  <div class="concept">
+    <h2>Concept 1 — Refined Vinyl</h2>
+    <p class="tag">Clean evolution of your current concept. Crisp concentric grooves, deep purple gradient, bold italic serif S on a polished violet label.</p>
+
+    <div class="size-row size-512">
+      <div class="label">Launcher 512px</div>
+      <div class="swatches">
+        <div class="swatch">
+          <div class="box-dark"><img src="01-refined-vinyl.svg" alt="Refined Vinyl on dark"></div>
+          <span class="label-small">dark bg</span>
+        </div>
+        <div class="swatch">
+          <div class="box-light"><img src="01-refined-vinyl.svg" alt="Refined Vinyl on light"></div>
+          <span class="label-small">light bg</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="size-row size-108">
+      <div class="label">Adaptive 108px</div>
+      <div class="swatches">
+        <div class="swatch">
+          <div class="box-dark"><img src="01-refined-vinyl.svg" alt=""></div>
+          <span class="label-small">dark bg</span>
+        </div>
+        <div class="swatch">
+          <div class="box-light"><img src="01-refined-vinyl.svg" alt=""></div>
+          <span class="label-small">light bg</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="size-row size-48">
+      <div class="label">Notification 48px</div>
+      <div class="swatches">
+        <div class="swatch">
+          <div class="box-dark"><img src="01-refined-vinyl.svg" alt=""></div>
+          <span class="label-small">dark bg</span>
+        </div>
+        <div class="swatch">
+          <div class="box-light"><img src="01-refined-vinyl.svg" alt=""></div>
+          <span class="label-small">light bg</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Concept 2: Synthwave S ─── -->
+  <div class="concept">
+    <h2>Concept 2 — Synthwave S</h2>
+    <p class="tag">Typography-led. Bold geometric S against a retro horizon with receding gridlines and a sunset disc. Pure 80s Miami Vice / Stranger Things energy.</p>
+
+    <div class="size-row size-512">
+      <div class="label">Launcher 512px</div>
+      <div class="swatches">
+        <div class="swatch">
+          <div class="box-dark"><img src="02-synthwave-s.svg" alt="Synthwave S on dark"></div>
+          <span class="label-small">dark bg</span>
+        </div>
+        <div class="swatch">
+          <div class="box-light"><img src="02-synthwave-s.svg" alt="Synthwave S on light"></div>
+          <span class="label-small">light bg</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="size-row size-108">
+      <div class="label">Adaptive 108px</div>
+      <div class="swatches">
+        <div class="swatch">
+          <div class="box-dark"><img src="02-synthwave-s.svg" alt=""></div>
+          <span class="label-small">dark bg</span>
+        </div>
+        <div class="swatch">
+          <div class="box-light"><img src="02-synthwave-s.svg" alt=""></div>
+          <span class="label-small">light bg</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="size-row size-48">
+      <div class="label">Notification 48px</div>
+      <div class="swatches">
+        <div class="swatch">
+          <div class="box-dark"><img src="02-synthwave-s.svg" alt=""></div>
+          <span class="label-small">dark bg</span>
+        </div>
+        <div class="swatch">
+          <div class="box-light"><img src="02-synthwave-s.svg" alt=""></div>
+          <span class="label-small">light bg</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Concept 3: Retro Badge ─── -->
+  <div class="concept">
+    <h2>Concept 3 — Retro Badge Monogram</h2>
+    <p class="tag">Circular medallion / vintage record label stamp. Enameled purple ring with dial tick marks, "EST. 2026" arc, bold italic S monogram. Boutique/premium feel.</p>
+
+    <div class="size-row size-512">
+      <div class="label">Launcher 512px</div>
+      <div class="swatches">
+        <div class="swatch">
+          <div class="box-dark"><img src="03-retro-badge.svg" alt="Retro Badge on dark"></div>
+          <span class="label-small">dark bg</span>
+        </div>
+        <div class="swatch">
+          <div class="box-light"><img src="03-retro-badge.svg" alt="Retro Badge on light"></div>
+          <span class="label-small">light bg</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="size-row size-108">
+      <div class="label">Adaptive 108px</div>
+      <div class="swatches">
+        <div class="swatch">
+          <div class="box-dark"><img src="03-retro-badge.svg" alt=""></div>
+          <span class="label-small">dark bg</span>
+        </div>
+        <div class="swatch">
+          <div class="box-light"><img src="03-retro-badge.svg" alt=""></div>
+          <span class="label-small">light bg</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="size-row size-48">
+      <div class="label">Notification 48px</div>
+      <div class="swatches">
+        <div class="swatch">
+          <div class="box-dark"><img src="03-retro-badge.svg" alt=""></div>
+          <span class="label-small">dark bg</span>
+        </div>
+        <div class="swatch">
+          <div class="box-light"><img src="03-retro-badge.svg" alt=""></div>
+          <span class="label-small">light bg</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Wordmark ─── -->
+  <div class="concept">
+    <h2>Refined Wordmark</h2>
+    <p class="tag">Standalone "Stash" lettering — preserves your Righteous-style look with a chromatic retro underline. Pairs with any of the three symbols above.</p>
+    <div class="wordmark-preview">
+      <img src="wordmark-refined.svg" alt="Stash wordmark on dark">
+    </div>
+    <div class="wordmark-preview light" style="margin-top: 8px;">
+      <img src="wordmark-refined.svg" alt="Stash wordmark on light">
+    </div>
+  </div>
+
+</body>
+</html>

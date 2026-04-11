@@ -11,6 +11,8 @@ import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncScheduler
 import com.stash.core.data.sync.SyncStateManager
+import com.stash.core.data.sync.toDisplayStatus
+import com.stash.core.model.SyncDisplayStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +36,12 @@ data class SyncHistoryInfo(
     val newTracksFound: Int = 0,
     val errorMessage: String? = null,
     val diagnostics: String? = null,
+    /**
+     * Richer display summary derived from the raw sync record. Prefer this
+     * over [status] for rendering — it distinguishes partial success,
+     * interruption (process kill), and genuine failure.
+     */
+    val displayStatus: SyncDisplayStatus = SyncDisplayStatus.Idle,
 )
 
 /**
@@ -188,5 +196,6 @@ class SyncViewModel @Inject constructor(
         newTracksFound = newTracksFound,
         errorMessage = errorMessage,
         diagnostics = diagnostics,
+        displayStatus = toDisplayStatus(),
     )
 }
