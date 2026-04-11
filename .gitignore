@@ -44,6 +44,7 @@ obj/
 *.keystore
 keystore.properties
 keystore-password-SAVE-THEN-DELETE.txt
+keystore-base64-SAVE-THEN-DELETE.txt
 
 # Google Services
 google-services.json
