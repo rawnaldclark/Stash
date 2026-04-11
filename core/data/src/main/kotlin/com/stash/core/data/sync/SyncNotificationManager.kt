@@ -3,6 +3,7 @@ package com.stash.core.data.sync
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -73,25 +74,44 @@ class SyncNotificationManager @Inject constructor(
     /**
      * Build a progress notification suitable for a foreground service.
      *
-     * @param title    Notification title (e.g. "Syncing playlists").
-     * @param text     Notification body text (e.g. "Downloading track 3 of 20").
-     * @param progress Current progress as a float in [0.0, 1.0].
+     * @param title             Notification title (e.g. "Syncing playlists").
+     * @param text              Notification body text (e.g. "Downloading track 3 of 20").
+     * @param progress          Current progress as a float in [0.0, 1.0]. Pass
+     *                          a negative value for an indeterminate spinner.
+     * @param cancelIntent      Optional [PendingIntent] to wire a "Cancel"
+     *                          action to — typically obtained from
+     *                          [androidx.work.WorkManager.createCancelPendingIntent].
      * @return A built [Notification] instance.
      */
     fun buildProgressNotification(
         title: String,
         text: String,
         progress: Float,
+        cancelIntent: PendingIntent? = null,
     ): Notification {
-        return NotificationCompat.Builder(context, CHANNEL_SYNC_PROGRESS)
+        val builder = NotificationCompat.Builder(context, CHANNEL_SYNC_PROGRESS)
             .setContentTitle(title)
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(true)
             .setSilent(true)
-            .setProgress(PROGRESS_MAX, (progress * PROGRESS_MAX).toInt(), false)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .build()
+
+        if (progress < 0f) {
+            builder.setProgress(0, 0, true) // indeterminate spinner
+        } else {
+            builder.setProgress(PROGRESS_MAX, (progress * PROGRESS_MAX).toInt(), false)
+        }
+
+        if (cancelIntent != null) {
+            builder.addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Cancel",
+                cancelIntent,
+            )
+        }
+
+        return builder.build()
     }
 
     /**

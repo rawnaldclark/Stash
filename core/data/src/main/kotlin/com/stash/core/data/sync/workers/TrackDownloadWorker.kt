@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.stash.core.data.db.dao.DownloadQueueDao
@@ -51,6 +52,25 @@ class TrackDownloadWorker @AssistedInject constructor(
         const val KEY_DOWNLOADED = "downloaded"
         const val KEY_FAILED = "failed"
         private const val TAG = "TrackDownloadWorker"
+    }
+
+    /**
+     * Called by WorkManager BEFORE [doWork] runs. Returning a [ForegroundInfo]
+     * here signals that this is a long-running worker that needs foreground
+     * service promotion, and WorkManager will start the foreground service
+     * itself before invoking [doWork]. This bypasses the Android 12+ restriction
+     * on starting foreground services from the background, because WorkManager
+     * is the one starting the service — not an already-backgrounded app.
+     *
+     * Without this override, the worker is treated as a regular background job
+     * and gets killed within ~10 minutes of the app being backgrounded.
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        return createForegroundInfo(
+            title = "Syncing playlists",
+            text = "Preparing downloads…",
+            progress = -1f, // indeterminate until we know the track count
+        )
     }
 
     override suspend fun doWork(): Result {
@@ -124,16 +144,12 @@ class TrackDownloadWorker @AssistedInject constructor(
                 )
             }
 
-            // Promote to foreground with an initial progress notification.
-            // This can fail if the app is in the background (Android 12+ restriction).
+            // The worker is already running as a foreground service because
+            // getForegroundInfo() was overridden and WorkManager promoted us
+            // before calling doWork(). This setForeground() call UPDATES the
+            // notification to show the real track count now that we know it.
             syncStateManager.onDownloading(downloaded = 0, total = total)
-            try {
-                setForeground(createForegroundInfo(downloaded = 0, total = total))
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not start foreground service (app may be in background): ${e.message}")
-                // Continue anyway — downloads still work without foreground promotion,
-                // they're just more likely to be killed by the system for long sessions.
-            }
+            setForeground(createForegroundInfo(downloaded = 0, total = total))
 
             var downloadedCount = 0
             var failedCount = 0
@@ -306,6 +322,10 @@ class TrackDownloadWorker @AssistedInject constructor(
 
     /**
      * Creates [ForegroundInfo] for the ongoing download notification.
+     *
+     * Overload used when we know the current track counts during the
+     * download loop — converts them into a progress fraction and a
+     * "Downloading track N of M" body.
      */
     private fun createForegroundInfo(downloaded: Int, total: Int): ForegroundInfo {
         val progress = if (total > 0) {
@@ -313,13 +333,33 @@ class TrackDownloadWorker @AssistedInject constructor(
             val span = 0.70f
             base + span * (downloaded.toFloat() / total)
         } else {
-            0.25f
+            -1f // indeterminate
         }
-
-        val notification = syncNotificationManager.buildProgressNotification(
+        return createForegroundInfo(
             title = "Syncing playlists",
-            text = if (total > 0) "Downloading track $downloaded of $total" else "Preparing downloads...",
+            text = if (total > 0) "Downloading track $downloaded of $total" else "Preparing downloads…",
             progress = progress,
+        )
+    }
+
+    /**
+     * Builds a [ForegroundInfo] with a "Cancel" action wired to
+     * [WorkManager.createCancelPendingIntent] so the user can abort the
+     * sync by tapping the notification action. [progress] can be negative
+     * to request an indeterminate spinner.
+     */
+    private fun createForegroundInfo(
+        title: String,
+        text: String,
+        progress: Float,
+    ): ForegroundInfo {
+        val cancelIntent = WorkManager.getInstance(applicationContext)
+            .createCancelPendingIntent(id)
+        val notification = syncNotificationManager.buildProgressNotification(
+            title = title,
+            text = text,
+            progress = progress,
+            cancelIntent = cancelIntent,
         )
         return ForegroundInfo(
             SyncNotificationManager.NOTIFICATION_ID_PROGRESS,

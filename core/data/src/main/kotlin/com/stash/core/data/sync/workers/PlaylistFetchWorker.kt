@@ -1,9 +1,12 @@
 package com.stash.core.data.sync.workers
 
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.stash.core.auth.TokenManager
@@ -13,6 +16,7 @@ import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
+import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
@@ -47,11 +51,38 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val syncHistoryDao: SyncHistoryDao,
     private val remoteSnapshotDao: RemoteSnapshotDao,
     private val syncStateManager: SyncStateManager,
+    private val syncNotificationManager: SyncNotificationManager,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
         const val KEY_SYNC_ID = "sync_id"
         private const val TAG = "StashSync"
+    }
+
+    /**
+     * Called by WorkManager BEFORE [doWork] runs. Promotes the worker to a
+     * foreground service with a "Fetching playlists…" notification so the
+     * system doesn't kill it during long fetches on huge libraries (3000+
+     * liked songs can take more than 10 minutes of paginated API calls).
+     *
+     * See [TrackDownloadWorker.getForegroundInfo] for background on why
+     * this override is necessary rather than calling setForeground() inside
+     * doWork().
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val cancelIntent = WorkManager.getInstance(applicationContext)
+            .createCancelPendingIntent(id)
+        val notification = syncNotificationManager.buildProgressNotification(
+            title = "Syncing playlists",
+            text = "Fetching your library…",
+            progress = -1f, // indeterminate spinner — we don't know total until mid-fetch
+            cancelIntent = cancelIntent,
+        )
+        return ForegroundInfo(
+            SyncNotificationManager.NOTIFICATION_ID_PROGRESS,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+        )
     }
 
     override suspend fun doWork(): Result {
