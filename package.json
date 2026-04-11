@@ -2,5 +2,8 @@
   "dependencies": {
     "@fontsource/righteous": "^5.2.7",
     "puppeteer": "^24.40.0"
+  },
+  "overrides": {
+    "basic-ftp": "^5.2.2"
   }
 }
