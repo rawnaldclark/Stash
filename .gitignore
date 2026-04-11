@@ -42,6 +42,8 @@ obj/
 # Keystore files
 *.jks
 *.keystore
+keystore.properties
+keystore-password-SAVE-THEN-DELETE.txt
 
 # Google Services
 google-services.json

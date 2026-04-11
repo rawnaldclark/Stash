@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,6 +8,41 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
 }
+
+// ── Release signing configuration ───────────────────────────────────────────
+//
+// Reads signing credentials from one of two sources, in order of precedence:
+//
+//  1. `keystore.properties` in the repo root (local development). The file is
+//     gitignored and never leaves the developer's machine.
+//
+//  2. Environment variables (CI / GitHub Actions). The release workflow
+//     base64-decodes a secret into a temporary .jks file and exports the
+//     passwords as env vars before running `assembleRelease`.
+//
+// If neither source is available, the release build falls back to the debug
+// keystore so the project still builds out-of-the-box for contributors. The
+// fallback APK is unusable for distribution but keeps `assembleRelease` working
+// during local testing.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+
+fun signingProp(key: String, envKey: String): String? =
+    keystoreProperties.getProperty(key) ?: System.getenv(envKey)
+
+val releaseStoreFilePath = signingProp("storeFile", "STASH_KEYSTORE_FILE")
+val releaseStorePassword = signingProp("storePassword", "STASH_KEYSTORE_PASSWORD")
+val releaseKeyAlias = signingProp("keyAlias", "STASH_KEY_ALIAS")
+val releaseKeyPassword = signingProp("keyPassword", "STASH_KEY_PASSWORD")
+
+val hasReleaseSigning = releaseStoreFilePath != null &&
+    releaseStorePassword != null &&
+    releaseKeyAlias != null &&
+    releaseKeyPassword != null
 
 android {
     namespace = "com.stash.app"
@@ -19,11 +56,28 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
     }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFilePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Only wire the release signing config if credentials were found.
+            // Otherwise release builds fall back to the debug key for local testing.
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"

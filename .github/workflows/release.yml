@@ -1,0 +1,107 @@
+name: Release APK
+
+# Triggered when a tag matching `v*` is pushed (e.g. `v0.1.0-beta`, `v1.2.3`).
+# The workflow builds a signed release APK and publishes it as a GitHub Release
+# with auto-generated changelog from the commits since the previous tag.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   KEYSTORE_BASE64        — the stash-release.jks file base64-encoded
+#   KEYSTORE_PASSWORD      — store password for the keystore
+#   KEY_ALIAS              — alias of the signing key (usually "stash")
+#   KEY_PASSWORD           — password for the signing key inside the keystore
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write  # required to create the GitHub Release and upload assets
+
+jobs:
+  build-release:
+    name: Build and publish signed release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed for changelog generation
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore from secret
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret is not set. See SECURITY.md and README for setup."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/stash-release.jks"
+          echo "Decoded keystore to $RUNNER_TEMP/stash-release.jks"
+          ls -la "$RUNNER_TEMP/stash-release.jks"
+
+      - name: Assemble release APK
+        env:
+          STASH_KEYSTORE_FILE: ${{ runner.temp }}/stash-release.jks
+          STASH_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          STASH_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          STASH_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Locate release APK
+        id: find_apk
+        run: |
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
+          if [ -z "$APK" ]; then
+            echo "::error::No release APK produced by assembleRelease"
+            exit 1
+          fi
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$(basename $APK)" >> "$GITHUB_OUTPUT"
+          echo "Built: $APK ($(du -h $APK | cut -f1))"
+
+      - name: Rename APK for release
+        id: rename_apk
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          NEW_NAME="Stash-${TAG}.apk"
+          cp "${{ steps.find_apk.outputs.apk_path }}" "$RUNNER_TEMP/$NEW_NAME"
+          echo "release_apk=$RUNNER_TEMP/$NEW_NAME" >> "$GITHUB_OUTPUT"
+          echo "release_name=$NEW_NAME" >> "$GITHUB_OUTPUT"
+          ls -la "$RUNNER_TEMP/$NEW_NAME"
+
+      - name: Clean up keystore from runner
+        if: always()
+        run: |
+          # Ensure the decoded keystore file is removed from the runner disk
+          # regardless of whether the build succeeded or failed.
+          rm -f "$RUNNER_TEMP/stash-release.jks"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Stash ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') }}
+          files: ${{ steps.rename_apk.outputs.release_apk }}
+          body: |
+            ## Stash ${{ github.ref_name }}
+
+            Download the APK below and install it on your Android device. See the [README](https://github.com/rawnaldclark/Stash#installation) for setup instructions.
+
+            **Requirements:** Android 8.0 (API 26) or later.
+
+            ### Changelog
+            _Auto-generated from commits below._
