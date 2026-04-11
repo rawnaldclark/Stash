@@ -70,8 +70,22 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // R8 minification is DISABLED because youtubedl-android embeds
+            // Chaquopy (Python runtime) + Apache Commons Compress + native
+            // binaries that use extensive reflection. R8 obfuscation renames
+            // classes those libraries look up by string name, causing
+            // "class X is not a concrete class" crashes on startup.
+            //
+            // This is the standard approach for apps in this space: NewPipe,
+            // Seal, YTDLnis, InnerTune all ship with minification off. The
+            // APK is ~5-10MB larger without minification (negligible next to
+            // the ~145MB Python/yt-dlp bundle it already carries), and the
+            // code-obfuscation benefit is moot for an open-source GPL-3.0
+            // project anyway.
+            //
+            // Resource shrinking is also off because it requires minification.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Only wire the release signing config if credentials were found.
             // Otherwise release builds fall back to the debug key for local testing.
