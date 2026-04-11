@@ -124,6 +124,30 @@ interface SyncHistoryDao {
     suspend fun updateDiagnostics(id: Long, diagnostics: String?)
 
     /**
+     * Startup cleanup: marks any sync runs that are stuck in a non-terminal
+     * state (AUTHENTICATING, FETCHING_PLAYLISTS, DIFFING, DOWNLOADING,
+     * FINALIZING) as FAILED with an "Interrupted" error message.
+     *
+     * This prevents the home screen's sync status card from showing
+     * "Syncing..." forever when a sync was killed mid-run (process death,
+     * force-close, device reboot). Terminal states (IDLE, COMPLETED, FAILED)
+     * are untouched.
+     *
+     * @param completedAt The timestamp to set on reset records.
+     * @return Number of rows reset.
+     */
+    @Query(
+        """
+        UPDATE sync_history
+        SET status = 'FAILED',
+            completed_at = :completedAt,
+            error_message = 'Interrupted'
+        WHERE status IN ('AUTHENTICATING', 'FETCHING_PLAYLISTS', 'DIFFING', 'DOWNLOADING', 'FINALIZING')
+        """
+    )
+    suspend fun resetStaleSyncs(completedAt: Long = System.currentTimeMillis()): Int
+
+    /**
      * Update the final result of a sync run in a single statement,
      * setting status, completion timestamp, error message, and all tallies.
      */

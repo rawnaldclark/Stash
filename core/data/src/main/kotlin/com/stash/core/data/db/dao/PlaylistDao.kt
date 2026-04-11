@@ -51,6 +51,30 @@ interface PlaylistDao {
     @Delete
     suspend fun delete(playlist: PlaylistEntity)
 
+    /**
+     * One-time cleanup: removes playlists created by the original
+     * DatabaseSeeder. The seeder used very specific source IDs that do
+     * not collide with real Spotify or YouTube Music playlists created
+     * by the sync pipeline (real YouTube liked uses `youtube_liked_songs`,
+     * real YouTube mixes use `VLRDTMAK5uy_*`). These five source IDs are
+     * only ever present when the seeder ran on a fresh install.
+     *
+     * @return The number of playlist rows deleted.
+     */
+    @Query(
+        """
+        DELETE FROM playlists
+        WHERE source_id IN (
+            'spotify:playlist:dailymix1',
+            'spotify:playlist:dailymix2',
+            'spotify:collection:tracks',
+            'RDMM',
+            'LM'
+        )
+        """
+    )
+    suspend fun deleteSeederPlaylists(): Int
+
     // ── List queries ────────────────────────────────────────────────────
 
     /** All active (non-hidden) playlists ordered alphabetically. */

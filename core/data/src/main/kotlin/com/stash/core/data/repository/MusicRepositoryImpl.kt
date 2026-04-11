@@ -28,10 +28,33 @@ class MusicRepositoryImpl @Inject constructor(
     private val downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao,
 ) : MusicRepository {
 
-    /** Startup fixups — resets exhausted download retries. */
+    /** Startup fixups — resets exhausted retries, purges seeder data, and
+     *  clears interrupted sync records. */
     suspend fun runMigrations() {
         // Reset exhausted retries so tracks get another chance each app session.
         downloadQueueDao.resetExhaustedRetries()
+
+        // Mark any sync runs left in a non-terminal state (from a killed
+        // process, reboot, etc.) as FAILED so the home screen's sync status
+        // card doesn't read "Syncing..." forever.
+        val resetSyncs = syncHistoryDao.resetStaleSyncs()
+        if (resetSyncs > 0) {
+            android.util.Log.i("StashMigrations", "Reset $resetSyncs stale sync record(s)")
+        }
+
+        // One-time cleanup of filler tracks/playlists created by the original
+        // DatabaseSeeder. The seeder used distinctive file paths and source IDs
+        // that do not collide with real sync data. Safe to run on every startup
+        // — becomes a no-op once cleaned. See DAO KDoc for details.
+        val deletedTracks = trackDao.deleteSeederTracks()
+        val deletedPlaylists = playlistDao.deleteSeederPlaylists()
+        if (deletedTracks > 0 || deletedPlaylists > 0) {
+            android.util.Log.i(
+                "StashMigrations",
+                "Cleaned seeder data: $deletedTracks tracks, $deletedPlaylists playlists",
+            )
+        }
+
         // NOTE: backfillSpotifyDateAdded() was removed — it ran on every startup and
         // overwrote all Spotify tracks' date_added with the same timestamp, making
         // "Recently Added" show arbitrary tracks instead of actual recent downloads.

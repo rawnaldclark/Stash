@@ -169,6 +169,20 @@ interface TrackDao {
     @Query("UPDATE tracks SET date_added = :now WHERE is_downloaded = 1 AND source = 'SPOTIFY'")
     suspend fun backfillSpotifyDateAdded(now: Long = System.currentTimeMillis())
 
+    /**
+     * One-time cleanup: removes all seeder-inserted "filler" tracks.
+     *
+     * The original DatabaseSeeder populated the library with 25 fake tracks
+     * (Blinding Lights, Levitating, Peaches, etc.) marked as downloaded with
+     * fake file paths under `/storage/emulated/0/Stash/`. Real downloads are
+     * always stored under the app's internal files directory, so this LIKE
+     * clause uniquely identifies seeder rows without touching user data.
+     *
+     * @return The number of rows deleted.
+     */
+    @Query("DELETE FROM tracks WHERE file_path LIKE '/storage/emulated/0/Stash/%'")
+    suspend fun deleteSeederTracks(): Int
+
     // ── Full-text search ────────────────────────────────────────────────
 
     /**
