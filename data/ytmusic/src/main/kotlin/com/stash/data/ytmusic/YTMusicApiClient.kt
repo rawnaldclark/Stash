@@ -304,6 +304,14 @@ class YTMusicApiClient @Inject constructor(
                     ?.get("text")?.asString()
                     ?: continue
 
+                // Filter: only accept algorithmic mix playlists (Discover/Daily/Supermix/
+                // Replay/Archive/New Release). Reject albums (MPRE*), channels (UC*),
+                // and community/user playlists (VLPL*, PL*, OLAK5uy_*).
+                if (!isAllowedMixPlaylist(playlistId)) {
+                    Log.d(TAG, "parseMixesFromHome: skipping non-mix '$title' (id=$playlistId)")
+                    continue
+                }
+
                 val thumbnailUrl = twoRowRenderer.navigatePath(
                     "thumbnailRenderer",
                     "musicThumbnailRenderer",
@@ -335,6 +343,31 @@ class YTMusicApiClient @Inject constructor(
     }
 
     // ── Utility helpers ──────────────────────────────────────────────────
+
+    /**
+     * Whitelists algorithmic mix playlist IDs from YouTube Music's home feed.
+     *
+     * YouTube Music mixes all share identifiable ID prefixes because they are
+     * generated playlists rather than user-created content:
+     * - `VLRDTMAK5uy_*` — Daily Mixes, Discover Mix, Supermix, Replay Mix, Archive Mix
+     * - `RDTMAK5uy_*` — Same playlists, without the `VL` browse prefix
+     * - `RDCLAK5uy_*` — YouTube Music radio / station mixes
+     * - `RDMM` — "My Mix" (personalized mix)
+     * - `LM` — Liked Music
+     *
+     * This explicitly rejects:
+     * - `MPRE*` — Album browse IDs
+     * - `UC*` — Channel IDs (artists)
+     * - `VLPL*` / `PL*` — User-created playlists (community content)
+     * - `OLAK5uy_*` — Album content playlists
+     */
+    private fun isAllowedMixPlaylist(playlistId: String): Boolean {
+        return playlistId.startsWith("VLRDTMAK5uy_") ||
+            playlistId.startsWith("RDTMAK5uy_") ||
+            playlistId.startsWith("RDCLAK5uy_") ||
+            playlistId == "RDMM" ||
+            playlistId == "LM"
+    }
 
     /**
      * Parses a duration string like "3:45" or "1:02:30" into milliseconds.

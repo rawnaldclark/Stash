@@ -97,6 +97,25 @@ class InnerTubeClient @Inject constructor(
     }
 
     /**
+     * Calls the InnerTube `player` action to get actual video metadata.
+     *
+     * Used to verify that a video ID returned by search actually corresponds
+     * to the expected song. InnerTube search metadata and actual video content
+     * can diverge — this endpoint returns the ground-truth title/author.
+     *
+     * @param videoId The YouTube video ID to look up.
+     * @return The parsed JSON response containing `videoDetails`, or null on failure.
+     */
+    suspend fun player(videoId: String): JsonObject? = withContext(Dispatchers.IO) {
+        val cookie = tokenManager.getYouTubeCookie()
+        val body = buildJsonObject {
+            put("context", buildContext())
+            put("videoId", videoId)
+        }
+        executeRequest("$BASE_URL/player", body, cookie)
+    }
+
+    /**
      * Builds the InnerTube client context object required by every request.
      */
     private fun buildContext(): JsonObject = buildJsonObject {

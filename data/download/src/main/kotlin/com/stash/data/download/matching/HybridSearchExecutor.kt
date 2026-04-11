@@ -6,19 +6,20 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Composite search executor that tries the fast InnerTube path first and
- * falls back to yt-dlp if InnerTube returns no results.
+ * Composite search executor: InnerTube first (fast), yt-dlp only when
+ * InnerTube returns empty results.
  *
  * Performance characteristics:
  * - InnerTube: ~0.2s per search (single HTTP POST)
  * - yt-dlp:    ~3s per search (Python subprocess + network)
  *
- * The fallback ensures reliability: InnerTube may return empty results for
- * obscure queries, region-restricted content, or if the API response format
- * changes. The yt-dlp path is battle-tested and handles these edge cases.
+ * InnerTube results are trusted when they contain at least one relevant
+ * title match. Accuracy is enforced downstream by DownloadManager's
+ * three-gate verification (title sim, artist sim, artist word match),
+ * so the search layer doesn't need to double-check with yt-dlp.
  *
- * This class is injected into [DownloadManager] as a drop-in replacement
- * for [YouTubeSearchExecutor], preserving the same `search()` contract.
+ * yt-dlp is only invoked when InnerTube returns zero results (obscure
+ * tracks, region-restricted content, API changes).
  */
 @Singleton
 class HybridSearchExecutor @Inject constructor(
@@ -30,53 +31,53 @@ class HybridSearchExecutor @Inject constructor(
     }
 
     /**
-     * Searches YouTube for tracks matching [query], trying InnerTube first.
+     * Verifies a video ID via the InnerTube player endpoint.
+     * Returns title and playability status so [DownloadManager] can
+     * reject unplayable or mismatched video IDs before downloading.
+     */
+    suspend fun verifyVideo(videoId: String): InnerTubeSearchExecutor.VideoVerification? {
+        return innerTubeSearch.verifyVideo(videoId)
+    }
+
+    /**
+     * Searches YouTube directly via yt-dlp, bypassing InnerTube.
+     * Used as a final fallback when InnerTube video IDs fail verification.
+     */
+    suspend fun searchYtDlpDirect(query: String, maxResults: Int = 5): List<YtDlpSearchResult> {
+        return try {
+            ytDlpSearch.search(query, maxResults)
+        } catch (e: Exception) {
+            Log.w(TAG, "yt-dlp direct search failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Searches YouTube for tracks matching [query].
      *
-     * If InnerTube returns results, they are used immediately (~15x faster).
-     * If InnerTube returns empty or throws, yt-dlp is used as a fallback.
+     * Uses InnerTube (~0.2s) and only falls back to yt-dlp (~3s) when
+     * InnerTube returns no results at all.
      *
      * @param query      Free-text search string (e.g. "Artist Title").
      * @param maxResults Maximum number of results to return.
-     * @return List of search results from whichever source succeeded first.
+     * @return List of search results.
      */
     suspend fun search(query: String, maxResults: Int = 10): List<YtDlpSearchResult> {
-        // Fast path: try InnerTube first (~0.2s)
+        // Fast path: InnerTube (~0.2s)
         val innerTubeResults = innerTubeSearch.search(query, maxResults)
 
         if (innerTubeResults.isNotEmpty()) {
-            // Check if InnerTube results look trustworthy:
-            // - Has at least one result with a non-empty album (YouTube Music indexed it properly)
-            // - Title words appear in the results (not completely unrelated)
-            val hasAlbumData = innerTubeResults.any { !it.album.isNullOrBlank() }
-            val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
-            val titleRelevant = innerTubeResults.any { result ->
-                val resultLower = result.title.lowercase()
-                queryWords.count { it in resultLower } >= (queryWords.size / 2).coerceAtLeast(1)
-            }
-
-            if (hasAlbumData && titleRelevant) {
-                // InnerTube results look good — use them (fast path)
-                return innerTubeResults
-            }
-
-            // InnerTube results look sketchy — merge with yt-dlp for safety
-            Log.d(TAG, "InnerTube results look unreliable (album=$hasAlbumData, relevant=$titleRelevant), merging with yt-dlp for: $query")
+            Log.d(TAG, "InnerTube returned ${innerTubeResults.size} results for '$query'")
+            return innerTubeResults
         }
 
-        // Slow path: get yt-dlp results and merge
-        val ytDlpResults = try {
+        // Slow fallback: yt-dlp only when InnerTube returns nothing
+        Log.d(TAG, "InnerTube empty, falling back to yt-dlp for: $query")
+        return try {
             ytDlpSearch.search(query, maxResults = 5)
         } catch (e: Exception) {
             Log.w(TAG, "yt-dlp search failed", e)
             emptyList()
         }
-
-        if (innerTubeResults.isEmpty()) return ytDlpResults
-
-        // Merge: deduplicate by video ID, yt-dlp first (more reliable IDs)
-        val seen = mutableSetOf<String>()
-        val merged = (ytDlpResults + innerTubeResults).filter { it.id.isNotBlank() && seen.add(it.id) }
-        Log.d(TAG, "Merged: ${ytDlpResults.size} yt-dlp + ${innerTubeResults.size} innertube = ${merged.size} unique")
-        return merged.take(maxResults)
     }
 }

@@ -4,10 +4,10 @@ import android.util.Log
 import com.stash.core.model.Track
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
+import com.stash.data.download.matching.AlbumMatchExecutor
 import com.stash.data.download.matching.DuplicateDetectionService
 import com.stash.data.download.matching.MatchScorer
 import com.stash.data.download.matching.HybridSearchExecutor
-import com.stash.data.download.matching.YouTubeSearchExecutor
 import com.stash.data.download.model.DownloadProgress
 import com.stash.data.download.model.DownloadStatus
 import com.stash.data.download.prefs.QualityPreferencesManager
@@ -49,6 +49,7 @@ sealed class TrackDownloadResult {
 class DownloadManager @Inject constructor(
     private val downloadExecutor: DownloadExecutor,
     private val searchExecutor: HybridSearchExecutor,
+    private val albumMatchExecutor: AlbumMatchExecutor,
     private val matchScorer: MatchScorer,
     private val duplicateDetection: DuplicateDetectionService,
     private val fileOrganizer: FileOrganizer,
@@ -177,7 +178,37 @@ class DownloadManager @Inject constructor(
         // If we already have a YouTube ID, use it directly
         track.youtubeId?.let { return "https://www.youtube.com/watch?v=$it" }
 
-        // Try multiple search strategies in order of expected quality
+        // ── Primary strategy: Album-based matching (most reliable) ──
+        // Searches for the album on YouTube Music, browses the tracklist,
+        // and finds the exact track within it. This gives correct video IDs
+        // because album tracklists are structured data, not search results.
+        if (track.album.isNotBlank()) {
+            val albumResult = albumMatchExecutor.findTrackInAlbum(
+                targetTitle = track.title,
+                targetArtist = track.artist,
+                targetAlbum = track.album,
+                targetDurationMs = track.durationMs,
+            )
+            if (albumResult != null) {
+                val scored = matchScorer.scoreResults(
+                    targetTitle = track.title,
+                    targetArtist = track.artist,
+                    targetDurationMs = track.durationMs,
+                    results = listOf(albumResult),
+                    targetAlbum = track.album,
+                )
+                val best = matchScorer.bestMatch(scored)
+                if (best != null) {
+                    // Album matches skip verifyMatch() intentionally — video IDs come from
+                    // the album's structured tracklist, not search results, so they don't
+                    // suffer from the metadata/ID mismatch that verifyMatch guards against.
+                    Log.d(TAG, "resolveUrl: ALBUM MATCH '${track.artist} - ${track.title}' → ${best.youtubeUrl}")
+                    return best.youtubeUrl
+                }
+            }
+        }
+
+        // ── Fallback: Track-level search strategies ──
         val strategies = buildSearchQueries(track)
 
         for (query in strategies) {
@@ -193,33 +224,100 @@ class DownloadManager @Inject constructor(
                 targetAlbum = track.album,
             )
 
+            val best = matchScorer.bestMatch(scored) ?: continue
+            val verified = verifyMatch(track, best, query) ?: continue
+            return verified
+        }
+
+        // Final fallback: direct yt-dlp search (bypasses InnerTube entirely)
+        Log.d(TAG, "resolveUrl: InnerTube strategies exhausted, trying yt-dlp for '${track.artist} - ${track.title}'")
+        val ytDlpQuery = "${track.artist} ${track.title}"
+        val ytDlpResults = searchExecutor.searchYtDlpDirect(ytDlpQuery, maxResults = 5)
+        if (ytDlpResults.isNotEmpty()) {
+            val scored = matchScorer.scoreResults(
+                targetTitle = track.title,
+                targetArtist = track.artist,
+                targetDurationMs = track.durationMs,
+                results = ytDlpResults,
+                targetAlbum = track.album,
+            )
             val best = matchScorer.bestMatch(scored)
             if (best != null) {
-                // Three-level verification — all must pass:
-                // 1. Title similarity >= 0.6 (prevents wrong song by same artist)
-                // 2. Artist Jaro-Winkler >= 0.65 (prevents wrong artist)
-                // 3. Artist words overlap (prevents near-name mismatches)
-                val titleSim = matchScorer.titleSimilarity(track.title, best.title)
-                if (titleSim < 0.6f) {
-                    Log.w(TAG, "resolveUrl: rejecting '${best.title}' — title sim ${String.format("%.2f", titleSim)} too low for '${track.title}'")
-                    continue
-                }
-                val artistSim = matchScorer.artistSimilarity(track.artist, best.uploader)
-                if (artistSim < 0.65f) {
-                    Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — fuzzy artist sim ${String.format("%.2f", artistSim)} too low for '${track.artist}'")
-                    continue
-                }
-                if (!artistWordsMatch(track.artist, best.uploader)) {
-                    Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — artist words don't match '${track.artist}'")
-                    continue
-                }
-                Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} (artist=%.2f)".format(artistSim))
-                return best.youtubeUrl
+                val verified = verifyMatch(track, best, ytDlpQuery)
+                if (verified != null) return verified
             }
         }
 
         Log.w(TAG, "resolveUrl: all strategies failed for '${track.artist} - ${track.title}'")
         return null
+    }
+
+    /**
+     * Runs all verification gates on a match candidate.
+     *
+     * Four-level verification:
+     * 1. **Title similarity** >= 0.6 (prevents wrong song by same artist)
+     * 2. **Short title containment** — for titles <= 5 chars, candidate must
+     *    contain the target as a word (Jaro-Winkler inflates scores for short strings)
+     * 3. **Artist similarity** >= 0.65 + word overlap (prevents wrong artist)
+     * 4. **Video ID verification** — InnerTube player endpoint confirms the actual
+     *    video title matches (catches InnerTube metadata/ID mismatches)
+     *
+     * @return The YouTube URL if all gates pass, null if rejected.
+     */
+    private suspend fun verifyMatch(
+        track: Track,
+        best: com.stash.data.download.model.MatchResult,
+        query: String,
+    ): String? {
+        // Gate 1: Title similarity
+        val titleSim = matchScorer.titleSimilarity(track.title, best.title)
+        if (titleSim < 0.6f) {
+            Log.w(TAG, "resolveUrl: rejecting '${best.title}' — title sim ${String.format("%.2f", titleSim)} too low for '${track.title}'")
+            return null
+        }
+
+        // Gate 2: Short title word containment
+        // Jaro-Winkler is unreliable for short strings (e.g., "Hey" vs "Otherside" = 0.63)
+        // For titles <= 5 chars, require the target to appear as a word in the candidate
+        val targetTitle = track.title.trim()
+        if (targetTitle.length <= 5) {
+            val targetWord = targetTitle.lowercase()
+            val candidateWords = best.title.lowercase().split(Regex("\\W+"))
+            if (targetWord !in candidateWords) {
+                Log.w(TAG, "resolveUrl: rejecting '${best.title}' — short title '${track.title}' not found as word")
+                return null
+            }
+        }
+
+        // Gate 3: Artist similarity + word overlap
+        val artistSim = matchScorer.artistSimilarity(track.artist, best.uploader)
+        if (artistSim < 0.65f) {
+            Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — fuzzy artist sim ${String.format("%.2f", artistSim)} too low for '${track.artist}'")
+            return null
+        }
+        if (!artistWordsMatch(track.artist, best.uploader)) {
+            Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — artist words don't match '${track.artist}'")
+            return null
+        }
+
+        // Gate 4: Video ID verification via InnerTube player endpoint
+        // The player returns the actual video title even for "unplayable" videos
+        // (WEB_REMIX client lacks playback auth, but yt-dlp handles that separately).
+        // We only check the title — if InnerTube search says "Song A" but the video
+        // is actually "Song B", we reject it.
+        val verification = searchExecutor.verifyVideo(best.videoId)
+        if (verification != null) {
+            val actualTitleSim = matchScorer.titleSimilarity(track.title, verification.title)
+            if (actualTitleSim < 0.6f) {
+                Log.w(TAG, "resolveUrl: VIDEO ID MISMATCH for '${track.title}' — " +
+                    "search said '${best.title}' but player says '${verification.title}' (sim=${String.format("%.2f", actualTitleSim)})")
+                return null
+            }
+        }
+
+        Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} (artist=%.2f, verified=${verification != null})".format(artistSim))
+        return best.youtubeUrl
     }
 
     /**
@@ -246,11 +344,9 @@ class DownloadManager @Inject constructor(
         val album = track.album.takeIf { it.isNotBlank() }
 
         return listOfNotNull(
-            "$artist $simpleTitle $album",  // Most specific: artist + clean title + album
-            "$artist $title",               // Original full query
-            "$artist $cleanTitle",          // Without parentheticals
-            "$artist $simpleTitle",         // Without remaster/deluxe suffixes
-            "$artist - $simpleTitle",       // With dash separator
+            "$artist $simpleTitle",         // Clean title (best for InnerTube)
+            "$artist $title",               // Original full query (fallback)
+            "$artist - $simpleTitle",       // With dash separator (last resort)
         ).map { it.trim() }.filter { it.isNotBlank() }.distinct()
     }
 

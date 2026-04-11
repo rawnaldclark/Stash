@@ -59,6 +59,47 @@ class InnerTubeSearchExecutor @Inject constructor(
     }
 
     /**
+     * Result of verifying a video ID via the InnerTube player endpoint.
+     */
+    data class VideoVerification(
+        val title: String,
+        val isPlayable: Boolean,
+    )
+
+    /**
+     * Verifies a video ID via the InnerTube player endpoint.
+     *
+     * Returns the actual video title AND playability status. InnerTube search
+     * results can return video IDs that are:
+     * - **Metadata mismatch**: search says "Song A" but player says "Song B"
+     * - **Unplayable**: correct metadata but video is unavailable/region-blocked,
+     *   causing yt-dlp to download a substitute or fail silently
+     *
+     * @param videoId The YouTube video ID to verify.
+     * @return Verification result, or null if the lookup failed entirely.
+     */
+    suspend fun verifyVideo(videoId: String): VideoVerification? {
+        return try {
+            val response = innerTubeClient.player(videoId) ?: return null
+            val title = response.navigatePath("videoDetails")
+                ?.jsonObject?.get("title")?.jsonPrimitive?.contentOrNull
+                ?: return null
+            val status = response.navigatePath("playabilityStatus")
+                ?.jsonObject?.get("status")?.jsonPrimitive?.contentOrNull
+            val isPlayable = status == "OK"
+            if (!isPlayable) {
+                val reason = response.navigatePath("playabilityStatus")
+                    ?.jsonObject?.get("reason")?.jsonPrimitive?.contentOrNull ?: "unknown"
+                Log.w(TAG, "Video $videoId unplayable: status=$status, reason=$reason")
+            }
+            VideoVerification(title = title, isPlayable = isPlayable)
+        } catch (e: Exception) {
+            Log.w(TAG, "Player lookup failed for $videoId", e)
+            null
+        }
+    }
+
+    /**
      * Parses the top-level InnerTube search response into a flat list of results.
      *
      * Navigates through `tabbedSearchResultsRenderer` -> tabs -> sections ->
