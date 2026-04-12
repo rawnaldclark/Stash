@@ -58,7 +58,17 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // Spotify sp_dc cookie input dialog
+    // Spotify WebView login (full-screen overlay)
+    if (uiState.showSpotifyWebLogin) {
+        com.stash.feature.settings.components.SpotifyLoginWebView(
+            onCookieExtracted = viewModel::onSpotifyWebLoginCookieExtracted,
+            onDismiss = viewModel::onDismissSpotifyWebLogin,
+            onManualFallback = viewModel::onConnectSpotifyManual,
+        )
+        return // Full-screen WebView replaces the Settings content
+    }
+
+    // Spotify sp_dc cookie input dialog (manual fallback)
     if (uiState.showSpotifyCookieDialog) {
         SpotifyCookieDialog(
             isValidating = uiState.isSpotifyCookieValidating,

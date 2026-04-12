@@ -33,6 +33,7 @@ data class SettingsUiState(
     val totalStorageBytes: Long = 0,
     val totalTracks: Int = 0,
     val showYouTubeCookieDialog: Boolean = false,
+    val showSpotifyWebLogin: Boolean = false,
     val showSpotifyCookieDialog: Boolean = false,
     val spotifyCookieError: String? = null,
     val isSpotifyCookieValidating: Boolean = false,

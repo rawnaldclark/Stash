@@ -78,6 +78,7 @@ class SettingsViewModel @Inject constructor(
             themeMode = theme,
             totalStorageBytes = storageBytes,
             totalTracks = trackCount,
+            showSpotifyWebLogin = local.showSpotifyWebLogin,
             showYouTubeCookieDialog = local.showYouTubeCookieDialog,
             showSpotifyCookieDialog = local.showSpotifyCookieDialog,
             spotifyCookieError = local.spotifyCookieError,
@@ -100,16 +101,43 @@ class SettingsViewModel @Inject constructor(
     // -- Spotify actions ------------------------------------------------------
 
     /**
-     * Opens the sp_dc cookie input dialog so the user can paste their cookie.
+     * Opens the Spotify WebView login flow. The user signs in via Spotify's
+     * own login page and the app extracts the sp_dc cookie automatically.
      */
     fun onConnectSpotify() {
         _localState.update {
+            it.copy(showSpotifyWebLogin = true)
+        }
+    }
+
+    /**
+     * Fallback: opens the manual sp_dc cookie paste dialog for users who
+     * prefer to extract the cookie themselves.
+     */
+    fun onConnectSpotifyManual() {
+        _localState.update {
             it.copy(
+                showSpotifyWebLogin = false,
                 showSpotifyCookieDialog = true,
                 spotifyCookieError = null,
                 isSpotifyCookieValidating = false,
             )
         }
+    }
+
+    /** Dismisses the WebView login screen. */
+    fun onDismissSpotifyWebLogin() {
+        _localState.update { it.copy(showSpotifyWebLogin = false) }
+    }
+
+    /**
+     * Called by the WebView login when an sp_dc cookie is successfully
+     * extracted from the Spotify session. Validates it the same way the
+     * manual paste flow does.
+     */
+    fun onSpotifyWebLoginCookieExtracted(spDcCookie: String) {
+        _localState.update { it.copy(showSpotifyWebLogin = false) }
+        onConnectSpotifyWithCookie(spDcCookie)
     }
 
     /**
@@ -379,6 +407,7 @@ class SettingsViewModel @Inject constructor(
      * [SettingsUiState].
      */
     private data class LocalState(
+        val showSpotifyWebLogin: Boolean = false,
         val showYouTubeCookieDialog: Boolean = false,
         val showSpotifyCookieDialog: Boolean = false,
         val spotifyCookieError: String? = null,
