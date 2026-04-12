@@ -87,7 +87,16 @@ Stash doesn't use Spotify's or YouTube's official APIs (they don't offer what St
 - A computer or another device with a desktop browser (Chrome, Firefox, Edge, or Safari)
 - Your Spotify account logged in on that browser
 
-### Steps
+### Option A — Sign in via the app (easiest)
+
+1. Open Stash → **Settings** → tap **Spotify** under Accounts → tap **Connect**.
+2. A Spotify login page will appear inside the app.
+3. Sign in with your email/password, Google, Apple, or Facebook — whatever you normally use.
+4. Once login succeeds, Stash extracts the cookie automatically. Done.
+
+If the in-app login doesn't work for you, use Option B below.
+
+### Option B — Paste the cookie manually
 
 1. On your computer, open **[https://open.spotify.com](https://open.spotify.com)** and make sure you're logged in.
 2. Press **F12** on your keyboard to open Developer Tools. A panel will open on the right or bottom of your browser.
@@ -95,10 +104,10 @@ Stash doesn't use Spotify's or YouTube's official APIs (they don't offer what St
 4. In the left sidebar of that tab, expand **Cookies** → click **`https://open.spotify.com`**.
 5. You'll see a list of cookies. Find the one named **`sp_dc`**.
 6. Double-click the value next to `sp_dc` and copy it (Ctrl+C / Cmd+C). It's a long string of random characters.
-7. Open Stash on your phone → **Settings** → tap **Spotify** under Accounts → tap **Connect**.
+7. Open Stash on your phone → **Settings** → tap **Spotify** → tap **Connect** → tap **"Paste cookie"** in the top-right corner.
 8. Paste the `sp_dc` cookie into the dialog and tap **Connect**.
 
-You're done. Stash will start fetching your Liked Songs, daily mixes, and playlists.
+> **Tip:** Some users have reported that cookies from incognito/private browsing windows can fail to sync. If you run into issues, try using your regular (non-incognito) browser window instead.
 
 > **Why a cookie and not a password?** Spotify's mobile login API doesn't allow third-party apps. The cookie approach lets Stash authenticate as your browser session does. The cookie is session-scoped and can be revoked by logging out of Spotify on the web.
 
@@ -125,6 +134,8 @@ You're done. Stash will start fetching your Liked Songs, daily mixes, and playli
 10. Paste the full cookie string and tap **Connect**.
 
 Stash will start fetching your YouTube Music daily mixes, discover mix, replay mix, and liked music.
+
+> **Tip:** Some users have reported that cookies from incognito/private browsing windows can fail to sync. If you run into issues, try using your regular (non-incognito) browser window instead.
 
 > **Why the whole cookie header?** YouTube uses multiple cookies together to authenticate (`SAPISID`, `__Secure-3PAPISID`, and `LOGIN_INFO`). Grabbing all of them at once is easier than finding each individually.
 
