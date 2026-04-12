@@ -25,7 +25,13 @@ Stash is an offline-first Android music player that syncs your liked songs, play
 
 ## Screenshots
 
-*Coming with the first release.*
+<p align="center">
+  <img src="docs/screenshots/home-dark.png" width="200" alt="Home screen dark mode">
+  <img src="docs/screenshots/home-light.png" width="200" alt="Home screen light mode">
+  <img src="docs/screenshots/liked-songs-light.png" width="200" alt="Liked songs with source chips">
+  <img src="docs/screenshots/now-playing.png" width="200" alt="Now playing screen">
+  <img src="docs/screenshots/queue.png" width="200" alt="Queue management">
+</p>
 
 ---
 
