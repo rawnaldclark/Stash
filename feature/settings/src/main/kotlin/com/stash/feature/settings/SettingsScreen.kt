@@ -159,6 +159,61 @@ private fun SettingsContent(
             color = MaterialTheme.colorScheme.onBackground,
         )
 
+        // -- Support section --------------------------------------------------
+        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+
+        SectionHeader(title = "Support Stash")
+
+        GlassCard {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "If Stash replaced a subscription for you, consider supporting the project.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { uriHandler.openUri("https://ko-fi.com/rawnald") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FavoriteBorder,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Donate", style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { uriHandler.openUri("https://github.com/rawnaldclark/Stash") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Star,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Star", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+
         // -- Accounts section -------------------------------------------------
         SectionHeader(title = "Accounts")
 
@@ -321,63 +376,6 @@ private fun SettingsContent(
                 StorageRow(label = "Version", value = "0.1.0")
                 Spacer(modifier = Modifier.height(8.dp))
                 StorageRow(label = "License", value = "GPL-3.0")
-            }
-        }
-
-        // -- Support section --------------------------------------------------
-        SectionHeader(title = "Support Stash")
-
-        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-
-        GlassCard {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = "If Stash replaced a subscription for you, consider supporting the project.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    // Ko-fi button
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = { uriHandler.openUri("https://ko-fi.com/rawnald") },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.FavoriteBorder,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Donate", style = MaterialTheme.typography.labelMedium)
-                    }
-
-                    // GitHub star button
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = { uriHandler.openUri("https://github.com/rawnaldclark/Stash") },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Star,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Star", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
             }
         }
 
