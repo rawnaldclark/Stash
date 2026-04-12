@@ -8,7 +8,7 @@
 
 Stash is an offline-first Android music player that syncs your liked songs, playlists, daily mixes, and discover mixes from both **Spotify** and **YouTube Music** into a single unified local library. Tracks are downloaded as high-quality Opus audio and played through a premium Material 3 interface with a full equalizer, queue management, and smart source-aware browsing.
 
-**Stash is not a Spotify replacement.** It's a personal-library tool for people who already have Spotify or YouTube Music accounts and want their library available offline on their terms.
+**Stash is not an online streaming service.** It's a personal-library tool for people who already have Spotify or YouTube Music accounts and want their library available offline on their terms.
 
 ---
 
