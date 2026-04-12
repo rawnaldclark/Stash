@@ -171,6 +171,18 @@ See the [LICENSE](LICENSE) file for the full text.
 
 ---
 
+## Support Stash
+
+Stash is free, open-source, and has no ads or telemetry. If it replaced a subscription for you, consider supporting the project:
+
+<a href="https://ko-fi.com/rawnald"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support on Ko-fi" height="36"></a>
+
+You can also [sponsor on GitHub](https://github.com/sponsors/rawnaldclark) for recurring support.
+
+Every contribution — whether it's a donation, a GitHub star, a bug report, or telling a friend — helps keep Stash alive and improving. Thank you.
+
+---
+
 ## Acknowledgments
 
 Stash stands on the shoulders of several open-source projects:

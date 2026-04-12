@@ -8,13 +8,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
@@ -312,9 +318,66 @@ private fun SettingsContent(
 
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
-                StorageRow(label = "Version", value = "1.0.0")
+                StorageRow(label = "Version", value = "0.1.0")
                 Spacer(modifier = Modifier.height(8.dp))
-                StorageRow(label = "Licenses", value = "Open-source licenses")
+                StorageRow(label = "License", value = "GPL-3.0")
+            }
+        }
+
+        // -- Support section --------------------------------------------------
+        SectionHeader(title = "Support Stash")
+
+        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+
+        GlassCard {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "If Stash replaced a subscription for you, consider supporting the project.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    // Ko-fi button
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { uriHandler.openUri("https://ko-fi.com/rawnald") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FavoriteBorder,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Donate", style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    // GitHub star button
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { uriHandler.openUri("https://github.com/rawnaldclark/Stash") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Star,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Star", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
         }
 
