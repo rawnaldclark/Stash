@@ -33,7 +33,10 @@ object DatabaseModule {
             StashDatabase.DATABASE_NAME,
         )
             .addMigrations(StashDatabase.MIGRATION_3_4)
-            .fallbackToDestructiveMigration()
+            // No fallbackToDestructiveMigration() — if a migration is missing,
+            // the app will crash on startup instead of silently wiping the
+            // user's entire library. This forces us to write proper migrations
+            // for every schema change. The crash is preferable to data loss.
             .build()
     }
 
