@@ -4,6 +4,7 @@ import android.text.format.DateUtils
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Sync
@@ -34,6 +37,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -51,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -126,6 +131,119 @@ fun SyncScreen(
                 progress = uiState.overallProgress,
                 onSyncNow = viewModel::onSyncNow,
             )
+        }
+
+        // -- Spotify Sync Preferences (above schedule, collapsed by default) --
+        if (uiState.spotifyConnected && uiState.spotifyPlaylists.isNotEmpty()) {
+            item {
+                var expanded by remember { mutableStateOf(false) }
+                val purple = MaterialTheme.colorScheme.primary
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded },
+                    color = purple.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, purple.copy(alpha = 0.3f),
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                            .animateContentSize(),
+                    ) {
+                        // Header row — always visible, purple accent
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Spotify Sync Preferences",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = purple,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    text = "Choose which playlists to sync and download",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Icon(
+                                imageVector = if (expanded) Icons.Filled.ExpandLess
+                                else Icons.Filled.ExpandMore,
+                                contentDescription = null,
+                                tint = purple,
+                            )
+                        }
+
+                        // Expanded content
+                        if (expanded) {
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            val liked = uiState.spotifyPlaylists.filter {
+                                it.type == com.stash.core.model.PlaylistType.LIKED_SONGS
+                            }
+                            val custom = uiState.spotifyPlaylists.filter {
+                                it.type == com.stash.core.model.PlaylistType.CUSTOM
+                            }
+                            val mixes = uiState.spotifyPlaylists.filter {
+                                it.type == com.stash.core.model.PlaylistType.DAILY_MIX
+                            }
+
+                            // Liked Songs
+                            liked.forEach { playlist ->
+                                SpotifySyncToggleRow(
+                                    name = playlist.name,
+                                    trackCount = playlist.trackCount,
+                                    enabled = playlist.syncEnabled,
+                                    onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
+                                )
+                            }
+
+                            // User Playlists
+                            if (custom.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Your Playlists",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = purple,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                custom.forEach { playlist ->
+                                    SpotifySyncToggleRow(
+                                        name = playlist.name,
+                                        trackCount = playlist.trackCount,
+                                        enabled = playlist.syncEnabled,
+                                        onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
+                                    )
+                                }
+                            }
+
+                            // Daily Mixes — single toggle for all
+                            if (mixes.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val totalMixTracks = mixes.sumOf { it.trackCount }
+                                val allMixesEnabled = mixes.all { it.syncEnabled }
+                                SpotifySyncToggleRow(
+                                    name = "Daily Mixes (${mixes.size})",
+                                    trackCount = totalMixTracks,
+                                    enabled = allMixesEnabled,
+                                    onToggle = { enabled ->
+                                        mixes.forEach { mix ->
+                                            viewModel.onTogglePlaylistSync(mix.id, enabled)
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // -- Schedule ---------------------------------------------------------
@@ -587,5 +705,46 @@ private fun SyncHistoryRow(sync: SyncHistoryInfo) {
                 }
             }
         }
+    }
+}
+
+// ── Spotify sync toggle row ─────────────────────────────────────────────────
+
+@Composable
+private fun SpotifySyncToggleRow(
+    name: String,
+    trackCount: Int,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle(!enabled) }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "$trackCount tracks",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+            ),
+        )
     }
 }

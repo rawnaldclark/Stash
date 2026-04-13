@@ -72,6 +72,12 @@ class DiffWorker @AssistedInject constructor(
                 // Find or create the local playlist.
                 val localPlaylist = findOrCreatePlaylist(playlistSnapshot)
 
+                // Skip playlists the user has disabled in Sync Preferences.
+                if (!localPlaylist.syncEnabled) {
+                    Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' sync disabled, skipping")
+                    continue
+                }
+
                 // Check snapshot_id for change detection (Spotify only).
                 val localSnapshotId = playlistDao.getSnapshotId(localPlaylist.id)
                 if (localSnapshotId != null &&

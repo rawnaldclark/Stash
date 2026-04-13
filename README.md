@@ -14,14 +14,16 @@ Stash is an offline-first Android music player that syncs your liked songs, play
 
 ## Features
 
-- 🎵 **Dual-source sync** — Spotify *and* YouTube Music, combined or filtered by source
-- 💾 **Offline library** — every track downloaded as Opus audio at your chosen bitrate
-- 🎯 **Bulletproof matching** — album-first pipeline eliminates "wrong track, same artist" mismatches that plague simpler tools
+- 🎵 **Dual-source sync** — pull from Spotify and YouTube Music into one library, or filter by source
+- 💾 **Offline everything** — tracks download as high-quality Opus audio, playable without internet
+- 🎯 **Bulletproof matching** — album-first pipeline finds the right version of every song, not some random live recording or cover
+- 🎛️ **Pick what you want** — choose exactly which Spotify playlists, liked songs, and daily mixes to sync. Don't want Daily Mix 3? Turn it off.
 - 🎚️ **Full equalizer** — 5-band EQ with presets, bass boost, and virtualizer
-- 📱 **Premium UI** — Jetpack Compose, Material 3, Light/Dark/System themes
-- 🔁 **Smart playback** — queue management, drag-to-reorder, swipe-to-remove
-- 🔒 **Private by design** — all credentials stored locally with AES-256-GCM, nothing ever leaves your device except the calls to Spotify/YouTube you'd make anyway
-- 🔓 **Free and open source** — no subscriptions, no ads, no telemetry, GPL-3.0
+- 📱 **Looks good** — Jetpack Compose, Material 3, light and dark themes that actually look premium
+- 🔁 **Smart playback** — queue management, drag-to-reorder, swipe-to-remove, random start on play-all
+- 🔑 **Spotify sign-in built in** — just log into Spotify inside the app, no cookie hunting required
+- 🔒 **Private by design** — credentials encrypted with AES-256-GCM, no servers, no telemetry, nothing leaves your phone
+- 🔓 **Free and open source** — no subscriptions, no ads, GPL-3.0
 
 ## Screenshots
 
@@ -143,7 +145,9 @@ Stash will start fetching your YouTube Music daily mixes, discover mix, replay m
 
 ### After setup
 
-Once both services are connected, go to the **Sync** tab and tap **Sync Now**. The first sync takes a while — Stash downloads every track in your liked songs, mixes, and playlists at your chosen quality. You can set this to run automatically on a daily schedule in Sync settings.
+Once you've connected a service, head to the **Sync** tab. Before you hit Sync Now, you can expand the **Spotify Sync Preferences** card to pick exactly what you want — liked songs, specific playlists, daily mixes, or all of the above. Uncheck anything you don't care about and it won't waste your time or storage.
+
+The first sync takes a while depending on how much you're pulling (a library of 1000+ songs might take an hour or so). After that, daily syncs just grab whatever's new. You can set it to run automatically on a schedule so your library stays current without you thinking about it.
 
 ---
 

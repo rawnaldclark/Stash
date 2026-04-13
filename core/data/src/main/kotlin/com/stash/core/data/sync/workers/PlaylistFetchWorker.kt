@@ -339,7 +339,73 @@ class PlaylistFetchWorker @AssistedInject constructor(
             diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message))
         }
 
-        Log.d(TAG, "fetchSpotifyPlaylists: completed -- $dailyMixCount daily mixes, $likedSongCount liked songs")
+        // Fetch user-created/saved playlists from the Spotify library.
+        var userPlaylistCount = 0
+        try {
+            val userPlaylists = spotifyApiClient.getUserPlaylists(limit = 50)
+            // Filter out daily mixes (already handled above) and any Spotify-owned playlists
+            val customPlaylists = userPlaylists.filter { playlist ->
+                !playlist.owner.id.equals("spotify", ignoreCase = true) &&
+                    !playlist.name.matches(Regex("""Daily Mix \d+"""))
+            }
+            Log.d(TAG, "fetchSpotifyPlaylists: found ${customPlaylists.size} user playlists (filtered from ${userPlaylists.size})")
+
+            for (playlist in customPlaylists) {
+                try {
+                    val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
+                        RemotePlaylistSnapshotEntity(
+                            syncId = syncId,
+                            source = MusicSource.SPOTIFY,
+                            sourcePlaylistId = playlist.id,
+                            playlistName = playlist.name,
+                            playlistType = PlaylistType.CUSTOM,
+                            trackCount = playlist.tracks?.total ?: 0,
+                            artUrl = playlist.images?.firstOrNull()?.url,
+                        )
+                    )
+
+                    when (val tracksResult = spotifyApiClient.getPlaylistTracks(playlist.id)) {
+                        is SyncResult.Success -> {
+                            val trackSnapshots = tracksResult.data.mapIndexedNotNull { index, item ->
+                                val track = item.track ?: return@mapIndexedNotNull null
+                                RemoteTrackSnapshotEntity(
+                                    syncId = syncId,
+                                    snapshotPlaylistId = playlistSnapshotId,
+                                    title = track.name,
+                                    artist = track.artists.joinToString(", ") { it.name },
+                                    album = track.album?.name,
+                                    durationMs = track.duration_ms,
+                                    spotifyUri = track.uri,
+                                    albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.album?.images?.firstOrNull()?.url),
+                                    position = index,
+                                )
+                            }
+                            if (trackSnapshots.isNotEmpty()) {
+                                remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                            }
+                            userPlaylistCount++
+                            Log.d(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — ${trackSnapshots.size} tracks")
+                        }
+                        is SyncResult.Empty -> {
+                            Log.d(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — empty")
+                        }
+                        is SyncResult.Error -> {
+                            Log.w(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — error: ${tracksResult.message}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "fetchSpotifyPlaylists: failed to fetch tracks for '${playlist.name}'", e)
+                }
+            }
+            diagnostics.add(SyncStepResult("SPOTIFY", "getUserPlaylists", StepStatus.SUCCESS, userPlaylistCount))
+        } catch (e: SpotifyApiException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchSpotifyPlaylists: user playlists fetch failed", e)
+            diagnostics.add(SyncStepResult("SPOTIFY", "getUserPlaylists", StepStatus.ERROR, errorMessage = e.message))
+        }
+
+        Log.d(TAG, "fetchSpotifyPlaylists: completed -- $dailyMixCount daily mixes, $likedSongCount liked songs, $userPlaylistCount user playlists")
     }
 
     /**

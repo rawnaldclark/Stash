@@ -143,4 +143,29 @@ interface PlaylistDao {
     /** All active playlists from a specific music source. */
     @Query("SELECT * FROM playlists WHERE source = :source AND is_active = 1 ORDER BY name ASC")
     suspend fun getActivePlaylistsBySource(source: MusicSource): List<PlaylistEntity>
+
+    // ── Sync preference queries ─────────────────────────────────────────
+
+    /** Toggle sync_enabled for a specific playlist. */
+    @Query("UPDATE playlists SET sync_enabled = :enabled WHERE id = :playlistId")
+    suspend fun updateSyncEnabled(playlistId: Long, enabled: Boolean)
+
+    /** All Spotify playlists ordered by type (liked first, then mixes, then custom) and name. */
+    @Query("""
+        SELECT * FROM playlists
+        WHERE source = 'SPOTIFY' AND is_active = 1
+        ORDER BY
+            CASE type
+                WHEN 'LIKED_SONGS' THEN 0
+                WHEN 'CUSTOM' THEN 1
+                WHEN 'DAILY_MIX' THEN 2
+            END,
+            name ASC
+    """)
+    fun getSpotifyPlaylistsForPreferences(): Flow<List<PlaylistEntity>>
+
+    /** All sync-enabled playlists for a given source. Used by the sync
+     *  pipeline to skip disabled playlists. */
+    @Query("SELECT * FROM playlists WHERE source = :source AND is_active = 1 AND sync_enabled = 1")
+    suspend fun getSyncEnabledPlaylists(source: MusicSource): List<PlaylistEntity>
 }

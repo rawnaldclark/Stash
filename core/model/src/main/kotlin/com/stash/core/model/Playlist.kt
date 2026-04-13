@@ -11,6 +11,7 @@ data class Playlist(
     val trackCount: Int = 0,
     val isActive: Boolean = true,
     val artUrl: String? = null,
+    val syncEnabled: Boolean = true,
     val tracks: List<Track> = emptyList(),
 )
 

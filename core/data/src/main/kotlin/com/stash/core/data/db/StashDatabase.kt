@@ -3,6 +3,8 @@ package com.stash.core.data.db
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.stash.core.data.db.converter.Converters
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
@@ -47,7 +49,7 @@ import com.stash.core.data.db.entity.TrackFts
         RemotePlaylistSnapshotEntity::class,
         RemoteTrackSnapshotEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -67,5 +69,14 @@ abstract class StashDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "stash.db"
+
+        /** v3 → v4: add sync_enabled column to playlists table. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE playlists ADD COLUMN sync_enabled INTEGER NOT NULL DEFAULT 1"
+                )
+            }
+        }
     }
 }

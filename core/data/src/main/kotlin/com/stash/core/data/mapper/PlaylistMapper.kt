@@ -21,6 +21,7 @@ fun PlaylistEntity.toDomain(): Playlist = Playlist(
     trackCount = trackCount,
     isActive = isActive,
     artUrl = artUrl,
+    syncEnabled = syncEnabled,
 )
 
 /**
@@ -40,4 +41,5 @@ fun Playlist.toEntity(): PlaylistEntity = PlaylistEntity(
     trackCount = trackCount,
     isActive = isActive,
     artUrl = artUrl,
+    syncEnabled = syncEnabled,
 )

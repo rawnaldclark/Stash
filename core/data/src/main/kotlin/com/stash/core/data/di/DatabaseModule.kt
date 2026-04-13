@@ -32,6 +32,7 @@ object DatabaseModule {
             StashDatabase::class.java,
             StashDatabase.DATABASE_NAME,
         )
+            .addMigrations(StashDatabase.MIGRATION_3_4)
             .fallbackToDestructiveMigration()
             .build()
     }

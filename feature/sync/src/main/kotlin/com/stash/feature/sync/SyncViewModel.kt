@@ -47,6 +47,18 @@ data class SyncHistoryInfo(
 /**
  * Full UI state for the Sync screen.
  */
+/**
+ * Lightweight model for a Spotify playlist's sync preference toggle.
+ */
+data class SpotifySyncPlaylist(
+    val id: Long,
+    val name: String,
+    val trackCount: Int,
+    val type: com.stash.core.model.PlaylistType,
+    val syncEnabled: Boolean,
+    val artUrl: String? = null,
+)
+
 data class SyncUiState(
     val syncPhase: SyncPhase = SyncPhase.Idle,
     val overallProgress: Float = 0f,
@@ -55,6 +67,8 @@ data class SyncUiState(
     val youTubeConnected: Boolean = false,
     val recentSyncs: List<SyncHistoryInfo> = emptyList(),
     val isSyncing: Boolean = false,
+    /** Spotify playlists available for sync preference toggles. */
+    val spotifyPlaylists: List<SpotifySyncPlaylist> = emptyList(),
 )
 
 /**
@@ -70,6 +84,7 @@ class SyncViewModel @Inject constructor(
     private val syncPreferencesManager: SyncPreferencesManager,
     private val tokenManager: TokenManager,
     private val syncHistoryDao: SyncHistoryDao,
+    private val playlistDao: com.stash.core.data.db.dao.PlaylistDao,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SyncUiState())
@@ -80,6 +95,7 @@ class SyncViewModel @Inject constructor(
         observePreferences()
         observeAuthStates()
         observeHistory()
+        observeSpotifyPlaylists()
     }
 
     // -- Public actions -------------------------------------------------------
@@ -87,6 +103,13 @@ class SyncViewModel @Inject constructor(
     /** Trigger an immediate sync, replacing any pending schedule. */
     fun onSyncNow() {
         syncScheduler.triggerManualSync()
+    }
+
+    /** Toggle sync_enabled for a specific Spotify playlist. */
+    fun onTogglePlaylistSync(playlistId: Long, enabled: Boolean) {
+        viewModelScope.launch {
+            playlistDao.updateSyncEnabled(playlistId, enabled)
+        }
     }
 
     /**
@@ -181,6 +204,27 @@ class SyncViewModel @Inject constructor(
             syncHistoryDao.getRecentSyncs(limit = 10).collect { entities ->
                 _uiState.update {
                     it.copy(recentSyncs = entities.map { e -> e.toInfo() })
+                }
+            }
+        }
+    }
+
+    private fun observeSpotifyPlaylists() {
+        viewModelScope.launch {
+            playlistDao.getSpotifyPlaylistsForPreferences().collect { entities ->
+                _uiState.update {
+                    it.copy(
+                        spotifyPlaylists = entities.map { e ->
+                            SpotifySyncPlaylist(
+                                id = e.id,
+                                name = e.name,
+                                trackCount = e.trackCount,
+                                type = e.type,
+                                syncEnabled = e.syncEnabled,
+                                artUrl = e.artUrl,
+                            )
+                        }
+                    )
                 }
             }
         }

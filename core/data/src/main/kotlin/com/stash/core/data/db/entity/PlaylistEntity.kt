@@ -47,4 +47,10 @@ data class PlaylistEntity(
 
     @ColumnInfo(name = "snapshot_id")
     val snapshotId: String? = null,
+
+    /** Whether this playlist participates in sync/download. Default true
+     *  so new playlists are included automatically; users opt-out via the
+     *  Spotify Sync Preferences on the Sync tab. */
+    @ColumnInfo(name = "sync_enabled", defaultValue = "1")
+    val syncEnabled: Boolean = true,
 )
