@@ -154,7 +154,7 @@ class HomeViewModel @Inject constructor(
             val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
             val downloaded = tracks.filter { it.filePath != null }
             if (downloaded.isNotEmpty()) {
-                playerRepository.setQueue(downloaded, startIndex = 0)
+                playerRepository.setQueue(downloaded, startIndex = downloaded.indices.random())
             }
         }
     }
@@ -220,7 +220,7 @@ class HomeViewModel @Inject constructor(
                 .distinctBy { it.id }
 
             if (allTracks.isNotEmpty()) {
-                playerRepository.setQueue(allTracks, startIndex = 0)
+                playerRepository.setQueue(allTracks, startIndex = allTracks.indices.random())
             }
         }
     }
@@ -259,7 +259,7 @@ class HomeViewModel @Inject constructor(
                 .distinctBy { it.id }
 
             if (allTracks.isNotEmpty()) {
-                playerRepository.setQueue(allTracks, startIndex = 0)
+                playerRepository.setQueue(allTracks, startIndex = allTracks.indices.random())
             }
         }
     }

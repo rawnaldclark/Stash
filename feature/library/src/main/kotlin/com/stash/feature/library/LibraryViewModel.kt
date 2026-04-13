@@ -71,8 +71,8 @@ class LibraryViewModel @Inject constructor(
         val query = controls.searchQuery.trim().lowercase()
 
         // -- Map DAO projections to UI models --
-        val artists = allArtists.map { ArtistInfo(it.artist, it.trackCount, it.totalDurationMs) }
-        val albums = allAlbums.map { AlbumInfo(it.album, it.artist, it.trackCount, it.artPath) }
+        val artists = allArtists.map { ArtistInfo(it.artist, it.trackCount, it.totalDurationMs, it.artUrl) }
+        val albums = allAlbums.map { AlbumInfo(it.album, it.artist, it.trackCount, it.artPath, it.artUrl) }
 
         // -- Apply source filter --
         val sourceFiltered = when (controls.sourceFilter) {
@@ -109,16 +109,23 @@ class LibraryViewModel @Inject constructor(
             SortOrder.ALPHABETICAL -> filteredPlaylists.sortedBy { it.name.lowercase() }
             SortOrder.MOST_PLAYED -> filteredPlaylists // no play-count on playlists
         }
+        // Sort artists/albums — default by track count descending (most tracks first)
         val sortedArtists = when (controls.sortOrder) {
-            SortOrder.RECENT -> filteredArtists
+            SortOrder.RECENT -> filteredArtists.sortedByDescending { it.trackCount }
             SortOrder.ALPHABETICAL -> filteredArtists.sortedBy { it.name.lowercase() }
             SortOrder.MOST_PLAYED -> filteredArtists.sortedByDescending { it.trackCount }
         }
         val sortedAlbums = when (controls.sortOrder) {
-            SortOrder.RECENT -> filteredAlbums
+            SortOrder.RECENT -> filteredAlbums.sortedByDescending { it.trackCount }
             SortOrder.ALPHABETICAL -> filteredAlbums.sortedBy { it.name.lowercase() }
             SortOrder.MOST_PLAYED -> filteredAlbums.sortedByDescending { it.trackCount }
         }
+
+        // Split into multi-track (primary) and single-track (collapsed)
+        val multiTrackArtists = sortedArtists.filter { it.trackCount >= 2 }
+        val singleTrackArtists = sortedArtists.filter { it.trackCount == 1 }
+        val multiTrackAlbums = sortedAlbums.filter { it.trackCount >= 2 }
+        val singleTrackAlbums = sortedAlbums.filter { it.trackCount == 1 }
 
         LibraryUiState(
             activeTab = controls.activeTab,
@@ -127,8 +134,10 @@ class LibraryViewModel @Inject constructor(
             sourceFilter = controls.sourceFilter,
             tracks = sortedTracks,
             playlists = sortedPlaylists,
-            artists = sortedArtists,
-            albums = sortedAlbums,
+            artists = multiTrackArtists,
+            singleTrackArtists = singleTrackArtists,
+            albums = multiTrackAlbums,
+            singleTrackAlbums = singleTrackAlbums,
             isLoading = false,
             spotifyConnected = authPair.first,
             youTubeConnected = authPair.second,

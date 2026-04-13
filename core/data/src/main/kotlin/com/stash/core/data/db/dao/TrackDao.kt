@@ -20,6 +20,7 @@ data class ArtistSummary(
     val artist: String,
     val trackCount: Int,
     val totalDurationMs: Long,
+    val artUrl: String?,
 )
 
 /**
@@ -35,6 +36,7 @@ data class AlbumSummary(
     val artist: String,
     val trackCount: Int,
     val artPath: String?,
+    val artUrl: String?,
 )
 
 /**
@@ -232,10 +234,11 @@ interface TrackDao {
         """
         SELECT artist,
                COUNT(*) AS trackCount,
-               SUM(duration_ms) AS totalDurationMs
+               SUM(duration_ms) AS totalDurationMs,
+               album_art_url AS artUrl
         FROM tracks
         GROUP BY artist
-        ORDER BY artist ASC
+        ORDER BY COUNT(*) DESC, artist ASC
         """
     )
     fun getAllArtists(): Flow<List<ArtistSummary>>
@@ -249,11 +252,12 @@ interface TrackDao {
         SELECT album,
                artist,
                COUNT(*) AS trackCount,
-               album_art_path AS artPath
+               album_art_path AS artPath,
+               album_art_url AS artUrl
         FROM tracks
         WHERE album != ''
         GROUP BY album, artist
-        ORDER BY album ASC
+        ORDER BY COUNT(*) DESC, album ASC
         """
     )
     fun getAllAlbums(): Flow<List<AlbumSummary>>

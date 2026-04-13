@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -30,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
@@ -216,6 +219,7 @@ private fun LibraryContent(
                 )
                 LibraryTab.ARTISTS -> ArtistsGrid(
                     artists = state.artists,
+                    singleTrackArtists = state.singleTrackArtists,
                     anyServiceConnected = anyServiceConnected,
                     onPlayArtist = onPlayArtist,
                     onAddArtistToQueue = onAddArtistToQueue,
@@ -223,6 +227,7 @@ private fun LibraryContent(
                 )
                 LibraryTab.ALBUMS -> AlbumsGrid(
                     albums = state.albums,
+                    singleTrackAlbums = state.singleTrackAlbums,
                     anyServiceConnected = anyServiceConnected,
                     onPlayAlbum = onPlayAlbum,
                     onAddAlbumToQueue = onAddAlbumToQueue,
@@ -827,12 +832,13 @@ private fun BottomSheetActionRow(
 @Composable
 private fun ArtistsGrid(
     artists: List<ArtistInfo>,
+    singleTrackArtists: List<ArtistInfo>,
     anyServiceConnected: Boolean,
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
     onDeleteArtist: (String) -> Unit,
 ) {
-    if (artists.isEmpty()) {
+    if (artists.isEmpty() && singleTrackArtists.isEmpty()) {
         EmptyTabMessage(
             if (anyServiceConnected) "Sync your library to see artists here"
             else "Connect a service in Settings to see your artists",
@@ -840,9 +846,11 @@ private fun ArtistsGrid(
         return
     }
 
-    // Artist selected for the context-menu bottom sheet.
     var artistToDelete by remember { mutableStateOf<ArtistInfo?>(null) }
     var selectedArtist by remember { mutableStateOf<ArtistInfo?>(null) }
+    var showSingleTrack by remember { mutableStateOf(false) }
+
+    val displayList = if (showSingleTrack) artists + singleTrackArtists else artists
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -850,7 +858,7 @@ private fun ArtistsGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(artists, key = { it.name }) { artist ->
+        items(displayList, key = { it.name }) { artist ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -862,28 +870,35 @@ private fun ArtistsGrid(
                         onLongClick = { selectedArtist = artist },
                     ),
             ) {
-                // Gradient circle with artist initial (Google Contacts style)
-                val gradientColors = remember(artist.name) {
-                    artistGradient(artist.name)
-                }
-                Box(
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(gradientColors),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = artist.name.firstOrNull()
-                            ?.uppercaseChar()
-                            ?.toString()
-                            ?: "?",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                // Album art proxy or gradient circle fallback
+                if (artist.artUrl != null) {
+                    coil3.compose.AsyncImage(
+                        model = artist.artUrl,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                     )
+                } else {
+                    val gradientColors = remember(artist.name) {
+                        artistGradient(artist.name)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(Brush.linearGradient(gradientColors)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = artist.name.firstOrNull()
+                                ?.uppercaseChar()?.toString() ?: "?",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                        )
+                    }
                 }
                 Text(
                     text = artist.name,
@@ -898,6 +913,43 @@ private fun ArtistsGrid(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+
+        // Collapsible section for single-track artists
+        if (singleTrackArtists.isNotEmpty()) {
+            item(span = { GridItemSpan(2) }) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                        .clickable { showSingleTrack = !showSingleTrack },
+                    color = StashTheme.extendedColors.glassBackground,
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, StashTheme.extendedColors.glassBorder,
+                    ),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = if (showSingleTrack) "Hide single-track artists"
+                            else "${singleTrackArtists.size} artists with 1 track",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            imageVector = if (showSingleTrack) Icons.Default.ExpandLess
+                            else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }
@@ -994,11 +1046,12 @@ private fun ArtistsGrid(
 @Composable
 private fun AlbumsGrid(
     albums: List<AlbumInfo>,
+    singleTrackAlbums: List<AlbumInfo>,
     anyServiceConnected: Boolean,
     onPlayAlbum: (String, String) -> Unit,
     onAddAlbumToQueue: (String, String) -> Unit,
 ) {
-    if (albums.isEmpty()) {
+    if (albums.isEmpty() && singleTrackAlbums.isEmpty()) {
         EmptyTabMessage(
             if (anyServiceConnected) "Sync your library to see albums here"
             else "Connect a service in Settings to see your albums",
@@ -1006,8 +1059,10 @@ private fun AlbumsGrid(
         return
     }
 
-    // Album selected for the context-menu bottom sheet.
     var selectedAlbum by remember { mutableStateOf<AlbumInfo?>(null) }
+    var showSingleTrack by remember { mutableStateOf(false) }
+
+    val displayList = if (showSingleTrack) albums + singleTrackAlbums else albums
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -1015,7 +1070,7 @@ private fun AlbumsGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(albums, key = { "${it.name}|${it.artist}" }) { album ->
+        items(displayList, key = { "${it.name}|${it.artist}" }) { album ->
             Column(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
@@ -1026,7 +1081,8 @@ private fun AlbumsGrid(
                         onLongClick = { selectedAlbum = album },
                     ),
             ) {
-                // Album art with fallback icon
+                // Album art: try local path, then remote URL, then fallback icon
+                val artModel = album.artPath ?: album.artUrl
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1035,9 +1091,9 @@ private fun AlbumsGrid(
                         .background(StashTheme.extendedColors.elevatedSurface),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (album.artPath != null) {
+                    if (artModel != null) {
                         AsyncImage(
-                            model = album.artPath,
+                            model = artModel,
                             contentDescription = "${album.name} album art",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
@@ -1058,13 +1114,61 @@ private fun AlbumsGrid(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = album.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = album.artist,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Text(
+                        text = "· ${album.trackCount}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        // Collapsible section for single-track albums
+        if (singleTrackAlbums.isNotEmpty()) {
+            item(span = { GridItemSpan(2) }) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                        .clickable { showSingleTrack = !showSingleTrack },
+                    color = StashTheme.extendedColors.glassBackground,
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, StashTheme.extendedColors.glassBorder,
+                    ),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = if (showSingleTrack) "Hide single-track albums"
+                            else "${singleTrackAlbums.size} albums with 1 track",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            imageVector = if (showSingleTrack) Icons.Default.ExpandLess
+                            else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }
