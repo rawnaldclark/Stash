@@ -1,5 +1,6 @@
 package com.stash.core.data.repository
 
+import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
 import com.stash.core.data.db.dao.PlaylistDao
@@ -11,6 +12,7 @@ import com.stash.core.data.mapper.toEntity
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -54,6 +56,12 @@ class MusicRepositoryImpl @Inject constructor(
                 "Cleaned seeder data: $deletedTracks tracks, $deletedPlaylists playlists",
             )
         }
+
+        // One-time upgrade: replace low-res album art URLs (60px YouTube thumbnails)
+        // with high-res equivalents. The ArtUrlUpgrader rewrites lh3 CDN URLs to
+        // request 544px instead of 60px, and Spotify URLs to 640px instead of 300px.
+        // Safe to run on every startup — already-upgraded URLs pass through unchanged.
+        upgradeAlbumArtUrls()
 
         // NOTE: backfillSpotifyDateAdded() was removed — it ran on every startup and
         // overwrote all Spotify tracks' date_added with the same timestamp, making
@@ -163,4 +171,32 @@ class MusicRepositoryImpl @Inject constructor(
 
     override fun getAllSyncHistory(): Flow<List<SyncHistoryEntity>> =
         syncHistoryDao.observeAll()
+
+    // ── Art URL migration ──────────────────────────────────────────────
+
+    /**
+     * Upgrades low-resolution album art URLs for all existing tracks.
+     * YouTube Music InnerTube responses originally returned 60x60 thumbnails;
+     * this replaces them with 544x544. Spotify 300px URLs are upgraded to 640px.
+     * Already-upgraded URLs pass through [ArtUrlUpgrader.upgrade] unchanged,
+     * so this is safe to run on every startup.
+     */
+    /**
+     * Upgrades low-res album art URLs to high-res equivalents.
+     * On first run: upgrades all tracks with low-res URLs (~2800 updates).
+     * On subsequent runs: `toUpdate` is empty so it returns immediately
+     * after a single DB read. The read itself is fast (~50ms for 3000 rows).
+     */
+    private suspend fun upgradeAlbumArtUrls() {
+        val allTracks = trackDao.getAllByDateAdded().first()
+        val toUpdate = allTracks.mapNotNull { track ->
+            val original = track.albumArtUrl ?: return@mapNotNull null
+            val better = ArtUrlUpgrader.upgrade(original) ?: return@mapNotNull null
+            if (better != original) track.copy(albumArtUrl = better) else null
+        }
+        if (toUpdate.isEmpty()) return
+
+        toUpdate.forEach { trackDao.update(it) }
+        android.util.Log.i("StashMigrations", "Upgraded ${toUpdate.size} album art URLs to high-res")
+    }
 }

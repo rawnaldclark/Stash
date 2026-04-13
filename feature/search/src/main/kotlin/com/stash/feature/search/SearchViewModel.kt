@@ -196,7 +196,7 @@ class SearchViewModel @Inject constructor(
             filePath = finalFile.absolutePath,
             fileSizeBytes = finalFile.length(),
             isDownloaded = true,
-            albumArtUrl = item.thumbnailUrl,
+            albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(item.thumbnailUrl),
         )
         musicRepository.insertTrack(track)
 

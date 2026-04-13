@@ -230,10 +230,15 @@ class YTMusicApiClient @Inject constructor(
             )?.firstArray()?.firstOrNull()
             ?.asObject()?.get("text")?.asString()
 
-        // Extract thumbnail
-        val thumbnailUrl = renderer.navigatePath("thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails")
-            ?.firstArray()?.firstOrNull()
-            ?.asObject()?.get("url")?.asString()
+        // Extract thumbnail — pick the largest available by width, then
+        // upgrade the CDN URL to request high-res (544px for lh3).
+        val thumbnails = renderer.navigatePath("thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails")
+            ?.firstArray()
+        val thumbnailUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
+            thumbnails?.maxByOrNull {
+                it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0
+            }?.asObject()?.get("url")?.asString()
+        )
 
         // Extract duration from fixedColumns if available
         val durationText = renderer["fixedColumns"]?.asArray()

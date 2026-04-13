@@ -229,7 +229,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                             album = track.album?.name,
                                             durationMs = track.duration_ms,
                                             spotifyUri = track.uri,
-                                            albumArtUrl = track.album?.images?.firstOrNull()?.url,
+                                            albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.album?.images?.firstOrNull()?.url),
                                             position = index,
                                         )
                                     }
@@ -322,7 +322,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         album = track.album?.name,
                         durationMs = track.duration_ms,
                         spotifyUri = track.uri,
-                        albumArtUrl = track.album?.images?.firstOrNull()?.url,
+                        albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.album?.images?.firstOrNull()?.url),
                         position = index,
                     )
                 }
@@ -382,7 +382,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                         album = track.album,
                                         durationMs = track.durationMs ?: 0L,
                                         youtubeId = track.videoId,
-                                        albumArtUrl = track.thumbnailUrl,
+                                        albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.thumbnailUrl),
                                         position = position,
                                     )
                                 }
@@ -435,7 +435,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             album = track.album,
                             durationMs = track.durationMs ?: 0L,
                             youtubeId = track.videoId,
-                            albumArtUrl = track.thumbnailUrl,
+                            albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.thumbnailUrl),
                             position = position,
                         )
                     }
