@@ -149,6 +149,18 @@ Once you've connected a service, head to the **Sync** tab. Before you hit Sync N
 
 The first sync takes a while depending on how much you're pulling (a library of 1000+ songs might take an hour or so). After that, daily syncs just grab whatever's new. You can set it to run automatically on a schedule so your library stays current without you thinking about it.
 
+### Troubleshooting: Sync stops or fails in the background
+
+Some Android devices kill background processes aggressively to save battery. If your sync fails with a foreground service error or just stops partway through, you need to let Stash run unrestricted:
+
+1. Go to your phone's **Settings** → **Apps** → **Stash**
+2. Tap **Battery** (or "App battery usage")
+3. Select **Unrestricted**
+
+This tells Android to let Stash keep running in the background while it downloads your library. Without this, some phones will kill the sync after a few minutes. You only need to do this once.
+
+> **Note for Samsung, Xiaomi, OnePlus, and Huawei users:** These manufacturers have extra battery restrictions on top of stock Android. If setting Unrestricted doesn't help, check [dontkillmyapp.com](https://dontkillmyapp.com/) for device-specific instructions.
+
 ---
 
 ## Why Not the Play Store?
