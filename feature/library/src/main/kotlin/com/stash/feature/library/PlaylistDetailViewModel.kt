@@ -1,0 +1,179 @@
+package com.stash.feature.library
+
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.stash.core.data.repository.MusicRepository
+import com.stash.core.media.PlayerRepository
+import com.stash.core.model.Playlist
+import com.stash.core.model.Track
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/**
+ * UI state for the Playlist Detail screen.
+ *
+ * @property playlist              The playlist metadata, or null while loading.
+ * @property tracks                The ordered list of tracks belonging to this playlist.
+ * @property isLoading             True while the initial data load is in progress.
+ * @property currentlyPlayingTrackId The ID of the track currently playing, used
+ *                                   to highlight the active row in the list.
+ */
+data class PlaylistDetailUiState(
+    val playlist: Playlist? = null,
+    val tracks: List<Track> = emptyList(),
+    val isLoading: Boolean = true,
+    val currentlyPlayingTrackId: Long? = null,
+)
+
+/**
+ * ViewModel for the Playlist Detail screen.
+ *
+ * Loads the playlist metadata via a one-shot suspend call and its tracks
+ * reactively from [MusicRepository]. Combines both with the current player
+ * state from [PlayerRepository] to highlight the active track row.
+ *
+ * The `playlistId` is extracted from the navigation [SavedStateHandle].
+ */
+@HiltViewModel
+class PlaylistDetailViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    private val musicRepository: MusicRepository,
+    private val playerRepository: PlayerRepository,
+) : ViewModel() {
+
+    /** The playlist ID extracted from the navigation route arguments. */
+    private val playlistId: Long = checkNotNull(savedStateHandle.get<Long>("playlistId")) {
+        "playlistId is required but was not found in SavedStateHandle"
+    }
+
+    /** Holds the one-shot playlist metadata fetched in [init]. */
+    private val _playlist = MutableStateFlow<Playlist?>(null)
+
+    /**
+     * Combined UI state that reacts to:
+     * 1. Playlist metadata (one-shot load into [_playlist])
+     * 2. Track list changes (reactive Flow from [MusicRepository])
+     * 3. Player state changes (to highlight the currently-playing track)
+     *
+     * Uses [SharingStarted.WhileSubscribed] with a 5-second stop timeout to keep
+     * the flow alive across configuration changes without leaking resources.
+     */
+    val uiState: StateFlow<PlaylistDetailUiState> = combine(
+        _playlist,
+        musicRepository.getTracksByPlaylist(playlistId),
+        playerRepository.playerState,
+    ) { playlist, tracks, playerState ->
+        PlaylistDetailUiState(
+            playlist = playlist,
+            tracks = tracks,
+            isLoading = playlist == null,
+            currentlyPlayingTrackId = playerState.currentTrack?.id,
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = PlaylistDetailUiState(),
+    )
+
+    init {
+        loadPlaylistMetadata()
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    /**
+     * Loads the playlist metadata (name, art, source, etc.) once.
+     * The tracks are loaded reactively via the Flow in [uiState],
+     * so only the metadata needs a one-shot fetch.
+     */
+    private fun loadPlaylistMetadata() {
+        viewModelScope.launch {
+            _playlist.value = musicRepository.getPlaylistWithTracks(playlistId)
+        }
+    }
+
+    // ── Playback actions ────────────────────────────────────────────────
+
+    /**
+     * Sets the playback queue to all downloaded tracks in this playlist
+     * and begins playback from the track matching [trackId].
+     *
+     * Uses the track ID rather than a positional index because the UI
+     * shows all tracks (including non-downloaded ones) but the queue
+     * only contains downloaded tracks. A positional index from the UI
+     * would point to the wrong track after non-downloaded entries are
+     * filtered out.
+     */
+    fun playTrack(trackId: Long) {
+        viewModelScope.launch {
+            val downloaded = uiState.value.tracks.filter { it.filePath != null }
+            if (downloaded.isEmpty()) return@launch
+            val index = downloaded.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
+            playerRepository.setQueue(downloaded, index)
+        }
+    }
+
+    /**
+     * Shuffles all downloaded tracks in the playlist and begins playback
+     * from a random position.
+     */
+    fun shuffleAll() {
+        viewModelScope.launch {
+            val downloaded = uiState.value.tracks.filter { it.filePath != null }
+            if (downloaded.isEmpty()) return@launch
+            val randomIndex = (downloaded.indices).random()
+            playerRepository.setQueue(downloaded, randomIndex)
+        }
+    }
+
+    /**
+     * Inserts [track] immediately after the currently-playing track in
+     * the playback queue.
+     */
+    fun playNext(track: Track) {
+        viewModelScope.launch {
+            playerRepository.addNext(track)
+        }
+    }
+
+    /**
+     * Appends [track] to the end of the current playback queue.
+     */
+    fun addToQueue(track: Track) {
+        viewModelScope.launch {
+            playerRepository.addToQueue(track)
+        }
+    }
+
+    /** Delete a track from the library (file + DB entry). */
+    fun deleteTrack(track: Track) {
+        viewModelScope.launch {
+            musicRepository.deleteTrack(track)
+        }
+    }
+
+    /** User-created playlists for the Save to Playlist picker. */
+    val userPlaylists = musicRepository.getUserCreatedPlaylists()
+
+    /** Save a track to an existing playlist. */
+    fun saveTrackToPlaylist(trackId: Long, playlistId: Long) {
+        viewModelScope.launch {
+            musicRepository.addTrackToPlaylist(trackId, playlistId)
+        }
+    }
+
+    /** Create a new playlist and immediately add the track to it. */
+    fun createPlaylistAndAddTrack(name: String, trackId: Long) {
+        viewModelScope.launch {
+            val playlistId = musicRepository.createPlaylist(name)
+            musicRepository.addTrackToPlaylist(trackId, playlistId)
+        }
+    }
+}

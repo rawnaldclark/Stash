@@ -35,6 +35,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
@@ -61,6 +62,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.sync.SyncPhase
 import com.stash.core.model.SyncDisplayStatus
+import com.stash.core.model.SyncMode
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -185,14 +187,54 @@ fun SyncScreen(
                         if (expanded) {
                             Spacer(modifier = Modifier.height(12.dp))
 
+                            // Mix sync mode toggle
+                            Text(
+                                text = "Mix sync mode",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = purple,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                FilterChip(
+                                    selected = uiState.syncMode == SyncMode.REFRESH,
+                                    onClick = { viewModel.onSyncModeChanged(SyncMode.REFRESH) },
+                                    label = { Text("Refresh") },
+                                )
+                                FilterChip(
+                                    selected = uiState.syncMode == SyncMode.ACCUMULATE,
+                                    onClick = { viewModel.onSyncModeChanged(SyncMode.ACCUMULATE) },
+                                    label = { Text("Accumulate") },
+                                )
+                            }
+                            Text(
+                                text = if (uiState.syncMode == SyncMode.REFRESH)
+                                    "Mixes update with fresh tracks each sync"
+                                else
+                                    "New tracks stack on top of old ones",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+
                             val liked = uiState.spotifyPlaylists.filter {
                                 it.type == com.stash.core.model.PlaylistType.LIKED_SONGS
                             }
                             val custom = uiState.spotifyPlaylists.filter {
                                 it.type == com.stash.core.model.PlaylistType.CUSTOM
                             }
-                            val mixes = uiState.spotifyPlaylists.filter {
+                            // Split DAILY_MIX type into actual Daily Mixes vs other
+                            // Spotify-generated mixes (Release Radar, Discover Weekly, etc.)
+                            val allMixes = uiState.spotifyPlaylists.filter {
                                 it.type == com.stash.core.model.PlaylistType.DAILY_MIX
+                            }
+                            val dailyMixes = allMixes.filter {
+                                it.name.matches(Regex("""Daily Mix \d+"""))
+                            }
+                            val otherMixes = allMixes.filter {
+                                !it.name.matches(Regex("""Daily Mix \d+"""))
                             }
 
                             // Liked Songs
@@ -202,6 +244,42 @@ fun SyncScreen(
                                     trackCount = playlist.trackCount,
                                     enabled = playlist.syncEnabled,
                                     onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
+                                )
+                            }
+
+                            // Spotify-generated mixes (each gets its own toggle)
+                            if (otherMixes.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Spotify Mixes",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = purple,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                otherMixes.forEach { playlist ->
+                                    SpotifySyncToggleRow(
+                                        name = playlist.name,
+                                        trackCount = playlist.trackCount,
+                                        enabled = playlist.syncEnabled,
+                                        onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
+                                    )
+                                }
+                            }
+
+                            // Daily Mixes 1-6 — single toggle for all
+                            if (dailyMixes.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val totalMixTracks = dailyMixes.sumOf { it.trackCount }
+                                val allMixesEnabled = dailyMixes.all { it.syncEnabled }
+                                SpotifySyncToggleRow(
+                                    name = "Daily Mixes (${dailyMixes.size})",
+                                    trackCount = totalMixTracks,
+                                    enabled = allMixesEnabled,
+                                    onToggle = { enabled ->
+                                        dailyMixes.forEach { mix ->
+                                            viewModel.onTogglePlaylistSync(mix.id, enabled)
+                                        }
+                                    },
                                 )
                             }
 
@@ -222,23 +300,6 @@ fun SyncScreen(
                                         onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
                                     )
                                 }
-                            }
-
-                            // Daily Mixes — single toggle for all
-                            if (mixes.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                val totalMixTracks = mixes.sumOf { it.trackCount }
-                                val allMixesEnabled = mixes.all { it.syncEnabled }
-                                SpotifySyncToggleRow(
-                                    name = "Daily Mixes (${mixes.size})",
-                                    trackCount = totalMixTracks,
-                                    enabled = allMixesEnabled,
-                                    onToggle = { enabled ->
-                                        mixes.forEach { mix ->
-                                            viewModel.onTogglePlaylistSync(mix.id, enabled)
-                                        }
-                                    },
-                                )
                             }
                         }
                     }

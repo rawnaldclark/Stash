@@ -199,6 +199,7 @@ class SettingsViewModel @Inject constructor(
      */
     fun onDisconnectSpotify() {
         viewModelScope.launch {
+            musicRepository.cancelPendingDownloadsForSource("SPOTIFY")
             tokenManager.clearAuth(AuthService.SPOTIFY)
         }
     }
@@ -300,6 +301,7 @@ class SettingsViewModel @Inject constructor(
      */
     fun onDisconnectYouTube() {
         viewModelScope.launch {
+            musicRepository.cancelPendingDownloadsForSource("YOUTUBE")
             tokenManager.clearAuth(AuthService.YOUTUBE_MUSIC)
         }
     }

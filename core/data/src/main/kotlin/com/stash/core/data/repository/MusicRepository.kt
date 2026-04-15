@@ -84,6 +84,41 @@ interface MusicRepository {
     /** Remove a playlist from the library without deleting its tracks from disk. */
     suspend fun removePlaylist(playlist: Playlist)
 
+    // ── Cleanup ──────────────────────────────────────────────────────────
+
+    /**
+     * Deletes tracks that have no playlist membership left after a mix refresh.
+     *
+     * Only deletes tracks that:
+     * 1. Have is_downloaded = true (have files on disk)
+     * 2. Are NOT in ANY active playlist_tracks entry (removed_at IS NULL)
+     * 3. Are NOT of source BOTH (local/custom imports)
+     *
+     * This prevents accidentally deleting tracks the user wants to keep.
+     *
+     * @return The number of orphaned tracks cleaned up.
+     */
+    suspend fun cleanOrphanedMixTracks(): Int
+
+    // ── Download queue cleanup ────────────────────────────────────────────
+
+    /** Cancel pending downloads when a service is disconnected. */
+    suspend fun cancelPendingDownloadsForSource(source: String): Int
+
+    // ── Custom playlist management ────────────────────────────────────────
+
+    /** Create a new empty custom playlist. Returns the playlist ID. */
+    suspend fun createPlaylist(name: String): Long
+
+    /** Add a track to a playlist. */
+    suspend fun addTrackToPlaylist(trackId: Long, playlistId: Long)
+
+    /** Remove a track from a playlist (soft delete). */
+    suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long)
+
+    /** Get all user-created custom playlists. */
+    fun getUserCreatedPlaylists(): Flow<List<Playlist>>
+
     // ── Sync history ────────────────────────────────────────────────────
 
     /** The most recent sync record, or null. */

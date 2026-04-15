@@ -6,6 +6,7 @@ import androidx.work.Configuration
 import com.stash.core.data.repository.MusicRepositoryImpl
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.data.download.ytdlp.YtDlpManager
+import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -61,5 +62,6 @@ class StashApplication : Application(), Configuration.Provider {
             ytDlpManager.initialize()
         }
         YtDlpUpdateWorker.schedulePeriodicUpdate(this)
+        UpdateCheckWorker.schedulePeriodicCheck(this)
     }
 }

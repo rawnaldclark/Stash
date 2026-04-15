@@ -35,6 +35,12 @@ class SyncNotificationManager @Inject constructor(
         /** Notification ID for the completion summary notification. */
         const val NOTIFICATION_ID_SUMMARY = 9002
 
+        /** Channel ID for app update availability notifications. */
+        const val CHANNEL_UPDATE = "update_channel"
+
+        /** Notification ID for the app update notification. */
+        const val NOTIFICATION_ID_UPDATE = 9003
+
         /** Maximum value for the determinate progress bar. */
         private const val PROGRESS_MAX = 100
     }
@@ -66,8 +72,16 @@ class SyncNotificationManager @Inject constructor(
             description = "Summary notification after a sync completes"
         }
 
+        val updateChannel = NotificationChannel(
+            CHANNEL_UPDATE,
+            "App Updates",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = "Notification when a new version of Stash is available"
+        }
+
         notificationManager.createNotificationChannels(
-            listOf(progressChannel, summaryChannel)
+            listOf(progressChannel, summaryChannel, updateChannel)
         )
     }
 

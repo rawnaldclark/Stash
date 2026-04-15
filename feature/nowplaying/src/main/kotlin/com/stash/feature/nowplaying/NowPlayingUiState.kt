@@ -3,6 +3,7 @@ package com.stash.feature.nowplaying
 import androidx.compose.ui.graphics.Color
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.Track
+import com.stash.core.ui.components.PlaylistInfo
 
 /**
  * Immutable snapshot of everything the Now Playing screen needs to render.
@@ -28,6 +29,8 @@ data class NowPlayingUiState(
     val vibrantColor: Color = Color(0xFF8E24AA),
     /** Muted color extracted from the album art via Palette API. */
     val mutedColor: Color = Color(0xFF37474F),
+    /** User-created playlists available for the "Save to Playlist" sheet. */
+    val userPlaylists: List<PlaylistInfo> = emptyList(),
 ) {
 
     /**

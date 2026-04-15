@@ -9,6 +9,7 @@ import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.sync.SyncPhase
 import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.data.sync.SyncPreferencesManager
+import com.stash.core.model.SyncMode
 import com.stash.core.data.sync.SyncScheduler
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.toDisplayStatus
@@ -69,6 +70,8 @@ data class SyncUiState(
     val isSyncing: Boolean = false,
     /** Spotify playlists available for sync preference toggles. */
     val spotifyPlaylists: List<SpotifySyncPlaylist> = emptyList(),
+    /** Controls whether mixes refresh or accumulate during sync. */
+    val syncMode: SyncMode = SyncMode.REFRESH,
 )
 
 /**
@@ -93,6 +96,7 @@ class SyncViewModel @Inject constructor(
     init {
         observeSyncPhase()
         observePreferences()
+        observeSyncMode()
         observeAuthStates()
         observeHistory()
         observeSpotifyPlaylists()
@@ -155,6 +159,13 @@ class SyncViewModel @Inject constructor(
         }
     }
 
+    /** Switch between REFRESH and ACCUMULATE sync modes. */
+    fun onSyncModeChanged(mode: SyncMode) {
+        viewModelScope.launch {
+            syncPreferencesManager.setSyncMode(mode)
+        }
+    }
+
     // -- Internal observers ---------------------------------------------------
 
     private fun observeSyncPhase() {
@@ -177,6 +188,14 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             syncPreferencesManager.preferences.collect { prefs ->
                 _uiState.update { it.copy(syncPreferences = prefs) }
+            }
+        }
+    }
+
+    private fun observeSyncMode() {
+        viewModelScope.launch {
+            syncPreferencesManager.syncMode.collect { mode ->
+                _uiState.update { it.copy(syncMode = mode) }
             }
         }
     }

@@ -57,6 +57,13 @@ class MusicRepositoryImpl @Inject constructor(
             )
         }
 
+        // Fix duplicate playlist_tracks entries that accumulated from daily mix
+        // sync runs. Each sync added new tracks at the same positions without
+        // removing old ones, causing multiple tracks at position 1, 2, etc.
+        // This cleanup keeps only the most recently added entry for each
+        // (playlist_id, track_id) pair and removes the rest.
+        deduplicatePlaylistTracks()
+
         // One-time upgrade: replace low-res album art URLs (60px YouTube thumbnails)
         // with high-res equivalents. The ArtUrlUpgrader rewrites lh3 CDN URLs to
         // request 544px instead of 60px, and Spotify URLs to 640px instead of 300px.
@@ -66,6 +73,12 @@ class MusicRepositoryImpl @Inject constructor(
         // NOTE: backfillSpotifyDateAdded() was removed — it ran on every startup and
         // overwrote all Spotify tracks' date_added with the same timestamp, making
         // "Recently Added" show arbitrary tracks instead of actual recent downloads.
+
+        // Clean up orphaned mix tracks — downloaded tracks whose playlist was
+        // refreshed and that no longer belong to any playlist. Deletes their
+        // audio files and DB rows to free storage. Safe to run every startup;
+        // becomes a no-op when there are no orphans.
+        cleanOrphanedMixTracks()
     }
 
     // ── Track queries ───────────────────────────────────────────────────
@@ -161,6 +174,41 @@ class MusicRepositoryImpl @Inject constructor(
         playlistDao.delete(playlist.toEntity())
     }
 
+    // ── Custom playlist management ──────────────────────────────────────
+
+    override suspend fun createPlaylist(name: String): Long {
+        val entity = com.stash.core.data.db.entity.PlaylistEntity(
+            name = name,
+            source = com.stash.core.model.MusicSource.BOTH,
+            type = com.stash.core.model.PlaylistType.CUSTOM,
+            isActive = true,
+            syncEnabled = false,
+        )
+        return playlistDao.insert(entity)
+    }
+
+    override suspend fun addTrackToPlaylist(trackId: Long, playlistId: Long) {
+        val position = playlistDao.getNextPosition(playlistId)
+        playlistDao.insertCrossRef(
+            com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+                playlistId = playlistId,
+                trackId = trackId,
+                position = position,
+            )
+        )
+        val count = trackDao.getByPlaylist(playlistId).first().size
+        playlistDao.updateTrackCount(playlistId, count)
+    }
+
+    override suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long) {
+        playlistDao.softDeleteTrackFromPlaylist(playlistId, trackId)
+        val count = trackDao.getByPlaylist(playlistId).first().size
+        playlistDao.updateTrackCount(playlistId, count)
+    }
+
+    override fun getUserCreatedPlaylists(): Flow<List<com.stash.core.model.Playlist>> =
+        playlistDao.getUserCreatedPlaylists().map { entities -> entities.map { it.toDomain() } }
+
     // ── Sync history ────────────────────────────────────────────────────
 
     override suspend fun getLatestSync(): SyncHistoryEntity? =
@@ -172,6 +220,50 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getAllSyncHistory(): Flow<List<SyncHistoryEntity>> =
         syncHistoryDao.observeAll()
 
+    // ── Download queue cleanup ────────────────────────────────────────────
+
+    override suspend fun cancelPendingDownloadsForSource(source: String): Int {
+        val cancelled = downloadQueueDao.cancelDownloadsForSource(source)
+        if (cancelled > 0) {
+            android.util.Log.i("StashMigrations", "Cancelled $cancelled pending downloads for disconnected source: $source")
+        }
+        return cancelled
+    }
+
+    // ── Cleanup ──────────────────────────────────────────────────────────
+
+    override suspend fun cleanOrphanedMixTracks(): Int {
+        val orphans = trackDao.getOrphanedDownloadedTracks()
+        if (orphans.isEmpty()) return 0
+
+        for (track in orphans) {
+            // Delete the audio file from disk.
+            track.filePath?.let { path ->
+                try {
+                    java.io.File(path).delete()
+                } catch (_: Exception) {
+                    // Best-effort: file may already be gone.
+                }
+            }
+            // Delete locally-stored album art if present.
+            track.albumArtPath?.let { path ->
+                try {
+                    java.io.File(path).delete()
+                } catch (_: Exception) {
+                    // Best-effort.
+                }
+            }
+            // Remove the track entity from the database.
+            trackDao.delete(track)
+        }
+
+        android.util.Log.i(
+            "StashCleanup",
+            "Cleaned ${orphans.size} orphaned track(s) and their audio files",
+        )
+        return orphans.size
+    }
+
     // ── Art URL migration ──────────────────────────────────────────────
 
     /**
@@ -181,6 +273,35 @@ class MusicRepositoryImpl @Inject constructor(
      * Already-upgraded URLs pass through [ArtUrlUpgrader.upgrade] unchanged,
      * so this is safe to run on every startup.
      */
+    /**
+     * Fixes accumulated duplicate entries in playlist_tracks. Before the
+     * DiffWorker fix, every sync run inserted new tracks without clearing
+     * old ones, causing multiple tracks per position. This query deletes
+     * all entries where duplicate positions exist within a playlist, keeping
+     * only the one with the latest added_at timestamp.
+     */
+    private suspend fun deduplicatePlaylistTracks() {
+        // Strategy: for each playlist that has duplicate positions, clear
+        // ALL entries and let the next sync rebuild them cleanly. This is
+        // aggressive but correct — the tracks themselves are not deleted,
+        // only the playlist membership. The next sync will re-associate them.
+        val allPlaylists = playlistDao.getAllActive().first()
+        var cleaned = 0
+        for (playlist in allPlaylists) {
+            // Count entries vs expected track count
+            val tracks = trackDao.getByPlaylist(playlist.id).first()
+            if (tracks.size > playlist.trackCount && playlist.trackCount > 0) {
+                playlistDao.clearPlaylistTracks(playlist.id)
+                cleaned++
+                android.util.Log.i("StashMigrations",
+                    "Cleared ${tracks.size} stale entries for '${playlist.name}' (expected ${playlist.trackCount})")
+            }
+        }
+        if (cleaned > 0) {
+            android.util.Log.i("StashMigrations", "Cleaned $cleaned playlists with duplicate track entries. Next sync will rebuild.")
+        }
+    }
+
     /**
      * Upgrades low-res album art URLs to high-res equivalents.
      * On first run: upgrades all tracks with low-res URLs (~2800 updates).

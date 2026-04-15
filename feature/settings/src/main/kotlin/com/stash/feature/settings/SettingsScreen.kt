@@ -383,7 +383,7 @@ private fun SettingsContent(
 
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
-                StorageRow(label = "Version", value = "0.2.0")
+                StorageRow(label = "Version", value = "0.3.0")
                 Spacer(modifier = Modifier.height(8.dp))
                 StorageRow(label = "License", value = "GPL-3.0")
             }

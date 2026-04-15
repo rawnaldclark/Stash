@@ -105,6 +105,13 @@ class TrackDownloadWorker @AssistedInject constructor(
             // Reset exhausted retries so tracks get another chance each sync.
             downloadQueueDao.resetExhaustedRetries()
 
+            // Reset stale IN_PROGRESS entries from a previous interrupted run.
+            // Safe because this worker is a unique chain — only one runs at a time.
+            val resetInProgress = downloadQueueDao.resetStaleInProgress()
+            if (resetInProgress > 0) {
+                Log.i(TAG, "Reset $resetInProgress stale IN_PROGRESS entries back to PENDING")
+            }
+
             // Re-queue tracks that are undownloaded but have no active queue entry.
             // This catches tracks whose retries were all exhausted and entries cleaned up,
             // or tracks that somehow never got queued.

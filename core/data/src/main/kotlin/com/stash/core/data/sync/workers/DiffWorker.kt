@@ -17,12 +17,16 @@ import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.model.MusicSource
+import com.stash.core.model.SyncMode
 import com.stash.core.model.SyncState
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.flow.first
 
 /**
  * Second worker in the sync chain. Compares remote playlist/track snapshots
@@ -45,6 +49,8 @@ class DiffWorker @AssistedInject constructor(
     private val syncHistoryDao: SyncHistoryDao,
     private val trackMatcher: TrackMatcher,
     private val syncStateManager: SyncStateManager,
+    private val musicRepository: MusicRepository,
+    private val syncPreferencesManager: SyncPreferencesManager,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -64,6 +70,9 @@ class DiffWorker @AssistedInject constructor(
         try {
             syncStateManager.onDiffing()
             syncHistoryDao.updateStatus(syncId, SyncState.DIFFING)
+
+            // Read user's sync mode preference once at the start of the diff pass.
+            val syncMode = syncPreferencesManager.syncMode.first()
 
             val playlistSnapshots = remoteSnapshotDao.getPlaylistSnapshotsBySyncId(syncId)
             var newTrackCount = 0
@@ -86,6 +95,15 @@ class DiffWorker @AssistedInject constructor(
                 ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' unchanged, skipping")
                     continue
+                }
+
+                // In REFRESH mode, clear existing playlist-track associations before
+                // inserting the current set. Without this, the table accumulates entries
+                // from every sync run with overlapping position values.
+                // In ACCUMULATE mode, keep existing tracks — new ones are added and
+                // duplicates are handled by INSERT ... ON CONFLICT REPLACE in the DAO.
+                if (syncMode == SyncMode.REFRESH) {
+                    playlistDao.clearPlaylistTracks(localPlaylist.id)
                 }
 
                 // Get track snapshots for this playlist.
@@ -147,6 +165,13 @@ class DiffWorker @AssistedInject constructor(
                     localPlaylist.id,
                     trackSnapshots.size,
                 )
+            }
+
+            // Clean up orphaned tracks whose playlists were refreshed and
+            // that no longer belong to any playlist. Frees disk storage.
+            val cleaned = musicRepository.cleanOrphanedMixTracks()
+            if (cleaned > 0) {
+                Log.i(TAG, "Cleaned $cleaned orphaned track(s) after diff")
             }
 
             // Update sync history with counts.

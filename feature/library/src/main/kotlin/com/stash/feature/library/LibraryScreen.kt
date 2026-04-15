@@ -88,6 +88,9 @@ import com.stash.core.ui.theme.StashTheme
 @Composable
 fun LibraryScreen(
     modifier: Modifier = Modifier,
+    onNavigateToPlaylist: (Long) -> Unit = {},
+    onNavigateToArtist: (String) -> Unit = {},
+    onNavigateToAlbum: (String, String) -> Unit = { _, _ -> },
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -101,14 +104,14 @@ fun LibraryScreen(
         onPlayNext = viewModel::playNext,
         onAddToQueue = viewModel::addToQueue,
         onDeleteTrack = viewModel::deleteTrack,
-        onPlayPlaylist = viewModel::playPlaylist,
+        onPlayPlaylist = { playlist -> onNavigateToPlaylist(playlist.id) },
         onAddPlaylistToQueue = viewModel::addPlaylistToQueue,
         onRemovePlaylist = viewModel::removePlaylist,
         onDeletePlaylist = viewModel::deletePlaylist,
-        onPlayArtist = viewModel::playArtist,
+        onPlayArtist = onNavigateToArtist,
         onAddArtistToQueue = viewModel::addArtistToQueue,
         onDeleteArtist = viewModel::deleteArtist,
-        onPlayAlbum = viewModel::playAlbum,
+        onPlayAlbum = onNavigateToAlbum,
         onAddAlbumToQueue = viewModel::addAlbumToQueue,
         modifier = modifier,
     )

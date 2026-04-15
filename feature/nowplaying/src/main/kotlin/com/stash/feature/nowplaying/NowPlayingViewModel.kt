@@ -5,7 +5,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.palette.graphics.Palette
+import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.ui.components.PlaylistInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +31,7 @@ import javax.inject.Inject
 @HiltViewModel
 class NowPlayingViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
+    private val musicRepository: MusicRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NowPlayingUiState())
@@ -36,6 +39,7 @@ class NowPlayingViewModel @Inject constructor(
 
     init {
         observePlayerState()
+        observeUserPlaylists()
     }
 
     // ------------------------------------------------------------------
@@ -65,6 +69,28 @@ class NowPlayingViewModel @Inject constructor(
                 )
             }
         }.launchIn(viewModelScope)
+    }
+
+    /**
+     * Observes user-created playlists and maps them to lightweight
+     * [PlaylistInfo] models for the "Save to Playlist" bottom sheet.
+     */
+    private fun observeUserPlaylists() {
+        musicRepository.getUserCreatedPlaylists()
+            .onEach { playlists ->
+                _uiState.update { current ->
+                    current.copy(
+                        userPlaylists = playlists.map { playlist ->
+                            PlaylistInfo(
+                                id = playlist.id,
+                                name = playlist.name,
+                                trackCount = playlist.trackCount,
+                            )
+                        },
+                    )
+                }
+            }
+            .launchIn(viewModelScope)
     }
 
     // ------------------------------------------------------------------
@@ -133,6 +159,33 @@ class NowPlayingViewModel @Inject constructor(
      */
     fun onSkipToQueueIndex(index: Int) {
         viewModelScope.launch { playerRepository.skipToQueueIndex(index) }
+    }
+
+    // ------------------------------------------------------------------
+    // Playlist Actions
+    // ------------------------------------------------------------------
+
+    /**
+     * Add the currently-playing track to an existing playlist.
+     *
+     * @param trackId    ID of the track to save.
+     * @param playlistId ID of the target playlist.
+     */
+    fun saveTrackToPlaylist(trackId: Long, playlistId: Long) {
+        viewModelScope.launch { musicRepository.addTrackToPlaylist(trackId, playlistId) }
+    }
+
+    /**
+     * Create a new playlist and immediately add the given track to it.
+     *
+     * @param name    Name for the new playlist.
+     * @param trackId ID of the track to save into the newly created playlist.
+     */
+    fun createPlaylistAndAddTrack(name: String, trackId: Long) {
+        viewModelScope.launch {
+            val playlistId = musicRepository.createPlaylist(name)
+            musicRepository.addTrackToPlaylist(trackId, playlistId)
+        }
     }
 
     // ------------------------------------------------------------------

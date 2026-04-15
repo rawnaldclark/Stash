@@ -123,6 +123,32 @@ interface DownloadQueueDao {
     @Query("UPDATE download_queue SET retry_count = 0, status = 'FAILED' WHERE status = 'FAILED' AND retry_count >= 3")
     suspend fun resetExhaustedRetries()
 
+    /**
+     * Reset stale IN_PROGRESS entries back to PENDING. Called at the start
+     * of each TrackDownloadWorker run. Since the worker is a unique WorkManager
+     * chain (only one instance runs at a time), any IN_PROGRESS entries at
+     * the start of doWork() are guaranteed to be leftovers from a previous
+     * interrupted run, not active downloads.
+     *
+     * @return Number of entries reset.
+     */
+    @Query("UPDATE download_queue SET status = 'PENDING' WHERE status = 'IN_PROGRESS'")
+    suspend fun resetStaleInProgress(): Int
+
+    /**
+     * Cancel all pending/in-progress downloads for tracks from a specific source.
+     * Called when the user disconnects a service (Spotify/YouTube) to prevent
+     * stale downloads from clogging the queue.
+     *
+     * @return Number of entries cancelled.
+     */
+    @Query("""
+        DELETE FROM download_queue
+        WHERE status IN ('PENDING', 'IN_PROGRESS')
+        AND track_id IN (SELECT id FROM tracks WHERE source = :source)
+    """)
+    suspend fun cancelDownloadsForSource(source: String): Int
+
     /** Diagnostic: count queue entries by status. */
     @Query("SELECT status, COUNT(*) FROM download_queue GROUP BY status")
     suspend fun getStatusCounts(): List<StatusCount>

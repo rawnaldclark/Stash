@@ -14,16 +14,22 @@ Stash is an offline-first Android music player that syncs your liked songs, play
 
 ## Features
 
-- 🎵 **Dual-source sync** — pull from Spotify and YouTube Music into one library, or filter by source
-- 💾 **Offline everything** — tracks download as high-quality Opus audio, playable without internet
-- 🎯 **Bulletproof matching** — album-first pipeline finds the right version of every song, not some random live recording or cover
-- 🎛️ **Pick what you want** — choose exactly which Spotify playlists, liked songs, and daily mixes to sync. Don't want Daily Mix 3? Turn it off.
-- 🎚️ **Full equalizer** — 5-band EQ with presets, bass boost, and virtualizer
-- 📱 **Looks good** — Jetpack Compose, Material 3, light and dark themes that actually look premium
-- 🔁 **Smart playback** — queue management, drag-to-reorder, swipe-to-remove, random start on play-all
-- 🔑 **Spotify sign-in built in** — just log into Spotify inside the app, no cookie hunting required
-- 🔒 **Private by design** — credentials encrypted with AES-256-GCM, no servers, no telemetry, nothing leaves your phone
-- 🔓 **Free and open source** — no subscriptions, no ads, GPL-3.0
+- **Dual-source sync** — pull from Spotify and YouTube Music into one library, or filter by source
+- **Offline everything** — tracks download as high-quality Opus audio, playable without internet
+- **Bulletproof matching** — album-first pipeline finds the right version of every song, not some random live recording or cover
+- **Playlist detail views** — tap any playlist, album, or artist to see all tracks. Tap a track to play from that point with the full list queued. Long-press for Play Next, Add to Queue, Save to Playlist, or Delete.
+- **Custom playlists** — create your own playlists and save tracks to them from anywhere. Bookmark icon in Now Playing makes it one tap.
+- **Spotify sync preferences** — choose exactly which playlists, liked songs, daily mixes, and discovery mixes to sync. Individual toggles for each. Don't want Daily Mix 3? Turn it off.
+- **Expanded Spotify mix detection** — Release Radar, Discover Weekly, On Repeat, Daylist, Repeat Rewind, Time Capsule, and Daily Mixes 1-6 are all automatically detected. Each gets its own toggle.
+- **Refresh vs Accumulate sync modes** — mixes can either replace their contents each sync (Refresh) or stack new tracks on top of what's already there (Accumulate). Your call.
+- **Parallel downloads** — 8 simultaneous tracks instead of one at a time. Background sync runs as a foreground service so it actually finishes with the phone locked.
+- **High-res album art** — YouTube thumbnails upgraded from 60px to 544px, Spotify art from 300px to 640px. Existing tracks get migrated on startup.
+- **Automatic update notifications** — checks GitHub for new releases daily and notifies you when one is available. Tap the notification to go straight to the download page.
+- **Full equalizer** — 5-band EQ with presets, bass boost, and virtualizer
+- **Smart playback** — queue management, drag-to-reorder, swipe-to-remove, random start on play-all
+- **Spotify sign-in built in** — just log into Spotify inside the app, no cookie hunting required
+- **Private by design** — credentials encrypted with AES-256-GCM, no servers, no telemetry, nothing leaves your phone
+- **Free and open source** — no subscriptions, no ads, GPL-3.0
 
 ## Screenshots
 
@@ -145,9 +151,11 @@ Stash will start fetching your YouTube Music daily mixes, discover mix, replay m
 
 ### After setup
 
-Once you've connected a service, head to the **Sync** tab. Before you hit Sync Now, you can expand the **Spotify Sync Preferences** card to pick exactly what you want — liked songs, specific playlists, daily mixes, or all of the above. Uncheck anything you don't care about and it won't waste your time or storage.
+Once you've connected a service, head to the **Sync** tab. Before you hit Sync Now, expand the **Spotify Sync Preferences** card to pick exactly what you want — liked songs, specific playlists, daily mixes, discovery mixes like Release Radar and Discover Weekly, or all of the above. Each one gets its own toggle. Uncheck anything you don't care about and it won't waste your time or storage.
 
-The first sync takes a while depending on how much you're pulling (a library of 1000+ songs might take an hour or so). After that, daily syncs just grab whatever's new. You can set it to run automatically on a schedule so your library stays current without you thinking about it.
+For mix playlists, you can also choose between **Refresh** mode (replaces the mix contents each sync, cleaning up old tracks) and **Accumulate** mode (stacks new tracks on top of what's already there). Refresh is the default and works well for most people.
+
+The first sync takes a while depending on how much you're pulling (a library of 1000+ songs might take an hour or so — downloads run 8 at a time now, so it's faster than it used to be). After that, daily syncs just grab whatever's new. You can set it to run automatically on a schedule so your library stays current without you thinking about it.
 
 ### Troubleshooting: Sync stops or fails in the background
 

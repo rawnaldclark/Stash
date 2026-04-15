@@ -185,6 +185,31 @@ interface TrackDao {
     @Query("DELETE FROM tracks WHERE file_path LIKE '/storage/emulated/0/Stash/%'")
     suspend fun deleteSeederTracks(): Int
 
+    // ── Orphan detection ───────────────────────────────────────────────
+
+    /**
+     * Returns downloaded tracks that have no active playlist membership.
+     *
+     * A track is "orphaned" when it was part of a daily mix that refreshed
+     * (its playlist_tracks rows were cleared) and it does not belong to any
+     * other playlist (liked songs, custom, or another mix).
+     *
+     * Excludes tracks with source = 'BOTH' because those are local/custom
+     * imports that should never be auto-deleted.
+     */
+    @Query(
+        """
+        SELECT t.* FROM tracks t
+        WHERE t.is_downloaded = 1
+          AND t.source != 'BOTH'
+          AND t.id NOT IN (
+              SELECT pt.track_id FROM playlist_tracks pt
+              WHERE pt.removed_at IS NULL
+          )
+        """
+    )
+    suspend fun getOrphanedDownloadedTracks(): List<TrackEntity>
+
     // ── Full-text search ────────────────────────────────────────────────
 
     /**

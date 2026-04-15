@@ -89,6 +89,7 @@ import com.stash.feature.home.components.StashVinylLogo
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
+    onNavigateToPlaylist: (Long) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -165,7 +166,7 @@ fun HomeScreen(
                         items(uiState.spotifyMixes, key = { it.id }) { playlist ->
                             DailyMixCard(
                                 playlist = playlist,
-                                onClick = { viewModel.playPlaylist(playlist) },
+                                onClick = { onNavigateToPlaylist(playlist.id) },
                                 onLongPress = { selectedPlaylist = playlist },
                             )
                         }
@@ -190,7 +191,7 @@ fun HomeScreen(
                         items(uiState.youtubeMixes, key = { it.id }) { playlist ->
                             DailyMixCard(
                                 playlist = playlist,
-                                onClick = { viewModel.playPlaylist(playlist) },
+                                onClick = { onNavigateToPlaylist(playlist.id) },
                                 onLongPress = { selectedPlaylist = playlist },
                             )
                         }
@@ -262,7 +263,7 @@ fun HomeScreen(
                             rowItems.forEach { playlist ->
                                 PlaylistGridCard(
                                     playlist = playlist,
-                                    onClick = { viewModel.playPlaylist(playlist) },
+                                    onClick = { onNavigateToPlaylist(playlist.id) },
                                     onLongPress = { selectedPlaylist = playlist },
                                     modifier = Modifier.weight(1f),
                                 )

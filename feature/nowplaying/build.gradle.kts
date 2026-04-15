@@ -8,6 +8,7 @@ android {
 
 dependencies {
     implementation(project(":core:media"))
+    implementation(project(":core:data"))
     implementation(libs.palette.ktx)
     implementation(libs.coil.compose)
     implementation(libs.compose.material.icons.extended)

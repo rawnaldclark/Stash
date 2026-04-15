@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.stash.core.model.SyncMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -26,6 +28,7 @@ data class SyncPreferences(
     val syncMinute: Int = 0,
     val autoSyncEnabled: Boolean = true,
     val wifiOnly: Boolean = true,
+    val syncMode: SyncMode = SyncMode.REFRESH,
 )
 
 /**
@@ -44,6 +47,7 @@ class SyncPreferencesManager @Inject constructor(
         val SYNC_MINUTE = intPreferencesKey("sync_minute")
         val AUTO_SYNC = booleanPreferencesKey("auto_sync_enabled")
         val WIFI_ONLY = booleanPreferencesKey("wifi_only")
+        val SYNC_MODE = stringPreferencesKey("sync_mode")
     }
 
     /** Reactive stream of the current [SyncPreferences]. */
@@ -53,7 +57,22 @@ class SyncPreferencesManager @Inject constructor(
             syncMinute = prefs[Keys.SYNC_MINUTE] ?: 0,
             autoSyncEnabled = prefs[Keys.AUTO_SYNC] ?: true,
             wifiOnly = prefs[Keys.WIFI_ONLY] ?: true,
+            syncMode = prefs[Keys.SYNC_MODE]?.let { name ->
+                runCatching { SyncMode.valueOf(name) }.getOrDefault(SyncMode.REFRESH)
+            } ?: SyncMode.REFRESH,
         )
+    }
+
+    /**
+     * Reactive stream of just the [SyncMode] preference.
+     *
+     * Exposed separately so background workers can read only the mode
+     * without pulling in all scheduling preferences.
+     */
+    val syncMode: Flow<SyncMode> = context.syncPrefsDataStore.data.map { prefs ->
+        prefs[Keys.SYNC_MODE]?.let { name ->
+            runCatching { SyncMode.valueOf(name) }.getOrDefault(SyncMode.REFRESH)
+        } ?: SyncMode.REFRESH
     }
 
     /**
@@ -77,5 +96,10 @@ class SyncPreferencesManager @Inject constructor(
     /** Restrict sync to Wi-Fi only, or allow any network. */
     suspend fun setWifiOnly(wifiOnly: Boolean) {
         context.syncPrefsDataStore.edit { it[Keys.WIFI_ONLY] = wifiOnly }
+    }
+
+    /** Set the playlist sync mode (REFRESH or ACCUMULATE). */
+    suspend fun setSyncMode(mode: SyncMode) {
+        context.syncPrefsDataStore.edit { it[Keys.SYNC_MODE] = mode.name }
     }
 }

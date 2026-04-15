@@ -8,7 +8,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.stash.feature.home.HomeScreen
+import com.stash.feature.library.AlbumDetailScreen
+import com.stash.feature.library.ArtistDetailScreen
 import com.stash.feature.library.LibraryScreen
+import com.stash.feature.library.PlaylistDetailScreen
 import com.stash.feature.nowplaying.NowPlayingScreen
 import com.stash.feature.search.SearchScreen
 import com.stash.feature.settings.SettingsScreen
@@ -33,11 +36,47 @@ fun StashNavHost(
         startDestination = HomeRoute,
         modifier = modifier,
     ) {
-        composable<HomeRoute> { HomeScreen() }
-        composable<LibraryRoute> { LibraryScreen() }
+        composable<HomeRoute> {
+            HomeScreen(
+                onNavigateToPlaylist = { playlistId ->
+                    navController.navigate(PlaylistDetailRoute(playlistId))
+                },
+            )
+        }
+        composable<LibraryRoute> {
+            LibraryScreen(
+                onNavigateToPlaylist = { playlistId ->
+                    navController.navigate(PlaylistDetailRoute(playlistId))
+                },
+                onNavigateToArtist = { artistName ->
+                    navController.navigate(ArtistDetailRoute(artistName))
+                },
+                onNavigateToAlbum = { albumName, artistName ->
+                    navController.navigate(AlbumDetailRoute(albumName, artistName))
+                },
+            )
+        }
         composable<SearchRoute> { SearchScreen() }
         composable<SyncRoute> { SyncScreen() }
         composable<SettingsRoute> { SettingsScreen() }
+
+        composable<PlaylistDetailRoute> {
+            PlaylistDetailScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable<ArtistDetailRoute> {
+            ArtistDetailScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable<AlbumDetailRoute> {
+            AlbumDetailScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
 
         composable<NowPlayingRoute>(
             enterTransition = {

@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -56,6 +57,7 @@ import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
 import com.stash.core.model.RepeatMode
+import com.stash.core.ui.components.SaveToPlaylistSheet
 import com.stash.feature.nowplaying.ui.AmbientBackground
 import com.stash.feature.nowplaying.ui.GlowingProgressBar
 import com.stash.feature.nowplaying.ui.QueueBottomSheet
@@ -78,6 +80,7 @@ fun NowPlayingScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val track = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
+    var showSaveSheet by remember { mutableStateOf(false) }
 
     // Queue bottom sheet
     if (showQueue) {
@@ -92,6 +95,20 @@ fun NowPlayingScreen(
             },
             onRemoveTrack = viewModel::onRemoveFromQueue,
             onMoveTrack = viewModel::onMoveInQueue,
+        )
+    }
+
+    // Save to playlist bottom sheet
+    if (showSaveSheet && track != null) {
+        SaveToPlaylistSheet(
+            playlists = uiState.userPlaylists,
+            onSaveToPlaylist = { playlistId ->
+                viewModel.saveTrackToPlaylist(track.id, playlistId)
+            },
+            onCreatePlaylist = { name ->
+                viewModel.createPlaylistAndAddTrack(name, track.id)
+            },
+            onDismiss = { showSaveSheet = false },
         )
     }
 
@@ -111,10 +128,12 @@ fun NowPlayingScreen(
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // -- Top bar: dismiss, label, queue --
+            // -- Top bar: dismiss, label, save, queue --
             TopBar(
                 onDismiss = onDismiss,
+                onSaveClick = { showSaveSheet = true },
                 onQueueClick = { showQueue = true },
+                hasTrack = uiState.hasTrack,
                 queueSize = uiState.queueSize,
             )
 
@@ -199,16 +218,21 @@ fun NowPlayingScreen(
 // ---------------------------------------------------------------------------
 
 /**
- * Top bar with dismiss button, "NOW PLAYING" label, and queue button.
+ * Top bar with dismiss button, "NOW PLAYING" label, save-to-playlist button,
+ * and queue button.
  *
  * @param onDismiss    Callback when the down-arrow is tapped.
+ * @param onSaveClick  Callback when the save/bookmark icon is tapped.
  * @param onQueueClick Callback when the queue icon is tapped.
+ * @param hasTrack     Whether a track is currently loaded (save button is hidden otherwise).
  * @param queueSize    Number of tracks in the queue, shown as a badge hint.
  */
 @Composable
 private fun TopBar(
     onDismiss: () -> Unit,
+    onSaveClick: () -> Unit,
     onQueueClick: () -> Unit,
+    hasTrack: Boolean,
     queueSize: Int,
 ) {
     Row(
@@ -233,6 +257,18 @@ private fun TopBar(
             textAlign = TextAlign.Center,
             modifier = Modifier.weight(1f),
         )
+
+        // Save to playlist — only shown when a track is loaded.
+        if (hasTrack) {
+            IconButton(onClick = onSaveClick) {
+                Icon(
+                    imageVector = Icons.Default.BookmarkBorder,
+                    contentDescription = "Save to Playlist",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
 
         IconButton(onClick = onQueueClick) {
             Icon(

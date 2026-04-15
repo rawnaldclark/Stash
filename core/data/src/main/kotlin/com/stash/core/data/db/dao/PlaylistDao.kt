@@ -144,6 +144,24 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlists WHERE source = :source AND is_active = 1 ORDER BY name ASC")
     suspend fun getActivePlaylistsBySource(source: MusicSource): List<PlaylistEntity>
 
+    /**
+     * Hard-delete all track associations for a playlist. Called before
+     * re-inserting the current track set during sync. Without this,
+     * the playlist_tracks table accumulates entries from every sync run
+     * with overlapping position values (e.g., two tracks both at position 1),
+     * which scrambles the display order in the playlist detail view.
+     */
+    @Query("DELETE FROM playlist_tracks WHERE playlist_id = :playlistId")
+    suspend fun clearPlaylistTracks(playlistId: Long)
+
+    /**
+     * One-time cleanup: hard-delete all soft-deleted playlist_tracks entries.
+     * These accumulate from daily mix rotations and serve no purpose after
+     * the soft-delete marker is set. Reduces table bloat.
+     */
+    @Query("DELETE FROM playlist_tracks WHERE removed_at IS NOT NULL")
+    suspend fun purgeRemovedPlaylistTracks(): Int
+
     // ── Sync preference queries ─────────────────────────────────────────
 
     /** Toggle sync_enabled for a specific playlist. */
@@ -168,4 +186,18 @@ interface PlaylistDao {
      *  pipeline to skip disabled playlists. */
     @Query("SELECT * FROM playlists WHERE source = :source AND is_active = 1 AND sync_enabled = 1")
     suspend fun getSyncEnabledPlaylists(source: MusicSource): List<PlaylistEntity>
+
+    // ── Custom playlist management ──────────────────────────────────────
+
+    /** Get the next available position for appending a track to a playlist. */
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id = :playlistId AND removed_at IS NULL")
+    suspend fun getNextPosition(playlistId: Long): Int
+
+    /** All user-created custom playlists (source = BOTH means local). */
+    @Query("SELECT * FROM playlists WHERE type = 'CUSTOM' AND source = 'BOTH' AND is_active = 1 ORDER BY name ASC")
+    fun getUserCreatedPlaylists(): Flow<List<PlaylistEntity>>
+
+    /** Soft-delete a single track from a playlist. */
+    @Query("UPDATE playlist_tracks SET removed_at = CURRENT_TIMESTAMP WHERE playlist_id = :playlistId AND track_id = :trackId AND removed_at IS NULL")
+    suspend fun softDeleteTrackFromPlaylist(playlistId: Long, trackId: Long)
 }
