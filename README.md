@@ -1,6 +1,6 @@
 # Stash
 
-> **Your Spotify + YouTube Music library, downloaded and playable offline. Bulletproof matching, premium UI, zero subscriptions.**
+> **Your Spotify + YouTube Music library, downloaded and playable offline.**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-purple.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-purple)](#requirements)
