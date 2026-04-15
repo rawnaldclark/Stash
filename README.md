@@ -6,7 +6,7 @@
 [![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-purple)](#requirements)
 [![Release](https://img.shields.io/github/v/release/rawnaldclark/Stash?color=purple&include_prereleases)](https://github.com/rawnaldclark/Stash/releases)
 
-Stash is an offline-first Android music player that syncs your liked songs, playlists, daily mixes, and discover mixes from both **Spotify** and **YouTube Music** into a single unified local library. Tracks are downloaded as high-quality Opus audio and played through a premium Material 3 interface with a full equalizer, queue management, and smart source-aware browsing.
+Stash is an offline-first Android music player that syncs your liked songs, playlists, daily mixes, and discover mixes from both **Spotify** and **YouTube Music** into a single unified local library. Tracks are downloaded as high-quality Opus audio and played through a Material 3 interface with a full equalizer, queue management, and smart source-aware browsing.
 
 **Stash is not an online streaming service.** It's a personal-library tool for people who already have Spotify or YouTube Music accounts and want their library available offline on their terms.
 
@@ -17,12 +17,11 @@ Stash is an offline-first Android music player that syncs your liked songs, play
 - **Dual-source sync** — pull from Spotify and YouTube Music into one library, or filter by source
 - **Offline everything** — tracks download as high-quality Opus audio, playable without internet
 - **Bulletproof matching** — album-first pipeline finds the right version of every song, not some random live recording or cover
-- **Playlist detail views** — tap any playlist, album, or artist to see all tracks. Tap a track to play from that point with the full list queued. Long-press for Play Next, Add to Queue, Save to Playlist, or Delete.
 - **Custom playlists** — create your own playlists and save tracks to them from anywhere. Bookmark icon in Now Playing makes it one tap.
 - **Spotify sync preferences** — choose exactly which playlists, liked songs, daily mixes, and discovery mixes to sync. Individual toggles for each. Don't want Daily Mix 3? Turn it off.
-- **Expanded Spotify mix detection** — Release Radar, Discover Weekly, On Repeat, Daylist, Repeat Rewind, Time Capsule, and Daily Mixes 1-6 are all automatically detected. Each gets its own toggle.
+- **Expanded Spotify mix detection** — Release Radar, Discover Weekly, On Repeat, Daylist, Repeat Rewind, Time Capsule, and Daily Mixes 1-6 are all automatically detected when available. Each gets its own toggle.
 - **Refresh vs Accumulate sync modes** — mixes can either replace their contents each sync (Refresh) or stack new tracks on top of what's already there (Accumulate). Your call.
-- **Parallel downloads** — 8 simultaneous tracks instead of one at a time. Background sync runs as a foreground service so it actually finishes with the phone locked.
+- **Parallel downloads** — 8 simultaneous tracks. Background sync runs as a foreground service so it actually finishes with the phone locked.
 - **High-res album art** — YouTube thumbnails upgraded from 60px to 544px, Spotify art from 300px to 640px. Existing tracks get migrated on startup.
 - **Automatic update notifications** — checks GitHub for new releases daily and notifies you when one is available. Tap the notification to go straight to the download page.
 - **Full equalizer** — 5-band EQ with presets, bass boost, and virtualizer
