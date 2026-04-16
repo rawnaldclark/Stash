@@ -249,6 +249,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                         status = DownloadStatus.FAILED,
                                         failureType = DownloadFailureType.NO_MATCH,
                                         errorMessage = err,
+                                        rejectedVideoId = outcome.rejectedVideoId,
                                     )
                                     firstError.compareAndSet(null, err)
                                     failedCount.incrementAndGet()

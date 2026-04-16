@@ -99,7 +99,8 @@ interface DownloadQueueDao {
         SET status = :status,
             error_message = :errorMessage,
             completed_at = :completedAt,
-            failure_type = :failureType
+            failure_type = :failureType,
+            rejected_video_id = :rejectedVideoId
         WHERE id = :id
     """)
     suspend fun updateStatus(
@@ -108,6 +109,7 @@ interface DownloadQueueDao {
         errorMessage: String? = null,
         completedAt: Long? = null,
         failureType: DownloadFailureType = DownloadFailureType.NONE,
+        rejectedVideoId: String? = null,
     )
 
     /** Increment the retry count for a download queue entry. */
@@ -193,7 +195,8 @@ interface DownloadQueueDao {
     /** Unmatched tracks for the Failed Matches detail screen. */
     @Query("""
         SELECT dq.id, dq.track_id AS trackId, t.title, t.artist,
-               t.album_art_url AS albumArtUrl, dq.created_at AS createdAt
+               t.album_art_url AS albumArtUrl, dq.created_at AS createdAt,
+               dq.rejected_video_id AS rejectedVideoId
         FROM download_queue dq
         INNER JOIN tracks t ON dq.track_id = t.id
         WHERE dq.failure_type = 'NO_MATCH'
@@ -234,4 +237,5 @@ data class UnmatchedTrackView(
     val artist: String,
     val albumArtUrl: String?,
     val createdAt: Long,
+    val rejectedVideoId: String?,
 )

@@ -9,8 +9,8 @@ sealed class TrackDownloadOutcome {
     /** Download succeeded. [filePath] is the absolute path on disk. */
     data class Success(val filePath: String) : TrackDownloadOutcome()
 
-    /** No YouTube match found for the track. */
-    data object Unmatched : TrackDownloadOutcome()
+    /** No YouTube match found for the track. [rejectedVideoId] is the best candidate that failed verification. */
+    data class Unmatched(val rejectedVideoId: String? = null) : TrackDownloadOutcome()
 
     /** Download failed. [error] describes exactly what went wrong. */
     data class Failed(val error: String) : TrackDownloadOutcome()

@@ -21,7 +21,7 @@ class TrackDownloaderImpl @Inject constructor(
     override suspend fun downloadTrack(track: Track, preResolvedUrl: String?): TrackDownloadOutcome {
         return when (val result = downloadManager.downloadTrack(track, preResolvedUrl)) {
             is TrackDownloadResult.Success -> TrackDownloadOutcome.Success(result.filePath)
-            is TrackDownloadResult.Unmatched -> TrackDownloadOutcome.Unmatched
+            is TrackDownloadResult.Unmatched -> TrackDownloadOutcome.Unmatched(result.rejectedVideoId)
             is TrackDownloadResult.Failed -> TrackDownloadOutcome.Failed(result.error)
         }
     }

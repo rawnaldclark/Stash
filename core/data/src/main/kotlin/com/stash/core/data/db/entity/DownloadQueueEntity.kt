@@ -61,6 +61,9 @@ data class DownloadQueueEntity(
     @ColumnInfo(name = "failure_type")
     val failureType: DownloadFailureType = DownloadFailureType.NONE,
 
+    @ColumnInfo(name = "rejected_video_id")
+    val rejectedVideoId: String? = null,
+
     @ColumnInfo(name = "created_at")
     val createdAt: Instant = Instant.now(),
 

@@ -27,8 +27,8 @@ sealed class TrackDownloadResult {
     /** Download succeeded. [filePath] is the absolute path on disk. */
     data class Success(val filePath: String) : TrackDownloadResult()
 
-    /** No YouTube match found for the track. */
-    data object Unmatched : TrackDownloadResult()
+    /** No YouTube match found for the track. [rejectedVideoId] is the best candidate that failed verification. */
+    data class Unmatched(val rejectedVideoId: String? = null) : TrackDownloadResult()
 
     /** Download failed. [error] describes why. */
     data class Failed(val error: String) : TrackDownloadResult()
@@ -89,17 +89,24 @@ class DownloadManager @Inject constructor(
     }
 
     /**
+     * Result of URL resolution: the accepted URL (or null) plus the best
+     * rejected candidate's video ID for user preview on the unmatched screen.
+     */
+    private data class ResolveResult(val url: String?, val rejectedVideoId: String? = null)
+
+    /**
      * Executes the download pipeline for a single track.
      */
     private suspend fun executeDownload(track: Track, preResolvedUrl: String?): TrackDownloadResult {
         emitProgress(track.id, 0f, DownloadStatus.MATCHING)
 
         // Step 1: Resolve YouTube URL
-        val youtubeUrl = preResolvedUrl ?: resolveUrl(track)
-        if (youtubeUrl == null) {
+        val resolveResult = if (preResolvedUrl != null) ResolveResult(url = preResolvedUrl) else resolveUrl(track)
+        if (resolveResult.url == null) {
             emitProgress(track.id, 0f, DownloadStatus.UNMATCHED)
-            return TrackDownloadResult.Unmatched
+            return TrackDownloadResult.Unmatched(rejectedVideoId = resolveResult.rejectedVideoId)
         }
+        val youtubeUrl = resolveResult.url
 
         emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)
 
@@ -172,11 +179,16 @@ class DownloadManager @Inject constructor(
      * 3. Without remaster/deluxe suffixes: "Artist Title"
      * 4. With dash separator: "Artist - Title"
      *
-     * @return The best-matching YouTube URL, or null if no acceptable match is found.
+     * @return A [ResolveResult] with the best-matching YouTube URL, or null URL
+     *         with the best rejected candidate's video ID if no match was accepted.
      */
-    private suspend fun resolveUrl(track: Track): String? {
+    private suspend fun resolveUrl(track: Track): ResolveResult {
         // If we already have a YouTube ID, use it directly
-        track.youtubeId?.let { return "https://www.youtube.com/watch?v=$it" }
+        track.youtubeId?.let { return ResolveResult(url = "https://www.youtube.com/watch?v=$it") }
+
+        // Track the best rejected candidate across all strategies so users can
+        // preview it from the Unmatched Songs screen.
+        var bestRejectedVideoId: String? = null
 
         // ── Primary strategy: Album-based matching (most reliable) ──
         // Searches for the album on YouTube Music, browses the tracklist,
@@ -203,7 +215,7 @@ class DownloadManager @Inject constructor(
                     // the album's structured tracklist, not search results, so they don't
                     // suffer from the metadata/ID mismatch that verifyMatch guards against.
                     Log.d(TAG, "resolveUrl: ALBUM MATCH '${track.artist} - ${track.title}' → ${best.youtubeUrl}")
-                    return best.youtubeUrl
+                    return ResolveResult(url = best.youtubeUrl)
                 }
             }
         }
@@ -225,8 +237,9 @@ class DownloadManager @Inject constructor(
             )
 
             val best = matchScorer.bestMatch(scored) ?: continue
-            val verified = verifyMatch(track, best, query) ?: continue
-            return verified
+            val verified = verifyMatch(track, best, query)
+            if (verified != null) return ResolveResult(url = verified)
+            bestRejectedVideoId = best.videoId  // Save the closest rejected match
         }
 
         // Final fallback: direct yt-dlp search (bypasses InnerTube entirely)
@@ -244,12 +257,13 @@ class DownloadManager @Inject constructor(
             val best = matchScorer.bestMatch(scored)
             if (best != null) {
                 val verified = verifyMatch(track, best, ytDlpQuery)
-                if (verified != null) return verified
+                if (verified != null) return ResolveResult(url = verified)
+                bestRejectedVideoId = best.videoId  // Save the closest rejected match
             }
         }
 
         Log.w(TAG, "resolveUrl: all strategies failed for '${track.artist} - ${track.title}'")
-        return null
+        return ResolveResult(url = null, rejectedVideoId = bestRejectedVideoId)
     }
 
     /**
