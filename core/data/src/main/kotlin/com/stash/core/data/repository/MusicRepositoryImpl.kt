@@ -129,6 +129,9 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getAllPlaylists(): Flow<List<Playlist>> =
         playlistDao.getAllActive().map { entities -> entities.map { it.toDomain() } }
 
+    override fun getPlaylistsByType(type: com.stash.core.model.PlaylistType): Flow<List<Playlist>> =
+        playlistDao.getByType(type).map { entities -> entities.map { it.toDomain() } }
+
     override suspend fun getPlaylistWithTracks(id: Long): Playlist? {
         val result = playlistDao.getPlaylistWithTracks(id) ?: return null
         return result.playlist.toDomain().copy(

@@ -11,6 +11,7 @@ import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaylistType
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -84,6 +85,10 @@ interface PlaylistDao {
     /** All playlists from a specific music source. */
     @Query("SELECT * FROM playlists WHERE source = :source ORDER BY name ASC")
     fun getBySource(source: MusicSource): Flow<List<PlaylistEntity>>
+
+    /** All active playlists of a specific type, ordered alphabetically. */
+    @Query("SELECT * FROM playlists WHERE type = :type AND is_active = 1 ORDER BY name ASC")
+    fun getByType(type: PlaylistType): Flow<List<PlaylistEntity>>
 
     // ── Single-item lookups ─────────────────────────────────────────────
 

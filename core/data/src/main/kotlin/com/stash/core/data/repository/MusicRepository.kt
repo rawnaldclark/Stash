@@ -62,6 +62,9 @@ interface MusicRepository {
     /** A single playlist with its full track list. */
     suspend fun getPlaylistWithTracks(id: Long): Playlist?
 
+    /** All active playlists of a given type (e.g. LIKED_SONGS). */
+    fun getPlaylistsByType(type: com.stash.core.model.PlaylistType): Flow<List<Playlist>>
+
     // ── Mutations ───────────────────────────────────────────────────────
 
     /** Record a play event: increments play count and updates last-played. */
