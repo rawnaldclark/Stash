@@ -1,6 +1,10 @@
 package com.stash.feature.library
 
+import android.net.Uri
 import kotlin.math.absoluteValue
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -33,6 +37,8 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
@@ -74,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.Playlist
+import com.stash.core.model.PlaylistType
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
@@ -108,6 +115,8 @@ fun LibraryScreen(
         onAddPlaylistToQueue = viewModel::addPlaylistToQueue,
         onRemovePlaylist = viewModel::removePlaylist,
         onDeletePlaylist = viewModel::deletePlaylist,
+        onSetPlaylistImage = viewModel::setPlaylistImage,
+        onRemovePlaylistImage = viewModel::removePlaylistImage,
         onPlayArtist = onNavigateToArtist,
         onAddArtistToQueue = viewModel::addArtistToQueue,
         onDeleteArtist = viewModel::deleteArtist,
@@ -134,6 +143,8 @@ private fun LibraryContent(
     onAddPlaylistToQueue: (Playlist) -> Unit,
     onRemovePlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist) -> Unit,
+    onSetPlaylistImage: (Long, Uri) -> Unit,
+    onRemovePlaylistImage: (Long) -> Unit,
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
     onDeleteArtist: (String) -> Unit,
@@ -210,6 +221,8 @@ private fun LibraryContent(
                     onAddPlaylistToQueue = onAddPlaylistToQueue,
                     onRemovePlaylist = onRemovePlaylist,
                     onDeletePlaylist = onDeletePlaylist,
+                    onSetPlaylistImage = onSetPlaylistImage,
+                    onRemovePlaylistImage = onRemovePlaylistImage,
                 )
                 LibraryTab.TRACKS -> TracksTab(
                     tracks = state.tracks,
@@ -446,6 +459,8 @@ private fun PlaylistsGrid(
     onAddPlaylistToQueue: (Playlist) -> Unit,
     onRemovePlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist) -> Unit,
+    onSetPlaylistImage: (Long, Uri) -> Unit,
+    onRemovePlaylistImage: (Long) -> Unit,
 ) {
     if (playlists.isEmpty()) {
         EmptyTabMessage(
@@ -459,6 +474,17 @@ private fun PlaylistsGrid(
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
     // Playlist pending delete confirmation.
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+    // Playlist awaiting image picker result.
+    var playlistForImagePick by remember { mutableStateOf<Playlist?>(null) }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null && playlistForImagePick != null) {
+            onSetPlaylistImage(playlistForImagePick!!.id, uri)
+        }
+        playlistForImagePick = null
+    }
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -608,6 +634,33 @@ private fun PlaylistsGrid(
                     selectedPlaylist = null
                 },
             )
+            // Image options — only for custom playlists
+            if (playlist.type == PlaylistType.CUSTOM) {
+                BottomSheetActionRow(
+                    icon = Icons.Default.Image,
+                    label = if (playlist.artUrl != null) "Change Image" else "Add Image",
+                    onClick = {
+                        playlistForImagePick = playlist
+                        selectedPlaylist = null
+                        imagePickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                )
+
+                // Remove Image — only shown when a custom image is set
+                if (playlist.artUrl != null) {
+                    BottomSheetActionRow(
+                        icon = Icons.Default.ImageNotSupported,
+                        label = "Remove Image",
+                        onClick = {
+                            onRemovePlaylistImage(playlist.id)
+                            selectedPlaylist = null
+                        },
+                    )
+                }
+            }
+
             BottomSheetActionRow(
                 icon = Icons.Default.RemoveCircleOutline,
                 label = "Remove Playlist",
