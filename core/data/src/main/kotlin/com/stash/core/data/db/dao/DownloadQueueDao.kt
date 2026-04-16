@@ -196,7 +196,8 @@ interface DownloadQueueDao {
     @Query("""
         SELECT dq.id, dq.track_id AS trackId, t.title, t.artist,
                t.album_art_url AS albumArtUrl, dq.created_at AS createdAt,
-               dq.rejected_video_id AS rejectedVideoId
+               dq.rejected_video_id AS rejectedVideoId,
+               dq.search_query AS searchQuery
         FROM download_queue dq
         INNER JOIN tracks t ON dq.track_id = t.id
         WHERE dq.failure_type = 'NO_MATCH'
@@ -238,4 +239,5 @@ data class UnmatchedTrackView(
     val albumArtUrl: String?,
     val createdAt: Long,
     val rejectedVideoId: String?,
+    val searchQuery: String,
 )
