@@ -122,6 +122,17 @@ interface MusicRepository {
     /** Get all user-created custom playlists. */
     fun getUserCreatedPlaylists(): Flow<List<Playlist>>
 
+    // ── Unmatched tracks ────────────────────────────────────────────────
+
+    /** Unmatched tracks (matching failures, not dismissed). */
+    fun getUnmatchedTracks(): Flow<List<com.stash.core.data.db.dao.UnmatchedTrackView>>
+
+    /** Count of unmatched tracks. */
+    fun getUnmatchedCount(): Flow<Int>
+
+    /** Dismiss a track from matching — marks TrackEntity and deletes queue entry. */
+    suspend fun dismissMatch(trackId: Long)
+
     // ── Sync history ────────────────────────────────────────────────────
 
     /** The most recent sync record, or null. */

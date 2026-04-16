@@ -212,6 +212,19 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getUserCreatedPlaylists(): Flow<List<com.stash.core.model.Playlist>> =
         playlistDao.getUserCreatedPlaylists().map { entities -> entities.map { it.toDomain() } }
 
+    // ── Unmatched tracks ────────────────────────────────────────────────
+
+    override fun getUnmatchedTracks(): Flow<List<com.stash.core.data.db.dao.UnmatchedTrackView>> =
+        downloadQueueDao.getUnmatchedTracks()
+
+    override fun getUnmatchedCount(): Flow<Int> =
+        downloadQueueDao.getUnmatchedCount()
+
+    override suspend fun dismissMatch(trackId: Long) {
+        trackDao.dismissMatch(trackId)
+        downloadQueueDao.deleteByTrackId(trackId)
+    }
+
     // ── Sync history ────────────────────────────────────────────────────
 
     override suspend fun getLatestSync(): SyncHistoryEntity? =
