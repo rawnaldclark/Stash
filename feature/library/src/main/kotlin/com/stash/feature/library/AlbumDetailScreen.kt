@@ -2,7 +2,6 @@ package com.stash.feature.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,12 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,7 +54,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
+import com.stash.core.ui.components.DetailTrackRow
+import com.stash.core.ui.components.TrackOptionsSheet
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.util.formatTotalDuration
 
 /**
  * Album Detail screen entry point.
@@ -121,12 +118,13 @@ fun AlbumDetailScreen(
                     items = state.tracks,
                     key = { _, track -> track.id },
                 ) { index, track ->
-                    AlbumDetailTrackRow(
+                    DetailTrackRow(
                         track = track,
                         trackNumber = index + 1,
                         isPlaying = track.id == state.currentlyPlayingTrackId,
                         onClick = { viewModel.playTrack(track.id) },
                         onLongPress = { selectedTrack = track },
+                        showArtist = false,
                     )
 
                     if (index < state.tracks.lastIndex) {
@@ -148,7 +146,7 @@ fun AlbumDetailScreen(
             sheetState = sheetState,
             containerColor = extendedColors.elevatedSurface,
         ) {
-            AlbumDetailTrackOptionsSheet(
+            TrackOptionsSheet(
                 track = selectedTrack!!,
                 onPlayNext = {
                     viewModel.playNext(it)
@@ -331,7 +329,7 @@ private fun AlbumDetailHeader(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = formatTotalDurationMs(totalDuration),
+                        text = formatTotalDuration(totalDuration),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -378,203 +376,5 @@ private fun AlbumDetailHeader(
 
             Spacer(modifier = Modifier.height(16.dp))
         }
-    }
-}
-
-// -- Track row composable --
-
-/**
- * A single track row in the album detail list.
- * Shows track number and title (no artist since it's in the header).
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun AlbumDetailTrackRow(
-    track: Track,
-    trackNumber: Int,
-    isPlaying: Boolean,
-    onClick: () -> Unit,
-    onLongPress: () -> Unit,
-) {
-    val extendedColors = StashTheme.extendedColors
-    val primaryColor = MaterialTheme.colorScheme.primary
-
-    val rowBackground = if (isPlaying) {
-        primaryColor.copy(alpha = 0.06f)
-    } else {
-        Color.Transparent
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(rowBackground)
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongPress,
-            )
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Track number
-        Text(
-            text = "$trackNumber",
-            style = MaterialTheme.typography.bodySmall,
-            color = if (isPlaying) primaryColor else extendedColors.textTertiary,
-            modifier = Modifier.width(28.dp),
-        )
-
-        // Album art thumbnail
-        val artUrl = track.albumArtPath ?: track.albumArtUrl
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(extendedColors.elevatedSurface),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (artUrl != null) {
-                AsyncImage(
-                    model = artUrl,
-                    contentDescription = "${track.title} album art",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.MusicNote,
-                    contentDescription = null,
-                    tint = extendedColors.textTertiary,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        // Title only (artist + album are in the header)
-        Text(
-            text = track.title,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (isPlaying) primaryColor else MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        // Duration
-        Text(
-            text = formatDurationMs(track.durationMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = extendedColors.textTertiary,
-        )
-    }
-}
-
-// -- Bottom sheet composable --
-
-/**
- * Bottom sheet content showing queue actions for a selected track.
- */
-@Composable
-private fun AlbumDetailTrackOptionsSheet(
-    track: Track,
-    onPlayNext: (Track) -> Unit,
-    onAddToQueue: (Track) -> Unit,
-    onSaveToPlaylist: (Track) -> Unit,
-    onDelete: (Track) -> Unit,
-) {
-    val extendedColors = StashTheme.extendedColors
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 32.dp),
-    ) {
-        // Track info header
-        Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val artUrl = track.albumArtPath ?: track.albumArtUrl
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(extendedColors.glassBackground),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (artUrl != null) {
-                    AsyncImage(
-                        model = artUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = null,
-                        tint = extendedColors.textTertiary,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = track.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
-        HorizontalDivider(
-            modifier = Modifier.padding(horizontal = 20.dp),
-            thickness = 0.5.dp,
-            color = extendedColors.glassBorder,
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        DetailSheetOptionRow(
-            icon = Icons.Default.PlaylistPlay,
-            label = "Play Next",
-            onClick = { onPlayNext(track) },
-        )
-        DetailSheetOptionRow(
-            icon = Icons.Default.PlaylistAdd,
-            label = "Add to Queue",
-            onClick = { onAddToQueue(track) },
-        )
-        DetailSheetOptionRow(
-            icon = Icons.Default.FavoriteBorder,
-            label = "Save to Playlist",
-            onClick = { onSaveToPlaylist(track) },
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        DetailSheetOptionRow(
-            icon = Icons.Default.Delete,
-            label = "Delete",
-            tint = MaterialTheme.colorScheme.error,
-            onClick = { onDelete(track) },
-        )
     }
 }
