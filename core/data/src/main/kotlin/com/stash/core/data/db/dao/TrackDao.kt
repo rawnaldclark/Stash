@@ -293,6 +293,10 @@ interface TrackDao {
     @Query("UPDATE tracks SET match_dismissed = 1 WHERE id = :trackId")
     suspend fun dismissMatch(trackId: Long)
 
+    /** Set the YouTube video ID for a track so future syncs don't re-queue it. */
+    @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId")
+    suspend fun updateYoutubeId(trackId: Long, youtubeId: String)
+
     /** Find a downloaded track by canonical identity (for auto-reconciliation). */
     @Query("""
         SELECT * FROM tracks
