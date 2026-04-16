@@ -8,7 +8,10 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
+import com.stash.core.ui.util.withSearchFilter
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -25,8 +28,11 @@ data class LikedSongsDetailUiState(
     val isLoading: Boolean = true,
     val currentlyPlayingTrackId: Long? = null,
     val source: MusicSource? = null,
+    val searchQuery: String = "",
+    val showSearch: Boolean = false,
 )
 
+@OptIn(FlowPreview::class)
 @HiltViewModel
 class LikedSongsDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -36,6 +42,16 @@ class LikedSongsDetailViewModel @Inject constructor(
 
     private val sourceFilter: MusicSource? =
         savedStateHandle.get<String>("source")?.let { MusicSource.valueOf(it) }
+
+    private val _searchQuery = MutableStateFlow("")
+    private val _showSearch = MutableStateFlow(false)
+
+    fun onSearchQueryChanged(query: String) { _searchQuery.value = query }
+    fun clearSearch() { _searchQuery.value = "" }
+    fun toggleSearch() {
+        _showSearch.value = !_showSearch.value
+        if (!_showSearch.value) _searchQuery.value = ""
+    }
 
     private val tracksFlow = musicRepository.getPlaylistsByType(PlaylistType.LIKED_SONGS)
         .map { playlists ->
@@ -53,9 +69,11 @@ class LikedSongsDetailViewModel @Inject constructor(
         }
 
     val uiState: StateFlow<LikedSongsDetailUiState> = combine(
-        tracksFlow,
+        tracksFlow.withSearchFilter(_searchQuery),
         playerRepository.playerState,
-    ) { tracks, playerState ->
+        _searchQuery,
+        _showSearch,
+    ) { tracks, playerState, query, showSearch ->
         val title = when (sourceFilter) {
             MusicSource.SPOTIFY -> "Liked Songs \u2022 Spotify"
             MusicSource.YOUTUBE -> "Liked Songs \u2022 YouTube"
@@ -67,6 +85,8 @@ class LikedSongsDetailViewModel @Inject constructor(
             isLoading = false,
             currentlyPlayingTrackId = playerState.currentTrack?.id,
             source = sourceFilter,
+            searchQuery = query,
+            showSearch = showSearch,
         )
     }.stateIn(
         scope = viewModelScope,
