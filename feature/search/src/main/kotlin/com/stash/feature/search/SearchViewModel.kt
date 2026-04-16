@@ -60,6 +60,12 @@ class SearchViewModel @Inject constructor(
 
         /** Maximum number of search results to request. */
         private const val MAX_RESULTS = 20
+
+        /** How many search results to pre-extract preview URLs for. */
+        private const val PRE_EXTRACT_LIMIT = 6
+
+        /** Max concurrent yt-dlp preview extractions (each is CPU-heavy). */
+        private const val PRE_EXTRACT_CONCURRENCY = 2
     }
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -70,6 +76,16 @@ class SearchViewModel @Inject constructor(
 
     /** Reference to the current search coroutine so it can be cancelled on new input. */
     private var searchJob: Job? = null
+
+    /**
+     * Cache of pre-extracted stream URLs, keyed by videoId.
+     * Populated in the background as soon as search results arrive.
+     * Cleared on each new search.
+     */
+    private val previewUrlCache = mutableMapOf<String, String>()
+
+    /** Active pre-extraction jobs, keyed by videoId. Can be cancelled on new search. */
+    private var preExtractJobs = mutableListOf<Job>()
 
     /**
      * Called whenever the search text field value changes.
@@ -122,9 +138,50 @@ class SearchViewModel @Inject constructor(
                     downloadedIds = downloadedIds,
                 )
             }
+
+            // Pre-extract stream URLs in the background so previews are instant.
+            // Uses a semaphore of 2 to avoid overwhelming yt-dlp with parallel calls.
+            preExtractStreamUrls(items)
         } catch (e: Exception) {
             Log.e(TAG, "Search failed for query: $query", e)
             _uiState.update { it.copy(isSearching = false, error = e.message) }
+        }
+    }
+
+    /**
+     * Pre-extracts stream URLs for search results in the background.
+     *
+     * Runs up to [PRE_EXTRACT_LIMIT] extractions concurrently (limited by
+     * [PRE_EXTRACT_CONCURRENCY] semaphore). Extracted URLs are cached in
+     * [previewUrlCache] and served instantly when the user taps preview.
+     *
+     * Each extraction takes ~20-35s due to QuickJS-NG cipher solving, but
+     * since this runs in the background while the user browses results,
+     * the first few URLs are typically ready by the time they tap preview.
+     */
+    private fun preExtractStreamUrls(items: List<SearchResultItem>) {
+        // Cancel any previous pre-extraction jobs and clear stale cache
+        preExtractJobs.forEach { it.cancel() }
+        preExtractJobs.clear()
+        previewUrlCache.clear()
+
+        val semaphore = kotlinx.coroutines.sync.Semaphore(PRE_EXTRACT_CONCURRENCY)
+
+        // Only pre-extract the first N results — user rarely scrolls past these
+        items.take(PRE_EXTRACT_LIMIT).forEach { item ->
+            val job = viewModelScope.launch {
+                semaphore.acquire()
+                try {
+                    val url = previewUrlExtractor.extractStreamUrl(item.videoId)
+                    previewUrlCache[item.videoId] = url
+                    Log.d(TAG, "Pre-extracted preview URL for ${item.videoId} (cache size: ${previewUrlCache.size})")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Pre-extract failed for ${item.videoId}: ${e.message}")
+                } finally {
+                    semaphore.release()
+                }
+            }
+            preExtractJobs.add(job)
         }
     }
 
@@ -237,7 +294,11 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(previewLoading = videoId, previewError = null) }
             try {
-                val url = previewUrlExtractor.extractStreamUrl(videoId)
+                // Check cache first — if pre-extraction finished, this is instant
+                val url = previewUrlCache[videoId]
+                    ?: previewUrlExtractor.extractStreamUrl(videoId).also {
+                        previewUrlCache[videoId] = it
+                    }
                 previewPlayer.playUrl(videoId, url)
                 _uiState.update { it.copy(previewLoading = null) }
             } catch (e: Exception) {
@@ -262,5 +323,7 @@ class SearchViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         previewPlayer.stop()
+        preExtractJobs.forEach { it.cancel() }
+        previewUrlCache.clear()
     }
 }

@@ -12,7 +12,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import org.json.JSONObject
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -98,23 +97,22 @@ class PreviewUrlExtractor @Inject constructor(
                         // 250 = Opus/WebM at ~70 kbps, bestaudio = widest compatibility fallback.
                         addOption("-f", FORMAT_SELECTOR)
 
-                        // Emit full metadata JSON on stdout instead of downloading the file.
-                        // --no-download alone is insufficient — some yt-dlp builds still
-                        // initiate the request. --dump-json is the canonical metadata flag.
-                        addOption("--dump-json")
+                        // Print ONLY the direct stream URL — much faster than --dump-json
+                        // which serializes 600KB+ of metadata we don't need.
+                        addOption("--print", "urls")
                         addOption("--no-download")
 
                         // NOTE: --flat-playlist is intentionally omitted. That flag causes
                         // yt-dlp to skip format resolution and emit only the video ID/title,
                         // which means the `url` field (the signed CDN stream URL) is absent.
 
-                        // Tell yt-dlp to use QuickJS for YouTube's JS signature challenges.
-                        // Without a JS runtime, yt-dlp can't decrypt stream URLs and fails
-                        // with "Signature solving failed".
+                        // QuickJS runtime for YouTube's JS signature challenges.
+                        // QuickJS-NG is slow (~20-35s) but required — without it yt-dlp
+                        // cannot solve signatures at all. The latency is hidden by
+                        // pre-extracting URLs in the background during search.
                         val qjsPath = ytDlpManager.quickJsPath
                         if (qjsPath != null) {
                             addOption("--js-runtimes", "quickjs:$qjsPath")
-                            // Download EJS challenge solver scripts from GitHub on first use.
                             addOption("--remote-components", "ejs:github")
                         }
                     }
@@ -136,19 +134,22 @@ class PreviewUrlExtractor @Inject constructor(
                     val response = YoutubeDL.getInstance().execute(request, url, null)
 
                     val stdout = response.out.orEmpty()
+                    val stderr = response.err.orEmpty()
                     Log.d(
                         TAG,
                         "extractStreamUrl: exit=${response.exitCode} stdoutLen=${stdout.length} " +
-                            "stderrLen=${response.err.orEmpty().length}",
+                            "stderrLen=${stderr.length}",
                     )
+                    if (stderr.isNotBlank()) {
+                        Log.d(TAG, "extractStreamUrl stderr: ${stderr.take(1000)}")
+                    }
 
-                    // yt-dlp emits one JSON object per video on stdout. Parse the `url` field,
-                    // which is the direct signed CDN stream URL.
-                    val streamUrl = JSONObject(stdout).optString("url", "")
-                    check(streamUrl.isNotEmpty()) {
-                        "yt-dlp returned JSON with no 'url' field for videoId=$videoId — " +
+                    // With --print urls, stdout contains just the direct CDN URL (one per line).
+                    val streamUrl = stdout.trim().lines().firstOrNull { it.startsWith("http") }
+                    check(!streamUrl.isNullOrBlank()) {
+                        "yt-dlp returned no stream URL for videoId=$videoId — " +
                             "video may be geo-blocked, age-restricted, or require sign-in. " +
-                            "stderr: ${response.err.orEmpty().take(500)}"
+                            "stderr: ${stderr.take(500)}"
                     }
 
                     Log.d(TAG, "extractStreamUrl: SUCCESS videoId=$videoId urlLen=${streamUrl.length}")
