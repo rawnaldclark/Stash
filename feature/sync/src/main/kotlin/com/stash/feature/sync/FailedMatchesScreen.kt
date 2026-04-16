@@ -380,9 +380,10 @@ private fun UnmatchedTrackRow(
         }
 
         // Preview button — shown only when a rejected candidate videoId exists
-        if (track.rejectedVideoId != null) {
+        val videoId = track.rejectedVideoId
+        if (videoId != null) {
             IconButton(
-                onClick = if (isPreviewPlaying) onStopPreview else { { onPreview(track.rejectedVideoId) } },
+                onClick = if (isPreviewPlaying) onStopPreview else { { onPreview(videoId) } },
                 modifier = Modifier.size(40.dp),
             ) {
                 when {
