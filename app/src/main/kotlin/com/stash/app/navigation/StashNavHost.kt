@@ -16,6 +16,7 @@ import com.stash.feature.library.PlaylistDetailScreen
 import com.stash.feature.nowplaying.NowPlayingScreen
 import com.stash.feature.search.SearchScreen
 import com.stash.feature.settings.SettingsScreen
+import com.stash.feature.sync.FailedMatchesScreen
 import com.stash.feature.sync.SyncScreen
 
 /** Transition duration for the Now Playing slide animation in milliseconds. */
@@ -61,7 +62,13 @@ fun StashNavHost(
             )
         }
         composable<SearchRoute> { SearchScreen() }
-        composable<SyncRoute> { SyncScreen() }
+        composable<SyncRoute> {
+            SyncScreen(
+                onNavigateToFailedMatches = {
+                    navController.navigate(FailedMatchesRoute)
+                },
+            )
+        }
         composable<SettingsRoute> { SettingsScreen() }
 
         composable<PlaylistDetailRoute> {
@@ -84,6 +91,12 @@ fun StashNavHost(
 
         composable<LikedSongsDetailRoute> {
             LikedSongsDetailScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable<FailedMatchesRoute> {
+            FailedMatchesScreen(
                 onBack = { navController.popBackStack() },
             )
         }
