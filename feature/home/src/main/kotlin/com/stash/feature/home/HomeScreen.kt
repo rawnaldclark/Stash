@@ -1,8 +1,10 @@
 package com.stash.feature.home
 
 import android.text.format.DateUtils
+import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateColor
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -58,10 +60,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -922,6 +927,47 @@ private fun LikedSongsCard(
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
+    val infiniteTransition = rememberInfiniteTransition(label = "livingHeart")
+
+    // Shifting gradient — cycles through purple hues
+    val gradientColor1 by infiniteTransition.animateColor(
+        initialValue = extendedColors.purpleLight,
+        targetValue = extendedColors.purpleDark,
+        animationSpec = infiniteRepeatable(
+            animation = tween(4000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "gradientColor1",
+    )
+    val gradientColor2 by infiniteTransition.animateColor(
+        initialValue = extendedColors.purpleDark,
+        targetValue = extendedColors.purpleLight,
+        animationSpec = infiniteRepeatable(
+            animation = tween(4000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "gradientColor2",
+    )
+
+    // Breathing glow — shadow radius pulses
+    val glowRadius by infiniteTransition.animateFloat(
+        initialValue = 8f,
+        targetValue = 20f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = EaseInOut),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "glowRadius",
+    )
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = EaseInOut),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "glowAlpha",
+    )
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -941,25 +987,63 @@ private fun LikedSongsCard(
                     )
                 ),
         ) {
-            // Main row — tapping navigates to liked songs detail view
+            // Main row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(onClick = onClick)
-                    .padding(20.dp),
+                    .padding(24.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                // Text content on the left
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "YOUR COLLECTION",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            letterSpacing = 1.5.sp,
+                        ),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "Liked Songs",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        if (singleSource != null) {
+                            SourceIndicator(source = singleSource, size = 6.dp)
+                        }
+                    }
+                    Text(
+                        text = when (singleSource) {
+                            MusicSource.SPOTIFY -> "$totalCount tracks on Spotify"
+                            MusicSource.YOUTUBE -> "$totalCount tracks on YouTube Music"
+                            else -> "$totalCount tracks \u00B7 2 sources"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // Living heart icon on the right
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .size(52.dp)
+                        .drawBehind {
+                            drawCircle(
+                                color = gradientColor1.copy(alpha = glowAlpha),
+                                radius = glowRadius.dp.toPx(),
+                            )
+                        }
+                        .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary,
-                                    extendedColors.purpleDark,
-                                )
+                                listOf(gradientColor1, gradientColor2)
                             )
                         ),
                     contentAlignment = Alignment.Center,
@@ -971,55 +1055,25 @@ private fun LikedSongsCard(
                         modifier = Modifier.size(24.dp),
                     )
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            text = "Liked Songs",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        // Single-source indicator: surfaces the lone connected service
-                        // when the user only has one source populated with liked songs.
-                        if (singleSource != null) {
-                            SourceIndicator(source = singleSource, size = 6.dp)
-                        }
-                    }
-                    Text(
-                        text = when (singleSource) {
-                            MusicSource.SPOTIFY -> "$totalCount tracks on Spotify"
-                            MusicSource.YOUTUBE -> "$totalCount tracks on YouTube Music"
-                            else -> "$totalCount tracks"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
 
-            // Source chips row — only shown when both sources have liked songs
+            // Source chips — compact pills, dot + count only
             if (showSourceChips) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        .padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     SourceLikedChip(
                         source = MusicSource.SPOTIFY,
-                        label = "Spotify",
                         count = spotifyCount,
                         onClick = onClickSpotify,
-                        modifier = Modifier.weight(1f),
                     )
                     SourceLikedChip(
                         source = MusicSource.YOUTUBE,
-                        label = "YouTube",
                         count = youtubeCount,
                         onClick = onClickYouTube,
-                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -1027,16 +1081,9 @@ private fun LikedSongsCard(
     }
 }
 
-/**
- * A tappable pill chip showing a source-specific liked-songs count.
- * Used inside [LikedSongsCard] to play one source's liked songs only.
- *
- * The touch target is kept at least 48dp tall for accessibility.
- */
 @Composable
 private fun SourceLikedChip(
     source: MusicSource,
-    label: String,
     count: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1045,38 +1092,40 @@ private fun SourceLikedChip(
     val accent = when (source) {
         MusicSource.SPOTIFY -> extendedColors.spotifyGreen
         MusicSource.YOUTUBE -> extendedColors.youtubeRed
-        // BOTH is unreachable — SourceLikedChip is only called with SPOTIFY or YOUTUBE.
         MusicSource.BOTH -> MaterialTheme.colorScheme.primary
+    }
+    val sourceName = when (source) {
+        MusicSource.SPOTIFY -> "Spotify"
+        MusicSource.YOUTUBE -> "YouTube"
+        MusicSource.BOTH -> ""
     }
 
     Surface(
         modifier = modifier
-            .height(48.dp)
             .clickable(onClick = onClick),
         color = accent.copy(alpha = 0.12f),
-        shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            SourceIndicator(source = source, size = 8.dp)
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(accent)
+                    .semantics {
+                        contentDescription = "$count $sourceName liked songs"
+                    },
             )
-            Spacer(modifier = Modifier.weight(1f))
             Text(
                 text = count.toString(),
                 style = MaterialTheme.typography.labelMedium,
                 color = accent,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
