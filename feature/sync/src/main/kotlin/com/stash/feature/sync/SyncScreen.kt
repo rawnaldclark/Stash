@@ -2,9 +2,11 @@ package com.stash.feature.sync
 
 import android.text.format.DateUtils
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,6 +78,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 @Composable
 fun SyncScreen(
     modifier: Modifier = Modifier,
+    onNavigateToFailedMatches: () -> Unit = {},
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -133,6 +136,16 @@ fun SyncScreen(
                 progress = uiState.overallProgress,
                 onSyncNow = viewModel::onSyncNow,
             )
+        }
+
+        // -- Unmatched songs warning card -------------------------------------
+        if (uiState.unmatchedCount > 0) {
+            item(key = "unmatched") {
+                UnmatchedSongsCard(
+                    count = uiState.unmatchedCount,
+                    onClick = onNavigateToFailedMatches,
+                )
+            }
         }
 
         // -- Spotify Sync Preferences (above schedule, collapsed by default) --
@@ -765,6 +778,75 @@ private fun SyncHistoryRow(sync: SyncHistoryInfo) {
                     )
                 }
             }
+        }
+    }
+}
+
+// -- Unmatched songs warning card ---------------------------------------------
+
+/**
+ * Amber-tinted warning card shown when one or more tracks failed YouTube
+ * matching during the last sync.  Tapping navigates to the FailedMatches
+ * screen where the user can manually resolve each track.
+ *
+ * @param count    Number of tracks that are currently unmatched.
+ * @param onClick  Navigation callback — routes to the Failed Matches screen.
+ */
+@Composable
+private fun UnmatchedSongsCard(
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color(0xFFFFA726).copy(alpha = 0.15f), // Amber tint
+                            Color.Transparent,
+                        )
+                    )
+                )
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Warning,
+                contentDescription = null,
+                tint = Color(0xFFFFA726),
+                modifier = Modifier.size(24.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "$count song${if (count != 1) "s" else ""} couldn't be matched",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "Tap to review",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }

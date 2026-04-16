@@ -72,6 +72,8 @@ data class SyncUiState(
     val spotifyPlaylists: List<SpotifySyncPlaylist> = emptyList(),
     /** Controls whether mixes refresh or accumulate during sync. */
     val syncMode: SyncMode = SyncMode.REFRESH,
+    /** Number of tracks that could not be matched to a YouTube video. */
+    val unmatchedCount: Int = 0,
 )
 
 /**
@@ -88,6 +90,7 @@ class SyncViewModel @Inject constructor(
     private val tokenManager: TokenManager,
     private val syncHistoryDao: SyncHistoryDao,
     private val playlistDao: com.stash.core.data.db.dao.PlaylistDao,
+    private val musicRepository: com.stash.core.data.repository.MusicRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SyncUiState())
@@ -100,6 +103,7 @@ class SyncViewModel @Inject constructor(
         observeAuthStates()
         observeHistory()
         observeSpotifyPlaylists()
+        observeUnmatchedCount()
     }
 
     // -- Public actions -------------------------------------------------------
@@ -245,6 +249,20 @@ class SyncViewModel @Inject constructor(
                         }
                     )
                 }
+            }
+        }
+    }
+
+    /**
+     * Observe the live count of tracks that failed YouTube matching.
+     *
+     * Drives the amber warning card on the Sync screen so the user always
+     * knows when there are songs requiring manual review.
+     */
+    private fun observeUnmatchedCount() {
+        viewModelScope.launch {
+            musicRepository.getUnmatchedCount().collect { count ->
+                _uiState.update { it.copy(unmatchedCount = count) }
             }
         }
     }
