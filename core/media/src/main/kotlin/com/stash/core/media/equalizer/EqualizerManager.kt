@@ -171,21 +171,16 @@ class EqualizerManager @Inject constructor(
 
         scope.launch {
             val current = equalizerStore.getSettings()
-            if (preset == EqPreset.CUSTOM) {
-                // Apply stored custom gains
+            val updated = if (preset == EqPreset.CUSTOM) {
                 val customGains = current.customGains.takeIf { it.isNotEmpty() }
                     ?: List(bandCount) { 0 }
                 applyGainsToEqualizer(eq, customGains.toIntArray())
-                equalizerStore.saveSettings(current.copy(preset = preset.name))
+                current.copy(preset = preset.name)
             } else {
-                equalizerStore.saveSettings(
-                    current.copy(
-                        preset = preset.name,
-                        // Also snapshot the preset gains as custom so switching
-                        // to CUSTOM later starts from this curve
-                    ),
-                )
+                current.copy(preset = preset.name)
             }
+            equalizerStore.saveSettings(updated)
+            if (isEnabled) reEvaluateBypass(updated)
         }
     }
 
@@ -211,16 +206,16 @@ class EqualizerManager @Inject constructor(
 
         scope.launch {
             val current = equalizerStore.getSettings()
-            // Build the full custom gains array from current equalizer state
             val customGains = (0 until bandCount).map { b ->
                 eq.getBandLevel(b.toShort()).toInt()
             }
-            equalizerStore.saveSettings(
-                current.copy(
-                    preset = EqPreset.CUSTOM.name,
-                    customGains = customGains,
-                ),
+            val updated = current.copy(
+                preset = EqPreset.CUSTOM.name,
+                customGains = customGains,
             )
+            equalizerStore.saveSettings(updated)
+            // Re-evaluate smart bypass — activate hardware if no longer flat
+            if (isEnabled) reEvaluateBypass(updated)
         }
     }
 
@@ -240,7 +235,9 @@ class EqualizerManager @Inject constructor(
 
         scope.launch {
             val current = equalizerStore.getSettings()
-            equalizerStore.saveSettings(current.copy(bassBoostStrength = clamped))
+            val updated = current.copy(bassBoostStrength = clamped)
+            equalizerStore.saveSettings(updated)
+            if (isEnabled) reEvaluateBypass(updated)
         }
     }
 
@@ -260,7 +257,9 @@ class EqualizerManager @Inject constructor(
 
         scope.launch {
             val current = equalizerStore.getSettings()
-            equalizerStore.saveSettings(current.copy(virtualizerStrength = clamped))
+            val updated = current.copy(virtualizerStrength = clamped)
+            equalizerStore.saveSettings(updated)
+            if (isEnabled) reEvaluateBypass(updated)
         }
     }
 
@@ -280,35 +279,87 @@ class EqualizerManager @Inject constructor(
 
         scope.launch {
             val current = equalizerStore.getSettings()
-            equalizerStore.saveSettings(current.copy(loudnessGainMb = clamped))
+            val updated = current.copy(loudnessGainMb = clamped)
+            equalizerStore.saveSettings(updated)
+            if (isEnabled) reEvaluateBypass(updated)
         }
     }
 
     /**
      * Enables or disables the entire effects chain.
      * When disabled, all effects are turned off but their settings are retained.
+     *
+     * When enabled, checks if all effects are at neutral (flat EQ, zero bass/
+     * virtualizer/loudness). If so, keeps the native effects disabled to avoid
+     * unnecessary DSP processing, latency, and potential resampling artifacts.
      */
     fun setEnabled(enabled: Boolean) {
         isEnabled = enabled
-        try { equalizer?.enabled = enabled } catch (_: Exception) {}
-        try { bassBoost?.enabled = enabled } catch (_: Exception) {}
-        try { virtualizer?.enabled = enabled } catch (_: Exception) {}
-        try {
-            if (enabled) {
-                // LoudnessEnhancer has no `enabled` setter; re-apply the gain
-                scope.launch {
-                    val settings = equalizerStore.getSettings()
-                    loudnessEnhancer?.setTargetGain(settings.loudnessGainMb)
-                }
-            } else {
-                loudnessEnhancer?.setTargetGain(0)
-            }
-        } catch (_: Exception) {}
 
         scope.launch {
-            val current = equalizerStore.getSettings()
-            equalizerStore.saveSettings(current.copy(enabled = enabled))
+            val settings = equalizerStore.getSettings()
+
+            if (enabled) {
+                // Smart bypass: if everything is at neutral, keep effects off
+                // to avoid unnecessary signal processing overhead.
+                val effectivelyFlat = isSettingsFlat(settings)
+                val hardwareEnabled = enabled && !effectivelyFlat
+
+                try { equalizer?.enabled = hardwareEnabled } catch (_: Exception) {}
+                try { bassBoost?.enabled = hardwareEnabled } catch (_: Exception) {}
+                try { virtualizer?.enabled = hardwareEnabled } catch (_: Exception) {}
+                try {
+                    loudnessEnhancer?.setTargetGain(
+                        if (hardwareEnabled) settings.loudnessGainMb else 0,
+                    )
+                } catch (_: Exception) {}
+
+                if (effectivelyFlat) {
+                    Log.d(TAG, "Smart bypass: all effects at neutral, hardware effects disabled")
+                }
+            } else {
+                try { equalizer?.enabled = false } catch (_: Exception) {}
+                try { bassBoost?.enabled = false } catch (_: Exception) {}
+                try { virtualizer?.enabled = false } catch (_: Exception) {}
+                try { loudnessEnhancer?.setTargetGain(0) } catch (_: Exception) {}
+            }
+
+            equalizerStore.saveSettings(settings.copy(enabled = enabled))
         }
+    }
+
+    /**
+     * Checks whether all effect settings are at their neutral/zero positions.
+     * Used by smart bypass to skip hardware effect processing when nothing
+     * would actually change the audio signal.
+     */
+    private fun isSettingsFlat(settings: EqualizerSettings): Boolean {
+        val preset = EqPreset.fromName(settings.preset)
+        val gainsFlat = when {
+            preset == EqPreset.FLAT -> true
+            preset == EqPreset.CUSTOM ->
+                settings.customGains.isEmpty() || settings.customGains.all { it == 0 }
+            else -> preset.gains.all { it == 0 }
+        }
+        return gainsFlat &&
+            settings.bassBoostStrength == 0 &&
+            settings.virtualizerStrength == 0 &&
+            settings.loudnessGainMb == 0
+    }
+
+    /**
+     * Re-evaluates whether hardware effects should be on or off based on
+     * current settings. Called after any individual effect value changes.
+     */
+    private fun reEvaluateBypass(settings: EqualizerSettings) {
+        val shouldBeActive = !isSettingsFlat(settings)
+        try { equalizer?.enabled = shouldBeActive } catch (_: Exception) {}
+        try { bassBoost?.enabled = shouldBeActive } catch (_: Exception) {}
+        try { virtualizer?.enabled = shouldBeActive } catch (_: Exception) {}
+        try {
+            loudnessEnhancer?.setTargetGain(if (shouldBeActive) settings.loudnessGainMb else 0)
+        } catch (_: Exception) {}
+        Log.d(TAG, "reEvaluateBypass: hardwareActive=$shouldBeActive")
     }
 
     // ---- Internal helpers ----
@@ -316,13 +367,19 @@ class EqualizerManager @Inject constructor(
     /**
      * Applies a complete [EqualizerSettings] snapshot to all active effects.
      * Called during [initialize] to restore persisted state.
+     *
+     * Uses smart bypass: when the user has EQ "enabled" but all values are
+     * neutral, the hardware effects stay off to keep the signal path clean.
      */
     private fun applySettings(settings: EqualizerSettings) {
         isEnabled = settings.enabled
 
-        // Equalizer bands
+        // Smart bypass: if enabled but flat, skip hardware activation
+        val hardwareEnabled = settings.enabled && !isSettingsFlat(settings)
+
+        // Equalizer bands — always set values so they're ready if enabled later
         equalizer?.let { eq ->
-            eq.enabled = settings.enabled
+            eq.enabled = hardwareEnabled
             val preset = EqPreset.fromName(settings.preset)
             val gains = if (preset == EqPreset.CUSTOM) {
                 if (settings.customGains.isNotEmpty()) {
@@ -338,21 +395,25 @@ class EqualizerManager @Inject constructor(
 
         // BassBoost
         bassBoost?.let {
-            it.enabled = settings.enabled
+            it.enabled = hardwareEnabled
             try { it.setStrength(settings.bassBoostStrength.toShort()) } catch (_: Exception) {}
         }
 
         // Virtualizer
         virtualizer?.let {
-            it.enabled = settings.enabled
+            it.enabled = hardwareEnabled
             try { it.setStrength(settings.virtualizerStrength.toShort()) } catch (_: Exception) {}
         }
 
         // LoudnessEnhancer
         loudnessEnhancer?.let {
             try {
-                it.setTargetGain(if (settings.enabled) settings.loudnessGainMb else 0)
+                it.setTargetGain(if (hardwareEnabled) settings.loudnessGainMb else 0)
             } catch (_: Exception) {}
+        }
+
+        if (settings.enabled && !hardwareEnabled) {
+            Log.d(TAG, "Smart bypass on restore: all effects neutral, hardware off")
         }
     }
 

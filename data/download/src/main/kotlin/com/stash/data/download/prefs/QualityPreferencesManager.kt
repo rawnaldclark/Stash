@@ -50,22 +50,26 @@ class QualityPreferencesManager @Inject constructor(
 /**
  * Maps a [QualityTier] to the corresponding yt-dlp command-line arguments.
  *
- * Requests YouTube's native Opus streams directly by format ID, avoiding
- * the FFmpeg extraction/transcode step entirely:
- *   - 251 = Opus ~160 kbps (highest quality)
+ * YouTube audio format IDs:
+ *   - 140 = AAC LC 256 kbps in m4a container (highest quality available)
+ *   - 251 = Opus ~160 kbps (VBR, actual range ~100-160 kbps)
  *   - 250 = Opus ~70 kbps
  *   - 249 = Opus ~50 kbps
+ *
+ * BEST tier prefers AAC 256kbps (format 140) which is perceptually superior
+ * to Opus 160kbps for music — better high-frequency detail, transient
+ * response, and complex-passage fidelity. Falls back to Opus if unavailable.
  *
  * `--embed-metadata` tells yt-dlp to write title/artist/album tags into
  * the file during download, eliminating a separate ffmpeg metadata pass.
  */
 fun QualityTier.toYtDlpArgs(): List<String> = when (this) {
     QualityTier.BEST -> listOf(
-        "-f", "251/250/bestaudio[ext=webm]/bestaudio",
+        "-f", "140/bestaudio[ext=m4a]/251/bestaudio",
         "--embed-metadata",
     )
     QualityTier.HIGH -> listOf(
-        "-f", "250/251/bestaudio[ext=webm]/bestaudio",
+        "-f", "251/250/bestaudio[ext=webm]/bestaudio",
         "--embed-metadata",
     )
     QualityTier.NORMAL -> listOf(
