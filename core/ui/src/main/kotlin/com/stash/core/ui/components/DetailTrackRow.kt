@@ -38,11 +38,15 @@ import com.stash.core.ui.util.formatDuration
  * Shows track number, album art thumbnail, title/artist, and formatted duration.
  * Tapping plays the track; long-pressing triggers the [onLongPress] callback.
  *
- * @param track       The track data to display.
- * @param trackNumber The 1-based position in the list.
- * @param isPlaying   True if this track is currently playing (highlights the row).
- * @param onClick     Invoked on tap to start playback from this track.
- * @param onLongPress Invoked on long-press to open the options sheet.
+ * @param track             The track data to display.
+ * @param trackNumber       The 1-based position in the list.
+ * @param isPlaying         True if this track is currently playing (highlights the row).
+ * @param onClick           Invoked on tap to start playback from this track.
+ * @param onLongPress       Invoked on long-press to open the options sheet.
+ * @param showArtist        When true (default), the artist name is shown as the subtitle.
+ *                          Set to false to suppress the subtitle entirely (e.g. AlbumDetailScreen).
+ * @param subtitleOverride  When non-null, replaces the artist name with this string.
+ *                          A blank override is treated as absent — no subtitle is rendered.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -52,6 +56,8 @@ fun DetailTrackRow(
     isPlaying: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
+    showArtist: Boolean = true,
+    subtitleOverride: String? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -122,13 +128,17 @@ fun DetailTrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = track.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // Determine subtitle text — default is artist, can be overridden or hidden
+            val subtitle = subtitleOverride ?: track.artist
+            if ((showArtist || subtitleOverride != null) && subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
 
         Spacer(modifier = Modifier.width(8.dp))
