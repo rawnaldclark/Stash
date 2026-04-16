@@ -183,6 +183,7 @@ class MusicRepositoryImpl @Inject constructor(
         val entity = com.stash.core.data.db.entity.PlaylistEntity(
             name = name,
             source = com.stash.core.model.MusicSource.BOTH,
+            sourceId = "custom_${java.util.UUID.randomUUID()}",
             type = com.stash.core.model.PlaylistType.CUSTOM,
             isActive = true,
             syncEnabled = false,
