@@ -10,4 +10,6 @@ dependencies {
     implementation(project(":core:media"))
     implementation(project(":data:download"))
     implementation(libs.compose.material.icons.extended)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
 }
