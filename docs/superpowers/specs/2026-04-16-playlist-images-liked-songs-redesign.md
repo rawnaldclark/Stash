@@ -15,17 +15,18 @@ Two independent sub-features:
 
 ### Image Picker Flow
 
-1. User long-presses a custom playlist in Library grid → context menu shows:
+1. User long-presses a custom playlist in Library grid → existing `ModalBottomSheet` shows new items:
    - "Add Image" (when no custom image set)
    - "Change Image" (when custom image already set)
    - "Remove Image" (when custom image already set)
-2. Same options available from PlaylistDetailScreen header (via menu/edit button)
+   - These options are only shown when `playlist.type == PlaylistType.CUSTOM` — never for DAILY_MIX or LIKED_SONGS playlists
+2. Same options available from PlaylistDetailScreen header (via menu/edit button, also guarded by CUSTOM type check)
 3. Tapping "Add Image" / "Change Image" launches Android Photo Picker (`PickVisualMedia()` with `ImageOnly` filter)
 4. Selected image is:
    - Resized to 512x512 pixels (center-cropped to square)
    - Compressed as JPEG
    - Saved to `context.filesDir/playlist_covers/{playlistId}.jpg`
-5. `artUrl` field on `PlaylistEntity` is updated to the local file path
+5. `artUrl` field on `PlaylistEntity` is updated to the local file path with a cache-busting timestamp query param (e.g., `file:///.../{playlistId}.jpg?v={System.currentTimeMillis()}`) so Coil invalidates its cache on image changes
 6. Coil `AsyncImage` loads the image everywhere it appears:
    - Library grid cards (`LibraryScreen.kt`)
    - Playlist detail header (`PlaylistDetailScreen.kt`)
@@ -36,6 +37,11 @@ Two independent sub-features:
 - "Remove Image" menu option deletes the file from `playlist_covers/` directory
 - Sets `artUrl = null` on the entity
 - Card falls back to the existing gradient placeholder with music note icon
+
+### Playlist Deletion Cleanup
+
+- When a custom playlist is deleted, also delete its cover image file from `playlist_covers/` if one exists
+- Prevents orphaned image files accumulating on disk
 
 ### Data Model
 
@@ -53,14 +59,14 @@ No schema changes. Reuses the existing `artUrl: String?` field on `PlaylistEntit
 
 ### Image Picker Contract
 
-Use `ActivityResultContracts.PickVisualMedia()` — the modern Android photo picker. Works natively on Android 13+, falls back to an intent-based picker on Android 11-12.
+Use `ActivityResultContracts.PickVisualMedia()` — the modern Android photo picker. Works natively on Android 13+, falls back to `ACTION_OPEN_DOCUMENT` intent on older devices (minSdk is 26).
 
 ### Image Storage
 
 - Directory: `context.filesDir/playlist_covers/`
 - Filename: `{playlistId}.jpg`
 - Max dimensions: 512x512
-- Format: JPEG (reasonable quality, small file size)
+- Format: JPEG at quality 85 (good quality, ~50-80KB per image)
 - Overwriting: setting a new image overwrites the previous file for that playlist
 
 ---
@@ -81,7 +87,7 @@ The `LikedSongsCard` composable (~170 lines in `HomeScreen.kt:910-1083`) uses:
 
 - **"YOUR COLLECTION" label** — uppercase, above the title. Space Grotesk SemiBold, small size (~10-11sp), primary color at 70% alpha, 1.5sp letter spacing
 - **Title** — "Liked Songs" bumped up to `titleLarge` or `headlineSmall` (from `titleMedium`). Space Grotesk SemiBold, white
-- **Subtitle** — "{count} tracks · {n} sources" in `bodySmall`, onSurfaceVariant
+- **Subtitle** — "{count} tracks · 2 sources" when both sources have liked songs, "{count} tracks on Spotify" or "{count} tracks on YouTube Music" when single source, in `bodySmall`, onSurfaceVariant
 - **Heart icon moves to the RIGHT** side of the row (currently on the left)
 
 #### Living Heart Icon
@@ -98,6 +104,7 @@ A 52dp circular container with animated effects:
 - NO source name text — the green dot = Spotify, red dot = YouTube
 - Smaller pills with 20dp border radius
 - Same `rgba` tinted background per source
+- Each chip must have a `contentDescription` for accessibility (e.g., "523 Spotify liked songs")
 
 #### What Stays the Same
 
