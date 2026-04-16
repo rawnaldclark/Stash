@@ -3,6 +3,7 @@ package com.stash.feature.library
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.Playlist
@@ -51,6 +52,7 @@ class PlaylistDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val playlistImageHelper: PlaylistImageHelper,
 ) : ViewModel() {
 
     /** The playlist ID extracted from the navigation route arguments. */
@@ -193,6 +195,26 @@ class PlaylistDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val playlistId = musicRepository.createPlaylist(name)
             musicRepository.addTrackToPlaylist(trackId, playlistId)
+        }
+    }
+
+    // ── Playlist cover image ───────────────────────────────────────────
+
+    /** Save a user-picked image as the playlist's cover art. */
+    fun setPlaylistImage(playlistId: Long, imageUri: Uri) {
+        viewModelScope.launch {
+            val artUrl = playlistImageHelper.savePlaylistCoverImage(playlistId, imageUri)
+            if (artUrl != null) {
+                musicRepository.updatePlaylistArtUrl(playlistId, artUrl)
+            }
+        }
+    }
+
+    /** Remove the custom cover image, reverting to the default placeholder. */
+    fun removePlaylistImage(playlistId: Long) {
+        viewModelScope.launch {
+            playlistImageHelper.deletePlaylistCoverFile(playlistId)
+            musicRepository.updatePlaylistArtUrl(playlistId, null)
         }
     }
 }

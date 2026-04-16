@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -49,9 +50,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.SearchFilterBar
@@ -85,6 +90,16 @@ fun PlaylistDetailScreen(
     val sheetState = rememberModalBottomSheetState()
     val userPlaylists by viewModel.userPlaylists.collectAsStateWithLifecycle(initialValue = emptyList())
 
+    // Image picker for custom playlist cover art
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        val playlist = state.playlist ?: return@rememberLauncherForActivityResult
+        if (uri != null) {
+            viewModel.setPlaylistImage(playlist.id, uri)
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -112,6 +127,11 @@ fun PlaylistDetailScreen(
                         },
                         onShuffle = { viewModel.shuffleAll() },
                         onToggleSearch = { viewModel.toggleSearch() },
+                        onSetImage = {
+                            imagePickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
                     )
                 }
 
@@ -231,6 +251,7 @@ private fun PlaylistHeader(
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
     onToggleSearch: () -> Unit,
+    onSetImage: () -> Unit,
 ) {
     val playlist = state.playlist ?: return
     val extendedColors = StashTheme.extendedColors
@@ -416,6 +437,24 @@ private fun PlaylistHeader(
                         contentDescription = "Filter tracks",
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
+                }
+
+                if (playlist.type == PlaylistType.CUSTOM) {
+                    IconButton(
+                        onClick = onSetImage,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                color = extendedColors.glassBackground,
+                                shape = RoundedCornerShape(12.dp),
+                            ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Image,
+                            contentDescription = "Set cover image",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 }
             }
 
