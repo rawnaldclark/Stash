@@ -40,8 +40,9 @@ import javax.inject.Singleton
  *
  * ## Timeout
  * The entire operation is bounded to [TIMEOUT_MS] milliseconds. yt-dlp must
- * contact YouTube's API to resolve the stream URL, so network latency applies.
- * 10 seconds is generous for a metadata-only request.
+ * contact YouTube's API, solve JavaScript signature challenges, and resolve
+ * the stream URL. This typically takes 5-35 seconds depending on network
+ * conditions and whether QuickJS caches are warm.
  */
 @Singleton
 class PreviewUrlExtractor @Inject constructor(
@@ -52,8 +53,12 @@ class PreviewUrlExtractor @Inject constructor(
     companion object {
         private const val TAG = "PreviewUrlExtractor"
 
-        /** Wall-clock budget for the entire extraction, including yt-dlp startup. */
-        private const val TIMEOUT_MS = 10_000L
+        /**
+         * Wall-clock budget for the entire extraction, including yt-dlp startup.
+         * Full metadata extraction (with signature solving) typically takes 5-35s
+         * depending on network conditions and YouTube's response time.
+         */
+        private const val TIMEOUT_MS = 60_000L
 
         /** yt-dlp format selector: prefer Opus/WebM Opus (251/250), fall back to best audio. */
         private const val FORMAT_SELECTOR = "251/250/bestaudio"
