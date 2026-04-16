@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import android.net.Uri
 import javax.inject.Inject
 
 /**
@@ -35,6 +36,7 @@ class LibraryViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
     private val tokenManager: TokenManager,
+    private val playlistImageHelper: PlaylistImageHelper,
 ) : ViewModel() {
 
     /** Local UI controls: tab, search query, and sort order. */
@@ -253,6 +255,7 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
             tracks.forEach { musicRepository.deleteTrack(it) }
+            playlistImageHelper.deletePlaylistCoverFile(playlist.id)
             musicRepository.removePlaylist(playlist)
         }
     }
@@ -261,6 +264,22 @@ class LibraryViewModel @Inject constructor(
     fun removePlaylist(playlist: Playlist) {
         viewModelScope.launch {
             musicRepository.removePlaylist(playlist)
+        }
+    }
+
+    fun setPlaylistImage(playlistId: Long, imageUri: Uri) {
+        viewModelScope.launch {
+            val artUrl = playlistImageHelper.savePlaylistCoverImage(playlistId, imageUri)
+            if (artUrl != null) {
+                musicRepository.updatePlaylistArtUrl(playlistId, artUrl)
+            }
+        }
+    }
+
+    fun removePlaylistImage(playlistId: Long) {
+        viewModelScope.launch {
+            playlistImageHelper.deletePlaylistCoverFile(playlistId)
+            musicRepository.updatePlaylistArtUrl(playlistId, null)
         }
     }
 
