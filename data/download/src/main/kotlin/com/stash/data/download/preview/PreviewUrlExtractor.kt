@@ -5,111 +5,154 @@ import android.util.Log
 import com.stash.core.auth.TokenManager
 import com.stash.data.download.CookieFileWriter
 import com.stash.data.download.ytdlp.YtDlpManager
+import com.stash.data.ytmusic.InnerTubeClient
 import com.yausername.youtubedl_android.YoutubeDL
-import com.yausername.youtubedl_android.YoutubeDLException
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Extracts a direct CDN audio stream URL from YouTube using yt-dlp, without
- * downloading the audio file.
+ * Extracts a direct audio stream URL from YouTube for preview playback.
  *
- * yt-dlp's `--dump-json` flag causes it to emit a JSON metadata blob on stdout
- * instead of downloading content. The `url` field in that blob is the signed CDN
- * URL that points directly to the audio bitstream (typically a Google Video CDN
- * address). This URL is valid for roughly 6 hours and can be fed to ExoPlayer
- * for gapless preview playback without any disk I/O.
+ * ## Strategy: InnerTube fast path → yt-dlp fallback
  *
- * ## QuickJS
- * YouTube's n-parameter challenge and signature cipher require a JS runtime to
- * solve. Without it yt-dlp fails with "Signature solving failed". We pass the
- * bundled QuickJS binary (libqjs.so) via `--js-runtimes quickjs:<path>` using
- * the same pattern as [com.stash.data.download.DownloadExecutor].
+ * 1. **InnerTube player API (~1-2s)**: Calls the YouTube Music player endpoint
+ *    with authenticated cookies. Parses `streamingData.adaptiveFormats` for
+ *    audio-only URLs. These URLs may be n-parameter throttled (~50KB/s) but
+ *    that's more than enough for audio preview (Opus is ~20KB/s).
  *
- * ## Cookies
- * Passing YouTube session cookies suppresses bot-detection throttling. The cookie
- * file is written to [Context.noBackupFilesDir] (excluded from Android backups),
- * restricted to owner-only permissions, and deleted in the `finally` block.
+ * 2. **yt-dlp fallback (~15-35s)**: If InnerTube returns no usable URLs
+ *    (ciphered, geo-blocked, etc.), falls back to yt-dlp with QuickJS for
+ *    full signature solving. Slow but reliable.
  *
- * ## Timeout
- * The entire operation is bounded to [TIMEOUT_MS] milliseconds. yt-dlp must
- * contact YouTube's API, solve JavaScript signature challenges, and resolve
- * the stream URL. This typically takes 5-35 seconds depending on network
- * conditions and whether QuickJS caches are warm.
+ * The InnerTube fast path succeeds for the majority of YouTube Music tracks,
+ * making previews near-instant.
  */
 @Singleton
 class PreviewUrlExtractor @Inject constructor(
     @ApplicationContext private val context: Context,
     private val ytDlpManager: YtDlpManager,
     private val tokenManager: TokenManager,
+    private val innerTubeClient: InnerTubeClient,
 ) {
     companion object {
         private const val TAG = "PreviewUrlExtractor"
-
-        /**
-         * Wall-clock budget for the entire extraction, including yt-dlp startup.
-         * Full metadata extraction (with signature solving) typically takes 5-35s
-         * depending on network conditions and YouTube's response time.
-         */
-        private const val TIMEOUT_MS = 60_000L
-
-        /** yt-dlp format selector: prefer Opus/WebM Opus (251/250), fall back to best audio. */
+        private const val YTDLP_TIMEOUT_MS = 60_000L
+        private const val INNERTUBE_TIMEOUT_MS = 10_000L
         private const val FORMAT_SELECTOR = "251/250/bestaudio"
     }
 
     /**
-     * Extracts a direct CDN audio stream URL for the given YouTube video ID.
+     * Extracts a direct audio stream URL for the given YouTube video ID.
      *
-     * Calls yt-dlp with `--dump-json --no-download` so no audio bytes are written
-     * to disk. The `url` field of the resulting JSON is the signed stream URL.
-     *
-     * @param videoId YouTube video ID (the `v=` query parameter, e.g. "dQw4w9WgXcQ").
-     * @return The direct CDN stream URL string, ready for use in a media player.
-     * @throws YoutubeDLException  if yt-dlp exits with a non-zero status code.
-     * @throws IllegalStateException if yt-dlp succeeds but the JSON contains no `url` field,
-     *                               which can happen for geo-blocked or age-restricted videos.
-     * @throws kotlinx.coroutines.TimeoutCancellationException if the operation exceeds [TIMEOUT_MS].
+     * Tries InnerTube first (fast, ~1-2s), falls back to yt-dlp (slow, ~15-35s).
      */
     suspend fun extractStreamUrl(videoId: String): String {
-        // SECURITY: Cookie file contains sensitive YouTube session cookies (SAPISID,
-        // LOGIN_INFO, etc.). Written only for the duration of the yt-dlp call and
-        // deleted in the finally block. Permissions are restricted to owner-only
-        // read/write to prevent other apps on rooted devices from reading it.
+        // Fast path: InnerTube player API
+        try {
+            val url = extractViaInnerTube(videoId)
+            if (url != null) return url
+        } catch (e: Exception) {
+            Log.w(TAG, "InnerTube fast path failed for $videoId: ${e.message}")
+        }
+
+        // Slow fallback: yt-dlp with QuickJS cipher solving
+        Log.d(TAG, "Falling back to yt-dlp for videoId=$videoId")
+        return extractViaYtDlp(videoId)
+    }
+
+    /**
+     * Fast path: extract stream URL via InnerTube player API.
+     *
+     * Calls `/youtubei/v1/player` with the user's YouTube session cookies.
+     * Parses `streamingData.adaptiveFormats` for audio-only formats with
+     * direct `url` fields (not `signatureCipher`).
+     *
+     * Returns null if no usable URL is found (all formats ciphered, video
+     * unavailable, etc.).
+     */
+    private suspend fun extractViaInnerTube(videoId: String): String? {
+        return withTimeout(INNERTUBE_TIMEOUT_MS) {
+            Log.d(TAG, "Trying InnerTube fast path for videoId=$videoId")
+
+            val response = innerTubeClient.player(videoId) ?: run {
+                Log.w(TAG, "InnerTube player returned null for $videoId")
+                return@withTimeout null
+            }
+
+            // Check playability
+            val status = response["playabilityStatus"]
+                ?.jsonObject?.get("status")
+                ?.jsonPrimitive?.content
+            if (status != "OK") {
+                Log.w(TAG, "InnerTube: video $videoId status=$status")
+                return@withTimeout null
+            }
+
+            // Extract streamingData.adaptiveFormats
+            val streamingData = response["streamingData"]?.jsonObject ?: run {
+                Log.w(TAG, "InnerTube: no streamingData for $videoId")
+                return@withTimeout null
+            }
+
+            val adaptiveFormats = streamingData["adaptiveFormats"]?.jsonArray ?: run {
+                Log.w(TAG, "InnerTube: no adaptiveFormats for $videoId")
+                return@withTimeout null
+            }
+
+            // Find the best audio format with a direct URL (not signatureCipher)
+            val audioFormats = adaptiveFormats
+                .filterIsInstance<JsonObject>()
+                .filter { format ->
+                    val mimeType = format["mimeType"]?.jsonPrimitive?.content ?: ""
+                    val hasDirectUrl = format["url"] != null
+                    val isAudio = mimeType.startsWith("audio/")
+                    isAudio && hasDirectUrl
+                }
+                .sortedByDescending { it["bitrate"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L }
+
+            val bestAudio = audioFormats.firstOrNull() ?: run {
+                Log.d(TAG, "InnerTube: no audio formats with direct URL for $videoId " +
+                    "(${adaptiveFormats.size} total formats, all may be ciphered)")
+                return@withTimeout null
+            }
+
+            val streamUrl = bestAudio["url"]!!.jsonPrimitive.content
+            val mimeType = bestAudio["mimeType"]?.jsonPrimitive?.content ?: "unknown"
+            val bitrate = bestAudio["bitrate"]?.jsonPrimitive?.content ?: "?"
+
+            Log.d(TAG, "InnerTube: SUCCESS videoId=$videoId mime=$mimeType bitrate=$bitrate urlLen=${streamUrl.length}")
+            streamUrl
+        }
+    }
+
+    /**
+     * Slow fallback: extract stream URL via yt-dlp with QuickJS cipher solving.
+     */
+    private suspend fun extractViaYtDlp(videoId: String): String {
         val cookieFile = File(context.noBackupFilesDir, "yt_preview_cookies_${System.nanoTime()}.txt")
 
-        return withTimeout(TIMEOUT_MS) {
+        return withTimeout(YTDLP_TIMEOUT_MS) {
             withContext(Dispatchers.IO) {
-                // Ensure the yt-dlp native binary and QuickJS are ready. Safe to call
-                // multiple times — YtDlpManager coalesces concurrent callers behind a mutex.
                 ytDlpManager.initialize()
 
                 try {
                     val url = "https://www.youtube.com/watch?v=$videoId"
 
                     val request = YoutubeDLRequest(url).apply {
-                        // Select the best audio-only format. 251 = Opus/WebM at ~160 kbps,
-                        // 250 = Opus/WebM at ~70 kbps, bestaudio = widest compatibility fallback.
                         addOption("-f", FORMAT_SELECTOR)
-
-                        // Print ONLY the direct stream URL — much faster than --dump-json
-                        // which serializes 600KB+ of metadata we don't need.
                         addOption("--print", "urls")
                         addOption("--no-download")
 
-                        // NOTE: --flat-playlist is intentionally omitted. That flag causes
-                        // yt-dlp to skip format resolution and emit only the video ID/title,
-                        // which means the `url` field (the signed CDN stream URL) is absent.
-
-                        // QuickJS runtime for YouTube's JS signature challenges.
-                        // QuickJS-NG is slow (~20-35s) but required — without it yt-dlp
-                        // cannot solve signatures at all. The latency is hidden by
-                        // pre-extracting URLs in the background during search.
                         val qjsPath = ytDlpManager.quickJsPath
                         if (qjsPath != null) {
                             addOption("--js-runtimes", "quickjs:$qjsPath")
@@ -117,11 +160,9 @@ class PreviewUrlExtractor @Inject constructor(
                         }
                     }
 
-                    // Pass cookies so YouTube doesn't bot-detect us.
                     val cookie = tokenManager.getYouTubeCookie()
                     if (cookie != null) {
                         CookieFileWriter.write(cookie, cookieFile)
-                        // Restrict file permissions to owner-only (prevents access by other apps)
                         cookieFile.setReadable(false, false)
                         cookieFile.setReadable(true, true)
                         cookieFile.setWritable(false, false)
@@ -129,33 +170,24 @@ class PreviewUrlExtractor @Inject constructor(
                         request.addOption("--cookies", cookieFile.absolutePath)
                     }
 
-                    Log.d(TAG, "extractStreamUrl: invoking yt-dlp for videoId=$videoId")
-
+                    Log.d(TAG, "yt-dlp: invoking for videoId=$videoId")
                     val response = YoutubeDL.getInstance().execute(request, url, null)
 
                     val stdout = response.out.orEmpty()
                     val stderr = response.err.orEmpty()
-                    Log.d(
-                        TAG,
-                        "extractStreamUrl: exit=${response.exitCode} stdoutLen=${stdout.length} " +
-                            "stderrLen=${stderr.length}",
-                    )
+                    Log.d(TAG, "yt-dlp: exit=${response.exitCode} stdoutLen=${stdout.length}")
                     if (stderr.isNotBlank()) {
-                        Log.d(TAG, "extractStreamUrl stderr: ${stderr.take(1000)}")
+                        Log.d(TAG, "yt-dlp stderr: ${stderr.take(500)}")
                     }
 
-                    // With --print urls, stdout contains just the direct CDN URL (one per line).
                     val streamUrl = stdout.trim().lines().firstOrNull { it.startsWith("http") }
                     check(!streamUrl.isNullOrBlank()) {
-                        "yt-dlp returned no stream URL for videoId=$videoId — " +
-                            "video may be geo-blocked, age-restricted, or require sign-in. " +
-                            "stderr: ${stderr.take(500)}"
+                        "yt-dlp returned no stream URL for videoId=$videoId. stderr: ${stderr.take(500)}"
                     }
 
-                    Log.d(TAG, "extractStreamUrl: SUCCESS videoId=$videoId urlLen=${streamUrl.length}")
+                    Log.d(TAG, "yt-dlp: SUCCESS videoId=$videoId urlLen=${streamUrl.length}")
                     streamUrl
                 } finally {
-                    // Always delete the cookie file, even on exception or timeout cancellation.
                     if (cookieFile.exists()) cookieFile.delete()
                 }
             }

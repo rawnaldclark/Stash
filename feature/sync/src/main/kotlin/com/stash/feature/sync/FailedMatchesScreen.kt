@@ -165,6 +165,7 @@ fun FailedMatchesScreen(
                             onBack = onBack,
                             onResync = { viewModel.resync() },
                             onApproveAll = { viewModel.approveAll() },
+                            onDismissAll = { viewModel.dismissAll() },
                         )
                     }
 
@@ -262,6 +263,7 @@ private fun FailedMatchesHeader(
     onBack: () -> Unit,
     onResync: () -> Unit,
     onApproveAll: () -> Unit,
+    onDismissAll: () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -356,6 +358,27 @@ private fun FailedMatchesHeader(
                     Icon(Icons.Default.Check, null, Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Approve All ($resyncCandidateCount)")
+                }
+            }
+
+            // Dismiss All button — permanently stop retrying all tracks
+            if (!isResyncing) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onDismissAll,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
+                    ),
+                ) {
+                    Icon(Icons.Default.Close, null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Dismiss All")
                 }
             }
 

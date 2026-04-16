@@ -335,6 +335,15 @@ class FailedMatchesViewModel @Inject constructor(
         }
     }
 
+    /** Dismiss ALL unmatched tracks permanently — never retry any of them. */
+    fun dismissAll() {
+        viewModelScope.launch {
+            uiState.value.tracks.forEach { track ->
+                musicRepository.dismissMatch(track.trackId)
+            }
+        }
+    }
+
     // -- Audio preview ------------------------------------------------------
 
     /**
