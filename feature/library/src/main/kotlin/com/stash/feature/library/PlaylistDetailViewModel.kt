@@ -7,7 +7,9 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
+import com.stash.core.ui.util.withSearchFilter
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +32,8 @@ data class PlaylistDetailUiState(
     val tracks: List<Track> = emptyList(),
     val isLoading: Boolean = true,
     val currentlyPlayingTrackId: Long? = null,
+    val searchQuery: String = "",
+    val showSearch: Boolean = false,
 )
 
 /**
@@ -41,6 +45,7 @@ data class PlaylistDetailUiState(
  *
  * The `playlistId` is extracted from the navigation [SavedStateHandle].
  */
+@OptIn(FlowPreview::class)
 @HiltViewModel
 class PlaylistDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -51,6 +56,16 @@ class PlaylistDetailViewModel @Inject constructor(
     /** The playlist ID extracted from the navigation route arguments. */
     private val playlistId: Long = checkNotNull(savedStateHandle.get<Long>("playlistId")) {
         "playlistId is required but was not found in SavedStateHandle"
+    }
+
+    private val _searchQuery = MutableStateFlow("")
+    private val _showSearch = MutableStateFlow(false)
+
+    fun onSearchQueryChanged(query: String) { _searchQuery.value = query }
+    fun clearSearch() { _searchQuery.value = "" }
+    fun toggleSearch() {
+        _showSearch.value = !_showSearch.value
+        if (!_showSearch.value) _searchQuery.value = ""
     }
 
     /** Holds the one-shot playlist metadata fetched in [init]. */
@@ -67,14 +82,18 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     val uiState: StateFlow<PlaylistDetailUiState> = combine(
         _playlist,
-        musicRepository.getTracksByPlaylist(playlistId),
+        musicRepository.getTracksByPlaylist(playlistId).withSearchFilter(_searchQuery),
         playerRepository.playerState,
-    ) { playlist, tracks, playerState ->
+        _searchQuery,
+        _showSearch,
+    ) { playlist, tracks, playerState, query, showSearch ->
         PlaylistDetailUiState(
             playlist = playlist,
             tracks = tracks,
             isLoading = playlist == null,
             currentlyPlayingTrackId = playerState.currentTrack?.id,
+            searchQuery = query,
+            showSearch = showSearch,
         )
     }.stateIn(
         scope = viewModelScope,
