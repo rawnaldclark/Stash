@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.ColumnInfo
 import com.stash.core.data.db.entity.DownloadQueueEntity
+import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
 import kotlinx.coroutines.flow.Flow
 
@@ -93,20 +94,20 @@ interface DownloadQueueDao {
      * @param errorMessage  Error description when status is FAILED, null otherwise.
      * @param completedAt   Epoch-millis timestamp when the download finished, or null.
      */
-    @Query(
-        """
+    @Query("""
         UPDATE download_queue
         SET status = :status,
             error_message = :errorMessage,
-            completed_at = :completedAt
+            completed_at = :completedAt,
+            failure_type = :failureType
         WHERE id = :id
-        """
-    )
+    """)
     suspend fun updateStatus(
         id: Long,
         status: DownloadStatus,
         errorMessage: String? = null,
         completedAt: Long? = null,
+        failureType: DownloadFailureType = DownloadFailureType.NONE,
     )
 
     /** Increment the retry count for a download queue entry. */
@@ -178,6 +179,7 @@ interface DownloadQueueDao {
     @Query("""
         SELECT t.id FROM tracks t
         WHERE t.is_downloaded = 0
+          AND t.match_dismissed = 0
           AND t.source IN (:sources)
           AND t.id NOT IN (
               SELECT dq.track_id FROM download_queue dq
@@ -185,4 +187,51 @@ interface DownloadQueueDao {
           )
     """)
     suspend fun getUnqueuedTrackIds(sources: List<String>): List<Long>
+
+    // ── Unmatched track queries ─────────────────────────────────────────
+
+    /** Unmatched tracks for the Failed Matches detail screen. */
+    @Query("""
+        SELECT dq.id, dq.track_id AS trackId, t.title, t.artist,
+               t.album_art_url AS albumArtUrl, dq.created_at AS createdAt
+        FROM download_queue dq
+        INNER JOIN tracks t ON dq.track_id = t.id
+        WHERE dq.failure_type = 'NO_MATCH'
+          AND dq.status = 'FAILED'
+          AND t.match_dismissed = 0
+        ORDER BY dq.created_at DESC
+    """)
+    fun getUnmatchedTracks(): Flow<List<UnmatchedTrackView>>
+
+    /** Count of unmatched tracks for the Sync tab card. */
+    @Query("""
+        SELECT COUNT(*)
+        FROM download_queue dq
+        INNER JOIN tracks t ON dq.track_id = t.id
+        WHERE dq.failure_type = 'NO_MATCH'
+          AND dq.status = 'FAILED'
+          AND t.match_dismissed = 0
+    """)
+    fun getUnmatchedCount(): Flow<Int>
+
+    /** Delete all queue entries for a track (used on dismiss to prevent retry paths from picking it up). */
+    @Query("DELETE FROM download_queue WHERE track_id = :trackId")
+    suspend fun deleteByTrackId(trackId: Long)
+
+    /** Find a queue entry by track ID (used for auto-reconciliation). */
+    @Query("SELECT * FROM download_queue WHERE track_id = :trackId AND status = 'FAILED' LIMIT 1")
+    suspend fun getFailedByTrackId(trackId: Long): DownloadQueueEntity?
 }
+
+/**
+ * Room projection for unmatched track display.
+ * Uses column aliases to map join results to flat fields.
+ */
+data class UnmatchedTrackView(
+    val id: Long,
+    val trackId: Long,
+    val title: String,
+    val artist: String,
+    val albumArtUrl: String?,
+    val createdAt: Long,
+)

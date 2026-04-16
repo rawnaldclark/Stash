@@ -286,4 +286,20 @@ interface TrackDao {
         """
     )
     fun getAllAlbums(): Flow<List<AlbumSummary>>
+
+    // ── Match dismissal & reconciliation ────────────────────────────────
+
+    /** Mark a track as permanently dismissed from matching. */
+    @Query("UPDATE tracks SET match_dismissed = 1 WHERE id = :trackId")
+    suspend fun dismissMatch(trackId: Long)
+
+    /** Find a downloaded track by canonical identity (for auto-reconciliation). */
+    @Query("""
+        SELECT * FROM tracks
+        WHERE is_downloaded = 1
+          AND LOWER(canonical_title) = LOWER(:canonicalTitle)
+          AND LOWER(canonical_artist) = LOWER(:canonicalArtist)
+        LIMIT 1
+    """)
+    suspend fun findDownloadedByCanonical(canonicalTitle: String, canonicalArtist: String): TrackEntity?
 }
