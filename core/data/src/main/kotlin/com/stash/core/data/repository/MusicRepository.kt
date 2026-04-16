@@ -87,6 +87,9 @@ interface MusicRepository {
     /** Remove a playlist from the library without deleting its tracks from disk. */
     suspend fun removePlaylist(playlist: Playlist)
 
+    /** Update a playlist's cover art URL (local file path or remote URL). */
+    suspend fun updatePlaylistArtUrl(playlistId: Long, artUrl: String?)
+
     // ── Cleanup ──────────────────────────────────────────────────────────
 
     /**

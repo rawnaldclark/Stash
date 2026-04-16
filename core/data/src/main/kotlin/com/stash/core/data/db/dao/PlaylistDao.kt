@@ -173,6 +173,10 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET sync_enabled = :enabled WHERE id = :playlistId")
     suspend fun updateSyncEnabled(playlistId: Long, enabled: Boolean)
 
+    /** Update the cover art URL (local file path or remote URL) for a playlist. */
+    @Query("UPDATE playlists SET art_url = :artUrl WHERE id = :playlistId")
+    suspend fun updateArtUrl(playlistId: Long, artUrl: String?)
+
     /** All Spotify playlists ordered by type (liked first, then mixes, then custom) and name. */
     @Query("""
         SELECT * FROM playlists

@@ -177,6 +177,10 @@ class MusicRepositoryImpl @Inject constructor(
         playlistDao.delete(playlist.toEntity())
     }
 
+    override suspend fun updatePlaylistArtUrl(playlistId: Long, artUrl: String?) {
+        playlistDao.updateArtUrl(playlistId, artUrl)
+    }
+
     // ── Custom playlist management ──────────────────────────────────────
 
     override suspend fun createPlaylist(name: String): Long {
