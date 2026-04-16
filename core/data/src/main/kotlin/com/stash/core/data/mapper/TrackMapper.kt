@@ -30,6 +30,7 @@ fun TrackEntity.toDomain(): Track = Track(
     playCount = playCount,
     isDownloaded = isDownloaded,
     matchConfidence = matchConfidence,
+    matchDismissed = matchDismissed,
 )
 
 /**
@@ -57,4 +58,5 @@ fun Track.toEntity(): TrackEntity = TrackEntity(
     playCount = playCount,
     isDownloaded = isDownloaded,
     matchConfidence = matchConfidence,
+    matchDismissed = matchDismissed,
 )

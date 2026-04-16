@@ -20,4 +20,5 @@ data class Track(
     val playCount: Int = 0,
     val isDownloaded: Boolean = false,
     val matchConfidence: Float = 0f,
+    val matchDismissed: Boolean = false,
 )

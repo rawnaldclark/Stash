@@ -49,7 +49,7 @@ import com.stash.core.data.db.entity.TrackFts
         RemotePlaylistSnapshotEntity::class,
         RemoteTrackSnapshotEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -76,6 +76,14 @@ abstract class StashDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE playlists ADD COLUMN sync_enabled INTEGER NOT NULL DEFAULT 1"
                 )
+            }
+        }
+
+        /** v4 → v5: add failure_type to download_queue, match_dismissed to tracks. */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE download_queue ADD COLUMN failure_type TEXT NOT NULL DEFAULT 'NONE'")
+                db.execSQL("ALTER TABLE tracks ADD COLUMN match_dismissed INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
 import java.time.Instant
 
@@ -56,6 +57,9 @@ data class DownloadQueueEntity(
 
     @ColumnInfo(name = "error_message")
     val errorMessage: String? = null,
+
+    @ColumnInfo(name = "failure_type")
+    val failureType: DownloadFailureType = DownloadFailureType.NONE,
 
     @ColumnInfo(name = "created_at")
     val createdAt: Instant = Instant.now(),

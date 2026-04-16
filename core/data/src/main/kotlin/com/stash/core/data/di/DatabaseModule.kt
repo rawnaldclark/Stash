@@ -32,7 +32,7 @@ object DatabaseModule {
             StashDatabase::class.java,
             StashDatabase.DATABASE_NAME,
         )
-            .addMigrations(StashDatabase.MIGRATION_3_4)
+            .addMigrations(StashDatabase.MIGRATION_3_4, StashDatabase.MIGRATION_4_5)
             // No fallbackToDestructiveMigration() — if a migration is missing,
             // the app will crash on startup instead of silently wiping the
             // user's entire library. This forces us to write proper migrations

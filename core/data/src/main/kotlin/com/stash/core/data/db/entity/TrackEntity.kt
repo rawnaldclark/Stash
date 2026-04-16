@@ -88,4 +88,7 @@ data class TrackEntity(
 
     @ColumnInfo(name = "match_confidence")
     val matchConfidence: Float = 0f,
+
+    @ColumnInfo(name = "match_dismissed")
+    val matchDismissed: Boolean = false,
 )

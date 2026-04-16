@@ -1,6 +1,7 @@
 package com.stash.core.data.db.converter
 
 import androidx.room.TypeConverter
+import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
@@ -69,4 +70,13 @@ internal class Converters {
     @TypeConverter
     fun stringToDownloadStatus(value: String?): DownloadStatus? =
         value?.let { DownloadStatus.valueOf(it) }
+
+    // ── DownloadFailureType ──────────────────────────────────────────────
+
+    @TypeConverter
+    fun downloadFailureTypeToString(value: DownloadFailureType?): String? = value?.name
+
+    @TypeConverter
+    fun stringToDownloadFailureType(value: String?): DownloadFailureType? =
+        value?.let { DownloadFailureType.valueOf(it) }
 }
