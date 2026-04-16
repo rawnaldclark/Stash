@@ -27,8 +27,10 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.media.preview.PreviewState
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -65,6 +68,15 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val previewState by viewModel.previewState.collectAsStateWithLifecycle()
+
+    // Auto-clear preview error after 3 seconds
+    if (state.previewError != null) {
+        LaunchedEffect(state.previewError) {
+            kotlinx.coroutines.delay(3000)
+            viewModel.clearPreviewError()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -85,8 +97,10 @@ fun SearchScreen(
             state.results.isEmpty() -> EmptySearchPrompt()
             else -> ResultsList(
                 results = state.results,
-                downloadingIds = state.downloadingIds,
-                downloadedIds = state.downloadedIds,
+                uiState = state,
+                previewState = previewState,
+                onPreview = viewModel::previewTrack,
+                onStopPreview = viewModel::stopPreview,
                 onDownload = viewModel::downloadTrack,
             )
         }
@@ -276,8 +290,10 @@ private fun EmptySearchPrompt() {
 @Composable
 private fun ResultsList(
     results: List<SearchResultItem>,
-    downloadingIds: Set<String>,
-    downloadedIds: Set<String>,
+    uiState: SearchUiState,
+    previewState: PreviewState,
+    onPreview: (String) -> Unit,
+    onStopPreview: () -> Unit,
     onDownload: (SearchResultItem) -> Unit,
 ) {
     LazyColumn(
@@ -290,8 +306,12 @@ private fun ResultsList(
         ) { item ->
             SearchResultRow(
                 item = item,
-                isDownloading = item.videoId in downloadingIds,
-                isDownloaded = item.videoId in downloadedIds,
+                isDownloading = item.videoId in uiState.downloadingIds,
+                isDownloaded = item.videoId in uiState.downloadedIds,
+                isPreviewLoading = uiState.previewLoading == item.videoId,
+                isPreviewPlaying = previewState is PreviewState.Playing && (previewState as PreviewState.Playing).videoId == item.videoId,
+                onPreview = { onPreview(item.videoId) },
+                onStopPreview = onStopPreview,
                 onDownload = { onDownload(item) },
             )
         }
@@ -312,6 +332,10 @@ private fun SearchResultRow(
     item: SearchResultItem,
     isDownloading: Boolean,
     isDownloaded: Boolean,
+    isPreviewLoading: Boolean,
+    isPreviewPlaying: Boolean,
+    onPreview: () -> Unit,
+    onStopPreview: () -> Unit,
     onDownload: () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -382,6 +406,30 @@ private fun SearchResultRow(
         )
 
         Spacer(modifier = Modifier.width(8.dp))
+
+        // Preview button
+        IconButton(
+            onClick = if (isPreviewPlaying) onStopPreview else onPreview,
+            modifier = Modifier.size(40.dp),
+        ) {
+            when {
+                isPreviewLoading -> CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                isPreviewPlaying -> Icon(
+                    imageVector = Icons.Default.Stop,
+                    contentDescription = "Stop preview",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                else -> Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Preview",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         // Download action button
         Box(

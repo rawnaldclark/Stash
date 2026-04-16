@@ -17,6 +17,8 @@ data class SearchUiState(
     val downloadingIds: Set<String> = emptySet(),
     val downloadedIds: Set<String> = emptySet(),
     val error: String? = null,
+    val previewLoading: String? = null,
+    val previewError: String? = null,
 )
 
 /**

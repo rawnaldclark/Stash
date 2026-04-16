@@ -7,10 +7,13 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
+import com.stash.core.media.preview.PreviewPlayer
+import com.stash.core.media.preview.PreviewState
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.matching.HybridSearchExecutor
+import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.download.prefs.QualityPreferencesManager
 import com.stash.data.download.prefs.toYtDlpArgs
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -42,6 +45,8 @@ class SearchViewModel @Inject constructor(
     private val fileOrganizer: FileOrganizer,
     private val qualityPrefs: QualityPreferencesManager,
     private val musicRepository: MusicRepository,
+    private val previewPlayer: PreviewPlayer,
+    private val previewUrlExtractor: PreviewUrlExtractor,
 ) : ViewModel() {
 
     companion object {
@@ -59,6 +64,9 @@ class SearchViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+
+    /** Observable preview playback state for the UI to highlight the active row. */
+    val previewState: StateFlow<PreviewState> = previewPlayer.previewState
 
     /** Reference to the current search coroutine so it can be cancelled on new input. */
     private var searchJob: Job? = null
@@ -211,5 +219,48 @@ class SearchViewModel @Inject constructor(
     /** Removes the video ID from the downloading set after a failure. */
     private fun markDownloadFailed(videoId: String) {
         _uiState.update { it.copy(downloadingIds = it.downloadingIds - videoId) }
+    }
+
+    // ------------------------------------------------------------------
+    // Audio preview
+    // ------------------------------------------------------------------
+
+    /**
+     * Starts an audio preview for the given video ID.
+     *
+     * Stops any currently playing preview first, then extracts a direct stream
+     * URL via [PreviewUrlExtractor] and hands it to [PreviewPlayer]. Loading
+     * and error states are surfaced through [SearchUiState].
+     */
+    fun previewTrack(videoId: String) {
+        previewPlayer.stop()
+        viewModelScope.launch {
+            _uiState.update { it.copy(previewLoading = videoId, previewError = null) }
+            try {
+                val url = previewUrlExtractor.extractStreamUrl(videoId)
+                previewPlayer.playUrl(videoId, url)
+                _uiState.update { it.copy(previewLoading = null) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Preview failed for videoId=$videoId", e)
+                _uiState.update { it.copy(previewLoading = null, previewError = "Couldn't load preview") }
+                previewPlayer.stop()
+            }
+        }
+    }
+
+    /** Stops the current audio preview, if any. */
+    fun stopPreview() {
+        previewPlayer.stop()
+        _uiState.update { it.copy(previewLoading = null) }
+    }
+
+    /** Clears the inline preview error message. */
+    fun clearPreviewError() {
+        _uiState.update { it.copy(previewError = null) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        previewPlayer.stop()
     }
 }
