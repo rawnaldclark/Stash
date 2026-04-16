@@ -22,6 +22,7 @@ import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
+import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.SyncState
 import dagger.assisted.Assisted
@@ -246,6 +247,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     downloadQueueDao.updateStatus(
                                         id = queueItem.id,
                                         status = DownloadStatus.FAILED,
+                                        failureType = DownloadFailureType.NO_MATCH,
                                         errorMessage = err,
                                     )
                                     firstError.compareAndSet(null, err)
@@ -257,6 +259,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     downloadQueueDao.updateStatus(
                                         id = queueItem.id,
                                         status = DownloadStatus.FAILED,
+                                        failureType = DownloadFailureType.DOWNLOAD_ERROR,
                                         errorMessage = outcome.error.take(500),
                                     )
                                     firstError.compareAndSet(null, outcome.error.take(500))

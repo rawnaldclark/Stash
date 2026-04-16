@@ -21,6 +21,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.TrackMatcher
+import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.SyncMode
 import com.stash.core.model.SyncState
@@ -117,6 +118,27 @@ class DiffWorker @AssistedInject constructor(
                     if (existingTrack != null) {
                         // Track already exists locally; ensure playlist membership.
                         ensurePlaylistMembership(localPlaylist.id, existingTrack.id, trackSnapshot.position)
+
+                        // Auto-reconciliation: if this track is undownloaded, check if a
+                        // manually-downloaded track with the same canonical identity exists.
+                        // This handles cases where a user downloaded a track via a different
+                        // playlist or source, so the existing entry can be resolved automatically.
+                        if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
+                            val downloadedMatch = trackDao.findDownloadedByCanonical(
+                                canonicalTitle = existingTrack.canonicalTitle.lowercase(),
+                                canonicalArtist = existingTrack.canonicalArtist.lowercase(),
+                            )
+                            if (downloadedMatch != null && downloadedMatch.id != existingTrack.id) {
+                                ensurePlaylistMembership(localPlaylist.id, downloadedMatch.id, trackSnapshot.position)
+                                val failedEntry = downloadQueueDao.getFailedByTrackId(existingTrack.id)
+                                if (failedEntry != null) {
+                                    downloadQueueDao.updateStatus(
+                                        id = failedEntry.id,
+                                        status = DownloadStatus.COMPLETED,
+                                    )
+                                }
+                            }
+                        }
                     } else {
                         // New track: create entity and queue for download.
                         val canonicalTitle = trackMatcher.canonicalTitle(trackSnapshot.title)
