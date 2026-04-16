@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
 import com.stash.core.ui.components.DetailTrackRow
+import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.TrackOptionsSheet
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.ui.util.formatTotalDuration
@@ -110,7 +112,37 @@ fun AlbumDetailScreen(
                             if (firstTrack != null) viewModel.playTrack(firstTrack.id)
                         },
                         onShuffle = { viewModel.shuffleAll() },
+                        onToggleSearch = { viewModel.toggleSearch() },
                     )
+                }
+
+                // ── Search filter bar ───────────────────────────────────
+                if (state.showSearch) {
+                    item(key = "search") {
+                        SearchFilterBar(
+                            query = state.searchQuery,
+                            onQueryChanged = viewModel::onSearchQueryChanged,
+                            onClear = viewModel::clearSearch,
+                        )
+                    }
+                }
+
+                // ── Empty search results ───────────────────────────────
+                if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
+                    item(key = "no-results") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "No matching songs",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
 
                 // -- Track list --
@@ -199,6 +231,7 @@ private fun AlbumDetailHeader(
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
+    onToggleSearch: () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -371,6 +404,23 @@ private fun AlbumDetailHeader(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(text = "Shuffle", style = MaterialTheme.typography.labelLarge)
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = onToggleSearch,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            color = extendedColors.glassBackground,
+                            shape = RoundedCornerShape(12.dp),
+                        ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Filter tracks",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
                 }
             }
 

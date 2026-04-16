@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.Track
+import com.stash.core.ui.util.withSearchFilter
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -23,6 +26,8 @@ import javax.inject.Inject
  * @property tracks                  Tracks on this album by this artist.
  * @property isLoading               True while the initial data load is in progress.
  * @property currentlyPlayingTrackId The ID of the currently-playing track.
+ * @property searchQuery              The active search/filter query string.
+ * @property showSearch               True when the search bar is visible.
  */
 data class AlbumDetailUiState(
     val albumName: String = "",
@@ -30,6 +35,8 @@ data class AlbumDetailUiState(
     val tracks: List<Track> = emptyList(),
     val isLoading: Boolean = true,
     val currentlyPlayingTrackId: Long? = null,
+    val searchQuery: String = "",
+    val showSearch: Boolean = false,
 )
 
 /**
@@ -42,6 +49,7 @@ data class AlbumDetailUiState(
  * The `albumName` and `artistName` are extracted from the navigation
  * [SavedStateHandle].
  */
+@OptIn(FlowPreview::class)
 @HiltViewModel
 class AlbumDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -59,6 +67,16 @@ class AlbumDetailViewModel @Inject constructor(
         "artistName is required but was not found in SavedStateHandle"
     }
 
+    private val _searchQuery = MutableStateFlow("")
+    private val _showSearch = MutableStateFlow(false)
+
+    fun onSearchQueryChanged(query: String) { _searchQuery.value = query }
+    fun clearSearch() { _searchQuery.value = "" }
+    fun toggleSearch() {
+        _showSearch.value = !_showSearch.value
+        if (!_showSearch.value) _searchQuery.value = ""
+    }
+
     /**
      * Filtered track flow: all tracks matching this album + artist combination.
      * Uses case-insensitive matching to be resilient against metadata variations.
@@ -72,19 +90,24 @@ class AlbumDetailViewModel @Inject constructor(
 
     /**
      * Combined UI state reacting to:
-     * 1. Filtered album track list
+     * 1. Filtered album track list (further narrowed by the search query)
      * 2. Player state changes (to highlight the currently-playing track)
+     * 3. Search query and search bar visibility
      */
     val uiState: StateFlow<AlbumDetailUiState> = combine(
-        albumTracks,
+        albumTracks.withSearchFilter(_searchQuery),
         playerRepository.playerState,
-    ) { tracks, playerState ->
+        _searchQuery,
+        _showSearch,
+    ) { tracks, playerState, query, showSearch ->
         AlbumDetailUiState(
             albumName = albumName,
             artistName = artistName,
             tracks = tracks,
             isLoading = false,
             currentlyPlayingTrackId = playerState.currentTrack?.id,
+            searchQuery = query,
+            showSearch = showSearch,
         )
     }.stateIn(
         scope = viewModelScope,
