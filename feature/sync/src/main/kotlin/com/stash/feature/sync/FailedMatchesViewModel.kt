@@ -59,7 +59,6 @@ data class ResyncCandidate(
  * @property resyncCandidates Map of trackId -> best candidate found during resync.
  * @property isResyncing      True while a resync operation is running.
  * @property resyncProgress   Human-readable progress string (e.g. "3 of 12").
- * @property approvingIds     Set of trackIds currently being downloaded via approve.
  */
 data class FailedMatchesUiState(
     val tracks: List<UnmatchedTrackView> = emptyList(),
@@ -68,7 +67,6 @@ data class FailedMatchesUiState(
     val resyncCandidates: Map<Long, ResyncCandidate> = emptyMap(),
     val isResyncing: Boolean = false,
     val resyncProgress: String = "",
-    val approvingIds: Set<Long> = emptySet(),
 )
 
 /**
@@ -98,7 +96,13 @@ class FailedMatchesViewModel @Inject constructor(
         private const val TAG = "FailedMatchesVM"
 
         /** Maximum concurrent YouTube searches during resync. */
-        private const val RESYNC_CONCURRENCY = 2
+        private const val RESYNC_CONCURRENCY = 4
+
+        /** How many resync candidates to pre-extract preview URLs for. */
+        private const val PRE_EXTRACT_LIMIT = 10
+
+        /** Max concurrent yt-dlp preview extractions (each is CPU-heavy). */
+        private const val PRE_EXTRACT_CONCURRENCY = 2
     }
 
     /** Observable preview playback state for the UI to highlight the active row. */
@@ -110,10 +114,18 @@ class FailedMatchesViewModel @Inject constructor(
     private val _resyncCandidates = MutableStateFlow<Map<Long, ResyncCandidate>>(emptyMap())
     private val _isResyncing = MutableStateFlow(false)
     private val _resyncProgress = MutableStateFlow("")
-    private val _approvingIds = MutableStateFlow<Set<Long>>(emptySet())
 
     /** Active resync job reference so it can be cancelled on new resync or cleanup. */
     private var resyncJob: Job? = null
+
+    /**
+     * Cache of pre-extracted stream URLs, keyed by videoId.
+     * Populated in the background after resync completes.
+     */
+    private val previewUrlCache = mutableMapOf<String, String>()
+
+    /** Active pre-extraction jobs — cancelled when a new resync starts. */
+    private var preExtractJobs = mutableListOf<Job>()
 
     // -- Combined UI state --------------------------------------------------
 
@@ -132,8 +144,6 @@ class FailedMatchesViewModel @Inject constructor(
                 resyncCandidates = candidates,
                 isResyncing = resyncing,
                 resyncProgress = progress,
-                // Read approvingIds directly — combine() supports max 5 typed flows
-                approvingIds = _approvingIds.value,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -190,45 +200,86 @@ class FailedMatchesViewModel @Inject constructor(
             }.joinAll()
 
             _isResyncing.value = false
+
+            // Pre-extract stream URLs for instant audio previews
+            preExtractStreamUrls(_resyncCandidates.value)
+        }
+    }
+
+    // -- Pre-extract preview URLs in background --------------------------------
+
+    /**
+     * Pre-extracts stream URLs for resync candidates in the background.
+     *
+     * Runs up to [PRE_EXTRACT_LIMIT] extractions concurrently (limited by
+     * [PRE_EXTRACT_CONCURRENCY] semaphore). Extracted URLs are cached in
+     * [previewUrlCache] and served instantly when the user taps preview.
+     */
+    private fun preExtractStreamUrls(candidates: Map<Long, ResyncCandidate>) {
+        preExtractJobs.forEach { it.cancel() }
+        preExtractJobs.clear()
+        previewUrlCache.clear()
+
+        val semaphore = Semaphore(PRE_EXTRACT_CONCURRENCY)
+        candidates.values.take(PRE_EXTRACT_LIMIT).forEach { candidate ->
+            val job = viewModelScope.launch {
+                semaphore.acquire()
+                try {
+                    val url = previewUrlExtractor.extractStreamUrl(candidate.videoId)
+                    previewUrlCache[candidate.videoId] = url
+                    Log.d(TAG, "Pre-extracted preview URL for ${candidate.videoId}")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Pre-extract failed for ${candidate.videoId}: ${e.message}")
+                } finally {
+                    semaphore.release()
+                }
+            }
+            preExtractJobs.add(job)
         }
     }
 
     // -- Approve: download a resync candidate and update the DB -------------
 
     /**
-     * Downloads the approved resync candidate and updates the database so the
-     * track is marked as downloaded and removed from the failed matches list.
-     *
-     * Follows the same download chain as SearchViewModel: yt-dlp download ->
-     * file organization -> DB update.
+     * Optimistically approves a resync candidate: immediately marks the queue
+     * entry as COMPLETED and sets the youtubeId on the track so the row
+     * disappears from the reactive [getUnmatchedTracks] Flow. The actual
+     * download runs in a fire-and-forget background coroutine.
      *
      * @param trackId      Primary key of the track in the tracks table.
      * @param queueEntryId Row ID of the download_queue entry to mark completed.
      * @param candidate    The [ResyncCandidate] the user approved.
      */
     fun approveMatch(trackId: Long, queueEntryId: Long, candidate: ResyncCandidate) {
-        if (trackId in _approvingIds.value) return
-        _approvingIds.update { it + trackId }
-
         viewModelScope.launch {
-            try {
-                val url = "https://www.youtube.com/watch?v=${candidate.videoId}"
-                val qualityTier = qualityPrefs.qualityTier.first()
-                val qualityArgs = qualityTier.toYtDlpArgs()
-                val tempDir = fileOrganizer.getTempDir()
-                val tempFilename = "approve_${candidate.videoId}"
+            // Immediately mark as completed — row disappears from reactive Flow
+            trackDao.updateYoutubeId(trackId, candidate.videoId)
+            downloadQueueDao.updateStatus(
+                id = queueEntryId,
+                status = DownloadStatus.COMPLETED,
+            )
 
-                val result = downloadExecutor.download(
-                    url = url,
-                    outputDir = tempDir,
-                    filename = tempFilename,
-                    qualityArgs = qualityArgs,
-                )
+            // Remove from resync candidates map
+            _resyncCandidates.update { it - trackId }
 
-                when (result) {
-                    is DownloadResult.Success -> {
-                        // Use the original track metadata for file organization
-                        val track = uiState.value.tracks.find { it.trackId == trackId }
+            // Background download — fire and forget
+            launch {
+                try {
+                    val url = "https://www.youtube.com/watch?v=${candidate.videoId}"
+                    val qualityTier = qualityPrefs.qualityTier.first()
+                    val qualityArgs = qualityTier.toYtDlpArgs()
+                    val tempDir = fileOrganizer.getTempDir()
+                    val tempFilename = "approve_${candidate.videoId}"
+
+                    val result = downloadExecutor.download(
+                        url = url,
+                        outputDir = tempDir,
+                        filename = tempFilename,
+                        qualityArgs = qualityArgs,
+                    )
+
+                    if (result is DownloadResult.Success) {
+                        val track = trackDao.getById(trackId)
                         val artist = track?.artist ?: candidate.artist
                         val title = track?.title ?: candidate.title
 
@@ -241,29 +292,32 @@ class FailedMatchesViewModel @Inject constructor(
                         result.file.copyTo(finalFile, overwrite = true)
                         result.file.delete()
 
-                        // Mark track as downloaded with file info
                         trackDao.markAsDownloaded(trackId, finalFile.absolutePath, finalFile.length())
-                        // Set youtubeId so future syncs don't re-queue this track
-                        trackDao.updateYoutubeId(trackId, candidate.videoId)
-                        // Mark queue entry as completed so it disappears from the list
-                        downloadQueueDao.updateStatus(
-                            id = queueEntryId,
-                            status = DownloadStatus.COMPLETED,
-                        )
-
-                        // Remove from approving set (track will vanish from list via Flow)
-                        _approvingIds.update { it - trackId }
-                        // Remove from resync candidates since it's now downloaded
-                        _resyncCandidates.update { it - trackId }
+                    } else {
+                        Log.w(TAG, "Background download failed for ${candidate.title}: $result")
                     }
-                    else -> {
-                        Log.e(TAG, "Approve download failed for ${candidate.title}: $result")
-                        _approvingIds.update { it - trackId }
-                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Background download error for ${candidate.title}", e)
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Approve failed for trackId=$trackId", e)
-                _approvingIds.update { it - trackId }
+            }
+        }
+    }
+
+    // -- Approve All: batch approve every track with a candidate ---------------
+
+    /**
+     * Approves all tracks that have a resync candidate. Since [approveMatch]
+     * is optimistic, all rows disappear immediately and downloads queue in
+     * the background.
+     */
+    fun approveAll() {
+        val tracks = uiState.value.tracks
+        val candidates = _resyncCandidates.value
+
+        tracks.forEach { track ->
+            val candidate = candidates[track.trackId]
+            if (candidate != null) {
+                approveMatch(track.trackId, track.id, candidate)
             }
         }
     }
@@ -296,7 +350,11 @@ class FailedMatchesViewModel @Inject constructor(
         viewModelScope.launch {
             _previewLoading.value = videoId
             try {
-                val url = previewUrlExtractor.extractStreamUrl(videoId)
+                // Check cache first — if pre-extraction finished, this is instant
+                val url = previewUrlCache[videoId]
+                    ?: previewUrlExtractor.extractStreamUrl(videoId).also {
+                        previewUrlCache[videoId] = it
+                    }
                 previewPlayer.playUrl(videoId, url)
             } catch (e: Exception) {
                 Log.e(TAG, "Preview failed for videoId=$videoId", e)
@@ -317,5 +375,7 @@ class FailedMatchesViewModel @Inject constructor(
         super.onCleared()
         previewPlayer.stop()
         resyncJob?.cancel()
+        preExtractJobs.forEach { it.cancel() }
+        previewUrlCache.clear()
     }
 }

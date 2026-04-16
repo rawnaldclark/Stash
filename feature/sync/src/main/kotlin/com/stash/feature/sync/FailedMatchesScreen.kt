@@ -161,8 +161,10 @@ fun FailedMatchesScreen(
                             trackCount = state.tracks.size,
                             isResyncing = state.isResyncing,
                             resyncProgress = state.resyncProgress,
+                            resyncCandidateCount = state.resyncCandidates.size,
                             onBack = onBack,
                             onResync = { viewModel.resync() },
+                            onApproveAll = { viewModel.approveAll() },
                         )
                     }
 
@@ -182,7 +184,6 @@ fun FailedMatchesScreen(
                             resyncAttempted = state.resyncProgress.isNotEmpty(),
                             isPreviewPlaying = isPreviewPlaying,
                             isPreviewLoading = isPreviewLoading,
-                            isApproving = track.trackId in state.approvingIds,
                             onPreview = { videoId -> viewModel.previewRejectedMatch(videoId) },
                             onStopPreview = { viewModel.stopPreview() },
                             onApprove = {
@@ -257,8 +258,10 @@ private fun FailedMatchesHeader(
     trackCount: Int,
     isResyncing: Boolean,
     resyncProgress: String,
+    resyncCandidateCount: Int,
     onBack: () -> Unit,
     onResync: () -> Unit,
+    onApproveAll: () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -342,6 +345,20 @@ private fun FailedMatchesHeader(
                 }
             }
 
+            // Approve All button — visible when resync found candidates
+            if (resyncCandidateCount > 0 && !isResyncing) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onApproveAll,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Default.Check, null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Approve All ($resyncCandidateCount)")
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
@@ -359,7 +376,6 @@ private fun FailedMatchesHeader(
  * @param resyncAttempted  Whether a resync has been run (to show "No match found").
  * @param isPreviewPlaying Whether this track's candidate is currently playing.
  * @param isPreviewLoading Whether the preview URL is currently being extracted.
- * @param isApproving      Whether a download is in progress for this track.
  * @param onPreview        Callback invoked with the videoId to start preview.
  * @param onStopPreview    Callback invoked to stop the current preview.
  * @param onApprove        Callback invoked when the approve (checkmark) button is tapped.
@@ -372,7 +388,6 @@ private fun UnmatchedTrackRow(
     resyncAttempted: Boolean,
     isPreviewPlaying: Boolean,
     isPreviewLoading: Boolean,
-    isApproving: Boolean,
     onPreview: (String) -> Unit,
     onStopPreview: () -> Unit,
     onApprove: () -> Unit,
@@ -480,28 +495,15 @@ private fun UnmatchedTrackRow(
 
         // Approve button -- only shown when a candidate exists
         if (candidate != null) {
-            if (isApproving) {
-                Box(
-                    modifier = Modifier.size(40.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = Color(0xFF4CAF50),
-                    )
-                }
-            } else {
-                IconButton(
-                    onClick = onApprove,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = "Approve match",
-                        tint = Color(0xFF4CAF50),
-                    )
-                }
+            IconButton(
+                onClick = onApprove,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Approve match",
+                    tint = Color(0xFF4CAF50),
+                )
             }
         }
 
