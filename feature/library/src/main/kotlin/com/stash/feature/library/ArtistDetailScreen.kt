@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,13 +52,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.Track
 import com.stash.core.ui.components.DetailTrackRow
+import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.TrackOptionsSheet
 import com.stash.core.ui.theme.StashTheme
 
 /**
  * Artist Detail screen entry point.
  *
- * Displays the artist name as header, track count, Play All / Shuffle buttons,
+ * Displays the artist name as header, track count, Play All / Shuffle / Search buttons,
  * and a scrollable track list. Tapping a track starts playback; long-pressing
  * opens a bottom sheet with queue actions.
  *
@@ -94,7 +96,7 @@ fun ArtistDetailScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp),
             ) {
-                // -- Header section --
+                // ── Header section ──────────────────────────────────────
                 item(key = "header") {
                     ArtistDetailHeader(
                         state = state,
@@ -104,10 +106,40 @@ fun ArtistDetailScreen(
                             if (firstTrack != null) viewModel.playTrack(firstTrack.id)
                         },
                         onShuffle = { viewModel.shuffleAll() },
+                        onToggleSearch = { viewModel.toggleSearch() },
                     )
                 }
 
-                // -- Track list --
+                // ── Search filter bar ───────────────────────────────────
+                if (state.showSearch) {
+                    item(key = "search") {
+                        SearchFilterBar(
+                            query = state.searchQuery,
+                            onQueryChanged = viewModel::onSearchQueryChanged,
+                            onClear = viewModel::clearSearch,
+                        )
+                    }
+                }
+
+                // ── Empty search results ───────────────────────────────
+                if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
+                    item(key = "no-results") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "No matching songs",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                // ── Track list ──────────────────────────────────────────
                 itemsIndexed(
                     items = state.tracks,
                     key = { _, track -> track.id },
@@ -133,7 +165,7 @@ fun ArtistDetailScreen(
         }
     }
 
-    // -- Track options bottom sheet --
+    // ── Track options bottom sheet ───────────────────────────────────────
     if (selectedTrack != null) {
         ModalBottomSheet(
             onDismissRequest = { selectedTrack = null },
@@ -162,7 +194,7 @@ fun ArtistDetailScreen(
         }
     }
 
-    // -- Save to Playlist sheet --
+    // ── Save to Playlist sheet ─────────────────────────────────────────────
     if (trackToSave != null) {
         com.stash.core.ui.components.SaveToPlaylistSheet(
             playlists = userPlaylists.map {
@@ -181,10 +213,12 @@ fun ArtistDetailScreen(
     }
 }
 
-// -- Header composable --
+// ── Header composable ───────────────────────────────────────────────────────
 
 /**
  * Displays the artist icon, name, track count, and action buttons.
+ *
+ * @param onToggleSearch Called when the user taps the search icon button.
  */
 @Composable
 private fun ArtistDetailHeader(
@@ -192,11 +226,12 @@ private fun ArtistDetailHeader(
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
+    onToggleSearch: () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // -- Back button row --
+        // ── Back button row ─────────────────────────────────────────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -223,14 +258,14 @@ private fun ArtistDetailHeader(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // -- Artist icon + name --
+        // ── Artist icon + name ──────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Circular artist icon
+            // Circular artist icon placeholder
             Box(
                 modifier = Modifier
                     .size(96.dp)
@@ -278,7 +313,7 @@ private fun ArtistDetailHeader(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // -- Action buttons: Play All + Shuffle --
+        // ── Action buttons: Play All + Shuffle + Search ─────────────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -313,6 +348,24 @@ private fun ArtistDetailHeader(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(text = "Shuffle", style = MaterialTheme.typography.labelLarge)
+            }
+
+            // Search toggle button — same glass-background style as PlaylistHeader
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(
+                onClick = onToggleSearch,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(
+                        color = extendedColors.glassBackground,
+                        shape = RoundedCornerShape(12.dp),
+                    ),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Filter tracks",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
 
