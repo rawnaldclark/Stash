@@ -23,6 +23,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.db.dao.UnmatchedTrackView
+import com.stash.core.media.preview.PreviewState
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -65,6 +68,7 @@ fun FailedMatchesScreen(
     viewModel: FailedMatchesViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val previewState by viewModel.previewState.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
     // Track pending dismiss confirmation dialog.
@@ -158,8 +162,16 @@ fun FailedMatchesScreen(
                         items = state.tracks,
                         key = { _, track -> track.id },
                     ) { index, track ->
+                        val isPreviewPlaying = previewState is PreviewState.Playing &&
+                            (previewState as PreviewState.Playing).videoId == track.rejectedVideoId
+                        val isPreviewLoading = state.previewLoading == track.rejectedVideoId
+
                         UnmatchedTrackRow(
                             track = track,
+                            isPreviewPlaying = isPreviewPlaying,
+                            isPreviewLoading = isPreviewLoading,
+                            onPreview = { videoId -> viewModel.previewRejectedMatch(videoId) },
+                            onStopPreview = { viewModel.stopPreview() },
                             onDismiss = { trackToDismiss = track },
                         )
 
@@ -293,17 +305,26 @@ private fun FailedMatchesHeader(
 
 /**
  * A single row for an unmatched track. Shows album art (or gradient
- * placeholder), title, artist, and a dismiss button.
+ * placeholder), title, artist, an optional preview button for rejected
+ * match candidates, and a dismiss button.
  *
  * Unlike [DetailTrackRow], this row is not tappable for playback because
  * unmatched tracks have no downloaded file.
  *
- * @param track     The unmatched track data to display.
- * @param onDismiss Callback invoked when the dismiss (X) button is tapped.
+ * @param track            The unmatched track data to display.
+ * @param isPreviewPlaying Whether this track's rejected candidate is currently playing.
+ * @param isPreviewLoading Whether the preview URL is currently being extracted.
+ * @param onPreview        Callback invoked with the rejectedVideoId to start preview.
+ * @param onStopPreview    Callback invoked to stop the current preview.
+ * @param onDismiss        Callback invoked when the dismiss (X) button is tapped.
  */
 @Composable
 private fun UnmatchedTrackRow(
     track: UnmatchedTrackView,
+    isPreviewPlaying: Boolean,
+    isPreviewLoading: Boolean,
+    onPreview: (String) -> Unit,
+    onStopPreview: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Row(
@@ -356,6 +377,31 @@ private fun UnmatchedTrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+
+        // Preview button — shown only when a rejected candidate videoId exists
+        if (track.rejectedVideoId != null) {
+            IconButton(
+                onClick = if (isPreviewPlaying) onStopPreview else { { onPreview(track.rejectedVideoId) } },
+                modifier = Modifier.size(40.dp),
+            ) {
+                when {
+                    isPreviewLoading -> CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    isPreviewPlaying -> Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Stop preview",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    else -> Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Preview closest match",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         // Dismiss button
