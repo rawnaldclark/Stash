@@ -11,6 +11,7 @@ import com.stash.feature.home.HomeScreen
 import com.stash.feature.library.AlbumDetailScreen
 import com.stash.feature.library.ArtistDetailScreen
 import com.stash.feature.library.LibraryScreen
+import com.stash.feature.library.LikedSongsDetailScreen
 import com.stash.feature.library.PlaylistDetailScreen
 import com.stash.feature.nowplaying.NowPlayingScreen
 import com.stash.feature.search.SearchScreen
@@ -40,6 +41,9 @@ fun StashNavHost(
             HomeScreen(
                 onNavigateToPlaylist = { playlistId ->
                     navController.navigate(PlaylistDetailRoute(playlistId))
+                },
+                onNavigateToLikedSongs = { source ->
+                    navController.navigate(LikedSongsDetailRoute(source))
                 },
             )
         }
@@ -74,6 +78,12 @@ fun StashNavHost(
 
         composable<AlbumDetailRoute> {
             AlbumDetailScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable<LikedSongsDetailRoute> {
+            LikedSongsDetailScreen(
                 onBack = { navController.popBackStack() },
             )
         }

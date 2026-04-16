@@ -90,6 +90,7 @@ import com.stash.feature.home.components.StashVinylLogo
 fun HomeScreen(
     modifier: Modifier = Modifier,
     onNavigateToPlaylist: (Long) -> Unit = {},
+    onNavigateToLikedSongs: (String?) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -238,6 +239,15 @@ fun HomeScreen(
                     onPlayAll = { viewModel.playLikedSongs(source = null) },
                     onPlaySpotify = { viewModel.playLikedSongs(source = MusicSource.SPOTIFY) },
                     onPlayYouTube = { viewModel.playLikedSongs(source = MusicSource.YOUTUBE) },
+                    onClick = { onNavigateToLikedSongs(null) },
+                    onClickSpotify = {
+                        val spotifyPlaylistId = uiState.spotifyLikedPlaylists.firstOrNull()?.id
+                        if (spotifyPlaylistId != null) onNavigateToPlaylist(spotifyPlaylistId)
+                    },
+                    onClickYouTube = {
+                        val youtubePlaylistId = uiState.youtubeLikedPlaylists.firstOrNull()?.id
+                        if (youtubePlaylistId != null) onNavigateToPlaylist(youtubePlaylistId)
+                    },
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -906,6 +916,9 @@ private fun LikedSongsCard(
     onPlayAll: () -> Unit,
     onPlaySpotify: () -> Unit,
     onPlayYouTube: () -> Unit,
+    onClick: () -> Unit,
+    onClickSpotify: () -> Unit,
+    onClickYouTube: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -928,11 +941,11 @@ private fun LikedSongsCard(
                     )
                 ),
         ) {
-            // Main row — tapping plays combined (or single-source if only one)
+            // Main row — tapping navigates to liked songs detail view
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onPlayAll)
+                    .clickable(onClick = onClick)
                     .padding(20.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -998,14 +1011,14 @@ private fun LikedSongsCard(
                         source = MusicSource.SPOTIFY,
                         label = "Spotify",
                         count = spotifyCount,
-                        onClick = onPlaySpotify,
+                        onClick = onClickSpotify,
                         modifier = Modifier.weight(1f),
                     )
                     SourceLikedChip(
                         source = MusicSource.YOUTUBE,
                         label = "YouTube",
                         count = youtubeCount,
-                        onClick = onPlayYouTube,
+                        onClick = onClickYouTube,
                         modifier = Modifier.weight(1f),
                     )
                 }
