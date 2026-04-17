@@ -88,7 +88,7 @@ import com.stash.data.ytmusic.model.TrackSummary
 @Composable
 fun SearchScreen(
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
-    onNavigateToAlbum: (albumName: String, artistName: String) -> Unit,
+    onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -132,7 +132,7 @@ fun SearchScreen(
                     previewLoadingId = previewLoadingId,
                     previewState = previewState,
                     onArtistClick = { a -> onNavigateToArtist(a.id, a.name, a.avatarUrl) },
-                    onAlbumClick = { a -> onNavigateToAlbum(a.title, a.artist) },
+                    onAlbumClick = onNavigateToAlbum,
                     onTopTrackClick = { t -> viewModel.delegate.previewTrack(t.videoId) },
                     onPreview = { viewModel.delegate.previewTrack(it) },
                     onStopPreview = viewModel.delegate::stopPreview,
