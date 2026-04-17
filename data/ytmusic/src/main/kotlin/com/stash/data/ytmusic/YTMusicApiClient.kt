@@ -248,9 +248,15 @@ class YTMusicApiClient @Inject constructor(
                 when {
                     title.equals("Albums", ignoreCase = true) ->
                         albums = parseAlbumsCarousel(carousel)
-                    title.equals("Singles", ignoreCase = true) ||
+                    // `contains("Singles")` subsumes both the stand-alone
+                    // "Singles" shelf and the combined "Singles and EPs"
+                    // shelf that InnerTube A/B-ships; the `contains("EPs")`
+                    // arm guards against an EP-only locale variant. If both
+                    // arrive on the same page, defensively merge them rather
+                    // than clobber the first shelf we saw.
+                    title.contains("Singles", ignoreCase = true) ||
                         title.contains("EPs", ignoreCase = true) ->
-                        singles = parseAlbumsCarousel(carousel)
+                        singles = singles + parseAlbumsCarousel(carousel)
                     title.contains("Fans also like", ignoreCase = true) ->
                         related = parseArtistsCarousel(carousel)
                     // Surface locale regressions (e.g. a translated "Albumes"
