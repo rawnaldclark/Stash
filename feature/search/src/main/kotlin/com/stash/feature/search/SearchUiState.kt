@@ -29,25 +29,18 @@ sealed interface SearchStatus {
 /**
  * UI state for the Search screen.
  *
- * Task 9 collapses the previous `results/isSearching/error/previewError`
- * fields into [status]; the download + preview state remain on the root
- * state because they're cross-cutting (multiple downloads can be in flight
- * regardless of the current search phase).
+ * Shrunk in the Album Discovery phase-1 migration: the previous
+ * `downloadingIds` / `downloadedIds` / `previewLoading` fields moved onto
+ * [com.stash.core.media.actions.TrackActionsDelegate] so they can be shared
+ * with `ArtistProfileViewModel` (and, next, `AlbumDiscoveryViewModel`).
+ * The screen now reads those flags straight from `viewModel.delegate.*`.
  *
- * @property query            Current text in the search field.
- * @property status           Current search phase — see [SearchStatus].
- * @property downloadingIds   Set of video IDs currently being downloaded.
- * @property downloadedIds    Set of video IDs already downloaded.
- * @property previewLoading   Video ID of the preview currently being
- *   extracted (spinner icon on the row), or null when no preview is
- *   loading.
+ * @property query  Current text in the search field.
+ * @property status Current search phase — see [SearchStatus].
  */
 data class SearchUiState(
     val query: String = "",
     val status: SearchStatus = SearchStatus.Idle,
-    val downloadingIds: Set<String> = emptySet(),
-    val downloadedIds: Set<String> = emptySet(),
-    val previewLoading: String? = null,
 )
 
 /**
