@@ -17,6 +17,18 @@ import kotlinx.serialization.json.JsonObject
  */
 
 /**
+ * Spec §8 Open Question 1: InnerTube returns artists with either `UC…`
+ * (channel) or `MPLAUC…` (music channel) browseIds. Cache-key stability
+ * requires a single form — we strip the `MPLA` prefix only when it is
+ * immediately followed by `UC`, leaving other unknown `MPLA`-prefixed ids
+ * (e.g. `MPLARZ…`) untouched to avoid truncating forms we don't recognize.
+ *
+ * Top-level `internal` so parser tests can exercise it directly.
+ */
+internal fun normalizeArtistBrowseId(browseId: String): String =
+    if (browseId.startsWith("MPLAUC")) browseId.removePrefix("MPLA") else browseId
+
+/**
  * Parses a `musicResponsiveListItemRenderer` into a [TrackSummary].
  *
  * Expected shape:

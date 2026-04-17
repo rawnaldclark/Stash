@@ -291,14 +291,9 @@ class YTMusicApiClient @Inject constructor(
         related = emptyList(),
     )
 
-    /**
-     * Spec §8 Open Question 1: InnerTube returns artists with either `UC…`
-     * (channel) or `MPLAUC…` (music channel) browseIds. Cache-key stability
-     * requires a single form — we strip the `MPLA` prefix and use the bare
-     * channel ID.
-     */
-    private fun normalizeArtistBrowseId(browseId: String): String =
-        if (browseId.startsWith("MPLA")) browseId.removePrefix("MPLA") else browseId
+    // `normalizeArtistBrowseId` lives as a top-level `internal` fun in
+    // [ResponseParserHelpers.kt] so unit tests can exercise it directly
+    // without reflection; this file calls it below in [getArtist].
 
     // ── InnerTube response parsers ───────────────────────────────────────
 
