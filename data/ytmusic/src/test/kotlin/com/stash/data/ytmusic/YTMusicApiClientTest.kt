@@ -59,9 +59,11 @@ class YTMusicApiClientTest {
         )
 
         val songs = result.sections[1] as SearchResultSection.Songs
-        assertTrue(
-            "songs list should be 1..4 items, was ${songs.tracks.size}",
-            songs.tracks.size in 1..4,
+        // Fixture ships 6 songs; parser must cap at 4 per the Search tab spec.
+        assertEquals(
+            "songs list must be capped at 4 even when the shelf has more",
+            4,
+            songs.tracks.size,
         )
         assertTrue(
             "first song videoId must be non-blank",
@@ -92,5 +94,32 @@ class YTMusicApiClientTest {
             "expected empty sections, got ${result.sections.map { it::class.simpleName }}",
             result.sections.isEmpty(),
         )
+    }
+
+    @Test
+    fun `searchAll caps Songs shelf at 4 items even if fixture has more`() = runTest {
+        // search_artist.json ships 6 songs; parser must cap at 4 per spec §3.2.
+        val client = fakeClient(loadFixture("search_artist.json"))
+
+        val result = client.searchAll("lootpack")
+
+        val songs = result.sections.filterIsInstance<SearchResultSection.Songs>().single()
+        assertEquals(4, songs.tracks.size)
+    }
+
+    @Test
+    fun `searchAll joins collab artists on top-card track with comma-space`() = runTest {
+        // search_track.json's top card has two artist runs (UC* browseIds) joined
+        // by " & " plus an album run (MPREb_* browseId). Parser must classify by
+        // endpoint prefix and emit artists joined by ", " rather than treating the
+        // second artist as the album.
+        val client = fakeClient(loadFixture("search_track.json"))
+
+        val result = client.searchAll("never gonna give")
+
+        val top = result.sections.first() as SearchResultSection.Top
+        val trackTop = top.item as TopResultItem.TrackTop
+        assertEquals("Rick Astley, John Smith", trackTop.track.artist)
+        assertEquals("Whenever You Need Somebody", trackTop.track.album)
     }
 }

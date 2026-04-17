@@ -39,9 +39,32 @@
                         "runs": [
                           { "text": "Song" },
                           { "text": " • " },
-                          { "text": "Rick Astley" },
+                          {
+                            "text": "Rick Astley",
+                            "navigationEndpoint": {
+                              "browseEndpoint": {
+                                "browseId": "UCRICKASTLEYID"
+                              }
+                            }
+                          },
+                          { "text": " & " },
+                          {
+                            "text": "John Smith",
+                            "navigationEndpoint": {
+                              "browseEndpoint": {
+                                "browseId": "UCJOHNSMITHID"
+                              }
+                            }
+                          },
                           { "text": " • " },
-                          { "text": "Whenever You Need Somebody" },
+                          {
+                            "text": "Whenever You Need Somebody",
+                            "navigationEndpoint": {
+                              "browseEndpoint": {
+                                "browseId": "MPREb_WYNSOMEBODY"
+                              }
+                            }
+                          },
                           { "text": " • " },
                           { "text": "3:32" }
                         ]
