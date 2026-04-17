@@ -1,9 +1,11 @@
 package com.stash.data.download.preview
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -53,14 +55,18 @@ class PreviewUrlExtractorTest {
             ytdlp = {
                 try {
                     delay(2_000); "https://slow/$it"
-                } catch (t: Throwable) {
-                    ytDlpCancelled.set(true); throw t
+                } catch (ce: kotlinx.coroutines.CancellationException) {
+                    // Narrow to CancellationException so we don't flag
+                    // an unrelated throw as a cancellation signal.
+                    ytDlpCancelled.set(true); throw ce
                 }
             },
         )
         PreviewUrlExtractor.raceForTest(hooks, "abc")
-        // small yield so structured cancellation propagates
-        delay(50)
+        // Drain pending tasks on the test scheduler so the cancellation
+        // propagates deterministically. runCurrent() is precise; delay()
+        // would advance virtual time arbitrarily.
+        runCurrent()
         assertTrue(ytDlpCancelled.get())
     }
 
@@ -90,24 +96,40 @@ class PreviewUrlExtractorTest {
     }
 
     @Test
-    fun `innertube semaphore allows 8 concurrent, ytdlp allows 2`() = runTest {
+    fun `innertube semaphore caps concurrency at 8`() = runTest {
         val itMax = AtomicInteger(0); val itCur = AtomicInteger(0)
-        val ytMax = AtomicInteger(0); val ytCur = AtomicInteger(0)
-
         val hooks = TestableExtractor(
             innertube = {
                 itMax.updateAndGet { m -> maxOf(m, itCur.incrementAndGet()) }
-                try { delay(30); "u" } finally { itCur.decrementAndGet() }
+                try { delay(50); "u" } finally { itCur.decrementAndGet() }
             },
+            // Effectively ignored: innertube always wins first, so yt-dlp
+            // gets cancelled before its delay elapses.
+            ytdlp = { delay(100_000); "y" },
+        )
+        coroutineScope {
+            (1..30).map { async { PreviewUrlExtractor.raceForTest(hooks, "id$it") } }.awaitAll()
+        }
+        // Assert the *exact* observed cap. 30 concurrent callers saturate
+        // the pool, so we should hit exactly 8 — not merely <= 8.
+        assertEquals("expected exactly 8 concurrent innertube slots", 8, itMax.get())
+    }
+
+    @Test
+    fun `ytdlp semaphore caps concurrency at 2`() = runTest {
+        val ytMax = AtomicInteger(0); val ytCur = AtomicInteger(0)
+        val hooks = TestableExtractor(
+            // Return null to force the race to fall back to yt-dlp, so
+            // the semaphore under test actually sees load.
+            innertube = { null },
             ytdlp = {
                 ytMax.updateAndGet { m -> maxOf(m, ytCur.incrementAndGet()) }
-                try { delay(30); "y" } finally { ytCur.decrementAndGet() }
+                try { delay(50); "y" } finally { ytCur.decrementAndGet() }
             },
         )
         coroutineScope {
-            (1..20).map { async { PreviewUrlExtractor.raceForTest(hooks, "id$it") } }.awaitAll()
+            (1..10).map { async { PreviewUrlExtractor.raceForTest(hooks, "id$it") } }.awaitAll()
         }
-        assertTrue("innertube max=${itMax.get()}", itMax.get() <= 8)
-        assertTrue("ytdlp max=${ytMax.get()}", ytMax.get() <= 2)
+        assertEquals("expected exactly 2 concurrent yt-dlp slots", 2, ytMax.get())
     }
 }
