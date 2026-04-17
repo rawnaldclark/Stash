@@ -217,3 +217,19 @@ internal fun TrackSummary.toTrackItem() = com.stash.core.media.actions.TrackItem
     durationSeconds = durationSeconds,
     thumbnailUrl = thumbnailUrl,
 )
+
+/**
+ * Adapter: [SearchResultItem] → [com.stash.core.media.actions.TrackItem].
+ *
+ * [PopularTracksSection]'s `onDownload` callback surfaces the row as a
+ * [SearchResultItem] (since the composable converts internally via
+ * [toSearchResultItem] to feed [PreviewDownloadRow]). Screens that route
+ * that callback into `delegate.downloadTrack` use this one-liner.
+ */
+internal fun SearchResultItem.toTrackItem() = com.stash.core.media.actions.TrackItem(
+    videoId = videoId,
+    title = title,
+    artist = artist,
+    durationSeconds = durationSeconds,
+    thumbnailUrl = thumbnailUrl,
+)

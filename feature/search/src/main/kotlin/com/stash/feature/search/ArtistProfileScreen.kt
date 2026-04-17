@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.AlbumsRowSkeleton
 import com.stash.core.ui.components.PopularListSkeleton
 import com.stash.core.ui.components.SectionHeader
+import kotlinx.coroutines.flow.merge
 
 /**
  * Artist Profile screen.
@@ -62,11 +63,17 @@ fun ArtistProfileScreen(
     vm: ArtistProfileViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
-    val previewState by vm.previewState.collectAsStateWithLifecycle()
+    val previewState by vm.delegate.previewState.collectAsStateWithLifecycle()
+    val downloadingIds by vm.delegate.downloadingIds.collectAsStateWithLifecycle()
+    val downloadedIds by vm.delegate.downloadedIds.collectAsStateWithLifecycle()
+    val previewLoadingId by vm.delegate.previewLoadingId.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(vm) {
-        vm.userMessages.collect { message -> snackbar.showSnackbar(message) }
+        merge(
+            vm.userMessages,
+            vm.delegate.userMessages,
+        ).collect { message -> snackbar.showSnackbar(message) }
     }
 
     Scaffold(
@@ -100,9 +107,12 @@ fun ArtistProfileScreen(
                     contentSections(
                         state = state,
                         previewState = previewState,
-                        onPreview = vm::previewTrack,
-                        onStopPreview = vm::stopPreview,
-                        onDownload = vm::downloadTrack,
+                        downloadingIds = downloadingIds,
+                        downloadedIds = downloadedIds,
+                        previewLoadingId = previewLoadingId,
+                        onPreview = vm.delegate::previewTrack,
+                        onStopPreview = vm.delegate::stopPreview,
+                        onDownload = { vm.delegate.downloadTrack(it.toTrackItem()) },
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
                     )
@@ -111,9 +121,12 @@ fun ArtistProfileScreen(
                 ArtistProfileStatus.Stale -> contentSections(
                     state = state,
                     previewState = previewState,
-                    onPreview = vm::previewTrack,
-                    onStopPreview = vm::stopPreview,
-                    onDownload = vm::downloadTrack,
+                    downloadingIds = downloadingIds,
+                    downloadedIds = downloadedIds,
+                    previewLoadingId = previewLoadingId,
+                    onPreview = vm.delegate::previewTrack,
+                    onStopPreview = vm.delegate::stopPreview,
+                    onDownload = { vm.delegate.downloadTrack(it.toTrackItem()) },
                     onNavigateToAlbum = onNavigateToAlbum,
                     onNavigateToArtist = onNavigateToArtist,
                 )
@@ -131,6 +144,9 @@ fun ArtistProfileScreen(
 private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     state: ArtistProfileUiState,
     previewState: com.stash.core.media.preview.PreviewState,
+    downloadingIds: Set<String>,
+    downloadedIds: Set<String>,
+    previewLoadingId: String?,
     onPreview: (String) -> Unit,
     onStopPreview: () -> Unit,
     onDownload: (SearchResultItem) -> Unit,
@@ -143,9 +159,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             PopularTracksSection(
                 tracks = state.popular,
                 previewState = previewState,
-                downloadingIds = state.downloadingIds,
-                downloadedIds = state.downloadedIds,
-                previewLoadingId = state.previewLoading,
+                downloadingIds = downloadingIds,
+                downloadedIds = downloadedIds,
+                previewLoadingId = previewLoadingId,
                 onPreview = onPreview,
                 onStopPreview = onStopPreview,
                 onDownload = onDownload,
