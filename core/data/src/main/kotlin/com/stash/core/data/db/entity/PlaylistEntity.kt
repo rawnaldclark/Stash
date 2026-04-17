@@ -48,9 +48,13 @@ data class PlaylistEntity(
     @ColumnInfo(name = "snapshot_id")
     val snapshotId: String? = null,
 
-    /** Whether this playlist participates in sync/download. Default true
-     *  so new playlists are included automatically; users opt-out via the
-     *  Spotify Sync Preferences on the Sync tab. */
+    /** Whether this playlist participates in sync/download. Kotlin default is
+     *  `false` — users must explicitly opt-in via the Spotify Sync
+     *  Preferences on the Sync tab. Prevents surprise downloads of every
+     *  playlist on the user's Spotify account on the first sync. The SQL
+     *  `defaultValue` stays `"1"` to preserve the existing schema and avoid
+     *  a Room migration; Room-generated INSERTs always supply the Kotlin
+     *  value so the SQL default is effectively unused in practice. */
     @ColumnInfo(name = "sync_enabled", defaultValue = "1")
-    val syncEnabled: Boolean = true,
+    val syncEnabled: Boolean = false,
 )

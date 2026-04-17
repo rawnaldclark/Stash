@@ -2,6 +2,7 @@ package com.stash.data.ytmusic
 
 import android.util.Log
 import com.stash.core.model.SyncResult
+import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.ArtistSummary
@@ -239,10 +240,13 @@ class YTMusicApiClient @Inject constructor(
         for (section in sections) {
             val obj = section.asObject() ?: continue
             obj["musicShelfRenderer"]?.asObject()?.let { shelf ->
-                val title = shelf.navigatePath("title", "runs")?.firstArray()
-                    ?.firstOrNull()?.asObject()?.get("text")?.asString()
-                if (title?.contains("popular", ignoreCase = true) == true) {
-                    popular = parseTracksFromShelf(shelf).take(10)
+                // Structural match: take the first musicShelfRenderer that
+                // produces non-empty track rows. Title matching breaks when
+                // YouTube Music labels the shelf "Songs" (or leaves it blank)
+                // instead of "Popular" — which is common in production.
+                if (popular.isEmpty()) {
+                    val parsed = parseTracksFromShelf(shelf).take(10)
+                    if (parsed.isNotEmpty()) popular = parsed
                 }
             }
             obj["musicCarouselShelfRenderer"]?.asObject()?.let { carousel ->
@@ -306,6 +310,43 @@ class YTMusicApiClient @Inject constructor(
         singles = emptyList(),
         related = emptyList(),
     )
+
+    /**
+     * Fetch a YouTube Music album browse page in one round-trip and parse it
+     * into an [AlbumDetail].
+     *
+     * The browse response for an album ([browseId] starts with `MPREb_`)
+     * contains:
+     *   - `header.musicDetailHeaderRenderer` — title, subtitle (artist + year),
+     *     and cover art.
+     *   - A single `singleColumnBrowseResultsRenderer` tab holding the
+     *     tracklist (`musicShelfRenderer`) followed by the "More by this
+     *     artist" row (`musicCarouselShelfRenderer`).
+     *
+     * Missing shelves surface as empty lists so the UI can still render the
+     * hero from nav args + a "No tracks available" message when the tracklist
+     * is region-blocked. A null InnerTube response (e.g. network failure)
+     * yields an [AlbumDetail] with a blank title / empty shelves — callers
+     * should treat a blank title as a retry signal.
+     *
+     * @param browseId The album browseId (e.g. `MPREb_…`).
+     * @return A populated [AlbumDetail]; shelves the real response lacks are
+     *   returned as empty lists.
+     */
+    suspend fun getAlbum(browseId: String): AlbumDetail {
+        val response = innerTubeClient.browse(browseId)
+            ?: return AlbumDetail(
+                id = browseId,
+                title = "",
+                artist = "",
+                artistId = null,
+                thumbnailUrl = null,
+                year = null,
+                tracks = emptyList(),
+                moreByArtist = emptyList(),
+            )
+        return AlbumResponseParser.parse(browseId, response)
+    }
 
     // `normalizeArtistBrowseId` lives as a top-level `internal` fun in
     // [ResponseParserHelpers.kt] so unit tests can exercise it directly

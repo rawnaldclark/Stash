@@ -113,6 +113,17 @@ class SyncViewModel @Inject constructor(
         syncScheduler.triggerManualSync()
     }
 
+    /**
+     * Cancel any in-flight sync. Backed by `WorkManager.cancelUniqueWork`,
+     * which cancels the work chain and any worker currently running — the
+     * worker sees a cancellation exception and exits. In-progress track
+     * downloads that finish before the cancellation is observed will still
+     * complete, but no new tracks are enqueued.
+     */
+    fun onStopSync() {
+        syncScheduler.cancelSync()
+    }
+
     /** Toggle sync_enabled for a specific Spotify playlist. */
     fun onTogglePlaylistSync(playlistId: Long, enabled: Boolean) {
         viewModelScope.launch {

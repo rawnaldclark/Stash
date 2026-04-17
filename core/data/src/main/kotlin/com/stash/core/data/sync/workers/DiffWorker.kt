@@ -187,6 +187,29 @@ class DiffWorker @AssistedInject constructor(
                     localPlaylist.id,
                     trackSnapshots.size,
                 )
+
+                // Refresh the playlist's cover art from the first 2 unique
+                // track album arts, joined with '|'. Callers that want the
+                // mosaic render both tiles side-by-side; single-image
+                // callers take the portion before '|' (see
+                // HomeScreen.primaryArtUrl). Spotify's own Daily Mix mosaic
+                // URL is aggressively cached upstream and often doesn't
+                // rotate between syncs — deriving the cover from the
+                // current tracks guarantees a visible change every time
+                // the tracklist rotates.
+                val derivedTiles = trackSnapshots
+                    .mapNotNull { it.albumArtUrl }
+                    .distinct()
+                    .take(2)
+                val coverToSet = when {
+                    derivedTiles.size >= 2 -> derivedTiles.joinToString("|")
+                    derivedTiles.size == 1 -> derivedTiles[0]
+                    else -> playlistSnapshot.artUrl
+                }
+                val currentArt = playlistDao.findBySourceId(playlistSnapshot.sourcePlaylistId)?.artUrl
+                if (coverToSet != null && coverToSet != currentArt) {
+                    playlistDao.updateArtUrl(localPlaylist.id, coverToSet)
+                }
             }
 
             // Clean up orphaned tracks whose playlists were refreshed and
@@ -234,7 +257,26 @@ class DiffWorker @AssistedInject constructor(
         snapshot: RemotePlaylistSnapshotEntity,
     ): PlaylistEntity {
         val existing = playlistDao.findBySourceId(snapshot.sourcePlaylistId)
-        if (existing != null) return existing
+        if (existing != null) {
+            // Refresh metadata from the remote snapshot so the Home page
+            // picks up new cover art and renamed mixes. Without this, a
+            // Daily Mix would render the same cover art forever even
+            // though the tracks rotate — making mixes "feel stale."
+            // Only write when the value actually changed so Room doesn't
+            // broadcast spurious Flow emissions on every sync.
+            if (snapshot.artUrl != null && snapshot.artUrl != existing.artUrl) {
+                playlistDao.updateArtUrl(existing.id, snapshot.artUrl)
+            }
+            if (snapshot.playlistName.isNotBlank() &&
+                snapshot.playlistName != existing.name
+            ) {
+                playlistDao.updateName(existing.id, snapshot.playlistName)
+            }
+            return existing.copy(
+                artUrl = snapshot.artUrl ?: existing.artUrl,
+                name = snapshot.playlistName.ifBlank { existing.name },
+            )
+        }
 
         val newPlaylist = PlaylistEntity(
             name = snapshot.playlistName,
@@ -274,20 +316,25 @@ class DiffWorker @AssistedInject constructor(
     }
 
     /**
-     * Ensures a cross-reference exists between a playlist and a track.
-     * Uses REPLACE on conflict so position gets updated if the track is
-     * already linked.
+     * Ensures a cross-reference exists between a playlist and a track. For
+     * existing rows we preserve the original `addedAt` so ACCUMULATE mode
+     * can sort newest-added first — if we let the default REPLACE behavior
+     * stamp `Instant.now()` every sync, every track would get the same
+     * addedAt and the "newest on top" UX vanishes. For new rows we pick up
+     * the default `Instant.now()` from the data class.
      */
     private suspend fun ensurePlaylistMembership(
         playlistId: Long,
         trackId: Long,
         position: Int,
     ) {
+        val existingRef = playlistDao.getCrossRef(playlistId, trackId)
         playlistDao.insertCrossRef(
             PlaylistTrackCrossRef(
                 playlistId = playlistId,
                 trackId = trackId,
                 position = position,
+                addedAt = existingRef?.addedAt ?: java.time.Instant.now(),
             )
         )
     }

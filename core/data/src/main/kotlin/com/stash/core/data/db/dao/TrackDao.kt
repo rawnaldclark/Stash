@@ -86,8 +86,11 @@ interface TrackDao {
         """
         SELECT t.* FROM tracks t
         INNER JOIN playlist_tracks pt ON t.id = pt.track_id
+        INNER JOIN playlists p ON pt.playlist_id = p.id
         WHERE pt.playlist_id = :playlistId AND pt.removed_at IS NULL
-        ORDER BY pt.position ASC
+        ORDER BY
+            CASE WHEN p.type = 'DAILY_MIX' THEN pt.added_at END DESC,
+            pt.position ASC
         """
     )
     fun getByPlaylist(playlistId: Long): Flow<List<TrackEntity>>

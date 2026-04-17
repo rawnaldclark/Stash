@@ -51,8 +51,8 @@ android {
         applicationId = "com.stash.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.3.2"
+        versionCode = 6
+        versionName = "0.3.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
     }
@@ -132,6 +132,9 @@ dependencies {
     implementation(project(":feature:settings"))
     implementation(project(":feature:search"))
     implementation(project(":data:download"))
+    // data:ytmusic provides AlbumSummary, used by SearchScreen/ArtistProfileScreen
+    // callback signatures that StashNavHost wires up for Album Discovery.
+    implementation(project(":data:ytmusic"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)

@@ -191,6 +191,15 @@ class YTMusicApiClientTest {
         assertTrue("related should be empty", profile.related.isEmpty())
     }
 
+    // NOTE: The three hand-built `getAlbum` fixture tests that used to live here
+    // were written against a guessed JSON shape (`musicDetailHeaderRenderer` +
+    // single-column layout) that does NOT match what InnerTube actually returns
+    // for an album browse. The real shape — captured via on-device logcat
+    // diagnostic on 2026-04-17 — uses `twoColumnBrowseResultsRenderer` +
+    // `musicResponsiveHeaderRenderer`. Rather than keep passing-but-wrong tests,
+    // they're deleted. Re-add with real captured responses if test coverage
+    // becomes important for this parser.
+
     @Test
     fun `normalizeArtistBrowseId strips MPLA only before UC`() {
         // `MPLAUC…` is the music-channel variant — strip `MPLA` to expose the

@@ -14,6 +14,7 @@ import com.stash.feature.library.LibraryScreen
 import com.stash.feature.library.LikedSongsDetailScreen
 import com.stash.feature.library.PlaylistDetailScreen
 import com.stash.feature.nowplaying.NowPlayingScreen
+import com.stash.feature.search.AlbumDiscoveryScreen
 import com.stash.feature.search.ArtistProfileScreen
 import com.stash.feature.search.SearchScreen
 import com.stash.feature.settings.SettingsScreen
@@ -67,8 +68,16 @@ fun StashNavHost(
                 onNavigateToArtist = { id, name, avatar ->
                     navController.navigate(SearchArtistRoute(id, name, avatar))
                 },
-                onNavigateToAlbum = { album, artist ->
-                    navController.navigate(AlbumDetailRoute(album, artist))
+                onNavigateToAlbum = { album ->
+                    navController.navigate(
+                        SearchAlbumRoute(
+                            browseId = album.id,
+                            title = album.title,
+                            artist = album.artist,
+                            thumbnailUrl = album.thumbnailUrl,
+                            year = album.year,
+                        ),
+                    )
                 },
             )
         }
@@ -114,11 +123,36 @@ fun StashNavHost(
         composable<SearchArtistRoute> {
             ArtistProfileScreen(
                 onBack = { navController.popBackStack() },
-                onNavigateToAlbum = { album, artist ->
-                    navController.navigate(AlbumDetailRoute(album, artist))
+                onNavigateToAlbum = { album ->
+                    navController.navigate(
+                        SearchAlbumRoute(
+                            browseId = album.id,
+                            title = album.title,
+                            artist = album.artist,
+                            thumbnailUrl = album.thumbnailUrl,
+                            year = album.year,
+                        ),
+                    )
                 },
                 onNavigateToArtist = { id, name, avatar ->
                     navController.navigate(SearchArtistRoute(id, name, avatar))
+                },
+            )
+        }
+
+        composable<SearchAlbumRoute> {
+            AlbumDiscoveryScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToAlbum = { album ->
+                    navController.navigate(
+                        SearchAlbumRoute(
+                            browseId = album.id,
+                            title = album.title,
+                            artist = album.artist,
+                            thumbnailUrl = album.thumbnailUrl,
+                            year = album.year,
+                        ),
+                    )
                 },
             )
         }

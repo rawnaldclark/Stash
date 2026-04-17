@@ -7,10 +7,13 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -42,6 +45,7 @@ class UpdateCheckWorker(
     companion object {
         private const val TAG = "UpdateCheckWorker"
         private const val UNIQUE_WORK_NAME = "stash_update_check"
+        private const val UNIQUE_ONE_SHOT_NAME = "stash_update_check_oneshot"
         private const val PREFS_NAME = "update_check_prefs"
         private const val KEY_LAST_NOTIFIED_VERSION = "last_notified_version"
         private const val RELEASES_URL =
@@ -68,6 +72,29 @@ class UpdateCheckWorker(
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 UNIQUE_WORK_NAME,
                 ExistingPeriodicWorkPolicy.KEEP,
+                request,
+            )
+        }
+
+        /**
+         * Fires a single update check immediately (subject to a network
+         * constraint). Used on every app cold-start so a release pushed
+         * between two periodic-worker windows is surfaced within seconds of
+         * the next launch, and by the Settings "Check for updates" button.
+         *
+         * [ExistingWorkPolicy.REPLACE] ensures a stale queued check doesn't
+         * starve a fresh request; multiple rapid calls collapse to one.
+         */
+        fun enqueueOneTimeCheck(context: Context) {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+            val request = OneTimeWorkRequestBuilder<UpdateCheckWorker>()
+                .setConstraints(constraints)
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                UNIQUE_ONE_SHOT_NAME,
+                ExistingWorkPolicy.REPLACE,
                 request,
             )
         }
@@ -137,10 +164,17 @@ class UpdateCheckWorker(
                 return Result.success()
             }
 
-            showUpdateNotification(tagName, releaseName)
+            val notified = showUpdateNotification(tagName, releaseName)
 
-            // Persist the version so we don't notify again.
-            prefs.edit().putString(KEY_LAST_NOTIFIED_VERSION, tagName).apply()
+            // Only persist if the notification actually surfaced. If the OS
+            // suppressed it (permission denied, channel muted, app in
+            // background restriction), the next worker run will try again —
+            // otherwise a permission granted later would never get a retry.
+            if (notified) {
+                prefs.edit().putString(KEY_LAST_NOTIFIED_VERSION, tagName).apply()
+            } else {
+                Log.w(TAG, "notify() suppressed for $tagName; will retry on next run")
+            }
 
             Result.success()
         } catch (e: Exception) {
@@ -167,10 +201,19 @@ class UpdateCheckWorker(
 
     /**
      * Posts a notification informing the user that a newer release is available.
-     *
      * Tapping the notification opens the GitHub releases page in the browser.
+     *
+     * @return `true` if the notification was accepted by the OS, `false` if
+     *   it was suppressed (notifications disabled globally, channel muted,
+     *   or POST_NOTIFICATIONS permission denied on Android 13+).
      */
-    private fun showUpdateNotification(tag: String, releaseName: String) {
+    private fun showUpdateNotification(tag: String, releaseName: String): Boolean {
+        val managerCompat = NotificationManagerCompat.from(applicationContext)
+        if (!managerCompat.areNotificationsEnabled()) {
+            Log.w(TAG, "Notifications disabled by user; skipping")
+            return false
+        }
+
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD_URL)).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
@@ -192,13 +235,16 @@ class UpdateCheckWorker(
             .setContentIntent(pendingIntent)
             .build()
 
-        val notificationManager = applicationContext.getSystemService(
-            Context.NOTIFICATION_SERVICE,
-        ) as NotificationManager
-
-        notificationManager.notify(
-            SyncNotificationManager.NOTIFICATION_ID_UPDATE,
-            notification,
-        )
+        return try {
+            managerCompat.notify(
+                SyncNotificationManager.NOTIFICATION_ID_UPDATE,
+                notification,
+            )
+            true
+        } catch (e: SecurityException) {
+            // Android 13+ with POST_NOTIFICATIONS revoked throws here.
+            Log.w(TAG, "notify() threw SecurityException — permission not granted", e)
+            false
+        }
     }
 }

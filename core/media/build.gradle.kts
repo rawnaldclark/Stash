@@ -12,11 +12,25 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests {
+            // Return Kotlin defaults (Unit) from stubbed Android SDK methods —
+            // needed so android.util.Log / android.os.SystemClock calls inside
+            // production code don't throw "not mocked" during JVM unit tests
+            // (e.g. TrackActionsDelegateTest).
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:common"))
+    // TrackActionsDelegate dependencies — shared preview+download surface.
+    implementation(project(":core:data"))
+    implementation(project(":core:auth"))
+    implementation(project(":data:download"))
 
     // Media3
     implementation(libs.media3.exoplayer)
@@ -41,4 +55,10 @@ dependencies {
 
     // Palette — color extraction from album artwork bitmaps.
     implementation(libs.palette.ktx)
+
+    // Unit tests — TrackActionsDelegateTest.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    testImplementation("org.mockito:mockito-core:5.14.2")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 }

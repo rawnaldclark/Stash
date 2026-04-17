@@ -1,38 +1,26 @@
 package com.stash.feature.search
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.AlbumsRowSkeleton
+import com.stash.core.ui.components.DiscoveryErrorCard
 import com.stash.core.ui.components.PopularListSkeleton
 import com.stash.core.ui.components.SectionHeader
+import com.stash.data.ytmusic.model.AlbumSummary
+import kotlinx.coroutines.flow.merge
 
 /**
  * Artist Profile screen.
@@ -47,7 +35,7 @@ import com.stash.core.ui.components.SectionHeader
  * While the first cache emission is in flight the sections render
  * shimmer skeletons rather than jumping layout when the data arrives.
  * If the cold cache miss throws, the hero keeps painting from nav args
- * and the shelves are replaced by [ArtistProfileErrorCard] with a Retry
+ * and the shelves are replaced by [DiscoveryErrorCard] with a Retry
  * button (spec §6.2).
  *
  * `userMessages` from the VM are surfaced through a local [Scaffold]'s
@@ -57,16 +45,22 @@ import com.stash.core.ui.components.SectionHeader
 @Composable
 fun ArtistProfileScreen(
     onBack: () -> Unit,
-    onNavigateToAlbum: (albumName: String, artistName: String) -> Unit,
+    onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     vm: ArtistProfileViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
-    val previewState by vm.previewState.collectAsStateWithLifecycle()
+    val previewState by vm.delegate.previewState.collectAsStateWithLifecycle()
+    val downloadingIds by vm.delegate.downloadingIds.collectAsStateWithLifecycle()
+    val downloadedIds by vm.delegate.downloadedIds.collectAsStateWithLifecycle()
+    val previewLoadingId by vm.delegate.previewLoadingId.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(vm) {
-        vm.userMessages.collect { message -> snackbar.showSnackbar(message) }
+        merge(
+            vm.userMessages,
+            vm.delegate.userMessages,
+        ).collect { message -> snackbar.showSnackbar(message) }
     }
 
     Scaffold(
@@ -88,7 +82,8 @@ fun ArtistProfileScreen(
 
             when (val status = state.status) {
                 is ArtistProfileStatus.Error -> item {
-                    ArtistProfileErrorCard(
+                    DiscoveryErrorCard(
+                        title = "Couldn't load artist",
                         message = status.message,
                         onRetry = vm::retry,
                     )
@@ -100,9 +95,12 @@ fun ArtistProfileScreen(
                     contentSections(
                         state = state,
                         previewState = previewState,
-                        onPreview = vm::previewTrack,
-                        onStopPreview = vm::stopPreview,
-                        onDownload = vm::downloadTrack,
+                        downloadingIds = downloadingIds,
+                        downloadedIds = downloadedIds,
+                        previewLoadingId = previewLoadingId,
+                        onPreview = vm.delegate::previewTrack,
+                        onStopPreview = vm.delegate::stopPreview,
+                        onDownload = { vm.delegate.downloadTrack(it.toTrackItem()) },
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
                     )
@@ -111,9 +109,12 @@ fun ArtistProfileScreen(
                 ArtistProfileStatus.Stale -> contentSections(
                     state = state,
                     previewState = previewState,
-                    onPreview = vm::previewTrack,
-                    onStopPreview = vm::stopPreview,
-                    onDownload = vm::downloadTrack,
+                    downloadingIds = downloadingIds,
+                    downloadedIds = downloadedIds,
+                    previewLoadingId = previewLoadingId,
+                    onPreview = vm.delegate::previewTrack,
+                    onStopPreview = vm.delegate::stopPreview,
+                    onDownload = { vm.delegate.downloadTrack(it.toTrackItem()) },
                     onNavigateToAlbum = onNavigateToAlbum,
                     onNavigateToArtist = onNavigateToArtist,
                 )
@@ -131,10 +132,13 @@ fun ArtistProfileScreen(
 private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     state: ArtistProfileUiState,
     previewState: com.stash.core.media.preview.PreviewState,
+    downloadingIds: Set<String>,
+    downloadedIds: Set<String>,
+    previewLoadingId: String?,
     onPreview: (String) -> Unit,
     onStopPreview: () -> Unit,
     onDownload: (SearchResultItem) -> Unit,
-    onNavigateToAlbum: (albumName: String, artistName: String) -> Unit,
+    onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
 ) {
     if (state.popular.isNotEmpty()) {
@@ -143,9 +147,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             PopularTracksSection(
                 tracks = state.popular,
                 previewState = previewState,
-                downloadingIds = state.downloadingIds,
-                downloadedIds = state.downloadedIds,
-                previewLoadingId = state.previewLoading,
+                downloadingIds = downloadingIds,
+                downloadedIds = downloadedIds,
+                previewLoadingId = previewLoadingId,
                 onPreview = onPreview,
                 onStopPreview = onStopPreview,
                 onDownload = onDownload,
@@ -157,7 +161,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         item {
             AlbumsRow(
                 albums = state.albums,
-                onClick = { onNavigateToAlbum(it.title, state.hero.name) },
+                onClick = onNavigateToAlbum,
             )
         }
     }
@@ -166,7 +170,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         item {
             SinglesRow(
                 singles = state.singles,
-                onClick = { onNavigateToAlbum(it.title, state.hero.name) },
+                onClick = onNavigateToAlbum,
             )
         }
     }
@@ -177,51 +181,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
                 artists = state.related,
                 onClick = { onNavigateToArtist(it.id, it.name, it.avatarUrl) },
             )
-        }
-    }
-}
-
-/**
- * Full-width error card shown below the hero when the cold cache miss
- * throws ([ArtistProfileStatus.Error]). Matches the visual pattern of
- * [com.stash.feature.search.SearchScreen]'s `ErrorMessage` but adds a
- * "Retry" button wired to [ArtistProfileViewModel.retry].
- */
-@Composable
-private fun ArtistProfileErrorCard(
-    message: String,
-    onRetry: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.ErrorOutline,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.error,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Couldn't load artist",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = onRetry) { Text("Retry") }
         }
     }
 }

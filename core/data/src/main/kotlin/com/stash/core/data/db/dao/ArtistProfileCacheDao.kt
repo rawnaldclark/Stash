@@ -46,4 +46,12 @@ interface ArtistProfileCacheDao {
         """
     )
     suspend fun evictOldest(keep: Int)
+
+    /**
+     * Wipe the whole table. Used by one-shot migrations when the parser
+     * output format changes incompatibly — old JSON stays schema-compatible
+     * but has been parsed with a bug, so we force every row to re-fetch.
+     */
+    @Query("DELETE FROM artist_profile_cache")
+    suspend fun clearAll()
 }
