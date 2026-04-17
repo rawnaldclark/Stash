@@ -278,6 +278,7 @@ class SearchViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Log.e(TAG, "Download error for ${item.title}", e)
                 markDownloadFailed(item.videoId)
             }
