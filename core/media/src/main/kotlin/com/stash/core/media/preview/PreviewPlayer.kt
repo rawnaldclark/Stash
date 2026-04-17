@@ -85,9 +85,11 @@ class PreviewPlayer @Inject constructor(
     val previewState: StateFlow<PreviewState> = _previewState
 
     /**
-     * One-shot playback errors. Buffered (extraBufferCapacity = 4) so rapid
-     * error events during startup aren't dropped when no subscriber is
-     * attached yet. VMs observe this and may retry via a fallback extractor.
+     * One-shot playback errors. Uses `extraBufferCapacity = 4` (replay = 0)
+     * so a burst of errors from the listener thread won't be dropped before
+     * the VM's collector drains them on the Main dispatcher. Late subscribers
+     * do NOT see pre-subscription emissions — replaying a stale error onto a
+     * new VM would be worse than losing it.
      */
     private val _playerErrors = MutableSharedFlow<PreviewErrorEvent>(extraBufferCapacity = 4)
     val playerErrors: SharedFlow<PreviewErrorEvent> = _playerErrors.asSharedFlow()
@@ -166,8 +168,8 @@ class PreviewPlayer @Inject constructor(
             // can decide whether to retry (e.g. InnerTube URL rejected → yt-dlp).
             val id = currentVideoId
             if (id.isNotEmpty()) {
-                // tryEmit is non-blocking; if no subscriber is attached the
-                // buffered value is still held for the next collect.
+                // Non-blocking; fits in the 4-slot buffer even if the VM's
+                // collector hasn't drained the previous event yet.
                 _playerErrors.tryEmit(PreviewErrorEvent(id, error))
             }
         }
@@ -243,6 +245,9 @@ class PreviewPlayer @Inject constructor(
     fun stop() {
         exoPlayer?.stop()
         exoPlayer?.clearMediaItems()
+        // Clear so a late onPlayerError (fired after stop tears down the
+        // source) can't be attributed to the stopped videoId.
+        currentVideoId = ""
         _previewState.value = PreviewState.Idle
     }
 

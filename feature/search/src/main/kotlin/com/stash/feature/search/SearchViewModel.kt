@@ -145,6 +145,12 @@ class SearchViewModel @Inject constructor(
      * when the user types another keystroke.
      */
     private fun runSearch(query: String) = flow {
+        // Any new keystroke invalidates the previous query's prefetch work.
+        // PreviewPrefetcher launches on its own SupervisorJob scope so
+        // flatMapLatest's cancel does NOT tear down in-flight prefetches;
+        // we have to cancel them explicitly or they burn CPU/bandwidth
+        // resolving URLs the user no longer cares about.
+        prefetcher.cancelAll()
         if (query.length < MIN_QUERY_LENGTH) {
             emit(SearchStatus.Idle)
             return@flow

@@ -112,7 +112,7 @@ fun SearchScreen(
 
             when (val status = state.status) {
                 SearchStatus.Idle -> EmptySearchPrompt()
-                SearchStatus.Typing, SearchStatus.Loading -> LoadingSkeletons()
+                SearchStatus.Loading -> LoadingSkeletons()
                 is SearchStatus.Results -> SectionedResultsList(
                     sections = status.sections,
                     uiState = state,
@@ -404,10 +404,8 @@ private fun TopResultCard(
 // ---------------------------------------------------------------------------
 
 /**
- * Six stacked shimmer placeholders standing in for song rows while the
- * search is loading. Rendered for both [SearchStatus.Typing] (pre-debounce)
- * and [SearchStatus.Loading] so the user always sees motion on the first
- * keystroke.
+ * Six stacked shimmer placeholders standing in for song rows while a
+ * `searchAll` call is in flight.
  */
 @Composable
 private fun LoadingSkeletons() {
