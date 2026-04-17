@@ -2,12 +2,8 @@ package com.stash.data.ytmusic
 
 import android.util.Log
 import com.stash.core.model.SyncResult
-import com.stash.data.ytmusic.model.AlbumSummary
-import com.stash.data.ytmusic.model.ArtistSummary
 import com.stash.data.ytmusic.model.SearchAllResults
 import com.stash.data.ytmusic.model.SearchResultSection
-import com.stash.data.ytmusic.model.TopResultItem
-import com.stash.data.ytmusic.model.TrackSummary
 import com.stash.data.ytmusic.model.YTMusicPlaylist
 import com.stash.data.ytmusic.model.YTMusicTrack
 import kotlinx.serialization.json.JsonArray
@@ -162,6 +158,7 @@ class YTMusicApiClient @Inject constructor(
             val renderer = shelf.asObject()?.get("musicShelfRenderer")?.asObject() ?: continue
             val title = renderer.navigatePath("title", "runs")?.firstArray()
                 ?.firstOrNull()?.asObject()?.get("text")?.asString() ?: continue
+            // Parsers live in SearchResponseParser.kt as top-level internal funcs.
             when (title) {
                 "Songs" -> parseSongsShelf(renderer).takeIf { it.isNotEmpty() }
                     ?.let { sections.add(SearchResultSection.Songs(it.take(4))) }
@@ -456,298 +453,16 @@ class YTMusicApiClient @Inject constructor(
         }
     }
 
-    /**
-     * Parses a duration string like "3:45" or "1:02:30" into seconds.
-     *
-     * @return Duration in seconds as a Double, or 0.0 if the format is unrecognized.
-     */
-    private fun parseDurationToSeconds(duration: String?): Double {
-        val ms = parseDurationToMs(duration) ?: return 0.0
-        return ms / 1000.0
-    }
-
-    // ── Search-tab shelf parsers (used by searchAll) ─────────────────────────
-
-    /**
-     * Parses the tall "Top result" card (`musicCardShelfRenderer`).
-     *
-     * The card's `title.runs[0].navigationEndpoint` tells us the kind:
-     * - `browseEndpoint` with `pageType == MUSIC_PAGE_TYPE_ARTIST` → [TopResultItem.ArtistTop].
-     * - `watchEndpoint` with a `videoId` → [TopResultItem.TrackTop].
-     *
-     * Any other kind (album, playlist, podcast, …) is out-of-scope for the
-     * Search tab's top slot and returns null — the UI will render no top card
-     * but still show the named shelves below.
-     *
-     * @param shelf The parsed `musicCardShelfRenderer` object.
-     * @return A [TopResultItem], or null if the card is neither artist nor track.
-     */
-    private fun parseTopResultCard(shelf: JsonObject): TopResultItem? {
-        val titleRun = shelf.navigatePath("title", "runs")?.firstArray()
-            ?.firstOrNull()?.asObject()
-            ?: return null
-        val title = titleRun["text"]?.asString() ?: return null
-
-        val thumbnails = shelf.navigatePath(
-            "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",
-        )?.firstArray()
-        val thumbnailUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
-            thumbnails?.maxByOrNull {
-                it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0
-            }?.asObject()?.get("url")?.asString()
-        )
-
-        // Artist top — browseEndpoint with artist page type.
-        val browseEndpoint = titleRun.navigatePath("navigationEndpoint", "browseEndpoint")?.asObject()
-        if (browseEndpoint != null) {
-            val pageType = browseEndpoint.navigatePath(
-                "browseEndpointContextSupportedConfigs",
-                "browseEndpointContextMusicConfig",
-                "pageType",
-            )?.asString()
-            if (pageType == "MUSIC_PAGE_TYPE_ARTIST") {
-                val id = browseEndpoint["browseId"]?.asString() ?: return null
-                return TopResultItem.ArtistTop(
-                    ArtistSummary(id = id, name = title, avatarUrl = thumbnailUrl),
-                )
-            }
-        }
-
-        // Track top — watchEndpoint with a videoId.
-        val watchEndpoint = titleRun.navigatePath("navigationEndpoint", "watchEndpoint")?.asObject()
-        if (watchEndpoint != null) {
-            val videoId = watchEndpoint["videoId"]?.asString() ?: return null
-            // Subtitle runs typically look like:
-            //   [{text:"Song"}, {text:" • "}, {text:"Rick Astley", nav→UC…},
-            //    {text:" & "}, {text:"John Smith", nav→UC…}, {text:" • "},
-            //    {text:"Whenever You Need Somebody", nav→MPREb_…}, {text:" • "},
-            //    {text:"3:32"}]
-            // Classify each run by its navigationEndpoint.browseEndpoint.browseId prefix
-            // so that collab artists aren't silently re-labelled as the album when they
-            // sit next to each other in the run list. Classification must run BEFORE the
-            // separator/kind-label drop so the endpoint metadata is still attached.
-            val subtitleRuns = shelf.navigatePath("subtitle", "runs")?.asArray()
-                ?.mapNotNull { it.asObject() }
-                ?: emptyList()
-            val artistNames = mutableListOf<String>()
-            var album: String? = null
-            var durationToken: String? = null
-            for (run in subtitleRuns) {
-                val text = run["text"]?.asString() ?: continue
-                // Skip separators and the leading kind label ("Song").
-                if (text == " • " || text == " & " || text == ", " || text == " x " || text == "Song") {
-                    continue
-                }
-                val browseId = run.navigatePath(
-                    "navigationEndpoint", "browseEndpoint", "browseId",
-                )?.asString()
-                when {
-                    browseId != null && (browseId.startsWith("UC") || browseId.startsWith("MPLAUC")) ->
-                        artistNames.add(text)
-                    browseId != null && browseId.startsWith("MPREb_") ->
-                        if (album == null) album = text
-                    text.matches(DURATION_REGEX) ->
-                        durationToken = text
-                }
-            }
-            val artist = artistNames.joinToString(", ")
-            return TopResultItem.TrackTop(
-                TrackSummary(
-                    videoId = videoId,
-                    title = title,
-                    artist = artist,
-                    album = album,
-                    durationSeconds = parseDurationToSeconds(durationToken),
-                    thumbnailUrl = thumbnailUrl,
-                ),
-            )
-        }
-
-        return null
-    }
-
-    /**
-     * Parses the "Songs" shelf — a vertical list of `musicResponsiveListItemRenderer`
-     * items with videoId, title, artists, album, and duration.
-     *
-     * Mirrors the column layout used by [parseTrackFromRenderer] but emits
-     * [TrackSummary] instead of [YTMusicTrack] so the Search tab and the
-     * download-match pipeline can diverge.
-     */
-    private fun parseSongsShelf(shelfRenderer: JsonObject): List<TrackSummary> {
-        val items = shelfRenderer["contents"]?.asArray() ?: return emptyList()
-        val result = mutableListOf<TrackSummary>()
-        for (item in items) {
-            val renderer = item.asObject()
-                ?.get("musicResponsiveListItemRenderer")?.asObject()
-                ?: continue
-
-            val videoId = renderer["playlistItemData"]?.asObject()
-                ?.get("videoId")?.asString()
-                ?: renderer.navigatePath(
-                    "overlay", "musicItemThumbnailOverlayRenderer", "content",
-                    "musicPlayButtonRenderer", "playNavigationEndpoint",
-                    "watchEndpoint", "videoId",
-                )?.asString()
-                ?: continue
-
-            val flexColumns = renderer["flexColumns"]?.asArray() ?: continue
-            val title = flexColumns.getOrNull(0)?.asObject()
-                ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
-                ?.firstArray()?.firstOrNull()?.asObject()
-                ?.get("text")?.asString()
-                ?: continue
-
-            val artistRuns = flexColumns.getOrNull(1)?.asObject()
-                ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
-                ?.asArray()
-            val artist = artistRuns
-                ?.mapNotNull { it.asObject()?.get("text")?.asString() }
-                ?.filterNot { it == " & " || it == ", " || it == " x " }
-                ?.joinToString(", ")
-                ?: ""
-
-            val album = flexColumns.getOrNull(2)?.asObject()
-                ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
-                ?.firstArray()?.firstOrNull()?.asObject()
-                ?.get("text")?.asString()
-
-            val thumbnails = renderer.navigatePath(
-                "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",
-            )?.firstArray()
-            val thumbnailUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
-                thumbnails?.maxByOrNull {
-                    it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0
-                }?.asObject()?.get("url")?.asString()
-            )
-
-            val durationText = renderer["fixedColumns"]?.asArray()
-                ?.firstOrNull()?.asObject()
-                ?.navigatePath("musicResponsiveListItemFixedColumnRenderer", "text", "runs")
-                ?.firstArray()?.firstOrNull()?.asObject()
-                ?.get("text")?.asString()
-
-            result.add(
-                TrackSummary(
-                    videoId = videoId,
-                    title = title,
-                    artist = artist,
-                    album = album,
-                    durationSeconds = parseDurationToSeconds(durationText),
-                    thumbnailUrl = thumbnailUrl,
-                ),
-            )
-        }
-        return result
-    }
-
-    /**
-     * Parses the "Artists" shelf — `musicResponsiveListItemRenderer` items
-     * where the item's top-level `navigationEndpoint.browseEndpoint.browseId`
-     * is the artist channel ID.
-     */
-    private fun parseArtistsShelf(shelfRenderer: JsonObject): List<ArtistSummary> {
-        val items = shelfRenderer["contents"]?.asArray() ?: return emptyList()
-        val result = mutableListOf<ArtistSummary>()
-        for (item in items) {
-            val renderer = item.asObject()
-                ?.get("musicResponsiveListItemRenderer")?.asObject()
-                ?: continue
-
-            val id = renderer.navigatePath(
-                "navigationEndpoint", "browseEndpoint", "browseId",
-            )?.asString() ?: continue
-
-            val name = renderer["flexColumns"]?.asArray()
-                ?.getOrNull(0)?.asObject()
-                ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
-                ?.firstArray()?.firstOrNull()?.asObject()
-                ?.get("text")?.asString()
-                ?: continue
-
-            val thumbnails = renderer.navigatePath(
-                "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",
-            )?.firstArray()
-            val avatarUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
-                thumbnails?.maxByOrNull {
-                    it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0
-                }?.asObject()?.get("url")?.asString()
-            )
-
-            result.add(ArtistSummary(id = id, name = name, avatarUrl = avatarUrl))
-        }
-        return result
-    }
-
-    /**
-     * Parses the "Albums" shelf — `musicTwoRowItemRenderer` cards with a
-     * browseId (MPREb_*), title, artist and year in subtitle, and a square
-     * thumbnail.
-     *
-     * Subtitle runs typically look like ["Album"/"EP"/"Single", " • ",
-     * "<artist>", " • ", "<year>"]. We filter out separator runs and the
-     * leading type label, then treat the first remaining token as the artist
-     * and a 4-digit numeric token as the year.
-     */
-    private fun parseAlbumsShelf(shelfRenderer: JsonObject): List<AlbumSummary> {
-        val items = shelfRenderer["contents"]?.asArray() ?: return emptyList()
-        val result = mutableListOf<AlbumSummary>()
-        for (item in items) {
-            val renderer = item.asObject()
-                ?.get("musicTwoRowItemRenderer")?.asObject()
-                ?: continue
-
-            val id = renderer.navigatePath(
-                "navigationEndpoint", "browseEndpoint", "browseId",
-            )?.asString() ?: continue
-
-            val title = renderer.navigatePath("title", "runs")?.firstArray()
-                ?.firstOrNull()?.asObject()?.get("text")?.asString()
-                ?: continue
-
-            val subtitleTexts = renderer.navigatePath("subtitle", "runs")?.asArray()
-                ?.mapNotNull { it.asObject()?.get("text")?.asString() }
-                ?.filterNot { it == " • " || it == " & " || it == ", " || it == " x " }
-                ?: emptyList()
-            // Drop the type label ("Album"/"EP"/"Single") if present.
-            val dataTokens = if (
-                subtitleTexts.firstOrNull()?.let { ALBUM_TYPE_LABELS.contains(it) } == true
-            ) subtitleTexts.drop(1) else subtitleTexts
-            val year = dataTokens.firstOrNull { it.matches(YEAR_REGEX) }
-            // Use the regex directly — comparing against the nullable `year` value
-            // mis-picks when only a year token exists (it != null matches everything
-            // non-year but also non-existence) and when no token matches the regex.
-            val artist = dataTokens.firstOrNull { !it.matches(YEAR_REGEX) } ?: ""
-
-            val thumbnails = renderer.navigatePath(
-                "thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails",
-            )?.firstArray()
-            val thumbnailUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
-                thumbnails?.maxByOrNull {
-                    it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0
-                }?.asObject()?.get("url")?.asString()
-            )
-
-            result.add(
-                AlbumSummary(
-                    id = id,
-                    title = title,
-                    artist = artist,
-                    thumbnailUrl = thumbnailUrl,
-                    year = year,
-                ),
-            )
-        }
-        return result
-    }
+    // Search-tab shelf parsers live in SearchResponseParser.kt as top-level
+    // internal functions so that follow-up artist-profile parsers (Task 2)
+    // can grow without pushing this file past 1000 LOC.
 
     private val TRACK_COUNT_REGEX = Regex("""(\d+)\s+(?:songs?|tracks?)""")
-    private val DURATION_REGEX = Regex("""\d{1,2}:\d{2}(?::\d{2})?""")
-    private val YEAR_REGEX = Regex("""\d{4}""")
-    private val ALBUM_TYPE_LABELS = setOf("Album", "Single", "EP", "Mixtape", "Compilation")
 }
 
 // ── JsonElement navigation extensions ────────────────────────────────────────
+// Exposed as `internal` so SearchResponseParser.kt (and future parser files in
+// this module) can reuse them without duplication.
 
 /**
  * Safely navigates a chain of JSON object keys.
@@ -755,7 +470,7 @@ class YTMusicApiClient @Inject constructor(
  * Returns the [JsonElement] at the end of the path, or null if any key is missing
  * or the intermediate value is not a [JsonObject].
  */
-private fun JsonObject.navigatePath(vararg keys: String): JsonElement? {
+internal fun JsonObject.navigatePath(vararg keys: String): JsonElement? {
     var current: JsonElement = this
     for (key in keys) {
         current = (current as? JsonObject)?.get(key) ?: return null
@@ -764,17 +479,17 @@ private fun JsonObject.navigatePath(vararg keys: String): JsonElement? {
 }
 
 /** Safely casts to [JsonObject], returning null on type mismatch. */
-private fun JsonElement.asObject(): JsonObject? = this as? JsonObject
+internal fun JsonElement.asObject(): JsonObject? = this as? JsonObject
 
 /** Safely casts to [JsonArray], returning null on type mismatch. */
-private fun JsonElement.asArray(): JsonArray? = this as? JsonArray
+internal fun JsonElement.asArray(): JsonArray? = this as? JsonArray
 
 /**
  * If this element is a [JsonArray], returns it; otherwise returns null.
  * Useful when the navigation target might already be an array.
  */
-private fun JsonElement.firstArray(): JsonArray? = this as? JsonArray
+internal fun JsonElement.firstArray(): JsonArray? = this as? JsonArray
 
 /** Safely extracts a string primitive value, returning null on type mismatch. */
-private fun JsonElement.asString(): String? =
+internal fun JsonElement.asString(): String? =
     try { jsonPrimitive.contentOrNull } catch (_: Exception) { null }
