@@ -63,19 +63,18 @@ internal fun parseTracksFromShelf(shelf: JsonObject): List<TrackSummary> {
  */
 internal fun parseAlbumsCarousel(carousel: JsonObject): List<AlbumSummary> {
     val items = carousel["contents"]?.asArray() ?: return emptyList()
-    val result = mutableListOf<AlbumSummary>()
-    for (item in items) {
+    return items.mapNotNull { item ->
         val renderer = item.asObject()
             ?.get("musicTwoRowItemRenderer")?.asObject()
-            ?: continue
+            ?: return@mapNotNull null
 
         val id = renderer.navigatePath(
             "navigationEndpoint", "browseEndpoint", "browseId",
-        )?.asString() ?: continue
+        )?.asString() ?: return@mapNotNull null
 
         val title = renderer.navigatePath("title", "runs")?.firstArray()
             ?.firstOrNull()?.asObject()?.get("text")?.asString()
-            ?: continue
+            ?: return@mapNotNull null
 
         // Subtitle tokens on an artist page: [TypeLabel, " • ", Year] — no artist run.
         // Strip separators and the leading type label; the first non-year token (if
@@ -99,17 +98,14 @@ internal fun parseAlbumsCarousel(carousel: JsonObject): List<AlbumSummary> {
             }?.asObject()?.get("url")?.asString(),
         )
 
-        result.add(
-            AlbumSummary(
-                id = id,
-                title = title,
-                artist = artist,
-                thumbnailUrl = thumbnailUrl,
-                year = year,
-            ),
+        AlbumSummary(
+            id = id,
+            title = title,
+            artist = artist,
+            thumbnailUrl = thumbnailUrl,
+            year = year,
         )
     }
-    return result
 }
 
 /**
@@ -125,19 +121,18 @@ internal fun parseAlbumsCarousel(carousel: JsonObject): List<AlbumSummary> {
  */
 internal fun parseArtistsCarousel(carousel: JsonObject): List<ArtistSummary> {
     val items = carousel["contents"]?.asArray() ?: return emptyList()
-    val result = mutableListOf<ArtistSummary>()
-    for (item in items) {
+    return items.mapNotNull { item ->
         val renderer = item.asObject()
             ?.get("musicTwoRowItemRenderer")?.asObject()
-            ?: continue
+            ?: return@mapNotNull null
 
         val id = renderer.navigatePath(
             "navigationEndpoint", "browseEndpoint", "browseId",
-        )?.asString() ?: continue
+        )?.asString() ?: return@mapNotNull null
 
         val name = renderer.navigatePath("title", "runs")?.firstArray()
             ?.firstOrNull()?.asObject()?.get("text")?.asString()
-            ?: continue
+            ?: return@mapNotNull null
 
         val thumbnails = renderer.navigatePath(
             "thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails",
@@ -148,7 +143,6 @@ internal fun parseArtistsCarousel(carousel: JsonObject): List<ArtistSummary> {
             }?.asObject()?.get("url")?.asString(),
         )
 
-        result.add(ArtistSummary(id = id, name = name, avatarUrl = avatarUrl))
+        ArtistSummary(id = id, name = name, avatarUrl = avatarUrl)
     }
-    return result
 }
