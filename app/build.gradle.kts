@@ -124,6 +124,7 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:data"))
     implementation(project(":core:media"))
+    implementation(project(":core:network"))
     implementation(project(":feature:home"))
     implementation(project(":feature:library"))
     implementation(project(":feature:nowplaying"))
@@ -151,4 +152,7 @@ dependencies {
     ksp(libs.hilt.work.compiler)
     implementation(libs.work.runtime.ktx)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+    implementation(libs.okhttp)
 }
