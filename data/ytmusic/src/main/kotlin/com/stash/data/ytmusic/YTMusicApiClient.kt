@@ -208,10 +208,16 @@ class YTMusicApiClient @Inject constructor(
             ?.get("musicImmersiveHeaderRenderer")?.asObject()
         val name = header?.navigatePath("title", "runs")?.firstArray()
             ?.firstOrNull()?.asObject()?.get("text")?.asString() ?: ""
-        // Artist avatars ship ascending by width; `lastOrNull` picks the largest.
+        // Pick the largest thumbnail by explicit width — InnerTube's ordering
+        // isn't guaranteed across locales — then run it through the shared
+        // [ArtUrlUpgrader] so lh3 CDN URLs are bumped to 544×544 (matching
+        // every other art surface in the app).
         val avatarUrl = header?.navigatePath(
             "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",
-        )?.firstArray()?.lastOrNull()?.asObject()?.get("url")?.asString()
+        )?.asArray()
+            ?.maxByOrNull { it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0 }
+            ?.asObject()?.get("url")?.asString()
+            ?.let { com.stash.core.common.ArtUrlUpgrader.upgrade(it) }
         val subscribersText = header?.navigatePath(
             "subscriptionButton", "subscribeButtonRenderer",
             "subscriberCountText", "runs",
