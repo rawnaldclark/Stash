@@ -75,6 +75,21 @@ class PreviewUrlExtractorTest {
     }
 
     @Test
+    fun `race falls back to ytdlp when innertube throws`() = runTest {
+        // Regression lock: any non-cancellation throw in the innertube
+        // extractor (IOException, parse error, etc.) must be rescued
+        // inside the async so yt-dlp can deliver. Before the fix, the
+        // exception escaped the async, cancelled yt-dlp, and propagated
+        // out of coroutineScope.
+        val hooks = TestableExtractor(
+            innertube = { throw java.io.IOException("boom") },
+            ytdlp = { "https://ytdlp/$it" },
+        )
+        val url = PreviewUrlExtractor.raceForTest(hooks, "abc")
+        assertEquals("https://ytdlp/abc", url)
+    }
+
+    @Test
     fun `innertube semaphore allows 8 concurrent, ytdlp allows 2`() = runTest {
         val itMax = AtomicInteger(0); val itCur = AtomicInteger(0)
         val ytMax = AtomicInteger(0); val ytCur = AtomicInteger(0)
