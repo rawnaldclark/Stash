@@ -11,7 +11,7 @@
         "musicThumbnailRenderer": {
           "thumbnail": {
             "thumbnails": [
-              { "url": "https://lh3.googleusercontent.com/artist-avatar-small=w120-h120", "width": 120, "height": 120 },
+              { "url": "https://lh3.googleusercontent.com/artist-avatar-small=w48-h48", "width": 48, "height": 48 },
               { "url": "https://lh3.googleusercontent.com/artist-avatar-large=w544-h544", "width": 544, "height": 544 }
             ]
           }
