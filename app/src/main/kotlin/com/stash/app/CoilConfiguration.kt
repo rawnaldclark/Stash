@@ -1,6 +1,5 @@
 package com.stash.app
 
-import android.content.Context
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.disk.DiskCache
@@ -25,12 +24,12 @@ object CoilConfiguration {
         ImageLoader.Builder(context)
             .memoryCache {
                 MemoryCache.Builder()
-                    .maxSizePercent(context as Context, 0.25)
+                    .maxSizePercent(context, 0.25)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
-                    .directory((context as Context).cacheDir.resolve("coil").toOkioPath())
+                    .directory(context.cacheDir.resolve("coil").toOkioPath())
                     .maxSizeBytes(250L * 1024 * 1024)
                     .build()
             }
