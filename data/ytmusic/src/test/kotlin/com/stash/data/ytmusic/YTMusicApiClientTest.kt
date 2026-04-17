@@ -1,0 +1,96 @@
+package com.stash.data.ytmusic
+
+import com.stash.data.ytmusic.model.SearchResultSection
+import com.stash.data.ytmusic.model.TopResultItem
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
+
+/**
+ * Parser-contract tests for [YTMusicApiClient.searchAll].
+ *
+ * Tests stub [InnerTubeClient.search] with fixture JSON that mirrors the real
+ * InnerTube `tabbedSearchResultsRenderer` schema. The fixtures are synthetic
+ * but structurally valid — they exercise the same renderer paths the parser
+ * walks against real responses. When real recordings become available (see
+ * Phase 9 of the plan), swap the fixtures — no parser changes should be needed.
+ */
+class YTMusicApiClientTest {
+
+    /** Loads a fixture file from `src/test/resources/fixtures/`. */
+    private fun loadFixture(name: String): String =
+        this::class.java.classLoader!!
+            .getResourceAsStream("fixtures/$name")!!
+            .bufferedReader()
+            .use { it.readText() }
+
+    /**
+     * Builds a [YTMusicApiClient] whose underlying [InnerTubeClient] returns
+     * the given JSON from any `search(query)` call.
+     */
+    private fun fakeClient(responseJson: String): YTMusicApiClient {
+        val inner = mock<InnerTubeClient>()
+        val parsed = Json.parseToJsonElement(responseJson).jsonObject
+        runBlocking { whenever(inner.search(any())).thenReturn(parsed) }
+        return YTMusicApiClient(inner)
+    }
+
+    @Test
+    fun `searchAll returns top artists songs albums for artist query`() = runTest {
+        val client = fakeClient(loadFixture("search_artist.json"))
+
+        val result = client.searchAll("lootpack")
+
+        // Section ordering must be Top, Songs, Artists, Albums
+        val kinds = result.sections.map { it::class.simpleName }
+        assertEquals(listOf("Top", "Songs", "Artists", "Albums"), kinds)
+
+        val top = result.sections.first() as SearchResultSection.Top
+        assertTrue(
+            "top result should be an ArtistTop, was ${top.item::class.simpleName}",
+            top.item is TopResultItem.ArtistTop,
+        )
+
+        val songs = result.sections[1] as SearchResultSection.Songs
+        assertTrue(
+            "songs list should be 1..4 items, was ${songs.tracks.size}",
+            songs.tracks.size in 1..4,
+        )
+        assertTrue(
+            "first song videoId must be non-blank",
+            songs.tracks.first().videoId.isNotBlank(),
+        )
+    }
+
+    @Test
+    fun `searchAll returns track as top when query matches single song`() = runTest {
+        val client = fakeClient(loadFixture("search_track.json"))
+
+        val result = client.searchAll("never gonna give")
+
+        val top = result.sections.first() as SearchResultSection.Top
+        assertTrue(
+            "top result should be a TrackTop, was ${top.item::class.simpleName}",
+            top.item is TopResultItem.TrackTop,
+        )
+    }
+
+    @Test
+    fun `searchAll returns empty sections list for zero-result query`() = runTest {
+        val client = fakeClient(loadFixture("search_empty.json"))
+
+        val result = client.searchAll("zzzzqqqqxxxxvvvv")
+
+        assertTrue(
+            "expected empty sections, got ${result.sections.map { it::class.simpleName }}",
+            result.sections.isEmpty(),
+        )
+    }
+}
