@@ -42,6 +42,16 @@ interface MusicRepository {
     /** Full-text search across title, artist, and album. */
     fun search(query: String): Flow<List<Track>>
 
+    /**
+     * Look up multiple [Track] rows by their YouTube videoId in one call.
+     *
+     * Returns only the subset of [videoIds] that resolve to an existing row;
+     * unknown ids are silently dropped. Used by
+     * `AlbumDiscoveryViewModel.shuffleDownloaded` to resolve the downloaded
+     * subset of an album for playback in a single pass.
+     */
+    suspend fun findByYoutubeIds(videoIds: Collection<String>): List<Track>
+
     /** Total number of tracks (reactive). */
     fun getTrackCount(): Flow<Int>
 
