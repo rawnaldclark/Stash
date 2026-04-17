@@ -25,11 +25,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -229,11 +234,29 @@ private fun SectionedResultsList(
         sections.forEach { section ->
             when (section) {
                 is SearchResultSection.Top -> item(key = "top") {
-                    TopResultCard(
-                        item = section.item,
-                        onArtistClick = onArtistClick,
-                        onTrackPlay = onTopTrackClick,
-                    )
+                    val top = section.item
+                    if (top is TopResultItem.TrackTop) {
+                        val videoId = top.track.videoId
+                        TopResultCard(
+                            item = top,
+                            onArtistClick = onArtistClick,
+                            onTrackPlay = onTopTrackClick,
+                            isDownloading = videoId in uiState.downloadingIds,
+                            isDownloaded = videoId in uiState.downloadedIds,
+                            isPreviewLoading = uiState.previewLoading == videoId,
+                            isPreviewPlaying = previewState is PreviewState.Playing &&
+                                previewState.videoId == videoId,
+                            onPreview = { onPreview(videoId) },
+                            onStopPreview = onStopPreview,
+                            onDownload = { onDownload(top.track) },
+                        )
+                    } else {
+                        TopResultCard(
+                            item = top,
+                            onArtistClick = onArtistClick,
+                            onTrackPlay = onTopTrackClick,
+                        )
+                    }
                 }
                 is SearchResultSection.Songs -> {
                     item(key = "songs_header") { SectionHeader("Songs") }
@@ -311,6 +334,14 @@ private fun TopResultCard(
     item: TopResultItem,
     onArtistClick: (ArtistSummary) -> Unit,
     onTrackPlay: (TrackSummary) -> Unit,
+    // new — only consulted when item is TrackTop
+    isDownloading: Boolean = false,
+    isDownloaded: Boolean = false,
+    isPreviewLoading: Boolean = false,
+    isPreviewPlaying: Boolean = false,
+    onPreview: () -> Unit = {},
+    onStopPreview: () -> Unit = {},
+    onDownload: () -> Unit = {},
 ) {
     val extendedColors = StashTheme.extendedColors
     val clickMod = when (item) {
@@ -394,6 +425,68 @@ private fun TopResultCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+        }
+
+        if (item is TopResultItem.TrackTop) {
+            Spacer(Modifier.width(8.dp))
+
+            // Preview button — mirrors PreviewDownloadRow's control
+            IconButton(
+                onClick = if (isPreviewPlaying) onStopPreview else onPreview,
+                modifier = Modifier.size(40.dp),
+            ) {
+                when {
+                    isPreviewLoading -> CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    isPreviewPlaying -> Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Stop preview",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    else -> Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Preview",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            // Download action — mirrors PreviewDownloadRow's control
+            Box(
+                modifier = Modifier.size(40.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                when {
+                    isDownloaded -> {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Downloaded",
+                            modifier = Modifier.size(24.dp),
+                            tint = extendedColors.success,
+                        )
+                    }
+                    isDownloading -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.5.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    else -> {
+                        IconButton(onClick = onDownload) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Download",
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
