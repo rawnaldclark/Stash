@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.cache.CachedProfile
 import com.stash.data.ytmusic.model.ArtistProfile
@@ -78,6 +79,10 @@ class ArtistProfileViewModel @Inject constructor(
 
     init {
         val t0 = SystemClock.elapsedRealtime()
+        // Nav-args hero already painted by the MutableStateFlow seed above —
+        // this bookend marks the "first-frame" moment so latency verification
+        // can diff skeleton → paint against spec §4.1 <50ms hero target.
+        PerfLog.d { "ArtistProfile hero first-frame nav-args (name=$initialName)" }
         viewModelScope.launch {
             artistCache.get(artistId)
                 .catch { t ->
@@ -139,14 +144,16 @@ class ArtistProfileViewModel @Inject constructor(
             prefetchKicked = true
             prefetcher.prefetch(profile.popular.map { it.videoId })
         }
-        Log.d(
-            TAG,
-            "ArtistProfile paint after ${SystemClock.elapsedRealtime() - t0}ms (status=$status)",
-        )
+        PerfLog.d {
+            "ArtistProfile paint after ${SystemClock.elapsedRealtime() - t0}ms (status=$status)"
+        }
     }
 
     companion object {
-        /** Perf log tag — `Perf` is the project-wide convention (see spec §7). */
-        private const val TAG = "Perf"
+        /**
+         * Error log tag for cache-failure paths. Latency bookends route
+         * through [PerfLog] (tag `Perf`) and do NOT use [TAG].
+         */
+        private const val TAG = "ArtistProfileVM"
     }
 }

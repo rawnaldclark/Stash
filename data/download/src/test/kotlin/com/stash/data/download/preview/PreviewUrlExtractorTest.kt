@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *  3. When InnerTube returns null, yt-dlp's result is returned instead.
  *  4. The split semaphores cap InnerTube at 8 concurrent and yt-dlp at 2.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class PreviewUrlExtractorTest {
 
     /** Test-double: adapts two lambdas into the [PreviewUrlExtractor.TestHooks] SPI. */
