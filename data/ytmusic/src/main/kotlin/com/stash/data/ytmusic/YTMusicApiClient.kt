@@ -714,7 +714,10 @@ class YTMusicApiClient @Inject constructor(
                 subtitleTexts.firstOrNull()?.let { ALBUM_TYPE_LABELS.contains(it) } == true
             ) subtitleTexts.drop(1) else subtitleTexts
             val year = dataTokens.firstOrNull { it.matches(YEAR_REGEX) }
-            val artist = dataTokens.firstOrNull { it != year } ?: ""
+            // Use the regex directly — comparing against the nullable `year` value
+            // mis-picks when only a year token exists (it != null matches everything
+            // non-year but also non-existence) and when no token matches the regex.
+            val artist = dataTokens.firstOrNull { !it.matches(YEAR_REGEX) } ?: ""
 
             val thumbnails = renderer.navigatePath(
                 "thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails",
