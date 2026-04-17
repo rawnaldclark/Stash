@@ -191,6 +191,7 @@ class PreviewPlayer @Inject constructor(
      */
     private fun requirePlayer(): ExoPlayer {
         return exoPlayer ?: ExoPlayer.Builder(context)
+            .setLoadControl(PreviewLoadControlFactory.create())
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
