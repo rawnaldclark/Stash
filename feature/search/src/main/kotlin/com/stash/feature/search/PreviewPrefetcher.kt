@@ -2,8 +2,10 @@ package com.stash.feature.search
 
 import android.util.Log
 import androidx.compose.foundation.lazy.LazyListState
+import com.stash.data.download.preview.PreviewUrlCache
 import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.ytmusic.model.TrackSummary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,9 +28,10 @@ import javax.inject.Inject
  * permits `@Inject` on a **secondary** constructor: the compiler emits a plain
  * Java constructor that Hilt's processor picks up. We use that pattern so:
  *
- *  - Production DI resolves [PreviewUrlExtractor] via the secondary
- *    `@Inject` constructor, which delegates to the primary with defaults
- *    (`mutableMapOf()` + `Dispatchers.IO`-backed `SupervisorJob` scope).
+ *  - Production DI resolves [PreviewUrlExtractor] + [PreviewUrlCache] via the
+ *    secondary `@Inject` constructor, which delegates to the primary using
+ *    [PreviewUrlCache.asMutableMap] so the VM and the prefetcher share one
+ *    cache (see Task 9 spec §9.3c).
  *  - Tests call the primary constructor directly to inject a test cache and
  *    a [CoroutineScope] tied to `runTest`'s scheduler so launched prefetch
  *    jobs can be drained deterministically via `advanceUntilIdle()`.
@@ -41,13 +44,14 @@ class PreviewPrefetcher(
 ) {
 
     /**
-     * Hilt-visible entry point. Delegates to the primary constructor with a
-     * fresh empty preview cache and a default `SupervisorJob + Dispatchers.IO`
-     * scope so the prefetcher survives individual job failures.
+     * Hilt-visible entry point. Delegates to the primary constructor using
+     * the shared [PreviewUrlCache]'s backing map so any URL prefetched here
+     * is immediately visible to every [SearchViewModel] / `ArtistProfileViewModel`
+     * that reads the cache.
      */
     @Inject
-    constructor(extractor: PreviewUrlExtractor) :
-        this(extractor, mutableMapOf())
+    constructor(extractor: PreviewUrlExtractor, cache: PreviewUrlCache) :
+        this(extractor, cache.asMutableMap)
 
     private val jobs = mutableListOf<Job>()
 
@@ -55,7 +59,8 @@ class PreviewPrefetcher(
      * Launches one coroutine per unique `videoId` not already present in
      * [previewUrlCache]. Failures are logged and swallowed so one bad id can
      * never bring down the prefetch pipeline (nor the enclosing [scope],
-     * thanks to `SupervisorJob`).
+     * thanks to `SupervisorJob`). [CancellationException] is re-thrown so
+     * structured-concurrency cancellation still propagates correctly.
      */
     fun prefetch(videoIds: List<String>) {
         videoIds
@@ -65,6 +70,7 @@ class PreviewPrefetcher(
                     try {
                         previewUrlCache[id] = extractor.extractStreamUrl(id)
                     } catch (t: Throwable) {
+                        if (t is CancellationException) throw t
                         Log.w(TAG, "prefetch fail $id: ${t.message}")
                     }
                 }

@@ -10,8 +10,11 @@ import androidx.media3.exoplayer.ExoPlayer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 // ---------------------------------------------------------------------------
 // State model
@@ -31,6 +34,16 @@ sealed interface PreviewState {
     data object Idle : PreviewState
     data class Playing(val videoId: String) : PreviewState
 }
+
+/**
+ * Error event surfaced by [PreviewPlayer] when ExoPlayer's [Player.Listener]
+ * reports an [onPlayerError]. Emitted on [PreviewPlayer.playerErrors].
+ *
+ * Search and Artist Profile ViewModels collect this flow so they can
+ * transparently retry a failed preview via the yt-dlp fallback path
+ * (see `SearchViewModel.onPreviewError` for the retry policy).
+ */
+data class PreviewErrorEvent(val videoId: String, val error: PlaybackException)
 
 // ---------------------------------------------------------------------------
 // Player
@@ -70,6 +83,14 @@ class PreviewPlayer @Inject constructor(
 
     /** Observable playback state.  Collected by the Search UI. */
     val previewState: StateFlow<PreviewState> = _previewState
+
+    /**
+     * One-shot playback errors. Buffered (extraBufferCapacity = 4) so rapid
+     * error events during startup aren't dropped when no subscriber is
+     * attached yet. VMs observe this and may retry via a fallback extractor.
+     */
+    private val _playerErrors = MutableSharedFlow<PreviewErrorEvent>(extraBufferCapacity = 4)
+    val playerErrors: SharedFlow<PreviewErrorEvent> = _playerErrors.asSharedFlow()
 
     // ------------------------------------------------------------------
     // ExoPlayer — lazily created, explicitly released
@@ -141,6 +162,14 @@ class PreviewPlayer @Inject constructor(
         override fun onPlayerError(error: PlaybackException) {
             // Any playback error resets state so the UI does not remain stuck in Playing.
             _previewState.value = PreviewState.Idle
+            // Surface the error to any VM subscribed to [playerErrors] so it
+            // can decide whether to retry (e.g. InnerTube URL rejected → yt-dlp).
+            val id = currentVideoId
+            if (id.isNotEmpty()) {
+                // tryEmit is non-blocking; if no subscriber is attached the
+                // buffered value is still held for the next collect.
+                _playerErrors.tryEmit(PreviewErrorEvent(id, error))
+            }
         }
     }
 
