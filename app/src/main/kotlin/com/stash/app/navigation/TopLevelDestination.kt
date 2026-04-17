@@ -39,3 +39,12 @@ data class SearchArtistRoute(
     val name: String,
     val avatarUrl: String? = null,
 )
+
+@Serializable
+data class SearchAlbumRoute(
+    val browseId: String,
+    val title: String,
+    val artist: String,
+    val thumbnailUrl: String?,
+    val year: String?,
+)

@@ -19,6 +19,7 @@ import com.stash.core.ui.components.AlbumsRowSkeleton
 import com.stash.core.ui.components.DiscoveryErrorCard
 import com.stash.core.ui.components.PopularListSkeleton
 import com.stash.core.ui.components.SectionHeader
+import com.stash.data.ytmusic.model.AlbumSummary
 import kotlinx.coroutines.flow.merge
 
 /**
@@ -44,7 +45,7 @@ import kotlinx.coroutines.flow.merge
 @Composable
 fun ArtistProfileScreen(
     onBack: () -> Unit,
-    onNavigateToAlbum: (albumName: String, artistName: String) -> Unit,
+    onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     vm: ArtistProfileViewModel = hiltViewModel(),
 ) {
@@ -137,7 +138,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     onPreview: (String) -> Unit,
     onStopPreview: () -> Unit,
     onDownload: (SearchResultItem) -> Unit,
-    onNavigateToAlbum: (albumName: String, artistName: String) -> Unit,
+    onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
 ) {
     if (state.popular.isNotEmpty()) {
@@ -160,7 +161,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         item {
             AlbumsRow(
                 albums = state.albums,
-                onClick = { onNavigateToAlbum(it.title, state.hero.name) },
+                onClick = onNavigateToAlbum,
             )
         }
     }
@@ -169,7 +170,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         item {
             SinglesRow(
                 singles = state.singles,
-                onClick = { onNavigateToAlbum(it.title, state.hero.name) },
+                onClick = onNavigateToAlbum,
             )
         }
     }
