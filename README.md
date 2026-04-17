@@ -14,18 +14,16 @@ Stash is an offline-first Android music player that syncs your liked songs, play
 
 ## Features
 
-- **Dual-source sync** — pull from Spotify and YouTube Music into one library, or filter by source
 - **Offline everything** — tracks download as high-quality Opus audio, playable without internet
-- **Bulletproof matching** — album-first pipeline finds the right version of every song, not some random live recording or cover
-- **Custom playlists** — create your own playlists and save tracks to them from anywhere. Bookmark icon in Now Playing makes it one tap.
+- **Bulletproof matching** — finds the right version of tracks 99% of the time, not some random live recording or cover
+- **Custom playlists** — create your own playlists and save tracks to them from anywhere.
 - **Spotify sync preferences** — choose exactly which playlists, liked songs, daily mixes, and discovery mixes to sync. Individual toggles for each. Don't want Daily Mix 3? Turn it off.
 - **Expanded Spotify mix detection** — Release Radar, Discover Weekly, On Repeat, Daylist, Repeat Rewind, Time Capsule, and Daily Mixes 1-6 are all automatically detected when available. Each gets its own toggle.
 - **Refresh vs Accumulate sync modes** — mixes can either replace their contents each sync (Refresh) or stack new tracks on top of what's already there (Accumulate). Your call.
 - **Parallel downloads** — 8 simultaneous tracks. Background sync runs as a foreground service so it actually finishes with the phone locked.
-- **High-res album art** — YouTube thumbnails upgraded from 60px to 544px, Spotify art from 300px to 640px. Existing tracks get migrated on startup.
-- **Automatic update notifications** — checks GitHub for new releases daily and notifies you when one is available. Tap the notification to go straight to the download page.
+- **High-res album art** —
+- **Automatic update notifications** — checks GitHub for new releases daily and notifies you when one is available.
 - **Full equalizer** — 5-band EQ with presets, bass boost, and virtualizer
-- **Smart playback** — queue management, drag-to-reorder, swipe-to-remove, random start on play-all
 - **Spotify sign-in built in** — just log into Spotify inside the app, no cookie hunting required
 - **Private by design** — credentials encrypted with AES-256-GCM, no servers, no telemetry, nothing leaves your phone
 - **Free and open source** — no subscriptions, no ads, GPL-3.0
@@ -45,9 +43,9 @@ Stash is an offline-first Android music player that syncs your liked songs, play
 ## Requirements
 
 - Android **8.0 (API 26)** or later
-- Roughly **5-10 GB** of free storage for a medium library (scales with your library size)
-- An active **Spotify account** (free or premium) and/or a **YouTube Music account**
-- Willingness to **sideload APKs** — Stash is not on the Google Play Store and won't be (see [Why Not Play Store?](#why-not-play-store) below)
+- Roughly **9-15 GB** of free storage for a medium library (scales with your library size)
+- An active **Spotify account** and/or a **YouTube Music account**
+- Stash is not on the Google Play Store and won't be (see [Why Not Play Store?](#why-not-play-store) below)
 
 ---
 
@@ -85,14 +83,14 @@ You'll need **Android Studio** (Hedgehog / 2023.1.1 or later), **JDK 17**, and *
 
 ## First-Time Setup
 
-Stash doesn't use Spotify's or YouTube's official APIs (they don't offer what Stash needs). Instead, you paste in your login cookies from a web browser. This sounds scary but takes about two minutes per service. Your cookies live **only on your phone**, encrypted with AES-256-GCM, and are sent **only to Spotify and YouTube themselves** — never to a Stash server (there isn't one).
+Stash doesn't use Spotify's or YouTube's official APIs (they don't offer what Stash needs). Instead, it uses your login cookies. This sounds scary but takes about two minutes per service. Your cookies live **only on your phone**, encrypted with AES-256-GCM, and are sent **only to Spotify and YouTube themselves** — never to a Stash server (there isn't one).
 
 <details>
 <summary><b>🎵 Connect Spotify (click to expand)</b></summary>
 
 ### What you need
 - A computer or another device with a desktop browser (Chrome, Firefox, Edge, or Safari)
-- Your Spotify account logged in on that browser
+- Spotify account logged in on that browser
 
 ### Option A — Sign in via the app (easiest)
 
