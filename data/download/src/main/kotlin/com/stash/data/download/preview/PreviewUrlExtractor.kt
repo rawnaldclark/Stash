@@ -166,6 +166,18 @@ class PreviewUrlExtractor @Inject constructor(
         )
 
     /**
+     * Retry-only entry point: bypass the InnerTube race and go straight to
+     * yt-dlp. Used by [com.stash.feature.search.SearchViewModel.onPreviewError]
+     * when ExoPlayer rejects an InnerTube URL (typically because the URL is
+     * n-parameter-throttled past what ExoPlayer is willing to wait for).
+     *
+     * yt-dlp's QuickJS cipher path produces unthrottled URLs that play
+     * reliably, at the cost of ~15-35 s extraction latency.
+     */
+    suspend fun extractViaYtDlpForRetry(videoId: String): String =
+        extractViaYtDlp(videoId)
+
+    /**
      * Fast path: extract stream URL via InnerTube player API.
      *
      * Calls `/youtubei/v1/player` with the user's YouTube session cookies.
