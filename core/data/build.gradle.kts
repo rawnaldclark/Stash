@@ -6,6 +6,18 @@ plugins {
 }
 android {
     namespace = "com.stash.core.data"
+
+    testOptions {
+        unitTests {
+            // Return Kotlin defaults (Unit) from stubbed Android SDK methods —
+            // needed so android.util.Log.d calls inside production code don't
+            // throw "not mocked" in JVM unit tests.
+            isReturnDefaultValues = true
+            // Robolectric needs the merged AGP resources to boot its
+            // Android runtime shim during JVM unit tests.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
@@ -30,4 +42,12 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    testImplementation("app.cash.turbine:turbine:1.1.0")
+    testImplementation("androidx.room:room-testing:2.7.1")
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("org.mockito:mockito-core:5.11.0")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 }
