@@ -147,6 +147,18 @@ class YTMusicApiClientTest {
             "avatarUrl should start with https://, was ${profile.avatarUrl}",
             profile.avatarUrl!!.startsWith("https://"),
         )
+        // Lock in "largest thumbnail wins" for the avatar: the fixture ships
+        // both a 48×48 and a 544×544 variant. ArtUrlUpgrader additionally
+        // normalizes lh3 URLs to `=w544-h544`, so "544" must appear regardless
+        // of which variant was picked — but the picker must NOT have chosen
+        // the 48 variant and then had its size token stripped (which would
+        // still contain "544" via the upgrader). We assert on the original
+        // `artist-avatar-large` path token to pin the picker to the 544 src.
+        assertTrue(
+            "avatar should be the 544 variant, was ${profile.avatarUrl}",
+            profile.avatarUrl!!.contains("artist-avatar-large") &&
+                profile.avatarUrl!!.contains("544"),
+        )
         assertTrue(
             "popular.size should be in 5..10, was ${profile.popular.size}",
             profile.popular.size in 5..10,
@@ -166,6 +178,13 @@ class YTMusicApiClientTest {
 
         val profile = client.getArtist("UCSPARSEID1")
 
+        // Lock in sparse-header behaviour: even when the rest of the page is
+        // empty we still extract name and subscriber text from the header.
+        assertEquals("Obscure Artist", profile.name)
+        assertTrue(
+            "subscribersText should contain 'subscriber', was '${profile.subscribersText}'",
+            profile.subscribersText?.contains("subscriber", ignoreCase = true) == true,
+        )
         assertTrue("popular should not be empty", profile.popular.isNotEmpty())
         assertTrue("albums should be empty", profile.albums.isEmpty())
         assertTrue("singles should be empty", profile.singles.isEmpty())
