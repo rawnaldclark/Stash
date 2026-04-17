@@ -2,8 +2,12 @@ package com.stash.data.ytmusic
 
 import android.util.Log
 import com.stash.core.model.SyncResult
+import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.ArtistProfile
+import com.stash.data.ytmusic.model.ArtistSummary
 import com.stash.data.ytmusic.model.SearchAllResults
 import com.stash.data.ytmusic.model.SearchResultSection
+import com.stash.data.ytmusic.model.TrackSummary
 import com.stash.data.ytmusic.model.YTMusicPlaylist
 import com.stash.data.ytmusic.model.YTMusicTrack
 import kotlinx.serialization.json.JsonArray
@@ -172,6 +176,129 @@ class YTMusicApiClient @Inject constructor(
         Log.d(TAG, "searchAll('$query'): ${sections.size} sections")
         return SearchAllResults(sections)
     }
+
+    /**
+     * Fetch a YouTube Music artist browse page in one round-trip and parse it
+     * into an [ArtistProfile].
+     *
+     * The browse response for an artist channel (browseId starting with `UC`
+     * or `MPLAUC`) contains:
+     *   - `header.musicImmersiveHeaderRenderer` — name, avatar, subscribers.
+     *   - A single `singleColumnBrowseResultsRenderer` tab holding a mix of
+     *     `musicShelfRenderer` (Popular) and `musicCarouselShelfRenderer`
+     *     (Albums, Singles, "Fans also like") sections.
+     *
+     * Missing shelves surface as empty lists so the UI can render without
+     * branching on null. A null InnerTube response (e.g. network failure)
+     * yields an [ArtistProfile] with empty name / empty shelves — callers
+     * should treat a blank name as a "retry" signal.
+     *
+     * @param browseId Either a raw channel ID (`UC…`) or an `MPLAUC…` music-
+     *   channel variant. Normalized to the bare channel form for cache-key
+     *   stability per spec §8.
+     * @return A populated [ArtistProfile]; shelves that the real response
+     *   lacks are empty lists.
+     */
+    suspend fun getArtist(browseId: String): ArtistProfile {
+        val normalized = normalizeArtistBrowseId(browseId)
+        val response = innerTubeClient.browse(normalized)
+            ?: return emptyArtistProfile(normalized)
+
+        val header = response["header"]?.asObject()
+            ?.get("musicImmersiveHeaderRenderer")?.asObject()
+        val name = header?.navigatePath("title", "runs")?.firstArray()
+            ?.firstOrNull()?.asObject()?.get("text")?.asString() ?: ""
+        // Artist avatars ship ascending by width; `lastOrNull` picks the largest.
+        val avatarUrl = header?.navigatePath(
+            "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",
+        )?.firstArray()?.lastOrNull()?.asObject()?.get("url")?.asString()
+        val subscribersText = header?.navigatePath(
+            "subscriptionButton", "subscribeButtonRenderer",
+            "subscriberCountText", "runs",
+        )?.firstArray()?.firstOrNull()?.asObject()?.get("text")?.asString()
+
+        val sections = response.navigatePath(
+            "contents", "singleColumnBrowseResultsRenderer", "tabs",
+        )?.firstArray()?.firstOrNull()?.asObject()
+            ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
+            ?.asArray()
+            ?: return emptyArtistProfile(normalized, name, avatarUrl, subscribersText)
+
+        var popular = emptyList<TrackSummary>()
+        var albums = emptyList<AlbumSummary>()
+        var singles = emptyList<AlbumSummary>()
+        var related = emptyList<ArtistSummary>()
+
+        // Parsers live in ArtistResponseParser.kt as top-level internal funcs.
+        for (section in sections) {
+            val obj = section.asObject() ?: continue
+            obj["musicShelfRenderer"]?.asObject()?.let { shelf ->
+                val title = shelf.navigatePath("title", "runs")?.firstArray()
+                    ?.firstOrNull()?.asObject()?.get("text")?.asString()
+                if (title?.contains("popular", ignoreCase = true) == true) {
+                    popular = parseTracksFromShelf(shelf).take(10)
+                }
+            }
+            obj["musicCarouselShelfRenderer"]?.asObject()?.let { carousel ->
+                val title = carousel.navigatePath(
+                    "header", "musicCarouselShelfBasicHeaderRenderer",
+                    "title", "runs",
+                )?.firstArray()?.firstOrNull()?.asObject()
+                    ?.get("text")?.asString().orEmpty()
+                when {
+                    title.equals("Albums", ignoreCase = true) ->
+                        albums = parseAlbumsCarousel(carousel)
+                    title.equals("Singles", ignoreCase = true) ||
+                        title.contains("EPs", ignoreCase = true) ->
+                        singles = parseAlbumsCarousel(carousel)
+                    title.contains("Fans also like", ignoreCase = true) ->
+                        related = parseArtistsCarousel(carousel)
+                }
+            }
+        }
+
+        Log.d(
+            TAG,
+            "getArtist('$normalized'): name='$name' popular=${popular.size} " +
+                "albums=${albums.size} singles=${singles.size} related=${related.size}",
+        )
+        return ArtistProfile(
+            id = normalized,
+            name = name,
+            avatarUrl = avatarUrl,
+            subscribersText = subscribersText,
+            popular = popular,
+            albums = albums,
+            singles = singles,
+            related = related,
+        )
+    }
+
+    /** Builds a shelf-less [ArtistProfile] for error / partial-response paths. */
+    private fun emptyArtistProfile(
+        id: String,
+        name: String = "",
+        avatarUrl: String? = null,
+        subscribersText: String? = null,
+    ): ArtistProfile = ArtistProfile(
+        id = id,
+        name = name,
+        avatarUrl = avatarUrl,
+        subscribersText = subscribersText,
+        popular = emptyList(),
+        albums = emptyList(),
+        singles = emptyList(),
+        related = emptyList(),
+    )
+
+    /**
+     * Spec §8 Open Question 1: InnerTube returns artists with either `UC…`
+     * (channel) or `MPLAUC…` (music channel) browseIds. Cache-key stability
+     * requires a single form — we strip the `MPLA` prefix and use the bare
+     * channel ID.
+     */
+    private fun normalizeArtistBrowseId(browseId: String): String =
+        if (browseId.startsWith("MPLA")) browseId.removePrefix("MPLA") else browseId
 
     // ── InnerTube response parsers ───────────────────────────────────────
 

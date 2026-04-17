@@ -157,75 +157,17 @@ internal fun parseTopResultCard(shelf: JsonObject): TopResultItem? {
  * Parses the "Songs" shelf — a vertical list of `musicResponsiveListItemRenderer`
  * items with videoId, title, artists, album, and duration.
  *
- * Mirrors the column layout used by [YTMusicApiClient]'s parseTrackFromRenderer
- * but emits [TrackSummary] instead of the download-match [YTMusicTrack] so the
- * Search tab and the download-match pipeline can diverge.
+ * Delegates per-row extraction to [parseTrackSummaryFromListItem] in
+ * [ResponseParserHelpers] so the artist-profile "Popular" shelf parser in
+ * [ArtistResponseParser] can share the column-walking logic.
  */
 internal fun parseSongsShelf(shelfRenderer: JsonObject): List<TrackSummary> {
     val items = shelfRenderer["contents"]?.asArray() ?: return emptyList()
-    val result = mutableListOf<TrackSummary>()
-    for (item in items) {
-        val renderer = item.asObject()
+    return items.mapNotNull { item ->
+        item.asObject()
             ?.get("musicResponsiveListItemRenderer")?.asObject()
-            ?: continue
-
-        val videoId = renderer["playlistItemData"]?.asObject()
-            ?.get("videoId")?.asString()
-            ?: renderer.navigatePath(
-                "overlay", "musicItemThumbnailOverlayRenderer", "content",
-                "musicPlayButtonRenderer", "playNavigationEndpoint",
-                "watchEndpoint", "videoId",
-            )?.asString()
-            ?: continue
-
-        val flexColumns = renderer["flexColumns"]?.asArray() ?: continue
-        val title = flexColumns.getOrNull(0)?.asObject()
-            ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
-            ?.firstArray()?.firstOrNull()?.asObject()
-            ?.get("text")?.asString()
-            ?: continue
-
-        val artistRuns = flexColumns.getOrNull(1)?.asObject()
-            ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
-            ?.asArray()
-        val artist = artistRuns
-            ?.mapNotNull { it.asObject()?.get("text")?.asString() }
-            ?.filterNot { it == " & " || it == ", " || it == " x " }
-            ?.joinToString(", ")
-            ?: ""
-
-        val album = flexColumns.getOrNull(2)?.asObject()
-            ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
-            ?.firstArray()?.firstOrNull()?.asObject()
-            ?.get("text")?.asString()
-
-        val thumbnails = renderer.navigatePath(
-            "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",
-        )?.firstArray()
-        val thumbnailUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
-            thumbnails?.maxByOrNull {
-                it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0
-            }?.asObject()?.get("url")?.asString()
-        )
-
-        val durationText = renderer["fixedColumns"]?.asArray()
-            ?.firstOrNull()?.asObject()
-            ?.navigatePath("musicResponsiveListItemFixedColumnRenderer", "text", "runs")
-            ?.firstArray()?.firstOrNull()?.asObject()
-            ?.get("text")?.asString()
-
-        result.add(
-            TrackSummary(
-                videoId = videoId,
-                title = title,
-                artist = artist,
-                album = album,
-                durationSeconds = parseDurationToSeconds(durationText),
-                thumbnailUrl = thumbnailUrl,
-            ),
-        )
+            ?.let { parseTrackSummaryFromListItem(it) }
     }
-    return result
 }
 
 /**
