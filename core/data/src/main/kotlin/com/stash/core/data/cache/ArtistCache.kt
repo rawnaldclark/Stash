@@ -4,6 +4,7 @@ import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.entity.ArtistProfileCacheEntity
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.ArtistProfile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.encodeToString
@@ -122,6 +123,10 @@ class ArtistCache @Inject constructor(
                 persist(refreshed)
                 emit(CachedProfile.Fresh(refreshed))
             } catch (t: Throwable) {
+                // Never swallow cancellation — doing so would mask rapid-
+                // navigation teardown into a spurious Stale(refreshFailed=true)
+                // emission on a detached collector, breaking structured concurrency.
+                if (t is CancellationException) throw t
                 // Don't blow up the screen — the user already has usable data.
                 // Surface the refresh failure for the ViewModel's Snackbar.
                 emit(CachedProfile.Stale(cachedProfile, refreshFailed = true))
