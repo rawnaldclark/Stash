@@ -517,18 +517,40 @@ class YTMusicApiClient @Inject constructor(
         val watchEndpoint = titleRun.navigatePath("navigationEndpoint", "watchEndpoint")?.asObject()
         if (watchEndpoint != null) {
             val videoId = watchEndpoint["videoId"]?.asString() ?: return null
-            // Subtitle runs: ["Song", " • ", "<artist>", " • ", "<album>", " • ", "<duration>"].
-            // Drop the kind label, then separators (' • ', ' & ', ', ', ' x ') and take the
-            // remaining data items in order. Duration is the last token like "3:32".
-            val subtitleTexts = shelf.navigatePath("subtitle", "runs")?.asArray()
-                ?.mapNotNull { it.asObject()?.get("text")?.asString() }
-                ?.filterNot { it == " • " || it == " & " || it == ", " || it == " x " }
+            // Subtitle runs typically look like:
+            //   [{text:"Song"}, {text:" • "}, {text:"Rick Astley", nav→UC…},
+            //    {text:" & "}, {text:"John Smith", nav→UC…}, {text:" • "},
+            //    {text:"Whenever You Need Somebody", nav→MPREb_…}, {text:" • "},
+            //    {text:"3:32"}]
+            // Classify each run by its navigationEndpoint.browseEndpoint.browseId prefix
+            // so that collab artists aren't silently re-labelled as the album when they
+            // sit next to each other in the run list. Classification must run BEFORE the
+            // separator/kind-label drop so the endpoint metadata is still attached.
+            val subtitleRuns = shelf.navigatePath("subtitle", "runs")?.asArray()
+                ?.mapNotNull { it.asObject() }
                 ?: emptyList()
-            val dataTokens = if (subtitleTexts.isNotEmpty()) subtitleTexts.drop(1) else emptyList()
-            val durationToken = dataTokens.lastOrNull()?.takeIf { it.matches(DURATION_REGEX) }
-            val nonDurationTokens = if (durationToken != null) dataTokens.dropLast(1) else dataTokens
-            val artist = nonDurationTokens.getOrNull(0) ?: ""
-            val album = nonDurationTokens.getOrNull(1)
+            val artistNames = mutableListOf<String>()
+            var album: String? = null
+            var durationToken: String? = null
+            for (run in subtitleRuns) {
+                val text = run["text"]?.asString() ?: continue
+                // Skip separators and the leading kind label ("Song").
+                if (text == " • " || text == " & " || text == ", " || text == " x " || text == "Song") {
+                    continue
+                }
+                val browseId = run.navigatePath(
+                    "navigationEndpoint", "browseEndpoint", "browseId",
+                )?.asString()
+                when {
+                    browseId != null && (browseId.startsWith("UC") || browseId.startsWith("MPLAUC")) ->
+                        artistNames.add(text)
+                    browseId != null && browseId.startsWith("MPREb_") ->
+                        if (album == null) album = text
+                    text.matches(DURATION_REGEX) ->
+                        durationToken = text
+                }
+            }
+            val artist = artistNames.joinToString(", ")
             return TopResultItem.TrackTop(
                 TrackSummary(
                     videoId = videoId,
