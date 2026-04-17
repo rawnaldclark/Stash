@@ -63,7 +63,7 @@ class PreviewUrlExtractor @Inject constructor(
     private val innerTubeClient: InnerTubeClient,
 ) {
     /** Test-only injection point for race logic. Not wired in production. */
-    interface TestHooks {
+    internal interface TestHooks {
         suspend fun innerTubeExtract(id: String): String?
         suspend fun ytDlpExtract(id: String): String
     }
