@@ -1,0 +1,412 @@
+{
+  "_comment": "Synthetic artist browse response. Popular shelf uses title 'Popular' to match parser's case-insensitive contains('popular') check. Real InnerTube has shipped both 'Top songs' and 'Popular' over time; either works.",
+  "header": {
+    "musicImmersiveHeaderRenderer": {
+      "title": {
+        "runs": [
+          { "text": "Lootpack" }
+        ]
+      },
+      "thumbnail": {
+        "musicThumbnailRenderer": {
+          "thumbnail": {
+            "thumbnails": [
+              { "url": "https://lh3.googleusercontent.com/artist-avatar-small=w120-h120", "width": 120, "height": 120 },
+              { "url": "https://lh3.googleusercontent.com/artist-avatar-large=w544-h544", "width": 544, "height": 544 }
+            ]
+          }
+        }
+      },
+      "subscriptionButton": {
+        "subscribeButtonRenderer": {
+          "subscriberCountText": {
+            "runs": [
+              { "text": "12K subscribers" }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "contents": {
+    "singleColumnBrowseResultsRenderer": {
+      "tabs": [
+        {
+          "tabRenderer": {
+            "content": {
+              "sectionListRenderer": {
+                "contents": [
+                  {
+                    "musicShelfRenderer": {
+                      "title": { "runs": [ { "text": "Popular" } ] },
+                      "contents": [
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": { "videoId": "POP1VIDEO" },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Weededed" } ] }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Lootpack" } ] }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Soundpieces: Da Antidote" } ] }
+                                }
+                              }
+                            ],
+                            "fixedColumns": [
+                              {
+                                "musicResponsiveListItemFixedColumnRenderer": {
+                                  "text": { "runs": [ { "text": "3:21" } ] }
+                                }
+                              }
+                            ],
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/pop1=w60-h60", "width": 60, "height": 60 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": { "videoId": "POP2VIDEO" },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "The Anthem" } ] }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Lootpack" } ] }
+                                }
+                              }
+                            ],
+                            "fixedColumns": [
+                              {
+                                "musicResponsiveListItemFixedColumnRenderer": {
+                                  "text": { "runs": [ { "text": "4:05" } ] }
+                                }
+                              }
+                            ],
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/pop2=w60-h60", "width": 60, "height": 60 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": { "videoId": "POP3VIDEO" },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Whenimondamic" } ] }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Lootpack" } ] }
+                                }
+                              }
+                            ],
+                            "fixedColumns": [
+                              {
+                                "musicResponsiveListItemFixedColumnRenderer": {
+                                  "text": { "runs": [ { "text": "3:15" } ] }
+                                }
+                              }
+                            ],
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/pop3=w60-h60", "width": 60, "height": 60 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": { "videoId": "POP4VIDEO" },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Crate Diggin'" } ] }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Lootpack" } ] }
+                                }
+                              }
+                            ],
+                            "fixedColumns": [
+                              {
+                                "musicResponsiveListItemFixedColumnRenderer": {
+                                  "text": { "runs": [ { "text": "3:50" } ] }
+                                }
+                              }
+                            ],
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/pop4=w60-h60", "width": 60, "height": 60 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": { "videoId": "POP5VIDEO" },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Long Awaited" } ] }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Lootpack" } ] }
+                                }
+                              }
+                            ],
+                            "fixedColumns": [
+                              {
+                                "musicResponsiveListItemFixedColumnRenderer": {
+                                  "text": { "runs": [ { "text": "4:22" } ] }
+                                }
+                              }
+                            ],
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/pop5=w60-h60", "width": 60, "height": 60 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": { "videoId": "POP6VIDEO" },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Questions" } ] }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Lootpack" } ] }
+                                }
+                              }
+                            ],
+                            "fixedColumns": [
+                              {
+                                "musicResponsiveListItemFixedColumnRenderer": {
+                                  "text": { "runs": [ { "text": "2:58" } ] }
+                                }
+                              }
+                            ],
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/pop6=w60-h60", "width": 60, "height": 60 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "musicCarouselShelfRenderer": {
+                      "header": {
+                        "musicCarouselShelfBasicHeaderRenderer": {
+                          "title": { "runs": [ { "text": "Albums" } ] }
+                        }
+                      },
+                      "contents": [
+                        {
+                          "musicTwoRowItemRenderer": {
+                            "navigationEndpoint": {
+                              "browseEndpoint": {
+                                "browseId": "MPREb_ALBUM1"
+                              }
+                            },
+                            "title": { "runs": [ { "text": "Soundpieces: Da Antidote" } ] },
+                            "subtitle": {
+                              "runs": [
+                                { "text": "Album" },
+                                { "text": " • " },
+                                { "text": "1999" }
+                              ]
+                            },
+                            "thumbnailRenderer": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/album1=w300-h300", "width": 300, "height": 300 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "musicTwoRowItemRenderer": {
+                            "navigationEndpoint": {
+                              "browseEndpoint": {
+                                "browseId": "MPREb_ALBUM2"
+                              }
+                            },
+                            "title": { "runs": [ { "text": "The Lost Tapes" } ] },
+                            "subtitle": {
+                              "runs": [
+                                { "text": "Album" },
+                                { "text": " • " },
+                                { "text": "2003" }
+                              ]
+                            },
+                            "thumbnailRenderer": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/album2=w300-h300", "width": 300, "height": 300 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "musicCarouselShelfRenderer": {
+                      "header": {
+                        "musicCarouselShelfBasicHeaderRenderer": {
+                          "title": { "runs": [ { "text": "Singles" } ] }
+                        }
+                      },
+                      "contents": [
+                        {
+                          "musicTwoRowItemRenderer": {
+                            "navigationEndpoint": {
+                              "browseEndpoint": {
+                                "browseId": "MPREb_SINGLE1"
+                              }
+                            },
+                            "title": { "runs": [ { "text": "The Anthem" } ] },
+                            "subtitle": {
+                              "runs": [
+                                { "text": "Single" },
+                                { "text": " • " },
+                                { "text": "2001" }
+                              ]
+                            },
+                            "thumbnailRenderer": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/single1=w300-h300", "width": 300, "height": 300 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "musicCarouselShelfRenderer": {
+                      "header": {
+                        "musicCarouselShelfBasicHeaderRenderer": {
+                          "title": { "runs": [ { "text": "Fans also like" } ] }
+                        }
+                      },
+                      "contents": [
+                        {
+                          "musicTwoRowItemRenderer": {
+                            "navigationEndpoint": {
+                              "browseEndpoint": {
+                                "browseId": "UCMADLIBID1"
+                              }
+                            },
+                            "title": { "runs": [ { "text": "Madlib" } ] },
+                            "subtitle": {
+                              "runs": [ { "text": "Artist" } ]
+                            },
+                            "thumbnailRenderer": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/madlib=w300-h300", "width": 300, "height": 300 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "musicTwoRowItemRenderer": {
+                            "navigationEndpoint": {
+                              "browseEndpoint": {
+                                "browseId": "UCQUASIMOTOID1"
+                              }
+                            },
+                            "title": { "runs": [ { "text": "Quasimoto" } ] },
+                            "subtitle": {
+                              "runs": [ { "text": "Artist" } ]
+                            },
+                            "thumbnailRenderer": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/quasimoto=w300-h300", "width": 300, "height": 300 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

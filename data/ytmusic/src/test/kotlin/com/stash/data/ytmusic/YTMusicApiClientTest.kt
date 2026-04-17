@@ -42,6 +42,19 @@ class YTMusicApiClientTest {
         return YTMusicApiClient(inner)
     }
 
+    /**
+     * Builds a [YTMusicApiClient] whose underlying [InnerTubeClient] returns
+     * the given JSON from any `browse(browseId)` call. Used by the
+     * `getArtist` tests since that method walks a browse response, not a
+     * search response.
+     */
+    private fun fakeBrowseClient(responseJson: String): YTMusicApiClient {
+        val inner = mock<InnerTubeClient>()
+        val parsed = Json.parseToJsonElement(responseJson).jsonObject
+        runBlocking { whenever(inner.browse(any())).thenReturn(parsed) }
+        return YTMusicApiClient(inner)
+    }
+
     @Test
     fun `searchAll returns top artists songs albums for artist query`() = runTest {
         val client = fakeClient(loadFixture("search_artist.json"))
@@ -121,5 +134,41 @@ class YTMusicApiClientTest {
         val trackTop = top.item as TopResultItem.TrackTop
         assertEquals("Rick Astley, John Smith", trackTop.track.artist)
         assertEquals("Whenever You Need Somebody", trackTop.track.album)
+    }
+
+    @Test
+    fun `getArtist returns full profile for rich artist`() = runTest {
+        val client = fakeBrowseClient(loadFixture("artist_rich.json"))
+
+        val profile = client.getArtist("UCLOOTPACKID1")
+
+        assertEquals("Lootpack", profile.name)
+        assertTrue(
+            "avatarUrl should start with https://, was ${profile.avatarUrl}",
+            profile.avatarUrl!!.startsWith("https://"),
+        )
+        assertTrue(
+            "popular.size should be in 5..10, was ${profile.popular.size}",
+            profile.popular.size in 5..10,
+        )
+        assertTrue("albums should not be empty", profile.albums.isNotEmpty())
+        assertTrue("singles should not be empty", profile.singles.isNotEmpty())
+        assertTrue("related should not be empty", profile.related.isNotEmpty())
+        assertTrue(
+            "subscribersText should contain 'subscriber', was '${profile.subscribersText}'",
+            profile.subscribersText?.contains("subscriber", ignoreCase = true) == true,
+        )
+    }
+
+    @Test
+    fun `getArtist tolerates sparse artist with only popular shelf`() = runTest {
+        val client = fakeBrowseClient(loadFixture("artist_sparse.json"))
+
+        val profile = client.getArtist("UCSPARSEID1")
+
+        assertTrue("popular should not be empty", profile.popular.isNotEmpty())
+        assertTrue("albums should be empty", profile.albums.isEmpty())
+        assertTrue("singles should be empty", profile.singles.isEmpty())
+        assertTrue("related should be empty", profile.related.isEmpty())
     }
 }
