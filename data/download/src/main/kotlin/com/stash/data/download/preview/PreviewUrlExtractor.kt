@@ -9,6 +9,7 @@ import com.stash.data.ytmusic.InnerTubeClient
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -45,6 +46,10 @@ import javax.inject.Singleton
  *  - InnerTube returns a non-null URL → cancel yt-dlp and return it.
  *  - InnerTube returns null (ciphered/geo-blocked/unavailable) or
  *    throws → await yt-dlp and return its result (throws on hard fail).
+ *
+ * Any non-cancellation failure in InnerTube is rescued inside the async
+ * as a null result, so the race transparently falls back to yt-dlp
+ * without poisoning the enclosing [coroutineScope].
  *
  * Because the InnerTube fast path succeeds for most YouTube Music
  * tracks, previews feel near-instant while preserving yt-dlp as a
@@ -102,6 +107,12 @@ class PreviewUrlExtractor @Inject constructor(
          * Wrapped in [coroutineScope] so a cancel on either side also tears
          * down the sibling job — important so `yt.cancel()` actually stops
          * work and frees the yt-dlp permit.
+         *
+         * Any non-cancellation failure in InnerTube is rescued *inside* the
+         * async (via [runCatching]) and surfaced as a null result. This
+         * keeps the exception from escaping the async and poisoning the
+         * enclosing [coroutineScope] (which would cancel yt-dlp and rethrow),
+         * so the race transparently falls back to yt-dlp on any throw.
          */
         private suspend fun race(
             videoId: String,
@@ -112,20 +123,26 @@ class PreviewUrlExtractor @Inject constructor(
         ): String = coroutineScope {
             val inner = async {
                 itSem.acquire()
-                try { innerTubeExtract(videoId) } finally { itSem.release() }
+                try {
+                    // Treat any non-cancellation failure as null so the
+                    // race falls back to yt-dlp. CancellationException MUST
+                    // propagate to preserve structured concurrency.
+                    runCatching { innerTubeExtract(videoId) }
+                        .getOrElse { t ->
+                            if (t is CancellationException) throw t
+                            null
+                        }
+                } finally {
+                    itSem.release()
+                }
             }
             val yt = async {
                 ytSem.acquire()
                 try { ytDlpExtract(videoId) } finally { ytSem.release() }
             }
-            // Await inner first: if it produces a non-null URL, cancel yt.
-            // runCatching swallows soft failures (timeouts / null-return
-            // paths already logged inside extractViaInnerTube) so yt-dlp
-            // can still deliver. Structured cancellation of the outer
-            // scope is re-thrown by the enclosing coroutineScope contract.
-            val itResult = runCatching { inner.await() }.getOrNull()
+            val itResult = inner.await()
             if (itResult != null) {
-                yt.cancel()
+                yt.cancel(CancellationException("InnerTube won the race"))
                 itResult
             } else {
                 yt.await()
