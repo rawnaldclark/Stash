@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,11 +43,13 @@ import coil3.compose.AsyncImage
  *   rest are optional and hide gracefully when null.
  * @param status Load status; currently unused visually but accepted so
  *   Task 11 can add a stale badge without the call-site changing.
+ * @param onBack Invoked when the top-left back arrow is tapped (spec §5.2).
  */
 @Composable
 fun ArtistHero(
     hero: HeroState,
     @Suppress("UNUSED_PARAMETER") status: ArtistProfileStatus,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val primary = MaterialTheme.colorScheme.primary
@@ -94,6 +100,22 @@ fun ArtistHero(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+
+        // Top-left back arrow. The Scaffold parent already applies
+        // `innerPadding` (incl. status bar) to the LazyColumn that hosts
+        // this hero, so here we just add the 8.dp Compose toolbar gutter.
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = MaterialTheme.colorScheme.onBackground,
+            )
         }
     }
 }
