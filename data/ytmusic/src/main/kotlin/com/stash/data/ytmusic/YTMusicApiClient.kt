@@ -253,6 +253,10 @@ class YTMusicApiClient @Inject constructor(
                         singles = parseAlbumsCarousel(carousel)
                     title.contains("Fans also like", ignoreCase = true) ->
                         related = parseArtistsCarousel(carousel)
+                    // Surface locale regressions (e.g. a translated "Albumes"
+                    // or a new shelf we don't dispatch yet) in logs instead of
+                    // silently producing an empty shelf.
+                    else -> Log.d(TAG, "getArtist: unknown carousel '$title' — skipped")
                 }
             }
         }
