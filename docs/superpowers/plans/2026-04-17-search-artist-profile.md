@@ -12,29 +12,55 @@
 
 ---
 
-## Pause State (2026-04-17)
+## Pause State (2026-04-17 — end of second session)
 
-**Status:** Phases 1–7 complete and approved. Phases 8–11 pending.
+**Status:** Phases 1–11 implemented and committed. Final branch-wide review flagged **2 Critical integration gaps** that must be fixed before merge (tracked as Task 12 below). Branch is NOT ready to ship.
 
-**Branch:** `feature/search-overhaul` (23 commits ahead of `master`).
+**Branch:** `feature/search-overhaul` (31 commits ahead of `master`). HEAD = `63fe067`.
 
 **Completed phases:**
-- ✅ Task 1 — `YTMusicApiClient.searchAll` + DTOs (5 tests)
-- ✅ Task 2 — `YTMusicApiClient.getArtist` (8 tests total)
-- ✅ Task 3 — `ArtistCache` + Room v6→v7 migration (8 tests; 6h TTL, memory LRU 20, stale-refresh-failure locked)
-- ✅ Task 4 — `PreviewUrlExtractor` split semaphores (InnerTube 8, yt-dlp 2) + InnerTube‖yt-dlp race (6 tests)
-- ✅ Task 5 — `PreviewPrefetcher` facade (2 tests; Hilt-friendly dual constructor)
-- ✅ Task 6 — `ShimmerPlaceholder` + `ArtistHeroSkeleton` / `PopularListSkeleton` / `AlbumsRowSkeleton`
-- ✅ Task 7 — `ArtistAvatarCard` + `AlbumSquareCard` (with `=wN-hN` size-knob fix)
+- ✅ Tasks 1-7 (prior sessions) — see commit log.
+- ✅ Task 8 — Artist Profile nav + screen + VM (`4cd3bc8` + `c4eab50` cleanup).
+- ✅ Task 9 — Sectioned Search: VM + Screen + retry fallback + shared `PreviewUrlCache` (`6d61f44` + `b7580ef` cleanup).
+- ✅ Task 10 — Coil + ExoPlayer + OkHttp warm-up (`17186df` + `c8089e8` cleanup).
+- ✅ Task 11 — Perf bookends + `PerfLog` helper + perf checklist doc (`63fe067`).
 
-**Known follow-ups to fold into later phases:**
-- Phase 8 must wire a **shared** preview URL cache (currently each `@Inject PreviewPrefetcher` would get its own map). Options: `@Singleton` the prefetcher, or provide a single `ConcurrentHashMap` via Hilt.
-- Phase 8's prefetcher usage should swap the default `mutableMapOf()` for a `ConcurrentHashMap` — real concurrency hits it once two VMs share it.
-- `PreviewPrefetcher.kt` currently swallows `CancellationException` inside its `catch (Throwable)` — add `if (t is CancellationException) throw t` when touched during Phase 8.
-- Phase 11 should add `@OptIn(ExperimentalCoroutinesApi::class)` to `PreviewUrlExtractorTest` (clears one compile warning).
-- Unrelated uncommitted edits sit in the working tree from prior sessions: `feature/settings/.../SettingsScreen.kt`, `feature/sync/.../FailedMatchesScreen.kt`, `feature/sync/.../FailedMatchesViewModel.kt`. Leave them alone — they are not part of this feature.
+**Test state:** 30 tests across `:feature:search`, `:data:download`, `:core:data`, `:data:ytmusic` — all green. `./gradlew :app:assembleDebug` green.
 
-**Resume instructions:** open a fresh session, read this Pause State block + the Performance Contract (§4 of the spec), then dispatch the Task 8 implementer subagent with the full Task 8 text (plan lines 1685–2108). Continue the subagent-driven flow (implementer → spec-compliance reviewer → code-quality reviewer → fix if needed → re-review).
+---
+
+### Task 12 — Fix Artist Profile integration gaps (MUST fix before merge)
+
+**Critical #1 — Popular rows on Artist Profile are inert.**
+`feature/search/src/main/kotlin/com/stash/feature/search/PopularTracksSection.kt:45-47` has literal no-op lambdas (`onPreview = { /* Task 10 wires preview */ }` etc.). Tapping a Popular track does nothing. Spec §4.1 target "tap preview on Popular → audible <500ms/3s" is unreachable on that screen.
+
+**Fix:** give `ArtistProfileViewModel` a preview + download surface. Two options:
+- **Option A (minimal):** Inject the 7 preview/download deps already on `SearchViewModel` (`PreviewPlayer`, `PreviewUrlExtractor`, `PreviewUrlCache`, `DownloadExecutor`, `TrackDao`, `FileOrganizer`, `QualityPreferencesManager`, `MusicRepository`) into `ArtistProfileViewModel` and duplicate `previewTrack/stopPreview/downloadTrack/onPreviewError` (~150 LOC copy). Extend `ArtistProfileUiState` with `downloadingIds`, `downloadedIds`, `previewLoading`. Expose `previewState` from VM. Update `PopularTracksSection` to accept + forward the 3 callbacks + state. Update the 3 VM tests (still 3; extend setup).
+- **Option B (cleaner):** Extract a `TrackActions` @ViewModelScoped class that encapsulates the preview + download state + methods. Both VMs inject and pass-through. Larger refactor but removes duplication.
+
+Recommend **Option A** — lowest risk, ships faster. If a third surface (`AlbumDetailScreen`) ever needs the same, extract then.
+
+**Critical #2 — `ArtistProfileStatus.Error` has no UI branch.**
+`feature/search/src/main/kotlin/com/stash/feature/search/ArtistProfileScreen.kt:64-99` only branches on `Loading` vs non-Loading. A cold-miss `getArtist` throw sets `status = Error(msg)` via the VM's `.catch { }` at `ArtistProfileViewModel.kt:88-99` but the screen never renders an error card / retry button. Spec §6.2 requires full-screen error + retry.
+
+**Fix:** add `ArtistProfileStatus.Error -> ErrorCard(status.message, onRetry = { vm.retry() })` branch; add `fun retry()` to the VM that re-subscribes to `artistCache.get(artistId)`. Also emit a user-message in the `.catch` block (`_userMessages.emit(...)` is suspending — call from the catch coroutine context).
+
+**Important — No on-screen back button.**
+`onBack: () -> Unit` parameter on `ArtistProfileScreen` is `@Suppress("UNUSED_PARAMETER")`-annotated (`ArtistProfileScreen.kt:41`). System back works but spec §5.2 wants an on-screen back arrow in the hero. Add a small `IconButton` in the top-left of `ArtistHero` wired to `onBack`.
+
+**Minor follow-ups (can ship later; don't block merge):**
+- `PreviewPrefetcher.prefetchVisible(...)` is dead code. Either delete or wire into the Albums/Singles `LazyRow`s per spec §4.2.7.
+- `PreviewPrefetcher` jobs leak past VM lifecycle — each VM injects a fresh instance with its own `CoroutineScope(SupervisorJob())`. Add `fun onCleared() { prefetcher.cancelAll() }` to both VMs, or tie the prefetcher scope to `viewModelScope`.
+- `ArtistHero` missing Shuffle / Download-all glass chips (spec §5.2).
+- `FailedMatchesViewModel.kt:137` still has its own local `previewUrlCache` — consolidate onto the shared singleton in a follow-up (NOT part of this branch).
+
+---
+
+**Unrelated uncommitted edits in working tree** (leave alone): `feature/settings/.../SettingsScreen.kt`, `feature/sync/.../FailedMatchesScreen.kt`, `feature/sync/.../FailedMatchesViewModel.kt`.
+
+**Perf checklist (uncommitted per plan):** `docs/superpowers/plans/2026-04-17-search-artist-profile-perf-checklist.md` — use after Task 12 lands to verify §4.1 targets on-device.
+
+**Resume instructions:** open a fresh session, read this block + the final review's "Critical" items above. Dispatch a Task 12 implementer with Option A scope. Verify with spec + code-quality reviewers. Then use `superpowers:finishing-a-development-branch` to merge/PR.
 
 ---
 
