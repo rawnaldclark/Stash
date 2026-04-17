@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 /**
@@ -214,7 +215,7 @@ class TrackActionsDelegate @Inject constructor(
                 val qualityTier = qualityPrefs.qualityTier.first()
                 val qualityArgs = qualityTier.toYtDlpArgs()
                 val tempDir = fileOrganizer.getTempDir()
-                val tempFilename = "actions_${item.videoId}"
+                val tempFilename = "actions_${item.videoId}_${UUID.randomUUID()}"
 
                 when (val result = downloadExecutor.download(
                     url = url,
