@@ -13,9 +13,6 @@ sealed interface SearchStatus {
     /** No query typed yet — render the empty prompt. */
     data object Idle : SearchStatus
 
-    /** The user is typing but debounce hasn't fired yet. */
-    data object Typing : SearchStatus
-
     /** A `searchAll` call is in flight; show loading skeletons. */
     data object Loading : SearchStatus
 
