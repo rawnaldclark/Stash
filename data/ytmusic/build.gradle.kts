@@ -7,6 +7,15 @@ plugins {
 
 android {
     namespace = "com.stash.data.ytmusic"
+
+    testOptions {
+        unitTests {
+            // Return Kotlin defaults (Unit) from stubbed Android SDK methods —
+            // needed so android.util.Log.d calls inside production code don't
+            // throw "not mocked" in JVM unit tests.
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
