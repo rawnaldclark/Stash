@@ -627,15 +627,16 @@ private fun DailyMixCard(
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Album art background (if available)
-            if (playlist.artUrl != null) {
-                AsyncImage(
-                    model = playlist.artUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            }
+            // Album art background. For daily mixes with 2 tile URLs
+            // (first 2 unique album covers from the current tracklist) we
+            // render them side-by-side — the cover updates visibly every
+            // sync that rotates tracks. Single-URL playlists render as a
+            // single background as before.
+            DailyMixCoverBackground(
+                tileUrls = playlist.artTileUrls,
+                fallback = playlist.artUrl,
+                modifier = Modifier.fillMaxSize(),
+            )
             // Gradient overlay for text readability
             Box(
                 modifier = Modifier
@@ -1128,6 +1129,49 @@ private fun SourceLikedChip(
                 color = accent,
             )
         }
+    }
+}
+
+// ── Daily mix cover background ───────────────────────────────────────────
+
+/**
+ * Renders the cover art for a daily-mix card. When 2 tile URLs are supplied,
+ * draws them side-by-side as a 50/50 horizontal mosaic so users see visible
+ * proof that the mix refreshed. With fewer URLs, falls back to a single
+ * [AsyncImage] using [fallback]. Draws nothing when neither is available.
+ */
+@Composable
+private fun DailyMixCoverBackground(
+    tileUrls: List<String>,
+    fallback: String?,
+    modifier: Modifier = Modifier,
+) {
+    when {
+        tileUrls.size >= 2 -> Row(modifier = modifier) {
+            AsyncImage(
+                model = tileUrls[0],
+                contentDescription = null,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                contentScale = ContentScale.Crop,
+            )
+            AsyncImage(
+                model = tileUrls[1],
+                contentDescription = null,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        fallback != null -> AsyncImage(
+            model = fallback,
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = ContentScale.Crop,
+        )
+        else -> Unit
     }
 }
 

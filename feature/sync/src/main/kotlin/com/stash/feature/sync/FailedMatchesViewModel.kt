@@ -19,9 +19,13 @@ import com.stash.data.download.prefs.toYtDlpArgs
 import com.stash.data.download.preview.PreviewUrlExtractor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -114,6 +118,14 @@ class FailedMatchesViewModel @Inject constructor(
     private val _resyncCandidates = MutableStateFlow<Map<Long, ResyncCandidate>>(emptyMap())
     private val _isResyncing = MutableStateFlow(false)
     private val _resyncProgress = MutableStateFlow("")
+
+    private val _userMessages = MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /** One-shot user-facing messages (e.g. Snackbar text). */
+    val userMessages: SharedFlow<String> = _userMessages.asSharedFlow()
 
     /** Active resync job reference so it can be cancelled on new resync or cleanup. */
     private var resyncJob: Job? = null
@@ -252,15 +264,30 @@ class FailedMatchesViewModel @Inject constructor(
      */
     fun approveMatch(trackId: Long, queueEntryId: Long, candidate: ResyncCandidate) {
         viewModelScope.launch {
-            // Immediately mark as completed — row disappears from reactive Flow
-            trackDao.updateYoutubeId(trackId, candidate.videoId)
-            downloadQueueDao.updateStatus(
-                id = queueEntryId,
-                status = DownloadStatus.COMPLETED,
-            )
+            val existing = trackDao.findByYoutubeId(candidate.videoId)
+            if (existing != null && existing.id != trackId) {
+                _userMessages.tryEmit(
+                    "Can't approve \u2014 '${candidate.title}' is already linked to " +
+                        "${existing.artist} \u2014 ${existing.title}. Try Dismiss instead.",
+                )
+                return@launch
+            }
 
-            // Remove from resync candidates map
-            _resyncCandidates.update { it - trackId }
+            try {
+                // Immediately mark as completed — row disappears from reactive Flow
+                trackDao.updateYoutubeId(trackId, candidate.videoId)
+                downloadQueueDao.updateStatus(
+                    id = queueEntryId,
+                    status = DownloadStatus.COMPLETED,
+                )
+
+                // Remove from resync candidates map
+                _resyncCandidates.update { it - trackId }
+            } catch (e: Exception) {
+                Log.e(TAG, "Approve failed for trackId=$trackId", e)
+                _userMessages.tryEmit("Couldn't approve this match. Please try again.")
+                return@launch
+            }
 
             // Background download — fire and forget
             launch {

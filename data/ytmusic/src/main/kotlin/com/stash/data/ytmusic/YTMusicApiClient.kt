@@ -240,10 +240,13 @@ class YTMusicApiClient @Inject constructor(
         for (section in sections) {
             val obj = section.asObject() ?: continue
             obj["musicShelfRenderer"]?.asObject()?.let { shelf ->
-                val title = shelf.navigatePath("title", "runs")?.firstArray()
-                    ?.firstOrNull()?.asObject()?.get("text")?.asString()
-                if (title?.contains("popular", ignoreCase = true) == true) {
-                    popular = parseTracksFromShelf(shelf).take(10)
+                // Structural match: take the first musicShelfRenderer that
+                // produces non-empty track rows. Title matching breaks when
+                // YouTube Music labels the shelf "Songs" (or leaves it blank)
+                // instead of "Popular" — which is common in production.
+                if (popular.isEmpty()) {
+                    val parsed = parseTracksFromShelf(shelf).take(10)
+                    if (parsed.isNotEmpty()) popular = parsed
                 }
             }
             obj["musicCarouselShelfRenderer"]?.asObject()?.let { carousel ->
@@ -342,14 +345,7 @@ class YTMusicApiClient @Inject constructor(
                 tracks = emptyList(),
                 moreByArtist = emptyList(),
             )
-        val album = AlbumResponseParser.parse(browseId, response)
-        Log.d(
-            TAG,
-            "getAlbum('$browseId'): title='${album.title}' artist='${album.artist}' " +
-                "year='${album.year}' tracks=${album.tracks.size} " +
-                "moreByArtist=${album.moreByArtist.size}",
-        )
-        return album
+        return AlbumResponseParser.parse(browseId, response)
     }
 
     // `normalizeArtistBrowseId` lives as a top-level `internal` fun in

@@ -42,6 +42,18 @@ interface PlaylistDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCrossRef(crossRef: PlaylistTrackCrossRef)
 
+    /**
+     * Returns the existing cross-reference for (playlistId, trackId) if any,
+     * so the caller can preserve `addedAt` when re-inserting (otherwise
+     * REPLACE would reset it every sync, breaking chronological ordering in
+     * ACCUMULATE mode where we want the newest additions on top).
+     */
+    @Query("""
+        SELECT * FROM playlist_tracks
+        WHERE playlist_id = :playlistId AND track_id = :trackId
+    """)
+    suspend fun getCrossRef(playlistId: Long, trackId: Long): PlaylistTrackCrossRef?
+
     // ── Update / Delete ─────────────────────────────────────────────────
 
     /** Update an existing playlist entity. */
@@ -176,6 +188,15 @@ interface PlaylistDao {
     /** Update the cover art URL (local file path or remote URL) for a playlist. */
     @Query("UPDATE playlists SET art_url = :artUrl WHERE id = :playlistId")
     suspend fun updateArtUrl(playlistId: Long, artUrl: String?)
+
+    /**
+     * Refreshes the user-facing name for a synced playlist. Spotify changes
+     * the display name for its generated mixes over time (e.g. "Your Daily
+     * Mix 1" → "Daily Mix 1" or back), so sync runs update the name to
+     * whatever the remote source currently reports.
+     */
+    @Query("UPDATE playlists SET name = :name WHERE id = :playlistId")
+    suspend fun updateName(playlistId: Long, name: String)
 
     /** All Spotify playlists ordered by type (liked first, then mixes, then custom) and name. */
     @Query("""

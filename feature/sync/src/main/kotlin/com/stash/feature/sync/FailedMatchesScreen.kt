@@ -35,8 +35,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,6 +83,11 @@ fun FailedMatchesScreen(
 
     // Track pending dismiss confirmation dialog.
     var trackToDismiss by remember { mutableStateOf<UnmatchedTrackView?>(null) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        viewModel.userMessages.collect { snackbarHostState.showSnackbar(it) }
+    }
 
     Box(
         modifier = Modifier
@@ -207,6 +216,11 @@ fun FailedMatchesScreen(
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) { data -> Snackbar(snackbarData = data) }
     }
 
     // -- Dismiss confirmation dialog --

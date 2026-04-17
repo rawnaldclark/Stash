@@ -22,15 +22,20 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
+import com.stash.core.data.sync.workers.UpdateCheckWorker
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.QualityTier
@@ -381,11 +386,37 @@ private fun SettingsContent(
         // -- About section ----------------------------------------------------
         SectionHeader(title = "About")
 
+        val aboutContext = LocalContext.current
+        val installedVersion = remember(aboutContext) {
+            runCatching {
+                aboutContext.packageManager
+                    .getPackageInfo(aboutContext.packageName, 0)
+                    .versionName
+            }.getOrNull() ?: "0.3.3"
+        }
+
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
-                StorageRow(label = "Version", value = "0.3.0")
+                StorageRow(label = "Version", value = installedVersion)
                 Spacer(modifier = Modifier.height(8.dp))
                 StorageRow(label = "License", value = "GPL-3.0")
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        UpdateCheckWorker.enqueueOneTimeCheck(aboutContext)
+                        Toast.makeText(
+                            aboutContext,
+                            "Checking for updates\u2026",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ),
+                ) {
+                    Text("Check for updates")
+                }
             }
         }
 

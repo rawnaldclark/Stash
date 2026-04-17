@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.stash.app.RequestNotificationPermissionOnce
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.nowplaying.MiniPlayer
 
@@ -33,6 +34,9 @@ fun StashScaffold() {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+
+    // Android 13+ runtime permission for notifications. One-shot per install.
+    RequestNotificationPermissionOnce()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
