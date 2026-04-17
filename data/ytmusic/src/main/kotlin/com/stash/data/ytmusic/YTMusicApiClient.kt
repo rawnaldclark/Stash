@@ -2,6 +2,7 @@ package com.stash.data.ytmusic
 
 import android.util.Log
 import com.stash.core.model.SyncResult
+import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.ArtistSummary
@@ -306,6 +307,50 @@ class YTMusicApiClient @Inject constructor(
         singles = emptyList(),
         related = emptyList(),
     )
+
+    /**
+     * Fetch a YouTube Music album browse page in one round-trip and parse it
+     * into an [AlbumDetail].
+     *
+     * The browse response for an album ([browseId] starts with `MPREb_`)
+     * contains:
+     *   - `header.musicDetailHeaderRenderer` — title, subtitle (artist + year),
+     *     and cover art.
+     *   - A single `singleColumnBrowseResultsRenderer` tab holding the
+     *     tracklist (`musicShelfRenderer`) followed by the "More by this
+     *     artist" row (`musicCarouselShelfRenderer`).
+     *
+     * Missing shelves surface as empty lists so the UI can still render the
+     * hero from nav args + a "No tracks available" message when the tracklist
+     * is region-blocked. A null InnerTube response (e.g. network failure)
+     * yields an [AlbumDetail] with a blank title / empty shelves — callers
+     * should treat a blank title as a retry signal.
+     *
+     * @param browseId The album browseId (e.g. `MPREb_…`).
+     * @return A populated [AlbumDetail]; shelves the real response lacks are
+     *   returned as empty lists.
+     */
+    suspend fun getAlbum(browseId: String): AlbumDetail {
+        val response = innerTubeClient.browse(browseId)
+            ?: return AlbumDetail(
+                id = browseId,
+                title = "",
+                artist = "",
+                artistId = null,
+                thumbnailUrl = null,
+                year = null,
+                tracks = emptyList(),
+                moreByArtist = emptyList(),
+            )
+        val album = AlbumResponseParser.parse(browseId, response)
+        Log.d(
+            TAG,
+            "getAlbum('$browseId'): title='${album.title}' artist='${album.artist}' " +
+                "year='${album.year}' tracks=${album.tracks.size} " +
+                "moreByArtist=${album.moreByArtist.size}",
+        )
+        return album
+    }
 
     // `normalizeArtistBrowseId` lives as a top-level `internal` fun in
     // [ResponseParserHelpers.kt] so unit tests can exercise it directly
