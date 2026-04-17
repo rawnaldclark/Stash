@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.PlaybackException
+import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.preview.PreviewPlayer
@@ -155,7 +156,12 @@ class SearchViewModel @Inject constructor(
             emit(SearchStatus.Idle)
             return@flow
         }
+        // Captured BEFORE the skeleton emit so both bookends measure from the
+        // same keystroke-cancelled-then-debounced moment. Spec §4.1 latency
+        // targets are tap → visible, so wall-clock from flow start is correct.
+        val t0 = SystemClock.elapsedRealtime()
         emit(SearchStatus.Loading)
+        PerfLog.d { "Search skeleton at ${SystemClock.elapsedRealtime() - t0}ms" }
         try {
             val results = api.searchAll(query)
             val sections = results.sections
@@ -163,6 +169,9 @@ class SearchViewModel @Inject constructor(
                 emit(SearchStatus.Empty)
             } else {
                 emit(SearchStatus.Results(sections))
+                PerfLog.d {
+                    "Search first-results at ${SystemClock.elapsedRealtime() - t0}ms (q=$query)"
+                }
                 prefetchTopN(sections)
                 refreshDownloadedIds(sections)
             }

@@ -1,12 +1,14 @@
 package com.stash.core.media.preview
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.stash.core.common.perf.PerfLog
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -220,6 +222,9 @@ class PreviewPlayer @Inject constructor(
      * @param streamUrl Direct audio stream URL that ExoPlayer can open.
      */
     fun playUrl(videoId: String, streamUrl: String) {
+        // Capture BEFORE any work so the bookend measures the full
+        // tap→audible latency (spec §4.1 target: p50 <500ms / p95 <3s).
+        val t0 = SystemClock.elapsedRealtime()
         val player = requirePlayer()
 
         // Stop any previous playback and clear the queue before loading the
@@ -233,6 +238,23 @@ class PreviewPlayer @Inject constructor(
         player.setMediaItem(MediaItem.fromUri(streamUrl))
         player.prepare()
         player.playWhenReady = true
+
+        // One-shot listener: fires on the first isPlaying=true and then
+        // removes itself. Distinct from [playerListener] (the long-lived
+        // class-level listener) so subsequent playUrl calls install a
+        // fresh instance rather than reusing a latched one. removeListener
+        // MUST be called inside the branch so the instance doesn't leak
+        // across playUrl calls.
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    PerfLog.d {
+                        "Preview audible at ${SystemClock.elapsedRealtime() - t0}ms (vid=$videoId)"
+                    }
+                    player.removeListener(this)
+                }
+            }
+        })
     }
 
     /**
