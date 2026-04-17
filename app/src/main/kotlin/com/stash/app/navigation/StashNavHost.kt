@@ -14,6 +14,7 @@ import com.stash.feature.library.LibraryScreen
 import com.stash.feature.library.LikedSongsDetailScreen
 import com.stash.feature.library.PlaylistDetailScreen
 import com.stash.feature.nowplaying.NowPlayingScreen
+import com.stash.feature.search.ArtistProfileScreen
 import com.stash.feature.search.SearchScreen
 import com.stash.feature.settings.SettingsScreen
 import com.stash.feature.sync.FailedMatchesScreen
@@ -61,7 +62,16 @@ fun StashNavHost(
                 },
             )
         }
-        composable<SearchRoute> { SearchScreen() }
+        composable<SearchRoute> {
+            SearchScreen(
+                onNavigateToArtist = { id, name, avatar ->
+                    navController.navigate(SearchArtistRoute(id, name, avatar))
+                },
+                onNavigateToAlbum = { album, artist ->
+                    navController.navigate(AlbumDetailRoute(album, artist))
+                },
+            )
+        }
         composable<SyncRoute> {
             SyncScreen(
                 onNavigateToFailedMatches = {
@@ -98,6 +108,18 @@ fun StashNavHost(
         composable<FailedMatchesRoute> {
             FailedMatchesScreen(
                 onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable<SearchArtistRoute> {
+            ArtistProfileScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToAlbum = { album, artist ->
+                    navController.navigate(AlbumDetailRoute(album, artist))
+                },
+                onNavigateToArtist = { id, name, avatar ->
+                    navController.navigate(SearchArtistRoute(id, name, avatar))
+                },
             )
         }
 

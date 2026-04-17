@@ -60,11 +60,23 @@ sealed interface CachedProfile {
  * have to sleep through the TTL.
  */
 @Singleton
-class ArtistCache @Inject constructor(
+class ArtistCache(
     private val dao: ArtistProfileCacheDao,
     private val api: YTMusicApiClient,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
+
+    /**
+     * Hilt-visible entry point. Delegates to the primary constructor with
+     * the `System::currentTimeMillis` clock default.
+     *
+     * The primary constructor stays non-`@Inject` so tests can pass a fixed
+     * clock (`now = { 1_000L }`) without Hilt trying — and failing — to
+     * resolve a `Function0<Long>` binding for the default.
+     */
+    @Inject
+    constructor(dao: ArtistProfileCacheDao, api: YTMusicApiClient) :
+        this(dao, api, System::currentTimeMillis)
 
     /**
      * Lenient JSON codec — matches the one in [ArtistCacheEntityFixtures]

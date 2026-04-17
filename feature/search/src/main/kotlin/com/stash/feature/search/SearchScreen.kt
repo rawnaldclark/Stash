@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,21 +15,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,12 +38,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -62,9 +54,15 @@ import com.stash.core.ui.theme.StashTheme
  * Displays a search bar at the top and renders results, loading, empty, or
  * error states below it. Each result row offers a download button that
  * transitions through idle -> downloading -> downloaded states.
+ *
+ * The two navigation callbacks are accepted now (Task 8) so the NavHost can
+ * compile and wire `SearchArtistRoute`; Task 10 will rewire the search UI
+ * to actually call them when a result row is tapped.
  */
 @Composable
 fun SearchScreen(
+    onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit = { _, _, _ -> },
+    onNavigateToAlbum: (albumName: String, artistName: String) -> Unit = { _, _ -> },
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -304,7 +302,7 @@ private fun ResultsList(
             items = results,
             key = { it.videoId },
         ) { item ->
-            SearchResultRow(
+            PreviewDownloadRow(
                 item = item,
                 isDownloading = item.videoId in uiState.downloadingIds,
                 isDownloaded = item.videoId in uiState.downloadedIds,
@@ -315,169 +313,5 @@ private fun ResultsList(
                 onDownload = { onDownload(item) },
             )
         }
-    }
-}
-
-/**
- * A single search result row showing a music icon, track metadata, duration,
- * and a download action button.
- *
- * The download button cycles through three visual states:
- * - Default: download arrow icon (tappable)
- * - Downloading: small circular progress indicator
- * - Downloaded: green checkmark icon
- */
-@Composable
-private fun SearchResultRow(
-    item: SearchResultItem,
-    isDownloading: Boolean,
-    isDownloaded: Boolean,
-    isPreviewLoading: Boolean,
-    isPreviewPlaying: Boolean,
-    onPreview: () -> Unit,
-    onStopPreview: () -> Unit,
-    onDownload: () -> Unit,
-) {
-    val extendedColors = StashTheme.extendedColors
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(extendedColors.glassBackground)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Album art or fallback music note
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(extendedColors.elevatedSurface),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (item.thumbnailUrl != null) {
-                coil3.compose.AsyncImage(
-                    model = item.thumbnailUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        // Title and artist column -- takes up remaining space
-        Column(
-            modifier = Modifier.weight(1f),
-        ) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = item.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        // Duration label
-        Text(
-            text = formatDuration(item.durationSeconds),
-            style = MaterialTheme.typography.bodySmall,
-            color = extendedColors.textTertiary,
-        )
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        // Preview button
-        IconButton(
-            onClick = if (isPreviewPlaying) onStopPreview else onPreview,
-            modifier = Modifier.size(40.dp),
-        ) {
-            when {
-                isPreviewLoading -> CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                isPreviewPlaying -> Icon(
-                    imageVector = Icons.Default.Stop,
-                    contentDescription = "Stop preview",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                else -> Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Preview",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        // Download action button
-        Box(
-            modifier = Modifier.size(40.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            when {
-                isDownloaded -> {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Downloaded",
-                        modifier = Modifier.size(24.dp),
-                        tint = extendedColors.success,
-                    )
-                }
-                isDownloading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.5.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                else -> {
-                    IconButton(onClick = onDownload) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Download",
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Formats a duration in seconds to "m:ss" or "h:mm:ss" display string.
- */
-private fun formatDuration(seconds: Double): String {
-    val totalSeconds = seconds.toLong()
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val secs = totalSeconds % 60
-    return if (hours > 0) {
-        "%d:%02d:%02d".format(hours, minutes, secs)
-    } else {
-        "%d:%02d".format(minutes, secs)
     }
 }
