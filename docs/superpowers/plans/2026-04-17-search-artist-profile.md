@@ -12,6 +12,32 @@
 
 ---
 
+## Pause State (2026-04-17)
+
+**Status:** Phases 1–7 complete and approved. Phases 8–11 pending.
+
+**Branch:** `feature/search-overhaul` (23 commits ahead of `master`).
+
+**Completed phases:**
+- ✅ Task 1 — `YTMusicApiClient.searchAll` + DTOs (5 tests)
+- ✅ Task 2 — `YTMusicApiClient.getArtist` (8 tests total)
+- ✅ Task 3 — `ArtistCache` + Room v6→v7 migration (8 tests; 6h TTL, memory LRU 20, stale-refresh-failure locked)
+- ✅ Task 4 — `PreviewUrlExtractor` split semaphores (InnerTube 8, yt-dlp 2) + InnerTube‖yt-dlp race (6 tests)
+- ✅ Task 5 — `PreviewPrefetcher` facade (2 tests; Hilt-friendly dual constructor)
+- ✅ Task 6 — `ShimmerPlaceholder` + `ArtistHeroSkeleton` / `PopularListSkeleton` / `AlbumsRowSkeleton`
+- ✅ Task 7 — `ArtistAvatarCard` + `AlbumSquareCard` (with `=wN-hN` size-knob fix)
+
+**Known follow-ups to fold into later phases:**
+- Phase 8 must wire a **shared** preview URL cache (currently each `@Inject PreviewPrefetcher` would get its own map). Options: `@Singleton` the prefetcher, or provide a single `ConcurrentHashMap` via Hilt.
+- Phase 8's prefetcher usage should swap the default `mutableMapOf()` for a `ConcurrentHashMap` — real concurrency hits it once two VMs share it.
+- `PreviewPrefetcher.kt` currently swallows `CancellationException` inside its `catch (Throwable)` — add `if (t is CancellationException) throw t` when touched during Phase 8.
+- Phase 11 should add `@OptIn(ExperimentalCoroutinesApi::class)` to `PreviewUrlExtractorTest` (clears one compile warning).
+- Unrelated uncommitted edits sit in the working tree from prior sessions: `feature/settings/.../SettingsScreen.kt`, `feature/sync/.../FailedMatchesScreen.kt`, `feature/sync/.../FailedMatchesViewModel.kt`. Leave them alone — they are not part of this feature.
+
+**Resume instructions:** open a fresh session, read this Pause State block + the Performance Contract (§4 of the spec), then dispatch the Task 8 implementer subagent with the full Task 8 text (plan lines 1685–2108). Continue the subagent-driven flow (implementer → spec-compliance reviewer → code-quality reviewer → fix if needed → re-review).
+
+---
+
 ## File Structure
 
 | File | Action | Responsibility |
