@@ -10,6 +10,9 @@ import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
@@ -23,19 +26,29 @@ import javax.inject.Singleton
 /**
  * Extracts a direct audio stream URL from YouTube for preview playback.
  *
- * ## Strategy: InnerTube fast path → yt-dlp fallback
+ * ## Strategy: InnerTube vs yt-dlp race (parallel, split concurrency)
  *
- * 1. **InnerTube player API (~1-2s)**: Calls the YouTube Music player endpoint
- *    with authenticated cookies. Parses `streamingData.adaptiveFormats` for
- *    audio-only URLs. These URLs may be n-parameter throttled (~50KB/s) but
- *    that's more than enough for audio preview (Opus is ~20KB/s).
+ * Both extractors run concurrently, each bounded by its own shared
+ * [Semaphore] so the two pools don't starve each other:
  *
- * 2. **yt-dlp fallback (~15-35s)**: If InnerTube returns no usable URLs
- *    (ciphered, geo-blocked, etc.), falls back to yt-dlp with QuickJS for
- *    full signature solving. Slow but reliable.
+ *  - **InnerTube player API (~1-2s)**: Calls the YouTube Music player
+ *    endpoint with authenticated cookies. Parses
+ *    `streamingData.adaptiveFormats` for audio-only URLs. These URLs may
+ *    be n-parameter throttled (~50KB/s) but that's more than enough for
+ *    audio preview (Opus is ~20KB/s). Cap: 8 concurrent.
  *
- * The InnerTube fast path succeeds for the majority of YouTube Music tracks,
- * making previews near-instant.
+ *  - **yt-dlp fallback (~15-35s)**: Heavier path using QuickJS for full
+ *    signature solving. Slow but reliable, so we cap it at 2 concurrent
+ *    to avoid thrashing CPU / the yt-dlp JNI surface.
+ *
+ * The race returns whichever extractor succeeds first:
+ *  - InnerTube returns a non-null URL → cancel yt-dlp and return it.
+ *  - InnerTube returns null (ciphered/geo-blocked/unavailable) or
+ *    throws → await yt-dlp and return its result (throws on hard fail).
+ *
+ * Because the InnerTube fast path succeeds for most YouTube Music
+ * tracks, previews feel near-instant while preserving yt-dlp as a
+ * correctness backstop.
  */
 @Singleton
 class PreviewUrlExtractor @Inject constructor(
@@ -44,31 +57,96 @@ class PreviewUrlExtractor @Inject constructor(
     private val tokenManager: TokenManager,
     private val innerTubeClient: InnerTubeClient,
 ) {
+    /** Test-only injection point for race logic. Not wired in production. */
+    interface TestHooks {
+        suspend fun innerTubeExtract(id: String): String?
+        suspend fun ytDlpExtract(id: String): String
+    }
+
     companion object {
         private const val TAG = "PreviewUrlExtractor"
         private const val YTDLP_TIMEOUT_MS = 60_000L
         private const val INNERTUBE_TIMEOUT_MS = 10_000L
         private const val FORMAT_SELECTOR = "251/250/bestaudio"
+
+        /** Concurrency caps for the two extractors. Shared process-wide. */
+        private const val INNERTUBE_CONCURRENCY = 8
+        private const val YTDLP_CONCURRENCY = 2
+
+        /**
+         * Shared so parallel callers (e.g. `PreviewPrefetcher`) respect the
+         * cap regardless of how many [PreviewUrlExtractor] instances exist.
+         */
+        private val innerTubeSemaphore = Semaphore(INNERTUBE_CONCURRENCY)
+        private val ytDlpSemaphore = Semaphore(YTDLP_CONCURRENCY)
+
+        /**
+         * Test-only: exercises [race] directly without Android deps. Reuses
+         * the shared semaphores so the tests also assert the real caps.
+         */
+        internal suspend fun raceForTest(hooks: TestHooks, videoId: String): String =
+            race(
+                videoId = videoId,
+                innerTubeExtract = hooks::innerTubeExtract,
+                ytDlpExtract = hooks::ytDlpExtract,
+                itSem = innerTubeSemaphore,
+                ytSem = ytDlpSemaphore,
+            )
+
+        /**
+         * Races the two extractors. InnerTube is preferred when it succeeds
+         * (non-null return); otherwise yt-dlp's result wins. Each extractor
+         * acquires/releases its own semaphore, so a flood of InnerTube
+         * requests can never block yt-dlp (or vice versa).
+         *
+         * Wrapped in [coroutineScope] so a cancel on either side also tears
+         * down the sibling job — important so `yt.cancel()` actually stops
+         * work and frees the yt-dlp permit.
+         */
+        private suspend fun race(
+            videoId: String,
+            innerTubeExtract: suspend (String) -> String?,
+            ytDlpExtract: suspend (String) -> String,
+            itSem: Semaphore,
+            ytSem: Semaphore,
+        ): String = coroutineScope {
+            val inner = async {
+                itSem.acquire()
+                try { innerTubeExtract(videoId) } finally { itSem.release() }
+            }
+            val yt = async {
+                ytSem.acquire()
+                try { ytDlpExtract(videoId) } finally { ytSem.release() }
+            }
+            // Await inner first: if it produces a non-null URL, cancel yt.
+            // runCatching swallows soft failures (timeouts / null-return
+            // paths already logged inside extractViaInnerTube) so yt-dlp
+            // can still deliver. Structured cancellation of the outer
+            // scope is re-thrown by the enclosing coroutineScope contract.
+            val itResult = runCatching { inner.await() }.getOrNull()
+            if (itResult != null) {
+                yt.cancel()
+                itResult
+            } else {
+                yt.await()
+            }
+        }
     }
 
     /**
      * Extracts a direct audio stream URL for the given YouTube video ID.
      *
-     * Tries InnerTube first (fast, ~1-2s), falls back to yt-dlp (slow, ~15-35s).
+     * Races InnerTube (fast, ~1-2s) against yt-dlp (slow, ~15-35s). See
+     * the class KDoc for the full strategy.
      */
-    suspend fun extractStreamUrl(videoId: String): String {
-        // Fast path: InnerTube player API
-        try {
-            val url = extractViaInnerTube(videoId)
-            if (url != null) return url
-        } catch (e: Exception) {
-            Log.w(TAG, "InnerTube fast path failed for $videoId: ${e.message}")
-        }
-
-        // Slow fallback: yt-dlp with QuickJS cipher solving
-        Log.d(TAG, "Falling back to yt-dlp for videoId=$videoId")
-        return extractViaYtDlp(videoId)
-    }
+    suspend fun extractStreamUrl(videoId: String): String =
+        race(
+            videoId = videoId,
+            innerTubeExtract = { id -> extractViaInnerTube(id) },
+            ytDlpExtract = { id -> extractViaYtDlp(id) },
+            itSem = innerTubeSemaphore,
+            ytSem = ytDlpSemaphore,
+        )
 
     /**
      * Fast path: extract stream URL via InnerTube player API.
