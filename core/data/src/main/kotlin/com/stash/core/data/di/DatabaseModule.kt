@@ -3,6 +3,7 @@ package com.stash.core.data.di
 import android.content.Context
 import androidx.room.Room
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.RemoteSnapshotDao
@@ -32,7 +33,12 @@ object DatabaseModule {
             StashDatabase::class.java,
             StashDatabase.DATABASE_NAME,
         )
-            .addMigrations(StashDatabase.MIGRATION_3_4, StashDatabase.MIGRATION_4_5, StashDatabase.MIGRATION_5_6)
+            .addMigrations(
+                StashDatabase.MIGRATION_3_4,
+                StashDatabase.MIGRATION_4_5,
+                StashDatabase.MIGRATION_5_6,
+                StashDatabase.MIGRATION_6_7,
+            )
             // No fallbackToDestructiveMigration() — if a migration is missing,
             // the app will crash on startup instead of silently wiping the
             // user's entire library. This forces us to write proper migrations
@@ -57,4 +63,8 @@ object DatabaseModule {
 
     @Provides
     fun provideRemoteSnapshotDao(db: StashDatabase): RemoteSnapshotDao = db.remoteSnapshotDao()
+
+    @Provides
+    fun provideArtistProfileCacheDao(db: StashDatabase): ArtistProfileCacheDao =
+        db.artistProfileCacheDao()
 }

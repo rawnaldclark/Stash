@@ -6,12 +6,14 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.stash.core.data.db.converter.Converters
+import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SourceAccountDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.entity.ArtistProfileCacheEntity
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
@@ -48,8 +50,9 @@ import com.stash.core.data.db.entity.TrackFts
         TrackFts::class,
         RemotePlaylistSnapshotEntity::class,
         RemoteTrackSnapshotEntity::class,
+        ArtistProfileCacheEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -66,6 +69,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun sourceAccountDao(): SourceAccountDao
 
     abstract fun remoteSnapshotDao(): RemoteSnapshotDao
+
+    abstract fun artistProfileCacheDao(): ArtistProfileCacheDao
 
     companion object {
         const val DATABASE_NAME = "stash.db"
@@ -91,6 +96,21 @@ abstract class StashDatabase : RoomDatabase() {
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE download_queue ADD COLUMN rejected_video_id TEXT DEFAULT NULL")
+            }
+        }
+
+        /** v6 → v7: add artist_profile_cache table for SWR artist pages. */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS artist_profile_cache (
+                        artist_id TEXT NOT NULL PRIMARY KEY,
+                        json TEXT NOT NULL,
+                        fetched_at INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
             }
         }
     }
