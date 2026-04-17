@@ -307,7 +307,7 @@ private fun ResultsList(
                 isDownloading = item.videoId in uiState.downloadingIds,
                 isDownloaded = item.videoId in uiState.downloadedIds,
                 isPreviewLoading = uiState.previewLoading == item.videoId,
-                isPreviewPlaying = previewState is PreviewState.Playing && (previewState as PreviewState.Playing).videoId == item.videoId,
+                isPreviewPlaying = previewState is PreviewState.Playing && previewState.videoId == item.videoId,
                 onPreview = { onPreview(item.videoId) },
                 onStopPreview = onStopPreview,
                 onDownload = { onDownload(item) },
