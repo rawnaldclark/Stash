@@ -45,4 +45,10 @@ data class ArtistProfileUiState(
     val singles: List<AlbumSummary> = emptyList(),
     val related: List<ArtistSummary> = emptyList(),
     val status: ArtistProfileStatus = ArtistProfileStatus.Loading,
+    /** Video IDs currently being downloaded — drives per-row spinner state. */
+    val downloadingIds: Set<String> = emptySet(),
+    /** Video IDs already downloaded — drives per-row green checkmark state. */
+    val downloadedIds: Set<String> = emptySet(),
+    /** Video ID whose preview URL is being resolved, or null if none. */
+    val previewLoading: String? = null,
 )

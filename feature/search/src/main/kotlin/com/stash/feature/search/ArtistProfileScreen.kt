@@ -1,17 +1,32 @@
 package com.stash.feature.search
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,6 +46,9 @@ import com.stash.core.ui.components.SectionHeader
  *
  * While the first cache emission is in flight the sections render
  * shimmer skeletons rather than jumping layout when the data arrives.
+ * If the cold cache miss throws, the hero keeps painting from nav args
+ * and the shelves are replaced by [ArtistProfileErrorCard] with a Retry
+ * button (spec §6.2).
  *
  * `userMessages` from the VM are surfaced through a local [Scaffold]'s
  * Snackbar host — refresh failures show a one-liner but the cached data
@@ -38,12 +56,13 @@ import com.stash.core.ui.components.SectionHeader
  */
 @Composable
 fun ArtistProfileScreen(
-    @Suppress("UNUSED_PARAMETER") onBack: () -> Unit,
+    onBack: () -> Unit,
     onNavigateToAlbum: (albumName: String, artistName: String) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     vm: ArtistProfileViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
+    val previewState by vm.previewState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(vm) {
@@ -59,44 +78,150 @@ fun ArtistProfileScreen(
                 .fillMaxSize()
                 .padding(inner),
         ) {
-            item { ArtistHero(hero = state.hero, status = state.status) }
-
-            if (state.status is ArtistProfileStatus.Loading && state.popular.isEmpty()) {
-                item { PopularListSkeleton() }
-                item { AlbumsRowSkeleton() }
-            } else {
-                if (state.popular.isNotEmpty()) {
-                    item { SectionHeader(title = "Popular") }
-                    item { PopularTracksSection(tracks = state.popular) }
-                }
-                if (state.albums.isNotEmpty()) {
-                    item { SectionHeader(title = "Albums") }
-                    item {
-                        AlbumsRow(
-                            albums = state.albums,
-                            onClick = { onNavigateToAlbum(it.title, state.hero.name) },
-                        )
-                    }
-                }
-                if (state.singles.isNotEmpty()) {
-                    item { SectionHeader(title = "Singles & EPs") }
-                    item {
-                        SinglesRow(
-                            singles = state.singles,
-                            onClick = { onNavigateToAlbum(it.title, state.hero.name) },
-                        )
-                    }
-                }
-                if (state.related.isNotEmpty()) {
-                    item { SectionHeader(title = "Fans also like") }
-                    item {
-                        RelatedArtistsRow(
-                            artists = state.related,
-                            onClick = { onNavigateToArtist(it.id, it.name, it.avatarUrl) },
-                        )
-                    }
-                }
+            item {
+                ArtistHero(
+                    hero = state.hero,
+                    status = state.status,
+                    onBack = onBack,
+                )
             }
+
+            when (val status = state.status) {
+                is ArtistProfileStatus.Error -> item {
+                    ArtistProfileErrorCard(
+                        message = status.message,
+                        onRetry = vm::retry,
+                    )
+                }
+                ArtistProfileStatus.Loading -> if (state.popular.isEmpty()) {
+                    item { PopularListSkeleton() }
+                    item { AlbumsRowSkeleton() }
+                } else {
+                    contentSections(
+                        state = state,
+                        previewState = previewState,
+                        onPreview = vm::previewTrack,
+                        onStopPreview = vm::stopPreview,
+                        onDownload = vm::downloadTrack,
+                        onNavigateToAlbum = onNavigateToAlbum,
+                        onNavigateToArtist = onNavigateToArtist,
+                    )
+                }
+                ArtistProfileStatus.Fresh,
+                ArtistProfileStatus.Stale -> contentSections(
+                    state = state,
+                    previewState = previewState,
+                    onPreview = vm::previewTrack,
+                    onStopPreview = vm::stopPreview,
+                    onDownload = vm::downloadTrack,
+                    onNavigateToAlbum = onNavigateToAlbum,
+                    onNavigateToArtist = onNavigateToArtist,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Shared helper for the Fresh / Stale / (populated) Loading branches so
+ * the `when` in [ArtistProfileScreen] doesn't duplicate four `item { }`
+ * blocks. Uses [LazyListScope]-style extension form so call sites read
+ * naturally inside `LazyColumn { ... }`.
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
+    state: ArtistProfileUiState,
+    previewState: com.stash.core.media.preview.PreviewState,
+    onPreview: (String) -> Unit,
+    onStopPreview: () -> Unit,
+    onDownload: (SearchResultItem) -> Unit,
+    onNavigateToAlbum: (albumName: String, artistName: String) -> Unit,
+    onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
+) {
+    if (state.popular.isNotEmpty()) {
+        item { SectionHeader(title = "Popular") }
+        item {
+            PopularTracksSection(
+                tracks = state.popular,
+                previewState = previewState,
+                downloadingIds = state.downloadingIds,
+                downloadedIds = state.downloadedIds,
+                previewLoadingId = state.previewLoading,
+                onPreview = onPreview,
+                onStopPreview = onStopPreview,
+                onDownload = onDownload,
+            )
+        }
+    }
+    if (state.albums.isNotEmpty()) {
+        item { SectionHeader(title = "Albums") }
+        item {
+            AlbumsRow(
+                albums = state.albums,
+                onClick = { onNavigateToAlbum(it.title, state.hero.name) },
+            )
+        }
+    }
+    if (state.singles.isNotEmpty()) {
+        item { SectionHeader(title = "Singles & EPs") }
+        item {
+            SinglesRow(
+                singles = state.singles,
+                onClick = { onNavigateToAlbum(it.title, state.hero.name) },
+            )
+        }
+    }
+    if (state.related.isNotEmpty()) {
+        item { SectionHeader(title = "Fans also like") }
+        item {
+            RelatedArtistsRow(
+                artists = state.related,
+                onClick = { onNavigateToArtist(it.id, it.name, it.avatarUrl) },
+            )
+        }
+    }
+}
+
+/**
+ * Full-width error card shown below the hero when the cold cache miss
+ * throws ([ArtistProfileStatus.Error]). Matches the visual pattern of
+ * [com.stash.feature.search.SearchScreen]'s `ErrorMessage` but adds a
+ * "Retry" button wired to [ArtistProfileViewModel.retry].
+ */
+@Composable
+private fun ArtistProfileErrorCard(
+    message: String,
+    onRetry: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.ErrorOutline,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.error,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Couldn't load artist",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = onRetry) { Text("Retry") }
         }
     }
 }
