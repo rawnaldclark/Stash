@@ -1,5 +1,7 @@
 package com.stash.data.ytmusic.model
 
+import kotlinx.serialization.Serializable
+
 /**
  * One section shown in the sectioned Search results.
  *
@@ -43,6 +45,7 @@ sealed interface TopResultItem {
 data class SearchAllResults(val sections: List<SearchResultSection>)
 
 /** Minimal artist identity for cards, top-result, and related-artists rows. */
+@Serializable
 data class ArtistSummary(
     val id: String,
     val name: String,
@@ -50,6 +53,7 @@ data class ArtistSummary(
 )
 
 /** Minimal album identity for horizontal album rows and discography grids. */
+@Serializable
 data class AlbumSummary(
     val id: String,
     val title: String,
@@ -64,6 +68,7 @@ data class AlbumSummary(
  * [durationSeconds] is a [Double] to accept fractional values from some
  * InnerTube responses; UI code should round for display.
  */
+@Serializable
 data class TrackSummary(
     val videoId: String,
     val title: String,
@@ -80,6 +85,7 @@ data class TrackSummary(
  * with no albums) surface as empty lists rather than nulls; the UI hides
  * empty rows.
  */
+@Serializable
 data class ArtistProfile(
     val id: String,
     val name: String,
