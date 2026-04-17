@@ -121,6 +121,27 @@ class ArtistCacheTest {
     }
 
     @Test
+    fun `stale refresh propagates CancellationException`() = runTest {
+        val dao = InMemoryDao().apply {
+            upsert(ArtistCacheEntityFixtures.serialized("UC1", "Cached", fetchedAt = 0L))
+        }
+        val api = mock<YTMusicApiClient>()
+        whenever(api.getArtist(eq("UC1"))).thenAnswer {
+            throw kotlinx.coroutines.CancellationException("cancelled")
+        }
+        val ttl7h = 7 * 60 * 60 * 1000L
+        val cache = ArtistCache(dao, api, now = { ttl7h })
+
+        var saw = false
+        try {
+            cache.get("UC1").collect { /* receives Stale first, then cancellation on refresh */ }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            saw = true
+        }
+        assertTrue("CancellationException must propagate to the collector", saw)
+    }
+
+    @Test
     fun `memory evicts oldest beyond 20`() = runTest {
         val dao = InMemoryDao()
         val api = mock<YTMusicApiClient>()
