@@ -171,4 +171,17 @@ class YTMusicApiClientTest {
         assertTrue("singles should be empty", profile.singles.isEmpty())
         assertTrue("related should be empty", profile.related.isEmpty())
     }
+
+    @Test
+    fun `normalizeArtistBrowseId strips MPLA only before UC`() {
+        // `MPLAUC…` is the music-channel variant — strip `MPLA` to expose the
+        // bare `UC…` channel id that the cache uses as its stable key.
+        assertEquals("UCabc", normalizeArtistBrowseId("MPLAUCabc"))
+        // A raw channel id passes through untouched.
+        assertEquals("UCabc", normalizeArtistBrowseId("UCabc"))
+        // Unknown `MPLA`-prefixed ids (e.g. `MPLARZ…`) must NOT be truncated —
+        // the old broad check produced "RZabc" here, which was wrong.
+        assertEquals("MPLARZabc", normalizeArtistBrowseId("MPLARZabc"))
+        assertEquals("MPLAxyz", normalizeArtistBrowseId("MPLAxyz"))
+    }
 }
