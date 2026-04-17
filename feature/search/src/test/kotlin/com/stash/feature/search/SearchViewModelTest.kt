@@ -1,17 +1,8 @@
 package com.stash.feature.search
 
-import androidx.media3.common.PlaybackException
 import app.cash.turbine.test
-import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.repository.MusicRepository
-import com.stash.core.media.preview.PreviewErrorEvent
-import com.stash.core.media.preview.PreviewPlayer
+import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.media.preview.PreviewState
-import com.stash.data.download.DownloadExecutor
-import com.stash.data.download.files.FileOrganizer
-import com.stash.data.download.prefs.QualityPreferencesManager
-import com.stash.data.download.preview.PreviewUrlCache
-import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.SearchAllResults
 import kotlinx.coroutines.CompletableDeferred
@@ -20,6 +11,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -27,6 +19,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -36,19 +29,27 @@ import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 /**
- * Unit tests for [SearchViewModel] — pin the three load-bearing behaviours
- * introduced by Task 9 of the Search Tab Overhaul:
+ * Unit tests for [SearchViewModel] — pin the search-query pipeline.
  *
- *  1. `flatMapLatest` cancels an in-flight [YTMusicApiClient.searchAll] call
- *     when a new keystroke arrives before the previous search resolved.
- *  2. A thrown [YTMusicApiClient.searchAll] surfaces a snackbar message on
- *     [SearchViewModel.userMessages] so the UI can show "Search failed".
- *  3. An ExoPlayer IO error within 3 s of the most recent preview start
- *     silently retries the stream via yt-dlp (bypassing the InnerTube race).
+ * The preview/download paths were extracted to
+ * [com.stash.core.media.actions.TrackActionsDelegate] in the Album Discovery
+ * phase-1 migration; coverage for cache hits, extractor misses, yt-dlp retry,
+ * download success/failure, refresh, etc. lives in `TrackActionsDelegateTest`.
+ * This file only exercises the parts still owned by the VM:
+ *
+ *  1. Blank / below-min-length queries emit [SearchStatus.Idle] without a
+ *     [YTMusicApiClient.searchAll] call.
+ *  2. A typed-past-the-minimum query triggers `searchAll` after the 300 ms
+ *     debounce window.
+ *  3. A new keystroke mid-search cancels the previous in-flight call
+ *     ([flatMapLatest]).
+ *  4. A thrown `searchAll` surfaces a snackbar message on
+ *     [SearchViewModel.userMessages].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchViewModelTest {
@@ -57,6 +58,37 @@ class SearchViewModelTest {
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
+
+    @Test
+    fun `blank or short query emits Idle without calling searchAll`() = runTest {
+        val api = mock<YTMusicApiClient>()
+        val vm = newVm(api = api)
+
+        vm.onQueryChanged("")
+        advanceUntilIdle()
+        assertEquals(SearchStatus.Idle, vm.uiState.value.status)
+
+        vm.onQueryChanged("a") // below MIN_QUERY_LENGTH (2)
+        advanceUntilIdle()
+        assertEquals(SearchStatus.Idle, vm.uiState.value.status)
+
+        verify(api, never()).searchAll(any())
+    }
+
+    @Test
+    fun `onQueryChanged triggers searchAll after debounce`() = runTest {
+        val api = mock<YTMusicApiClient>()
+        whenever(api.searchAll(eq("abc"))).doReturn(SearchAllResults(emptyList()))
+        val vm = newVm(api = api)
+
+        vm.onQueryChanged("abc")
+        // Before the debounce, no call should have gone out yet.
+        advanceTimeBy(100)
+        verify(api, never()).searchAll(any())
+
+        advanceUntilIdle()
+        verify(api, atLeastOnce()).searchAll(eq("abc"))
+    }
 
     @Test
     fun `flatMapLatest cancels prior query on new keystroke`() = runTest {
@@ -97,64 +129,28 @@ class SearchViewModelTest {
         }
     }
 
-    @Test
-    fun `preview retries via ytdlp when InnerTube playback errors within 3s`() = runTest {
-        val player = mock<PreviewPlayer>()
-        val playerErrors = MutableSharedFlow<PreviewErrorEvent>()
-        whenever(player.previewState).thenReturn(MutableStateFlow(PreviewState.Idle))
-        // The VM collects this flow in init{}; we don't need to emit on it
-        // for this test — we call vm.onPreviewError(...) directly.
-        whenever(player.playerErrors).thenReturn(playerErrors.asSharedFlow())
-
-        val extractor = mock<PreviewUrlExtractor>()
-        whenever(extractor.extractStreamUrl(eq("vid"))).thenReturn("https://innertube/vid")
-        whenever(extractor.extractViaYtDlpForRetry(eq("vid"))).thenReturn("https://ytdlp/vid")
-
-        val vm = newVm(api = mock(), player = player, extractor = extractor)
-
-        vm.previewTrack("vid")
-        advanceUntilIdle()
-        verify(player).playUrl(eq("vid"), eq("https://innertube/vid"))
-
-        // Simulate ExoPlayer IO error within 3 s of the preview start.
-        vm.onPreviewError(
-            "vid",
-            PlaybackException("source", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED),
-        )
-        advanceTimeBy(500)
-        advanceUntilIdle()
-
-        verify(player).playUrl(eq("vid"), eq("https://ytdlp/vid"))
-    }
-
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 
     private fun newVm(
         api: YTMusicApiClient = mock(),
-        player: PreviewPlayer = mock {
-            on { previewState } doReturn MutableStateFlow(PreviewState.Idle)
-            on { playerErrors } doReturn MutableSharedFlow<PreviewErrorEvent>().asSharedFlow()
-        },
-        extractor: PreviewUrlExtractor = mock(),
         prefetcher: PreviewPrefetcher = mock(),
-        previewCache: PreviewUrlCache = PreviewUrlCache(),
-        trackDao: TrackDao = mock(),
-        downloadExecutor: DownloadExecutor = mock(),
-        fileOrganizer: FileOrganizer = mock(),
-        qualityPrefs: QualityPreferencesManager = mock(),
-        musicRepository: MusicRepository = mock(),
-    ): SearchViewModel = SearchViewModel(
-        api = api,
-        previewPlayer = player,
-        previewUrlExtractor = extractor,
-        previewUrlCache = previewCache,
-        prefetcher = prefetcher,
-        trackDao = trackDao,
-        downloadExecutor = downloadExecutor,
-        fileOrganizer = fileOrganizer,
-        qualityPrefs = qualityPrefs,
-        musicRepository = musicRepository,
-    )
+        delegate: TrackActionsDelegate = stubDelegate(),
+    ): SearchViewModel = SearchViewModel(api, prefetcher, delegate)
+
+    /**
+     * Returns a [TrackActionsDelegate] mock with all flows stubbed to their
+     * default initial values. The VM's `init` calls `bindToScope`; we ignore
+     * the scope (the mock is a no-op) and trust the delegate's own tests to
+     * cover the real bind semantics.
+     */
+    private fun stubDelegate(): TrackActionsDelegate = mock {
+        on { previewState } doReturn
+            MutableStateFlow(PreviewState.Idle as PreviewState).asStateFlow()
+        on { userMessages } doReturn MutableSharedFlow<String>().asSharedFlow()
+        on { downloadingIds } doReturn MutableStateFlow<Set<String>>(emptySet()).asStateFlow()
+        on { downloadedIds } doReturn MutableStateFlow<Set<String>>(emptySet()).asStateFlow()
+        on { previewLoadingId } doReturn MutableStateFlow<String?>(null).asStateFlow()
+    }
 }

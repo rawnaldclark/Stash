@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.flow.merge
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.ui.components.AlbumSquareCard
 import com.stash.core.ui.components.ArtistAvatarCard
@@ -91,11 +92,17 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val previewState by viewModel.previewState.collectAsStateWithLifecycle()
+    val previewState by viewModel.delegate.previewState.collectAsStateWithLifecycle()
+    val downloadingIds by viewModel.delegate.downloadingIds.collectAsStateWithLifecycle()
+    val downloadedIds by viewModel.delegate.downloadedIds.collectAsStateWithLifecycle()
+    val previewLoadingId by viewModel.delegate.previewLoadingId.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(viewModel) {
-        viewModel.userMessages.collect { msg -> snackbarHostState.showSnackbar(msg) }
+        merge(
+            viewModel.userMessages,
+            viewModel.delegate.userMessages,
+        ).collect { msg -> snackbarHostState.showSnackbar(msg) }
     }
 
     Scaffold(
@@ -120,14 +127,16 @@ fun SearchScreen(
                 SearchStatus.Loading -> LoadingSkeletons()
                 is SearchStatus.Results -> SectionedResultsList(
                     sections = status.sections,
-                    uiState = state,
+                    downloadingIds = downloadingIds,
+                    downloadedIds = downloadedIds,
+                    previewLoadingId = previewLoadingId,
                     previewState = previewState,
                     onArtistClick = { a -> onNavigateToArtist(a.id, a.name, a.avatarUrl) },
                     onAlbumClick = { a -> onNavigateToAlbum(a.title, a.artist) },
-                    onTopTrackClick = { t -> viewModel.previewTrack(t.videoId) },
-                    onPreview = { viewModel.previewTrack(it) },
-                    onStopPreview = viewModel::stopPreview,
-                    onDownload = { t -> viewModel.downloadTrack(t.toSearchResultItem()) },
+                    onTopTrackClick = { t -> viewModel.delegate.previewTrack(t.videoId) },
+                    onPreview = { viewModel.delegate.previewTrack(it) },
+                    onStopPreview = viewModel.delegate::stopPreview,
+                    onDownload = { t -> viewModel.delegate.downloadTrack(t.toTrackItem()) },
                 )
                 SearchStatus.Empty -> NoResultsMessage()
                 is SearchStatus.Error -> ErrorMessage(status.message)
@@ -218,7 +227,9 @@ private fun SearchBar(
 @Composable
 private fun SectionedResultsList(
     sections: List<SearchResultSection>,
-    uiState: SearchUiState,
+    downloadingIds: Set<String>,
+    downloadedIds: Set<String>,
+    previewLoadingId: String?,
     previewState: PreviewState,
     onArtistClick: (ArtistSummary) -> Unit,
     onAlbumClick: (AlbumSummary) -> Unit,
@@ -241,9 +252,9 @@ private fun SectionedResultsList(
                             item = top,
                             onArtistClick = onArtistClick,
                             onTrackPlay = onTopTrackClick,
-                            isDownloading = videoId in uiState.downloadingIds,
-                            isDownloaded = videoId in uiState.downloadedIds,
-                            isPreviewLoading = uiState.previewLoading == videoId,
+                            isDownloading = videoId in downloadingIds,
+                            isDownloaded = videoId in downloadedIds,
+                            isPreviewLoading = previewLoadingId == videoId,
                             isPreviewPlaying = previewState is PreviewState.Playing &&
                                 previewState.videoId == videoId,
                             onPreview = { onPreview(videoId) },
@@ -264,9 +275,9 @@ private fun SectionedResultsList(
                         val item = t.toSearchResultItem()
                         PreviewDownloadRow(
                             item = item,
-                            isDownloading = t.videoId in uiState.downloadingIds,
-                            isDownloaded = t.videoId in uiState.downloadedIds,
-                            isPreviewLoading = uiState.previewLoading == t.videoId,
+                            isDownloading = t.videoId in downloadingIds,
+                            isDownloaded = t.videoId in downloadedIds,
+                            isPreviewLoading = previewLoadingId == t.videoId,
                             isPreviewPlaying = previewState is PreviewState.Playing &&
                                 previewState.videoId == t.videoId,
                             onPreview = { onPreview(t.videoId) },
