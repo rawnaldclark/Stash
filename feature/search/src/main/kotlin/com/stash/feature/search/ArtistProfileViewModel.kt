@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -78,25 +79,38 @@ class ArtistProfileViewModel @Inject constructor(
     init {
         val t0 = SystemClock.elapsedRealtime()
         viewModelScope.launch {
-            artistCache.get(artistId).collect { cached ->
-                when (cached) {
-                    is CachedProfile.Fresh -> apply(
-                        profile = cached.profile,
-                        status = ArtistProfileStatus.Fresh,
-                        t0 = t0,
+            artistCache.get(artistId)
+                .catch { t ->
+                    // Cold miss with no cached fallback — the flow throws and
+                    // would otherwise crash viewModelScope. Flip to Error and
+                    // let the screen render a message instead. `flow.catch`
+                    // intentionally does not swallow CancellationException.
+                    Log.e(TAG, "cache failure for $artistId", t)
+                    _uiState.value = _uiState.value.copy(
+                        status = ArtistProfileStatus.Error(
+                            t.message ?: "Something went wrong.",
+                        ),
                     )
-                    is CachedProfile.Stale -> {
-                        apply(
+                }
+                .collect { cached ->
+                    when (cached) {
+                        is CachedProfile.Fresh -> apply(
                             profile = cached.profile,
-                            status = ArtistProfileStatus.Stale,
+                            status = ArtistProfileStatus.Fresh,
                             t0 = t0,
                         )
-                        if (cached.refreshFailed) {
-                            _userMessages.emit("Couldn't refresh — showing cached.")
+                        is CachedProfile.Stale -> {
+                            apply(
+                                profile = cached.profile,
+                                status = ArtistProfileStatus.Stale,
+                                t0 = t0,
+                            )
+                            if (cached.refreshFailed) {
+                                _userMessages.emit("Couldn't refresh — showing cached.")
+                            }
                         }
                     }
                 }
-            }
         }
     }
 

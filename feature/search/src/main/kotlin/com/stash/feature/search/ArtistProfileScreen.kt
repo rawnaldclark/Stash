@@ -38,7 +38,7 @@ import com.stash.core.ui.components.SectionHeader
  */
 @Composable
 fun ArtistProfileScreen(
-    onBack: () -> Unit,
+    @Suppress("UNUSED_PARAMETER") onBack: () -> Unit,
     onNavigateToAlbum: (albumName: String, artistName: String) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     vm: ArtistProfileViewModel = hiltViewModel(),
@@ -49,12 +49,6 @@ fun ArtistProfileScreen(
     LaunchedEffect(vm) {
         vm.userMessages.collect { message -> snackbar.showSnackbar(message) }
     }
-
-    // Android system back is handled by the NavHost; exposing `onBack`
-    // future-proofs the Scaffold if we add a top-app-bar back button in
-    // Task 11's polish pass.
-    @Suppress("UNUSED_PARAMETER")
-    val unusedBack = onBack
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
