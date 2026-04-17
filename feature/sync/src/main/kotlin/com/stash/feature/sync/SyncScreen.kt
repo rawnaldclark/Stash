@@ -135,6 +135,7 @@ fun SyncScreen(
                 phase = uiState.syncPhase,
                 progress = uiState.overallProgress,
                 onSyncNow = viewModel::onSyncNow,
+                onStopSync = viewModel::onStopSync,
             )
         }
 
@@ -148,10 +149,18 @@ fun SyncScreen(
             }
         }
 
-        // -- Spotify Sync Preferences (above schedule, collapsed by default) --
-        if (uiState.spotifyConnected && uiState.spotifyPlaylists.isNotEmpty()) {
+        // -- Spotify Sync Preferences (above schedule) ------------------------
+        // Rendered whenever Spotify is connected, even before the first sync
+        // has populated the playlist list — so users can see what's coming
+        // and opt in to the playlists they want BEFORE tapping Sync. Starts
+        // expanded when empty (first-run explainer is visible) or when every
+        // playlist is off (user might be reviewing a fresh install's state).
+        if (uiState.spotifyConnected) {
             item {
-                var expanded by remember { mutableStateOf(false) }
+                val everythingOff = uiState.spotifyPlaylists.isNotEmpty() &&
+                    uiState.spotifyPlaylists.none { it.syncEnabled }
+                val startExpanded = uiState.spotifyPlaylists.isEmpty() || everythingOff
+                var expanded by remember(startExpanded) { mutableStateOf(startExpanded) }
                 val purple = MaterialTheme.colorScheme.primary
 
                 Surface(
@@ -197,7 +206,15 @@ fun SyncScreen(
                         }
 
                         // Expanded content
-                        if (expanded) {
+                        if (expanded && uiState.spotifyPlaylists.isEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Your Spotify playlists and daily mixes will appear here after the first sync. Tap Sync Now to load them — nothing downloads until you toggle it on.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        } else if (expanded) {
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // Mix sync mode toggle
@@ -403,6 +420,7 @@ private fun SyncActionSection(
     phase: SyncPhase,
     progress: Float,
     onSyncNow: () -> Unit,
+    onStopSync: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -411,35 +429,73 @@ private fun SyncActionSection(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Button(
-            onClick = onSyncNow,
-            enabled = !isSyncing,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-            ),
-        ) {
-            if (isSyncing) {
+        if (isSyncing) {
+            // Primary Sync button flips into a disabled "Syncing…" row that
+            // mirrors the current phase, plus a distinct error-coloured
+            // "Stop sync" button so the user can always bail out. Before this
+            // landed the only way to stop an in-flight sync was to
+            // force-quit the app.
+            Button(
+                onClick = { /* disabled while syncing */ },
+                enabled = false,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                    disabledContentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
                     color = MaterialTheme.colorScheme.onPrimary,
                     strokeWidth = 2.dp,
                 )
                 Spacer(Modifier.width(8.dp))
-            } else {
+                Text(
+                    text = phaseLabel(phase),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+            Button(
+                onClick = onStopSync,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PauseCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Stop sync",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        } else {
+            Button(
+                onClick = onSyncNow,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                ),
+            ) {
                 Icon(
                     imageVector = Icons.Filled.Sync,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Sync Now",
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
-            Text(
-                text = if (isSyncing) phaseLabel(phase) else "Sync Now",
-                style = MaterialTheme.typography.labelLarge,
-            )
         }
 
         if (isSyncing) {

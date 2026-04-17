@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil3.SingletonImageLoader
+import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.repository.MusicRepositoryImpl
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.data.download.ytdlp.YtDlpManager
@@ -45,6 +46,9 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var okHttpClient: OkHttpClient
 
+    @Inject
+    lateinit var artistProfileCacheDao: ArtistProfileCacheDao
+
     /** Application-scoped coroutine scope for one-shot startup tasks. */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -82,5 +86,36 @@ class StashApplication : Application(), Configuration.Provider {
         }
         YtDlpUpdateWorker.schedulePeriodicUpdate(this)
         UpdateCheckWorker.schedulePeriodicCheck(this)
+        // Also fire a one-shot check on every cold start so a release pushed
+        // between periodic-worker windows surfaces within seconds of the
+        // next launch — the 24-hour periodic worker alone can leave users
+        // waiting up to 48 hours when Android Doze defers the fire.
+        UpdateCheckWorker.enqueueOneTimeCheck(this)
+        applicationScope.launch { maybeInvalidateArtistCache() }
+    }
+
+    /**
+     * Wipe the artist-profile cache exactly once after a parser-format
+     * upgrade. Rows written by the pre-fix parser contain empty Popular
+     * lists; without invalidation they'd be served for the full 6-hour TTL.
+     * A SharedPreferences flag bumped to [ARTIST_CACHE_VERSION] ensures the
+     * wipe runs exactly once per install.
+     */
+    private suspend fun maybeInvalidateArtistCache() {
+        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
+        val stored = prefs.getInt("artist_cache_version", 0)
+        if (stored < ARTIST_CACHE_VERSION) {
+            artistProfileCacheDao.clearAll()
+            prefs.edit().putInt("artist_cache_version", ARTIST_CACHE_VERSION).apply()
+        }
+    }
+
+    companion object {
+        /**
+         * Bump whenever a parser change makes existing cached rows produce
+         * a worse UX than a fresh fetch. Current bump (v1) invalidates rows
+         * written before the 2026-04-17 Popular-shelf title-matching fix.
+         */
+        private const val ARTIST_CACHE_VERSION = 1
     }
 }
