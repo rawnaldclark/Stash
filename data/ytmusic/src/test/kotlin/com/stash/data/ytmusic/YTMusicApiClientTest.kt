@@ -192,6 +192,83 @@ class YTMusicApiClientTest {
     }
 
     @Test
+    fun `getAlbum parses rich fixture with header subtitle tracklist and moreByArtist`() = runTest {
+        val client = fakeBrowseClient(loadFixture("album_rich.json"))
+
+        val album = client.getAlbum("MPREb_curtains")
+
+        assertEquals("MPREb_curtains", album.id)
+        assertEquals("Curtains", album.title)
+        assertEquals("John Frusciante", album.artist)
+        assertEquals("UCFRUSCIANTEID1", album.artistId)
+        assertEquals("2005", album.year)
+        assertTrue(
+            "thumbnailUrl should be non-null and https, was ${album.thumbnailUrl}",
+            album.thumbnailUrl != null && album.thumbnailUrl!!.startsWith("https://"),
+        )
+        // 15 tracks seeded in the fixture; parser must surface all of them in order.
+        assertEquals(15, album.tracks.size)
+        assertEquals("The Past Recedes", album.tracks[0].title)
+        assertEquals("CURT01", album.tracks[0].videoId)
+        assertEquals("John Frusciante", album.tracks[0].artist)
+        // Duration "4:39" → 4 * 60 + 39 = 279 seconds.
+        assertEquals(279.0, album.tracks[0].durationSeconds, 0.01)
+        // Last track — verify ordering preserved.
+        assertEquals("Far Away", album.tracks[14].title)
+        assertEquals("CURT15", album.tracks[14].videoId)
+
+        // moreByArtist shelf: 2 albums with browseIds + years.
+        assertEquals(2, album.moreByArtist.size)
+        assertEquals("Inside of Emptiness", album.moreByArtist[0].title)
+        assertEquals("MPREb_insideOfEmptiness", album.moreByArtist[0].id)
+        assertEquals("2004", album.moreByArtist[0].year)
+        assertEquals("The Will to Death", album.moreByArtist[1].title)
+        assertEquals("MPREb_willToDeath", album.moreByArtist[1].id)
+    }
+
+    @Test
+    fun `getAlbum parses sparse fixture with empty moreByArtist and no year`() = runTest {
+        val client = fakeBrowseClient(loadFixture("album_sparse.json"))
+
+        val album = client.getAlbum("MPREb_sparse")
+
+        assertEquals("Sparse EP", album.title)
+        assertEquals("Obscure Artist", album.artist)
+        assertEquals("UCSPARSEID1", album.artistId)
+        assertEquals(
+            "year should be null when subtitle has no 4-digit token, was '${album.year}'",
+            null,
+            album.year,
+        )
+        assertEquals(2, album.tracks.size)
+        assertTrue(
+            "moreByArtist should be empty, had ${album.moreByArtist.size}",
+            album.moreByArtist.isEmpty(),
+        )
+    }
+
+    @Test
+    fun `getAlbum with malformed response returns empty tracks not throw`() = runTest {
+        val client = fakeBrowseClient(loadFixture("album_malformed.json"))
+
+        // Must not throw even though the tracklist shelf is missing —
+        // region-blocked albums should surface as an empty tracklist the UI
+        // can show a "No tracks available" message for.
+        val album = client.getAlbum("MPREb_blocked")
+
+        assertEquals("Region Blocked Album", album.title)
+        assertEquals("Blocked Artist", album.artist)
+        assertTrue(
+            "tracks should be empty when musicShelfRenderer is missing, had ${album.tracks.size}",
+            album.tracks.isEmpty(),
+        )
+        assertTrue(
+            "moreByArtist should be empty when there's no carousel, had ${album.moreByArtist.size}",
+            album.moreByArtist.isEmpty(),
+        )
+    }
+
+    @Test
     fun `normalizeArtistBrowseId strips MPLA only before UC`() {
         // `MPLAUC…` is the music-channel variant — strip `MPLA` to expose the
         // bare `UC…` channel id that the cache uses as its stable key.
