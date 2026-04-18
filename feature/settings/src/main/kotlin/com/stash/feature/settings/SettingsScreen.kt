@@ -28,7 +28,9 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -385,6 +387,12 @@ private fun SettingsContent(
 
         val storageContext = LocalContext.current
         val contentResolver = storageContext.contentResolver
+        // Tracks what action the user intended when they tapped the folder
+        // picker. "SetOnly" = just pick a destination for new downloads.
+        // "SetAndMove" = pick destination AND auto-start the library move
+        // once the URI is saved (single tap flow for users with existing
+        // libraries who want to migrate).
+        var pendingPickerIntent by remember { mutableStateOf(PickerIntent.SetOnly) }
         val treePicker = androidx.activity.compose.rememberLauncherForActivityResult(
             contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
         ) { uri ->
@@ -400,7 +408,11 @@ private fun SettingsContent(
                     )
                 }
                 onSetExternalStorage(uri)
+                if (pendingPickerIntent == PickerIntent.SetAndMove) {
+                    onStartMoveLibrary(uri)
+                }
             }
+            pendingPickerIntent = PickerIntent.SetOnly
         }
 
         val externalTree = uiState.externalTreeUri
@@ -496,20 +508,28 @@ private fun SettingsContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                // Move library --------------------------------------------
-                if (externalTree != null) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    androidx.compose.material3.HorizontalDivider(
-                        color = extendedColors.glassBorder,
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    MoveLibrarySection(
-                        state = uiState.moveLibraryState,
-                        onStart = { onStartMoveLibrary(externalTree) },
-                        onCancel = onCancelMoveLibrary,
-                        onDismiss = onDismissMoveLibrary,
-                    )
-                }
+                // Move library — always visible. When no external folder has
+                // been picked yet, the Start button launches the picker and
+                // auto-starts the move in a single tap flow.
+                Spacer(modifier = Modifier.height(12.dp))
+                androidx.compose.material3.HorizontalDivider(
+                    color = extendedColors.glassBorder,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                MoveLibrarySection(
+                    state = uiState.moveLibraryState,
+                    hasExternalFolder = externalTree != null,
+                    onStart = {
+                        if (externalTree != null) {
+                            onStartMoveLibrary(externalTree)
+                        } else {
+                            pendingPickerIntent = PickerIntent.SetAndMove
+                            treePicker.launch(null)
+                        }
+                    },
+                    onCancel = onCancelMoveLibrary,
+                    onDismiss = onDismissMoveLibrary,
+                )
             }
         }
 
@@ -522,7 +542,7 @@ private fun SettingsContent(
                 aboutContext.packageManager
                     .getPackageInfo(aboutContext.packageName, 0)
                     .versionName
-            }.getOrNull() ?: "0.3.4-beta"
+            }.getOrNull() ?: "0.3.4-beta.2"
         }
 
         GlassCard {
@@ -556,6 +576,13 @@ private fun SettingsContent(
 }
 
 /**
+ * Tracks what the user meant when they tapped the SAF folder-picker.
+ * [SetOnly] = redirect new downloads; [SetAndMove] = also start the
+ * library migration to the picked folder as soon as it's granted.
+ */
+private enum class PickerIntent { SetOnly, SetAndMove }
+
+/**
  * Renders the "Move existing library" action inside the Storage card.
  *
  * Shows four visual states driven by the underlying
@@ -568,6 +595,7 @@ private fun SettingsContent(
 @Composable
 private fun MoveLibrarySection(
     state: com.stash.data.download.files.MoveLibraryState,
+    hasExternalFolder: Boolean,
     onStart: () -> Unit,
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
@@ -581,7 +609,11 @@ private fun MoveLibrarySection(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Move tracks already on your device into the folder above so they're accessible over USB too.",
+                text = if (hasExternalFolder) {
+                    "Move tracks already on your device into the folder above so they're accessible over USB too."
+                } else {
+                    "Move tracks already on your device to an external folder (SD / USB) so you can access them over USB too. You'll pick the destination next."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -593,7 +625,10 @@ private fun MoveLibrarySection(
                     contentColor = MaterialTheme.colorScheme.primary,
                 ),
             ) {
-                Text("Move library to this folder")
+                Text(
+                    text = if (hasExternalFolder) "Move library to this folder"
+                    else "Pick destination and move library",
+                )
             }
         }
         is com.stash.data.download.files.MoveLibraryState.Running -> {
