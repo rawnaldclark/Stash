@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -48,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,6 +65,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.merge
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.ui.components.AlbumSquareCard
@@ -137,6 +143,7 @@ fun SearchScreen(
                     onPreview = { viewModel.delegate.previewTrack(it) },
                     onStopPreview = viewModel.delegate::stopPreview,
                     onDownload = { t -> viewModel.delegate.downloadTrack(t.toTrackItem()) },
+                    onVisibleSongIdsChanged = viewModel::prefetchVisible,
                 )
                 SearchStatus.Empty -> NoResultsMessage()
                 is SearchStatus.Error -> ErrorMessage(status.message)
@@ -224,6 +231,7 @@ private fun SearchBar(
  * backing [YTMusicApiClient.searchAll] parser, so this composable only
  * needs to pattern-match the kinds it actually receives.
  */
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 @Composable
 private fun SectionedResultsList(
     sections: List<SearchResultSection>,
@@ -237,8 +245,32 @@ private fun SectionedResultsList(
     onPreview: (String) -> Unit,
     onStopPreview: () -> Unit,
     onDownload: (TrackSummary) -> Unit,
+    onVisibleSongIdsChanged: (List<String>) -> Unit = {},
 ) {
+    val listState = rememberLazyListState()
+
+    // Scroll-driven preview prefetch. Keys are set as "song_<videoId>" on
+    // each Songs row below, so we can derive visible video ids directly
+    // from layoutInfo without ferrying a flat tracks list into this
+    // composable. 200ms debounce absorbs fast scroll without spamming
+    // the extractor; distinctUntilChanged filters no-op emissions when
+    // the visible set hasn't changed since the last tick.
+    LaunchedEffect(listState, sections) {
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
+                (info.key as? String)?.takeIf { it.startsWith("song_") }
+                    ?.removePrefix("song_")
+            }
+        }
+            .debounce(200)
+            .distinctUntilChanged()
+            .collect { ids ->
+                if (ids.isNotEmpty()) onVisibleSongIdsChanged(ids)
+            }
+    }
+
     LazyColumn(
+        state = listState,
         contentPadding = PaddingValues(bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {

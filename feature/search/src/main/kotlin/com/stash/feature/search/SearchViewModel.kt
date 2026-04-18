@@ -145,6 +145,20 @@ class SearchViewModel @Inject constructor(
     }
 
     /**
+     * Scroll-driven prefetch entry point. The screen hands over the set of
+     * video ids currently rendered by the Songs section; we forward to the
+     * [PreviewPrefetcher], which dedupes against the shared
+     * [com.stash.data.download.preview.PreviewUrlCache] so already-warmed
+     * ids cost nothing. Complements [prefetchTopN], which only pre-warms
+     * the first [PREFETCH_TOP_N] ids on a fresh results page — this keeps
+     * rows the user scrolls into warm as well.
+     */
+    fun prefetchVisible(videoIds: List<String>) {
+        if (videoIds.isEmpty()) return
+        prefetcher.prefetch(videoIds.distinct())
+    }
+
+    /**
      * Kicks the [PreviewPrefetcher] for the first [PREFETCH_TOP_N] tracks
      * across the Top-result (if a track) and Songs sections so a preview
      * tap on any of them hits a warm URL cache. Safe to call repeatedly —
