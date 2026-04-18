@@ -111,6 +111,7 @@ class StashApplication : Application(), Configuration.Provider {
         UpdateCheckWorker.enqueueOneTimeCheck(this)
         applicationScope.launch { maybeInvalidateArtistCache() }
         applicationScope.launch { maybeEnableYouTubePlaylistSync() }
+        applicationScope.launch { maybeHideEmptyYouTubePlaylists() }
 
         // Start the local listening-history recorder + optional Last.fm
         // scrobbler. Both are safe to start unconditionally — the scrobbler
@@ -159,6 +160,29 @@ class StashApplication : Application(), Configuration.Provider {
         }
     }
 
+    /**
+     * Hides stale YouTube playlists that have zero linked tracks. These
+     * are leftovers from syncs that ran before the Option-A auto-enable
+     * fix — they got created as empty shells and never populated, but
+     * still render as dead "0 track" cards on the Home screen. DiffWorker
+     * will re-activate them if the same mix reappears in a future sync.
+     * Gated by [YOUTUBE_HIDE_EMPTY_VERSION] so it runs at most once.
+     */
+    private suspend fun maybeHideEmptyYouTubePlaylists() {
+        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
+        val stored = prefs.getInt("youtube_hide_empty_version", 0)
+        if (stored < YOUTUBE_HIDE_EMPTY_VERSION) {
+            val hidden = playlistDao.hideEmptyYouTubePlaylists()
+            Log.i(
+                "StashMigration",
+                "maybeHideEmptyYouTubePlaylists: hid $hidden empty playlist(s)",
+            )
+            prefs.edit()
+                .putInt("youtube_hide_empty_version", YOUTUBE_HIDE_EMPTY_VERSION)
+                .apply()
+        }
+    }
+
     companion object {
         /**
          * Bump whenever a parser change makes existing cached rows produce
@@ -175,5 +199,12 @@ class StashApplication : Application(), Configuration.Provider {
          * already live in the DB.
          */
         private const val YOUTUBE_SYNC_ENABLE_VERSION = 1
+
+        /**
+         * Bump when [maybeHideEmptyYouTubePlaylists] needs to run again.
+         * v1 is the initial rollout that hides stale empty "My Mix N"
+         * shells left over from pre-fix syncs.
+         */
+        private const val YOUTUBE_HIDE_EMPTY_VERSION = 1
     }
 }

@@ -238,10 +238,58 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET sync_enabled = 1 WHERE source = 'YOUTUBE' AND sync_enabled = 0")
     suspend fun enableAllYouTubePlaylistSync(): Int
 
+    /**
+     * One-shot data migration: hide every YouTube playlist that currently
+     * has zero linked tracks. Cleans up stale "My Mix N" rows left over
+     * from syncs that ran while sync_enabled was false — they were created
+     * as playlist shells but never populated with tracks, then kept
+     * cluttering the Home screen indefinitely because the feed rotated
+     * past them. Future DiffWorker runs re-activate any such row if the
+     * same mix reappears in a later snapshot.
+     *
+     * @return the number of rows hidden.
+     */
+    @Query(
+        """
+        UPDATE playlists SET is_active = 0
+        WHERE source = 'YOUTUBE' AND is_active = 1
+          AND id NOT IN (
+              SELECT playlist_id FROM playlist_tracks
+              WHERE removed_at IS NULL
+          )
+        """
+    )
+    suspend fun hideEmptyYouTubePlaylists(): Int
+
     /** All sync-enabled playlists for a given source. Used by the sync
      *  pipeline to skip disabled playlists. */
     @Query("SELECT * FROM playlists WHERE source = :source AND is_active = 1 AND sync_enabled = 1")
     suspend fun getSyncEnabledPlaylists(source: MusicSource): List<PlaylistEntity>
+
+    /**
+     * Soft-deactivate playlists from [source] whose [source_id] isn't in
+     * [currentSourceIds]. Used after a sync to hide playlists that rotated
+     * off the remote's home feed (e.g. a YouTube Music Home Mix that isn't
+     * surfaced today). The rows stay in the DB with their track links
+     * intact, so the playlist can be cheaply revived if it reappears
+     * later — see [reactivateById]. Returns the number of rows flipped.
+     */
+    @Query(
+        "UPDATE playlists SET is_active = 0 " +
+            "WHERE source = :source AND is_active = 1 " +
+            "AND source_id NOT IN (:currentSourceIds)"
+    )
+    suspend fun deactivateMissingForSource(
+        source: MusicSource,
+        currentSourceIds: List<String>,
+    ): Int
+
+    /** Flip [is_active] back to 1 for a specific playlist id. Paired with
+     *  [deactivateMissingForSource] so a rotating home-feed mix that
+     *  returns tomorrow re-surfaces on the Home screen instead of
+     *  remaining silently hidden. */
+    @Query("UPDATE playlists SET is_active = 1 WHERE id = :playlistId AND is_active = 0")
+    suspend fun reactivateById(playlistId: Long): Int
 
     // ── Custom playlist management ──────────────────────────────────────
 

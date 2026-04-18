@@ -212,6 +212,28 @@ class DiffWorker @AssistedInject constructor(
                 }
             }
 
+            // Soft-hide YouTube playlists that rotated off the home feed
+            // since the last sync. Without this, the Home screen keeps
+            // showing stale "My Mix N" cards that point at empty
+            // playlist_tracks (they were never populated because sync was
+            // disabled at the time). Only targets YOUTUBE — Spotify
+            // playlists are user-curated and shouldn't silently disappear
+            // just because the sync didn't surface them. findOrCreatePlaylist
+            // above re-activates a hidden playlist that reappears in a
+            // later snapshot, so the cycle is reversible.
+            val youtubeSourceIds = playlistSnapshots
+                .filter { it.source == MusicSource.YOUTUBE }
+                .map { it.sourcePlaylistId }
+            if (youtubeSourceIds.isNotEmpty()) {
+                val hidden = playlistDao.deactivateMissingForSource(
+                    source = MusicSource.YOUTUBE,
+                    currentSourceIds = youtubeSourceIds,
+                )
+                if (hidden > 0) {
+                    Log.i(TAG, "Deactivated $hidden stale YouTube playlist(s)")
+                }
+            }
+
             // Clean up orphaned tracks whose playlists were refreshed and
             // that no longer belong to any playlist. Frees disk storage.
             val cleaned = musicRepository.cleanOrphanedMixTracks()
@@ -272,9 +294,17 @@ class DiffWorker @AssistedInject constructor(
             ) {
                 playlistDao.updateName(existing.id, snapshot.playlistName)
             }
+            // Re-activate a previously auto-hidden playlist when it
+            // reappears in today's snapshot. Pairs with the post-loop
+            // deactivateMissingForSource call below — without it, a mix
+            // that rotated off and back on would stay invisible forever.
+            if (!existing.isActive) {
+                playlistDao.reactivateById(existing.id)
+            }
             return existing.copy(
                 artUrl = snapshot.artUrl ?: existing.artUrl,
                 name = snapshot.playlistName.ifBlank { existing.name },
+                isActive = true,
             )
         }
 

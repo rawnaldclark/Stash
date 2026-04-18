@@ -379,14 +379,31 @@ class YTMusicApiClient @Inject constructor(
             ?.get("musicPlaylistShelfRenderer")?.asObject()
 
         if (twoColumnShelf != null) {
-            Log.d(TAG, "parseTracksFromBrowse: using twoColumnBrowseResultsRenderer path")
-            val items = twoColumnShelf["contents"]?.asArray() ?: return emptyList()
-            for (item in items) {
-                val renderer = item.asObject()
-                    ?.get("musicResponsiveListItemRenderer")?.asObject()
-                    ?: continue
-                parseTrackFromRenderer(renderer)?.let { tracks.add(it) }
+            val items = twoColumnShelf["contents"]?.asArray()
+            if (items == null) {
+                Log.d(
+                    TAG,
+                    "parseTracksFromBrowse: twoColumn path — shelf present but no 'contents' " +
+                        "array; shelf keys=${twoColumnShelf.keys}",
+                )
+                return emptyList()
             }
+            var skipped = 0
+            for (item in items) {
+                val obj = item.asObject()
+                val renderer = obj?.get("musicResponsiveListItemRenderer")?.asObject()
+                if (renderer == null) {
+                    skipped++
+                    continue
+                }
+                val parsed = parseTrackFromRenderer(renderer)
+                if (parsed != null) tracks.add(parsed) else skipped++
+            }
+            Log.d(
+                TAG,
+                "parseTracksFromBrowse: twoColumn path parsed=${tracks.size} skipped=$skipped " +
+                    "rawItems=${items.size}",
+            )
             return tracks
         }
 
@@ -413,9 +430,14 @@ class YTMusicApiClient @Inject constructor(
                     parseTrackFromRenderer(renderer)?.let { tracks.add(it) }
                 }
             }
+            Log.d(TAG, "parseTracksFromBrowse: found ${tracks.size} tracks (singleColumn path)")
+            return tracks
         }
 
-        Log.d(TAG, "parseTracksFromBrowse: found ${tracks.size} tracks")
+        Log.w(
+            TAG,
+            "parseTracksFromBrowse: NEITHER shelf path matched. Top-level keys=${response.keys}",
+        )
         return tracks
     }
 
