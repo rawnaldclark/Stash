@@ -153,19 +153,18 @@ class DownloadManager @Inject constructor(
 
         emitProgress(track.id, 0.9f, DownloadStatus.PROCESSING)
 
-        // Step 4: Move to organized directory
-        val finalFile = fileOrganizer.getTrackFile(
+        // Step 4: Move to organized destination (internal or user-selected SAF target).
+        val committed = fileOrganizer.commitDownload(
+            tempFile = downloadedFile,
             artist = track.artist,
             album = track.album.ifEmpty { null },
             title = track.title,
             format = downloadedFile.extension,
         )
-        downloadedFile.copyTo(finalFile, overwrite = true)
-        downloadedFile.delete()
 
-        Log.i(TAG, "Downloaded: ${track.artist} - ${track.title} → ${finalFile.absolutePath}")
+        Log.i(TAG, "Downloaded: ${track.artist} - ${track.title} → ${committed.filePath}")
         emitProgress(track.id, 1f, DownloadStatus.COMPLETED)
-        return TrackDownloadResult.Success(finalFile.absolutePath)
+        return TrackDownloadResult.Success(committed.filePath)
     }
 
     /**

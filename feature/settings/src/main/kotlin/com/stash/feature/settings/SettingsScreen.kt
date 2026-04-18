@@ -134,6 +134,10 @@ fun SettingsScreen(
         onEqBandGainChanged = viewModel::setEqBandGain,
         onBassBoostChanged = viewModel::setBassBoost,
         onVirtualizerChanged = viewModel::setVirtualizer,
+        onSetExternalStorage = viewModel::setExternalStorageUri,
+        onStartMoveLibrary = viewModel::startMoveLibrary,
+        onCancelMoveLibrary = viewModel::cancelMoveLibrary,
+        onDismissMoveLibrary = viewModel::dismissMoveLibrary,
         modifier = modifier,
     )
 }
@@ -156,6 +160,10 @@ private fun SettingsContent(
     onEqBandGainChanged: (Int, Float) -> Unit,
     onBassBoostChanged: (Float) -> Unit,
     onVirtualizerChanged: (Float) -> Unit,
+    onSetExternalStorage: (android.net.Uri?) -> Unit,
+    onStartMoveLibrary: (android.net.Uri) -> Unit,
+    onCancelMoveLibrary: () -> Unit,
+    onDismissMoveLibrary: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -375,11 +383,133 @@ private fun SettingsContent(
         // -- Storage section --------------------------------------------------
         SectionHeader(title = "Storage")
 
+        val storageContext = LocalContext.current
+        val contentResolver = storageContext.contentResolver
+        val treePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+        ) { uri ->
+            if (uri != null) {
+                // Take a persistable permission BEFORE handing the URI to the
+                // VM — without this, the permission is revoked when the app
+                // is backgrounded and the persisted URI becomes useless.
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                }
+                onSetExternalStorage(uri)
+            }
+        }
+
+        val externalTree = uiState.externalTreeUri
+        // Derive a human-readable folder name from the tree URI without
+        // pulling the documentfile dep into this module. Tree URIs look like
+        // `content://com.android.externalstorage.documents/tree/primary%3AMusic%2FStash`
+        // — after decoding, the last path segment after the colon is the
+        // visible folder.
+        val externalFolderName = remember(externalTree) {
+            externalTree?.lastPathSegment
+                ?.substringAfterLast(':', "")
+                ?.substringAfterLast('/', "")
+                ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+                ?.takeIf { it.isNotBlank() }
+                ?: externalTree?.let { "External folder" }
+                ?: ""
+        }
+        val internalPath = remember(storageContext) {
+            java.io.File(storageContext.filesDir, "music").absolutePath
+        }
+
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 StorageRow(label = "Total tracks", value = "${uiState.totalTracks}")
                 Spacer(modifier = Modifier.height(8.dp))
                 StorageRow(label = "Storage used", value = formatBytes(uiState.totalStorageBytes))
+                Spacer(modifier = Modifier.height(12.dp))
+                androidx.compose.material3.HorizontalDivider(
+                    color = extendedColors.glassBorder,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Current location ----------------------------------------
+                Text(
+                    text = "Download location",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = when {
+                        externalTree == null -> "Internal (app-private)"
+                        externalFolderName.isBlank() -> "External folder (SD card / USB)"
+                        else -> externalFolderName
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = if (externalTree != null) {
+                        "Tracks are stored in this folder and survive uninstall. Visible to other apps and over USB."
+                    } else {
+                        internalPath
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Actions -------------------------------------------------
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { treePicker.launch(null) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    ) {
+                        Text(
+                            text = if (externalTree != null) "Change folder" else "Pick SD / folder",
+                        )
+                    }
+                    if (externalTree != null) {
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { onSetExternalStorage(null) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        ) {
+                            Text("Use internal")
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "New downloads go to the selected location. Use \"Move library\" below to transfer existing tracks.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                // Move library --------------------------------------------
+                if (externalTree != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    androidx.compose.material3.HorizontalDivider(
+                        color = extendedColors.glassBorder,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    MoveLibrarySection(
+                        state = uiState.moveLibraryState,
+                        onStart = { onStartMoveLibrary(externalTree) },
+                        onCancel = onCancelMoveLibrary,
+                        onDismiss = onDismissMoveLibrary,
+                    )
+                }
             }
         }
 
@@ -392,7 +522,7 @@ private fun SettingsContent(
                 aboutContext.packageManager
                     .getPackageInfo(aboutContext.packageName, 0)
                     .versionName
-            }.getOrNull() ?: "0.3.3"
+            }.getOrNull() ?: "0.3.4-beta"
         }
 
         GlassCard {
@@ -422,6 +552,121 @@ private fun SettingsContent(
 
         // Bottom padding for navigation bar clearance
         Spacer(modifier = Modifier.height(80.dp))
+    }
+}
+
+/**
+ * Renders the "Move existing library" action inside the Storage card.
+ *
+ * Shows four visual states driven by the underlying
+ * [com.stash.data.download.files.MoveLibraryState]:
+ * - **Idle** — prompt + "Move library to this folder" button.
+ * - **Running(c, t)** — live progress ("Moving c of t...") + linear bar + Cancel.
+ * - **Done(moved, failed)** — result summary + Dismiss.
+ * - **Error(msg)** — error text + Dismiss.
+ */
+@Composable
+private fun MoveLibrarySection(
+    state: com.stash.data.download.files.MoveLibraryState,
+    onStart: () -> Unit,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    when (state) {
+        com.stash.data.download.files.MoveLibraryState.Idle -> {
+            Text(
+                text = "Existing library",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Move tracks already on your device into the folder above so they're accessible over USB too.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.OutlinedButton(
+                onClick = onStart,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
+            ) {
+                Text("Move library to this folder")
+            }
+        }
+        is com.stash.data.download.files.MoveLibraryState.Running -> {
+            Text(
+                text = "Moving ${state.current} of ${state.total}...",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = {
+                    if (state.total == 0) 0f
+                    else state.current.toFloat() / state.total.toFloat()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.TextButton(
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Cancel")
+            }
+        }
+        is com.stash.data.download.files.MoveLibraryState.Done -> {
+            Text(
+                text = buildString {
+                    append("Moved ${state.moved} track")
+                    if (state.moved != 1) append("s")
+                    if (state.failed > 0) {
+                        append(" • ${state.failed} failed")
+                    }
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (state.failed > 0) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Failed tracks stay in internal storage. Try again later.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Dismiss")
+            }
+        }
+        is com.stash.data.download.files.MoveLibraryState.Error -> {
+            Text(
+                text = "Couldn't move library",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = state.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Dismiss")
+            }
+        }
     }
 }
 

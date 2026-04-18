@@ -36,6 +36,9 @@ dependencies {
     implementation(libs.work.runtime.ktx)
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)
+    // SAF support for writing downloads to a user-chosen external-storage tree
+    // (SD card / USB-OTG). DocumentFile wraps the raw content-tree Uri.
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")

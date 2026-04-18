@@ -310,16 +310,14 @@ class FailedMatchesViewModel @Inject constructor(
                         val artist = track?.artist ?: candidate.artist
                         val title = track?.title ?: candidate.title
 
-                        val finalFile = fileOrganizer.getTrackFile(
+                        val committed = fileOrganizer.commitDownload(
+                            tempFile = result.file,
                             artist = artist,
                             album = null,
                             title = title,
                             format = result.file.extension,
                         )
-                        result.file.copyTo(finalFile, overwrite = true)
-                        result.file.delete()
-
-                        trackDao.markAsDownloaded(trackId, finalFile.absolutePath, finalFile.length())
+                        trackDao.markAsDownloaded(trackId, committed.filePath, committed.sizeBytes)
                     } else {
                         Log.w(TAG, "Background download failed for ${candidate.title}: $result")
                     }

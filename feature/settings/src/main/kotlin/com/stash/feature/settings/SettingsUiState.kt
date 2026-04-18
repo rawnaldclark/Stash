@@ -46,4 +46,18 @@ data class SettingsUiState(
     val eqBandGains: List<Float> = listOf(0.5f, 0.5f, 0.5f, 0.5f, 0.5f),
     val eqBassBoost: Float = 0f,
     val eqVirtualizer: Float = 0f,
+    /**
+     * User-selected SAF tree URI for external storage (SD card / USB-OTG /
+     * any folder). Null = using the app's internal music directory. When
+     * non-null, new downloads are written there via ContentResolver.
+     */
+    val externalTreeUri: android.net.Uri? = null,
+    /**
+     * Live state of the one-shot "Move existing library" migration. The
+     * Settings UI watches this to render progress, a Done banner, or an
+     * Error message when the user migrates their internal library to an
+     * external SAF target.
+     */
+    val moveLibraryState: com.stash.data.download.files.MoveLibraryState =
+        com.stash.data.download.files.MoveLibraryState.Idle,
 )

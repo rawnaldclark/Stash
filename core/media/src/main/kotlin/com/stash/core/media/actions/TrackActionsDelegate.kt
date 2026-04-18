@@ -249,14 +249,13 @@ class TrackActionsDelegate @Inject constructor(
         result: DownloadResult.Success,
         item: TrackItem,
     ) {
-        val finalFile = fileOrganizer.getTrackFile(
+        val committed = fileOrganizer.commitDownload(
+            tempFile = result.file,
             artist = item.artist,
             album = null,
             title = item.title,
             format = result.file.extension,
         )
-        result.file.copyTo(finalFile, overwrite = true)
-        result.file.delete()
 
         val track = Track(
             title = item.title,
@@ -264,8 +263,8 @@ class TrackActionsDelegate @Inject constructor(
             durationMs = (item.durationSeconds * 1000).toLong(),
             source = MusicSource.YOUTUBE,
             youtubeId = item.videoId,
-            filePath = finalFile.absolutePath,
-            fileSizeBytes = finalFile.length(),
+            filePath = committed.filePath,
+            fileSizeBytes = committed.sizeBytes,
             isDownloaded = true,
             albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(item.thumbnailUrl),
         )

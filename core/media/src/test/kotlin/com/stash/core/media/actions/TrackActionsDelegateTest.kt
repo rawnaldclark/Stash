@@ -278,7 +278,9 @@ class TrackActionsDelegateTest {
             }
             val fileOrganizer = mock<FileOrganizer> {
                 on { getTempDir() } doReturn tempFile.parentFile!!
-                on { getTrackFile(any(), anyOrNull(), any(), any()) } doReturn finalFile
+                onBlocking {
+                    commitDownload(any(), any(), anyOrNull(), any(), any())
+                } doReturn FileOrganizer.CommittedTrack(finalFile.absolutePath, 1L)
             }
             val repo = mock<MusicRepository> {
                 onBlocking { insertTrack(any()) } doReturn 1L

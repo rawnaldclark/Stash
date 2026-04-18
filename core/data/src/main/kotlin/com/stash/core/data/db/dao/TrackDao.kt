@@ -96,6 +96,19 @@ interface TrackDao {
     fun getByPlaylist(playlistId: Long): Flow<List<TrackEntity>>
 
     /** Most-recently-added downloaded tracks, limited to [limit] results. */
+    /**
+     * Returns every downloaded track whose `file_path` starts with [pathPrefix].
+     * Used by the library-migration flow to enumerate tracks still stored in
+     * internal app-private storage when the user picks an external SAF target.
+     */
+    @Query("""
+        SELECT * FROM tracks
+        WHERE is_downloaded = 1
+          AND file_path IS NOT NULL
+          AND file_path LIKE :pathPrefix || '%'
+    """)
+    suspend fun getDownloadedTracksWithPathPrefix(pathPrefix: String): List<TrackEntity>
+
     @Query("SELECT * FROM tracks WHERE is_downloaded = 1 ORDER BY date_added DESC LIMIT :limit")
     fun getRecentlyAdded(limit: Int): Flow<List<TrackEntity>>
 

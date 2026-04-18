@@ -1,5 +1,7 @@
 package com.stash.core.data.di
 
+import com.stash.core.data.prefs.StoragePreference
+import com.stash.core.data.prefs.StoragePreferencesManager
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.data.prefs.ThemePreferencesManager
 import com.stash.core.data.repository.MusicRepository
@@ -25,4 +27,8 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindThemePreference(impl: ThemePreferencesManager): ThemePreference
+
+    @Binds
+    @Singleton
+    abstract fun bindStoragePreference(impl: StoragePreferencesManager): StoragePreference
 }

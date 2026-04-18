@@ -6,8 +6,12 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.youtube.YouTubeCookieHelper
+import android.net.Uri
 import com.stash.core.data.prefs.QualityPreference
+import com.stash.core.data.prefs.StoragePreference
 import com.stash.core.data.prefs.ThemePreference
+import com.stash.data.download.files.MoveLibraryCoordinator
+import com.stash.data.download.files.MoveLibraryState
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
@@ -41,6 +45,8 @@ class SettingsViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val qualityPreference: QualityPreference,
     private val themePreference: ThemePreference,
+    private val storagePreference: StoragePreference,
+    private val moveLibraryCoordinator: MoveLibraryCoordinator,
     private val youTubeCookieHelper: YouTubeCookieHelper,
     private val equalizerManager: com.stash.core.media.equalizer.EqualizerManager,
     private val equalizerStore: com.stash.core.media.equalizer.EqualizerStore,
@@ -60,6 +66,8 @@ class SettingsViewModel @Inject constructor(
         musicRepository.getTotalStorageBytes(),
         qualityPreference.qualityTier,
         themePreference.themeMode,
+        storagePreference.externalTreeUri,
+        moveLibraryCoordinator.state,
         _localState,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -69,7 +77,9 @@ class SettingsViewModel @Inject constructor(
         val storageBytes = values[3] as Long
         val quality = values[4] as QualityTier
         val theme = values[5] as ThemeMode
-        val local = values[6] as LocalState
+        val externalTree = values[6] as Uri?
+        val moveState = values[7] as MoveLibraryState
+        val local = values[8] as LocalState
 
         SettingsUiState(
             spotifyAuthState = spotifyAuth,
@@ -91,12 +101,51 @@ class SettingsViewModel @Inject constructor(
             eqBandGains = local.eqBandGains,
             eqBassBoost = local.eqBassBoost,
             eqVirtualizer = local.eqVirtualizer,
+            externalTreeUri = externalTree,
+            moveLibraryState = moveState,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = SettingsUiState(),
     )
+
+    // -- Storage actions ------------------------------------------------------
+
+    /**
+     * Persists the user's chosen SAF tree URI (or null to revert to
+     * internal). Callers MUST have already called
+     * `ContentResolver.takePersistableUriPermission(uri, ...)` before
+     * invoking this — the persisted URI is useless without the sticky
+     * permission and would fail at write time.
+     */
+    fun setExternalStorageUri(uri: Uri?) {
+        viewModelScope.launch {
+            storagePreference.setExternalTreeUri(uri)
+        }
+    }
+
+    /**
+     * Counts how many downloaded tracks still live in internal storage —
+     * used by the Settings UI to decide whether to surface the "Move
+     * library" action.
+     */
+    suspend fun countMovableTracks(): Int = moveLibraryCoordinator.countMovableTracks()
+
+    /** Starts the library-move job on the coordinator's app-scoped job. */
+    fun startMoveLibrary(targetUri: Uri) {
+        moveLibraryCoordinator.start(targetUri)
+    }
+
+    /** Cancels an in-progress move. State reverts to Idle. */
+    fun cancelMoveLibrary() {
+        moveLibraryCoordinator.cancel()
+    }
+
+    /** Dismisses a terminal Done/Error state, returning to Idle. */
+    fun dismissMoveLibrary() {
+        moveLibraryCoordinator.dismiss()
+    }
 
     // -- Spotify actions ------------------------------------------------------
 
