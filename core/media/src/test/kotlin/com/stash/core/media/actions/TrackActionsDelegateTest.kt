@@ -151,6 +151,54 @@ class TrackActionsDelegateTest {
     }
 
     @Test
+    fun `previewTrack is a no-op when the same videoId is already Playing`() = runTest {
+        val urlCache = PreviewUrlCache().also { it["v1"] = "https://warm.example/x" }
+        val extractor = mock<PreviewUrlExtractor>()
+        val playingState = MutableStateFlow<PreviewState>(PreviewState.Playing("v1"))
+        val player = mock<PreviewPlayer> {
+            on { previewState } doReturn playingState.asStateFlow()
+            on { playerErrors } doReturn MutableSharedFlow<PreviewErrorEvent>()
+        }
+        val d = delegate(previewPlayer = player, urlExtractor = extractor, urlCache = urlCache)
+
+        d.previewTrack("v1")
+        advanceUntilIdle()
+
+        // No stop, no new playUrl, no extract — the guard short-circuited.
+        verify(player, never()).stop()
+        verify(player, never()).playUrl(any(), any())
+        verify(extractor, never()).extractStreamUrl(any())
+    }
+
+    @Test
+    fun `previewTrack is a no-op when the same videoId is already loading`() = runTest {
+        val urlCache = PreviewUrlCache()
+        // Extractor hangs on first call so we can observe the in-flight-load guard.
+        val gate = CompletableDeferred<String>()
+        val extractor = mock<PreviewUrlExtractor> {
+            onBlocking { extractStreamUrl("v1") } doSuspendableAnswer { gate.await() }
+        }
+        val player = stubPreviewPlayer()
+        val d = delegate(previewPlayer = player, urlExtractor = extractor, urlCache = urlCache)
+
+        // First call starts an extraction and parks at the gate.
+        d.previewTrack("v1")
+        advanceUntilIdle()
+
+        // Second call while load is in flight must be swallowed by the guard.
+        d.previewTrack("v1")
+        advanceUntilIdle()
+
+        // Only the first call kicked extract + stop; second was a no-op.
+        verify(extractor, times(1)).extractStreamUrl("v1")
+        verify(player, times(1)).stop()
+
+        // Release the first extraction so the test scope can finish cleanly.
+        gate.complete("https://late.example/y")
+        advanceUntilIdle()
+    }
+
+    @Test
     fun `previewTrack extractor failure emits userMessage and clears loading`() = runTest {
         val extractor = mock<PreviewUrlExtractor> {
             onBlocking { extractStreamUrl("v1") } doThrow RuntimeException("extract boom")

@@ -129,6 +129,15 @@ class TrackActionsDelegate @Inject constructor(
      * state.
      */
     fun previewTrack(videoId: String) {
+        // Idempotency guard: if we're already playing — or loading — this same
+        // videoId, do nothing. Prevents redundant stop+restart cycles from
+        // phantom clicks, double-taps, or any future caller that fires the
+        // same id twice within the play window. The Stop button already uses
+        // [stopPreview] so legitimate "stop" taps still work; this only
+        // swallows spurious "play what's already playing" requests.
+        if ((previewState.value as? PreviewState.Playing)?.videoId == videoId) return
+        if (_previewLoadingId.value == videoId) return
+
         previewPlayer.stop()
         scope().launch {
             val t0 = System.currentTimeMillis()
