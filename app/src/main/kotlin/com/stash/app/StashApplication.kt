@@ -82,6 +82,11 @@ class StashApplication : Application(), Configuration.Provider {
         }
         applicationScope.launch {
             ytDlpManager.initialize()
+            // Kick a background warmup extraction right after init. Primes the
+            // player-JS + QuickJS caches so the first real user preview doesn't
+            // pay the ~14 s cold-start cost. Serial with initialize() because
+            // warmUp() requires [YtDlpManager.initialized].
+            ytDlpManager.warmUp()
         }
         // Warm up music.youtube.com TLS + DNS in the first 2s of launch so
         // the first search request doesn't pay the full handshake cost.

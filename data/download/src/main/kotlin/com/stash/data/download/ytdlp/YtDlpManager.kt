@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDLRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +31,8 @@ class YtDlpManager @Inject constructor(
 ) {
     private val initMutex = Mutex()
     private var initialized = false
+    private val warmMutex = Mutex()
+    private var warmed = false
     private val backgroundScope = CoroutineScope(Dispatchers.IO)
 
     /** Path to the extracted QuickJS binary, set during [initialize]. */
@@ -39,6 +42,16 @@ class YtDlpManager @Inject constructor(
     companion object {
         private const val TAG = "YtDlpManager"
         private const val QJS_LIB_NAME = "libqjs.so"
+
+        /**
+         * Canonical short test clip maintained by youtube-dl's upstream
+         * maintainers. Stable URL, ~10s long, unlikely to be removed. We
+         * do a throwaway URL extraction against it at app start so the
+         * first real user preview doesn't pay the cold-start cost
+         * (player-JS fetch + parse + QuickJS bootstrap ~14 s on-device).
+         */
+        private const val WARMUP_VIDEO_URL =
+            "https://www.youtube.com/watch?v=BaW_jenozKc"
     }
 
     /**
@@ -92,6 +105,51 @@ class YtDlpManager @Inject constructor(
             Log.i(TAG, "QuickJS found at $quickJsPath (${qjsFile.length()} bytes)")
         } else {
             Log.e(TAG, "QuickJS not found at ${qjsFile.absolutePath} exists=${qjsFile.exists()} exec=${qjsFile.canExecute()}")
+        }
+    }
+
+    /**
+     * One-shot background warmup. Kicks a throwaway URL extraction against
+     * a known-stable short clip so yt-dlp's in-process player-JS cache
+     * and QuickJS runtime are primed before the user ever taps Preview.
+     *
+     * Idempotent (coalesces behind [warmMutex]); safe to call any number
+     * of times. Failures are swallowed — warmup is a pure optimization;
+     * if it fails, the normal extraction path still works fine.
+     *
+     * Call AFTER [initialize]; if not initialized yet, this no-ops.
+     */
+    suspend fun warmUp() {
+        if (warmed) return
+        if (!initialized) return
+        warmMutex.withLock {
+            if (warmed) return
+            withContext(Dispatchers.IO) {
+                val t0 = System.currentTimeMillis()
+                try {
+                    val request = YoutubeDLRequest(WARMUP_VIDEO_URL).apply {
+                        addOption("-f", "bestaudio")
+                        addOption("--print", "urls")
+                        addOption("--no-download")
+                        quickJsPath?.let { qjs ->
+                            addOption("--js-runtimes", "quickjs:$qjs")
+                            addOption("--remote-components", "ejs:github")
+                        }
+                    }
+                    val response = YoutubeDL.getInstance()
+                        .execute(request, WARMUP_VIDEO_URL, null)
+                    val dt = System.currentTimeMillis() - t0
+                    Log.i(
+                        TAG,
+                        "warmup: exit=${response.exitCode} dt=${dt}ms " +
+                            "stdoutLen=${response.out.orEmpty().length}",
+                    )
+                } catch (t: Throwable) {
+                    val dt = System.currentTimeMillis() - t0
+                    Log.w(TAG, "warmup failed after ${dt}ms: ${t.message}")
+                }
+            }
+            warmed = true
         }
     }
 
