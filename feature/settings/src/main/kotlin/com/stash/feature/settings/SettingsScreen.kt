@@ -27,6 +27,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -140,6 +141,7 @@ fun SettingsScreen(
         onStartMoveLibrary = viewModel::startMoveLibrary,
         onCancelMoveLibrary = viewModel::cancelMoveLibrary,
         onDismissMoveLibrary = viewModel::dismissMoveLibrary,
+        countMovableTracks = viewModel::countMovableTracks,
         modifier = modifier,
     )
 }
@@ -166,6 +168,7 @@ private fun SettingsContent(
     onStartMoveLibrary: (android.net.Uri) -> Unit,
     onCancelMoveLibrary: () -> Unit,
     onDismissMoveLibrary: () -> Unit,
+    countMovableTracks: suspend () -> Int,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -503,33 +506,51 @@ private fun SettingsContent(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "New downloads go to the selected location. Use \"Move library\" below to transfer existing tracks.",
+                    text = "New downloads go to the selected location.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                // Move library — always visible. When no external folder has
-                // been picked yet, the Start button launches the picker and
-                // auto-starts the move in a single tap flow.
-                Spacer(modifier = Modifier.height(12.dp))
-                androidx.compose.material3.HorizontalDivider(
-                    color = extendedColors.glassBorder,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                MoveLibrarySection(
-                    state = uiState.moveLibraryState,
-                    hasExternalFolder = externalTree != null,
-                    onStart = {
-                        if (externalTree != null) {
-                            onStartMoveLibrary(externalTree)
-                        } else {
-                            pendingPickerIntent = PickerIntent.SetAndMove
-                            treePicker.launch(null)
-                        }
-                    },
-                    onCancel = onCancelMoveLibrary,
-                    onDismiss = onDismissMoveLibrary,
-                )
+                // Move library — rendered only when there's work to do. We
+                // refresh the count reactively after each move (state
+                // transition to Idle) and when the user picks a new folder.
+                // If everything is already in the external target the
+                // section simply disappears so the button isn't a dead-end.
+                var movableCount by remember { mutableStateOf<Int?>(null) }
+                LaunchedEffect(uiState.moveLibraryState, externalTree) {
+                    if (uiState.moveLibraryState !is com.stash.data.download.files.MoveLibraryState.Running) {
+                        movableCount = runCatching { countMovableTracks() }.getOrNull()
+                    }
+                }
+
+                val showMoveSection = when (uiState.moveLibraryState) {
+                    com.stash.data.download.files.MoveLibraryState.Idle ->
+                        (movableCount ?: 0) > 0
+                    else -> true  // show progress/done/error regardless of count
+                }
+
+                if (showMoveSection) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    androidx.compose.material3.HorizontalDivider(
+                        color = extendedColors.glassBorder,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    MoveLibrarySection(
+                        state = uiState.moveLibraryState,
+                        hasExternalFolder = externalTree != null,
+                        movableCount = movableCount ?: 0,
+                        onStart = {
+                            if (externalTree != null) {
+                                onStartMoveLibrary(externalTree)
+                            } else {
+                                pendingPickerIntent = PickerIntent.SetAndMove
+                                treePicker.launch(null)
+                            }
+                        },
+                        onCancel = onCancelMoveLibrary,
+                        onDismiss = onDismissMoveLibrary,
+                    )
+                }
             }
         }
 
@@ -542,7 +563,7 @@ private fun SettingsContent(
                 aboutContext.packageManager
                     .getPackageInfo(aboutContext.packageName, 0)
                     .versionName
-            }.getOrNull() ?: "0.3.4-beta.3"
+            }.getOrNull() ?: "0.3.4-beta.4"
         }
 
         GlassCard {
@@ -596,6 +617,7 @@ private enum class PickerIntent { SetOnly, SetAndMove }
 private fun MoveLibrarySection(
     state: com.stash.data.download.files.MoveLibraryState,
     hasExternalFolder: Boolean,
+    movableCount: Int,
     onStart: () -> Unit,
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
@@ -610,9 +632,9 @@ private fun MoveLibrarySection(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = if (hasExternalFolder) {
-                    "Move tracks already on your device into the folder above so they're accessible over USB too."
+                    "Move $movableCount track${if (movableCount == 1) "" else "s"} still on your device into the folder above so they're accessible over USB too."
                 } else {
-                    "Move tracks already on your device to an external folder (SD / USB) so you can access them over USB too. You'll pick the destination next."
+                    "Move $movableCount track${if (movableCount == 1) "" else "s"} on your device to an external folder (SD / USB) so you can access them over USB too. You'll pick the destination next."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -626,8 +648,11 @@ private fun MoveLibrarySection(
                 ),
             ) {
                 Text(
-                    text = if (hasExternalFolder) "Move library to this folder"
-                    else "Pick destination and move library",
+                    text = if (hasExternalFolder) {
+                        "Move $movableCount track${if (movableCount == 1) "" else "s"} to this folder"
+                    } else {
+                        "Pick destination and move library"
+                    },
                 )
             }
         }
