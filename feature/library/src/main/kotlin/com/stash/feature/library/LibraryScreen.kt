@@ -33,6 +33,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -101,8 +103,10 @@ fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val importState by viewModel.localImportState.collectAsStateWithLifecycle()
     LibraryContent(
         state = state,
+        importState = importState,
         onTabSelected = viewModel::selectTab,
         onSearchQueryChanged = viewModel::setSearchQuery,
         onSortOrderChanged = viewModel::setSortOrder,
@@ -122,6 +126,9 @@ fun LibraryScreen(
         onDeleteArtist = viewModel::deleteArtist,
         onPlayAlbum = onNavigateToAlbum,
         onAddAlbumToQueue = viewModel::addAlbumToQueue,
+        onStartImport = viewModel::startLocalImport,
+        onCancelImport = viewModel::cancelLocalImport,
+        onDismissImport = viewModel::dismissLocalImport,
         modifier = modifier,
     )
 }
@@ -131,6 +138,7 @@ fun LibraryScreen(
 @Composable
 private fun LibraryContent(
     state: LibraryUiState,
+    importState: com.stash.data.download.files.LocalImportState,
     onTabSelected: (LibraryTab) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onSortOrderChanged: (SortOrder) -> Unit,
@@ -150,6 +158,9 @@ private fun LibraryContent(
     onDeleteArtist: (String) -> Unit,
     onPlayAlbum: (String, String) -> Unit,
     onAddAlbumToQueue: (String, String) -> Unit,
+    onStartImport: (List<Uri>) -> Unit,
+    onCancelImport: () -> Unit,
+    onDismissImport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -158,12 +169,57 @@ private fun LibraryContent(
             .background(MaterialTheme.colorScheme.background)
             .padding(top = 16.dp),
     ) {
-        // -- Heading --
-        Text(
-            text = "Library",
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(horizontal = 20.dp),
+        // -- Heading + Import action --
+        // SAF audio picker launched from the "Add tracks" icon button in
+        // the heading row. Returns a List<Uri> that we hand directly to
+        // the coordinator; no persistable permission needed because we
+        // copy the bytes immediately at import time.
+        val importPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments(),
+        ) { uris: List<Uri>? ->
+            if (!uris.isNullOrEmpty()) onStartImport(uris)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Library",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f),
+            )
+            // Filled-tonal button (icon + label) instead of a ghost
+            // IconButton — users were missing the plain '+' too easily. The
+            // tonal background + "Import" word makes the affordance obvious
+            // without dominating the heading row.
+            androidx.compose.material3.FilledTonalButton(
+                onClick = { importPicker.launch(arrayOf("audio/*")) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = 14.dp,
+                    vertical = 8.dp,
+                ),
+            ) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Filled.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Import",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+
+        // -- Import progress strip (only when Running / Done / Error) --
+        LocalImportStrip(
+            state = importState,
+            onCancel = onCancelImport,
+            onDismiss = onDismissImport,
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -446,6 +502,105 @@ private fun SourceFilter.displayName(): String = when (this) {
     SourceFilter.ALL -> "All"
     SourceFilter.YOUTUBE -> "YouTube"
     SourceFilter.SPOTIFY -> "Spotify"
+}
+
+// ── Local import progress strip ─────────────────────────────────────────────
+
+/**
+ * Compact banner that appears below the "Library" heading while
+ * [LocalImportState] is non-Idle. Shows progress during a batch import,
+ * a summary after Done, or an error + dismiss after Error. Hides
+ * completely when [state] is [LocalImportState.Idle].
+ */
+@Composable
+private fun LocalImportStrip(
+    state: com.stash.data.download.files.LocalImportState,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    when (state) {
+        com.stash.data.download.files.LocalImportState.Idle -> Unit
+        is com.stash.data.download.files.LocalImportState.Running -> {
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "Importing ${state.current} of ${state.total}\u2026",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    androidx.compose.material3.TextButton(onClick = onCancel) {
+                        Text("Cancel")
+                    }
+                }
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = {
+                        if (state.total == 0) 0f
+                        else state.current.toFloat() / state.total.toFloat()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+        is com.stash.data.download.files.LocalImportState.Done -> {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = buildString {
+                        append("Imported ${state.imported} track")
+                        if (state.imported != 1) append("s")
+                        if (state.failed > 0) append(" \u2022 ${state.failed} failed")
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                androidx.compose.material3.TextButton(onClick = onDismiss) {
+                    Text("Dismiss")
+                }
+            }
+        }
+        is com.stash.data.download.files.LocalImportState.Error -> {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Import failed",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        text = state.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                androidx.compose.material3.TextButton(onClick = onDismiss) {
+                    Text("Dismiss")
+                }
+            }
+        }
+    }
 }
 
 // ── Playlists tab (2-column grid) ────────────────────────────────────────────

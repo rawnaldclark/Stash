@@ -868,7 +868,7 @@ private fun SourceSubHeader(
     val accent = when (source) {
         MusicSource.SPOTIFY -> extendedColors.spotifyGreen
         MusicSource.YOUTUBE -> extendedColors.youtubeRed
-        MusicSource.BOTH -> MaterialTheme.colorScheme.primary
+        MusicSource.LOCAL, MusicSource.BOTH -> MaterialTheme.colorScheme.primary
     }
 
     Row(
@@ -1122,11 +1122,12 @@ private fun SourceLikedChip(
     val accent = when (source) {
         MusicSource.SPOTIFY -> extendedColors.spotifyGreen
         MusicSource.YOUTUBE -> extendedColors.youtubeRed
-        MusicSource.BOTH -> MaterialTheme.colorScheme.primary
+        MusicSource.LOCAL, MusicSource.BOTH -> MaterialTheme.colorScheme.primary
     }
     val sourceName = when (source) {
         MusicSource.SPOTIFY -> "Spotify"
         MusicSource.YOUTUBE -> "YouTube"
+        MusicSource.LOCAL -> "Local"
         MusicSource.BOTH -> ""
     }
 

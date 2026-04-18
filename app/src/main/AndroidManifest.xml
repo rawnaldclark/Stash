@@ -24,6 +24,23 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!--
+                Share target for importing user audio files into the Stash
+                library. Users can long-press an audio file in their file
+                manager (or other app) and pick Stash from the share sheet;
+                MainActivity.onCreate / onNewIntent routes the URIs to the
+                LocalImportCoordinator.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
         </activity>
         <receiver
             android:name="com.stash.core.data.sync.BootReceiver"

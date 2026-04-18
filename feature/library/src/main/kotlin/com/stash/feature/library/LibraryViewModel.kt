@@ -7,6 +7,8 @@ import com.stash.core.auth.model.AuthState
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.MusicSource
+import com.stash.data.download.files.LocalImportCoordinator
+import com.stash.data.download.files.LocalImportState
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -37,7 +39,26 @@ class LibraryViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val tokenManager: TokenManager,
     private val playlistImageHelper: PlaylistImageHelper,
+    private val localImportCoordinator: LocalImportCoordinator,
 ) : ViewModel() {
+
+    /** Live progress for "Import from device". Observed by LibraryScreen. */
+    val localImportState: StateFlow<LocalImportState> = localImportCoordinator.state
+
+    /** Kick off an import for the URIs picked via the SAF audio picker. */
+    fun startLocalImport(uris: List<Uri>) {
+        localImportCoordinator.start(uris)
+    }
+
+    /** Cancel an in-progress import. Files imported so far stay put. */
+    fun cancelLocalImport() {
+        localImportCoordinator.cancel()
+    }
+
+    /** Dismiss the Done/Error banner, hide the progress strip. */
+    fun dismissLocalImport() {
+        localImportCoordinator.dismiss()
+    }
 
     /** Local UI controls: tab, search query, and sort order. */
     private val _controls = MutableStateFlow(ControlState())

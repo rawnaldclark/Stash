@@ -563,7 +563,7 @@ private fun SettingsContent(
                 aboutContext.packageManager
                     .getPackageInfo(aboutContext.packageName, 0)
                     .versionName
-            }.getOrNull() ?: "0.3.4-beta.4"
+            }.getOrNull() ?: "0.3.4"
         }
 
         GlassCard {

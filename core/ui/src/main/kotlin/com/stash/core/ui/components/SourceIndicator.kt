@@ -59,5 +59,15 @@ fun SourceIndicator(
                 )
             }
         }
+        if (source == MusicSource.LOCAL) {
+            Box(Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+            if (showLabel) {
+                Text(
+                    text = "Local",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extendedColors.textTertiary,
+                )
+            }
+        }
     }
 }

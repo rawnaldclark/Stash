@@ -83,6 +83,21 @@ jobs:
           echo "release_name=$NEW_NAME" >> "$GITHUB_OUTPUT"
           ls -la "$RUNNER_TEMP/$NEW_NAME"
 
+      - name: Extract tag annotation as release body
+        id: tag_body
+        run: |
+          # Pull the tag's annotation (git tag -a -m "...") and emit it as a
+          # GITHUB_OUTPUT heredoc so multi-line notes survive. Strip any PGP
+          # signature block that git may append to signed tags. Falls back
+          # to an empty body if the tag has no annotation (lightweight tag).
+          RAW=$(git for-each-ref --format='%(contents)' "refs/tags/${GITHUB_REF_NAME}")
+          BODY=$(printf '%s' "$RAW" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d')
+          {
+            echo 'body<<STASH_EOF'
+            printf '%s\n' "$BODY"
+            echo 'STASH_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Clean up keystore from runner
         if: always()
         run: |
@@ -95,16 +110,21 @@ jobs:
         with:
           name: Stash ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
+          # Auto-append a "What's Changed" commit list under our custom body
+          # so the raw commit history is still there if someone wants it.
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') }}
           files: ${{ steps.rename_apk.outputs.release_apk }}
           body: |
-            ## Stash ${{ github.ref_name }}
+            ${{ steps.tag_body.outputs.body }}
 
-            Download the APK below and install it on your Android device. See the [README](https://github.com/rawnaldclark/Stash#installation) for setup instructions.
+            ---
 
-            **Requirements:** Android 8.0 (API 26) or later.
+            ## Install
 
-            ### Changelog
-            _Auto-generated from commits below._
+            Download the `.apk` below and open it on your Android device. If you've got a previous Stash release installed, this upgrades in place — your library, sync history, and settings are preserved.
+
+            **Requires:** Android 8.0 (API 26) or newer.
+
+            See the [README](https://github.com/rawnaldclark/Stash#installation) for first-time setup.
