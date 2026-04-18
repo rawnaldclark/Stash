@@ -190,6 +190,19 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * Creates a new empty custom playlist with the given [name]. Trims input
+     * and no-ops if the trimmed name is blank. The new playlist will appear
+     * in the Home Playlists section automatically (Room Flow).
+     */
+    fun createPlaylist(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            musicRepository.createPlaylist(trimmed)
+        }
+    }
+
+    /**
      * Plays every downloaded track across every daily mix from the given [source],
      * effectively merging all of that source's mixes into one continuous queue.
      * Passing null plays the combined pool from BOTH sources (Spotify first,

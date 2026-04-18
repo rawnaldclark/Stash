@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
@@ -77,6 +78,7 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.SyncDisplayStatus
 import com.stash.core.model.SyncState
 import com.stash.core.model.Track
+import com.stash.core.ui.components.CreatePlaylistDialog
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
@@ -103,6 +105,8 @@ fun HomeScreen(
     // Playlist selected for the context-menu bottom sheet (shared across daily mixes + grid).
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+    // Controls the "New Playlist" naming dialog launched from the Playlists section.
+    var showCreateDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
@@ -259,39 +263,64 @@ fun HomeScreen(
         }
 
         // ── Playlists grid ───────────────────────────────────────────
-        if (uiState.playlists.isNotEmpty()) {
-            item {
-                SectionHeader(title = "Playlists")
+        // Always rendered so the Create Playlist card is available even when
+        // the user has no custom playlists yet.
+        item {
+            SectionHeader(title = "Playlists")
+        }
+        // Render a non-scrollable 2-column grid inside the LazyColumn. The
+        // first tile is always the Create Playlist card, followed by the
+        // user's custom playlists.
+        item {
+            // Use a sealed representation so the Create tile sits in the
+            // same chunked(2) flow as the playlist tiles.
+            val tiles: List<PlaylistTile> = buildList {
+                add(PlaylistTile.Create)
+                uiState.playlists.forEach { add(PlaylistTile.Item(it)) }
             }
-            // Render a non-scrollable 2-column grid inside the LazyColumn
-            item {
-                val rows = uiState.playlists.chunked(2)
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    rows.forEach { rowItems ->
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            rowItems.forEach { playlist ->
-                                PlaylistGridCard(
-                                    playlist = playlist,
-                                    onClick = { onNavigateToPlaylist(playlist.id) },
-                                    onLongPress = { selectedPlaylist = playlist },
+            val rows = tiles.chunked(2)
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                rows.forEach { rowItems ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        rowItems.forEach { tile ->
+                            when (tile) {
+                                is PlaylistTile.Create -> CreatePlaylistCard(
+                                    onClick = { showCreateDialog = true },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                is PlaylistTile.Item -> PlaylistGridCard(
+                                    playlist = tile.playlist,
+                                    onClick = { onNavigateToPlaylist(tile.playlist.id) },
+                                    onLongPress = { selectedPlaylist = tile.playlist },
                                     modifier = Modifier.weight(1f),
                                 )
                             }
-                            // Pad single-item rows with a spacer
-                            if (rowItems.size == 1) {
-                                Spacer(Modifier.weight(1f))
-                            }
+                        }
+                        // Pad single-item rows with a spacer
+                        if (rowItems.size == 1) {
+                            Spacer(Modifier.weight(1f))
                         }
                     }
                 }
             }
         }
+    }
+
+    // ── Create playlist naming dialog ────────────────────────────────────
+    if (showCreateDialog) {
+        CreatePlaylistDialog(
+            onConfirm = { name ->
+                viewModel.createPlaylist(name)
+                showCreateDialog = false
+            },
+            onDismiss = { showCreateDialog = false },
+        )
     }
 
     // ── Playlist context-menu bottom sheet ──────────────────────────────
@@ -1251,6 +1280,61 @@ private fun PlaylistGridCard(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Sealed tile type used to interleave the Create-Playlist entry point with
+ * the user's custom playlists inside the Home Playlists 2-column grid.
+ */
+private sealed interface PlaylistTile {
+    object Create : PlaylistTile
+    data class Item(val playlist: Playlist) : PlaylistTile
+}
+
+// ── Create playlist card ────────────────────────────────────────────────
+
+/**
+ * First tile in the Playlists grid. Tapping it opens the naming dialog to
+ * create a new empty custom playlist. Styled to match [PlaylistGridCard]
+ * so the grid reads consistently.
+ */
+@Composable
+private fun CreatePlaylistCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+
+    Surface(
+        modifier = modifier
+            .height(100.dp)
+            .clickable(onClick = onClick),
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+            )
+            Text(
+                text = "Create Playlist",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
