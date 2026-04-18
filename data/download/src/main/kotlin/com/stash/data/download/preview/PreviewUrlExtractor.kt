@@ -156,14 +156,44 @@ class PreviewUrlExtractor @Inject constructor(
      * Races InnerTube (fast, ~1-2s) against yt-dlp (slow, ~15-35s). See
      * the class KDoc for the full strategy.
      */
-    suspend fun extractStreamUrl(videoId: String): String =
-        race(
-            videoId = videoId,
-            innerTubeExtract = { id -> extractViaInnerTube(id) },
-            ytDlpExtract = { id -> extractViaYtDlp(id) },
-            itSem = innerTubeSemaphore,
-            ytSem = ytDlpSemaphore,
-        )
+    suspend fun extractStreamUrl(videoId: String): String {
+        val t0 = System.currentTimeMillis()
+        Log.d("LATDIAG", "extract-start videoId=$videoId")
+        return try {
+            val url = race(
+                videoId = videoId,
+                innerTubeExtract = { id ->
+                    val it0 = System.currentTimeMillis()
+                    val result = runCatching { extractViaInnerTube(id) }
+                    val dt = System.currentTimeMillis() - it0
+                    val outcome = result.fold(
+                        onSuccess = { if (it != null) "url" else "null" },
+                        onFailure = { "throw:${it.javaClass.simpleName}" },
+                    )
+                    Log.d("LATDIAG", "innertube-end videoId=$id dt=${dt}ms outcome=$outcome")
+                    result.getOrThrow()
+                },
+                ytDlpExtract = { id ->
+                    val yt0 = System.currentTimeMillis()
+                    val result = runCatching { extractViaYtDlp(id) }
+                    val dt = System.currentTimeMillis() - yt0
+                    val outcome = result.fold(
+                        onSuccess = { "url" },
+                        onFailure = { "throw:${it.javaClass.simpleName}" },
+                    )
+                    Log.d("LATDIAG", "ytdlp-end videoId=$id dt=${dt}ms outcome=$outcome")
+                    result.getOrThrow()
+                },
+                itSem = innerTubeSemaphore,
+                ytSem = ytDlpSemaphore,
+            )
+            Log.d("LATDIAG", "extract-end videoId=$videoId dt=${System.currentTimeMillis() - t0}ms")
+            url
+        } catch (t: Throwable) {
+            Log.d("LATDIAG", "extract-fail videoId=$videoId dt=${System.currentTimeMillis() - t0}ms err=${t.javaClass.simpleName}")
+            throw t
+        }
+    }
 
     /**
      * Retry-only entry point: bypass the InnerTube race and go straight to

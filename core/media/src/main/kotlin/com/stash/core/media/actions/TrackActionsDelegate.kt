@@ -131,8 +131,11 @@ class TrackActionsDelegate @Inject constructor(
     fun previewTrack(videoId: String) {
         previewPlayer.stop()
         scope().launch {
+            val t0 = System.currentTimeMillis()
             _previewLoadingId.value = videoId
             try {
+                val cacheHit = previewUrlCache[videoId] != null
+                android.util.Log.d("LATDIAG", "preview-start videoId=$videoId cache=$cacheHit")
                 val url = previewUrlCache[videoId]
                     ?: previewUrlExtractor.extractStreamUrl(videoId).also {
                         previewUrlCache[videoId] = it
@@ -141,9 +144,17 @@ class TrackActionsDelegate @Inject constructor(
                 lastPreviewStartedAt = SystemClock.elapsedRealtime()
                 previewPlayer.playUrl(videoId, url)
                 _previewLoadingId.value = null
+                android.util.Log.d(
+                    "LATDIAG",
+                    "preview-play videoId=$videoId totalDt=${System.currentTimeMillis() - t0}ms cache=$cacheHit",
+                )
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Preview failed for videoId=$videoId", e)
+                android.util.Log.d(
+                    "LATDIAG",
+                    "preview-fail videoId=$videoId totalDt=${System.currentTimeMillis() - t0}ms err=${e.javaClass.simpleName}",
+                )
                 _previewLoadingId.value = null
                 _userMessages.emit("Couldn't load preview.")
                 previewPlayer.stop()
@@ -210,6 +221,8 @@ class TrackActionsDelegate @Inject constructor(
         _downloadingIds.update { it + item.videoId }
 
         scope().launch {
+            val t0 = System.currentTimeMillis()
+            android.util.Log.d("LATDIAG", "download-start videoId=${item.videoId} title='${item.title}'")
             try {
                 val url = "https://www.youtube.com/watch?v=${item.videoId}"
                 val qualityTier = qualityPrefs.qualityTier.first()
@@ -217,13 +230,28 @@ class TrackActionsDelegate @Inject constructor(
                 val tempDir = fileOrganizer.getTempDir()
                 val tempFilename = "actions_${item.videoId}_${UUID.randomUUID()}"
 
-                when (val result = downloadExecutor.download(
+                val dt0 = System.currentTimeMillis()
+                val result = downloadExecutor.download(
                     url = url,
                     outputDir = tempDir,
                     filename = tempFilename,
                     qualityArgs = qualityArgs,
-                )) {
-                    is DownloadResult.Success -> handleDownloadSuccess(result, item)
+                )
+                val downloadDt = System.currentTimeMillis() - dt0
+                android.util.Log.d(
+                    "LATDIAG",
+                    "download-exec videoId=${item.videoId} dt=${downloadDt}ms result=${result.javaClass.simpleName}",
+                )
+                when (result) {
+                    is DownloadResult.Success -> {
+                        val ct0 = System.currentTimeMillis()
+                        handleDownloadSuccess(result, item)
+                        val commitDt = System.currentTimeMillis() - ct0
+                        android.util.Log.d(
+                            "LATDIAG",
+                            "download-commit videoId=${item.videoId} dt=${commitDt}ms totalDt=${System.currentTimeMillis() - t0}ms",
+                        )
+                    }
                     is DownloadResult.YtDlpError -> {
                         Log.e(TAG, "Download failed for ${item.title}: ${result.message.take(100)}")
                         markDownloadFailed(item.videoId)
