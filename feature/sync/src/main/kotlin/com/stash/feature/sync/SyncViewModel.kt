@@ -60,6 +60,21 @@ data class SpotifySyncPlaylist(
     val artUrl: String? = null,
 )
 
+/**
+ * Lightweight model for a YouTube Music playlist's sync preference toggle.
+ * Mirrors [SpotifySyncPlaylist] so the UI can use a shared toggle row
+ * composable; kept as a separate type so future YouTube-only fields don't
+ * pollute the Spotify struct.
+ */
+data class YouTubeSyncPlaylist(
+    val id: Long,
+    val name: String,
+    val trackCount: Int,
+    val type: com.stash.core.model.PlaylistType,
+    val syncEnabled: Boolean,
+    val artUrl: String? = null,
+)
+
 data class SyncUiState(
     val syncPhase: SyncPhase = SyncPhase.Idle,
     val overallProgress: Float = 0f,
@@ -70,6 +85,8 @@ data class SyncUiState(
     val isSyncing: Boolean = false,
     /** Spotify playlists available for sync preference toggles. */
     val spotifyPlaylists: List<SpotifySyncPlaylist> = emptyList(),
+    /** YouTube Music playlists available for sync preference toggles. */
+    val youTubePlaylists: List<YouTubeSyncPlaylist> = emptyList(),
     /** Controls whether mixes refresh or accumulate during sync. */
     val syncMode: SyncMode = SyncMode.REFRESH,
     /** Number of tracks that could not be matched to a YouTube video. */
@@ -103,6 +120,7 @@ class SyncViewModel @Inject constructor(
         observeAuthStates()
         observeHistory()
         observeSpotifyPlaylists()
+        observeYouTubePlaylists()
         observeUnmatchedCount()
     }
 
@@ -250,6 +268,27 @@ class SyncViewModel @Inject constructor(
                     it.copy(
                         spotifyPlaylists = entities.map { e ->
                             SpotifySyncPlaylist(
+                                id = e.id,
+                                name = e.name,
+                                trackCount = e.trackCount,
+                                type = e.type,
+                                syncEnabled = e.syncEnabled,
+                                artUrl = e.artUrl,
+                            )
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private fun observeYouTubePlaylists() {
+        viewModelScope.launch {
+            playlistDao.getYouTubePlaylistsForPreferences().collect { entities ->
+                _uiState.update {
+                    it.copy(
+                        youTubePlaylists = entities.map { e ->
+                            YouTubeSyncPlaylist(
                                 id = e.id,
                                 name = e.name,
                                 trackCount = e.trackCount,

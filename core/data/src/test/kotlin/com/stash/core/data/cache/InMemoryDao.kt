@@ -26,4 +26,8 @@ internal class InMemoryDao : ArtistProfileCacheDao {
         val toRemove = store.keys.filter { it !in keepIds }
         toRemove.forEach { store.remove(it) }
     }
+
+    override suspend fun clearAll() {
+        store.clear()
+    }
 }

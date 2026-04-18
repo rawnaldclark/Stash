@@ -212,6 +212,32 @@ interface PlaylistDao {
     """)
     fun getSpotifyPlaylistsForPreferences(): Flow<List<PlaylistEntity>>
 
+    /** All YouTube Music playlists ordered by type (liked first, then mixes) and name. */
+    @Query("""
+        SELECT * FROM playlists
+        WHERE source = 'YOUTUBE' AND is_active = 1
+        ORDER BY
+            CASE type
+                WHEN 'LIKED_SONGS' THEN 0
+                WHEN 'DAILY_MIX' THEN 1
+                ELSE 2
+            END,
+            name ASC
+    """)
+    fun getYouTubePlaylistsForPreferences(): Flow<List<PlaylistEntity>>
+
+    /**
+     * One-shot data migration: flip sync_enabled on every YouTube playlist
+     * that's still false. Fixes the Option A gap where playlists discovered
+     * before the Sync-preference UI was extended to YouTube got stuck at
+     * sync_enabled = 0 and silently skipped by DiffWorker. Called once per
+     * install from [com.stash.app.StashApplication].
+     *
+     * @return the number of rows updated.
+     */
+    @Query("UPDATE playlists SET sync_enabled = 1 WHERE source = 'YOUTUBE' AND sync_enabled = 0")
+    suspend fun enableAllYouTubePlaylistSync(): Int
+
     /** All sync-enabled playlists for a given source. Used by the sync
      *  pipeline to skip disabled playlists. */
     @Query("SELECT * FROM playlists WHERE source = :source AND is_active = 1 AND sync_enabled = 1")

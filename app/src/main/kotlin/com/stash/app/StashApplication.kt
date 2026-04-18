@@ -4,7 +4,9 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil3.SingletonImageLoader
+import android.util.Log
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
+import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.media.listening.ListeningRecorder
 import com.stash.core.data.repository.MusicRepositoryImpl
@@ -50,6 +52,9 @@ class StashApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var artistProfileCacheDao: ArtistProfileCacheDao
+
+    @Inject
+    lateinit var playlistDao: PlaylistDao
 
     @Inject
     lateinit var listeningRecorder: ListeningRecorder
@@ -105,6 +110,7 @@ class StashApplication : Application(), Configuration.Provider {
         // waiting up to 48 hours when Android Doze defers the fire.
         UpdateCheckWorker.enqueueOneTimeCheck(this)
         applicationScope.launch { maybeInvalidateArtistCache() }
+        applicationScope.launch { maybeEnableYouTubePlaylistSync() }
 
         // Start the local listening-history recorder + optional Last.fm
         // scrobbler. Both are safe to start unconditionally — the scrobbler
@@ -130,6 +136,29 @@ class StashApplication : Application(), Configuration.Provider {
         }
     }
 
+    /**
+     * Retroactively enables `sync_enabled = 1` on every YouTube playlist in
+     * the local DB exactly once. Fixes the parity gap where YouTube
+     * playlists discovered before the Sync-preferences UI was extended to
+     * YouTube got stuck at `sync_enabled = 0` and were silently skipped by
+     * DiffWorker. Gated by [YOUTUBE_SYNC_ENABLE_VERSION] so it runs at most
+     * once per install, no matter how many times the app restarts.
+     */
+    private suspend fun maybeEnableYouTubePlaylistSync() {
+        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
+        val stored = prefs.getInt("youtube_sync_enable_version", 0)
+        if (stored < YOUTUBE_SYNC_ENABLE_VERSION) {
+            val updated = playlistDao.enableAllYouTubePlaylistSync()
+            Log.i(
+                "StashMigration",
+                "maybeEnableYouTubePlaylistSync: flipped $updated rows to sync_enabled=1",
+            )
+            prefs.edit()
+                .putInt("youtube_sync_enable_version", YOUTUBE_SYNC_ENABLE_VERSION)
+                .apply()
+        }
+    }
+
     companion object {
         /**
          * Bump whenever a parser change makes existing cached rows produce
@@ -137,5 +166,14 @@ class StashApplication : Application(), Configuration.Provider {
          * written before the 2026-04-17 Popular-shelf title-matching fix.
          */
         private const val ARTIST_CACHE_VERSION = 1
+
+        /**
+         * Bump when [maybeEnableYouTubePlaylistSync] needs to run again.
+         * Current bump (v1) is the initial rollout that flips every
+         * pre-existing YouTube playlist to `sync_enabled = 1` so the Option
+         * A auto-download default takes effect for users whose playlists
+         * already live in the DB.
+         */
+        private const val YOUTUBE_SYNC_ENABLE_VERSION = 1
     }
 }

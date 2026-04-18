@@ -337,6 +337,132 @@ fun SyncScreen(
             }
         }
 
+        // -- YouTube Sync Preferences ----------------------------------------
+        // YouTube playlists are auto-enabled on discovery (Option A default),
+        // so this section starts collapsed — the user only needs to open it
+        // if they want to turn off a specific mix. Opens expanded on first
+        // run (empty list) so the explainer is visible before the first sync.
+        if (uiState.youTubeConnected) {
+            item {
+                val everythingOff = uiState.youTubePlaylists.isNotEmpty() &&
+                    uiState.youTubePlaylists.none { it.syncEnabled }
+                val startExpanded = uiState.youTubePlaylists.isEmpty() || everythingOff
+                var expanded by remember(startExpanded) { mutableStateOf(startExpanded) }
+                val accent = MaterialTheme.colorScheme.primary
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded },
+                    color = accent.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, accent.copy(alpha = 0.3f),
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                            .animateContentSize(),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "YouTube Music Sync Preferences",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = accent,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    text = "New mixes auto-sync; toggle off any you don't want",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Icon(
+                                imageVector = if (expanded) Icons.Filled.ExpandLess
+                                else Icons.Filled.ExpandMore,
+                                contentDescription = null,
+                                tint = accent,
+                            )
+                        }
+
+                        if (expanded && uiState.youTubePlaylists.isEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Your YouTube Music mixes and Liked Songs will appear here after the first sync. Everything starts enabled — toggle off anything you don't want downloaded.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        } else if (expanded) {
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            val ytLiked = uiState.youTubePlaylists.filter {
+                                it.type == com.stash.core.model.PlaylistType.LIKED_SONGS
+                            }
+                            val ytMixes = uiState.youTubePlaylists.filter {
+                                it.type == com.stash.core.model.PlaylistType.DAILY_MIX
+                            }
+                            val ytOther = uiState.youTubePlaylists.filter {
+                                it.type != com.stash.core.model.PlaylistType.LIKED_SONGS &&
+                                    it.type != com.stash.core.model.PlaylistType.DAILY_MIX
+                            }
+
+                            ytLiked.forEach { playlist ->
+                                SpotifySyncToggleRow(
+                                    name = playlist.name,
+                                    trackCount = playlist.trackCount,
+                                    enabled = playlist.syncEnabled,
+                                    onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
+                                )
+                            }
+
+                            if (ytMixes.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Home Mixes",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = accent,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                ytMixes.forEach { playlist ->
+                                    SpotifySyncToggleRow(
+                                        name = playlist.name,
+                                        trackCount = playlist.trackCount,
+                                        enabled = playlist.syncEnabled,
+                                        onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
+                                    )
+                                }
+                            }
+
+                            if (ytOther.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Other Playlists",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = accent,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                ytOther.forEach { playlist ->
+                                    SpotifySyncToggleRow(
+                                        name = playlist.name,
+                                        trackCount = playlist.trackCount,
+                                        enabled = playlist.syncEnabled,
+                                        onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // -- Schedule ---------------------------------------------------------
         item {
             Text(

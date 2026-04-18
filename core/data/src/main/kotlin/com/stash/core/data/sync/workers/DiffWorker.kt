@@ -286,6 +286,11 @@ class DiffWorker @AssistedInject constructor(
             mixNumber = snapshot.mixNumber,
             artUrl = snapshot.artUrl,
             trackCount = snapshot.trackCount,
+            // YouTube sources (Liked Songs + Home mixes) auto-enable on
+            // discovery — users expect "I connected YouTube, download my
+            // stuff." Spotify stays opt-in because a typical Spotify
+            // library has 100+ playlists and bulk auto-download is rude.
+            syncEnabled = snapshot.source == MusicSource.YOUTUBE,
         )
         val id = playlistDao.insert(newPlaylist)
         return newPlaylist.copy(id = id)
