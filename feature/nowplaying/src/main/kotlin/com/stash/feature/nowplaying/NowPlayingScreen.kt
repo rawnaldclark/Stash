@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -32,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,6 +84,17 @@ fun NowPlayingScreen(
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
 
+    // One-shot Toast confirmation for the "wrong match" flag action. Toast
+    // instead of Snackbar so we don't have to restructure the screen into
+    // a Scaffold — the full-screen ambient background would fight with
+    // Material's Snackbar surface anyway.
+    val toastContext = LocalContext.current
+    LaunchedEffect(Unit) {
+        viewModel.userMessages.collect { msg ->
+            android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
     // Queue bottom sheet
     if (showQueue) {
         QueueBottomSheet(
@@ -128,9 +141,10 @@ fun NowPlayingScreen(
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // -- Top bar: dismiss, label, save, queue --
+            // -- Top bar: dismiss, label, flag, save, queue --
             TopBar(
                 onDismiss = onDismiss,
+                onFlagWrongMatch = viewModel::flagCurrentTrackAsWrongMatch,
                 onSaveClick = { showSaveSheet = true },
                 onQueueClick = { showQueue = true },
                 hasTrack = uiState.hasTrack,
@@ -230,6 +244,7 @@ fun NowPlayingScreen(
 @Composable
 private fun TopBar(
     onDismiss: () -> Unit,
+    onFlagWrongMatch: () -> Unit,
     onSaveClick: () -> Unit,
     onQueueClick: () -> Unit,
     hasTrack: Boolean,
@@ -257,6 +272,21 @@ private fun TopBar(
             textAlign = TextAlign.Center,
             modifier = Modifier.weight(1f),
         )
+
+        // Flag as wrong match — only shown when a track is loaded. Lives
+        // here (not in the Playlist Detail row menu) because Now Playing
+        // is where the user actually realises "this isn't the right song"
+        // — their ears are the ground truth.
+        if (hasTrack) {
+            IconButton(onClick = onFlagWrongMatch) {
+                Icon(
+                    imageVector = Icons.Default.Flag,
+                    contentDescription = "Flag as wrong match",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
 
         // Save to playlist — only shown when a track is loaded.
         if (hasTrack) {

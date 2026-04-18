@@ -233,6 +233,18 @@ class MusicRepositoryImpl @Inject constructor(
         downloadQueueDao.deleteByTrackId(trackId)
     }
 
+    // ── Wrong-match flagging ────────────────────────────────────────────
+
+    override suspend fun setMatchFlagged(trackId: Long, flagged: Boolean) {
+        trackDao.updateMatchFlagged(trackId, flagged)
+    }
+
+    override fun getFlaggedTracks(): Flow<List<com.stash.core.data.db.entity.TrackEntity>> =
+        trackDao.getFlaggedTracks()
+
+    override fun getFlaggedCount(): Flow<Int> =
+        trackDao.getFlaggedCount()
+
     // ── Sync history ────────────────────────────────────────────────────
 
     override suspend fun getLatestSync(): SyncHistoryEntity? =

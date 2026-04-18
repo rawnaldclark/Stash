@@ -10,8 +10,12 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.ui.components.PlaylistInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
@@ -36,6 +40,13 @@ class NowPlayingViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(NowPlayingUiState())
     val uiState: StateFlow<NowPlayingUiState> = _uiState.asStateFlow()
+
+    private val _userMessages = MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    /** One-shot snackbar messages (e.g. "Track flagged as wrong match"). */
+    val userMessages: SharedFlow<String> = _userMessages.asSharedFlow()
 
     init {
         observePlayerState()
@@ -185,6 +196,24 @@ class NowPlayingViewModel @Inject constructor(
         viewModelScope.launch {
             val playlistId = musicRepository.createPlaylist(name)
             musicRepository.addTrackToPlaylist(trackId, playlistId)
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Wrong-match flagging
+    // ------------------------------------------------------------------
+
+    /**
+     * Flag the currently-playing track as the wrong song. Surfaces it in
+     * the Failed Matches screen so the user can pick a replacement. No-op
+     * when nothing is playing. Emits a snackbar message so the user knows
+     * where to go next.
+     */
+    fun flagCurrentTrackAsWrongMatch() {
+        val track = _uiState.value.currentTrack ?: return
+        viewModelScope.launch {
+            musicRepository.setMatchFlagged(track.id, true)
+            _userMessages.tryEmit("Flagged. Find it in Sync \u2192 Failed Matches to pick a replacement.")
         }
     }
 

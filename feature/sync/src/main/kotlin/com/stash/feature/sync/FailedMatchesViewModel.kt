@@ -26,7 +26,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -55,9 +57,34 @@ data class ResyncCandidate(
 )
 
 /**
- * UI state for the Failed Matches (unmatched songs) screen.
+ * Lightweight view model for a user-flagged track — the audio downloaded
+ * fine, but it's the wrong song. Sits alongside [UnmatchedTrackView] in the
+ * Failed Matches screen so the same resync + preview infrastructure can
+ * produce replacement candidates.
  *
- * @property tracks           List of tracks that could not be matched on YouTube.
+ * @property trackId          Primary key of the track in the tracks table.
+ * @property title            Original Spotify / YouTube metadata title.
+ * @property artist           Original metadata artist.
+ * @property albumArtUrl      Original album art, used as a visual anchor.
+ * @property currentYoutubeId The currently-associated YT video (wrong one).
+ * @property currentFilePath  On-disk file to delete when the swap is approved.
+ * @property searchQuery      "<artist> - <title>" — what the resync feeds into YT search.
+ */
+data class FlaggedTrackRow(
+    val trackId: Long,
+    val title: String,
+    val artist: String,
+    val albumArtUrl: String?,
+    val currentYoutubeId: String?,
+    val currentFilePath: String?,
+    val searchQuery: String,
+)
+
+/**
+ * UI state for the Failed Matches screen.
+ *
+ * @property tracks           Tracks that sync couldn't match on YouTube at all.
+ * @property flaggedTracks    Tracks the user marked as "wrong song" from Now Playing.
  * @property isLoading        True while the initial data load is in progress.
  * @property previewLoading   The videoId currently being loaded for preview, or null.
  * @property resyncCandidates Map of trackId -> best candidate found during resync.
@@ -66,6 +93,7 @@ data class ResyncCandidate(
  */
 data class FailedMatchesUiState(
     val tracks: List<UnmatchedTrackView> = emptyList(),
+    val flaggedTracks: List<FlaggedTrackRow> = emptyList(),
     val isLoading: Boolean = true,
     val previewLoading: String? = null,
     val resyncCandidates: Map<Long, ResyncCandidate> = emptyMap(),
@@ -141,21 +169,42 @@ class FailedMatchesViewModel @Inject constructor(
 
     // -- Combined UI state --------------------------------------------------
 
+    /**
+     * Flagged tracks pre-mapped to the UI row type so the main
+     * [combine] below only needs to know about one shape. Keeps the
+     * outer [combine] under its 5-param typed-overload limit.
+     */
+    private val flaggedRows: Flow<List<FlaggedTrackRow>> =
+        musicRepository.getFlaggedTracks().map { entities ->
+            entities.map { t ->
+                FlaggedTrackRow(
+                    trackId = t.id,
+                    title = t.title,
+                    artist = t.artist,
+                    albumArtUrl = t.albumArtUrl,
+                    currentYoutubeId = t.youtubeId,
+                    currentFilePath = t.filePath,
+                    searchQuery = "${t.artist} - ${t.title}",
+                )
+            }
+        }
+
     val uiState: StateFlow<FailedMatchesUiState> =
         combine(
             musicRepository.getUnmatchedTracks(),
+            flaggedRows,
             _previewLoading,
             _resyncCandidates,
-            _isResyncing,
-            _resyncProgress,
-        ) { tracks, loading, candidates, resyncing, progress ->
+            combine(_isResyncing, _resyncProgress) { r, p -> r to p },
+        ) { tracks, flagged, loading, candidates, resyncState ->
             FailedMatchesUiState(
                 tracks = tracks,
+                flaggedTracks = flagged,
                 isLoading = false,
                 previewLoading = loading,
                 resyncCandidates = candidates,
-                isResyncing = resyncing,
-                resyncProgress = progress,
+                isResyncing = resyncState.first,
+                resyncProgress = resyncState.second,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -179,20 +228,34 @@ class FailedMatchesViewModel @Inject constructor(
             _isResyncing.value = true
             _resyncProgress.value = ""
 
-            val tracks = uiState.value.tracks
+            // Single search pass over BOTH unmatched and user-flagged tracks.
+            // Each row becomes a (trackId, searchQuery, rejectedVideoId?)
+            // triple so the same semaphored search loop handles both kinds.
+            val unmatched = uiState.value.tracks.map {
+                Triple(it.trackId, it.searchQuery, it.rejectedVideoId)
+            }
+            val flagged = uiState.value.flaggedTracks.map {
+                Triple(it.trackId, it.searchQuery, it.currentYoutubeId)
+            }
+            val jobs = unmatched + flagged
+
             val semaphore = Semaphore(RESYNC_CONCURRENCY)
-            val total = tracks.size
+            val total = jobs.size
             val completed = AtomicInteger(0)
 
-            tracks.map { track ->
+            jobs.map { (trackId, query, excludeVideoId) ->
                 launch {
                     semaphore.acquire()
                     try {
-                        val results = searchExecutor.search(track.searchQuery, maxResults = 5)
-                        val best = results.firstOrNull()
+                        val results = searchExecutor.search(query, maxResults = 5)
+                        // For flagged tracks, skip the currently-associated
+                        // (wrong) video — surfacing it as the candidate would
+                        // just swap the track with itself.
+                        val best = results.firstOrNull { excludeVideoId == null || it.id != excludeVideoId }
+                            ?: results.firstOrNull()
                         if (best != null) {
                             _resyncCandidates.update { current ->
-                                current + (track.trackId to ResyncCandidate(
+                                current + (trackId to ResyncCandidate(
                                     videoId = best.id,
                                     title = best.title,
                                     artist = best.uploader,
@@ -202,7 +265,7 @@ class FailedMatchesViewModel @Inject constructor(
                             }
                         }
                     } catch (e: Exception) {
-                        Log.w(TAG, "Resync search failed for '${track.searchQuery}': ${e.message}")
+                        Log.w(TAG, "Resync search failed for '$query': ${e.message}")
                     } finally {
                         semaphore.release()
                         val done = completed.incrementAndGet()
@@ -344,6 +407,104 @@ class FailedMatchesViewModel @Inject constructor(
             if (candidate != null) {
                 approveMatch(track.trackId, track.id, candidate)
             }
+        }
+    }
+
+    // -- Approve a swap for a FLAGGED track --------------------------------
+
+    /**
+     * Approves a replacement candidate for a user-flagged (wrong-match)
+     * track. Deletes the old audio file, kicks a fresh yt-dlp download of
+     * the new video in the background, then swaps youtubeId + file_path +
+     * file_size + clears the flag so the track disappears from the Failed
+     * Matches screen. File IO failures on the old-file delete are swallowed
+     * — a stray leftover file is strictly better than a lost swap, and the
+     * orphan cleanup pass will eventually catch it.
+     */
+    fun approveSwap(row: FlaggedTrackRow, candidate: ResyncCandidate) {
+        viewModelScope.launch {
+            // Guard: another track already owns this videoId — swapping would
+            // violate the UNIQUE(youtube_id) constraint and blow up silently.
+            val existing = trackDao.findByYoutubeId(candidate.videoId)
+            if (existing != null && existing.id != row.trackId) {
+                _userMessages.tryEmit(
+                    "Can't swap — '${candidate.title}' is already linked to " +
+                        "${existing.artist} — ${existing.title}.",
+                )
+                return@launch
+            }
+
+            // Optimistically clear the flag so the row disappears. If the
+            // background download fails, the track still exists and the
+            // user can re-flag it.
+            try {
+                musicRepository.setMatchFlagged(row.trackId, false)
+                _resyncCandidates.update { it - row.trackId }
+            } catch (e: Exception) {
+                Log.e(TAG, "approveSwap pre-download update failed", e)
+                _userMessages.tryEmit("Couldn't approve this swap. Please try again.")
+                return@launch
+            }
+
+            // Fire-and-forget download + file swap.
+            launch {
+                // Delete the existing audio before overwriting — commitDownload
+                // creates a new file with a hashed name derived from the new
+                // title, so the old path would leak as an orphan otherwise.
+                row.currentFilePath?.let { oldPath ->
+                    try {
+                        val deleted = java.io.File(oldPath).delete()
+                        Log.d(TAG, "approveSwap: old file delete path=$oldPath deleted=$deleted")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "approveSwap: old file delete threw", e)
+                    }
+                }
+
+                try {
+                    val url = "https://www.youtube.com/watch?v=${candidate.videoId}"
+                    val qualityTier = qualityPrefs.qualityTier.first()
+                    val qualityArgs = qualityTier.toYtDlpArgs()
+                    val tempDir = fileOrganizer.getTempDir()
+                    val tempFilename = "swap_${candidate.videoId}"
+
+                    val result = downloadExecutor.download(
+                        url = url,
+                        outputDir = tempDir,
+                        filename = tempFilename,
+                        qualityArgs = qualityArgs,
+                    )
+                    if (result is DownloadResult.Success) {
+                        val committed = fileOrganizer.commitDownload(
+                            tempFile = result.file,
+                            artist = row.artist,
+                            album = null,
+                            title = row.title,
+                            format = result.file.extension,
+                        )
+                        trackDao.updateYoutubeId(row.trackId, candidate.videoId)
+                        trackDao.markAsDownloaded(row.trackId, committed.filePath, committed.sizeBytes)
+                    } else {
+                        Log.w(TAG, "approveSwap: download failed for ${candidate.title}: $result")
+                        _userMessages.tryEmit("Couldn't re-download '${candidate.title}'.")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "approveSwap: unexpected error for ${candidate.title}", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Clear a flag without permanently dismissing the track. Used when the
+     * user inspects a flagged track in Failed Matches and decides the
+     * original match was actually fine. Unlike [dismissTrack], this does
+     * NOT set match_dismissed, so future sync attempts still behave
+     * normally for this row.
+     */
+    fun unflagTrack(trackId: Long) {
+        viewModelScope.launch {
+            musicRepository.setMatchFlagged(trackId, false)
+            _resyncCandidates.update { it - trackId }
         }
     }
 

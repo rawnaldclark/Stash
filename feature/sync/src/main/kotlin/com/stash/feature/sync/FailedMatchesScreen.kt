@@ -104,7 +104,7 @@ fun FailedMatchesScreen(
             }
 
             // -- Empty state: all caught up --
-            state.tracks.isEmpty() -> {
+            state.tracks.isEmpty() && state.flaggedTracks.isEmpty() -> {
                 // Back button pinned to top-left
                 IconButton(
                     onClick = onBack,
@@ -211,6 +211,64 @@ fun FailedMatchesScreen(
                                 thickness = 0.5.dp,
                                 color = extendedColors.glassBorder,
                             )
+                        }
+                    }
+
+                    // -- Flagged-as-wrong-match section --
+                    // User-flagged (via Now Playing overflow) tracks that
+                    // downloaded fine but play the wrong song. Same resync
+                    // + preview infrastructure; approve SWAPS the file
+                    // rather than downloading fresh.
+                    if (state.flaggedTracks.isNotEmpty()) {
+                        item(key = "flagged_header") {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                                Text(
+                                    text = "You flagged these as wrong",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Tap resync above to find replacements, then approve to swap.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        itemsIndexed(
+                            items = state.flaggedTracks,
+                            key = { _, row -> "flagged_${row.trackId}" },
+                        ) { index, row ->
+                            val candidate = state.resyncCandidates[row.trackId]
+                            val isPreviewPlaying = previewState is PreviewState.Playing &&
+                                (previewState as PreviewState.Playing).videoId == candidate?.videoId
+                            val isPreviewLoading = state.previewLoading == candidate?.videoId
+
+                            FlaggedTrackListItem(
+                                row = row,
+                                candidate = candidate,
+                                resyncAttempted = state.resyncProgress.isNotEmpty(),
+                                isPreviewPlaying = isPreviewPlaying,
+                                isPreviewLoading = isPreviewLoading,
+                                onPreview = { videoId -> viewModel.previewRejectedMatch(videoId) },
+                                onStopPreview = { viewModel.stopPreview() },
+                                onApprove = {
+                                    candidate?.let { viewModel.approveSwap(row, it) }
+                                },
+                                onUnflag = { viewModel.unflagTrack(row.trackId) },
+                            )
+
+                            if (index < state.flaggedTracks.lastIndex) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 80.dp, end = 20.dp),
+                                    thickness = 0.5.dp,
+                                    color = extendedColors.glassBorder,
+                                )
+                            }
                         }
                     }
                 }
@@ -552,6 +610,153 @@ private fun UnmatchedTrackRow(
             Icon(
                 imageVector = Icons.Default.Close,
                 contentDescription = "Dismiss",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Row composable for a user-flagged track (see [FlaggedTrackRow]). Mirrors
+ * [UnmatchedTrackRow] but with a distinct approve/unflag surface — the track
+ * already has an audio file on disk, so "approve" triggers a swap rather than
+ * a fresh download, and "unflag" clears the wrong-match flag without entering
+ * the permanent-dismiss lane.
+ */
+@Composable
+private fun FlaggedTrackListItem(
+    row: FlaggedTrackRow,
+    candidate: ResyncCandidate?,
+    resyncAttempted: Boolean,
+    isPreviewPlaying: Boolean,
+    isPreviewLoading: Boolean,
+    onPreview: (String) -> Unit,
+    onStopPreview: () -> Unit,
+    onApprove: () -> Unit,
+    onUnflag: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
+                        ),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            val art = candidate?.thumbnailUrl ?: row.albumArtUrl
+            if (art != null) {
+                AsyncImage(
+                    model = art,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = "${row.title} \u2014 ${row.artist}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (candidate != null) {
+                Text(
+                    text = "\u2192 ${candidate.title} \u2014 ${candidate.artist}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else if (resyncAttempted) {
+                Text(
+                    text = "No replacement found",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    maxLines = 1,
+                )
+            } else {
+                Text(
+                    text = "Tap Resync to find replacements",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    maxLines = 1,
+                )
+            }
+        }
+
+        if (candidate != null) {
+            IconButton(
+                onClick = if (isPreviewPlaying) onStopPreview else {
+                    { onPreview(candidate.videoId) }
+                },
+                modifier = Modifier.size(40.dp),
+            ) {
+                when {
+                    isPreviewLoading -> CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    isPreviewPlaying -> Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Stop preview",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    else -> Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Preview replacement",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        if (candidate != null) {
+            IconButton(
+                onClick = onApprove,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Swap to this match",
+                    tint = Color(0xFF4CAF50),
+                )
+            }
+        }
+
+        IconButton(
+            onClick = onUnflag,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Unflag (keep current match)",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

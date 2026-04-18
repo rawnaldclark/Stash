@@ -91,4 +91,15 @@ data class TrackEntity(
 
     @ColumnInfo(name = "match_dismissed")
     val matchDismissed: Boolean = false,
+
+    /**
+     * User-reported "this downloaded the wrong song." Set via a Now Playing
+     * overflow action once the user realizes a sync-matched track plays a
+     * different song than its Spotify metadata says. Surfaces the track in
+     * the Failed Matches screen so the resync flow can present alternative
+     * candidates; cleared when the user approves a replacement match or
+     * dismisses the flag.
+     */
+    @ColumnInfo(name = "match_flagged", defaultValue = "0")
+    val matchFlagged: Boolean = false,
 )

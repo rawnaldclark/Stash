@@ -146,6 +146,24 @@ interface MusicRepository {
     /** Dismiss a track from matching — marks TrackEntity and deletes queue entry. */
     suspend fun dismissMatch(trackId: Long)
 
+    // ── Wrong-match flagging (user-initiated from Now Playing) ──────────
+
+    /**
+     * Flag the currently-playing track as the wrong song. Surfaces it in
+     * the Failed Matches screen alongside unmatched tracks. Set [flagged]
+     * to `false` to clear a previously-set flag (used by approve/dismiss).
+     */
+    suspend fun setMatchFlagged(trackId: Long, flagged: Boolean)
+
+    /**
+     * Flagged tracks — i.e. successfully downloaded tracks that the user
+     * said are the wrong song. Used by the Failed Matches screen.
+     */
+    fun getFlaggedTracks(): Flow<List<com.stash.core.data.db.entity.TrackEntity>>
+
+    /** Count of flagged tracks. Drives the Sync-tab warning card. */
+    fun getFlaggedCount(): Flow<Int>
+
     // ── Sync history ────────────────────────────────────────────────────
 
     /** The most recent sync record, or null. */

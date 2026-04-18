@@ -322,4 +322,27 @@ interface TrackDao {
         LIMIT 1
     """)
     suspend fun findDownloadedByCanonical(canonicalTitle: String, canonicalArtist: String): TrackEntity?
+
+    // ── Wrong-match flagging (user-initiated) ───────────────────────────
+
+    /**
+     * Flag a track as wrongly-matched, or unflag it. Used from the Now
+     * Playing overflow menu when the user realises the downloaded audio
+     * doesn't match the Spotify metadata. Flagged tracks surface in the
+     * Failed Matches screen so the resync flow can offer alternatives.
+     */
+    @Query("UPDATE tracks SET match_flagged = :flagged WHERE id = :trackId")
+    suspend fun updateMatchFlagged(trackId: Long, flagged: Boolean)
+
+    /**
+     * All currently-flagged tracks. Used by the Failed Matches screen to
+     * render flagged rows alongside unmatched ones. Ordered by title so
+     * the list is stable across flagged-flag toggles.
+     */
+    @Query("SELECT * FROM tracks WHERE match_flagged = 1 ORDER BY title ASC")
+    fun getFlaggedTracks(): Flow<List<TrackEntity>>
+
+    /** Count of flagged tracks. Drives the Sync-tab warning card. */
+    @Query("SELECT COUNT(*) FROM tracks WHERE match_flagged = 1")
+    fun getFlaggedCount(): Flow<Int>
 }

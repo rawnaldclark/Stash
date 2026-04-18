@@ -55,7 +55,7 @@ import com.stash.core.data.db.entity.TrackFts
         ArtistProfileCacheEntity::class,
         ListeningEventEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -141,6 +141,20 @@ abstract class StashDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_track_id ON listening_events(track_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_started_at ON listening_events(started_at)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_scrobbled ON listening_events(scrobbled)")
+            }
+        }
+
+        /**
+         * v8 → v9: add match_flagged column to tracks so users can mark a
+         * wrongly-matched track from Now Playing and have it surface in the
+         * Failed Matches screen for re-match. Defaults to 0 so no existing
+         * row is retroactively flagged.
+         */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE tracks ADD COLUMN match_flagged INTEGER NOT NULL DEFAULT 0"
+                )
             }
         }
     }
