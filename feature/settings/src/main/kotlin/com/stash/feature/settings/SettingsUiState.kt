@@ -60,4 +60,26 @@ data class SettingsUiState(
      */
     val moveLibraryState: com.stash.data.download.files.MoveLibraryState =
         com.stash.data.download.files.MoveLibraryState.Idle,
+    /** Last.fm connection state — drives the Settings → Last.fm section. */
+    val lastFmState: LastFmAuthState = LastFmAuthState.NotConfigured,
 )
+
+/**
+ * Connection state for the Last.fm scrobbler integration.
+ *
+ * - [NotConfigured]: the APK was built without a Last.fm API key / secret.
+ *   UI shows a disabled card explaining the developer setup step.
+ * - [Disconnected]: credentials present, user hasn't auth'd yet.
+ * - [AwaitingAuth]: we requested an auth token and opened the user's
+ *   browser; waiting for the user to tap "Finish connecting" after
+ *   approving on Last.fm's site.
+ * - [Connected]: session key stored; scrobbler is live.
+ * - [Error]: something went wrong. Dismissable back to [Disconnected].
+ */
+sealed interface LastFmAuthState {
+    data object NotConfigured : LastFmAuthState
+    data object Disconnected : LastFmAuthState
+    data class AwaitingAuth(val token: String) : LastFmAuthState
+    data class Connected(val username: String, val pendingScrobbles: Int) : LastFmAuthState
+    data class Error(val message: String) : LastFmAuthState
+}

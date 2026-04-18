@@ -142,6 +142,10 @@ fun SettingsScreen(
         onCancelMoveLibrary = viewModel::cancelMoveLibrary,
         onDismissMoveLibrary = viewModel::dismissMoveLibrary,
         countMovableTracks = viewModel::countMovableTracks,
+        onConnectLastFm = viewModel::onConnectLastFm,
+        onFinishLastFmAuth = viewModel::onFinishLastFmAuth,
+        onDisconnectLastFm = viewModel::onDisconnectLastFm,
+        onDismissLastFmError = viewModel::onDismissLastFmError,
         modifier = modifier,
     )
 }
@@ -169,6 +173,10 @@ private fun SettingsContent(
     onCancelMoveLibrary: () -> Unit,
     onDismissMoveLibrary: () -> Unit,
     countMovableTracks: suspend () -> Int,
+    onConnectLastFm: ((String) -> Unit) -> Unit,
+    onFinishLastFmAuth: () -> Unit,
+    onDisconnectLastFm: () -> Unit,
+    onDismissLastFmError: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -385,6 +393,24 @@ private fun SettingsContent(
             onVirtualizerChanged = onVirtualizerChanged,
         )
 
+        // -- Last.fm section --------------------------------------------------
+        SectionHeader(title = "Last.fm")
+
+        val lastFmUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+        GlassCard {
+            LastFmSection(
+                state = uiState.lastFmState,
+                onConnect = {
+                    onConnectLastFm { url ->
+                        runCatching { lastFmUriHandler.openUri(url) }
+                    }
+                },
+                onFinish = onFinishLastFmAuth,
+                onDisconnect = onDisconnectLastFm,
+                onDismissError = onDismissLastFmError,
+            )
+        }
+
         // -- Storage section --------------------------------------------------
         SectionHeader(title = "Storage")
 
@@ -593,6 +619,138 @@ private fun SettingsContent(
 
         // Bottom padding for navigation bar clearance
         Spacer(modifier = Modifier.height(80.dp))
+    }
+}
+
+/**
+ * Renders the Last.fm connection card. Four states from the VM drive
+ * the layout: NotConfigured (disabled explanation), Disconnected
+ * (Connect button), AwaitingAuth (Finish connecting after browser),
+ * Connected (username + pending scrobbles + Disconnect), Error
+ * (message + Dismiss).
+ */
+@Composable
+private fun LastFmSection(
+    state: LastFmAuthState,
+    onConnect: () -> Unit,
+    onFinish: () -> Unit,
+    onDisconnect: () -> Unit,
+    onDismissError: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        when (state) {
+            LastFmAuthState.NotConfigured -> {
+                Text(
+                    text = "Not configured",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "This build of Stash doesn't include a Last.fm API key. " +
+                        "A developer rebuilding with a key in local.properties unlocks this feature.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            LastFmAuthState.Disconnected -> {
+                Text(
+                    text = "Scrobble your plays",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Connect Last.fm and every song you finish in Stash lands in your Last.fm profile — perfect for building your own listening history independent of Spotify.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                androidx.compose.material3.OutlinedButton(
+                    onClick = onConnect,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ),
+                ) {
+                    Text("Connect Last.fm")
+                }
+            }
+            is LastFmAuthState.AwaitingAuth -> {
+                Text(
+                    text = "Waiting for approval",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Your browser should be open on Last.fm. Tap \"Yes, allow access\" on their page, then come back and tap Finish below.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                androidx.compose.material3.Button(
+                    onClick = onFinish,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Finish connecting")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                androidx.compose.material3.TextButton(
+                    onClick = onDismissError,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Cancel")
+                }
+            }
+            is LastFmAuthState.Connected -> {
+                Text(
+                    text = "Connected as ${state.username}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (state.pendingScrobbles > 0) {
+                        "Scrobbling your plays. ${state.pendingScrobbles} queued to submit."
+                    } else {
+                        "Scrobbling your plays. Everything up to date."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                androidx.compose.material3.OutlinedButton(
+                    onClick = onDisconnect,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ),
+                ) {
+                    Text("Disconnect")
+                }
+            }
+            is LastFmAuthState.Error -> {
+                Text(
+                    text = "Couldn't connect",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = state.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                androidx.compose.material3.TextButton(
+                    onClick = onDismissError,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Dismiss")
+                }
+            }
+        }
     }
 }
 

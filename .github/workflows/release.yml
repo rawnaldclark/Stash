@@ -59,6 +59,14 @@ jobs:
           STASH_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           STASH_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           STASH_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # Optional Last.fm API credentials. Missing secrets are OK —
+          # the app builds fine, the Last.fm UI just shows "Not configured."
+          # Set these in repo Settings → Secrets → Actions to enable the
+          # scrobbler in shipped APKs:
+          #   LASTFM_API_KEY     — from https://www.last.fm/api/account/create
+          #   LASTFM_API_SECRET  — shared secret from the same page
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Locate release APK

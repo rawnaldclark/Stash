@@ -8,6 +8,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.stash.core.data.db.converter.Converters
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SourceAccountDao
@@ -15,6 +16,7 @@ import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.ArtistProfileCacheEntity
 import com.stash.core.data.db.entity.DownloadQueueEntity
+import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
@@ -51,8 +53,9 @@ import com.stash.core.data.db.entity.TrackFts
         RemotePlaylistSnapshotEntity::class,
         RemoteTrackSnapshotEntity::class,
         ArtistProfileCacheEntity::class,
+        ListeningEventEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -71,6 +74,9 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun remoteSnapshotDao(): RemoteSnapshotDao
 
     abstract fun artistProfileCacheDao(): ArtistProfileCacheDao
+
+    abstract fun listeningEventDao(): ListeningEventDao
+
 
     companion object {
         const val DATABASE_NAME = "stash.db"
@@ -111,6 +117,30 @@ abstract class StashDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        /**
+         * v7 → v8: add listening_events table for local play history +
+         * optional Last.fm scrobbling. ForeignKey(tracks.id) cascades so
+         * rows are cleaned up if a track is deleted.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS listening_events (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        track_id INTEGER NOT NULL,
+                        started_at INTEGER NOT NULL,
+                        scrobbled INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_track_id ON listening_events(track_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_started_at ON listening_events(started_at)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_scrobbled ON listening_events(scrobbled)")
             }
         }
     }

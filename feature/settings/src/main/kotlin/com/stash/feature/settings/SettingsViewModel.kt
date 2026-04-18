@@ -10,6 +10,11 @@ import android.net.Uri
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.prefs.StoragePreference
 import com.stash.core.data.prefs.ThemePreference
+import com.stash.core.data.lastfm.LastFmApiClient
+import com.stash.core.data.lastfm.LastFmCredentials
+import com.stash.core.data.lastfm.LastFmSession
+import com.stash.core.data.lastfm.LastFmSessionPreference
+import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
 import com.stash.core.data.repository.MusicRepository
@@ -50,6 +55,10 @@ class SettingsViewModel @Inject constructor(
     private val youTubeCookieHelper: YouTubeCookieHelper,
     private val equalizerManager: com.stash.core.media.equalizer.EqualizerManager,
     private val equalizerStore: com.stash.core.media.equalizer.EqualizerStore,
+    private val lastFmApiClient: LastFmApiClient,
+    private val lastFmSessionPreference: LastFmSessionPreference,
+    private val lastFmCredentials: LastFmCredentials,
+    private val listeningEventDao: ListeningEventDao,
 ) : ViewModel() {
 
     /** Internal mutable UI state that is combined with token-manager flows. */
@@ -68,6 +77,8 @@ class SettingsViewModel @Inject constructor(
         themePreference.themeMode,
         storagePreference.externalTreeUri,
         moveLibraryCoordinator.state,
+        lastFmSessionPreference.session,
+        listeningEventDao.pendingScrobbleCount(),
         _localState,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -79,7 +90,19 @@ class SettingsViewModel @Inject constructor(
         val theme = values[5] as ThemeMode
         val externalTree = values[6] as Uri?
         val moveState = values[7] as MoveLibraryState
-        val local = values[8] as LocalState
+        val lastFmSession = values[8] as LastFmSession?
+        val pendingScrobbles = values[9] as Int
+        val local = values[10] as LocalState
+
+        val lastFmState: LastFmAuthState = local.lastFmAuthOverride
+            ?: when {
+                !lastFmCredentials.isConfigured -> LastFmAuthState.NotConfigured
+                lastFmSession != null -> LastFmAuthState.Connected(
+                    username = lastFmSession.username,
+                    pendingScrobbles = pendingScrobbles,
+                )
+                else -> LastFmAuthState.Disconnected
+            }
 
         SettingsUiState(
             spotifyAuthState = spotifyAuth,
@@ -103,6 +126,7 @@ class SettingsViewModel @Inject constructor(
             eqVirtualizer = local.eqVirtualizer,
             externalTreeUri = externalTree,
             moveLibraryState = moveState,
+            lastFmState = lastFmState,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -145,6 +169,83 @@ class SettingsViewModel @Inject constructor(
     /** Dismisses a terminal Done/Error state, returning to Idle. */
     fun dismissMoveLibrary() {
         moveLibraryCoordinator.dismiss()
+    }
+
+    // -- Last.fm actions ------------------------------------------------------
+
+    /**
+     * Step 1 of the Last.fm web-auth flow: request a one-shot auth token
+     * from Last.fm and transition to [LastFmAuthState.AwaitingAuth]. The
+     * screen is expected to open the user's browser to
+     * `https://www.last.fm/api/auth/?api_key=X&token=Y` so they can
+     * approve. Returns the URL to open so the screen can hand it to
+     * UriHandler.
+     */
+    fun onConnectLastFm(onUrlReady: (String) -> Unit) {
+        viewModelScope.launch {
+            val tokenResult = lastFmApiClient.getAuthToken()
+            tokenResult.fold(
+                onSuccess = { token ->
+                    _localState.update {
+                        it.copy(lastFmAuthOverride = LastFmAuthState.AwaitingAuth(token))
+                    }
+                    val url = "https://www.last.fm/api/auth/?api_key=" +
+                        "${lastFmCredentials.apiKey}&token=$token"
+                    onUrlReady(url)
+                },
+                onFailure = { t ->
+                    _localState.update {
+                        it.copy(
+                            lastFmAuthOverride = LastFmAuthState.Error(
+                                t.message ?: "Couldn't request Last.fm auth token",
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    /**
+     * Step 2: user has approved in their browser, back in Stash they tap
+     * "Finish connecting." Exchange the stored token for a session key.
+     */
+    fun onFinishLastFmAuth() {
+        val override = _localState.value.lastFmAuthOverride
+        if (override !is LastFmAuthState.AwaitingAuth) return
+        viewModelScope.launch {
+            val result = lastFmApiClient.getSession(override.token)
+            result.fold(
+                onSuccess = { (username, sessionKey) ->
+                    lastFmSessionPreference.save(LastFmSession(username, sessionKey))
+                    // Clear the override — the session flow now drives Connected state.
+                    _localState.update { it.copy(lastFmAuthOverride = null) }
+                },
+                onFailure = { t ->
+                    _localState.update {
+                        it.copy(
+                            lastFmAuthOverride = LastFmAuthState.Error(
+                                t.message ?: "Couldn't finish Last.fm connection. " +
+                                    "Did you tap Allow on Last.fm's website?",
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    /** Forget the Last.fm session + stop scrobbling. */
+    fun onDisconnectLastFm() {
+        viewModelScope.launch {
+            lastFmSessionPreference.clear()
+            _localState.update { it.copy(lastFmAuthOverride = null) }
+        }
+    }
+
+    /** Dismiss a Last.fm error banner and return to Disconnected. */
+    fun onDismissLastFmError() {
+        _localState.update { it.copy(lastFmAuthOverride = null) }
     }
 
     // -- Spotify actions ------------------------------------------------------
@@ -472,5 +573,12 @@ class SettingsViewModel @Inject constructor(
         val eqBandGains: List<Float> = listOf(0.5f, 0.5f, 0.5f, 0.5f, 0.5f),
         val eqBassBoost: Float = 0f,
         val eqVirtualizer: Float = 0f,
+        /**
+         * Transient Last.fm auth state used to override the session-flow-
+         * derived default. Non-null while we're mid-flow (AwaitingAuth
+         * after fetching a token) or showing an error. Cleared when the
+         * flow completes or the user dismisses the error.
+         */
+        val lastFmAuthOverride: LastFmAuthState? = null,
     )
 }

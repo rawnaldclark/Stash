@@ -5,6 +5,8 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil3.SingletonImageLoader
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
+import com.stash.core.data.lastfm.LastFmScrobbler
+import com.stash.core.media.listening.ListeningRecorder
 import com.stash.core.data.repository.MusicRepositoryImpl
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.data.download.ytdlp.YtDlpManager
@@ -49,6 +51,12 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var artistProfileCacheDao: ArtistProfileCacheDao
 
+    @Inject
+    lateinit var listeningRecorder: ListeningRecorder
+
+    @Inject
+    lateinit var lastFmScrobbler: LastFmScrobbler
+
     /** Application-scoped coroutine scope for one-shot startup tasks. */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -92,6 +100,13 @@ class StashApplication : Application(), Configuration.Provider {
         // waiting up to 48 hours when Android Doze defers the fire.
         UpdateCheckWorker.enqueueOneTimeCheck(this)
         applicationScope.launch { maybeInvalidateArtistCache() }
+
+        // Start the local listening-history recorder + optional Last.fm
+        // scrobbler. Both are safe to start unconditionally — the scrobbler
+        // no-ops until a session key is stored, and the recorder just
+        // observes the player regardless of whether scrobbling is on.
+        listeningRecorder.start()
+        lastFmScrobbler.start()
     }
 
     /**

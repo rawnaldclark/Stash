@@ -44,6 +44,27 @@ val hasReleaseSigning = releaseStoreFilePath != null &&
     releaseKeyAlias != null &&
     releaseKeyPassword != null
 
+// ── Last.fm API credentials ────────────────────────────────────────────────
+//
+// Read from `local.properties` (gitignored) or env vars (CI). Users who want
+// Last.fm scrobbling need to register a Last.fm API account at
+// https://www.last.fm/api/account/create and drop the key/secret into
+// local.properties as:
+//   lastfm.apiKey=...
+//   lastfm.apiSecret=...
+// Missing credentials are NOT an error — the app builds + runs normally, the
+// Last.fm UI just shows "Not configured" and the scrobbler no-ops.
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties().apply {
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { load(it) }
+    }
+}
+val lastFmApiKey: String =
+    localProperties.getProperty("lastfm.apiKey") ?: System.getenv("LASTFM_API_KEY").orEmpty()
+val lastFmApiSecret: String =
+    localProperties.getProperty("lastfm.apiSecret") ?: System.getenv("LASTFM_API_SECRET").orEmpty()
+
 android {
     namespace = "com.stash.app"
     compileSdk = 35
@@ -51,10 +72,15 @@ android {
         applicationId = "com.stash.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.3.5-beta.1"
+        versionCode = 13
+        versionName = "0.3.5-beta.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
+        // Last.fm API credentials exposed via BuildConfig for the app-level
+        // Hilt module to inject into LastFmApiClient. Empty strings are
+        // valid — the Settings UI just disables the connect button.
+        buildConfigField("String", "LASTFM_API_KEY", "\"$lastFmApiKey\"")
+        buildConfigField("String", "LASTFM_API_SECRET", "\"$lastFmApiSecret\"")
     }
 
     signingConfigs {
