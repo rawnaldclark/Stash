@@ -200,12 +200,21 @@ class PlaylistDetailViewModel @Inject constructor(
 
     // ── Playlist cover image ───────────────────────────────────────────
 
-    /** Save a user-picked image as the playlist's cover art. */
+    /**
+     * Save a user-picked image as the playlist's cover art.
+     *
+     * After persisting to the DB, also re-emits [_playlist] with the new
+     * [artUrl]. The playlist metadata is loaded once via a suspend call
+     * (see [loadPlaylistMetadata]) and is not backed by a reactive Flow,
+     * so the detail screen would otherwise keep showing the stale artUrl
+     * until the user navigates away and back.
+     */
     fun setPlaylistImage(playlistId: Long, imageUri: Uri) {
         viewModelScope.launch {
             val artUrl = playlistImageHelper.savePlaylistCoverImage(playlistId, imageUri)
             if (artUrl != null) {
                 musicRepository.updatePlaylistArtUrl(playlistId, artUrl)
+                _playlist.value = _playlist.value?.copy(artUrl = artUrl)
             }
         }
     }
@@ -215,6 +224,7 @@ class PlaylistDetailViewModel @Inject constructor(
         viewModelScope.launch {
             playlistImageHelper.deletePlaylistCoverFile(playlistId)
             musicRepository.updatePlaylistArtUrl(playlistId, null)
+            _playlist.value = _playlist.value?.copy(artUrl = null)
         }
     }
 }
