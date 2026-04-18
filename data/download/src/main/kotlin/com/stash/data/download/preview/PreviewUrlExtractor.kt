@@ -221,8 +221,12 @@ class PreviewUrlExtractor @Inject constructor(
         return withTimeout(INNERTUBE_TIMEOUT_MS) {
             Log.d(TAG, "Trying InnerTube fast path for videoId=$videoId")
 
-            val response = innerTubeClient.player(videoId) ?: run {
-                Log.w(TAG, "InnerTube player returned null for $videoId")
+            // Ordered client-variant attempt. ANDROID_VR / IOS frequently
+            // return unciphered adaptiveFormats urls, letting us skip the
+            // ~14 s yt-dlp + QuickJS cipher-solve path entirely. Falls
+            // back transparently to WEB_REMIX if neither yields a direct URL.
+            val response = innerTubeClient.playerForAudio(videoId) ?: run {
+                Log.w(TAG, "InnerTube playerForAudio returned null for $videoId")
                 return@withTimeout null
             }
 
