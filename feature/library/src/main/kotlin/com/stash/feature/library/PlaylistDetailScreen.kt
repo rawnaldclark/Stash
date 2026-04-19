@@ -33,11 +33,19 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,7 +95,15 @@ fun PlaylistDetailScreen(
     // Bottom sheet state for the long-press track menu.
     var selectedTrack by remember { mutableStateOf<Track?>(null) }
     var trackToSave by remember { mutableStateOf<Track?>(null) }
+    var trackToDelete by remember { mutableStateOf<Track?>(null) }
     val sheetState = rememberModalBottomSheetState()
+
+    // Snackbar for the cascade-removal summary so users see what
+    // happened (e.g. "Kept on disk — also in Liked Songs").
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        viewModel.userMessages.collect { snackbarHostState.showSnackbar(it) }
+    }
     val userPlaylists by viewModel.userPlaylists.collectAsStateWithLifecycle(initialValue = emptyList())
 
     // Image picker for custom playlist cover art
@@ -212,7 +228,11 @@ fun PlaylistDetailScreen(
                     selectedTrack = null
                 },
                 onDelete = {
-                    viewModel.deleteTrack(it)
+                    // Hand off to the confirmation dialog so the user can
+                    // choose "delete only" vs "delete and block future
+                    // syncs". Closing the sheet here prevents it from
+                    // lingering behind the dialog.
+                    trackToDelete = it
                     selectedTrack = null
                 },
             )
@@ -236,6 +256,68 @@ fun PlaylistDetailScreen(
             onDismiss = { trackToSave = null },
         )
     }
+
+    // ── Delete track confirmation dialog ──────────────────────────────────
+    trackToDelete?.let { track ->
+        var alsoBlacklist by remember(track.id) { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { trackToDelete = null },
+            title = { Text("Delete ${track.title}?") },
+            text = {
+                Column {
+                    Text(
+                        text = "Removes the song from this playlist. If it's also in Liked Songs or an in-app playlist, the file stays so those lists keep playing.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { alsoBlacklist = !alsoBlacklist },
+                    ) {
+                        Checkbox(
+                            checked = alsoBlacklist,
+                            onCheckedChange = { alsoBlacklist = it },
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Also block this song from future syncs",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = "Blocked songs never re-download. Unblock in Settings later.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteTrackFromPlaylist(track, alsoBlacklist)
+                        trackToDelete = null
+                    },
+                ) {
+                    Text(
+                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { trackToDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    SnackbarHost(
+        hostState = snackbarHostState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 16.dp),
+    ) { data -> Snackbar(snackbarData = data) }
 }
 
 // ── Header composable ───────────────────────────────────────────────────────

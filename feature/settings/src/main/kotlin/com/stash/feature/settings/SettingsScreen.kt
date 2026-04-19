@@ -1,5 +1,6 @@
 package com.stash.feature.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -62,9 +65,11 @@ import com.stash.feature.settings.components.YouTubeCookieDialog
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
+    onNavigateToBlockedSongs: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val blockedCount by viewModel.blockedCount.collectAsStateWithLifecycle()
 
     // Spotify WebView login (full-screen overlay)
     if (uiState.showSpotifyWebLogin) {
@@ -146,6 +151,8 @@ fun SettingsScreen(
         onFinishLastFmAuth = viewModel::onFinishLastFmAuth,
         onDisconnectLastFm = viewModel::onDisconnectLastFm,
         onDismissLastFmError = viewModel::onDismissLastFmError,
+        blockedCount = blockedCount,
+        onNavigateToBlockedSongs = onNavigateToBlockedSongs,
         modifier = modifier,
     )
 }
@@ -177,6 +184,8 @@ private fun SettingsContent(
     onFinishLastFmAuth: () -> Unit,
     onDisconnectLastFm: () -> Unit,
     onDismissLastFmError: () -> Unit,
+    blockedCount: Int,
+    onNavigateToBlockedSongs: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -577,6 +586,46 @@ private fun SettingsContent(
                         onDismiss = onDismissMoveLibrary,
                     )
                 }
+            }
+        }
+
+        // -- Library section --------------------------------------------------
+        SectionHeader(title = "Library")
+
+        GlassCard {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToBlockedSongs() }
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Block,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Blocked Songs",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = if (blockedCount > 0)
+                            "$blockedCount song${if (blockedCount != 1) "s" else ""} will never re-download"
+                        else
+                            "No blocked songs",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 

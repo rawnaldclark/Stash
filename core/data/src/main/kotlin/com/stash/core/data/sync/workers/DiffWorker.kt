@@ -115,6 +115,20 @@ class DiffWorker @AssistedInject constructor(
                 for (trackSnapshot in trackSnapshots) {
                     val existingTrack = findExistingTrack(trackSnapshot)
 
+                    // Blacklist: user explicitly blocked this identity from
+                    // ever being re-downloaded. Skip BOTH the download-queue
+                    // insert and the playlist_tracks link — the track stays
+                    // invisible to the library unless the user unblocks from
+                    // Settings → Blocked Songs.
+                    if (existingTrack != null && existingTrack.isBlacklisted) {
+                        Log.d(
+                            TAG,
+                            "Skipping blacklisted track id=${existingTrack.id} " +
+                                "'${existingTrack.title}' by ${existingTrack.artist}",
+                        )
+                        continue
+                    }
+
                     if (existingTrack != null) {
                         // Track already exists locally; ensure playlist membership.
                         ensurePlaylistMembership(localPlaylist.id, existingTrack.id, trackSnapshot.position)

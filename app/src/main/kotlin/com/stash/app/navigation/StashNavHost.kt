@@ -17,6 +17,7 @@ import com.stash.feature.nowplaying.NowPlayingScreen
 import com.stash.feature.search.AlbumDiscoveryScreen
 import com.stash.feature.search.ArtistProfileScreen
 import com.stash.feature.search.SearchScreen
+import com.stash.feature.settings.BlockedSongsScreen
 import com.stash.feature.settings.SettingsScreen
 import com.stash.feature.sync.FailedMatchesScreen
 import com.stash.feature.sync.SyncScreen
@@ -88,7 +89,17 @@ fun StashNavHost(
                 },
             )
         }
-        composable<SettingsRoute> { SettingsScreen() }
+        composable<SettingsRoute> {
+            SettingsScreen(
+                onNavigateToBlockedSongs = { navController.navigate(BlockedSongsRoute) },
+            )
+        }
+
+        composable<BlockedSongsRoute> {
+            BlockedSongsScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
 
         composable<PlaylistDetailRoute> {
             PlaylistDetailScreen(

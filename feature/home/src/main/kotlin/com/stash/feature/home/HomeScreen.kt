@@ -53,6 +53,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -394,18 +395,64 @@ fun HomeScreen(
 
     // ── Delete playlist confirmation dialog ──────────────────────────────
     playlistToDelete?.let { playlist ->
+        var alsoBlacklist by remember(playlist.id) { mutableStateOf(false) }
+        var preview by remember(playlist.id) {
+            mutableStateOf<HomeViewModel.DeletePreview?>(null)
+        }
+        // Load the cascade preview (deleted vs. kept-due-to-protection)
+        // as soon as the dialog opens so the copy is accurate.
+        LaunchedEffect(playlist.id) {
+            preview = viewModel.previewPlaylistDelete(playlist)
+        }
+
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { playlistToDelete = null },
             title = { Text("Delete ${playlist.name}?") },
-            text = { Text("This will delete all downloaded songs in this playlist from your device.") },
+            text = {
+                Column {
+                    val p = preview
+                    Text(
+                        text = when {
+                            p == null -> "This will delete downloaded songs in this playlist from your device."
+                            p.protectedCount == 0 -> "This will delete ${p.willDelete} downloaded song${if (p.willDelete != 1) "s" else ""} from your device."
+                            else -> "${p.willDelete} song${if (p.willDelete != 1) "s" else ""} will be deleted. ${p.protectedCount} ${if (p.protectedCount != 1) "are also in" else "is also in"} Liked Songs or a custom playlist and will stay."
+                        },
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { alsoBlacklist = !alsoBlacklist },
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = alsoBlacklist,
+                            onCheckedChange = { alsoBlacklist = it },
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Also block these songs from future syncs",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = {
-                        viewModel.deletePlaylistAndSongs(playlist)
+                        viewModel.deletePlaylistAndSongs(playlist, alsoBlacklist)
                         playlistToDelete = null
                     },
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
             dismissButton = {

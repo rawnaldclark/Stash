@@ -245,6 +245,136 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getFlaggedCount(): Flow<Int> =
         trackDao.getFlaggedCount()
 
+    // ── Blacklist + cascade deletion ────────────────────────────────────
+
+    override suspend fun removeTrackFromPlaylistAndMaybeDelete(
+        trackId: Long,
+        fromPlaylistId: Long,
+        alsoBlacklist: Boolean,
+    ): MusicRepository.CascadeRemovalSummary {
+        // Step 1: always detach from the target playlist.
+        playlistDao.removeTrackFromPlaylist(fromPlaylistId, trackId)
+
+        // Step 2: protected-playlist escape hatch. Liked Songs and in-app
+        // custom playlists count as user-curated data — we refuse to let a
+        // cascade from elsewhere destroy them. Blacklist is also bypassed
+        // so the user doesn't accidentally block a track they cared enough
+        // about to put in a protected list.
+        if (trackDao.isTrackInProtectedPlaylist(trackId)) {
+            return MusicRepository.CascadeRemovalSummary(
+                deleted = 0,
+                keptProtected = 1,
+                keptElsewhere = 0,
+                blacklisted = 0,
+            )
+        }
+
+        // Step 3: another non-protected playlist still claims it. Keep.
+        val otherClaims = trackDao.countOtherPlaylistsClaimingTrack(
+            trackId = trackId,
+            excludePlaylistId = fromPlaylistId,
+        )
+        if (otherClaims > 0) {
+            return MusicRepository.CascadeRemovalSummary(
+                deleted = 0,
+                keptProtected = 0,
+                keptElsewhere = 1,
+                blacklisted = 0,
+            )
+        }
+
+        // Step 4: nothing else claims the track. Destroy the file + art,
+        // then either keep a blacklisted tombstone or delete the row.
+        val track = trackDao.getById(trackId) ?: return MusicRepository.CascadeRemovalSummary(
+            deleted = 0, keptProtected = 0, keptElsewhere = 0, blacklisted = 0,
+        )
+
+        track.filePath?.let { path ->
+            runCatching { java.io.File(path).delete() }
+        }
+        track.albumArtPath?.let { path ->
+            runCatching { java.io.File(path).delete() }
+        }
+
+        return if (alsoBlacklist) {
+            // Tombstone: keep the row so future sync identity matches
+            // (spotify_uri, youtube_id, canonical title+artist) still find
+            // it and see is_blacklisted = 1, never re-queueing.
+            trackDao.markBlacklistedAndClear(trackId)
+            MusicRepository.CascadeRemovalSummary(
+                deleted = 1, keptProtected = 0, keptElsewhere = 0, blacklisted = 1,
+            )
+        } else {
+            // Hard delete; next sync of the same identity starts fresh.
+            trackDao.delete(track)
+            MusicRepository.CascadeRemovalSummary(
+                deleted = 1, keptProtected = 0, keptElsewhere = 0, blacklisted = 0,
+            )
+        }
+    }
+
+    override suspend fun deletePlaylistWithCascade(
+        playlistId: Long,
+        alsoBlacklist: Boolean,
+    ): MusicRepository.CascadeRemovalSummary {
+        // Snapshot the track list BEFORE any mutation — iterating a live
+        // Flow while deleting would race with cascades.
+        val trackIds = playlistDao.getPlaylistWithTracks(playlistId)?.tracks
+            ?.map { it.id }
+            ?: emptyList()
+
+        var deleted = 0
+        var keptProtected = 0
+        var keptElsewhere = 0
+        var blacklisted = 0
+
+        for (id in trackIds) {
+            val result = removeTrackFromPlaylistAndMaybeDelete(
+                trackId = id,
+                fromPlaylistId = playlistId,
+                alsoBlacklist = alsoBlacklist,
+            )
+            deleted += result.deleted
+            keptProtected += result.keptProtected
+            keptElsewhere += result.keptElsewhere
+            blacklisted += result.blacklisted
+        }
+
+        // Finally remove the playlist itself. playlist_tracks rows for it
+        // have already been handled per-track above; this just clears the
+        // container row. Uses the existing remove path for consistency.
+        playlistDao.getById(playlistId)?.let { playlistDao.delete(it) }
+
+        return MusicRepository.CascadeRemovalSummary(
+            deleted = deleted,
+            keptProtected = keptProtected,
+            keptElsewhere = keptElsewhere,
+            blacklisted = blacklisted,
+        )
+    }
+
+    override suspend fun isTrackProtectedExcluding(
+        trackId: Long,
+        excludePlaylistId: Long,
+    ): Boolean = trackDao.isTrackInProtectedPlaylistExcluding(trackId, excludePlaylistId)
+
+    override suspend fun blacklistTrack(trackId: Long) {
+        val track = trackDao.getById(trackId) ?: return
+        track.filePath?.let { path -> runCatching { java.io.File(path).delete() } }
+        track.albumArtPath?.let { path -> runCatching { java.io.File(path).delete() } }
+        trackDao.markBlacklistedAndClear(trackId)
+    }
+
+    override suspend fun unblacklistTrack(trackId: Long) {
+        trackDao.updateBlacklisted(trackId, false)
+    }
+
+    override fun getBlacklistedTracks(): Flow<List<com.stash.core.data.db.entity.TrackEntity>> =
+        trackDao.getBlacklistedTracks()
+
+    override fun getBlacklistedCount(): Flow<Int> =
+        trackDao.getBlacklistedCount()
+
     // ── Sync history ────────────────────────────────────────────────────
 
     override suspend fun getLatestSync(): SyncHistoryEntity? =

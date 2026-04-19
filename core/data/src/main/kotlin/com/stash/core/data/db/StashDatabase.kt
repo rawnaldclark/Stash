@@ -55,7 +55,7 @@ import com.stash.core.data.db.entity.TrackFts
         ArtistProfileCacheEntity::class,
         ListeningEventEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -154,6 +154,20 @@ abstract class StashDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE tracks ADD COLUMN match_flagged INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        /**
+         * v9 → v10: add is_blacklisted column to tracks for the user-level
+         * "never download again" list. Defaults to 0. DiffWorker consults
+         * this during sync so blacklisted identities survive across sync
+         * runs without the track ever being re-queued.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE tracks ADD COLUMN is_blacklisted INTEGER NOT NULL DEFAULT 0"
                 )
             }
         }

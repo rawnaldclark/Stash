@@ -172,6 +172,15 @@ interface PlaylistDao {
     suspend fun clearPlaylistTracks(playlistId: Long)
 
     /**
+     * Remove a single track's membership from a specific playlist. Used by
+     * the cascade-delete flow so unlinking (a) a track being removed from
+     * one playlist while protected by another, and (b) a track being hard-
+     * deleted, both go through the same primitive.
+     */
+    @Query("DELETE FROM playlist_tracks WHERE playlist_id = :playlistId AND track_id = :trackId")
+    suspend fun removeTrackFromPlaylist(playlistId: Long, trackId: Long)
+
+    /**
      * One-time cleanup: hard-delete all soft-deleted playlist_tracks entries.
      * These accumulate from daily mix rotations and serve no purpose after
      * the soft-delete marker is set. Reduces table bloat.

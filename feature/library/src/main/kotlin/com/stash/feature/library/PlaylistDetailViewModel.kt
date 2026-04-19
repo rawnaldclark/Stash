@@ -14,6 +14,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -173,12 +174,46 @@ class PlaylistDetailViewModel @Inject constructor(
         }
     }
 
-    /** Delete a track from the library (file + DB entry). */
-    fun deleteTrack(track: Track) {
+    /**
+     * Delete a track using the protected-playlist cascade against the
+     * currently-open playlist. If the track is also in Liked Songs or an
+     * in-app custom playlist (other than this one), only the membership
+     * in THIS playlist is removed — the file stays so the other lists
+     * still play. If [alsoBlacklist] is set, destroyed tracks are also
+     * marked never-download-again.
+     *
+     * The returned cascade summary is emitted on [userMessages] as a
+     * human-readable string so the detail screen can show a Snackbar.
+     */
+    fun deleteTrackFromPlaylist(track: Track, alsoBlacklist: Boolean) {
         viewModelScope.launch {
-            musicRepository.deleteTrack(track)
+            val summary = musicRepository.removeTrackFromPlaylistAndMaybeDelete(
+                trackId = track.id,
+                fromPlaylistId = playlistId,
+                alsoBlacklist = alsoBlacklist,
+            )
+            val msg = when {
+                summary.keptProtected > 0 ->
+                    "Removed from this playlist. Kept on disk (also in Liked Songs or a custom playlist)."
+                summary.keptElsewhere > 0 ->
+                    "Removed from this playlist. Kept on disk (in other playlists)."
+                summary.blacklisted > 0 ->
+                    "Deleted and blocked from future syncs."
+                summary.deleted > 0 ->
+                    "Deleted from your device."
+                else -> "Removed."
+            }
+            _userMessages.tryEmit(msg)
         }
     }
+
+    private val _userMessages = kotlinx.coroutines.flow.MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+    /** Snackbar-targeted messages (delete confirmation, errors). */
+    val userMessages: kotlinx.coroutines.flow.SharedFlow<String> =
+        _userMessages.asSharedFlow()
 
     /** User-created playlists for the Save to Playlist picker. */
     val userPlaylists = musicRepository.getUserCreatedPlaylists()

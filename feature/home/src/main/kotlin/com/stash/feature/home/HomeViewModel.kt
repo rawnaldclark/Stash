@@ -15,6 +15,7 @@ import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -172,14 +173,65 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Deletes a playlist and all its downloaded songs from disk.
+     * Deletes a playlist using the protected-playlist cascade. Tracks that
+     * also belong to Liked Songs or an in-app custom playlist are kept —
+     * only their membership in [playlist] is removed. If [alsoBlacklist]
+     * is `true`, tracks that WERE deleted are also marked never-download-
+     * again, so future syncs skip their identity forever.
+     *
+     * The [CascadeRemovalSummary] returned via [_lastCascadeSummary] drives
+     * the post-delete Snackbar so users see exactly what happened.
      */
-    fun deletePlaylistAndSongs(playlist: Playlist) {
+    fun deletePlaylistAndSongs(playlist: Playlist, alsoBlacklist: Boolean = false) {
         viewModelScope.launch {
-            val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
-            tracks.forEach { musicRepository.deleteTrack(it) }
-            musicRepository.removePlaylist(playlist)
+            val summary = musicRepository.deletePlaylistWithCascade(
+                playlistId = playlist.id,
+                alsoBlacklist = alsoBlacklist,
+            )
+            _lastCascadeSummary.emit(summary)
         }
+    }
+
+    /**
+     * Preview counts the UI uses in the delete-confirmation dialog:
+     * how many tracks would actually be removed vs. kept due to
+     * protected-playlist membership.
+     */
+    suspend fun previewPlaylistDelete(playlist: Playlist): DeletePreview {
+        val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
+        var protected = 0
+        for (track in tracks) {
+            // isTrackInProtectedPlaylist returns true if the track is in
+            // Liked Songs / custom playlists OTHER than [playlist]. We
+            // have to do the "other than" filtering here because the DAO
+            // query doesn't exclude the source playlist.
+            val inProtectedElsewhere = musicRepository.isTrackProtectedExcluding(
+                trackId = track.id,
+                excludePlaylistId = playlist.id,
+            )
+            if (inProtectedElsewhere) protected++
+        }
+        return DeletePreview(
+            totalTracks = tracks.size,
+            protectedCount = protected,
+        )
+    }
+
+    private val _lastCascadeSummary =
+        kotlinx.coroutines.flow.MutableSharedFlow<com.stash.core.data.repository.MusicRepository.CascadeRemovalSummary>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+        )
+    /** One-shot cascade summaries for the delete Snackbar. */
+    val lastCascadeSummary: kotlinx.coroutines.flow.SharedFlow<com.stash.core.data.repository.MusicRepository.CascadeRemovalSummary> =
+        _lastCascadeSummary.asSharedFlow()
+
+    /** Preview counts shown in the playlist-delete confirmation dialog. */
+    data class DeletePreview(
+        val totalTracks: Int,
+        val protectedCount: Int,
+    ) {
+        val willDelete: Int get() = totalTracks - protectedCount
     }
 
     /** Remove playlist from library without deleting its downloaded tracks. */

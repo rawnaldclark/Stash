@@ -102,4 +102,16 @@ data class TrackEntity(
      */
     @ColumnInfo(name = "match_flagged", defaultValue = "0")
     val matchFlagged: Boolean = false,
+
+    /**
+     * User-level "never download this track again" marker. When set, DiffWorker
+     * skips both the download queue insert and the playlist_tracks link during
+     * sync — the track effectively disappears from the user's library without
+     * being forgotten by identity matching. Cleared via the Blocked Songs
+     * viewer in Settings. Downstream lookups (findBySpotifyUri / ByYoutubeId /
+     * canonical) still hit blacklisted rows so every future sync attempt for
+     * the same identity is also blocked.
+     */
+    @ColumnInfo(name = "is_blacklisted", defaultValue = "0")
+    val isBlacklisted: Boolean = false,
 )

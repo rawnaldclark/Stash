@@ -345,4 +345,114 @@ interface TrackDao {
     /** Count of flagged tracks. Drives the Sync-tab warning card. */
     @Query("SELECT COUNT(*) FROM tracks WHERE match_flagged = 1")
     fun getFlaggedCount(): Flow<Int>
+
+    // ── Blacklist (never-download list) ─────────────────────────────────
+
+    /**
+     * Toggle the "never download again" flag for a specific track. When set,
+     * DiffWorker skips this track's identity on every future sync — the
+     * download queue, playlist_tracks link, and file download are all
+     * bypassed until [updateBlacklisted] is called with `false` again.
+     */
+    @Query("UPDATE tracks SET is_blacklisted = :blacklisted WHERE id = :trackId")
+    suspend fun updateBlacklisted(trackId: Long, blacklisted: Boolean)
+
+    /**
+     * Blacklist-and-clear: atomically flags the track as blocked and wipes
+     * on-disk state so a later unblacklist can cleanly re-download. Paired
+     * with file deletion in [MusicRepositoryImpl.blacklistTrack] so the
+     * DB + filesystem stay in sync.
+     */
+    @Query(
+        """
+        UPDATE tracks SET
+            is_blacklisted = 1,
+            is_downloaded = 0,
+            file_path = NULL,
+            album_art_path = NULL
+        WHERE id = :trackId
+        """
+    )
+    suspend fun markBlacklistedAndClear(trackId: Long)
+
+    /** All blacklisted tracks — drives the Settings → Blocked Songs viewer. */
+    @Query(
+        """
+        SELECT * FROM tracks
+        WHERE is_blacklisted = 1
+        ORDER BY artist ASC, title ASC
+        """
+    )
+    fun getBlacklistedTracks(): Flow<List<TrackEntity>>
+
+    /** Count of blacklisted tracks for the Settings row badge. */
+    @Query("SELECT COUNT(*) FROM tracks WHERE is_blacklisted = 1")
+    fun getBlacklistedCount(): Flow<Int>
+
+    // ── Protected-playlist cascade helpers ───────────────────────────────
+
+    /**
+     * Returns `true` if [trackId] belongs to at least one playlist that
+     * counts as "protected" — Liked Songs (either source) or an in-app
+     * Stash custom playlist (type=CUSTOM AND source=BOTH). Used by the
+     * cascade-delete algorithm to decide whether deleting another playlist
+     * is allowed to also delete the audio file.
+     */
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM playlist_tracks pt
+            INNER JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = :trackId
+              AND pt.removed_at IS NULL
+              AND (
+                  p.type = 'LIKED_SONGS'
+                  OR (p.type = 'CUSTOM' AND p.source = 'BOTH')
+              )
+        )
+        """
+    )
+    suspend fun isTrackInProtectedPlaylist(trackId: Long): Boolean
+
+    /**
+     * Same as [isTrackInProtectedPlaylist] but excludes [excludePlaylistId]
+     * from the search. Used for delete-preview: when the user asks to
+     * delete a playlist, we need to know whether each track would still
+     * have a protected home *after* that playlist is gone.
+     */
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM playlist_tracks pt
+            INNER JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = :trackId
+              AND pt.playlist_id != :excludePlaylistId
+              AND pt.removed_at IS NULL
+              AND (
+                  p.type = 'LIKED_SONGS'
+                  OR (p.type = 'CUSTOM' AND p.source = 'BOTH')
+              )
+        )
+        """
+    )
+    suspend fun isTrackInProtectedPlaylistExcluding(
+        trackId: Long,
+        excludePlaylistId: Long,
+    ): Boolean
+
+    /**
+     * Returns the count of *other* playlists (any type, any source) that
+     * still claim [trackId] after excluding [excludePlaylistId]. Used as
+     * the second step of the cascade algorithm — if this is zero, no
+     * playlist references the track any more and its file can be removed.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM playlist_tracks pt
+        WHERE pt.track_id = :trackId
+          AND pt.playlist_id != :excludePlaylistId
+          AND pt.removed_at IS NULL
+        """
+    )
+    suspend fun countOtherPlaylistsClaimingTrack(trackId: Long, excludePlaylistId: Long): Int
 }
