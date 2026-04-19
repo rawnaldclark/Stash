@@ -48,6 +48,16 @@ class YTMusicApiClient @Inject constructor(
 
         /** InnerTube browse ID for the YouTube Music home feed. */
         private const val BROWSE_HOME = "FEmusic_home"
+
+        /**
+         * Library Playlists tab — user-created + user-saved playlists.
+         * Returns a tabbed browse with a `gridRenderer` of
+         * `musicTwoRowItemRenderer` items. Each item's
+         * `navigationEndpoint.browseEndpoint.browseId` resolves to the
+         * same `VL{playlistId}` format as every other playlist in the
+         * system, so [getPlaylistTracks] works without modification.
+         */
+        private const val BROWSE_LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
     }
 
     /**
@@ -90,6 +100,29 @@ class YTMusicApiClient @Inject constructor(
             SyncResult.Empty("Home feed returned no mixes")
         } else {
             SyncResult.Success(mixes)
+        }
+    }
+
+    /**
+     * Fetches the authenticated user's Library → Playlists tab — every
+     * playlist they created or saved, regardless of whether it came from
+     * Home mixes or an external share. Built-in pseudo-playlists (Liked
+     * Music / Episodes for Later) are filtered out so they don't create
+     * duplicate sync rows alongside [getLikedSongs].
+     *
+     * Requires a valid SAPISID cookie; an unauthenticated browse returns
+     * an empty library.
+     */
+    suspend fun getUserPlaylists(): SyncResult<List<YTMusicPlaylist>> {
+        val response = innerTubeClient.browse(BROWSE_LIBRARY_PLAYLISTS)
+        if (response == null) {
+            return SyncResult.Error("InnerTube browse($BROWSE_LIBRARY_PLAYLISTS) returned null")
+        }
+        val playlists = parseUserPlaylists(response)
+        return if (playlists.isEmpty()) {
+            SyncResult.Empty("Library returned no playlists")
+        } else {
+            SyncResult.Success(playlists)
         }
     }
 
@@ -609,6 +642,118 @@ class YTMusicApiClient @Inject constructor(
             }
         }
 
+        return playlists
+    }
+
+    /**
+     * Extracts user-library playlists from the `FEmusic_liked_playlists`
+     * browse response.
+     *
+     * The Library → Playlists tab typically renders either:
+     *  - A `gridRenderer` (newer web client): flat grid of
+     *    `musicTwoRowItemRenderer` items.
+     *  - A `musicShelfRenderer` (older / mobile clients): list of
+     *    `musicResponsiveListItemRenderer` items.
+     *
+     * We walk every tab → section → contents and try both shapes on each
+     * container, collecting whatever works. Built-in playlists (Liked
+     * Music, Episodes for Later) and non-playlist cards (the "New
+     * playlist" tile) are filtered out by browseId prefix.
+     */
+    private fun parseUserPlaylists(response: JsonObject): List<YTMusicPlaylist> {
+        val playlists = mutableListOf<YTMusicPlaylist>()
+        val seenIds = mutableSetOf<String>()
+
+        val tabs = response.navigatePath(
+            "contents", "singleColumnBrowseResultsRenderer", "tabs",
+        )?.asArray() ?: return emptyList()
+
+        for (tab in tabs) {
+            val sections = tab.asObject()
+                ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
+                ?.asArray()
+                ?: continue
+
+            for (section in sections) {
+                val sectionObj = section.asObject() ?: continue
+
+                // Collect candidate item arrays from either shape.
+                val gridItems = sectionObj
+                    .get("gridRenderer")?.asObject()
+                    ?.get("items")?.asArray()
+                val itemSectionGridItems = sectionObj
+                    .get("itemSectionRenderer")?.asObject()
+                    ?.get("contents")?.asArray()
+                    ?.firstOrNull()?.asObject()
+                    ?.get("gridRenderer")?.asObject()
+                    ?.get("items")?.asArray()
+                val musicShelfItems = sectionObj
+                    .get("musicShelfRenderer")?.asObject()
+                    ?.get("contents")?.asArray()
+
+                val items = gridItems ?: itemSectionGridItems ?: musicShelfItems ?: continue
+
+                for (item in items) {
+                    val renderer = item.asObject()
+                        ?.get("musicTwoRowItemRenderer")?.asObject()
+                        ?: item.asObject()
+                            ?.get("musicResponsiveListItemRenderer")?.asObject()
+                        ?: continue
+
+                    val browseId = renderer.navigatePath(
+                        "navigationEndpoint", "browseEndpoint", "browseId",
+                    )?.asString()
+                        ?: continue
+
+                    // Accept only playlist browseIds (VL-prefixed). Filter
+                    // out built-ins and non-playlist tiles.
+                    if (!browseId.startsWith("VL")) continue
+                    if (browseId == "VLLM" || browseId == "VLSE") continue
+
+                    val playlistId = browseId.removePrefix("VL")
+                    if (!seenIds.add(playlistId)) continue
+
+                    val title = renderer["title"]?.asObject()
+                        ?.get("runs")?.asArray()
+                        ?.firstOrNull()?.asObject()
+                        ?.get("text")?.asString()
+                        ?: renderer["flexColumns"]?.asArray()
+                            ?.firstOrNull()?.asObject()
+                            ?.navigatePath(
+                                "musicResponsiveListItemFlexColumnRenderer",
+                                "text",
+                                "runs",
+                            )?.asArray()
+                            ?.firstOrNull()?.asObject()
+                            ?.get("text")?.asString()
+                        ?: continue
+
+                    val thumbnailUrl = renderer.navigatePath(
+                        "thumbnailRenderer", "musicThumbnailRenderer",
+                        "thumbnail", "thumbnails",
+                    )?.firstArray()?.lastOrNull()
+                        ?.asObject()?.get("url")?.asString()
+
+                    val subtitleText = renderer["subtitle"]?.asObject()
+                        ?.get("runs")?.asArray()
+                        ?.mapNotNull { it.asObject()?.get("text")?.asString() }
+                        ?.joinToString("")
+                    val trackCount = subtitleText?.let { TRACK_COUNT_REGEX.find(it) }
+                        ?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+                    playlists.add(
+                        YTMusicPlaylist(
+                            playlistId = playlistId,
+                            title = title,
+                            thumbnailUrl = thumbnailUrl,
+                            trackCount = trackCount,
+                        )
+                    )
+                }
+            }
+        }
+
+        Log.d(TAG, "parseUserPlaylists: found ${playlists.size} library playlists")
         return playlists
     }
 

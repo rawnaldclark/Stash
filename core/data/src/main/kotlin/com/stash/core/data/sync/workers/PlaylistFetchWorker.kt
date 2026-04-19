@@ -518,6 +518,83 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     Log.e(TAG, "fetchYouTubePlaylists: liked songs error: ${result.message}")
                 }
             }
+
+            // Fetch user-library playlists (user-created + user-saved from
+            // Library → Playlists). These come with `PlaylistType.CUSTOM`
+            // and land in the "Other Playlists" toggle group on the Sync
+            // screen, alongside Home Mixes / Liked Songs. Built-ins
+            // (Liked Music, Episodes for Later) are filtered out by
+            // parseUserPlaylists, so no duplicate snapshot rows.
+            when (val result = ytMusicApiClient.getUserPlaylists()) {
+                is SyncResult.Success -> {
+                    val userPlaylists = result.data
+                    diagnostics.add(
+                        SyncStepResult(
+                            "YOUTUBE",
+                            "getUserPlaylists",
+                            StepStatus.SUCCESS,
+                            userPlaylists.size,
+                        )
+                    )
+                    Log.d(TAG, "fetchYouTubePlaylists: found ${userPlaylists.size} user playlists")
+
+                    for (playlist in userPlaylists) {
+                        val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
+                            RemotePlaylistSnapshotEntity(
+                                syncId = syncId,
+                                source = MusicSource.YOUTUBE,
+                                sourcePlaylistId = playlist.playlistId,
+                                playlistName = playlist.title,
+                                playlistType = PlaylistType.CUSTOM,
+                                trackCount = playlist.trackCount ?: 0,
+                                artUrl = playlist.thumbnailUrl,
+                            )
+                        )
+
+                        when (val tracksResult = ytMusicApiClient.getPlaylistTracks(playlist.playlistId)) {
+                            is SyncResult.Success -> {
+                                val tracks = tracksResult.data
+                                val trackSnapshots = tracks.mapIndexed { position, track ->
+                                    RemoteTrackSnapshotEntity(
+                                        syncId = syncId,
+                                        snapshotPlaylistId = playlistSnapshotId,
+                                        title = track.title,
+                                        artist = track.artists,
+                                        album = track.album,
+                                        durationMs = track.durationMs ?: 0L,
+                                        youtubeId = track.videoId,
+                                        albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.thumbnailUrl),
+                                        position = position,
+                                    )
+                                }
+                                if (trackSnapshots.isNotEmpty()) {
+                                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                                }
+                            }
+                            is SyncResult.Empty -> {
+                                Log.d(
+                                    TAG,
+                                    "fetchYouTubePlaylists: no tracks for user playlist '${playlist.title}': ${tracksResult.reason}",
+                                )
+                            }
+                            is SyncResult.Error -> {
+                                Log.e(
+                                    TAG,
+                                    "fetchYouTubePlaylists: failed tracks for user playlist '${playlist.title}': ${tracksResult.message}",
+                                )
+                            }
+                        }
+                    }
+                }
+                is SyncResult.Empty -> {
+                    diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.EMPTY, errorMessage = result.reason))
+                    Log.d(TAG, "fetchYouTubePlaylists: user playlists empty: ${result.reason}")
+                }
+                is SyncResult.Error -> {
+                    diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.ERROR, errorMessage = result.message))
+                    Log.e(TAG, "fetchYouTubePlaylists: user playlists error: ${result.message}")
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "YouTube Music fetch failed, continuing with other services", e)
             diagnostics.add(SyncStepResult("YOUTUBE", "fetchYouTubePlaylists", StepStatus.ERROR, errorMessage = e.message))

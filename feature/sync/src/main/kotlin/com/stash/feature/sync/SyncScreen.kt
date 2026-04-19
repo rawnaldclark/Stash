@@ -338,26 +338,33 @@ fun SyncScreen(
         }
 
         // -- YouTube Sync Preferences ----------------------------------------
-        // YouTube playlists are auto-enabled on discovery (Option A default),
-        // so this section starts collapsed — the user only needs to open it
-        // if they want to turn off a specific mix. Opens expanded on first
-        // run (empty list) so the explainer is visible before the first sync.
+        // Opt-in by default. The FIRST Sync Now fetches everything but
+        // downloads nothing because every playlist starts disabled —
+        // that's the staging/discover phase. Users pick what they want,
+        // tap Sync Now again, and downloads begin.
         if (uiState.youTubeConnected) {
             item {
-                val everythingOff = uiState.youTubePlaylists.isNotEmpty() &&
+                val hasPlaylists = uiState.youTubePlaylists.isNotEmpty()
+                val everythingOff = hasPlaylists &&
                     uiState.youTubePlaylists.none { it.syncEnabled }
-                val startExpanded = uiState.youTubePlaylists.isEmpty() || everythingOff
+                val startExpanded = !hasPlaylists || everythingOff
                 var expanded by remember(startExpanded) { mutableStateOf(startExpanded) }
                 val accent = MaterialTheme.colorScheme.primary
+                // Amber highlight when user action is needed (post-fetch,
+                // pre-selection) so the card doesn't blend into the rest
+                // of the glass-y Sync screen.
+                val attentionColor = MaterialTheme.colorScheme.tertiary
+                val needsAction = everythingOff
+                val cardAccent = if (needsAction) attentionColor else accent
 
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { expanded = !expanded },
-                    color = accent.copy(alpha = 0.08f),
+                    color = cardAccent.copy(alpha = 0.08f),
                     shape = RoundedCornerShape(16.dp),
                     border = androidx.compose.foundation.BorderStroke(
-                        1.dp, accent.copy(alpha = 0.3f),
+                        1.dp, cardAccent.copy(alpha = 0.3f),
                     ),
                 ) {
                     Column(
@@ -372,13 +379,20 @@ fun SyncScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "YouTube Music Sync Preferences",
+                                    text = if (needsAction)
+                                        "Pick what to download from YouTube"
+                                    else
+                                        "YouTube Music Sync Preferences",
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = accent,
+                                    color = cardAccent,
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Text(
-                                    text = "New mixes auto-sync; toggle off any you don't want",
+                                    text = when {
+                                        needsAction -> "Found ${uiState.youTubePlaylists.size} playlists — enable the ones you want, then tap Sync Now again"
+                                        !hasPlaylists -> "Tap Sync Now to discover your YouTube Music library"
+                                        else -> "Choose which mixes and playlists to keep synced"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -387,14 +401,14 @@ fun SyncScreen(
                                 imageVector = if (expanded) Icons.Filled.ExpandLess
                                 else Icons.Filled.ExpandMore,
                                 contentDescription = null,
-                                tint = accent,
+                                tint = cardAccent,
                             )
                         }
 
-                        if (expanded && uiState.youTubePlaylists.isEmpty()) {
+                        if (expanded && !hasPlaylists) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "Your YouTube Music mixes and Liked Songs will appear here after the first sync. Everything starts enabled — toggle off anything you don't want downloaded.",
+                                text = "Your Home Mixes, Liked Songs, and playlists from your YouTube Music library will appear here after the first sync. Nothing downloads until you pick what you want — no surprise downloads.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
