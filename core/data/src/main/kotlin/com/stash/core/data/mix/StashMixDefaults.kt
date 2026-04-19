@@ -4,14 +4,17 @@ import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.db.entity.StashMixRecipeEntity
 
 /**
- * Ships the opinionated default Stash Mixes on first launch. Mirrors the
- * "daily mix" spots Spotify/YT have but recipe-driven, so every choice is
- * visible and editable (in a future mix-builder UI). Each recipe here is
- * deliberately tuned around signals we have from day one — affinity +
- * tags + listening freshness.
+ * Ships Stash's built-in mix recipes. The launch surface is deliberately
+ * narrow — a single "Stash Discover" mix — so we can validate the engine
+ * (scoring, refresh, discovery) on one flagship experience before adding
+ * more recipes. Future releases will expand this list and eventually
+ * let users author their own via a mix-builder UI.
  *
  * Only seeds when [StashMixRecipeDao.countBuiltins] is zero, so users
- * don't get defaults re-inserted every launch.
+ * don't get defaults re-inserted every launch. Upgrades from pre-0.4.1
+ * installs that already have multiple builtins go through
+ * `StashApplication.maybeReseedStashMixes` which clears the old set
+ * first and then runs this seed.
  */
 object StashMixDefaults {
 
@@ -21,80 +24,28 @@ object StashMixDefaults {
     }
 
     /**
-     * The seven recipes the Stash Mixes launch ships with. Kept here (not
-     * in SQL migration) so it's easy to tweak wording / tags without
-     * dragging a schema bump along.
+     * The single launch recipe.
+     *
+     * Intentional tuning choices:
+     *  - No tag filter — works on every library size, including ones
+     *    that haven't finished tag enrichment. Once enrichment is deep,
+     *    we can layer tag-biased variants on top.
+     *  - Slight positive affinity bias so the mix leans into what you
+     *    already like without turning into straight Heavy Rotation.
+     *  - 14-day freshness window so you don't hear the same tracks the
+     *    mix surfaced yesterday.
+     *  - 25% discovery ratio: hands off to the Last.fm similar-artist
+     *    discovery pipeline to fill those slots with genuinely new music.
      */
     val ALL: List<StashMixRecipeEntity> = listOf(
         StashMixRecipeEntity(
-            name = "Rediscovery",
-            description = "Tracks you loved but haven't played recently.",
+            name = "Stash Discover",
+            description = "Your favorites blended with new tracks Stash thinks you'll like.",
             includeTagsCsv = "",
-            affinityBias = -0.5f,
-            freshnessWindowDays = 60,
-            discoveryRatio = 0f,
-            targetLength = 50,
-            isBuiltin = true,
-        ),
-        StashMixRecipeEntity(
-            name = "Heavy Rotation",
-            description = "Your most-played tracks right now.",
-            includeTagsCsv = "",
-            affinityBias = 0.8f,
-            freshnessWindowDays = 0,
-            discoveryRatio = 0f,
-            targetLength = 50,
-            isBuiltin = true,
-        ),
-        StashMixRecipeEntity(
-            name = "Focus",
-            description = "Instrumental, ambient, post-rock \u2014 for work and reading.",
-            includeTagsCsv = "ambient,instrumental,post-rock,electronic,chillout,downtempo",
-            affinityBias = 0.1f,
+            affinityBias = 0.2f,
             freshnessWindowDays = 14,
-            discoveryRatio = 0.2f,
+            discoveryRatio = 0.25f,
             targetLength = 50,
-            isBuiltin = true,
-        ),
-        StashMixRecipeEntity(
-            name = "Late Night",
-            description = "Downtempo, trip-hop, atmospheric. Low-key vibes.",
-            includeTagsCsv = "downtempo,trip-hop,jazz,atmospheric,chillout,lo-fi",
-            affinityBias = 0.1f,
-            freshnessWindowDays = 14,
-            discoveryRatio = 0.2f,
-            targetLength = 50,
-            isBuiltin = true,
-        ),
-        StashMixRecipeEntity(
-            name = "Throwback",
-            description = "Older favorites from your library.",
-            includeTagsCsv = "",
-            eraEndYear = 2015,
-            affinityBias = 0.3f,
-            freshnessWindowDays = 14,
-            discoveryRatio = 0.1f,
-            targetLength = 50,
-            isBuiltin = true,
-        ),
-        StashMixRecipeEntity(
-            name = "Road Trip",
-            description = "Rock, alt, indie, americana \u2014 open-road energy.",
-            includeTagsCsv = "rock,alternative,indie,americana,country,folk,indie rock",
-            affinityBias = 0.4f,
-            freshnessWindowDays = 14,
-            discoveryRatio = 0.2f,
-            targetLength = 50,
-            isBuiltin = true,
-        ),
-        StashMixRecipeEntity(
-            name = "New Arrivals",
-            description = "Recently added to your library.",
-            includeTagsCsv = "",
-            affinityBias = 0f,
-            freshnessWindowDays = 0,
-            discoveryRatio = 0f,
-            targetLength = 30,
             isBuiltin = true,
         ),
     )

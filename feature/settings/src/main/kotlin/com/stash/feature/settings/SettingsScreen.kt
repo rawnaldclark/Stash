@@ -280,6 +280,26 @@ private fun SettingsContent(
             onDisconnect = onDisconnectYouTube,
         )
 
+        // Last.fm lives in the Accounts group (v0.4.1 relocation) so
+        // users who are scanning for "sign-in / connect" surfaces see
+        // all three services together. The actual connect UX is still
+        // different enough (web-auth vs cookie / OAuth) that we render
+        // via its own composable instead of AccountConnectionCard.
+        val lastFmUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+        GlassCard {
+            LastFmSection(
+                state = uiState.lastFmState,
+                onConnect = {
+                    onConnectLastFm { url ->
+                        runCatching { lastFmUriHandler.openUri(url) }
+                    }
+                },
+                onFinish = onFinishLastFmAuth,
+                onDisconnect = onDisconnectLastFm,
+                onDismissError = onDismissLastFmError,
+            )
+        }
+
         // -- Audio Quality section --------------------------------------------
         SectionHeader(title = "Audio Quality")
 
@@ -401,24 +421,6 @@ private fun SettingsContent(
             onBassBoostChanged = onBassBoostChanged,
             onVirtualizerChanged = onVirtualizerChanged,
         )
-
-        // -- Last.fm section --------------------------------------------------
-        SectionHeader(title = "Last.fm")
-
-        val lastFmUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-        GlassCard {
-            LastFmSection(
-                state = uiState.lastFmState,
-                onConnect = {
-                    onConnectLastFm { url ->
-                        runCatching { lastFmUriHandler.openUri(url) }
-                    }
-                },
-                onFinish = onFinishLastFmAuth,
-                onDisconnect = onDisconnectLastFm,
-                onDismissError = onDismissLastFmError,
-            )
-        }
 
         // -- Storage section --------------------------------------------------
         SectionHeader(title = "Storage")

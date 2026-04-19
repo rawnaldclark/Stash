@@ -211,15 +211,15 @@ class DiffWorker @AssistedInject constructor(
                 // rotate between syncs — deriving the cover from the
                 // current tracks guarantees a visible change every time
                 // the tracklist rotates.
+                // v0.4.1: mosaic collapsed to single-image so the mix is
+                // recognizable at a glance. Still refreshed every sync —
+                // the FIRST unique track art becomes the new cover, so
+                // rotations remain visible, just cleaner.
                 val derivedTiles = trackSnapshots
                     .mapNotNull { it.albumArtUrl }
                     .distinct()
-                    .take(2)
-                val coverToSet = when {
-                    derivedTiles.size >= 2 -> derivedTiles.joinToString("|")
-                    derivedTiles.size == 1 -> derivedTiles[0]
-                    else -> playlistSnapshot.artUrl
-                }
+                    .take(1)
+                val coverToSet = derivedTiles.firstOrNull() ?: playlistSnapshot.artUrl
                 val currentArt = playlistDao.findBySourceId(playlistSnapshot.sourcePlaylistId)?.artUrl
                 if (coverToSet != null && coverToSet != currentArt) {
                     playlistDao.updateArtUrl(localPlaylist.id, coverToSet)

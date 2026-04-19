@@ -63,4 +63,16 @@ interface StashMixRecipeDao {
     /** Look up a recipe by the playlist it materialized into. */
     @Query("SELECT * FROM stash_mix_recipes WHERE playlist_id = :playlistId LIMIT 1")
     suspend fun findByPlaylistId(playlistId: Long): StashMixRecipeEntity?
+
+    /**
+     * Return every materialized playlist_id across builtin recipes —
+     * used by the "reset builtins" migration to delete the old backing
+     * playlists before we wipe and reseed the recipe table.
+     */
+    @Query("SELECT playlist_id FROM stash_mix_recipes WHERE is_builtin = 1 AND playlist_id IS NOT NULL")
+    suspend fun getBuiltinPlaylistIds(): List<Long>
+
+    /** Delete every builtin recipe. Paired with [getBuiltinPlaylistIds]. */
+    @Query("DELETE FROM stash_mix_recipes WHERE is_builtin = 1")
+    suspend fun deleteAllBuiltins(): Int
 }

@@ -64,6 +64,10 @@ interface PlaylistDao {
     @Delete
     suspend fun delete(playlist: PlaylistEntity)
 
+    /** Delete a playlist by id. Cascades to playlist_tracks rows. */
+    @Query("DELETE FROM playlists WHERE id = :playlistId")
+    suspend fun deleteById(playlistId: Long)
+
     /**
      * One-time cleanup: removes playlists created by the original
      * DatabaseSeeder. The seeder used very specific source IDs that do

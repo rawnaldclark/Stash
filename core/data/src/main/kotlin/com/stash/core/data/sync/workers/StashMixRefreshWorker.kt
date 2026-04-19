@@ -205,13 +205,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
             )
         }
 
-        // Refresh cover tiles from the first 2 unique album arts.
-        val tiles = tracks.mapNotNull { it.albumArtUrl }.distinct().take(2)
-        val coverUrl = when {
-            tiles.size >= 2 -> tiles.joinToString("|")
-            tiles.size == 1 -> tiles[0]
-            else -> null
-        }
+        // v0.4.1: single-image cover instead of the 2-tile mosaic used in
+        // older builds. Still rotates every refresh — the top track's
+        // album art becomes the mix cover.
+        val coverUrl = tracks.mapNotNull { it.albumArtUrl }.firstOrNull()
         if (coverUrl != null) {
             playlistDao.updateArtUrl(playlistId, coverUrl)
         }

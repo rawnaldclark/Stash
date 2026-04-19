@@ -118,6 +118,7 @@ class StashApplication : Application(), Configuration.Provider {
         // daily discovery-queue drain (unmetered+charging). All three
         // are idempotent periodic registrations.
         applicationScope.launch {
+            maybeReseedStashMixes()
             StashMixDefaults.seedIfNeeded(stashMixRecipeDao)
             // Fire a one-shot refresh on first launch so mixes populate
             // without waiting for the 24-hour periodic cycle. Subsequent
@@ -157,6 +158,37 @@ class StashApplication : Application(), Configuration.Provider {
         if (stored < ARTIST_CACHE_VERSION) {
             artistProfileCacheDao.clearAll()
             prefs.edit().putInt("artist_cache_version", ARTIST_CACHE_VERSION).apply()
+        }
+    }
+
+    /**
+     * One-shot reset of the Stash Mix recipe set. Used when the shipped
+     * defaults change meaningfully — e.g. the 0.4.1 switch from the
+     * original seven recipes to a single "Stash Discover" flagship. We
+     * delete every builtin recipe *and* its materialized playlist (which
+     * also removes its playlist_tracks rows via FK cascade), then let
+     * [StashMixDefaults.seedIfNeeded] repopulate with whatever the new
+     * defaults are. Gated by [STASH_MIX_RECIPE_VERSION] so each rollout
+     * runs exactly once per install.
+     *
+     * User-created mixes are untouched — only `is_builtin = 1` rows get
+     * wiped, so a future custom mix-builder doesn't lose data here.
+     */
+    private suspend fun maybeReseedStashMixes() {
+        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
+        val stored = prefs.getInt("stash_mix_recipe_version", 0)
+        if (stored < STASH_MIX_RECIPE_VERSION) {
+            val playlistIds = stashMixRecipeDao.getBuiltinPlaylistIds()
+            val removedRecipes = stashMixRecipeDao.deleteAllBuiltins()
+            playlistIds.forEach { playlistDao.deleteById(it) }
+            Log.i(
+                "StashMigration",
+                "maybeReseedStashMixes: removed $removedRecipes builtin recipes " +
+                    "+ ${playlistIds.size} materialized playlists",
+            )
+            prefs.edit()
+                .putInt("stash_mix_recipe_version", STASH_MIX_RECIPE_VERSION)
+                .apply()
         }
     }
 
@@ -229,5 +261,12 @@ class StashApplication : Application(), Configuration.Provider {
          * shells left over from pre-fix syncs.
          */
         private const val YOUTUBE_HIDE_EMPTY_VERSION = 1
+
+        /**
+         * Bump when the shipped Stash Mix recipe set changes in a way
+         * that should wipe pre-existing builtins on upgrade. v1 = the
+         * 0.4.1 switch from 7 recipes to a single "Stash Discover".
+         */
+        private const val STASH_MIX_RECIPE_VERSION = 1
     }
 }

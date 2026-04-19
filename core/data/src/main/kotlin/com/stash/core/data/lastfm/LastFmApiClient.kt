@@ -1,5 +1,7 @@
 package com.stash.core.data.lastfm
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -223,63 +225,71 @@ class LastFmApiClient @Inject constructor(
         return BigInteger(1, md5).toString(16).padStart(32, '0')
     }
 
-    private fun signedGet(params: Map<String, String>): JsonObject {
-        val signed = params.toMutableMap().apply {
-            put("api_sig", sign(this))
-            put("format", "json")
+    // All HTTP helpers dispatch to Dispatchers.IO so callers can be
+    // suspend functions invoked from anywhere (including VM scopes on
+    // the Main dispatcher) without hitting NetworkOnMainThreadException.
+    // OkHttp's execute() is blocking; wrapping here keeps the rest of
+    // the client straightforward and consistent.
+    private suspend fun signedGet(params: Map<String, String>): JsonObject =
+        withContext(Dispatchers.IO) {
+            val signed = params.toMutableMap().apply {
+                put("api_sig", sign(this))
+                put("format", "json")
+            }
+            val url = API_URL.toHttpUrl().newBuilder().apply {
+                signed.forEach { (k, v) -> addQueryParameter(k, v) }
+            }.build()
+            val request = Request.Builder().url(url).get().build()
+            val body = okHttpClient.newCall(request).execute().use {
+                check(it.isSuccessful) { "Last.fm GET failed: HTTP ${it.code}" }
+                it.body?.string() ?: error("Empty Last.fm response")
+            }
+            json.parseToJsonElement(body).jsonObject
         }
-        val url = API_URL.toHttpUrl().newBuilder().apply {
-            signed.forEach { (k, v) -> addQueryParameter(k, v) }
-        }.build()
-        val request = Request.Builder().url(url).get().build()
-        val body = okHttpClient.newCall(request).execute().use {
-            check(it.isSuccessful) { "Last.fm GET failed: HTTP ${it.code}" }
-            it.body?.string() ?: error("Empty Last.fm response")
-        }
-        return json.parseToJsonElement(body).jsonObject
-    }
 
-    private fun signedPost(params: Map<String, String>): JsonObject {
-        val signed = params.toMutableMap().apply {
-            put("api_sig", sign(this))
-            put("format", "json")
+    private suspend fun signedPost(params: Map<String, String>): JsonObject =
+        withContext(Dispatchers.IO) {
+            val signed = params.toMutableMap().apply {
+                put("api_sig", sign(this))
+                put("format", "json")
+            }
+            val form = FormBody.Builder().apply {
+                signed.forEach { (k, v) -> add(k, v) }
+            }.build()
+            val request = Request.Builder().url(API_URL).post(form).build()
+            val body = okHttpClient.newCall(request).execute().use {
+                check(it.isSuccessful) { "Last.fm POST failed: HTTP ${it.code}" }
+                it.body?.string() ?: error("Empty Last.fm response")
+            }
+            json.parseToJsonElement(body).jsonObject
         }
-        val form = FormBody.Builder().apply {
-            signed.forEach { (k, v) -> add(k, v) }
-        }.build()
-        val request = Request.Builder().url(API_URL).post(form).build()
-        val body = okHttpClient.newCall(request).execute().use {
-            check(it.isSuccessful) { "Last.fm POST failed: HTTP ${it.code}" }
-            it.body?.string() ?: error("Empty Last.fm response")
-        }
-        return json.parseToJsonElement(body).jsonObject
-    }
 
     /**
      * Unsigned GET — used for read-only public API endpoints. No session
      * key, no signature, just an API key. Returns the parsed root JSON
      * object (callers drill into the response-specific subtree).
      */
-    private fun unsignedGet(params: Map<String, String>): JsonObject {
-        val paramsWithFormat = params + ("format" to "json")
-        val url = API_URL.toHttpUrl().newBuilder().apply {
-            paramsWithFormat.forEach { (k, v) -> addQueryParameter(k, v) }
-        }.build()
-        val request = Request.Builder().url(url).get().build()
-        val body = okHttpClient.newCall(request).execute().use {
-            check(it.isSuccessful) { "Last.fm GET failed: HTTP ${it.code}" }
-            it.body?.string() ?: error("Empty Last.fm response")
+    private suspend fun unsignedGet(params: Map<String, String>): JsonObject =
+        withContext(Dispatchers.IO) {
+            val paramsWithFormat = params + ("format" to "json")
+            val url = API_URL.toHttpUrl().newBuilder().apply {
+                paramsWithFormat.forEach { (k, v) -> addQueryParameter(k, v) }
+            }.build()
+            val request = Request.Builder().url(url).get().build()
+            val body = okHttpClient.newCall(request).execute().use {
+                check(it.isSuccessful) { "Last.fm GET failed: HTTP ${it.code}" }
+                it.body?.string() ?: error("Empty Last.fm response")
+            }
+            val root = json.parseToJsonElement(body).jsonObject
+            // Last.fm returns HTTP 200 with { error, message } on some
+            // kinds of failures (invalid artist, rate-limited, etc).
+            // Surface those so callers don't treat garbage as success.
+            root["error"]?.jsonPrimitive?.content?.let { err ->
+                val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
+                error("Last.fm API error $err: $msg")
+            }
+            root
         }
-        val root = json.parseToJsonElement(body).jsonObject
-        // Last.fm returns HTTP 200 with { error, message } on some kinds
-        // of failures (invalid artist, rate-limited, etc). Surface those
-        // so callers don't treat garbage as success.
-        root["error"]?.jsonPrimitive?.content?.let { err ->
-            val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
-            error("Last.fm API error $err: $msg")
-        }
-        return root
-    }
 
     // ── Response parsers ──────────────────────────────────────────────
 

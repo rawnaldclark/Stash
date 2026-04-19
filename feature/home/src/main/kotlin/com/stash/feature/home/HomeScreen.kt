@@ -151,31 +151,6 @@ fun HomeScreen(
             )
         }
 
-        // ── Stash Mixes (recipe-driven, generated locally) ───────────
-        // Sits ABOVE the sync-sourced Daily Mixes on purpose: these are
-        // yours, produced by Stash itself, and should feel like the
-        // primary listening surface. Empty until the first refresh
-        // materializes tracks.
-        if (uiState.stashMixes.isNotEmpty()) {
-            item {
-                SectionHeader(title = "Stash Mixes")
-            }
-            item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(uiState.stashMixes, key = { it.id }) { playlist ->
-                        DailyMixCard(
-                            playlist = playlist,
-                            onClick = { onNavigateToPlaylist(playlist.id) },
-                            onLongPress = { selectedPlaylist = playlist },
-                        )
-                    }
-                }
-            }
-        }
-
         // ── Mixes (split by source, each with a Play All button) ─────
         if (uiState.spotifyMixes.isNotEmpty() || uiState.youtubeMixes.isNotEmpty()) {
             item {
@@ -231,6 +206,30 @@ fun HomeScreen(
                                 onLongPress = { selectedPlaylist = playlist },
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // ── Stash Mixes (recipe-driven, generated locally) ───────────
+        // v0.4.1: sits BELOW the sync-sourced Daily Mixes while the
+        // feature is in beta. Once it graduates, this block can move
+        // back up so user-generated mixes feel primary.
+        if (uiState.stashMixes.isNotEmpty()) {
+            item {
+                SectionHeader(title = "Stash Mixes  (Beta)")
+            }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(uiState.stashMixes, key = { it.id }) { playlist ->
+                        DailyMixCard(
+                            playlist = playlist,
+                            onClick = { onNavigateToPlaylist(playlist.id) },
+                            onLongPress = { selectedPlaylist = playlist },
+                        )
                     }
                 }
             }
