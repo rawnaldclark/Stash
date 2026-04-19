@@ -7,14 +7,18 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.stash.core.data.db.converter.Converters
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
+import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SourceAccountDao
+import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.TrackTagDao
 import com.stash.core.data.db.entity.ArtistProfileCacheEntity
+import com.stash.core.data.db.entity.DiscoveryQueueEntity
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.PlaylistEntity
@@ -22,9 +26,11 @@ import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.SourceAccountEntity
+import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.db.entity.TrackFts
+import com.stash.core.data.db.entity.TrackTagEntity
 
 /**
  * Central Room database for the Stash application.
@@ -54,8 +60,11 @@ import com.stash.core.data.db.entity.TrackFts
         RemoteTrackSnapshotEntity::class,
         ArtistProfileCacheEntity::class,
         ListeningEventEntity::class,
+        TrackTagEntity::class,
+        StashMixRecipeEntity::class,
+        DiscoveryQueueEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -76,6 +85,12 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun artistProfileCacheDao(): ArtistProfileCacheDao
 
     abstract fun listeningEventDao(): ListeningEventDao
+
+    abstract fun trackTagDao(): TrackTagDao
+
+    abstract fun stashMixRecipeDao(): StashMixRecipeDao
+
+    abstract fun discoveryQueueDao(): DiscoveryQueueDao
 
 
     companion object {
@@ -169,6 +184,86 @@ abstract class StashDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE tracks ADD COLUMN is_blacklisted INTEGER NOT NULL DEFAULT 0"
                 )
+            }
+        }
+
+        /**
+         * v10 → v11: three new tables backing the Stash Mixes feature —
+         * track_tags (Last.fm tag enrichment), stash_mix_recipes
+         * (declarative mix definitions), discovery_queue (Last.fm-sourced
+         * candidate tracks waiting to be downloaded into a mix).
+         *
+         * Schema mirrors the Room annotations on [TrackTagEntity],
+         * [StashMixRecipeEntity], and [DiscoveryQueueEntity] — if those
+         * change, this migration + the schema JSON both need updating.
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // track_tags — composite PK (track_id, tag), FK cascade on track delete.
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS track_tags (
+                        track_id INTEGER NOT NULL,
+                        tag TEXT NOT NULL,
+                        weight REAL NOT NULL,
+                        source TEXT NOT NULL,
+                        fetched_at INTEGER NOT NULL,
+                        PRIMARY KEY (track_id, tag),
+                        FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_track_tags_tag ON track_tags(tag)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_track_tags_track_id ON track_tags(track_id)")
+
+                // stash_mix_recipes — the recipe table, FK to playlists set null on delete.
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS stash_mix_recipes (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        description TEXT,
+                        include_tags_csv TEXT NOT NULL DEFAULT '',
+                        exclude_tags_csv TEXT NOT NULL DEFAULT '',
+                        era_start_year INTEGER,
+                        era_end_year INTEGER,
+                        affinity_bias REAL NOT NULL DEFAULT 0,
+                        discovery_ratio REAL NOT NULL DEFAULT 0,
+                        freshness_window_days INTEGER NOT NULL DEFAULT 0,
+                        target_length INTEGER NOT NULL DEFAULT 50,
+                        is_builtin INTEGER NOT NULL DEFAULT 0,
+                        is_active INTEGER NOT NULL DEFAULT 1,
+                        playlist_id INTEGER,
+                        created_at INTEGER NOT NULL,
+                        last_refreshed_at INTEGER,
+                        FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stash_mix_recipes_playlist_id ON stash_mix_recipes(playlist_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stash_mix_recipes_is_active ON stash_mix_recipes(is_active)")
+
+                // discovery_queue — FK to recipe cascades on delete.
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS discovery_queue (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        recipe_id INTEGER NOT NULL,
+                        artist TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        seed_artist TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'PENDING',
+                        track_id INTEGER,
+                        queued_at INTEGER NOT NULL,
+                        completed_at INTEGER,
+                        error_message TEXT,
+                        FOREIGN KEY (recipe_id) REFERENCES stash_mix_recipes(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_discovery_queue_status ON discovery_queue(status)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_discovery_queue_recipe_id ON discovery_queue(recipe_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_discovery_queue_queued_at ON discovery_queue(queued_at)")
             }
         }
     }

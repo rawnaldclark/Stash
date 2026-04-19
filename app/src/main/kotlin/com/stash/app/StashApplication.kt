@@ -7,11 +7,16 @@ import coil3.SingletonImageLoader
 import android.util.Log
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.PlaylistDao
+import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.lastfm.LastFmScrobbler
+import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.media.listening.ListeningRecorder
 import com.stash.core.data.repository.MusicRepositoryImpl
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.data.download.ytdlp.YtDlpManager
+import com.stash.core.data.sync.workers.StashDiscoveryWorker
+import com.stash.core.data.sync.workers.StashMixRefreshWorker
+import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
 import dagger.hilt.android.HiltAndroidApp
@@ -62,6 +67,9 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var lastFmScrobbler: LastFmScrobbler
 
+    @Inject
+    lateinit var stashMixRecipeDao: StashMixRecipeDao
+
     /** Application-scoped coroutine scope for one-shot startup tasks. */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -104,6 +112,21 @@ class StashApplication : Application(), Configuration.Provider {
         }
         YtDlpUpdateWorker.schedulePeriodicUpdate(this)
         UpdateCheckWorker.schedulePeriodicCheck(this)
+
+        // Stash Mixes scheduling. Daily refresh for mix regeneration,
+        // separate daily tag enrichment (unmetered+charging), separate
+        // daily discovery-queue drain (unmetered+charging). All three
+        // are idempotent periodic registrations.
+        applicationScope.launch {
+            StashMixDefaults.seedIfNeeded(stashMixRecipeDao)
+            // Fire a one-shot refresh on first launch so mixes populate
+            // without waiting for the 24-hour periodic cycle. Subsequent
+            // one-shots are safe (unique-work policy = REPLACE).
+            StashMixRefreshWorker.enqueueOneTime(this@StashApplication)
+        }
+        StashMixRefreshWorker.schedulePeriodic(this)
+        TagEnrichmentWorker.schedulePeriodic(this)
+        StashDiscoveryWorker.schedulePeriodic(this)
         // Also fire a one-shot check on every cold start so a release pushed
         // between periodic-worker windows surfaces within seconds of the
         // next launch — the 24-hour periodic worker alone can leave users

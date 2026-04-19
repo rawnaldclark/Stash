@@ -16,6 +16,13 @@ import com.stash.core.model.Track
 data class HomeUiState(
     val syncStatus: SyncStatusInfo = SyncStatusInfo(),
 
+    /**
+     * Recipe-generated Stash Mixes. Rotate daily via StashMixRefreshWorker.
+     * Rendered in a dedicated Home section above Daily Mixes so users
+     * recognize them as "yours" vs. imported.
+     */
+    val stashMixes: List<Playlist> = emptyList(),
+
     /** Spotify daily mixes (e.g. Daily Mix 1, Discover Weekly). */
     val spotifyMixes: List<Playlist> = emptyList(),
 

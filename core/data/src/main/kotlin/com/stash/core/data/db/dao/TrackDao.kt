@@ -389,6 +389,19 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks WHERE is_blacklisted = 1")
     fun getBlacklistedCount(): Flow<Int>
 
+    /**
+     * All downloaded, non-blacklisted tracks — the candidate pool for
+     * Stash Mix recipes. No ordering specified; callers re-sort based on
+     * their own scoring.
+     */
+    @Query(
+        """
+        SELECT * FROM tracks
+        WHERE is_downloaded = 1 AND is_blacklisted = 0
+        """
+    )
+    suspend fun getAllDownloadedNonBlacklisted(): List<TrackEntity>
+
     // ── Protected-playlist cascade helpers ───────────────────────────────
 
     /**

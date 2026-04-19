@@ -66,4 +66,52 @@ interface ListeningEventDao {
         val trackId: Long,
         val plays: Int,
     )
+
+    /**
+     * All play counts for tracks listened to since [sinceEpochMs]. Used by
+     * [com.stash.core.data.mix.MixGenerator] to build affinity scores. No
+     * limit — callers need the whole library, not just the top N.
+     */
+    @Query(
+        """
+        SELECT track_id AS trackId, COUNT(*) AS plays
+        FROM listening_events
+        WHERE started_at >= :sinceEpochMs
+        GROUP BY track_id
+        """
+    )
+    suspend fun getPlayCountsSince(sinceEpochMs: Long): List<TrackPlayCount>
+
+    /**
+     * Track IDs played at least once since [sinceEpochMs]. Used for the
+     * freshness-window filter — mix recipes exclude tracks in this set
+     * so a Rediscovery mix never surfaces last week's plays.
+     */
+    @Query(
+        """
+        SELECT DISTINCT track_id FROM listening_events
+        WHERE started_at >= :sinceEpochMs
+        """
+    )
+    suspend fun getTrackIdsPlayedSince(sinceEpochMs: Long): List<Long>
+
+    /**
+     * Top artists by play count in the window. Seeds the Last.fm
+     * similar-artist discovery pipeline — the top N artists per-recipe
+     * drive what new tracks we go hunt for.
+     */
+    @Query(
+        """
+        SELECT t.artist AS artist, COUNT(*) AS plays
+        FROM listening_events le
+        INNER JOIN tracks t ON t.id = le.track_id
+        WHERE le.started_at >= :sinceEpochMs
+        GROUP BY LOWER(t.artist)
+        ORDER BY plays DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getTopArtistsSince(sinceEpochMs: Long, limit: Int = 20): List<ArtistPlayCount>
+
+    data class ArtistPlayCount(val artist: String, val plays: Int)
 }

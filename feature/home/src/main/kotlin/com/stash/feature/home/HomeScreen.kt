@@ -151,6 +151,31 @@ fun HomeScreen(
             )
         }
 
+        // ── Stash Mixes (recipe-driven, generated locally) ───────────
+        // Sits ABOVE the sync-sourced Daily Mixes on purpose: these are
+        // yours, produced by Stash itself, and should feel like the
+        // primary listening surface. Empty until the first refresh
+        // materializes tracks.
+        if (uiState.stashMixes.isNotEmpty()) {
+            item {
+                SectionHeader(title = "Stash Mixes")
+            }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(uiState.stashMixes, key = { it.id }) { playlist ->
+                        DailyMixCard(
+                            playlist = playlist,
+                            onClick = { onNavigateToPlaylist(playlist.id) },
+                            onLongPress = { selectedPlaylist = playlist },
+                        )
+                    }
+                }
+            }
+        }
+
         // ── Mixes (split by source, each with a Play All button) ─────
         if (uiState.spotifyMixes.isNotEmpty() || uiState.youtubeMixes.isNotEmpty()) {
             item {

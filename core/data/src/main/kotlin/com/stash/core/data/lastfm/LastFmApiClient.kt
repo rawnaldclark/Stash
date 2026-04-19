@@ -1,7 +1,9 @@
 package com.stash.core.data.lastfm
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.FormBody
@@ -92,6 +94,116 @@ class LastFmApiClient @Inject constructor(
         Unit
     }
 
+    // ── Public (API-key-only) read endpoints ──────────────────────────
+
+    /**
+     * Top tags for a single track. Returns `emptyList()` when the track
+     * isn't in Last.fm's index at all (extremely common for deep cuts).
+     * Caller then falls back to [getArtistTopTags] — every listed artist
+     * has tags, so we always get *something*.
+     */
+    suspend fun getTrackTopTags(
+        artist: String,
+        track: String,
+    ): Result<List<LastFmTag>> = runCatching {
+        val params = sortedMapOf(
+            "method" to "track.getTopTags",
+            "api_key" to credentials.apiKey,
+            "artist" to artist,
+            "track" to track,
+            "autocorrect" to "1",
+        )
+        val response = unsignedGet(params)
+        parseTopTags(response["toptags"]?.jsonObject)
+    }
+
+    /** Top tags for an artist. Used as fallback + as a coarse genre signal. */
+    suspend fun getArtistTopTags(artist: String): Result<List<LastFmTag>> = runCatching {
+        val params = sortedMapOf(
+            "method" to "artist.getTopTags",
+            "api_key" to credentials.apiKey,
+            "artist" to artist,
+            "autocorrect" to "1",
+        )
+        val response = unsignedGet(params)
+        parseTopTags(response["toptags"]?.jsonObject)
+    }
+
+    /**
+     * Artists similar to [artist]. [limit] is the Last.fm page size — the
+     * API caps around 100 regardless of what you send. Used by the
+     * discovery engine to seed new candidate artists from the user's
+     * favorites.
+     */
+    suspend fun getSimilarArtists(
+        artist: String,
+        limit: Int = 30,
+    ): Result<List<LastFmSimilarArtist>> = runCatching {
+        val params = sortedMapOf(
+            "method" to "artist.getSimilar",
+            "api_key" to credentials.apiKey,
+            "artist" to artist,
+            "autocorrect" to "1",
+            "limit" to limit.toString(),
+        )
+        val response = unsignedGet(params)
+        parseSimilarArtists(response["similarartists"]?.jsonObject)
+    }
+
+    /** Top tracks for an artist — fuel for discovery downloads. */
+    suspend fun getArtistTopTracks(
+        artist: String,
+        limit: Int = 10,
+    ): Result<List<LastFmTopTrack>> = runCatching {
+        val params = sortedMapOf(
+            "method" to "artist.getTopTracks",
+            "api_key" to credentials.apiKey,
+            "artist" to artist,
+            "autocorrect" to "1",
+            "limit" to limit.toString(),
+        )
+        val response = unsignedGet(params)
+        parseTopTracks(response["toptracks"]?.jsonObject)
+    }
+
+    // ── Public user-history endpoints (API-key-only for public profiles) ──
+
+    /**
+     * User's all-time top artists. Used for Last.fm cold-start — when a
+     * user connects an account with existing scrobble history, we seed
+     * affinity from this call so their mixes are personal from day one.
+     */
+    suspend fun getUserTopArtists(
+        username: String,
+        period: String = "overall",
+        limit: Int = 100,
+    ): Result<List<LastFmTopArtist>> = runCatching {
+        val params = sortedMapOf(
+            "method" to "user.getTopArtists",
+            "api_key" to credentials.apiKey,
+            "user" to username,
+            "period" to period,
+            "limit" to limit.toString(),
+        )
+        val response = unsignedGet(params)
+        parseTopArtists(response["topartists"]?.jsonObject)
+    }
+
+    /** User's loved tracks. Strong affinity signal for cold-start. */
+    suspend fun getUserLovedTracks(
+        username: String,
+        limit: Int = 200,
+    ): Result<List<LastFmTopTrack>> = runCatching {
+        val params = sortedMapOf(
+            "method" to "user.getLovedTracks",
+            "api_key" to credentials.apiKey,
+            "user" to username,
+            "limit" to limit.toString(),
+        )
+        val response = unsignedGet(params)
+        parseTopTracks(response["lovedtracks"]?.jsonObject)
+    }
+
     // ── Internal: signed request helpers ──────────────────────────────
 
     private fun sign(params: Map<String, String>): String {
@@ -143,11 +255,119 @@ class LastFmApiClient @Inject constructor(
         return json.parseToJsonElement(body).jsonObject
     }
 
+    /**
+     * Unsigned GET — used for read-only public API endpoints. No session
+     * key, no signature, just an API key. Returns the parsed root JSON
+     * object (callers drill into the response-specific subtree).
+     */
+    private fun unsignedGet(params: Map<String, String>): JsonObject {
+        val paramsWithFormat = params + ("format" to "json")
+        val url = API_URL.toHttpUrl().newBuilder().apply {
+            paramsWithFormat.forEach { (k, v) -> addQueryParameter(k, v) }
+        }.build()
+        val request = Request.Builder().url(url).get().build()
+        val body = okHttpClient.newCall(request).execute().use {
+            check(it.isSuccessful) { "Last.fm GET failed: HTTP ${it.code}" }
+            it.body?.string() ?: error("Empty Last.fm response")
+        }
+        val root = json.parseToJsonElement(body).jsonObject
+        // Last.fm returns HTTP 200 with { error, message } on some kinds
+        // of failures (invalid artist, rate-limited, etc). Surface those
+        // so callers don't treat garbage as success.
+        root["error"]?.jsonPrimitive?.content?.let { err ->
+            val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
+            error("Last.fm API error $err: $msg")
+        }
+        return root
+    }
+
+    // ── Response parsers ──────────────────────────────────────────────
+
+    private fun parseTopTags(root: JsonObject?): List<LastFmTag> {
+        if (root == null) return emptyList()
+        val tagsRaw = root["tag"] ?: return emptyList()
+        val arr = tagsRaw.asArrayOrSingletonArray() ?: return emptyList()
+        // Last.fm counts: usually a small integer in the 0..100 range for
+        // top tags, but occasionally very large for artist-level. Normalize
+        // by the max within this response so tag weights are comparable
+        // across tracks even when absolute counts aren't.
+        val pairs = arr.mapNotNull { elem ->
+            val obj = elem.jsonObject
+            val name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val count = obj["count"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+            name.lowercase() to count
+        }.filter { it.first.isNotBlank() && it.second > 0 }
+        val maxCount = pairs.maxOfOrNull { it.second } ?: return emptyList()
+        return pairs.map { LastFmTag(name = it.first, weight = it.second.toFloat() / maxCount) }
+    }
+
+    private fun parseSimilarArtists(root: JsonObject?): List<LastFmSimilarArtist> {
+        if (root == null) return emptyList()
+        val arr = root["artist"]?.asArrayOrSingletonArray() ?: return emptyList()
+        return arr.mapNotNull { elem ->
+            val obj = elem.jsonObject
+            val name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val match = obj["match"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f
+            LastFmSimilarArtist(name = name, match = match)
+        }
+    }
+
+    private fun parseTopTracks(root: JsonObject?): List<LastFmTopTrack> {
+        if (root == null) return emptyList()
+        val arr = root["track"]?.asArrayOrSingletonArray() ?: return emptyList()
+        return arr.mapNotNull { elem ->
+            val obj = elem.jsonObject
+            val name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val artistNode = obj["artist"]
+            val artist = when {
+                artistNode is JsonObject -> artistNode["name"]?.jsonPrimitive?.content
+                else -> artistNode?.jsonPrimitive?.content
+            } ?: return@mapNotNull null
+            val playcount = obj["playcount"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+            LastFmTopTrack(artist = artist, title = name, playcount = playcount)
+        }
+    }
+
+    private fun parseTopArtists(root: JsonObject?): List<LastFmTopArtist> {
+        if (root == null) return emptyList()
+        val arr = root["artist"]?.asArrayOrSingletonArray() ?: return emptyList()
+        return arr.mapNotNull { elem ->
+            val obj = elem.jsonObject
+            val name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val playcount = obj["playcount"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+            LastFmTopArtist(name = name, playcount = playcount)
+        }
+    }
+
+    /**
+     * Last.fm quirk: when a list has a single element the API returns a
+     * JSON object directly instead of a 1-element array. Normalize both
+     * shapes into an array so parsers can iterate uniformly.
+     */
+    private fun kotlinx.serialization.json.JsonElement.asArrayOrSingletonArray():
+        JsonArray? = when (this) {
+        is JsonArray -> this
+        is JsonObject -> JsonArray(listOf(this))
+        else -> null
+    }
+
     companion object {
         private const val API_URL = "https://ws.audioscrobbler.com/2.0/"
         private val json = Json { ignoreUnknownKeys = true }
     }
 }
+
+/** Parsed tag row from track/artist top-tag endpoints. [weight] in 0..1. */
+data class LastFmTag(val name: String, val weight: Float)
+
+/** Parsed similar-artist from `artist.getSimilar`. [match] in 0..1. */
+data class LastFmSimilarArtist(val name: String, val match: Float)
+
+/** Track projection used by top-tracks, loved-tracks, artist top-tracks. */
+data class LastFmTopTrack(val artist: String, val title: String, val playcount: Int)
+
+/** Artist projection used by user.getTopArtists. */
+data class LastFmTopArtist(val name: String, val playcount: Int)
 
 /**
  * Last.fm API credentials. Provided by the app layer (typically from
