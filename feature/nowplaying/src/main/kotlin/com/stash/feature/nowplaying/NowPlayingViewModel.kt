@@ -217,6 +217,30 @@ class NowPlayingViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Destroy the currently-playing track. Deletes the audio file + row;
+     * if [alsoBlock] is set, keeps the row as a blacklist tombstone so
+     * future syncs skip the identity forever.
+     *
+     * Skips to the next track BEFORE the delete so ExoPlayer doesn't
+     * error out mid-playback on a file that just disappeared under it.
+     * On the last track in the queue, skipNext will stop playback
+     * naturally — cleaner than racing the delete.
+     */
+    fun deleteCurrentTrack(alsoBlock: Boolean) {
+        val track = _uiState.value.currentTrack ?: return
+        viewModelScope.launch {
+            playerRepository.skipNext()
+            if (alsoBlock) {
+                musicRepository.blacklistTrack(track.id)
+                _userMessages.tryEmit("Deleted and blocked from future syncs.")
+            } else {
+                musicRepository.deleteTrack(track)
+                _userMessages.tryEmit("Deleted from your device.")
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Palette Color Extraction
     // ------------------------------------------------------------------

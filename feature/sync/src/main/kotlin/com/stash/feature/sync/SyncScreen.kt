@@ -139,11 +139,19 @@ fun SyncScreen(
             )
         }
 
-        // -- Unmatched songs warning card -------------------------------------
-        if (uiState.unmatchedCount > 0) {
-            item(key = "unmatched") {
+        // -- Songs that need review card --------------------------------------
+        // Covers both "couldn't match during sync" (unmatched) and "user
+        // flagged as wrong from Now Playing" (flagged). Without the flagged
+        // branch, songs flagged on Now Playing had nowhere to surface —
+        // the Failed Matches screen was unreachable without at least one
+        // unmatched song alongside them.
+        val reviewCount = uiState.unmatchedCount + uiState.flaggedCount
+        if (reviewCount > 0) {
+            item(key = "review_queue") {
                 UnmatchedSongsCard(
-                    count = uiState.unmatchedCount,
+                    count = reviewCount,
+                    unmatchedCount = uiState.unmatchedCount,
+                    flaggedCount = uiState.flaggedCount,
                     onClick = onNavigateToFailedMatches,
                 )
             }
@@ -991,10 +999,33 @@ private fun SyncHistoryRow(sync: SyncHistoryInfo) {
 @Composable
 private fun UnmatchedSongsCard(
     count: Int,
+    unmatchedCount: Int,
+    flaggedCount: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
+
+    // Accurate copy for each mix of causes — "couldn't be matched" is
+    // specifically the sync-failure path, not the user-flagged path.
+    // Without this split, a user who only flagged songs from Now Playing
+    // would see a card claiming sync failed, which is false.
+    val headline = when {
+        unmatchedCount > 0 && flaggedCount > 0 ->
+            "$count song${if (count != 1) "s" else ""} need review"
+        flaggedCount > 0 ->
+            "$flaggedCount song${if (flaggedCount != 1) "s" else ""} flagged as wrong match"
+        else ->
+            "$unmatchedCount song${if (unmatchedCount != 1) "s" else ""} couldn't be matched"
+    }
+    val sub = when {
+        unmatchedCount > 0 && flaggedCount > 0 ->
+            "$unmatchedCount unmatched \u00B7 $flaggedCount flagged \u2014 tap to fix"
+        flaggedCount > 0 ->
+            "Tap to pick a replacement"
+        else ->
+            "Tap to review"
+    }
 
     Surface(
         modifier = modifier
@@ -1027,12 +1058,12 @@ private fun UnmatchedSongsCard(
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "$count song${if (count != 1) "s" else ""} couldn't be matched",
+                    text = headline,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Tap to review",
+                    text = sub,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

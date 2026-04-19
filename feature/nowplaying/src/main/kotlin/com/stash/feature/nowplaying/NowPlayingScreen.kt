@@ -83,6 +83,10 @@ fun NowPlayingScreen(
     val track = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
+    // "This song is wrong" dialog — shown when the flag icon is tapped.
+    // Decouples the Flag button (which is just "there's a problem") from
+    // the action (find a replacement / delete / delete + block).
+    var showWrongMatchDialog by remember { mutableStateOf(false) }
 
     // One-shot Toast confirmation for the "wrong match" flag action. Toast
     // instead of Snackbar so we don't have to restructure the screen into
@@ -125,6 +129,74 @@ fun NowPlayingScreen(
         )
     }
 
+    // "This song is wrong" — 3-option dialog triggered by the flag icon.
+    // Separated from the icon's direct action so the same entry point
+    // covers three very different outcomes: mark for replacement, delete
+    // the file, delete + permanently block.
+    if (showWrongMatchDialog && track != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showWrongMatchDialog = false },
+            title = {
+                androidx.compose.material3.Text(
+                    text = "What's wrong with this song?",
+                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
+            },
+            text = {
+                androidx.compose.foundation.layout.Column(
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                ) {
+                    androidx.compose.material3.Text(
+                        text = "Pick what should happen to '${track.title}'.",
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    androidx.compose.foundation.layout.Spacer(
+                        modifier = Modifier.height(4.dp),
+                    )
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            viewModel.flagCurrentTrackAsWrongMatch()
+                            showWrongMatchDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        androidx.compose.material3.Text("Find a better match")
+                    }
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            viewModel.deleteCurrentTrack(alsoBlock = false)
+                            showWrongMatchDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        androidx.compose.material3.Text("Delete from library")
+                    }
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            viewModel.deleteCurrentTrack(alsoBlock = true)
+                            showWrongMatchDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                        ),
+                    ) {
+                        androidx.compose.material3.Text("Delete and block forever")
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showWrongMatchDialog = false },
+                ) {
+                    androidx.compose.material3.Text("Cancel")
+                }
+            },
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // Ambient animated background behind everything.
         AmbientBackground(
@@ -144,7 +216,7 @@ fun NowPlayingScreen(
             // -- Top bar: dismiss, label, flag, save, queue --
             TopBar(
                 onDismiss = onDismiss,
-                onFlagWrongMatch = viewModel::flagCurrentTrackAsWrongMatch,
+                onFlagWrongMatch = { showWrongMatchDialog = true },
                 onSaveClick = { showSaveSheet = true },
                 onQueueClick = { showQueue = true },
                 hasTrack = uiState.hasTrack,

@@ -168,6 +168,7 @@ fun FailedMatchesScreen(
                     item(key = "header") {
                         FailedMatchesHeader(
                             trackCount = state.tracks.size,
+                            flaggedCount = state.flaggedTracks.size,
                             isResyncing = state.isResyncing,
                             resyncProgress = state.resyncProgress,
                             resyncCandidateCount = state.resyncCandidates.size,
@@ -329,6 +330,7 @@ fun FailedMatchesScreen(
 @Composable
 private fun FailedMatchesHeader(
     trackCount: Int,
+    flaggedCount: Int,
     isResyncing: Boolean,
     resyncProgress: String,
     resyncCandidateCount: Int,
@@ -372,8 +374,37 @@ private fun FailedMatchesHeader(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp),
         ) {
+            // Dynamic title + subtitle so the screen reads accurately
+            // whether the user arrived here because sync couldn't match
+            // songs, because they flagged a track from Now Playing, or
+            // both at once. Previously the header always said "Unmatched
+            // Songs" which was wrong when the only reason to be here was
+            // a flagged track.
+            val totalReview = trackCount + flaggedCount
+            val title = when {
+                trackCount > 0 && flaggedCount > 0 -> "Songs to Review"
+                flaggedCount > 0 -> "Flagged Songs"
+                else -> "Unmatched Songs"
+            }
+            val subtitle = when {
+                trackCount > 0 && flaggedCount > 0 ->
+                    "These songs couldn't be matched during sync, or you flagged them as wrong."
+                flaggedCount > 0 ->
+                    "Songs you flagged from Now Playing. Pick a replacement below."
+                else ->
+                    "These songs couldn't be found on YouTube during sync."
+            }
+            val countLine = when {
+                trackCount > 0 && flaggedCount > 0 ->
+                    "$trackCount unmatched \u00B7 $flaggedCount flagged \u00B7 $totalReview total"
+                flaggedCount > 0 ->
+                    "$flaggedCount flagged track${if (flaggedCount != 1) "s" else ""}"
+                else ->
+                    "$trackCount track${if (trackCount != 1) "s" else ""}"
+            }
+
             Text(
-                text = "Unmatched Songs",
+                text = title,
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -382,7 +413,7 @@ private fun FailedMatchesHeader(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "These songs couldn't be found on YouTube during sync.",
+                text = subtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -390,7 +421,7 @@ private fun FailedMatchesHeader(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "$trackCount track${if (trackCount != 1) "s" else ""}",
+                text = countLine,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -91,6 +91,12 @@ data class SyncUiState(
     val syncMode: SyncMode = SyncMode.REFRESH,
     /** Number of tracks that could not be matched to a YouTube video. */
     val unmatchedCount: Int = 0,
+    /**
+     * Number of tracks the user flagged from Now Playing as "wrong
+     * match." Drives the Sync-tab review card alongside [unmatchedCount]
+     * so flagged tracks are reachable even when no sync failures exist.
+     */
+    val flaggedCount: Int = 0,
 )
 
 /**
@@ -122,6 +128,7 @@ class SyncViewModel @Inject constructor(
         observeSpotifyPlaylists()
         observeYouTubePlaylists()
         observeUnmatchedCount()
+        observeFlaggedCount()
     }
 
     // -- Public actions -------------------------------------------------------
@@ -313,6 +320,20 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             musicRepository.getUnmatchedCount().collect { count ->
                 _uiState.update { it.copy(unmatchedCount = count) }
+            }
+        }
+    }
+
+    /**
+     * Observe the live count of user-flagged "wrong match" tracks so the
+     * Sync-tab review card is reachable even when no sync-side matching
+     * failures exist. Without this, tracks flagged from Now Playing had
+     * no entry-point surface into Failed Matches and appeared lost.
+     */
+    private fun observeFlaggedCount() {
+        viewModelScope.launch {
+            musicRepository.getFlaggedCount().collect { count ->
+                _uiState.update { it.copy(flaggedCount = count) }
             }
         }
     }
