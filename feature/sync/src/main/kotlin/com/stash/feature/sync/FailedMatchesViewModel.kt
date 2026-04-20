@@ -13,6 +13,7 @@ import com.stash.core.model.DownloadStatus
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
 import com.stash.data.download.files.FileOrganizer
+import com.stash.data.download.files.SwapCoordinator
 import com.stash.data.download.matching.HybridSearchExecutor
 import com.stash.data.download.prefs.QualityPreferencesManager
 import com.stash.data.download.prefs.toYtDlpArgs
@@ -122,6 +123,7 @@ class FailedMatchesViewModel @Inject constructor(
     private val qualityPrefs: QualityPreferencesManager,
     private val trackDao: TrackDao,
     private val downloadQueueDao: DownloadQueueDao,
+    private val swapCoordinator: SwapCoordinator,
 ) : ViewModel() {
 
     companion object {
@@ -434,9 +436,8 @@ class FailedMatchesViewModel @Inject constructor(
                 return@launch
             }
 
-            // Optimistically clear the flag so the row disappears. If the
-            // background download fails, the track still exists and the
-            // user can re-flag it.
+            // Optimistically clear the flag + remove from candidates so the
+            // row disappears from the Failed Matches screen immediately.
             try {
                 musicRepository.setMatchFlagged(row.trackId, false)
                 _resyncCandidates.update { it - row.trackId }
@@ -446,51 +447,19 @@ class FailedMatchesViewModel @Inject constructor(
                 return@launch
             }
 
-            // Fire-and-forget download + file swap.
-            launch {
-                // Delete the existing audio before overwriting — commitDownload
-                // creates a new file with a hashed name derived from the new
-                // title, so the old path would leak as an orphan otherwise.
-                row.currentFilePath?.let { oldPath ->
-                    try {
-                        val deleted = java.io.File(oldPath).delete()
-                        Log.d(TAG, "approveSwap: old file delete path=$oldPath deleted=$deleted")
-                    } catch (e: Exception) {
-                        Log.w(TAG, "approveSwap: old file delete threw", e)
-                    }
-                }
-
-                try {
-                    val url = "https://www.youtube.com/watch?v=${candidate.videoId}"
-                    val qualityTier = qualityPrefs.qualityTier.first()
-                    val qualityArgs = qualityTier.toYtDlpArgs()
-                    val tempDir = fileOrganizer.getTempDir()
-                    val tempFilename = "swap_${candidate.videoId}"
-
-                    val result = downloadExecutor.download(
-                        url = url,
-                        outputDir = tempDir,
-                        filename = tempFilename,
-                        qualityArgs = qualityArgs,
-                    )
-                    if (result is DownloadResult.Success) {
-                        val committed = fileOrganizer.commitDownload(
-                            tempFile = result.file,
-                            artist = row.artist,
-                            album = null,
-                            title = row.title,
-                            format = result.file.extension,
-                        )
-                        trackDao.updateYoutubeId(row.trackId, candidate.videoId)
-                        trackDao.markAsDownloaded(row.trackId, committed.filePath, committed.sizeBytes)
-                    } else {
-                        Log.w(TAG, "approveSwap: download failed for ${candidate.title}: $result")
-                        _userMessages.tryEmit("Couldn't re-download '${candidate.title}'.")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "approveSwap: unexpected error for ${candidate.title}", e)
-                }
-            }
+            // Hand the download + commit + DB update off to SwapCoordinator's
+            // application-scope so it survives the user leaving this screen.
+            // Pre-Phase-5b this was an inline `launch {}` on viewModelScope,
+            // which got cancelled the instant the user navigated away — they
+            // ended up with the DB pointing at a deleted file while the new
+            // audio never actually landed.
+            swapCoordinator.swap(
+                trackId = row.trackId,
+                oldFilePath = row.currentFilePath,
+                artist = row.artist,
+                title = row.title,
+                newVideoId = candidate.videoId,
+            )
         }
     }
 
