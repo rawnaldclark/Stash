@@ -1,6 +1,8 @@
 package com.stash.feature.settings.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,8 +13,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -20,7 +26,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -74,71 +84,86 @@ fun EqualizerSection(
     onVirtualizerChanged: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Collapsed by default unless EQ is on; auto-expands whenever the
+    // user toggles EQ on. Manual tap on the header lets the user open
+    // the controls to tweak before enabling, or hide them while enabled
+    // if they just want to see the toggle.
+    var expanded by remember { mutableStateOf(enabled) }
+    LaunchedEffect(enabled) {
+        if (enabled) expanded = true
+    }
+
     GlassCard(modifier = modifier) {
         Column(modifier = Modifier.fillMaxWidth()) {
 
             // -- Enable/disable toggle ----------------------------------------
             EnableToggle(
                 enabled = enabled,
+                expanded = expanded,
+                onHeaderClick = { expanded = !expanded },
                 onEnabledChanged = onEnabledChanged,
             )
 
-            // -- All controls below dim when disabled -------------------------
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .alpha(if (enabled) 1f else 0.4f),
-            ) {
+            // -- Controls collapse when the section is collapsed. When
+            //    expanded but EQ off, controls still dim (alpha 0.4) to
+            //    signal they won't do anything until the switch is on.
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(if (enabled) 1f else 0.4f),
+                ) {
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                // -- Preset chips ---------------------------------------------
-                PresetChipRow(
-                    currentPreset = currentPreset,
-                    enabled = enabled,
-                    onPresetSelected = onPresetSelected,
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // -- Per-band gain sliders ------------------------------------
-                Text(
-                    text = "Band Gain",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                bandFrequencies.forEachIndexed { index, freqLabel ->
-                    val gain = bandGains.getOrElse(index) { 0.5f }
-                    BandGainRow(
-                        frequencyLabel = freqLabel,
-                        gain = gain,
+                    // -- Preset chips ---------------------------------------------
+                    PresetChipRow(
+                        currentPreset = currentPreset,
                         enabled = enabled,
-                        onGainChanged = { newGain -> onBandGainChanged(index, newGain) },
+                        onPresetSelected = onPresetSelected,
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // -- Per-band gain sliders ------------------------------------
+                    Text(
+                        text = "Band Gain",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    bandFrequencies.forEachIndexed { index, freqLabel ->
+                        val gain = bandGains.getOrElse(index) { 0.5f }
+                        BandGainRow(
+                            frequencyLabel = freqLabel,
+                            gain = gain,
+                            enabled = enabled,
+                            onGainChanged = { newGain -> onBandGainChanged(index, newGain) },
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // -- Bass Boost -----------------------------------------------
+                    LabeledSlider(
+                        label = "Bass Boost",
+                        value = bassBoost,
+                        enabled = enabled,
+                        onValueChanged = onBassBoostChanged,
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // -- Virtualizer / Surround -----------------------------------
+                    LabeledSlider(
+                        label = "Surround",
+                        value = virtualizer,
+                        enabled = enabled,
+                        onValueChanged = onVirtualizerChanged,
                     )
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // -- Bass Boost -----------------------------------------------
-                LabeledSlider(
-                    label = "Bass Boost",
-                    value = bassBoost,
-                    enabled = enabled,
-                    onValueChanged = onBassBoostChanged,
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // -- Virtualizer / Surround -----------------------------------
-                LabeledSlider(
-                    label = "Surround",
-                    value = virtualizer,
-                    enabled = enabled,
-                    onValueChanged = onVirtualizerChanged,
-                )
             }
         }
     }
@@ -149,11 +174,16 @@ fun EqualizerSection(
 // ---------------------------------------------------------------------------
 
 /**
- * Toggle row with "Equalizer" label and a [Switch].
+ * Header row: tappable "Equalizer" label + expand/collapse chevron on
+ * the left, Switch on the right. The whole row left of the Switch is
+ * the expand/collapse hit target; the Switch keeps its own click
+ * region so toggling EQ doesn't accidentally collapse the controls.
  */
 @Composable
 private fun EnableToggle(
     enabled: Boolean,
+    expanded: Boolean,
+    onHeaderClick: () -> Unit,
     onEnabledChanged: (Boolean) -> Unit,
 ) {
     Row(
@@ -161,11 +191,24 @@ private fun EnableToggle(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = "Equalizer",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onHeaderClick),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Equalizer",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "Collapse equalizer" else "Expand equalizer",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Switch(
             checked = enabled,
             onCheckedChange = onEnabledChanged,

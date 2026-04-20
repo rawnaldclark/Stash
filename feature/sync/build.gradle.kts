@@ -12,4 +12,7 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    // For the "Fix wrong-version downloads" trigger (enqueues
+    // YtLibraryBackfillWorker via WorkManager).
+    implementation(libs.work.runtime.ktx)
 }

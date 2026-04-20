@@ -109,6 +109,18 @@ fun HomeScreen(
     // Controls the "New Playlist" naming dialog launched from the Playlists section.
     var showCreateDialog by remember { mutableStateOf(false) }
 
+    // Pre-computed 2-column chunking for the Playlists grid. Hoisted out
+    // of the LazyColumn's item{} so the chunked() + buildList{} only runs
+    // when the playlists list actually changes — not on every recomposition
+    // triggered by unrelated state (sync status, liked songs count, etc.).
+    val playlistGridRows = remember(uiState.playlists) {
+        val tiles: List<PlaylistTile> = buildList {
+            add(PlaylistTile.Create)
+            uiState.playlists.forEach { add(PlaylistTile.Item(it)) }
+        }
+        tiles.chunked(2)
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -293,45 +305,57 @@ fun HomeScreen(
         item {
             SectionHeader(title = "Playlists")
         }
-        // Render a non-scrollable 2-column grid inside the LazyColumn. The
-        // first tile is always the Create Playlist card, followed by the
-        // user's custom playlists.
-        item {
-            // Use a sealed representation so the Create tile sits in the
-            // same chunked(2) flow as the playlist tiles.
-            val tiles: List<PlaylistTile> = buildList {
-                add(PlaylistTile.Create)
-                uiState.playlists.forEach { add(PlaylistTile.Item(it)) }
-            }
-            val rows = tiles.chunked(2)
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                rows.forEach { rowItems ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        rowItems.forEach { tile ->
-                            when (tile) {
-                                is PlaylistTile.Create -> CreatePlaylistCard(
-                                    onClick = { showCreateDialog = true },
-                                    modifier = Modifier.weight(1f),
-                                )
-                                is PlaylistTile.Item -> PlaylistGridCard(
-                                    playlist = tile.playlist,
-                                    onClick = { onNavigateToPlaylist(tile.playlist.id) },
-                                    onLongPress = { selectedPlaylist = tile.playlist },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                        // Pad single-item rows with a spacer
-                        if (rowItems.size == 1) {
-                            Spacer(Modifier.weight(1f))
-                        }
+        // 2-column grid virtualized via the outer LazyColumn: each chunked
+        // row is its own LazyColumn item, so only the rows near the viewport
+        // get composed/measured. The pre-Phase-8 version wrapped the whole
+        // grid in a single item{} + non-lazy Column, which forced every
+        // PlaylistGridCard (33+ in a typical library) to compose + layout +
+        // load its AsyncImage every time the parent item was near-visible.
+        // That was the dominant source of vertical-scroll jank; horizontal
+        // carousels stayed smooth because they were already real LazyRows.
+        itemsIndexed(
+            items = playlistGridRows,
+            key = { index, row ->
+                // Row-stable key so LazyColumn can reuse layouts when the
+                // user's playlist list mutates (rename, delete, reorder).
+                row.joinToString("-") { tile ->
+                    when (tile) {
+                        PlaylistTile.Create -> "create"
+                        is PlaylistTile.Item -> tile.playlist.id.toString()
                     }
+                }
+            },
+        ) { index, rowItems ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        // Spacing between rows — previously handled by the
+                        // outer Column's spacedBy(12). Done inline here so
+                        // each item carries its own bottom padding.
+                        top = if (index == 0) 0.dp else 12.dp,
+                    ),
+            ) {
+                rowItems.forEach { tile ->
+                    when (tile) {
+                        is PlaylistTile.Create -> CreatePlaylistCard(
+                            onClick = { showCreateDialog = true },
+                            modifier = Modifier.weight(1f),
+                        )
+                        is PlaylistTile.Item -> PlaylistGridCard(
+                            playlist = tile.playlist,
+                            onClick = { onNavigateToPlaylist(tile.playlist.id) },
+                            onLongPress = { selectedPlaylist = tile.playlist },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                // Pad single-item rows with a spacer
+                if (rowItems.size == 1) {
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }

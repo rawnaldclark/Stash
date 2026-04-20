@@ -87,12 +87,13 @@ fun StashNavHost(
                 onNavigateToFailedMatches = {
                     navController.navigate(FailedMatchesRoute)
                 },
+                // Phase 8: Library actions (Blocked Songs + Fix wrong-version)
+                // moved out of Settings into the Sync tab's Library section.
+                onNavigateToBlockedSongs = { navController.navigate(BlockedSongsRoute) },
             )
         }
         composable<SettingsRoute> {
-            SettingsScreen(
-                onNavigateToBlockedSongs = { navController.navigate(BlockedSongsRoute) },
-            )
+            SettingsScreen()
         }
 
         composable<BlockedSongsRoute> {

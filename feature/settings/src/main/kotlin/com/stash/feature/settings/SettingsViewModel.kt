@@ -64,19 +64,9 @@ class SettingsViewModel @Inject constructor(
     /** Internal mutable UI state that is combined with token-manager flows. */
     private val _localState = MutableStateFlow(LocalState())
 
-    /**
-     * Reactive count of blocked songs, displayed as a badge next to the
-     * "Blocked Songs" row. Lives in its own StateFlow rather than being
-     * merged into [uiState] because the main combine is already at 11
-     * flows — this keeps it loosely coupled and easy to inspect.
-     */
-    val blockedCount: kotlinx.coroutines.flow.StateFlow<Int> =
-        musicRepository.getBlacklistedCount()
-            .stateIn(
-                scope = viewModelScope,
-                started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
-                initialValue = 0,
-            )
+    // Phase 8: `blockedCount` + `onRunYtLibraryBackfill` relocated to
+    // SyncViewModel — the Blocked Songs + Fix-wrong-version rows moved
+    // out of Settings into the Sync tab's Library section.
 
     /**
      * The main UI state, combining reactive auth states from [TokenManager],

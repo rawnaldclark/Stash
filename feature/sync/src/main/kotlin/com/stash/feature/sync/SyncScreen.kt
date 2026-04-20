@@ -23,12 +23,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PauseCircle
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
@@ -41,6 +44,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -79,9 +83,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 fun SyncScreen(
     modifier: Modifier = Modifier,
     onNavigateToFailedMatches: () -> Unit = {},
+    onNavigateToBlockedSongs: () -> Unit = {},
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val blockedCount by viewModel.blockedCount.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier
@@ -505,6 +511,29 @@ fun SyncScreen(
             )
         }
 
+        // -- Library maintenance ----------------------------------------------
+        // Blocked Songs + Fix wrong-version downloads were previously in
+        // Settings → Library. They live here now because both are
+        // sync-adjacent operations: blocked songs gate what sync will re-
+        // download, and "fix wrong-version" actively re-canonicalizes
+        // YT library imports (which is literally a sync operation). Sits
+        // above Recent Syncs so maintenance actions stay glanceable
+        // without scrolling past the (potentially long) history log.
+        item {
+            Text(
+                text = "Library",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+        }
+        item {
+            LibraryMaintenanceCard(
+                blockedCount = blockedCount,
+                onNavigateToBlockedSongs = onNavigateToBlockedSongs,
+                onRunYtLibraryBackfill = viewModel::onRunYtLibraryBackfill,
+            )
+        }
+
         // -- Recent History ---------------------------------------------------
         if (uiState.recentSyncs.isNotEmpty()) {
             item {
@@ -521,6 +550,108 @@ fun SyncScreen(
 
         // Bottom spacing so content isn't hidden behind nav bar
         item { Spacer(Modifier.height(80.dp)) }
+    }
+}
+
+/**
+ * Glass-styled card containing the two library-maintenance actions
+ * migrated out of Settings in Phase 8:
+ *  - Navigate to the Blocked Songs manager.
+ *  - Launch the YT library backfill worker (re-canonicalize OMV imports).
+ *
+ * Shows a blocked-count badge on the first row so the count is visible
+ * without entering the screen.
+ */
+@Composable
+private fun LibraryMaintenanceCard(
+    blockedCount: Int,
+    onNavigateToBlockedSongs: () -> Unit,
+    onRunYtLibraryBackfill: () -> Unit,
+) {
+    val cardContext = LocalContext.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = StashTheme.extendedColors.glassBackground,
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp, StashTheme.extendedColors.glassBorder,
+        ),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onNavigateToBlockedSongs)
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Block,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Blocked Songs",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = if (blockedCount > 0)
+                            "$blockedCount song${if (blockedCount != 1) "s" else ""} will never re-download"
+                        else
+                            "No blocked songs",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onRunYtLibraryBackfill()
+                        android.widget.Toast.makeText(
+                            cardContext,
+                            "Scanning YouTube library\u2026 watch the Sync Progress notification.",
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Fix wrong-version downloads",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Swap music-video imports for their studio audio. Re-downloads the affected tracks.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
