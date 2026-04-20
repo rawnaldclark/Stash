@@ -7,6 +7,15 @@ plugins {
 
 android {
     namespace = "com.stash.data.spotify"
+
+    testOptions {
+        unitTests {
+            // Return Kotlin defaults from stubbed Android SDK methods so
+            // android.util.Log calls inside production code don't throw
+            // "not mocked" in JVM unit tests. Mirrors data/ytmusic.
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -20,4 +29,6 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
+
+    testImplementation("junit:junit:4.13.2")
 }

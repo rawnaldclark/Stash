@@ -1,0 +1,52 @@
+{
+  "items": [
+    {
+      "track": {
+        "id": "2bCQHF9gdG5BNDVuEIEnNk",
+        "name": "Smooth Criminal - 2012 Remaster",
+        "uri": "spotify:track:2bCQHF9gdG5BNDVuEIEnNk",
+        "duration_ms": 257766,
+        "explicit": false,
+        "external_ids": { "isrc": "USSM11200115" },
+        "artists": [
+          { "id": "3fMbdgg4jU18AjLCKBhRSm", "name": "Michael Jackson" }
+        ],
+        "album": {
+          "id": "6n5DMSnTgvdgMWK7aydpYx",
+          "name": "Bad 25th Anniversary",
+          "images": [{ "url": "https://i.scdn.co/image/ab67616d00001e02" }]
+        }
+      }
+    },
+    {
+      "track": {
+        "id": "7lQ8MOhq6IN2w8EYcFNSUk",
+        "name": "Example Explicit Track",
+        "uri": "spotify:track:7lQ8MOhq6IN2w8EYcFNSUk",
+        "duration_ms": 210000,
+        "explicit": true,
+        "external_ids": { "isrc": "USUG11900001" },
+        "artists": [
+          { "id": "a1", "name": "Some Artist" }
+        ],
+        "album": {
+          "id": "b1",
+          "name": "Some Album",
+          "images": []
+        }
+      }
+    },
+    {
+      "track": {
+        "id": "legacyNoExternalIds",
+        "name": "Legacy Track Without external_ids",
+        "uri": "spotify:track:legacyNoExternalIds",
+        "duration_ms": 180000,
+        "explicit": false,
+        "artists": [{ "id": "a2", "name": "Legacy Artist" }],
+        "album": { "id": "b2", "name": "Legacy Album", "images": [] }
+      }
+    }
+  ],
+  "next": null
+}

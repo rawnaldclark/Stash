@@ -61,4 +61,20 @@ data class RemoteTrackSnapshotEntity(
 
     /** Zero-based position of this track within the playlist. */
     val position: Int = 0,
+
+    /**
+     * International Standard Recording Code from Spotify's `external_ids.isrc`
+     * when available. Null for YouTube-sourced snapshots (YT Music doesn't
+     * expose ISRCs on these endpoints) and for GraphQL-fallback fetches that
+     * don't currently parse the field. Carried through [DiffWorker] into the
+     * persisted [TrackEntity.isrc] so the matcher can disambiguate masters.
+     */
+    val isrc: String? = null,
+
+    /**
+     * Spotify's explicit flag. Null for YouTube-sourced snapshots and for
+     * Spotify rows fetched before this field was threaded through. Carried
+     * to [TrackEntity.explicit].
+     */
+    val explicit: Boolean? = null,
 )

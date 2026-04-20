@@ -3,6 +3,7 @@ package com.stash.data.download.matching
 import android.util.Log
 import com.stash.data.download.ytdlp.YtDlpSearchResult
 import com.stash.data.ytmusic.InnerTubeClient
+import com.stash.data.ytmusic.model.MusicVideoType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -60,20 +61,29 @@ class InnerTubeSearchExecutor @Inject constructor(
 
     /**
      * Result of verifying a video ID via the InnerTube player endpoint.
+     *
+     * [musicVideoType] carries YouTube Music's structured video classification
+     * (ATV / OMV / UGC / …). It's the authoritative signal the matcher should
+     * use instead of title-keyword heuristics; null when the player response
+     * omits the field (rare — seen on some non-music videos and podcasts).
      */
     data class VideoVerification(
         val title: String,
         val isPlayable: Boolean,
+        val musicVideoType: MusicVideoType?,
     )
 
     /**
      * Verifies a video ID via the InnerTube player endpoint.
      *
-     * Returns the actual video title AND playability status. InnerTube search
-     * results can return video IDs that are:
+     * Returns the actual video title, playability status, AND YouTube Music's
+     * `musicVideoType` classification. InnerTube search results can return
+     * video IDs that are:
      * - **Metadata mismatch**: search says "Song A" but player says "Song B"
      * - **Unplayable**: correct metadata but video is unavailable/region-blocked,
      *   causing yt-dlp to download a substitute or fail silently
+     * - **Wrong type**: the search heuristic said "Song" but the video is
+     *   actually an OMV or UGC upload — `musicVideoType` closes that gap.
      *
      * @param videoId The YouTube video ID to verify.
      * @return Verification result, or null if the lookup failed entirely.
@@ -81,8 +91,9 @@ class InnerTubeSearchExecutor @Inject constructor(
     suspend fun verifyVideo(videoId: String): VideoVerification? {
         return try {
             val response = innerTubeClient.player(videoId) ?: return null
-            val title = response.navigatePath("videoDetails")
-                ?.jsonObject?.get("title")?.jsonPrimitive?.contentOrNull
+            val videoDetails = response.navigatePath("videoDetails")?.jsonObject
+                ?: return null
+            val title = videoDetails["title"]?.jsonPrimitive?.contentOrNull
                 ?: return null
             val status = response.navigatePath("playabilityStatus")
                 ?.jsonObject?.get("status")?.jsonPrimitive?.contentOrNull
@@ -92,7 +103,14 @@ class InnerTubeSearchExecutor @Inject constructor(
                     ?.jsonObject?.get("reason")?.jsonPrimitive?.contentOrNull ?: "unknown"
                 Log.w(TAG, "Video $videoId unplayable: status=$status, reason=$reason")
             }
-            VideoVerification(title = title, isPlayable = isPlayable)
+            val musicVideoType = MusicVideoType.fromInnerTube(
+                videoDetails["musicVideoType"]?.jsonPrimitive?.contentOrNull,
+            )
+            VideoVerification(
+                title = title,
+                isPlayable = isPlayable,
+                musicVideoType = musicVideoType,
+            )
         } catch (e: Exception) {
             Log.w(TAG, "Player lookup failed for $videoId", e)
             null
@@ -193,12 +211,18 @@ class InnerTubeSearchExecutor @Inject constructor(
             .filterNot { it == " & " || it == ", " || it == " • " || it == " x " || it == " · " || it == "Song" || it == "Video" || it == "Album" || it == "EP" || it == "Single" }
             .joinToString(", ")
 
-        // Extract album from flexColumns[2] (if present)
-        val albumName = flexColumns.getOrNull(2)?.jsonObject
+        // Extract album from flexColumns[2] (if present).
+        // YouTube Music repurposes this column for play-count badges
+        // on singles/popular tracks that don't have a canonical album
+        // (e.g. "551M plays", "1.1B plays", "28K views"). Those strings
+        // pollute downstream code that treats album as a group key —
+        // drop them so only real album names make it through.
+        val rawAlbum = flexColumns.getOrNull(2)?.jsonObject
             ?.navigatePath(
                 "musicResponsiveListItemFlexColumnRenderer", "text", "runs"
             )?.jsonArray?.firstOrNull()
             ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
+        val albumName = rawAlbum?.takeUnless { looksLikePlayCountBadge(it) }
 
         // Extract duration from fixedColumns[0] — format "M:SS" or "H:MM:SS"
         // Some results have duration in flexColumns[1] runs (after artist, album, duration)
@@ -231,6 +255,21 @@ class InnerTubeSearchExecutor @Inject constructor(
                 ?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
         )
 
+        // musicVideoType is YouTube Music's authoritative classification
+        // (ATV / OMV / UGC / OFFICIAL_SOURCE_MUSIC / PODCAST_EPISODE).
+        // It lives on the overlay play-button's watchEndpoint config.
+        // When present, the scorer uses it instead of the text-based
+        // "Song" vs. "Video" heuristic below (the heuristic is kept as
+        // a fallback for renderer shapes that omit the enum).
+        val musicVideoType = MusicVideoType.fromInnerTube(
+            renderer.navigatePath(
+                "overlay", "musicItemThumbnailOverlayRenderer", "content",
+                "musicPlayButtonRenderer", "playNavigationEndpoint",
+                "watchEndpoint", "watchEndpointMusicSupportedConfigs",
+                "watchEndpointMusicConfig", "musicVideoType",
+            )?.jsonPrimitive?.contentOrNull,
+        )
+
         return YtDlpSearchResult(
             id = videoId,
             title = title,
@@ -248,8 +287,25 @@ class InnerTubeSearchExecutor @Inject constructor(
             thumbnail = thumbnailUrl,
             album = albumName,
             description = "",
+            musicVideoType = musicVideoType,
         )
     }
+
+    /**
+     * Heuristic for "is this flexColumns[2] value actually a play-count
+     * badge, not an album name?" Matches strings like `551M plays`,
+     * `1.1B plays`, `28K views`, `42,314 plays`. Case-insensitive.
+     * Album names rarely end in those tokens, so false positives are
+     * vanishingly rare; false negatives (play-counts that slip through)
+     * would at least be obvious play-count strings the user can flag.
+     */
+    private val playCountBadge = Regex(
+        """^\s*[\d.,]+\s*[KMB]?\s*(plays|views)\s*$""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private fun looksLikePlayCountBadge(text: String): Boolean =
+        playCountBadge.matches(text.trim())
 
     /**
      * Converts a duration string like "3:45" or "1:02:30" to seconds.

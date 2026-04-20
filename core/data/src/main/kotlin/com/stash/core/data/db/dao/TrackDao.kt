@@ -313,6 +313,86 @@ interface TrackDao {
     @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId")
     suspend fun updateYoutubeId(trackId: Long, youtubeId: String)
 
+    /**
+     * Atomically refresh the display + lookup metadata for a track after
+     * [com.stash.data.download.matching.YtLibraryCanonicalizer] swaps its
+     * videoId. The title/canonical fields drive playlist display, search,
+     * and dedup; album + album_art_url drive the playlist mosaic; duration
+     * keeps playback scrubbing accurate.
+     *
+     * [album], [albumArtUrl] are COALESCE'd so a null/blank source
+     * (yt-dlp fallback results don't carry album metadata) doesn't wipe
+     * out an existing value. [durationMs] uses CASE so zero/unknown
+     * durations don't overwrite a known one.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET title = :title,
+            canonical_title = :canonicalTitle,
+            canonical_artist = :canonicalArtist,
+            album = CASE WHEN :album IS NULL OR :album = '' THEN album ELSE :album END,
+            album_art_url = COALESCE(:albumArtUrl, album_art_url),
+            duration_ms = CASE WHEN :durationMs > 0 THEN :durationMs ELSE duration_ms END
+        WHERE id = :trackId
+        """
+    )
+    suspend fun updateCanonicalMetadata(
+        trackId: Long,
+        title: String,
+        canonicalTitle: String,
+        canonicalArtist: String,
+        album: String?,
+        albumArtUrl: String?,
+        durationMs: Long,
+    )
+
+    /**
+     * Atomically reverts a track to an undownloaded state so the download
+     * pipeline will re-resolve + re-fetch it. Used by the YT-library
+     * backfill worker to force canonicalization on tracks whose videoId
+     * currently points at an OMV / UGC / PODCAST_EPISODE upload. The
+     * file_path + file_size are cleared so playback fallbacks can't try
+     * to hit a file we're about to delete.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET is_downloaded = 0,
+            file_path = NULL,
+            file_size_bytes = 0
+        WHERE id = :trackId
+        """
+    )
+    suspend fun resetForReDownload(trackId: Long)
+
+    /**
+     * YT-source tracks whose stored title looks like a music-video upload
+     * (e.g. contains `(Official Video)` / `(Music Video)` / `(MV)`). The
+     * backfill worker checks these candidates with InnerTube's player
+     * endpoint to confirm their [musicVideoType] and canonicalizes the
+     * ones that come back OMV / UGC / PODCAST. Title-pattern filter is
+     * intentionally conservative — it misses OMV uploads with clean
+     * titles (e.g. raw VEVO uploads), which a future aggressive mode
+     * can catch by checking every YT-source track.
+     */
+    @Query(
+        """
+        SELECT * FROM tracks
+        WHERE source = 'YOUTUBE'
+          AND is_downloaded = 1
+          AND youtube_id IS NOT NULL
+          AND (
+              title LIKE '%(Official Video)%'
+              OR title LIKE '%(Official Music Video)%'
+              OR title LIKE '%(Music Video)%'
+              OR title LIKE '%(MV)%'
+              OR title LIKE '%(Video)%'
+          )
+        """
+    )
+    suspend fun getYtSourceVideoTitleCandidates(): List<TrackEntity>
+
     /** Find a downloaded track by canonical identity (for auto-reconciliation). */
     @Query("""
         SELECT * FROM tracks

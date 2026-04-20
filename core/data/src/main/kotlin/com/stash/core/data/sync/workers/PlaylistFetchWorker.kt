@@ -231,6 +231,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                             spotifyUri = track.uri,
                                             albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.album?.images?.firstOrNull()?.url),
                                             position = index,
+                                            isrc = track.isrc,
+                                            explicit = track.explicit,
                                         )
                                     }
                                     if (trackSnapshots.isNotEmpty()) {
@@ -324,6 +326,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         spotifyUri = track.uri,
                         albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.album?.images?.firstOrNull()?.url),
                         position = index,
+                        isrc = track.isrc,
+                        explicit = track.explicit,
                     )
                 }
                 if (trackSnapshots.isNotEmpty()) {
@@ -378,6 +382,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                     spotifyUri = track.uri,
                                     albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.album?.images?.firstOrNull()?.url),
                                     position = index,
+                                    isrc = track.isrc,
+                                    explicit = track.explicit,
                                 )
                             }
                             if (trackSnapshots.isNotEmpty()) {

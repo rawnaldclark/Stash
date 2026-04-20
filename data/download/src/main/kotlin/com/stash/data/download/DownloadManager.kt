@@ -1,6 +1,9 @@
 package com.stash.data.download
 
 import android.util.Log
+import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.mapper.toDomain
+import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
@@ -8,6 +11,8 @@ import com.stash.data.download.matching.AlbumMatchExecutor
 import com.stash.data.download.matching.DuplicateDetectionService
 import com.stash.data.download.matching.MatchScorer
 import com.stash.data.download.matching.HybridSearchExecutor
+import com.stash.data.download.matching.YtLibraryCanonicalizer
+import java.io.File
 import com.stash.data.download.model.DownloadProgress
 import com.stash.data.download.model.DownloadStatus
 import com.stash.data.download.prefs.QualityPreferencesManager
@@ -55,6 +60,8 @@ class DownloadManager @Inject constructor(
     private val fileOrganizer: FileOrganizer,
     private val metadataEmbedder: MetadataEmbedder,
     private val qualityPrefs: QualityPreferencesManager,
+    private val ytLibraryCanonicalizer: YtLibraryCanonicalizer,
+    private val trackDao: TrackDao,
 ) {
     /** Limits concurrent downloads. 8 parallel slots — with native opus (no FFmpeg
      *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
@@ -108,6 +115,22 @@ class DownloadManager @Inject constructor(
         }
         val youtubeUrl = resolveResult.url
 
+        // If resolveUrl routed through YtLibraryCanonicalizer, the DB
+        // now has the ATV's refreshed title/album/album_art/duration —
+        // but the `track` object passed in here is still the stale
+        // in-memory copy from TrackDownloadWorker. Re-fetch so
+        // commitDownload's filename derivation uses the new title.
+        // Fallback to the original in-memory track if the row was
+        // deleted mid-flight (rare; better to still download than bail).
+        val effectiveTrack = trackDao.getById(track.id)?.toDomain() ?: track
+        if (effectiveTrack.title != track.title) {
+            Log.i(
+                TAG,
+                "executeDownload: track metadata refreshed by canonicalizer " +
+                    "'${track.title}' → '${effectiveTrack.title}'",
+            )
+        }
+
         emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)
 
         // Step 2: Get quality args from user preferences
@@ -156,13 +179,28 @@ class DownloadManager @Inject constructor(
         // Step 4: Move to organized destination (internal or user-selected SAF target).
         val committed = fileOrganizer.commitDownload(
             tempFile = downloadedFile,
-            artist = track.artist,
-            album = track.album.ifEmpty { null },
-            title = track.title,
+            artist = effectiveTrack.artist,
+            album = effectiveTrack.album.ifEmpty { null },
+            title = effectiveTrack.title,
             format = downloadedFile.extension,
         )
 
-        Log.i(TAG, "Downloaded: ${track.artist} - ${track.title} → ${committed.filePath}")
+        // Clean up the previous file if the canonicalizer renamed the
+        // track (new title → new derived file path). Without this the
+        // old OMV-titled file lingers as an orphan consuming disk. Only
+        // delete when paths genuinely differ — for a plain re-download
+        // commitDownload already overwrote the same path.
+        val oldPath = track.filePath
+        if (oldPath != null && oldPath != committed.filePath) {
+            runCatching {
+                val deleted = File(oldPath).delete()
+                Log.d(TAG, "executeDownload: deleted orphaned old file path=$oldPath deleted=$deleted")
+            }.onFailure { e ->
+                Log.w(TAG, "executeDownload: failed to delete old file $oldPath", e)
+            }
+        }
+
+        Log.i(TAG, "Downloaded: ${effectiveTrack.artist} - ${effectiveTrack.title} → ${committed.filePath}")
         emitProgress(track.id, 1f, DownloadStatus.COMPLETED)
         return TrackDownloadResult.Success(committed.filePath)
     }
@@ -182,8 +220,21 @@ class DownloadManager @Inject constructor(
      *         with the best rejected candidate's video ID if no match was accepted.
      */
     private suspend fun resolveUrl(track: Track): ResolveResult {
-        // If we already have a YouTube ID, use it directly
-        track.youtubeId?.let { return ResolveResult(url = "https://www.youtube.com/watch?v=$it") }
+        // If we already have a YouTube ID, use it directly — except for
+        // YT-library-sourced tracks, which get canonicalized: the imported
+        // videoId may point at an OMV / UGC / PODCAST, and the canonicalizer
+        // swaps it for the ATV master when one exists. Spotify-sourced
+        // tracks with a youtubeId have already been through the scorer +
+        // verifyMatch gates on a previous sync, so they skip the canonicalizer
+        // to avoid pointless re-search work.
+        track.youtubeId?.let { videoId ->
+            val url = if (track.source == MusicSource.YOUTUBE) {
+                ytLibraryCanonicalizer.canonicalize(track, videoId)
+            } else {
+                "https://www.youtube.com/watch?v=$videoId"
+            }
+            return ResolveResult(url = url)
+        }
 
         // Track the best rejected candidate across all strategies so users can
         // preview it from the Unmatched Songs screen.
@@ -207,6 +258,7 @@ class DownloadManager @Inject constructor(
                     targetDurationMs = track.durationMs,
                     results = listOf(albumResult),
                     targetAlbum = track.album,
+                    targetExplicit = track.explicit,
                 )
                 val best = matchScorer.bestMatch(scored)
                 if (best != null) {
@@ -233,6 +285,7 @@ class DownloadManager @Inject constructor(
                 targetDurationMs = track.durationMs,
                 results = results,
                 targetAlbum = track.album,
+                targetExplicit = track.explicit,
             )
 
             val best = matchScorer.bestMatch(scored) ?: continue
@@ -252,6 +305,7 @@ class DownloadManager @Inject constructor(
                 targetDurationMs = track.durationMs,
                 results = ytDlpResults,
                 targetAlbum = track.album,
+                targetExplicit = track.explicit,
             )
             val best = matchScorer.bestMatch(scored)
             if (best != null) {
@@ -283,6 +337,28 @@ class DownloadManager @Inject constructor(
         best: com.stash.data.download.model.MatchResult,
         query: String,
     ): String? {
+        // Gate 0: Duration hard gate. A candidate more than ±15s off the
+        // target duration is structurally the wrong recording (extended
+        // mix, music-video cut with spoken intro, podcast episode, etc.)
+        // even if title/artist/popularity push soft-scoring past threshold.
+        // This is the gate that neutralises the 9:25-vs-4:18 Smooth Criminal
+        // class of bugs once and for all.
+        if (!matchScorer.durationPassesHardGate(
+                targetMs = track.durationMs,
+                candidateDurationSec = best.durationSeconds,
+            )
+        ) {
+            val deltaSec = Math.abs((track.durationMs / 1000) - best.durationSeconds)
+            Log.w(
+                TAG,
+                "resolveUrl: rejecting '${best.title}' — duration ${best.durationSeconds}s is " +
+                    "${deltaSec}s off target ${track.durationMs / 1000}s (gate ±${
+                        com.stash.data.download.matching.MatchScorer.DURATION_HARD_GATE_SEC
+                    }s)",
+            )
+            return null
+        }
+
         // Gate 1: Title similarity
         val titleSim = matchScorer.titleSimilarity(track.title, best.title)
         if (titleSim < 0.6f) {

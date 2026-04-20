@@ -65,7 +65,11 @@ enum class DownloadStatus {
  * @property uploader        channel/uploader name.
  * @property durationSeconds video duration in seconds.
  * @property viewCount       total view count at time of search.
- * @property matchScore      confidence score in [0.0, 1.0] that this video matches the track.
+ * @property matchScore      composite match score. Non-negative; typically in
+ *                            [0.0, 1.0] but may exceed 1.0 when multiple
+ *                            positive signals (ATV + Topic + album match)
+ *                            stack. Compare via
+ *                            [com.stash.data.download.matching.MatchScorer.AUTO_ACCEPT_THRESHOLD].
  */
 data class MatchResult(
     val youtubeUrl: String,
@@ -75,4 +79,19 @@ data class MatchResult(
     val durationSeconds: Long,
     val viewCount: Long,
     val matchScore: Float,
+    /**
+     * Album as reported by YouTube Music's search shelf. Populated from
+     * [com.stash.data.download.ytdlp.YtDlpSearchResult.album]; null for
+     * yt-dlp-sourced fallback results that don't carry album metadata.
+     * Used by [com.stash.data.download.matching.YtLibraryCanonicalizer]
+     * to refresh a canonicalized track's `album` column.
+     */
+    val album: String? = null,
+    /**
+     * Thumbnail URL from YouTube Music's search shelf. Used by the
+     * canonicalizer to refresh a track's `album_art_url` so the cover
+     * switches from the music-video still to the studio master's art.
+     * Null when the source didn't carry a thumbnail.
+     */
+    val thumbnailUrl: String? = null,
 )

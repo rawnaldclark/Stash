@@ -64,7 +64,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         StashMixRecipeEntity::class,
         DiscoveryQueueEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -264,6 +264,23 @@ abstract class StashDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_discovery_queue_status ON discovery_queue(status)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_discovery_queue_recipe_id ON discovery_queue(recipe_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_discovery_queue_queued_at ON discovery_queue(queued_at)")
+            }
+        }
+
+        /**
+         * v11 → v12: add `isrc` + `explicit` columns to both `tracks` and
+         * `remote_track_snapshots`. Both nullable because neither field is
+         * available for YouTube-sourced tracks. `isrc` holds Spotify's
+         * per-master unique identifier; `explicit` is the parental-advisory
+         * flag. The matcher uses them to distinguish clean vs. explicit
+         * masters and to pin a specific recording when an ISRC is known.
+         */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN isrc TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE tracks ADD COLUMN explicit INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE remote_track_snapshots ADD COLUMN isrc TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE remote_track_snapshots ADD COLUMN explicit INTEGER DEFAULT NULL")
             }
         }
     }

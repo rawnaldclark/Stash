@@ -1,7 +1,9 @@
 package com.stash.data.download.ytdlp
 
+import com.stash.data.ytmusic.model.MusicVideoType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * DTO for a single result returned by yt-dlp's `--dump-json` output.
@@ -38,4 +40,19 @@ data class YtDlpSearchResult(
     val thumbnail: String? = null,
     /** Album name (populated by InnerTube search from flexColumns[2]). */
     val album: String? = null,
+    /**
+     * YouTube Music's authoritative video classification. Populated by
+     * [com.stash.data.download.matching.InnerTubeSearchExecutor] from
+     * `watchEndpointMusicConfig.musicVideoType`; null for yt-dlp-sourced
+     * fallback results (yt-dlp's JSON doesn't expose this field). Drives
+     * scorer preferences: ATV > OFFICIAL_SOURCE_MUSIC > OMV; UGC + PODCAST
+     * are hard-rejected.
+     *
+     * `@Transient` because [kotlinx.serialization] handles `YtDlpSearchResult`
+     * shapes only when they originate from yt-dlp JSON — the InnerTube
+     * path constructs the DTO in Kotlin code and never round-trips it
+     * through JSON, so the enum never needs a serializer.
+     */
+    @Transient
+    val musicVideoType: MusicVideoType? = null,
 )

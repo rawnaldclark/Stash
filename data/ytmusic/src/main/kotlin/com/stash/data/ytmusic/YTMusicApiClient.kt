@@ -6,6 +6,7 @@ import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.ArtistSummary
+import com.stash.data.ytmusic.model.MusicVideoType
 import com.stash.data.ytmusic.model.SearchAllResults
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TrackSummary
@@ -549,6 +550,19 @@ class YTMusicApiClient @Inject constructor(
             ?.asObject()?.get("text")?.asString()
         val durationMs = parseDurationToMs(durationText)
 
+        // InnerTube's authoritative video-type enum. Same renderer path as
+        // [InnerTubeSearchExecutor.parseRenderer]; drives Mode B canonicalization
+        // — a YT library import carrying MUSIC_VIDEO_TYPE_OMV triggers a search
+        // for the ATV equivalent so users get studio audio instead of MV audio.
+        val musicVideoType = MusicVideoType.fromInnerTube(
+            renderer.navigatePath(
+                "overlay", "musicItemThumbnailOverlayRenderer", "content",
+                "musicPlayButtonRenderer", "playNavigationEndpoint",
+                "watchEndpoint", "watchEndpointMusicSupportedConfigs",
+                "watchEndpointMusicConfig", "musicVideoType",
+            )?.asString(),
+        )
+
         return YTMusicTrack(
             videoId = videoId,
             title = title,
@@ -556,6 +570,7 @@ class YTMusicApiClient @Inject constructor(
             album = album,
             durationMs = durationMs,
             thumbnailUrl = thumbnailUrl,
+            musicVideoType = musicVideoType,
         )
     }
 

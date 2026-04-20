@@ -114,4 +114,22 @@ data class TrackEntity(
      */
     @ColumnInfo(name = "is_blacklisted", defaultValue = "0")
     val isBlacklisted: Boolean = false,
+
+    /**
+     * International Standard Recording Code — per-master unique identifier
+     * from Spotify's `external_ids.isrc`. Null for YouTube-sourced tracks
+     * and for legacy Spotify rows inserted before the matcher started
+     * requesting it. When present, the YouTube matcher can use it as the
+     * highest-precision signal to disambiguate clean vs. explicit masters
+     * and different remasters of the same song.
+     */
+    val isrc: String? = null,
+
+    /**
+     * Spotify's parental-advisory flag. Null for YouTube-sourced tracks and
+     * for legacy Spotify rows inserted before the field was threaded through;
+     * false/true for Spotify rows inserted after v12. Used by the matcher to
+     * prefer candidates whose explicitness matches the source track.
+     */
+    val explicit: Boolean? = null,
 )

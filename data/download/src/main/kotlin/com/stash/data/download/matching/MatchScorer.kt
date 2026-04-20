@@ -4,6 +4,7 @@ import android.util.Log
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.data.download.model.MatchResult
 import com.stash.data.download.ytdlp.YtDlpSearchResult
+import com.stash.data.ytmusic.model.MusicVideoType
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -47,6 +48,45 @@ class MatchScorer @Inject constructor(
 
         /** Scores below this value are discarded as unlikely matches. */
         const val REJECT_THRESHOLD = 0.50f
+
+        /**
+         * Hard duration tolerance in seconds. Candidates further than this
+         * from the target duration are rejected by [durationPassesHardGate]
+         * regardless of how well every other signal scores. Pre-Phase-3
+         * duration was only a soft weight, which let a 9:25 MV beat a 4:18
+         * target when title + artist + topic piled up enough score; the
+         * gate neutralises that at the pipeline level.
+         */
+        const val DURATION_HARD_GATE_SEC = 15
+
+        /** Adjustments keyed off InnerTube's authoritative musicVideoType enum. */
+        const val VIDEO_TYPE_ATV_BONUS = 0.20f
+        const val VIDEO_TYPE_OFFICIAL_SOURCE_BONUS = 0.10f
+        const val VIDEO_TYPE_OMV_PENALTY = 0.15f
+        const val VIDEO_TYPE_UGC_PENALTY = 0.40f
+        /** Large enough to clamp to zero for any realistic candidate score. */
+        const val VIDEO_TYPE_PODCAST_PENALTY = 1.0f
+
+        /**
+         * Demotion applied when the Spotify target's parental-advisory flag
+         * disagrees with the candidate title's `(Clean)` / `(Explicit)`
+         * keyword. Imperfect (InnerTube doesn't expose a candidate-side
+         * explicit enum on search results), but enough signal to let the
+         * explicit master out-rank the radio edit and vice-versa when the
+         * title is labelled.
+         */
+        const val EXPLICIT_MISMATCH_PENALTY = 0.15f
+    }
+
+    /**
+     * Hard duration gate. Returns `false` iff both target and candidate
+     * durations are known and differ by more than [DURATION_HARD_GATE_SEC]
+     * seconds. Unknown durations pass — InnerTube omits duration on some
+     * results and we don't want to blanket-reject them.
+     */
+    fun durationPassesHardGate(targetMs: Long, candidateDurationSec: Long): Boolean {
+        if (targetMs <= 0L || candidateDurationSec <= 0L) return true
+        return abs((targetMs / 1000) - candidateDurationSec) <= DURATION_HARD_GATE_SEC
     }
 
     /**
@@ -64,6 +104,7 @@ class MatchScorer @Inject constructor(
         targetDurationMs: Long,
         results: List<YtDlpSearchResult>,
         targetAlbum: String = "",
+        targetExplicit: Boolean? = null,
     ): List<MatchResult> {
         if (results.isEmpty()) return emptyList()
 
@@ -78,19 +119,30 @@ class MatchScorer @Inject constructor(
             val topicBonus = computeTopicBonus(result.uploader, result.channel)
             val uploaderPenalty = computeUploaderMismatchPenalty(targetArtist, result.uploader, result.channel)
             val albumBonus = computeAlbumBonus(targetAlbum, result.album, result.title)
+            val videoTypeAdjustment = computeVideoTypeAdjustment(result.musicVideoType)
+            val explicitMismatch = computeExplicitMismatchPenalty(targetExplicit, result.title)
 
+            // coerceAtLeast(0f) floors negative contributions so a catastrophic
+            // candidate doesn't accidentally sort ABOVE a better one (a -1.0
+            // podcast penalty otherwise produces −0.9 which compares <0.0 but
+            // we want it strictly non-negative for the auto-accept check).
+            // We DON'T cap the ceiling: bonuses legitimately push a great
+            // match past 1.0, and clamping collapses tie-breaks — e.g. a
+            // (Sped Up) variant and its original would both hit the ceiling
+            // and sort by input order rather than by quality.
             val finalScore = (
                 titleScore * TITLE_WEIGHT +
                     artistScore * ARTIST_WEIGHT +
                     durationScore * DURATION_WEIGHT +
                     popularityScore * POPULARITY_WEIGHT +
-                    topicBonus + albumBonus - penalty - uploaderPenalty
-                ).coerceIn(0f, 1f)
+                    topicBonus + albumBonus + videoTypeAdjustment -
+                    penalty - uploaderPenalty - explicitMismatch
+                ).coerceAtLeast(0f)
 
-            Log.d("MatchScorer", "  ${result.title} by ${result.uploader} (album=${result.album ?: "?"}) | " +
-                "title=%.2f art=%.2f dur=%.2f pop=%.2f topic=%.2f alb=%.2f pen=%.2f uplPen=%.2f → %.2f".format(
+            Log.d("MatchScorer", "  ${result.title} by ${result.uploader} (album=${result.album ?: "?"}, mvt=${result.musicVideoType}) | " +
+                "title=%.2f art=%.2f dur=%.2f pop=%.2f topic=%.2f alb=%.2f vt=%+.2f pen=%.2f uplPen=%.2f xpl=%.2f → %.2f".format(
                     titleScore, artistScore, durationScore, popularityScore,
-                    topicBonus, albumBonus, penalty, uploaderPenalty, finalScore))
+                    topicBonus, albumBonus, videoTypeAdjustment, penalty, uploaderPenalty, explicitMismatch, finalScore))
 
             MatchResult(
                 youtubeUrl = result.webpageUrl.ifEmpty {
@@ -102,6 +154,8 @@ class MatchScorer @Inject constructor(
                 durationSeconds = result.duration.toLong(),
                 viewCount = result.viewCount,
                 matchScore = finalScore,
+                album = result.album,
+                thumbnailUrl = result.thumbnail,
             )
         }.sortedByDescending { it.matchScore }
     }
@@ -192,8 +246,14 @@ class MatchScorer @Inject constructor(
     }
 
     /**
-     * Penalty for content variants (covers, remixes, live, karaoke, instrumental)
-     * when the target title does not contain the same keyword.
+     * Penalty for content variants (covers, remixes, live, karaoke, instrumental,
+     * sped-up / nightcore / slowed / edit / extended) when the target title
+     * does not contain the same keyword.
+     *
+     * "music video" / "official video" used to live here too. They were
+     * removed in Phase 3: [computeVideoTypeAdjustment] now handles those
+     * cases via InnerTube's structured `musicVideoType` enum, which is
+     * more reliable than string-matching titles.
      */
     private fun computePenalty(targetTitle: String, candidateTitle: String): Float {
         val targetLower = targetTitle.lowercase()
@@ -202,16 +262,80 @@ class MatchScorer @Inject constructor(
         // Live/concert indicators (many live versions don't say "live" explicitly)
         val liveIndicators = listOf("live", "concert", "woodstock", "festival", "session",
             "unplugged", "acoustic version", "radio session", "bbc session", "peel session",
-            "music video", "official video", "mtv", "letterman", "snl", "tonight show")
+            "mtv", "letterman", "snl", "tonight show")
         val isLikelyLive = liveIndicators.any { it in candidateLower } &&
             liveIndicators.none { it in targetLower }
+
+        // Tempo/pitch edits commonly uploaded to YT that masquerade as the
+        // real track — penalise whenever the target title doesn't explicitly
+        // request the variant. "slowed" covers both "Slowed" and "Slowed Down";
+        // "edit" and "extended" catch alternate cuts that differ from the
+        // album master.
+        val tempoVariants = listOf("sped up", "nightcore", "slowed", "extended", "edit")
+        val isTempoVariant = tempoVariants.any { it in candidateLower } &&
+            tempoVariants.none { it in targetLower }
 
         return when {
             "karaoke" in candidateLower -> 0.4f
             "cover" in candidateLower && "cover" !in targetLower -> 0.25f
             "remix" in candidateLower && "remix" !in targetLower -> 0.25f
             "instrumental" in candidateLower && "instrumental" !in targetLower -> 0.2f
+            isTempoVariant -> 0.2f
             isLikelyLive -> 0.15f
+            else -> 0f
+        }
+    }
+
+    /**
+     * Adjustment keyed off YouTube Music's authoritative video classification.
+     *
+     * Replaces the "music video" / "official video" string match in
+     * [computePenalty]. ATV (Topic-channel audio) gets a positive bump on
+     * top of the Topic-channel name bonus; OMV (official music video) is
+     * demoted because its audio track often differs from the album master
+     * (intros, outros, alternate mixes); UGC (user-uploaded) is demoted
+     * hard enough that bestMatch can't accept it unless no other candidate
+     * exists; PODCAST_EPISODE gets an effectively-infinite penalty so it
+     * clamps to zero and falls below [AUTO_ACCEPT_THRESHOLD].
+     *
+     * Null means "enum not available" (yt-dlp fallback path or InnerTube
+     * renderer shape we couldn't parse) — no adjustment so the scorer
+     * falls back to everything else it has.
+     */
+    private fun computeVideoTypeAdjustment(musicVideoType: MusicVideoType?): Float =
+        when (musicVideoType) {
+            MusicVideoType.ATV -> VIDEO_TYPE_ATV_BONUS
+            MusicVideoType.OFFICIAL_SOURCE_MUSIC -> VIDEO_TYPE_OFFICIAL_SOURCE_BONUS
+            MusicVideoType.OMV -> -VIDEO_TYPE_OMV_PENALTY
+            MusicVideoType.UGC -> -VIDEO_TYPE_UGC_PENALTY
+            MusicVideoType.PODCAST_EPISODE -> -VIDEO_TYPE_PODCAST_PENALTY
+            null -> 0f
+        }
+
+    /**
+     * Demotes candidates whose title disagrees with the target's explicit
+     * flag. When the target is explicit and the candidate title contains
+     * "(Clean)" / " clean version" / "[clean]", apply the penalty; same
+     * the other way for non-explicit targets vs. "(Explicit)" titles.
+     *
+     * Null target (unknown) returns 0 — we can't enforce a preference we
+     * don't have. This is the best we can do until InnerTube exposes a
+     * candidate-side explicit flag we can extract on the search side.
+     */
+    private fun computeExplicitMismatchPenalty(
+        targetExplicit: Boolean?,
+        candidateTitle: String,
+    ): Float {
+        if (targetExplicit == null) return 0f
+        val title = candidateTitle.lowercase()
+        val cleanMarker = Regex("""[\(\[]\s*clean(\s+version)?\s*[\)\]]""")
+        val explicitMarker = Regex("""[\(\[]\s*explicit\s*[\)\]]""")
+        val candidateIsClean = cleanMarker.containsMatchIn(title)
+        val candidateIsExplicit = explicitMarker.containsMatchIn(title)
+
+        return when {
+            targetExplicit && candidateIsClean -> EXPLICIT_MISMATCH_PENALTY
+            !targetExplicit && candidateIsExplicit -> EXPLICIT_MISMATCH_PENALTY
             else -> 0f
         }
     }

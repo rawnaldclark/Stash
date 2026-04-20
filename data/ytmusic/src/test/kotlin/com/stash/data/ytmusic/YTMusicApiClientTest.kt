@@ -1,12 +1,21 @@
 package com.stash.data.ytmusic
 
+import com.stash.core.model.SyncResult
+import com.stash.data.ytmusic.model.MusicVideoType
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
@@ -199,6 +208,126 @@ class YTMusicApiClientTest {
     // `musicResponsiveHeaderRenderer`. Rather than keep passing-but-wrong tests,
     // they're deleted. Re-add with real captured responses if test coverage
     // becomes important for this parser.
+
+    /**
+     * Builds a minimal `musicResponsiveListItemRenderer` JSON object with the
+     * fields [parseTrackFromRenderer] reads. Assembled via
+     * [buildJsonObject] so the brace-nesting is enforced by Kotlin rather
+     * than by me counting curly braces.
+     */
+    private fun listItemRenderer(
+        videoId: String,
+        title: String,
+        artist: String,
+        mvt: String,
+    ) = buildJsonObject {
+        putJsonObject("musicResponsiveListItemRenderer") {
+            putJsonObject("playlistItemData") { put("videoId", videoId) }
+            putJsonArray("flexColumns") {
+                addJsonObject {
+                    putJsonObject("musicResponsiveListItemFlexColumnRenderer") {
+                        putJsonObject("text") {
+                            putJsonArray("runs") {
+                                addJsonObject { put("text", title) }
+                            }
+                        }
+                    }
+                }
+                addJsonObject {
+                    putJsonObject("musicResponsiveListItemFlexColumnRenderer") {
+                        putJsonObject("text") {
+                            putJsonArray("runs") {
+                                addJsonObject { put("text", artist) }
+                            }
+                        }
+                    }
+                }
+            }
+            putJsonObject("overlay") {
+                putJsonObject("musicItemThumbnailOverlayRenderer") {
+                    putJsonObject("content") {
+                        putJsonObject("musicPlayButtonRenderer") {
+                            putJsonObject("playNavigationEndpoint") {
+                                putJsonObject("watchEndpoint") {
+                                    putJsonObject("watchEndpointMusicSupportedConfigs") {
+                                        putJsonObject("watchEndpointMusicConfig") {
+                                            put("musicVideoType", mvt)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `getPlaylistTracks threads musicVideoType from browse response`() = runTest {
+        // Single-column browse response containing two tracks: an ATV
+        // (Topic-channel audio) song and an OMV (official music video).
+        // The OMV is the Mode B canonicalization trigger — a YT-library
+        // import carrying OMV should later be reconciled to its ATV
+        // equivalent. This test only pins the parser contract.
+        val fixture = buildJsonObject {
+            putJsonObject("contents") {
+                putJsonObject("singleColumnBrowseResultsRenderer") {
+                    putJsonArray("tabs") {
+                        addJsonObject {
+                            putJsonObject("tabRenderer") {
+                                putJsonObject("content") {
+                                    putJsonObject("sectionListRenderer") {
+                                        putJsonArray("contents") {
+                                            addJsonObject {
+                                                putJsonObject("musicShelfRenderer") {
+                                                    putJsonArray("contents") {
+                                                        add(
+                                                            listItemRenderer(
+                                                                videoId = "XzNWRmqibNE",
+                                                                title = "Smooth Criminal",
+                                                                artist = "Michael Jackson",
+                                                                mvt = "MUSIC_VIDEO_TYPE_ATV",
+                                                            ),
+                                                        )
+                                                        add(
+                                                            listItemRenderer(
+                                                                videoId = "h_D3VFfhvs4",
+                                                                title = "Smooth Criminal (Official Video)",
+                                                                artist = "Michael Jackson",
+                                                                mvt = "MUSIC_VIDEO_TYPE_OMV",
+                                                            ),
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }.toString()
+
+        val client = fakeBrowseClient(fixture)
+        val result = client.getPlaylistTracks("anyPlaylistId")
+        assertTrue(
+            "fixture should parse as SyncResult.Success, got $result",
+            result is SyncResult.Success,
+        )
+        val tracks = (result as SyncResult.Success).data
+        assertEquals(2, tracks.size)
+
+        val atv = tracks.firstOrNull { it.videoId == "XzNWRmqibNE" }
+        assertNotNull("ATV track must be parsed", atv)
+        assertEquals(MusicVideoType.ATV, atv!!.musicVideoType)
+
+        val omv = tracks.firstOrNull { it.videoId == "h_D3VFfhvs4" }
+        assertNotNull("OMV track must be parsed — this is the Mode B canonicalization trigger", omv)
+        assertEquals(MusicVideoType.OMV, omv!!.musicVideoType)
+    }
 
     @Test
     fun `normalizeArtistBrowseId strips MPLA only before UC`() {

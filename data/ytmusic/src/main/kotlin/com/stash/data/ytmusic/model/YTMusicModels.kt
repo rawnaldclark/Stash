@@ -3,12 +3,18 @@ package com.stash.data.ytmusic.model
 /**
  * A track (song/video) from YouTube Music.
  *
- * @property videoId     The YouTube video ID (used for playback and matching).
- * @property title       The track title.
- * @property artists     Comma-separated artist names.
- * @property album       The album name, if available.
- * @property durationMs  Track duration in milliseconds, if known.
- * @property thumbnailUrl URL of the track's thumbnail image.
+ * @property videoId       The YouTube video ID (used for playback and matching).
+ * @property title         The track title.
+ * @property artists       Comma-separated artist names.
+ * @property album         The album name, if available.
+ * @property durationMs    Track duration in milliseconds, if known.
+ * @property thumbnailUrl  URL of the track's thumbnail image.
+ * @property musicVideoType YouTube Music's authoritative classification of the
+ *   underlying video (ATV / OMV / UGC / OFFICIAL_SOURCE_MUSIC / PODCAST_EPISODE).
+ *   Surfaced from InnerTube's `watchEndpointMusicConfig.musicVideoType` field;
+ *   null when the renderer omits the field. This is the signal that Mode B
+ *   canonicalization uses to decide whether a YT-library import needs to be
+ *   reconciled to an ATV equivalent.
  */
 data class YTMusicTrack(
     val videoId: String,
@@ -17,6 +23,7 @@ data class YTMusicTrack(
     val album: String? = null,
     val durationMs: Long? = null,
     val thumbnailUrl: String? = null,
+    val musicVideoType: MusicVideoType? = null,
 )
 
 /**

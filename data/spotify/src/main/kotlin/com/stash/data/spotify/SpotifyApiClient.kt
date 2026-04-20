@@ -460,8 +460,15 @@ class SpotifyApiClient @Inject constructor(
         }
 
         val allTracks = mutableListOf<SpotifyTrackItem>()
+        // `external_ids` is requested as a whole object, not `external_ids(isrc)`
+        // or `external_ids.isrc`. Empirically (verified against live Spotify
+        // responses on device, 2026-04-19), both nested forms are silently
+        // dropped by Spotify's `fields=` parser while the plain object name
+        // returns the full `{"isrc": "..."}`. Costs maybe 30 bytes per track,
+        // buys us a working ISRC — fair trade.
         var url: String? = "$WEB_API_BASE/playlists/$playlistId/tracks?limit=50&offset=0" +
-            "&fields=items(track(id,name,uri,duration_ms,artists(id,name),album(id,name,images))),next"
+            "&fields=items(track(id,name,uri,duration_ms,explicit,external_ids," +
+            "artists(id,name),album(id,name,images))),next"
 
         while (url != null) {
             Log.d(TAG, "tryGetPlaylistTracksViaWebApi: GET $url")
@@ -527,73 +534,8 @@ class SpotifyApiClient @Inject constructor(
         return allTracks
     }
 
-    /**
-     * Parses a single page of the Web API playlist tracks response.
-     *
-     * @param responseBody The raw JSON response body.
-     * @return Pair of (tracks on this page, next page URL or null).
-     */
-    private fun parseWebApiPlaylistPage(responseBody: String): Pair<List<SpotifyTrackItem>, String?> {
-        return try {
-            val root = json.parseToJsonElement(responseBody).jsonObject
-            val nextUrl = root["next"]?.jsonPrimitive?.contentOrNull
-            val items = root["items"]?.jsonArray ?: return Pair(emptyList(), null)
-
-            val tracks = items.mapNotNull { element ->
-                try {
-                    val wrapper = element.jsonObject
-                    val trackObj = wrapper["track"]?.jsonObject ?: return@mapNotNull null
-
-                    val id = trackObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                    val name = trackObj["name"]?.jsonPrimitive?.contentOrNull ?: "Unknown"
-                    val uri = trackObj["uri"]?.jsonPrimitive?.contentOrNull ?: "spotify:track:$id"
-                    val durationMs = trackObj["duration_ms"]?.jsonPrimitive?.longOrNull ?: 0L
-
-                    // Parse artists
-                    val artists = trackObj["artists"]?.jsonArray?.mapNotNull { artistEl ->
-                        val artistObj = artistEl.jsonObject
-                        val artistId = artistObj["id"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val artistName = artistObj["name"]?.jsonPrimitive?.contentOrNull
-                            ?: return@mapNotNull null
-                        SpotifyArtist(id = artistId, name = artistName)
-                    } ?: emptyList()
-
-                    // Parse album
-                    val albumObj = trackObj["album"]?.jsonObject
-                    val album = if (albumObj != null) {
-                        val albumId = albumObj["id"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val albumName = albumObj["name"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val albumImages = albumObj["images"]?.jsonArray?.mapNotNull { imgEl ->
-                            val imgUrl = imgEl.jsonObject["url"]?.jsonPrimitive?.contentOrNull
-                            if (imgUrl != null) SpotifyImage(url = imgUrl) else null
-                        }
-                        SpotifyAlbum(id = albumId, name = albumName, images = albumImages)
-                    } else {
-                        null
-                    }
-
-                    SpotifyTrackItem(
-                        track = SpotifyTrackObject(
-                            id = id,
-                            name = name,
-                            artists = artists,
-                            album = album,
-                            duration_ms = durationMs,
-                            uri = uri,
-                        ),
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "parseWebApiPlaylistPage: failed to parse track item", e)
-                    null
-                }
-            }
-
-            Pair(tracks, nextUrl)
-        } catch (e: Exception) {
-            Log.e(TAG, "parseWebApiPlaylistPage: failed to parse response", e)
-            Pair(emptyList(), null)
-        }
-    }
+    // `parseWebApiPlaylistPage` lives as a top-level `internal fun` in
+    // [SpotifyTrackParser.kt] so unit tests can exercise it directly.
 
     // ── Prong 2: sp_dc + GraphQL Partner API (fallback) ─────────────────
 

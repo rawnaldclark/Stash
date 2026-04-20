@@ -70,6 +70,22 @@ data class SpotifyTrackObject(
     val album: SpotifyAlbum? = null,
     val duration_ms: Long = 0,
     val uri: String = "",
+    /**
+     * Parental-advisory flag from Spotify. Always present on Web API track
+     * objects; defaults to `false` for responses that predate the field or
+     * for sources that don't expose it (e.g. the GraphQL fallback, which
+     * currently does not parse it). Threaded through to domain [Track] so
+     * the YouTube matcher can distinguish clean vs. explicit uploads.
+     */
+    val explicit: Boolean = false,
+    /**
+     * International Standard Recording Code — a per-master unique identifier
+     * Spotify exposes via `external_ids.isrc`. Populated only when the Web
+     * API request explicitly asks for `external_ids` in its `fields=`
+     * parameter. Used as the highest-precision signal when matching a
+     * Spotify track to its canonical YouTube upload.
+     */
+    val isrc: String? = null,
 )
 
 @Serializable

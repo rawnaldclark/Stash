@@ -170,6 +170,8 @@ class DiffWorker @AssistedInject constructor(
                             canonicalTitle = canonicalTitle,
                             canonicalArtist = canonicalArtist,
                             isDownloaded = false,
+                            isrc = trackSnapshot.isrc,
+                            explicit = trackSnapshot.explicit,
                         )
                         val trackId = trackDao.insert(newTrack)
 
