@@ -238,12 +238,20 @@ class LibraryViewModel @Inject constructor(
     }
 
     /**
-     * Delete [track] from the library: removes the database record and the
-     * audio file from disk.
+     * Delete [track] from the library. When [alsoBlacklist] is true the
+     * track is kept as a blacklisted tombstone (row retained so future
+     * sync identity matches still see it and skip re-downloading); when
+     * false the row is removed outright and the track will come back on
+     * the next sync if a playlist still references its identity. Matches
+     * the Home/Playlist-detail UX — "Delete" vs. "Delete & Block".
      */
-    fun deleteTrack(track: Track) {
+    fun deleteTrack(track: Track, alsoBlacklist: Boolean = false) {
         viewModelScope.launch {
-            musicRepository.deleteTrack(track)
+            if (alsoBlacklist) {
+                musicRepository.blacklistTrack(track.id)
+            } else {
+                musicRepository.deleteTrack(track)
+            }
         }
     }
 
@@ -291,12 +299,12 @@ class LibraryViewModel @Inject constructor(
      * User-uploaded cover image is a separate filesystem artifact the
      * cascade doesn't know about — delete it here before delegating.
      */
-    fun deletePlaylist(playlist: Playlist) {
+    fun deletePlaylist(playlist: Playlist, alsoBlacklist: Boolean = false) {
         viewModelScope.launch {
             playlistImageHelper.deletePlaylistCoverFile(playlist.id)
             musicRepository.deletePlaylistWithCascade(
                 playlistId = playlist.id,
-                alsoBlacklist = false,
+                alsoBlacklist = alsoBlacklist,
             )
         }
     }

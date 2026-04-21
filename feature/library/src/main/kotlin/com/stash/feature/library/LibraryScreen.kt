@@ -146,11 +146,11 @@ private fun LibraryContent(
     onTrackClick: (Track) -> Unit,
     onPlayNext: (Track) -> Unit,
     onAddToQueue: (Track) -> Unit,
-    onDeleteTrack: (Track) -> Unit,
+    onDeleteTrack: (Track, Boolean) -> Unit,
     onPlayPlaylist: (Playlist) -> Unit,
     onAddPlaylistToQueue: (Playlist) -> Unit,
     onRemovePlaylist: (Playlist) -> Unit,
-    onDeletePlaylist: (Playlist) -> Unit,
+    onDeletePlaylist: (Playlist, Boolean) -> Unit,
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onPlayArtist: (String) -> Unit,
@@ -613,7 +613,7 @@ private fun PlaylistsGrid(
     onPlayPlaylist: (Playlist) -> Unit,
     onAddPlaylistToQueue: (Playlist) -> Unit,
     onRemovePlaylist: (Playlist) -> Unit,
-    onDeletePlaylist: (Playlist) -> Unit,
+    onDeletePlaylist: (Playlist, Boolean) -> Unit,
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
 ) {
@@ -840,23 +840,51 @@ private fun PlaylistsGrid(
 
     // ── Delete confirmation dialog ──────────────────────────────────────
     playlistToDelete?.let { playlist ->
+        var alsoBlacklist by remember(playlist.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { playlistToDelete = null },
-            title = { Text("Delete playlist?") },
+            title = { Text("Delete \"${playlist.name}\"?") },
             text = {
-                Text(
-                    "\"${playlist.name}\" and all its tracks will be removed from " +
-                        "your library and deleted from disk. This cannot be undone.",
-                )
+                Column {
+                    Text(
+                        "\"${playlist.name}\" and all its tracks will be removed from " +
+                            "your library and deleted from disk. This cannot be undone.",
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { alsoBlacklist = !alsoBlacklist },
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = alsoBlacklist,
+                            onCheckedChange = { alsoBlacklist = it },
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Also block these songs from future syncs",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onDeletePlaylist(playlist)
+                        onDeletePlaylist(playlist, alsoBlacklist)
                         playlistToDelete = null
                     },
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
             dismissButton = {
@@ -878,7 +906,7 @@ private fun TracksTab(
     onTrackClick: (Track) -> Unit,
     onPlayNext: (Track) -> Unit,
     onAddToQueue: (Track) -> Unit,
-    onDeleteTrack: (Track) -> Unit,
+    onDeleteTrack: (Track, Boolean) -> Unit,
     anyServiceConnected: Boolean,
 ) {
     if (tracks.isEmpty()) {
@@ -972,23 +1000,51 @@ private fun TracksTab(
 
     // ── Delete confirmation dialog ──────────────────────────────────────
     trackToDelete?.let { track ->
+        var alsoBlacklist by remember(track.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { trackToDelete = null },
-            title = { Text("Delete track?") },
+            title = { Text("Delete \"${track.title}\"?") },
             text = {
-                Text(
-                    "\"${track.title}\" by ${track.artist} will be removed from " +
-                        "your library and deleted from disk. This cannot be undone.",
-                )
+                Column {
+                    Text(
+                        "\"${track.title}\" by ${track.artist} will be removed from " +
+                            "your library and deleted from disk.",
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { alsoBlacklist = !alsoBlacklist },
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = alsoBlacklist,
+                            onCheckedChange = { alsoBlacklist = it },
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Also block this song from future syncs",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onDeleteTrack(track)
+                        onDeleteTrack(track, alsoBlacklist)
                         trackToDelete = null
                     },
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
             dismissButton = {
