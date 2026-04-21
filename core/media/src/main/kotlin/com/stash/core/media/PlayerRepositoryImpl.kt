@@ -4,8 +4,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
@@ -192,6 +194,46 @@ class PlayerRepositoryImpl @Inject constructor(
         override fun onRepeatModeChanged(repeatMode: Int) {
             controllerDeferred?.let { updateState(it) }
         }
+
+        /**
+         * Auto-recover from playback failures (issue #15).
+         *
+         * Without this override, ExoPlayer's default behaviour on
+         * [PlaybackException] is to drop to `STATE_IDLE` and stay there —
+         * the UI sees the auto-advance fire (`onMediaItemTransition`
+         * delivers the next track) but playback never actually begins
+         * because the player needs `prepare()` to re-enter `STATE_READY`.
+         * Symptom: next song appears in Now Playing, play button does
+         * nothing, until the user manually skips twice.
+         *
+         * The recovery pattern below mirrors what a manual "skip next"
+         * does under the hood. We log the failing track + reason for
+         * triage (often a missing file_path after a backfill swap, a
+         * transient streaming hiccup, or a codec edge case), then seek
+         * past the broken item and re-prepare. If we're at the end of
+         * the queue we stop gracefully rather than loop on errors.
+         */
+        override fun onPlayerError(error: PlaybackException) {
+            val controller = controllerDeferred
+            val failingTitle = controller?.currentMediaItem?.mediaMetadata?.title
+            Log.w(
+                TAG,
+                "onPlayerError: '$failingTitle' code=${error.errorCode} " +
+                    "(${error.errorCodeName}) — attempting skip-next recovery",
+                error,
+            )
+            if (controller == null) return
+
+            if (controller.hasNextMediaItem()) {
+                controller.seekToNextMediaItem()
+                controller.prepare()
+                controller.play()
+            } else {
+                // End of queue — let the player stop cleanly rather than
+                // looping on the same broken item.
+                controller.stop()
+            }
+        }
     }
 
     /**
@@ -234,6 +276,7 @@ class PlayerRepositoryImpl @Inject constructor(
     // ---- Mappers ----
 
     companion object {
+        private const val TAG = "StashPlayer"
         private const val POSITION_UPDATE_INTERVAL_MS = 250L
         private const val EXTRA_TRACK_ID = "stash_track_id"
     }

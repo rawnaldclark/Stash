@@ -120,6 +120,7 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch {
             maybeReseedStashMixes()
             StashMixDefaults.seedIfNeeded(stashMixRecipeDao)
+            maybeRetuneStashDiscover()
             // Fire a one-shot refresh on first launch so mixes populate
             // without waiting for the 24-hour periodic cycle. Subsequent
             // one-shots are safe (unique-work policy = REPLACE).
@@ -188,6 +189,35 @@ class StashApplication : Application(), Configuration.Provider {
             )
             prefs.edit()
                 .putInt("stash_mix_recipe_version", STASH_MIX_RECIPE_VERSION)
+                .apply()
+        }
+    }
+
+    /**
+     * One-shot tuning migration that updates an existing "Stash Discover"
+     * recipe's knobs in place — no wipe, no cascade. Gated by
+     * [STASH_DISCOVER_TUNING_VERSION] so each ratio/length change ships
+     * exactly once per install. Fresh installs skip this because
+     * [StashMixDefaults] already seeds with the new values.
+     */
+    private suspend fun maybeRetuneStashDiscover() {
+        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
+        val stored = prefs.getInt("stash_discover_tuning_version", 0)
+        if (stored < STASH_DISCOVER_TUNING_VERSION) {
+            val updated = stashMixRecipeDao.retuneBuiltin(
+                name = "Stash Discover",
+                discoveryRatio = 0.6f,
+                freshnessWindowDays = 14,
+                targetLength = 50,
+            )
+            if (updated > 0) {
+                Log.i(
+                    "StashMigration",
+                    "Retuned Stash Discover to discovery_ratio=0.6 ($updated row)",
+                )
+            }
+            prefs.edit()
+                .putInt("stash_discover_tuning_version", STASH_DISCOVER_TUNING_VERSION)
                 .apply()
         }
     }
@@ -268,5 +298,13 @@ class StashApplication : Application(), Configuration.Provider {
          * 0.4.1 switch from 7 recipes to a single "Stash Discover".
          */
         private const val STASH_MIX_RECIPE_VERSION = 1
+
+        /**
+         * Bump when the built-in Stash Discover recipe's tunables change
+         * and existing installs should adopt them. v1 = 2026-04-21 bump
+         * of discovery_ratio from 0.25 → 0.6 after audit showed the mix
+         * was 100% library.
+         */
+        private const val STASH_DISCOVER_TUNING_VERSION = 1
     }
 }

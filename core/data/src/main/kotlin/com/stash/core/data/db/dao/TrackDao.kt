@@ -139,6 +139,41 @@ interface TrackDao {
     )
     suspend fun findByCanonicalIdentity(title: String, artist: String): TrackEntity?
 
+    /**
+     * Consolidated lookup used by the sync diff pass: matches by Spotify
+     * URI first, then YouTube ID, then canonical identity — in the same
+     * priority order as the three separate calls it replaces. Folds the
+     * old 3-query N+1 into a single DB round-trip per remote track.
+     *
+     * Pass `null` for any identifier you don't have; the `:xIsNull` flag
+     * lets us skip that branch cheaply (SQLite short-circuits the OR).
+     * Canonical fallback is always required — callers normalise the
+     * remote title/artist before calling.
+     */
+    @Query(
+        """
+        SELECT * FROM tracks
+        WHERE (:spotifyUriIsNull = 0 AND spotify_uri = :spotifyUri)
+           OR (:youtubeIdIsNull = 0 AND youtube_id = :youtubeId)
+           OR (canonical_title = :canonicalTitle AND canonical_artist = :canonicalArtist)
+        ORDER BY
+            CASE
+                WHEN :spotifyUriIsNull = 0 AND spotify_uri = :spotifyUri THEN 0
+                WHEN :youtubeIdIsNull = 0 AND youtube_id = :youtubeId THEN 1
+                ELSE 2
+            END
+        LIMIT 1
+        """
+    )
+    suspend fun findByAnyIdentity(
+        spotifyUri: String?,
+        spotifyUriIsNull: Int,
+        youtubeId: String?,
+        youtubeIdIsNull: Int,
+        canonicalTitle: String,
+        canonicalArtist: String,
+    ): TrackEntity?
+
     /** Find a track by primary key. */
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getById(trackId: Long): TrackEntity?
@@ -348,6 +383,41 @@ interface TrackDao {
     )
 
     /**
+     * Fill-only-if-blank variant for use by [DownloadManager.resolveUrl]
+     * when a plain YouTube search finds a matched track for a stub. The
+     * prototypical caller is the Stash-Discover pipeline: it creates
+     * tracks with null album art, blank album, zero duration, null
+     * youtube_id — every field we could pull from the match. Unlike
+     * [updateCanonicalMetadata], this never overwrites a populated
+     * field, so Spotify-sourced tracks (where album/art came from the
+     * Spotify API on sync) don't get their metadata rewritten to
+     * whatever YouTube thinks it should be.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET album = CASE WHEN album IS NULL OR album = '' THEN :album ELSE album END,
+            album_art_url = CASE
+                WHEN album_art_url IS NULL OR album_art_url = '' THEN :albumArtUrl
+                ELSE album_art_url
+            END,
+            duration_ms = CASE WHEN duration_ms = 0 THEN :durationMs ELSE duration_ms END,
+            youtube_id = CASE
+                WHEN youtube_id IS NULL OR youtube_id = '' THEN :youtubeId
+                ELSE youtube_id
+            END
+        WHERE id = :trackId
+        """
+    )
+    suspend fun fillMissingMetadata(
+        trackId: Long,
+        album: String?,
+        albumArtUrl: String?,
+        durationMs: Long,
+        youtubeId: String?,
+    )
+
+    /**
      * Atomically reverts a track to an undownloaded state so the download
      * pipeline will re-resolve + re-fetch it. Used by the YT-library
      * backfill worker to force canonicalization on tracks whose videoId
@@ -367,14 +437,30 @@ interface TrackDao {
     suspend fun resetForReDownload(trackId: Long)
 
     /**
-     * YT-source tracks whose stored title looks like a music-video upload
-     * (e.g. contains `(Official Video)` / `(Music Video)` / `(MV)`). The
-     * backfill worker checks these candidates with InnerTube's player
-     * endpoint to confirm their [musicVideoType] and canonicalizes the
-     * ones that come back OMV / UGC / PODCAST. Title-pattern filter is
-     * intentionally conservative — it misses OMV uploads with clean
-     * titles (e.g. raw VEVO uploads), which a future aggressive mode
-     * can catch by checking every YT-source track.
+     * YT-source tracks the Quick-scan backfill should verify. Two routes
+     * land a row in this set:
+     *
+     *  1. **Known-bad stored type** — `music_video_type` is OMV, UGC, or
+     *     PODCAST_EPISODE from a prior Deep scan. Candidate without any
+     *     InnerTube round-trip; the worker can re-queue immediately.
+     *  2. **Unknown type + suspect title** — `music_video_type IS NULL`
+     *     and the title matches one of the music-video / lyric-video /
+     *     audio-upload markers observed on real VEVO uploads. The worker
+     *     verifies via InnerTube and writes the resolved type back so
+     *     the next scan is fast.
+     *
+     * Tracks whose stored type is ATV or OFFICIAL_SOURCE_MUSIC are
+     * excluded — they're already canonical. Deep scan uses the separate
+     * [getAllDownloadedYtTracks] query which ignores title and stored
+     * type entirely.
+     *
+     * Pattern note: brackets + "HD" / "Upscaled" / "Lyric" variants were
+     * added 2026-04-21 after a real-library audit showed 0 matches with
+     * the old "(Official Video)"-only patterns despite 38 clearly-video
+     * titles in the library (e.g. "(Official HD Video)", "(Lyric Video)",
+     * "[Official Music Video]"). `(Remastered)`, `(Live)`, and bare
+     * `Performance` are deliberately excluded — those are frequently
+     * the user's intended version and re-downloading is likely wrong.
      */
     @Query(
         """
@@ -383,15 +469,58 @@ interface TrackDao {
           AND is_downloaded = 1
           AND youtube_id IS NOT NULL
           AND (
-              title LIKE '%(Official Video)%'
-              OR title LIKE '%(Official Music Video)%'
-              OR title LIKE '%(Music Video)%'
-              OR title LIKE '%(MV)%'
-              OR title LIKE '%(Video)%'
+              music_video_type IN ('OMV', 'UGC', 'PODCAST_EPISODE')
+              OR (
+                  music_video_type IS NULL
+                  AND (
+                      title LIKE '%(Official Video%' COLLATE NOCASE
+                      OR title LIKE '%(Official HD Video%' COLLATE NOCASE
+                      OR title LIKE '%(Official Music Video%' COLLATE NOCASE
+                      OR title LIKE '%(Music Video%' COLLATE NOCASE
+                      OR title LIKE '%[Official Video%' COLLATE NOCASE
+                      OR title LIKE '%[Official Music Video%' COLLATE NOCASE
+                      OR title LIKE '%[Music Video%' COLLATE NOCASE
+                      OR title LIKE '%(Lyric Video%' COLLATE NOCASE
+                      OR title LIKE '%(Official Lyric Video%' COLLATE NOCASE
+                      OR title LIKE '%[Lyric Video%' COLLATE NOCASE
+                      OR title LIKE '%(Visualizer%' COLLATE NOCASE
+                      OR title LIKE '%(Audio)%' COLLATE NOCASE
+                      OR title LIKE '%(Official Audio%' COLLATE NOCASE
+                      OR title LIKE '%(MV)%' COLLATE NOCASE
+                      OR title LIKE '%(Video)%' COLLATE NOCASE
+                      OR title LIKE '%HD Video%' COLLATE NOCASE
+                  )
+              )
           )
         """
     )
     suspend fun getYtSourceVideoTitleCandidates(): List<TrackEntity>
+
+    /**
+     * Every downloaded YT-source track with a resolved videoId. Used by
+     * the Deep-scan backfill mode — verifies each track's live
+     * musicVideoType via InnerTube regardless of title. Slow (one
+     * player-endpoint call per row, capped by the worker's concurrency
+     * semaphore) but the populated `music_video_type` column makes
+     * subsequent Quick scans effectively instant.
+     */
+    @Query(
+        """
+        SELECT * FROM tracks
+        WHERE source = 'YOUTUBE'
+          AND is_downloaded = 1
+          AND youtube_id IS NOT NULL
+        """
+    )
+    suspend fun getAllDownloadedYtTracks(): List<TrackEntity>
+
+    /**
+     * Persist the per-track [MusicVideoType] resolved by the backfill
+     * worker. Stored as the enum's `.name` so migrations and adhoc SQL
+     * tooling can read it without needing the enum's ordering.
+     */
+    @Query("UPDATE tracks SET music_video_type = :type WHERE id = :trackId")
+    suspend fun updateMusicVideoType(trackId: Long, type: String?)
 
     /** Find a downloaded track by canonical identity (for auto-reconciliation). */
     @Query("""

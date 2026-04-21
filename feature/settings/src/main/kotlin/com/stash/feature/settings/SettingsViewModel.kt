@@ -12,6 +12,7 @@ import com.stash.core.data.prefs.StoragePreference
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
+import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.lastfm.LastFmSession
 import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.db.dao.ListeningEventDao
@@ -59,6 +60,7 @@ class SettingsViewModel @Inject constructor(
     private val lastFmSessionPreference: LastFmSessionPreference,
     private val lastFmCredentials: LastFmCredentials,
     private val listeningEventDao: ListeningEventDao,
+    private val lastFmScrobbler: LastFmScrobbler,
 ) : ViewModel() {
 
     /** Internal mutable UI state that is combined with token-manager flows. */
@@ -131,6 +133,8 @@ class SettingsViewModel @Inject constructor(
             externalTreeUri = externalTree,
             moveLibraryState = moveState,
             lastFmState = lastFmState,
+            isScrobbleDraining = local.isScrobbleDraining,
+            scrobbleDrainResult = local.lastScrobbleDrainResult,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -250,6 +254,31 @@ class SettingsViewModel @Inject constructor(
     /** Dismiss a Last.fm error banner and return to Disconnected. */
     fun onDismissLastFmError() {
         _localState.update { it.copy(lastFmAuthOverride = null) }
+    }
+
+    /**
+     * Manually drain the pending Last.fm scrobble queue. Triggered from
+     * the Settings "Sync scrobbles now" button. Result is surfaced via a
+     * one-shot flag on LocalState so the UI can show a snackbar like
+     * "Sent 312 scrobbles" — the reactive pending-count Flow keeps the
+     * subtitle under the button accurate on its own.
+     */
+    fun onSyncScrobblesNow() {
+        viewModelScope.launch {
+            _localState.update { it.copy(isScrobbleDraining = true) }
+            val result = runCatching { lastFmScrobbler.drainNow() }.getOrNull()
+            _localState.update {
+                it.copy(
+                    isScrobbleDraining = false,
+                    lastScrobbleDrainResult = result,
+                )
+            }
+        }
+    }
+
+    /** UI acknowledgement of the drain snackbar. */
+    fun onClearScrobbleDrainResult() {
+        _localState.update { it.copy(lastScrobbleDrainResult = null) }
     }
 
     // -- Spotify actions ------------------------------------------------------
@@ -584,5 +613,12 @@ class SettingsViewModel @Inject constructor(
          * flow completes or the user dismisses the error.
          */
         val lastFmAuthOverride: LastFmAuthState? = null,
+        /** True while a manual scrobble-drain is in-flight. */
+        val isScrobbleDraining: Boolean = false,
+        /**
+         * Result of the most recent manual drain. Consumed by the UI
+         * (snackbar) and then cleared via [onClearScrobbleDrainResult].
+         */
+        val lastScrobbleDrainResult: LastFmScrobbler.DrainResult? = null,
     )
 }

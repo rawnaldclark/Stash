@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -53,6 +54,31 @@ class LastFmScrobbler @Inject constructor(
             }
         }
     }
+
+    /**
+     * Manually drain the pending-scrobble queue once, on demand. Used by
+     * the Settings "Sync scrobbles now" button — after the user finishes
+     * the Last.fm connect handshake, they can tap this to push the full
+     * backlog (cold-start import can leave ~300 synthetic plays +
+     * accumulated real plays pending). Returns the pair
+     * (submitted, session-present). When the session is null the call is
+     * a cheap no-op so the UI can surface a "Connect first" message.
+     */
+    suspend fun drainNow(): DrainResult {
+        val session = runCatching { sessionPreference.session.firstOrNull() }.getOrNull()
+            ?: return DrainResult(submitted = 0, sessionPresent = false)
+        val before = runCatching { listeningEventDao.pendingScrobbles(limit = Int.MAX_VALUE) }
+            .getOrElse { emptyList() }
+            .size
+        drainQueue(session)
+        val after = runCatching { listeningEventDao.pendingScrobbles(limit = Int.MAX_VALUE) }
+            .getOrElse { emptyList() }
+            .size
+        return DrainResult(submitted = (before - after).coerceAtLeast(0), sessionPresent = true)
+    }
+
+    /** Result of a [drainNow] invocation, surfaced to the Settings UI. */
+    data class DrainResult(val submitted: Int, val sessionPresent: Boolean)
 
     /**
      * Submits up to 100 pending events per pass. Last.fm allows

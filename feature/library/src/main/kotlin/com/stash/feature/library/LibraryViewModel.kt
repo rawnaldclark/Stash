@@ -128,9 +128,16 @@ class LibraryViewModel @Inject constructor(
             SortOrder.MOST_PLAYED -> filteredTracks.sortedByDescending { it.playCount }
         }
         val sortedPlaylists = when (controls.sortOrder) {
-            SortOrder.RECENT -> filteredPlaylists.sortedByDescending { it.lastSynced ?: 0L }
+            // RECENT uses date_added (stable across syncs) not last_synced
+            // — the latter reshuffles the list every sync run. See
+            // PlaylistEntity.dateAdded + migration v12→v13 (issue #13).
+            SortOrder.RECENT -> filteredPlaylists.sortedByDescending { it.dateAdded }
             SortOrder.ALPHABETICAL -> filteredPlaylists.sortedBy { it.name.lowercase() }
-            SortOrder.MOST_PLAYED -> filteredPlaylists // no play-count on playlists
+            // Playlists don't track a per-playlist play_count; use
+            // trackCount as the most-relevant "size" signal so this
+            // chip produces a visible ordering change instead of a
+            // silent no-op.
+            SortOrder.MOST_PLAYED -> filteredPlaylists.sortedByDescending { it.trackCount }
         }
         // Sort artists/albums — default by track count descending (most tracks first)
         val sortedArtists = when (controls.sortOrder) {
@@ -268,16 +275,29 @@ class LibraryViewModel @Inject constructor(
     }
 
     /**
-     * Delete a playlist from the library.
-     * Note: Currently removes the playlist by re-inserting with zero tracks.
-     * A dedicated deletePlaylist method can be added to MusicRepository later.
+     * Delete a playlist + its tracks from the library.
+     *
+     * Routes through [MusicRepository.deletePlaylistWithCascade] — the
+     * same atomic-transaction path Home uses for its long-press "delete
+     * playlist and songs" action. The earlier ad-hoc implementation fired
+     * N separate `deleteTrack` statements in a loop; each invalidated
+     * Room's InvalidationTracker, which retriggered the Library UI's
+     * live `getAllByDateAdded()` Flow mid-iteration, causing its
+     * CursorWindow to be recycled underneath the reader and crashing
+     * the app with `IllegalStateException: Couldn't read row N, col 0
+     * from CursorWindow`. The cascade path invalidates once at commit,
+     * so the Flow re-reads from a fresh cursor exactly once. Fixes #14.
+     *
+     * User-uploaded cover image is a separate filesystem artifact the
+     * cascade doesn't know about — delete it here before delegating.
      */
     fun deletePlaylist(playlist: Playlist) {
         viewModelScope.launch {
-            val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
-            tracks.forEach { musicRepository.deleteTrack(it) }
             playlistImageHelper.deletePlaylistCoverFile(playlist.id)
-            musicRepository.removePlaylist(playlist)
+            musicRepository.deletePlaylistWithCascade(
+                playlistId = playlist.id,
+                alsoBlacklist = false,
+            )
         }
     }
 

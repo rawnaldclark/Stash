@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
@@ -231,35 +232,10 @@ fun SyncScreen(
                         } else if (expanded) {
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            // Mix sync mode toggle
-                            Text(
-                                text = "Mix sync mode",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = purple,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                FilterChip(
-                                    selected = uiState.syncMode == SyncMode.REFRESH,
-                                    onClick = { viewModel.onSyncModeChanged(SyncMode.REFRESH) },
-                                    label = { Text("Refresh") },
-                                )
-                                FilterChip(
-                                    selected = uiState.syncMode == SyncMode.ACCUMULATE,
-                                    onClick = { viewModel.onSyncModeChanged(SyncMode.ACCUMULATE) },
-                                    label = { Text("Accumulate") },
-                                )
-                            }
-                            Text(
-                                text = if (uiState.syncMode == SyncMode.REFRESH)
-                                    "Mixes update with fresh tracks each sync"
-                                else
-                                    "New tracks stack on top of old ones",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            SyncModeChipRow(
+                                mode = uiState.spotifySyncMode,
+                                onChange = viewModel::onSpotifySyncModeChanged,
+                                accent = purple,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
 
@@ -429,6 +405,13 @@ fun SyncScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                         } else if (expanded) {
                             Spacer(modifier = Modifier.height(12.dp))
+
+                            SyncModeChipRow(
+                                mode = uiState.youtubeSyncMode,
+                                onChange = viewModel::onYoutubeSyncModeChanged,
+                                accent = accent,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             val ytLiked = uiState.youTubePlaylists.filter {
                                 it.type == com.stash.core.model.PlaylistType.LIKED_SONGS
@@ -651,6 +634,7 @@ private fun LibraryMaintenanceCard(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+
         }
     }
 }
@@ -1207,6 +1191,51 @@ private fun UnmatchedSongsCard(
             )
         }
     }
+}
+
+// ── Refresh / Accumulate chip row (shared Spotify + YouTube) ────────────────
+
+/**
+ * Section header + two chips letting the user pick between REFRESH and
+ * ACCUMULATE for a single source. Rendered in each service's Sync
+ * Preferences card with its own accent color. Bound per-source as of
+ * v0.5 — the two cards control independent DataStore keys.
+ */
+@Composable
+private fun SyncModeChipRow(
+    mode: SyncMode,
+    onChange: (SyncMode) -> Unit,
+    accent: Color,
+) {
+    Text(
+        text = "Mix sync mode",
+        style = MaterialTheme.typography.labelMedium,
+        color = accent,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = mode == SyncMode.REFRESH,
+            onClick = { onChange(SyncMode.REFRESH) },
+            label = { Text("Refresh") },
+        )
+        FilterChip(
+            selected = mode == SyncMode.ACCUMULATE,
+            onClick = { onChange(SyncMode.ACCUMULATE) },
+            label = { Text("Accumulate") },
+        )
+    }
+    Text(
+        text = if (mode == SyncMode.REFRESH)
+            "Mixes update with fresh tracks each sync"
+        else
+            "New tracks stack on top of old ones",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 // ── Spotify sync toggle row ─────────────────────────────────────────────────

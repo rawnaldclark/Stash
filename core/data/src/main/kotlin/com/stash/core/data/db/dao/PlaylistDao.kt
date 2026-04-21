@@ -94,9 +94,39 @@ interface PlaylistDao {
 
     // ── List queries ────────────────────────────────────────────────────
 
-    /** All active (non-hidden) playlists ordered alphabetically. */
+    /** All active (non-hidden) playlists ordered alphabetically.
+     *
+     *  Unfiltered by `sync_enabled` — for UI consumers use
+     *  [getAllVisible] instead. This variant exists for maintenance
+     *  passes (dedup, migrations) that legitimately need every active
+     *  row regardless of the user's Sync Preferences toggles. */
     @Query("SELECT * FROM playlists WHERE is_active = 1 ORDER BY name ASC")
     fun getAllActive(): Flow<List<PlaylistEntity>>
+
+    /**
+     * All playlists eligible to render on Home/Library. Adds a
+     * `sync_enabled` gate on top of [getAllActive] so a playlist the user
+     * has turned off in Sync Preferences disappears from the Home grid
+     * and Library list, mirroring the way the track-download path already
+     * skips it.
+     *
+     * The exemption is `source = 'BOTH'`, not `type = 'CUSTOM'`. The
+     * YouTube sync worker classifies a user's personal YouTube playlists
+     * as `type = CUSTOM, source = YOUTUBE` — they look "custom" to us but
+     * they're still imported from YouTube and must honor the user's
+     * sync toggle. Only genuinely local content (in-app-created CUSTOM
+     * and recipe-generated STASH_MIX — both carry `source = BOTH`) is
+     * unconditionally visible.
+     */
+    @Query(
+        """
+        SELECT * FROM playlists
+        WHERE is_active = 1
+          AND (sync_enabled = 1 OR source = 'BOTH')
+        ORDER BY name ASC
+        """
+    )
+    fun getAllVisible(): Flow<List<PlaylistEntity>>
 
     /** All playlists from a specific music source. */
     @Query("SELECT * FROM playlists WHERE source = :source ORDER BY name ASC")

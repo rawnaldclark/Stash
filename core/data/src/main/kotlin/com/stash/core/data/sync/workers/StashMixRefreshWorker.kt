@@ -205,6 +205,35 @@ class StashMixRefreshWorker @AssistedInject constructor(
             )
         }
 
+        // Re-link any Discovery-sourced tracks that this recipe has
+        // already accepted on previous refreshes. Without this, every
+        // weekly refresh wiped the Discovery slots when the playlist was
+        // cleared above, the next orphan-sweep deleted the audio files,
+        // and the mix silently degenerated to 100% library tracks — the
+        // user's "Stash Discover" ended up being a random unplayed slice
+        // of their own imports. See the audit in conversation 2026-04-21.
+        //
+        // Library tracks already own positions 0..tracks.size-1, so we
+        // append discovery survivors after them. Dedup against the set
+        // we just inserted in case generator + discovery both surface
+        // the same track (possible if a Discovery download completed and
+        // then showed up in the user's library in some other way).
+        val librarySet = tracks.mapTo(HashSet(tracks.size)) { it.id }
+        val discoveryTrackIds = discoveryQueueDao
+            .getDoneTrackIdsForRecipe(recipe.id)
+            .filter { it !in librarySet }
+        discoveryTrackIds.forEachIndexed { offset, trackId ->
+            playlistDao.insertCrossRef(
+                PlaylistTrackCrossRef(
+                    playlistId = playlistId,
+                    trackId = trackId,
+                    position = tracks.size + offset,
+                    addedAt = nowInstant,
+                )
+            )
+        }
+        val totalCount = tracks.size + discoveryTrackIds.size
+
         // v0.4.1: single-image cover instead of the 2-tile mosaic used in
         // older builds. Still rotates every refresh — the top track's
         // album art becomes the mix cover.
@@ -212,7 +241,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
         if (coverUrl != null) {
             playlistDao.updateArtUrl(playlistId, coverUrl)
         }
-        playlistDao.updateTrackCount(playlistId, tracks.size)
+        playlistDao.updateTrackCount(playlistId, totalCount)
         return playlistId
     }
 

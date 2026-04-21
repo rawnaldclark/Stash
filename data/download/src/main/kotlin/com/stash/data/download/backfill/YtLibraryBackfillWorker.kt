@@ -95,33 +95,56 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
         const val KEY_CANONICALIZED = "canonicalized"
         const val KEY_SKIPPED = "skipped"
 
+        /**
+         * Input key selecting Quick vs Deep scan. Quick = title-pattern
+         * filter + known-bad `music_video_type` (default). Deep = every
+         * downloaded YT-source track gets verified regardless of title.
+         */
+        const val KEY_MODE = "mode"
+        const val MODE_QUICK = "quick"
+        const val MODE_DEEP = "deep"
+
         private const val TAG = "YtLibBackfill"
 
         /**
          * Max concurrent [InnerTubeSearchExecutor.verifyVideo] calls.
          * Kept low (4) so we don't earn a 429 on InnerTube's player
          * endpoint mid-pass. Typical backfill size is ~100 tracks, so
-         * 4-wide is plenty fast (~25 seconds verify phase).
+         * 4-wide is plenty fast (~25 seconds verify phase). Deep scans
+         * of 1,000+ tracks run at the same concurrency, taking ~60s.
          */
         private const val VERIFY_CONCURRENCY = 4
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo =
         createForegroundInfo(
-            title = "Optimizing YouTube library",
+            title = titleFor(modeFromInput()),
             text = "Checking for wrong-version downloads…",
             progress = -1f,
         )
 
+    private fun modeFromInput(): String =
+        inputData.getString(KEY_MODE) ?: MODE_QUICK
+
+    private fun titleFor(mode: String): String = when (mode) {
+        MODE_DEEP -> "Deep-scanning YouTube library"
+        else -> "Optimizing YouTube library"
+    }
+
     override suspend fun doWork(): Result {
+        val mode = modeFromInput()
+        val modeLabel = titleFor(mode)
         try {
-            val candidates = trackDao.getYtSourceVideoTitleCandidates()
+            val candidates = when (mode) {
+                MODE_DEEP -> trackDao.getAllDownloadedYtTracks()
+                else -> trackDao.getYtSourceVideoTitleCandidates()
+            }
             val total = candidates.size
-            Log.i(TAG, "Backfill starting: $total candidates with video-title markers")
+            Log.i(TAG, "Backfill starting [$mode]: $total candidates")
 
             if (total == 0) {
                 syncNotificationManager.updateProgress(
-                    title = "Optimizing YouTube library",
+                    title = modeLabel,
                     text = "Nothing to fix — your library is already clean.",
                     progress = 1f,
                 )
@@ -132,7 +155,7 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
 
             setForeground(
                 createForegroundInfo(
-                    title = "Optimizing YouTube library",
+                    title = modeLabel,
                     text = "0 of $total checked",
                     progress = 0f,
                 ),
@@ -159,7 +182,7 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
                             semaphore.release()
                             val done = checked.incrementAndGet()
                             syncNotificationManager.updateProgress(
-                                title = "Optimizing YouTube library",
+                                title = modeLabel,
                                 text = "$done of $total checked (${canonicalized.get()} queued)",
                                 progress = done.toFloat() / total,
                             )
@@ -180,14 +203,14 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
             // DownloadManager.resolveUrl and swaps videoId to ATV.
             if (finalCanon > 0) {
                 syncNotificationManager.updateProgress(
-                    title = "Optimizing YouTube library",
+                    title = modeLabel,
                     text = "$finalCanon queued for re-download — starting sync…",
                     progress = 1f,
                 )
                 syncScheduler.triggerManualSync()
             } else {
                 syncNotificationManager.updateProgress(
-                    title = "Optimizing YouTube library",
+                    title = modeLabel,
                     text = "Done — no wrong versions found.",
                     progress = 1f,
                 )
@@ -230,23 +253,48 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
         track: com.stash.core.data.db.entity.TrackEntity,
     ): Outcome? {
         val videoId = track.youtubeId ?: return null
-        val verification = searchExecutor.verifyVideo(videoId) ?: return Outcome.SKIPPED
 
-        val type = verification.musicVideoType
+        // Short-circuit: if we already know this video is OMV / UGC /
+        // PODCAST_EPISODE from a prior verification, we don't need to
+        // round-trip InnerTube again. Skip straight to the rewrite path.
+        val storedType = track.musicVideoType?.let {
+            runCatching { MusicVideoType.valueOf(it) }.getOrNull()
+        }
+        val knownBad = storedType == MusicVideoType.OMV ||
+            storedType == MusicVideoType.UGC ||
+            storedType == MusicVideoType.PODCAST_EPISODE
+        val type: MusicVideoType?
+        if (knownBad) {
+            type = storedType
+        } else {
+            val verification = searchExecutor.verifyVideo(videoId) ?: return Outcome.SKIPPED
+            type = verification.musicVideoType
+            // Persist the resolved type so future scans can skip the
+            // InnerTube round-trip. Null types are stored as null too,
+            // so we don't keep re-checking tracks InnerTube refuses to
+            // classify on every Deep scan.
+            runCatching {
+                trackDao.updateMusicVideoType(track.id, type?.name)
+            }
+        }
+
         if (type == null) {
             Log.d(TAG, "skip: trackId=${track.id} '${track.title}' has no musicVideoType, no fix")
             return Outcome.SKIPPED
         }
 
         if (type == MusicVideoType.ATV || type == MusicVideoType.OFFICIAL_SOURCE_MUSIC) {
-            // Audio is already canonical. If the title still has an MV
-            // marker (e.g. '(Official Video)'), the display metadata
+            // Audio is already canonical. If the title still has an MV /
+            // lyric / visualizer / audio marker, the display metadata
             // lagged behind the audio swap — refresh it in-place.
-            val hasMvMarker = track.title.contains("Official Video", ignoreCase = true) ||
-                track.title.contains("Music Video", ignoreCase = true) ||
-                track.title.contains("(Video)", ignoreCase = true) ||
-                track.title.contains("(MV)", ignoreCase = true)
-            if (hasMvMarker) {
+            val lower = track.title.lowercase()
+            val hasMarker = listOf(
+                "official video", "music video", "official hd video",
+                "(video)", "(mv)", "(lyric video", "(lyrics video",
+                "(visualizer", "(audio)", "(official audio",
+                "[official video", "[music video", "[lyric video",
+            ).any { it in lower }
+            if (hasMarker) {
                 val refreshed = canonicalizer.refreshMetadata(track.toDomain())
                 if (refreshed) {
                     Log.i(TAG, "refreshed metadata: trackId=${track.id} was $type/$videoId")
@@ -266,6 +314,11 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
             }
         }
         trackDao.resetForReDownload(track.id)
+        // The stored music_video_type reflects the *old* videoId. Once
+        // the re-download runs, the canonicalizer will swap in an ATV
+        // videoId and the stored type becomes a lie. Clear it now so
+        // the next scan re-verifies against whatever we end up with.
+        runCatching { trackDao.updateMusicVideoType(track.id, null) }
         // CRITICAL: youtubeUrl MUST be null. If we pass the old OMV URL
         // here, TrackDownloadWorker forwards it as `preResolvedUrl` to
         // DownloadManager.executeDownload, which bypasses resolveUrl()

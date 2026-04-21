@@ -62,6 +62,13 @@ data class SettingsUiState(
         com.stash.data.download.files.MoveLibraryState.Idle,
     /** Last.fm connection state — drives the Settings → Last.fm section. */
     val lastFmState: LastFmAuthState = LastFmAuthState.NotConfigured,
+    /** True while a manual scrobble-drain is in-flight. */
+    val isScrobbleDraining: Boolean = false,
+    /**
+     * One-shot result of the most recent manual scrobble drain. Non-null
+     * triggers a snackbar; the UI clears it via onClearScrobbleDrainResult.
+     */
+    val scrobbleDrainResult: com.stash.core.data.lastfm.LastFmScrobbler.DrainResult? = null,
 )
 
 /**

@@ -3,6 +3,7 @@ package com.stash.core.data.lastfm
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -34,11 +35,23 @@ class LastFmSessionPreference @Inject constructor(
 ) {
     private val usernameKey = stringPreferencesKey("username")
     private val sessionKeyKey = stringPreferencesKey("session_key")
+    private val bannerDismissedKey = booleanPreferencesKey("home_banner_dismissed")
 
     val session: Flow<LastFmSession?> = context.lastFmDataStore.data.map { prefs ->
         val u = prefs[usernameKey]
         val k = prefs[sessionKeyKey]
         if (u.isNullOrBlank() || k.isNullOrBlank()) null else LastFmSession(u, k)
+    }
+
+    /**
+     * Whether the user dismissed the Home "Connect Last.fm" nudge banner.
+     * Sticky — once set, the banner stays hidden forever (the user can
+     * still connect via Settings). If they ever disconnect after
+     * connecting, this flag is reset so the banner can come back if they
+     * rack up more pending plays without reconnecting.
+     */
+    val bannerDismissed: Flow<Boolean> = context.lastFmDataStore.data.map { prefs ->
+        prefs[bannerDismissedKey] ?: false
     }
 
     suspend fun save(session: LastFmSession) {
@@ -52,6 +65,14 @@ class LastFmSessionPreference @Inject constructor(
         context.lastFmDataStore.edit {
             it.remove(usernameKey)
             it.remove(sessionKeyKey)
+            // Also reset the banner-dismissed flag so a user who
+            // disconnects and later accumulates more pending plays can
+            // see the nudge again.
+            it.remove(bannerDismissedKey)
         }
+    }
+
+    suspend fun setBannerDismissed(dismissed: Boolean) {
+        context.lastFmDataStore.edit { it[bannerDismissedKey] = dismissed }
     }
 }

@@ -49,6 +49,12 @@ fun StashNavHost(
                 onNavigateToLikedSongs = { source ->
                     navController.navigate(LikedSongsDetailRoute(source))
                 },
+                onNavigateToSettings = {
+                    navController.navigate(SettingsRoute) {
+                        // Clear top so repeated taps don't stack Settings entries.
+                        launchSingleTop = true
+                    }
+                },
             )
         }
         composable<LibraryRoute> {

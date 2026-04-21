@@ -64,7 +64,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         StashMixRecipeEntity::class,
         DiscoveryQueueEntity::class,
     ],
-    version = 12,
+    version = 14,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -281,6 +281,49 @@ abstract class StashDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE tracks ADD COLUMN explicit INTEGER DEFAULT NULL")
                 db.execSQL("ALTER TABLE remote_track_snapshots ADD COLUMN isrc TEXT DEFAULT NULL")
                 db.execSQL("ALTER TABLE remote_track_snapshots ADD COLUMN explicit INTEGER DEFAULT NULL")
+            }
+        }
+
+        /**
+         * v12 → v13: add `date_added` to playlists. Drives the Library
+         * tab's "Recently added" sort order (issue #13 on GitHub). Unlike
+         * `last_synced` — which resets every sync run and caused
+         * playlists to reshuffle in the list — `date_added` is stable:
+         * set once when the playlist first enters the library.
+         *
+         * Existing rows are backfilled from `last_synced` when available
+         * (best approximation of "when the user first saw this playlist"
+         * for Spotify-imported mixes), otherwise from the migration's
+         * wall clock.
+         */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playlists ADD COLUMN date_added INTEGER NOT NULL DEFAULT 0")
+                // last_synced is an Instant stored as epoch-millis INTEGER;
+                // NULL when never synced. Use it as the best backfill
+                // proxy, fall back to the migration's wall clock in ms.
+                db.execSQL(
+                    """
+                    UPDATE playlists
+                    SET date_added = COALESCE(last_synced, strftime('%s','now') * 1000)
+                    WHERE date_added = 0
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /**
+         * v14 — persists the per-track InnerTube `musicVideoType` (ATV /
+         * OMV / UGC / OFFICIAL_SOURCE_MUSIC / PODCAST_EPISODE) so the
+         * Fix-Wrong-Versions backfill can skip InnerTube verification
+         * calls on tracks it's already typed. Nullable — null means
+         * "never verified" and the worker will verify on next scan. The
+         * column is TEXT (the enum's .name), not an INTEGER code, so
+         * migrations reading the DB don't need to know the enum ordering.
+         */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN music_video_type TEXT")
             }
         }
     }

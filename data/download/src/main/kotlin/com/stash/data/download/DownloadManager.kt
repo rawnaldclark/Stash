@@ -266,6 +266,7 @@ class DownloadManager @Inject constructor(
                     // the album's structured tracklist, not search results, so they don't
                     // suffer from the metadata/ID mismatch that verifyMatch guards against.
                     Log.d(TAG, "resolveUrl: ALBUM MATCH '${track.artist} - ${track.title}' → ${best.youtubeUrl}")
+                    persistMatchMetadata(track, best)
                     return ResolveResult(url = best.youtubeUrl)
                 }
             }
@@ -290,7 +291,10 @@ class DownloadManager @Inject constructor(
 
             val best = matchScorer.bestMatch(scored) ?: continue
             val verified = verifyMatch(track, best, query)
-            if (verified != null) return ResolveResult(url = verified)
+            if (verified != null) {
+                persistMatchMetadata(track, best)
+                return ResolveResult(url = verified)
+            }
             bestRejectedVideoId = best.videoId  // Save the closest rejected match
         }
 
@@ -310,7 +314,10 @@ class DownloadManager @Inject constructor(
             val best = matchScorer.bestMatch(scored)
             if (best != null) {
                 val verified = verifyMatch(track, best, ytDlpQuery)
-                if (verified != null) return ResolveResult(url = verified)
+                if (verified != null) {
+                    persistMatchMetadata(track, best)
+                    return ResolveResult(url = verified)
+                }
                 bestRejectedVideoId = best.videoId  // Save the closest rejected match
             }
         }
@@ -407,6 +414,33 @@ class DownloadManager @Inject constructor(
 
         Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} (artist=%.2f, verified=${verification != null})".format(artistSim))
         return best.youtubeUrl
+    }
+
+    /**
+     * Persists per-match metadata that search discovers but callers of
+     * resolveUrl otherwise discard. Fill-only-if-blank semantics (via the
+     * DAO query) so Spotify-sourced tracks whose title / album / art
+     * arrived with the sync don't get silently rewritten to whatever the
+     * YouTube match happens to say. The primary win is the Stash
+     * Discover pipeline — it creates tracks with null art / blank album
+     * / zero duration / null youtube_id, and without this call the
+     * finished download would leave them permanently metadata-less.
+     */
+    private suspend fun persistMatchMetadata(
+        track: Track,
+        best: com.stash.data.download.model.MatchResult,
+    ) {
+        runCatching {
+            trackDao.fillMissingMetadata(
+                trackId = track.id,
+                album = best.album?.takeIf { it.isNotBlank() },
+                albumArtUrl = best.thumbnailUrl,
+                durationMs = best.durationSeconds.takeIf { it > 0 }?.let { it * 1000L } ?: 0L,
+                youtubeId = best.videoId.takeIf { it.isNotBlank() },
+            )
+        }.onFailure { e ->
+            Log.w(TAG, "persistMatchMetadata failed for trackId=${track.id}", e)
+        }
     }
 
     /**

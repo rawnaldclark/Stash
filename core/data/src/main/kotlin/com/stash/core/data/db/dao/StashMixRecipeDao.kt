@@ -75,4 +75,27 @@ interface StashMixRecipeDao {
     /** Delete every builtin recipe. Paired with [getBuiltinPlaylistIds]. */
     @Query("DELETE FROM stash_mix_recipes WHERE is_builtin = 1")
     suspend fun deleteAllBuiltins(): Int
+
+    /**
+     * Non-destructive tuning migration — updates an individual builtin
+     * recipe's knobs without dropping its materialized playlist or
+     * cascading its discovery_queue. Used when we ship a new default
+     * (e.g. bumping discovery_ratio) and want existing installs to pick
+     * it up without wiping the user's accumulated discovery state.
+     */
+    @Query(
+        """
+        UPDATE stash_mix_recipes
+        SET discovery_ratio = :discoveryRatio,
+            freshness_window_days = :freshnessWindowDays,
+            target_length = :targetLength
+        WHERE is_builtin = 1 AND name = :name
+        """
+    )
+    suspend fun retuneBuiltin(
+        name: String,
+        discoveryRatio: Float,
+        freshnessWindowDays: Int,
+        targetLength: Int,
+    ): Int
 }

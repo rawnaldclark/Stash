@@ -63,8 +63,13 @@ class StashDiscoveryWorker @AssistedInject constructor(
     companion object {
         private const val TAG = "StashDiscovery"
         private const val WORK_NAME = "stash_discovery"
-        private const val BATCH_SIZE = 30
-        private const val PER_RECIPE_WEEKLY_CAP = 10
+        private const val BATCH_SIZE = 60
+        // Raised from 10 → 30 on 2026-04-21. Combined with the wipe-
+        // on-refresh fix (StashMixRefreshWorker re-links DONE discovery
+        // tracks) this lets the mix actually fill its ~30-slot discovery
+        // quota inside one week instead of dribbling tracks in over a
+        // month and getting wiped before they land.
+        private const val PER_RECIPE_WEEKLY_CAP = 30
         private const val WEEK_MS = 7L * 24 * 60 * 60 * 1000
 
         fun schedulePeriodic(context: Context) {

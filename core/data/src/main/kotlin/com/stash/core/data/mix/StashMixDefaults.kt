@@ -34,8 +34,11 @@ object StashMixDefaults {
      *    already like without turning into straight Heavy Rotation.
      *  - 14-day freshness window so you don't hear the same tracks the
      *    mix surfaced yesterday.
-     *  - 25% discovery ratio: hands off to the Last.fm similar-artist
-     *    discovery pipeline to fill those slots with genuinely new music.
+     *  - 60% discovery ratio (raised from 0.25 on 2026-04-21 after user
+     *    testing — library-only slots dominated the mix and the user
+     *    "recognized" most tracks from their Spotify/YouTube imports).
+     *    30 discovery slots + 20 library anchors means the mix stays
+     *    mostly-fresh while keeping stylistic familiarity.
      */
     val ALL: List<StashMixRecipeEntity> = listOf(
         StashMixRecipeEntity(
@@ -44,7 +47,7 @@ object StashMixDefaults {
             includeTagsCsv = "",
             affinityBias = 0.2f,
             freshnessWindowDays = 14,
-            discoveryRatio = 0.25f,
+            discoveryRatio = 0.6f,
             targetLength = 50,
             isBuiltin = true,
         ),

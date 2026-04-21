@@ -25,6 +25,12 @@ data class Playlist(
     val artTileUrls: List<String> = emptyList(),
     val syncEnabled: Boolean = false,
     val tracks: List<Track> = emptyList(),
+    /**
+     * Epoch-millis timestamp of when this playlist was first added to
+     * the library. Stable across syncs; drives the Library tab's
+     * "Recently added" sort. See [com.stash.core.data.db.entity.PlaylistEntity.dateAdded].
+     */
+    val dateAdded: Long = System.currentTimeMillis(),
 )
 
 enum class PlaylistType {

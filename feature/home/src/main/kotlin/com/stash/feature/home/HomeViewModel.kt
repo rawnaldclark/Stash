@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
+import com.stash.core.data.db.dao.ListeningEventDao
+import com.stash.core.data.lastfm.LastFmCredentials
+import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.toDisplayStatus
 import com.stash.core.media.PlayerRepository
@@ -13,6 +16,7 @@ import com.stash.core.model.PlaylistType
 import com.stash.core.model.SyncDisplayStatus
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -20,6 +24,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -38,6 +43,9 @@ class HomeViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
     private val tokenManager: TokenManager,
+    private val lastFmSessionPreference: LastFmSessionPreference,
+    private val lastFmCredentials: LastFmCredentials,
+    private val listeningEventDao: ListeningEventDao,
 ) : ViewModel() {
 
     /**
@@ -76,15 +84,50 @@ class HomeViewModel @Inject constructor(
     ) { spotify, youtube -> Pair(spotify, youtube) }
 
     /**
-     * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
+     * Active sort for the Home Playlists grid. Starts at RECENT to match
+     * the previous default (implicit `getAllPlaylists` ordering, now made
+     * explicit as "most recently added first").
+     */
+    private val _playlistSortOrder = MutableStateFlow(PlaylistSortOrder.RECENT)
+
+    /**
+     * Last.fm banner prompt: only visible when the app has creds wired
+     * (so it's meaningful to connect), the user hasn't completed auth,
+     * AND there are local plays already queued — otherwise there's
+     * nothing to nudge about. Once a session is saved, the Flow re-emits
+     * null and the banner disappears on its own.
+     */
+    private val lastFmPromptFlow =
+        if (!lastFmCredentials.isConfigured) {
+            kotlinx.coroutines.flow.flowOf<LastFmPromptState?>(null)
+        } else {
+            combine(
+                lastFmSessionPreference.session,
+                listeningEventDao.pendingScrobbleCount(),
+                lastFmSessionPreference.bannerDismissed,
+            ) { session, pending, dismissed ->
+                if (session == null && pending > 0 && !dismissed) {
+                    LastFmPromptState(pendingCount = pending)
+                } else {
+                    null
+                }
+            }
+        }
+
+    /**
+     * Derives (spotifyConnected, youTubeConnected, lastFmPrompt) from
+     * TokenManager + Last.fm session state. Bundled so the top-level
+     * combine stays at 5 inputs.
      */
     private val authStateFlow = combine(
         tokenManager.spotifyAuthState,
         tokenManager.youTubeAuthState,
-    ) { spotify, youtube ->
+        lastFmPromptFlow,
+    ) { spotify, youtube, lastFmPrompt ->
         AuthInfo(
             spotifyConnected = spotify is AuthState.Connected,
             youTubeConnected = youtube is AuthState.Connected,
+            lastFmPrompt = lastFmPrompt,
         )
     }
 
@@ -93,7 +136,8 @@ class HomeViewModel @Inject constructor(
         syncStatusFlow,
         authStateFlow,
         sourceCountsFlow,
-    ) { musicData, syncStatus, authInfo, sourceCounts ->
+        _playlistSortOrder,
+    ) { musicData, syncStatus, authInfo, sourceCounts, playlistSortOrder ->
         // Stash Mixes — recipe-driven, generated locally. Separate from
         // sync-imported Daily Mixes so the UI can label them distinctly.
         val stashMixes = musicData.playlists.filter { it.type == PlaylistType.STASH_MIX }
@@ -110,7 +154,15 @@ class HomeViewModel @Inject constructor(
         val spotifyLikedCount = spotifyLikedPlaylists.sumOf { it.trackCount }
         val youtubeLikedCount = youtubeLikedPlaylists.sumOf { it.trackCount }
 
-        val otherPlaylists = musicData.playlists.filter { it.type == PlaylistType.CUSTOM }
+        val otherPlaylists = musicData.playlists
+            .filter { it.type == PlaylistType.CUSTOM }
+            .let { list ->
+                when (playlistSortOrder) {
+                    PlaylistSortOrder.RECENT -> list.sortedByDescending { it.dateAdded }
+                    PlaylistSortOrder.ALPHABETICAL -> list.sortedBy { it.name.lowercase() }
+                    PlaylistSortOrder.MOST_PLAYED -> list.sortedByDescending { it.trackCount }
+                }
+            }
 
         HomeUiState(
             syncStatus = syncStatus.copy(
@@ -131,9 +183,11 @@ class HomeViewModel @Inject constructor(
             totalTracks = musicData.trackCount,
             totalStorageBytes = musicData.storageBytes,
             playlists = otherPlaylists,
+            playlistSortOrder = playlistSortOrder,
             isLoading = false,
             spotifyConnected = authInfo.spotifyConnected,
             youTubeConnected = authInfo.youTubeConnected,
+            lastFmPrompt = authInfo.lastFmPrompt,
             hasEverSynced = syncStatus.lastSyncTime != null,
         )
     }.stateIn(
@@ -141,6 +195,26 @@ class HomeViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = HomeUiState(),
     )
+
+    /**
+     * Updates the sort applied to the Home Playlists grid. The new order
+     * propagates through the UI state combine and the grid re-sorts on the
+     * next recomposition.
+     */
+    fun setPlaylistSortOrder(order: PlaylistSortOrder) {
+        _playlistSortOrder.update { order }
+    }
+
+    /**
+     * Hide the Last.fm connect nudge on Home forever (until the user
+     * connects then disconnects, which resets the flag). Writes through
+     * to DataStore; the prompt Flow re-emits null on the next tick.
+     */
+    fun dismissLastFmBanner() {
+        viewModelScope.launch {
+            lastFmSessionPreference.setBannerDismissed(true)
+        }
+    }
 
     /**
      * Begins playback of the given track list starting at [index].
@@ -353,4 +427,5 @@ private data class MusicData(
 private data class AuthInfo(
     val spotifyConnected: Boolean,
     val youTubeConnected: Boolean,
+    val lastFmPrompt: LastFmPromptState?,
 )

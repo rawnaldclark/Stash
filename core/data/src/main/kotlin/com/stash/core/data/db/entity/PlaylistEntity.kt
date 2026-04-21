@@ -57,4 +57,18 @@ data class PlaylistEntity(
      *  value so the SQL default is effectively unused in practice. */
     @ColumnInfo(name = "sync_enabled", defaultValue = "1")
     val syncEnabled: Boolean = false,
+
+    /**
+     * Timestamp of when this playlist was first added to the user's
+     * library — stable across syncs, unlike [lastSynced] which resets
+     * every sync run. Drives the Library tab's "Recently added" sort
+     * order so user-added playlists stay where the user added them in
+     * the list instead of reshuffling after each sync.
+     *
+     * Default = `Instant.now()` for Kotlin-side inserts; migration
+     * v12→v13 backfills existing rows from `last_synced` if set, else
+     * the migration's wall clock.
+     */
+    @ColumnInfo(name = "date_added", defaultValue = "0")
+    val dateAdded: Instant = Instant.now(),
 )

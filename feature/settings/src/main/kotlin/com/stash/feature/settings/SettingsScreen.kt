@@ -150,6 +150,8 @@ fun SettingsScreen(
         onFinishLastFmAuth = viewModel::onFinishLastFmAuth,
         onDisconnectLastFm = viewModel::onDisconnectLastFm,
         onDismissLastFmError = viewModel::onDismissLastFmError,
+        onSyncScrobblesNow = viewModel::onSyncScrobblesNow,
+        onClearScrobbleDrainResult = viewModel::onClearScrobbleDrainResult,
         modifier = modifier,
     )
 }
@@ -181,6 +183,8 @@ private fun SettingsContent(
     onFinishLastFmAuth: () -> Unit,
     onDisconnectLastFm: () -> Unit,
     onDismissLastFmError: () -> Unit,
+    onSyncScrobblesNow: () -> Unit,
+    onClearScrobbleDrainResult: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -292,7 +296,29 @@ private fun SettingsContent(
                 onFinish = onFinishLastFmAuth,
                 onDisconnect = onDisconnectLastFm,
                 onDismissError = onDismissLastFmError,
+                onSyncScrobblesNow = onSyncScrobblesNow,
+                isScrobbleDraining = uiState.isScrobbleDraining,
             )
+            // Surface the result of a manual drain inline (keeps the
+            // Settings screen Compose-local; no scaffold/snackbar host
+            // dependency). The Text sticks around for ~3s and fades; the
+            // VM clears the state so repeated taps render fresh.
+            uiState.scrobbleDrainResult?.let { result ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = when {
+                        !result.sessionPresent -> "Connect Last.fm first."
+                        result.submitted == 0 -> "No new scrobbles to send."
+                        else -> "Sent ${result.submitted} scrobble${if (result.submitted == 1) "" else "s"} to Last.fm."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                androidx.compose.runtime.LaunchedEffect(result) {
+                    kotlinx.coroutines.delay(3000)
+                    onClearScrobbleDrainResult()
+                }
+            }
         }
 
         // -- Audio Quality section --------------------------------------------
@@ -646,6 +672,8 @@ private fun LastFmSection(
     onFinish: () -> Unit,
     onDisconnect: () -> Unit,
     onDismissError: () -> Unit,
+    onSyncScrobblesNow: () -> Unit,
+    isScrobbleDraining: Boolean,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         when (state) {
@@ -730,6 +758,23 @@ private fun LastFmSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
+                // "Sync scrobbles now" — manual drain. Useful right after
+                // the Last.fm connect handshake when cold-start import +
+                // accumulated local plays can leave hundreds queued up.
+                androidx.compose.material3.Button(
+                    onClick = onSyncScrobblesNow,
+                    enabled = !isScrobbleDraining && state.pendingScrobbles > 0,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = when {
+                            isScrobbleDraining -> "Syncing…"
+                            state.pendingScrobbles == 0 -> "Nothing to sync"
+                            else -> "Sync scrobbles now"
+                        },
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
                 androidx.compose.material3.OutlinedButton(
                     onClick = onDisconnect,
                     modifier = Modifier.fillMaxWidth(),

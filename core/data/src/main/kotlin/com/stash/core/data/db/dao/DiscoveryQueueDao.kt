@@ -70,6 +70,39 @@ interface DiscoveryQueueDao {
     data class StatusCount(val status: String, val n: Int)
 
     /**
+     * Track ids for every DONE discovery row whose track still exists
+     * in the tracks table. Used by [StashMixRefreshWorker.materializeMix]
+     * to re-link surviving discovery tracks after the refresh clears the
+     * playlist — without this step, a Discovery download that completed
+     * between refreshes gets wiped from the mix and then garbage-
+     * collected by the orphan sweeper.
+     */
+    @Query(
+        """
+        SELECT dq.track_id FROM discovery_queue dq
+        INNER JOIN tracks t ON t.id = dq.track_id
+        WHERE dq.recipe_id = :recipeId
+          AND dq.status = 'DONE'
+          AND dq.track_id IS NOT NULL
+        """
+    )
+    suspend fun getDoneTrackIdsForRecipe(recipeId: Long): List<Long>
+
+    /**
+     * Track ids referenced by any non-terminal discovery row (PENDING /
+     * DONE). Fed to the orphan sweeper so in-flight + just-completed
+     * discovery tracks don't get deleted between refresh and re-link.
+     */
+    @Query(
+        """
+        SELECT DISTINCT track_id FROM discovery_queue
+        WHERE track_id IS NOT NULL
+          AND status IN ('PENDING', 'DONE')
+        """
+    )
+    suspend fun getActiveTrackIds(): List<Long>
+
+    /**
      * Does this recipe already have a pending/complete entry for
      * (artist, title)? Prevents duplicate discoveries across refreshes.
      */

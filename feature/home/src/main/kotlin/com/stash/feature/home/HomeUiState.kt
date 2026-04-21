@@ -50,9 +50,18 @@ data class HomeUiState(
     /** Custom (non-mix, non-liked) playlists shown in the grid. */
     val playlists: List<Playlist> = emptyList(),
 
+    /** Active sort for the Home Playlists grid. Mirrors Library's chips. */
+    val playlistSortOrder: PlaylistSortOrder = PlaylistSortOrder.RECENT,
+
     val isLoading: Boolean = true,
     val spotifyConnected: Boolean = false,
     val youTubeConnected: Boolean = false,
+    /**
+     * Non-null when Last.fm creds are wired but the user hasn't
+     * connected yet AND there are local plays queued waiting to be
+     * scrobbled. Drives the Home banner nudging them into Settings.
+     */
+    val lastFmPrompt: LastFmPromptState? = null,
     val hasEverSynced: Boolean = false,
 ) {
     /** Total liked songs across both sources. */
@@ -83,6 +92,17 @@ data class HomeUiState(
             else -> null
         }
 }
+
+/** Payload for the "connect Last.fm to send plays" banner. */
+data class LastFmPromptState(val pendingCount: Int)
+
+/**
+ * Sort options for the Home Playlists grid. Deliberately duplicated from
+ * the Library module's `SortOrder` to avoid a cross-module dependency for
+ * three enum values. If a third surface ever needs the same options, lift
+ * to a shared module rather than crossing the feature:library boundary.
+ */
+enum class PlaylistSortOrder { RECENT, ALPHABETICAL, MOST_PLAYED }
 
 /**
  * Summarised sync status information displayed in the sync status card.

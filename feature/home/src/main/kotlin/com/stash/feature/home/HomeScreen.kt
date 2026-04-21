@@ -14,6 +14,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +39,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
@@ -45,6 +48,8 @@ import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -99,6 +104,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToLikedSongs: (String?) -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -161,6 +167,22 @@ fun HomeScreen(
                 hasEverSynced = uiState.hasEverSynced,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
+        }
+
+        // ── Last.fm connect nudge ────────────────────────────────────
+        // Shown only when we have creds wired AND the user has local
+        // plays accumulating locally AND the user hasn't dismissed the
+        // banner. Taps route into Settings; the X dismisses permanently.
+        uiState.lastFmPrompt?.let { prompt ->
+            item {
+                Spacer(Modifier.height(6.dp))
+                LastFmConnectBanner(
+                    pendingCount = prompt.pendingCount,
+                    onConnect = onNavigateToSettings,
+                    onDismiss = viewModel::dismissLastFmBanner,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
         }
 
         // ── Mixes (split by source, each with a Play All button) ─────
@@ -304,6 +326,12 @@ fun HomeScreen(
         // the user has no custom playlists yet.
         item {
             SectionHeader(title = "Playlists")
+        }
+        item {
+            PlaylistSortChipRow(
+                activeSort = uiState.playlistSortOrder,
+                onSortSelected = viewModel::setPlaylistSortOrder,
+            )
         }
         // 2-column grid virtualized via the outer LazyColumn: each chunked
         // row is its own LazyColumn item, so only the rows near the viewport
@@ -545,40 +573,9 @@ private fun SyncStatusCard(
                 )
             }
 
-            // -- Connected services row --
-            if (anyServiceConnected) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (spotifyConnected) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            SourceIndicator(source = MusicSource.SPOTIFY, size = 6.dp)
-                            Text(
-                                text = "Spotify",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    if (youTubeConnected) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            SourceIndicator(source = MusicSource.YOUTUBE, size = 6.dp)
-                            Text(
-                                text = "YouTube Music",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
+            // Connected-services row removed 2026-04-21: the stats row
+            // below already labels Spotify/YouTube with their counts, so
+            // the dot+label row was pure duplication.
 
             // -- Prompt or stats depending on sync state --
             if (!anyServiceConnected) {
@@ -1472,6 +1469,126 @@ private fun HomeBottomSheetActionRow(
             color = tint,
         )
     }
+}
+
+// ── Last.fm connect banner ───────────────────────────────────────────────
+
+/**
+ * Surfaces a nudge when the user has local listening history but hasn't
+ * connected Last.fm — all those plays are sitting in the scrobble queue
+ * with no session to send them to. Tapping the banner jumps to Settings,
+ * where the existing connect flow handles the web-auth handshake.
+ */
+@Composable
+private fun LastFmConnectBanner(
+    pendingCount: Int,
+    onConnect: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = MaterialTheme.colorScheme.tertiary
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = accent.copy(alpha = 0.10f),
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onConnect)
+                .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Connect Last.fm",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "$pendingCount ${if (pendingCount == 1) "play" else "plays"} waiting to scrobble",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = "Connect →",
+                style = MaterialTheme.typography.labelSmall,
+                color = accent,
+            )
+            // Dismiss-forever X. Stops the click from also triggering
+            // onConnect by putting it on its own clickable region.
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onDismiss),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Dismiss Last.fm banner",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+// ── Playlist sort chips ──────────────────────────────────────────────────
+
+/**
+ * Horizontally-scrollable row of filter chips controlling the sort applied to
+ * the Home Playlists grid. Deliberately mirrors the Library module's
+ * SortChipRow so the two surfaces feel identical.
+ */
+@Composable
+private fun PlaylistSortChipRow(
+    activeSort: PlaylistSortOrder,
+    onSortSelected: (PlaylistSortOrder) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        PlaylistSortOrder.entries.forEach { order ->
+            val isSelected = order == activeSort
+            FilterChip(
+                selected = isSelected,
+                onClick = { onSortSelected(order) },
+                label = {
+                    Text(
+                        text = order.displayName(),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = StashTheme.extendedColors.elevatedSurface,
+                    selectedLabelColor = MaterialTheme.colorScheme.onBackground,
+                    containerColor = Color.Transparent,
+                    labelColor = StashTheme.extendedColors.textTertiary,
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    borderColor = Color.Transparent,
+                    selectedBorderColor = StashTheme.extendedColors.glassBorderBright,
+                    enabled = true,
+                    selected = isSelected,
+                ),
+            )
+        }
+    }
+}
+
+private fun PlaylistSortOrder.displayName(): String = when (this) {
+    PlaylistSortOrder.RECENT -> "Recently Added"
+    PlaylistSortOrder.ALPHABETICAL -> "A-Z"
+    PlaylistSortOrder.MOST_PLAYED -> "Most Played"
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────

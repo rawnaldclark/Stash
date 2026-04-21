@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.stash.core.model.MusicSource
 import com.stash.core.model.SyncMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -22,13 +23,16 @@ private val Context.syncPrefsDataStore by preferencesDataStore(name = "sync_pref
  * @property syncMinute Minute of hour (0-59) for the scheduled daily sync.
  * @property autoSyncEnabled Whether the daily auto-sync is active.
  * @property wifiOnly   Whether sync should only run on unmetered (Wi-Fi) connections.
+ * @property spotifySyncMode Refresh/accumulate mode applied to Spotify-sourced playlists.
+ * @property youtubeSyncMode Refresh/accumulate mode applied to YouTube-sourced playlists.
  */
 data class SyncPreferences(
     val syncHour: Int = 6,
     val syncMinute: Int = 0,
     val autoSyncEnabled: Boolean = true,
     val wifiOnly: Boolean = true,
-    val syncMode: SyncMode = SyncMode.REFRESH,
+    val spotifySyncMode: SyncMode = SyncMode.REFRESH,
+    val youtubeSyncMode: SyncMode = SyncMode.REFRESH,
 )
 
 /**
@@ -37,6 +41,12 @@ data class SyncPreferences(
  * All values are persisted in a dedicated DataStore file (`sync_preferences`)
  * and exposed as a reactive [Flow] so that UI and background workers can
  * observe changes immediately.
+ *
+ * Migration note — v0.5: the old global `sync_mode` key is transparently
+ * forwarded into `spotify_sync_mode` the first time the new key is read
+ * without a value. YouTube defaults independently to [SyncMode.REFRESH].
+ * The split matches the user-facing UI, which renders a separate chip
+ * row in each service's Sync Preferences card.
  */
 @Singleton
 class SyncPreferencesManager @Inject constructor(
@@ -47,7 +57,10 @@ class SyncPreferencesManager @Inject constructor(
         val SYNC_MINUTE = intPreferencesKey("sync_minute")
         val AUTO_SYNC = booleanPreferencesKey("auto_sync_enabled")
         val WIFI_ONLY = booleanPreferencesKey("wifi_only")
-        val SYNC_MODE = stringPreferencesKey("sync_mode")
+        /** Legacy global key — read-only now. Used for one-shot migration. */
+        val LEGACY_SYNC_MODE = stringPreferencesKey("sync_mode")
+        val SPOTIFY_SYNC_MODE = stringPreferencesKey("spotify_sync_mode")
+        val YOUTUBE_SYNC_MODE = stringPreferencesKey("youtube_sync_mode")
     }
 
     /** Reactive stream of the current [SyncPreferences]. */
@@ -57,23 +70,41 @@ class SyncPreferencesManager @Inject constructor(
             syncMinute = prefs[Keys.SYNC_MINUTE] ?: 0,
             autoSyncEnabled = prefs[Keys.AUTO_SYNC] ?: true,
             wifiOnly = prefs[Keys.WIFI_ONLY] ?: true,
-            syncMode = prefs[Keys.SYNC_MODE]?.let { name ->
-                runCatching { SyncMode.valueOf(name) }.getOrDefault(SyncMode.REFRESH)
-            } ?: SyncMode.REFRESH,
+            spotifySyncMode = resolveSpotifyMode(prefs),
+            youtubeSyncMode = resolveYoutubeMode(prefs),
         )
     }
 
     /**
-     * Reactive stream of just the [SyncMode] preference.
-     *
-     * Exposed separately so background workers can read only the mode
-     * without pulling in all scheduling preferences.
+     * Reactive stream of Spotify's sync mode. Exposed separately so
+     * background workers can read only the mode without pulling the full
+     * [SyncPreferences] combine. Migrates the legacy global `sync_mode`
+     * value if the Spotify-specific key isn't set yet.
      */
-    val syncMode: Flow<SyncMode> = context.syncPrefsDataStore.data.map { prefs ->
-        prefs[Keys.SYNC_MODE]?.let { name ->
-            runCatching { SyncMode.valueOf(name) }.getOrDefault(SyncMode.REFRESH)
-        } ?: SyncMode.REFRESH
+    val spotifySyncMode: Flow<SyncMode> =
+        context.syncPrefsDataStore.data.map { resolveSpotifyMode(it) }
+
+    /** Reactive stream of YouTube's sync mode. Defaults to REFRESH. */
+    val youtubeSyncMode: Flow<SyncMode> =
+        context.syncPrefsDataStore.data.map { resolveYoutubeMode(it) }
+
+    private fun resolveSpotifyMode(
+        prefs: androidx.datastore.preferences.core.Preferences,
+    ): SyncMode {
+        val explicit = prefs[Keys.SPOTIFY_SYNC_MODE]?.let { parseMode(it) }
+        if (explicit != null) return explicit
+        // Fall back to the legacy global key so users who set a preference
+        // before the split don't silently flip to REFRESH after upgrade.
+        return prefs[Keys.LEGACY_SYNC_MODE]?.let { parseMode(it) } ?: SyncMode.REFRESH
     }
+
+    private fun resolveYoutubeMode(
+        prefs: androidx.datastore.preferences.core.Preferences,
+    ): SyncMode =
+        prefs[Keys.YOUTUBE_SYNC_MODE]?.let { parseMode(it) } ?: SyncMode.REFRESH
+
+    private fun parseMode(name: String): SyncMode? =
+        runCatching { SyncMode.valueOf(name) }.getOrNull()
 
     /**
      * Persist a new sync schedule time.
@@ -98,8 +129,29 @@ class SyncPreferencesManager @Inject constructor(
         context.syncPrefsDataStore.edit { it[Keys.WIFI_ONLY] = wifiOnly }
     }
 
-    /** Set the playlist sync mode (REFRESH or ACCUMULATE). */
-    suspend fun setSyncMode(mode: SyncMode) {
-        context.syncPrefsDataStore.edit { it[Keys.SYNC_MODE] = mode.name }
+    /** Persist Spotify's sync mode. Also removes the legacy global key so
+     *  subsequent reads come exclusively from the Spotify-specific slot. */
+    suspend fun setSpotifySyncMode(mode: SyncMode) {
+        context.syncPrefsDataStore.edit {
+            it[Keys.SPOTIFY_SYNC_MODE] = mode.name
+            it.remove(Keys.LEGACY_SYNC_MODE)
+        }
+    }
+
+    /** Persist YouTube's sync mode. */
+    suspend fun setYoutubeSyncMode(mode: SyncMode) {
+        context.syncPrefsDataStore.edit { it[Keys.YOUTUBE_SYNC_MODE] = mode.name }
+    }
+
+    /**
+     * Read-time resolver used by sync workers: returns the appropriate
+     * [SyncMode] for the given [MusicSource]. LOCAL/BOTH sources (STASH_MIX
+     * etc.) don't flow through the sync pipeline, but a sane default
+     * keeps this total.
+     */
+    fun syncModeFor(source: MusicSource): Flow<SyncMode> = when (source) {
+        MusicSource.SPOTIFY -> spotifySyncMode
+        MusicSource.YOUTUBE -> youtubeSyncMode
+        MusicSource.LOCAL, MusicSource.BOTH -> spotifySyncMode
     }
 }

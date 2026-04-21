@@ -132,4 +132,17 @@ data class TrackEntity(
      * prefer candidates whose explicitness matches the source track.
      */
     val explicit: Boolean? = null,
+
+    /**
+     * InnerTube's per-video classification, persisted here so the Fix-
+     * Wrong-Versions backfill can skip a network round-trip on tracks
+     * it's already verified. Stores the string form of [MusicVideoType]
+     * (ATV / OMV / UGC / OFFICIAL_SOURCE_MUSIC / PODCAST_EPISODE), or
+     * null when we haven't classified the track yet. A non-null value
+     * means the audio was the given type at verification time — it can
+     * go stale if the user manually rehooks the track elsewhere, but in
+     * practice InnerTube doesn't re-classify existing videoIds.
+     */
+    @ColumnInfo(name = "music_video_type")
+    val musicVideoType: String? = null,
 )

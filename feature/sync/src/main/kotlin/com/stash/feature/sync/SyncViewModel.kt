@@ -97,8 +97,13 @@ data class SyncUiState(
     val spotifyPlaylists: List<SpotifySyncPlaylist> = emptyList(),
     /** YouTube Music playlists available for sync preference toggles. */
     val youTubePlaylists: List<YouTubeSyncPlaylist> = emptyList(),
-    /** Controls whether mixes refresh or accumulate during sync. */
-    val syncMode: SyncMode = SyncMode.REFRESH,
+    /**
+     * Per-source sync modes. Each service's Sync Preferences card
+     * renders its own Refresh/Accumulate chip row bound to one of
+     * these. Defaults to REFRESH for both.
+     */
+    val spotifySyncMode: SyncMode = SyncMode.REFRESH,
+    val youtubeSyncMode: SyncMode = SyncMode.REFRESH,
     /** Number of tracks that could not be matched to a YouTube video. */
     val unmatchedCount: Int = 0,
     /**
@@ -179,7 +184,17 @@ class SyncViewModel @Inject constructor(
      * `ExistingWorkPolicy.KEEP` — if a backfill is already queued or
      * running, a second tap is a no-op rather than replacing it.
      */
-    fun onRunYtLibraryBackfill() {
+    fun onRunYtLibraryBackfill() = enqueueBackfill(YtLibraryBackfillWorker.MODE_QUICK)
+
+    /**
+     * Deep-scan variant — verifies every downloaded YT-source track
+     * against InnerTube regardless of title. Populates
+     * `tracks.music_video_type` so subsequent Quick scans become
+     * effectively instant. Roughly 1 minute on a ~1,000-track library.
+     */
+    fun onRunYtLibraryDeepScan() = enqueueBackfill(YtLibraryBackfillWorker.MODE_DEEP)
+
+    private fun enqueueBackfill(mode: String) {
         val work = OneTimeWorkRequestBuilder<YtLibraryBackfillWorker>()
             .setConstraints(
                 Constraints.Builder()
@@ -187,10 +202,15 @@ class SyncViewModel @Inject constructor(
                     .build(),
             )
             .addTag("yt_library_backfill")
+            .setInputData(
+                androidx.work.workDataOf(YtLibraryBackfillWorker.KEY_MODE to mode),
+            )
             .build()
+        // ExistingWorkPolicy.REPLACE so tapping Deep immediately after
+        // Quick doesn't silently drop the user's upgrade choice.
         WorkManager.getInstance(appContext).enqueueUniqueWork(
             YtLibraryBackfillWorker.UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.REPLACE,
             work,
         )
     }
@@ -249,10 +269,17 @@ class SyncViewModel @Inject constructor(
         }
     }
 
-    /** Switch between REFRESH and ACCUMULATE sync modes. */
-    fun onSyncModeChanged(mode: SyncMode) {
+    /** Switch Spotify's Refresh/Accumulate mode. */
+    fun onSpotifySyncModeChanged(mode: SyncMode) {
         viewModelScope.launch {
-            syncPreferencesManager.setSyncMode(mode)
+            syncPreferencesManager.setSpotifySyncMode(mode)
+        }
+    }
+
+    /** Switch YouTube's Refresh/Accumulate mode. */
+    fun onYoutubeSyncModeChanged(mode: SyncMode) {
+        viewModelScope.launch {
+            syncPreferencesManager.setYoutubeSyncMode(mode)
         }
     }
 
@@ -284,8 +311,13 @@ class SyncViewModel @Inject constructor(
 
     private fun observeSyncMode() {
         viewModelScope.launch {
-            syncPreferencesManager.syncMode.collect { mode ->
-                _uiState.update { it.copy(syncMode = mode) }
+            syncPreferencesManager.spotifySyncMode.collect { mode ->
+                _uiState.update { it.copy(spotifySyncMode = mode) }
+            }
+        }
+        viewModelScope.launch {
+            syncPreferencesManager.youtubeSyncMode.collect { mode ->
+                _uiState.update { it.copy(youtubeSyncMode = mode) }
             }
         }
     }

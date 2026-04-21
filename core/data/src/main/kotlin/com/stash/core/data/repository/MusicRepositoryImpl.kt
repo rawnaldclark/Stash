@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 import javax.inject.Inject
 
 /**
@@ -28,6 +29,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val playlistDao: PlaylistDao,
     private val syncHistoryDao: SyncHistoryDao,
     private val downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao,
+    private val discoveryQueueDao: com.stash.core.data.db.dao.DiscoveryQueueDao,
 ) : MusicRepository {
 
     /** Startup fixups — resets exhausted retries, purges seeder data, and
@@ -84,9 +86,29 @@ class MusicRepositoryImpl @Inject constructor(
     // ── Track queries ───────────────────────────────────────────────────
 
     override fun getAllTracks(): Flow<List<Track>> =
-        trackDao.getAllByDateAdded().map { entities ->
-            entities.filter { it.isDownloaded }.map { it.toDomain() }
-        }
+        trackDao.getAllByDateAdded()
+            // `SELECT * FROM tracks` with a multi-thousand-row library
+            // bumps against Android's CursorWindow size limit (~2 MB).
+            // Libraries past that boundary read the tail rows from a
+            // separate fetched window, and if the tracks table mutates
+            // while Room's suspending query is mid-iteration (e.g. the
+            // user just tapped "delete playlist and songs" in Library
+            // tab while this Flow is live), CursorWindow throws
+            // `IllegalStateException: Couldn't read row N, col 0 from
+            // CursorWindow`. Without a retry the exception propagates
+            // through combine() → StateFlow → viewModelScope → CRASH
+            // (issue #14). Retrying re-subscribes the upstream; Room's
+            // InvalidationTracker has by then committed the mutation,
+            // so the fresh cursor reads a consistent table. Cap at 3
+            // attempts so a non-race failure doesn't loop forever.
+            .retryWhen { cause, attempt ->
+                val raced = cause is IllegalStateException &&
+                    cause.message?.contains("CursorWindow") == true
+                raced && attempt < 3
+            }
+            .map { entities ->
+                entities.filter { it.isDownloaded }.map { it.toDomain() }
+            }
 
     override fun getTracksByArtist(artist: String): Flow<List<Track>> =
         trackDao.getByArtist(artist).map { entities -> entities.map { it.toDomain() } }
@@ -130,7 +152,12 @@ class MusicRepositoryImpl @Inject constructor(
     // ── Playlist queries ────────────────────────────────────────────────
 
     override fun getAllPlaylists(): Flow<List<Playlist>> =
-        playlistDao.getAllActive().map { entities -> entities.map { it.toDomain() } }
+        // Uses the sync-enabled-gated query so toggled-off external
+        // playlists vanish from Home + Library in step with their
+        // Sync Preferences state. See PlaylistDao.getAllVisible for
+        // the source=BOTH exemption that keeps local CUSTOM + STASH_MIX
+        // visible while still gating imported YouTube CUSTOM playlists.
+        playlistDao.getAllVisible().map { entities -> entities.map { it.toDomain() } }
 
     override fun getPlaylistsByType(type: com.stash.core.model.PlaylistType): Flow<List<Playlist>> =
         playlistDao.getByType(type).map { entities -> entities.map { it.toDomain() } }
@@ -399,7 +426,25 @@ class MusicRepositoryImpl @Inject constructor(
     // ── Cleanup ──────────────────────────────────────────────────────────
 
     override suspend fun cleanOrphanedMixTracks(): Int {
-        val orphans = trackDao.getOrphanedDownloadedTracks()
+        val rawOrphans = trackDao.getOrphanedDownloadedTracks()
+        if (rawOrphans.isEmpty()) return 0
+
+        // Don't delete tracks the Discovery pipeline still owns. A
+        // Discovery download completes, then the weekly mix refresh
+        // clears the playlist_tracks row before re-linking — between
+        // those two writes the track looks orphaned to this sweeper.
+        // Before the guard, that gap was long enough to delete the
+        // audio file (see 2026-04-21 audit: 9 of 10 DONE discovery
+        // entries had dangling track_ids from this race).
+        val protectedIds = discoveryQueueDao.getActiveTrackIds().toHashSet()
+        val orphans = rawOrphans.filterNot { it.id in protectedIds }
+        val skipped = rawOrphans.size - orphans.size
+        if (skipped > 0) {
+            android.util.Log.d(
+                "StashCleanup",
+                "Skipped $skipped orphan(s) protected by active discovery queue",
+            )
+        }
         if (orphans.isEmpty()) return 0
 
         for (track in orphans) {
