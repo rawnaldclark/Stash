@@ -10,6 +10,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
@@ -18,36 +19,42 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.delay
 
 /**
- * One-shot backfill that populates `album_art_url` for already-downloaded
- * tracks whose art is still missing. Two cohorts get repaired:
+ * One-shot backfill that repairs Discovery-pipeline metadata gaps on
+ * already-downloaded tracks. Two independent passes run per invocation:
  *
- *  1. Stash Discover tracks from before v0.5.3 where the match pipeline
- *     surfaced no thumbnail — most common for niche / ambient genres whose
- *     YouTube uploads return plain video renderers instead of music
- *     renderers, so `MatchResult.thumbnailUrl` was null.
- *  2. Any other historical track whose Spotify-side art URL was blank at
- *     sync time and was never retroactively filled.
- *
+ * ## Pass 1 — `album_art_url`
+ * Fills missing art on is_downloaded=1 tracks with a null `album_art_url`.
  * Strategy per candidate:
- *   - Last.fm `track.getInfo(artist, title)` — album-art keyed to the
- *     canonical track identity. Preferred because the result is actual
+ *   - Last.fm `track.getInfo(artist, title)` — album art keyed to the
+ *     canonical track identity; preferred because the result is real
  *     album art, not a video still.
- *   - Fallback `https://i.ytimg.com/vi/<id>/hqdefault.jpg` when the track
- *     has a `youtube_id` and Last.fm had no result.
- *   - Skip entirely when neither source yields anything — there's nothing
- *     to write and we leave the row for a future backfill pass.
+ *   - Fallback `https://i.ytimg.com/vi/<id>/hqdefault.jpg` when the row
+ *     has a `youtube_id` and Last.fm had nothing.
+ *   - Skip when neither source yields anything — leave for a future pass.
+ * Rate-limited to one Last.fm call every 220ms.
  *
- * Rate-limited to one Last.fm call every 220ms (matches
- * [TagEnrichmentWorker]'s budget, staying comfortably under Last.fm's
- * 5 req/sec ceiling). Runs on any connected network — the payloads are
- * small JSON responses and the total traffic is bounded by the batch cap.
+ * ## Pass 2 — `duration_ms`
+ * Fills missing duration on is_downloaded=1 tracks with `duration_ms = 0`.
+ * Uses `MediaMetadataRetriever` via [AudioDurationExtractor] to read the
+ * authoritative value straight off the container — no network, matches
+ * exactly what ExoPlayer sees at play-time. Separate from Pass 1 because
+ * not every art-missing row has zero duration (and vice versa), and the
+ * duration pass has no network dependency.
  *
+ * ## Scope
+ * Both passes cover the same root cohort — Stash Discover stubs whose
+ * `persistMatchMetadata` couldn't write full metadata because the YT
+ * match surfaced no thumbnail, no duration, or tripped the UNIQUE
+ * constraint on youtube_id and rolled back the whole UPDATE. See the
+ * v0.5.3 and v0.5.4 commit messages for the detailed pipeline trace.
+ *
+ * ## Scheduling
  * Scheduled once per install from [com.stash.app.StashApplication.onCreate]
- * with `ExistingWorkPolicy.KEEP` so re-launches don't re-enqueue a running
- * backfill. The worker is idempotent: if it runs before all candidates are
- * resolved (e.g. user kills the app mid-drain, or Last.fm returns rate-
- * limit errors), the remaining rows are picked up by the next scheduled
- * pass.
+ * with `ExistingWorkPolicy.KEEP`, so re-launches become no-ops once the
+ * worker completes. Idempotent: if interrupted mid-pass (process killed,
+ * Last.fm rate-limited), the remaining rows are picked up by the next
+ * scheduled pass because both fill queries are guarded by the still-blank
+ * condition.
  */
 @HiltWorker
 class ArtBackfillWorker @AssistedInject constructor(
@@ -56,6 +63,7 @@ class ArtBackfillWorker @AssistedInject constructor(
     private val trackDao: TrackDao,
     private val lastFmApiClient: LastFmApiClient,
     private val credentials: LastFmCredentials,
+    private val audioDurationExtractor: AudioDurationExtractor,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -85,10 +93,21 @@ class ArtBackfillWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
+        runArtPass()
+        runDurationPass()
+        return Result.success()
+    }
+
+    /**
+     * Pass 1: repair missing `album_art_url`. Network-bound (Last.fm),
+     * rate-limited to respect Last.fm's ceiling. Graceful no-op when no
+     * candidates match the query.
+     */
+    private suspend fun runArtPass() {
         val candidates = trackDao.findArtBackfillCandidates(BATCH_SIZE)
         if (candidates.isEmpty()) {
             Log.d(TAG, "no tracks need art backfill")
-            return Result.success()
+            return
         }
         Log.i(TAG, "backfilling art for ${candidates.size} tracks")
 
@@ -112,9 +131,38 @@ class ArtBackfillWorker @AssistedInject constructor(
             // next row's Last.fm call costs.
             delay(REQUEST_INTERVAL_MS)
         }
+        Log.i(TAG, "art backfill done: filled=$filled skipped=$skipped (no art found)")
+    }
 
-        Log.i(TAG, "backfill done: filled=$filled skipped=$skipped (no art found)")
-        return Result.success()
+    /**
+     * Pass 2: repair missing `duration_ms`. Purely local — reads each
+     * file's container metadata via `MediaMetadataRetriever`. No rate-
+     * limit needed; each extraction takes single-digit milliseconds and
+     * the candidate set is typically small (dozens, not thousands).
+     */
+    private suspend fun runDurationPass() {
+        val candidates = trackDao.findDurationBackfillCandidates(BATCH_SIZE)
+        if (candidates.isEmpty()) {
+            Log.d(TAG, "no tracks need duration backfill")
+            return
+        }
+        Log.i(TAG, "backfilling duration for ${candidates.size} tracks")
+
+        var filled = 0
+        var skipped = 0
+        for (row in candidates) {
+            val ms = audioDurationExtractor.extractMs(row.filePath)
+            if (ms != null && ms > 0) {
+                runCatching { trackDao.fillMissingDuration(row.id, ms) }
+                    .onSuccess { filled++ }
+                    .onFailure { e ->
+                        Log.w(TAG, "fillMissingDuration failed for trackId=${row.id}", e)
+                    }
+            } else {
+                skipped++
+            }
+        }
+        Log.i(TAG, "duration backfill done: filled=$filled skipped=$skipped (unreadable or missing)")
     }
 
     /**

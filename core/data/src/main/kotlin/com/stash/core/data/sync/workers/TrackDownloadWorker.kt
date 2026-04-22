@@ -14,6 +14,7 @@ import kotlinx.coroutines.supervisorScope
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
@@ -51,6 +52,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val syncNotificationManager: SyncNotificationManager,
     private val trackDownloader: TrackDownloader,
     private val tokenManager: com.stash.core.auth.TokenManager,
+    private val audioDurationExtractor: AudioDurationExtractor,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -232,6 +234,21 @@ class TrackDownloadWorker @AssistedInject constructor(
                                         filePath = outcome.filePath,
                                         fileSizeBytes = fileSize,
                                     )
+                                    // Duration from the container itself —
+                                    // authoritative, independent of whether
+                                    // the match pipeline populated a value.
+                                    // Fill-if-zero guards against overwriting
+                                    // a known-good Spotify duration.
+                                    if (trackEntity.durationMs == 0L) {
+                                        audioDurationExtractor.extractMs(outcome.filePath)
+                                            ?.let { ms ->
+                                                runCatching {
+                                                    trackDao.fillMissingDuration(queueItem.trackId, ms)
+                                                }.onFailure { e ->
+                                                    Log.w(TAG, "fillMissingDuration failed for ${queueItem.trackId}", e)
+                                                }
+                                            }
+                                    }
                                     downloadQueueDao.updateStatus(
                                         id = queueItem.id,
                                         status = DownloadStatus.COMPLETED,

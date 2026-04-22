@@ -53,6 +53,17 @@ data class ArtBackfillRow(
 )
 
 /**
+ * Minimal row projection for the duration-backfill pass. File path is all
+ * we need — `AudioDurationExtractor.extractMs` reads ground-truth duration
+ * directly from the container.
+ */
+data class DurationBackfillRow(
+    val id: Long,
+    @androidx.room.ColumnInfo(name = "file_path")
+    val filePath: String,
+)
+
+/**
  * Data-access object for [TrackEntity].
  *
  * Provides CRUD operations, various sorted/filtered queries, full-text
@@ -451,6 +462,45 @@ interface TrackDao {
         """
     )
     suspend fun fillMissingAlbumArtUrl(trackId: Long, albumArtUrl: String)
+
+    /**
+     * Duration-only sibling of [fillMissingMetadata]. Used by the primary
+     * download path post-markAsDownloaded and by [ArtBackfillWorker]'s
+     * duration pass. Guarded by `duration_ms = 0` so known-good durations
+     * from Spotify / match pipelines aren't overwritten.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET duration_ms = :durationMs
+        WHERE id = :trackId
+          AND duration_ms = 0
+        """
+    )
+    suspend fun fillMissingDuration(trackId: Long, durationMs: Long)
+
+    /**
+     * Candidate projection for [ArtBackfillWorker]'s duration pass:
+     * downloaded tracks whose duration is still zero but whose file is
+     * on disk (so `MediaMetadataRetriever` can extract the real value).
+     *
+     * Cheaper than [findArtBackfillCandidates] because this only needs
+     * the file path — no network round-trips are implied by a hit in
+     * this result set. Same `LIMIT` safety cap so a huge backlog can't
+     * take down the worker.
+     */
+    @Query(
+        """
+        SELECT id, file_path
+        FROM tracks
+        WHERE is_downloaded = 1
+          AND duration_ms = 0
+          AND file_path IS NOT NULL
+          AND file_path != ''
+        LIMIT :limit
+        """
+    )
+    suspend fun findDurationBackfillCandidates(limit: Int): List<DurationBackfillRow>
 
     /**
      * Candidate projection for [ArtBackfillWorker]: downloaded tracks whose
