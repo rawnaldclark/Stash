@@ -14,6 +14,7 @@ import com.stash.core.media.listening.ListeningRecorder
 import com.stash.core.data.repository.MusicRepositoryImpl
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.data.download.ytdlp.YtDlpManager
+import com.stash.core.data.sync.workers.ArtBackfillWorker
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import com.stash.core.data.sync.workers.TagEnrichmentWorker
@@ -129,6 +130,11 @@ class StashApplication : Application(), Configuration.Provider {
         StashMixRefreshWorker.schedulePeriodic(this)
         TagEnrichmentWorker.schedulePeriodic(this)
         StashDiscoveryWorker.schedulePeriodic(this)
+        // Repair missing album_art_url on tracks downloaded before 0.5.3 —
+        // primarily Stash Discover candidates whose match pipeline surfaced
+        // no thumbnail (see ArtBackfillWorker KDoc). KEEP policy means the
+        // worker is a no-op on every subsequent launch once it completes.
+        ArtBackfillWorker.enqueueOneTime(this)
         // Also fire a one-shot check on every cold start so a release pushed
         // between periodic-worker windows surfaces within seconds of the
         // next launch — the 24-hour periodic worker alone can leave users

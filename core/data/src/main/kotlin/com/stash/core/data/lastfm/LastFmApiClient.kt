@@ -191,6 +191,32 @@ class LastFmApiClient @Inject constructor(
         parseTopArtists(response["topartists"]?.jsonObject)
     }
 
+    /**
+     * `track.getInfo` — album art + canonical album/title/duration for a
+     * track. Returns the best non-placeholder image URL, or null if the
+     * track isn't in Last.fm's catalog or has no art.
+     *
+     * Used by the art-backfill pipeline and as the preferred fallback when
+     * a YouTube match returns no thumbnail (niche genres, compilation
+     * uploads, UGC tracks often surface without music-renderer thumbnails).
+     * Higher-quality than YouTube's hqdefault.jpg when Last.fm has the
+     * track at all — Last.fm images are album art, not video stills.
+     */
+    suspend fun getTrackInfo(
+        artist: String,
+        title: String,
+    ): Result<String?> = runCatching {
+        val params = sortedMapOf(
+            "method" to "track.getInfo",
+            "api_key" to credentials.apiKey,
+            "artist" to artist,
+            "track" to title,
+            "autocorrect" to "1",
+        )
+        val response = unsignedGet(params)
+        parseTrackImageUrl(response["track"]?.jsonObject)
+    }
+
     /** User's loved tracks. Strong affinity signal for cold-start. */
     suspend fun getUserLovedTracks(
         username: String,
@@ -338,6 +364,31 @@ class LastFmApiClient @Inject constructor(
         }
     }
 
+    /**
+     * Extracts the best album-art URL from a `track.getInfo` response's
+     * `track.album.image[]` array. Prefers "mega" → "extralarge" → "large"
+     * sizes. Filters Last.fm's well-known "no image" placeholder (the star
+     * logo at `.../2a96cbd8b46e442fc41c2b86b821562f.*`) which otherwise
+     * masquerades as a populated URL.
+     */
+    private fun parseTrackImageUrl(trackRoot: JsonObject?): String? {
+        if (trackRoot == null) return null
+        val album = trackRoot["album"]?.jsonObject ?: return null
+        val images = album["image"]?.asArrayOrSingletonArray() ?: return null
+        // Build a size → url map, filtering placeholder + empty entries.
+        val bySize = HashMap<String, String>(images.size)
+        for (img in images) {
+            val obj = img.jsonObject
+            val size = obj["size"]?.jsonPrimitive?.content ?: continue
+            val url = obj["#text"]?.jsonPrimitive?.content
+                ?.takeIf { it.isNotBlank() && !it.contains(LASTFM_PLACEHOLDER_HASH) }
+                ?: continue
+            bySize[size] = url
+        }
+        // Preference order: highest quality first.
+        return bySize["mega"] ?: bySize["extralarge"] ?: bySize["large"]
+    }
+
     private fun parseTopArtists(root: JsonObject?): List<LastFmTopArtist> {
         if (root == null) return emptyList()
         val arr = root["artist"]?.asArrayOrSingletonArray() ?: return emptyList()
@@ -364,6 +415,14 @@ class LastFmApiClient @Inject constructor(
     companion object {
         private const val API_URL = "https://ws.audioscrobbler.com/2.0/"
         private val json = Json { ignoreUnknownKeys = true }
+
+        /**
+         * Last.fm's global "no image" placeholder filename — the star logo
+         * that Last.fm serves when an album has no uploaded art. The same
+         * hash appears across every image size so a single substring match
+         * filters every flavour (34s, 64s, 174s, 300x300).
+         */
+        private const val LASTFM_PLACEHOLDER_HASH = "2a96cbd8b46e442fc41c2b86b821562f"
     }
 }
 

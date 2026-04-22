@@ -40,6 +40,19 @@ data class AlbumSummary(
 )
 
 /**
+ * Minimal row projection for the art-backfill pipeline. Returned by
+ * [TrackDao.findArtBackfillCandidates] — only the fields needed to
+ * attempt a backfill without dragging in the full [TrackEntity] shape.
+ */
+data class ArtBackfillRow(
+    val id: Long,
+    val artist: String,
+    val title: String,
+    @androidx.room.ColumnInfo(name = "youtube_id")
+    val youtubeId: String?,
+)
+
+/**
  * Data-access object for [TrackEntity].
  *
  * Provides CRUD operations, various sorted/filtered queries, full-text
@@ -416,6 +429,51 @@ interface TrackDao {
         durationMs: Long,
         youtubeId: String?,
     )
+
+    /**
+     * Art-only sibling of [fillMissingMetadata]. Used by the art-backfill
+     * worker and as a narrow fallback from the match pipeline when the
+     * only field we have is an album-art URL (e.g. Last.fm `track.getInfo`
+     * returned art but no other canonical metadata we'd want to write).
+     *
+     * Kept separate from [fillMissingMetadata] because that query also
+     * touches `youtube_id`, which has a UNIQUE index — if two Discovery
+     * candidates resolve to the same YouTube video, the second fillMissing
+     * fails the whole row via SQLiteConstraintException and the art write
+     * is lost collaterally. This single-column update side-steps that.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET album_art_url = :albumArtUrl
+        WHERE id = :trackId
+          AND (album_art_url IS NULL OR album_art_url = '')
+        """
+    )
+    suspend fun fillMissingAlbumArtUrl(trackId: Long, albumArtUrl: String)
+
+    /**
+     * Candidate projection for [ArtBackfillWorker]: downloaded tracks whose
+     * art is still missing. Returns the minimum fields needed to attempt
+     * a backfill: the track id for the final UPDATE, artist + title for
+     * the Last.fm `track.getInfo` lookup, and `youtube_id` as the last-
+     * resort fallback (synthetic `https://i.ytimg.com/vi/<id>/hqdefault.jpg`).
+     * Only rows where the backfill has any chance of succeeding are
+     * returned — tracks with a blank artist or title can't match anything
+     * upstream, so we skip them entirely.
+     */
+    @Query(
+        """
+        SELECT id, artist, title, youtube_id
+        FROM tracks
+        WHERE is_downloaded = 1
+          AND (album_art_url IS NULL OR album_art_url = '')
+          AND artist != ''
+          AND title != ''
+        LIMIT :limit
+        """
+    )
+    suspend fun findArtBackfillCandidates(limit: Int): List<ArtBackfillRow>
 
     /**
      * Atomically reverts a track to an undownloaded state so the download

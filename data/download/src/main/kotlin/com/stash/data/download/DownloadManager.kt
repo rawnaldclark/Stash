@@ -2,6 +2,8 @@ package com.stash.data.download
 
 import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.lastfm.LastFmApiClient
+import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
@@ -62,6 +64,8 @@ class DownloadManager @Inject constructor(
     private val qualityPrefs: QualityPreferencesManager,
     private val ytLibraryCanonicalizer: YtLibraryCanonicalizer,
     private val trackDao: TrackDao,
+    private val lastFmApiClient: LastFmApiClient,
+    private val lastFmCredentials: LastFmCredentials,
 ) {
     /** Limits concurrent downloads. 8 parallel slots — with native opus (no FFmpeg
      *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
@@ -430,16 +434,60 @@ class DownloadManager @Inject constructor(
         track: Track,
         best: com.stash.data.download.model.MatchResult,
     ) {
+        // Resolve the best-available album art URL via a three-tier fallback:
+        //   1. best.thumbnailUrl  — YouTube Music's search-shelf thumbnail.
+        //      Present for most InnerTube hits; absent for yt-dlp-fallback
+        //      results and for UGC / niche uploads where the response comes
+        //      back as a plain video renderer without the music thumbnail
+        //      path. Niche ambient / modern-classical + compilation uploads
+        //      land in this tier frequently.
+        //   2. Last.fm track.getInfo   — album art keyed to the canonical
+        //      (artist, title) identity rather than the YouTube video. When
+        //      Last.fm has the track, this is typically higher quality than
+        //      any YouTube thumbnail because it's actual album art, not a
+        //      video still. Skipped when credentials aren't configured.
+        //   3. i.ytimg.com/vi/<id>/hqdefault.jpg  — deterministic per video
+        //      id. hqdefault (480×360) is guaranteed to exist for every YT
+        //      video; maxresdefault would be higher res but returns a stock
+        //      placeholder on non-HD uploads. Only usable when best.videoId
+        //      is non-blank.
+        val resolvedArtUrl: String? = best.thumbnailUrl
+            ?: (if (lastFmCredentials.isConfigured) {
+                runCatching {
+                    lastFmApiClient.getTrackInfo(track.artist, track.title).getOrNull()
+                }.getOrNull()
+            } else null)
+            ?: best.videoId.takeIf { it.isNotBlank() }?.let { vid ->
+                "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
+            }
+
         runCatching {
             trackDao.fillMissingMetadata(
                 trackId = track.id,
                 album = best.album?.takeIf { it.isNotBlank() },
-                albumArtUrl = best.thumbnailUrl,
+                albumArtUrl = resolvedArtUrl,
                 durationMs = best.durationSeconds.takeIf { it > 0 }?.let { it * 1000L } ?: 0L,
                 youtubeId = best.videoId.takeIf { it.isNotBlank() },
             )
         }.onFailure { e ->
-            Log.w(TAG, "persistMatchMetadata failed for trackId=${track.id}", e)
+            // fillMissingMetadata can fail on UNIQUE constraint (youtube_id
+            // already used by another track, e.g. two Discovery candidates
+            // both resolving to the same compilation video) — when that
+            // happens the whole row is rolled back and the art write is
+            // lost collaterally. Fall back to the art-only write so we
+            // still get the album cover even if youtube_id can't be set.
+            Log.w(
+                TAG,
+                "persistMatchMetadata: fillMissingMetadata failed for trackId=${track.id} " +
+                    "(${e.javaClass.simpleName}: ${e.message}); trying art-only fallback",
+            )
+            if (resolvedArtUrl != null) {
+                runCatching {
+                    trackDao.fillMissingAlbumArtUrl(track.id, resolvedArtUrl)
+                }.onFailure { inner ->
+                    Log.w(TAG, "persistMatchMetadata: art-only fallback also failed for trackId=${track.id}", inner)
+                }
+            }
         }
     }
 
