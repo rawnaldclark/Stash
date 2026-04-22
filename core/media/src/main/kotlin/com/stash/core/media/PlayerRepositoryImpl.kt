@@ -12,6 +12,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
+import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.service.StashPlaybackService
 import com.stash.core.model.PlayerState
 import com.stash.core.model.RepeatMode
@@ -42,9 +43,24 @@ import javax.inject.Singleton
 class PlayerRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val playbackStateStore: PlaybackStateStore,
+    private val musicRepository: MusicRepository,
 ) : PlayerRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    init {
+        // Evict deleted tracks from the live queue. Without this, ExoPlayer's
+        // open file handle keeps audio playing after the user deletes the
+        // song (correct Unix semantics, wrong UX) — see Reddit report from
+        // user Superb_Agency_796. Subscribing here means every repo delete
+        // entry-point automatically informs the player; future delete methods
+        // don't have to remember to call a helper in the ViewModel layer.
+        scope.launch {
+            musicRepository.trackDeletions.collect { trackId ->
+                evictTrackFromQueue(trackId)
+            }
+        }
+    }
 
     private val _playerState = MutableStateFlow(PlayerState())
     override val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
@@ -141,6 +157,30 @@ class PlayerRepositoryImpl @Inject constructor(
         val controller = ensureController() ?: return
         if (index in 0 until controller.mediaItemCount) {
             controller.seekToDefaultPosition(index)
+        }
+    }
+
+    /**
+     * Called by the MusicRepository.trackDeletions collector. Removes every
+     * queue entry whose Media3 extras carry [deletedTrackId]. Operates
+     * high-to-low so earlier indices stay valid while the loop runs.
+     *
+     * If the currently-playing item is removed, Media3 auto-advances to the
+     * next queue entry (or stops the player if we've emptied the queue) —
+     * no manual `stop()` or `seekToNextMediaItem()` needed.
+     *
+     * No-op when the controller hasn't been initialised yet (user deleted
+     * a track before ever hitting play this session).
+     */
+    private fun evictTrackFromQueue(deletedTrackId: Long) {
+        val controller = controllerDeferred ?: return
+        for (i in controller.mediaItemCount - 1 downTo 0) {
+            val item = controller.getMediaItemAt(i)
+            val queuedId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID)
+                ?: item.mediaId.toLongOrNull()
+            if (queuedId == deletedTrackId) {
+                controller.removeMediaItem(i)
+            }
         }
     }
 

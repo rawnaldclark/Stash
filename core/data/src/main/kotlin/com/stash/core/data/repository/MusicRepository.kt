@@ -6,6 +6,7 @@ import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharedFlow
 
 /**
  * Primary repository interface for music data operations.
@@ -15,6 +16,20 @@ import kotlinx.coroutines.flow.Flow
  * write is committed.
  */
 interface MusicRepository {
+
+    // ── Deletion events ─────────────────────────────────────────────────
+
+    /**
+     * Emits a track id every time the repository deletes that track's audio
+     * file + DB row (or tombstones it via blacklist). Collectors such as
+     * `PlayerRepositoryImpl` subscribe once and evict the track from any
+     * in-memory queue so playback doesn't continue on a deleted file.
+     *
+     * Any future delete-entry-point added to the repository MUST emit here
+     * after the terminal write — that's what keeps the player eviction
+     * hook automatic instead of requiring every ViewModel to remember.
+     */
+    val trackDeletions: SharedFlow<Long>
 
     // ── Track queries ───────────────────────────────────────────────────
 

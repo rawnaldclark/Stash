@@ -42,6 +42,10 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+    // DocumentFile: SAF-aware deletion of tracks stored on external SD card /
+    // USB-OTG via the user's ACTION_OPEN_DOCUMENT_TREE grant. See the
+    // deleteTrackFile helper in MusicRepositoryImpl.
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")

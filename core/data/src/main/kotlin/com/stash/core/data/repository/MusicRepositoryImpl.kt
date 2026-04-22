@@ -1,5 +1,8 @@
 package com.stash.core.data.repository
 
+import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
@@ -11,7 +14,11 @@ import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.mapper.toEntity
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -25,12 +32,48 @@ import javax.inject.Inject
  * entities to domain models via extension functions in the mapper package.
  */
 class MusicRepositoryImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val trackDao: TrackDao,
     private val playlistDao: PlaylistDao,
     private val syncHistoryDao: SyncHistoryDao,
     private val downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao,
     private val discoveryQueueDao: com.stash.core.data.db.dao.DiscoveryQueueDao,
 ) : MusicRepository {
+
+    // ── Deletion event plumbing ─────────────────────────────────────────
+    //
+    // Every repo method that actually removes a track file + DB row emits
+    // the track id here. The player (and any future component that holds
+    // references to tracks) subscribes once and reacts automatically, so
+    // new delete entry-points can't forget to tell the player.
+    //
+    // Buffer is generous so emits from a cascade-delete loop don't suspend
+    // the caller (we use tryEmit).
+    private val _trackDeletions = MutableSharedFlow<Long>(
+        replay = 0,
+        extraBufferCapacity = 64,
+    )
+    override val trackDeletions: SharedFlow<Long> = _trackDeletions.asSharedFlow()
+
+    /**
+     * Deletes the audio file at [path]. Handles both app-internal paths
+     * (plain `java.io.File`) and SAF-backed external storage URIs (the
+     * `content://...` strings returned by [com.stash.data.download.files.FileOrganizer]
+     * when the user has picked an SD card / USB-OTG folder). Without the
+     * `content://` branch, external-storage users would leak every deleted
+     * track's file, because `File(contentUri).delete()` silently returns
+     * false for a URI that isn't a real filesystem path.
+     *
+     * Returns true on successful unlink. Best-effort: false just means the
+     * file was already gone, the SAF grant was revoked, or I/O failed.
+     */
+    private fun deleteTrackFile(path: String): Boolean = runCatching {
+        if (path.startsWith("content://")) {
+            DocumentFile.fromSingleUri(context, Uri.parse(path))?.delete() == true
+        } else {
+            java.io.File(path).delete()
+        }
+    }.getOrDefault(false)
 
     /** Startup fixups — resets exhausted retries, purges seeder data, and
      *  clears interrupted sync records. */
@@ -181,22 +224,13 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun deleteTrack(track: Track): Boolean {
         // Best-effort file deletion -- the file may already be gone.
-        track.filePath?.let { path ->
-            try {
-                java.io.File(path).delete()
-            } catch (_: Exception) {
-                // Ignore: file may not exist or may be unreadable.
-            }
-        }
-        // Also delete locally-stored album art.
-        track.albumArtPath?.let { path ->
-            try {
-                java.io.File(path).delete()
-            } catch (_: Exception) {
-                // Ignore.
-            }
-        }
+        track.filePath?.let { deleteTrackFile(it) }
+        // Album art lives in the app cache (internal only) but route it
+        // through the same helper so a future SAF-backed art cache would
+        // work without another code change.
+        track.albumArtPath?.let { deleteTrackFile(it) }
         trackDao.delete(track.toEntity())
+        _trackDeletions.tryEmit(track.id)
         return true
     }
 
@@ -316,24 +350,22 @@ class MusicRepositoryImpl @Inject constructor(
             deleted = 0, keptProtected = 0, keptElsewhere = 0, blacklisted = 0,
         )
 
-        track.filePath?.let { path ->
-            runCatching { java.io.File(path).delete() }
-        }
-        track.albumArtPath?.let { path ->
-            runCatching { java.io.File(path).delete() }
-        }
+        track.filePath?.let { deleteTrackFile(it) }
+        track.albumArtPath?.let { deleteTrackFile(it) }
 
         return if (alsoBlacklist) {
             // Tombstone: keep the row so future sync identity matches
             // (spotify_uri, youtube_id, canonical title+artist) still find
             // it and see is_blacklisted = 1, never re-queueing.
             trackDao.markBlacklistedAndClear(trackId)
+            _trackDeletions.tryEmit(trackId)
             MusicRepository.CascadeRemovalSummary(
                 deleted = 1, keptProtected = 0, keptElsewhere = 0, blacklisted = 1,
             )
         } else {
             // Hard delete; next sync of the same identity starts fresh.
             trackDao.delete(track)
+            _trackDeletions.tryEmit(trackId)
             MusicRepository.CascadeRemovalSummary(
                 deleted = 1, keptProtected = 0, keptElsewhere = 0, blacklisted = 0,
             )
@@ -387,9 +419,10 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun blacklistTrack(trackId: Long) {
         val track = trackDao.getById(trackId) ?: return
-        track.filePath?.let { path -> runCatching { java.io.File(path).delete() } }
-        track.albumArtPath?.let { path -> runCatching { java.io.File(path).delete() } }
+        track.filePath?.let { deleteTrackFile(it) }
+        track.albumArtPath?.let { deleteTrackFile(it) }
         trackDao.markBlacklistedAndClear(trackId)
+        _trackDeletions.tryEmit(trackId)
     }
 
     override suspend fun unblacklistTrack(trackId: Long) {
@@ -448,24 +481,13 @@ class MusicRepositoryImpl @Inject constructor(
         if (orphans.isEmpty()) return 0
 
         for (track in orphans) {
-            // Delete the audio file from disk.
-            track.filePath?.let { path ->
-                try {
-                    java.io.File(path).delete()
-                } catch (_: Exception) {
-                    // Best-effort: file may already be gone.
-                }
-            }
+            // Delete the audio file from disk (SAF-aware — see deleteTrackFile).
+            track.filePath?.let { deleteTrackFile(it) }
             // Delete locally-stored album art if present.
-            track.albumArtPath?.let { path ->
-                try {
-                    java.io.File(path).delete()
-                } catch (_: Exception) {
-                    // Best-effort.
-                }
-            }
+            track.albumArtPath?.let { deleteTrackFile(it) }
             // Remove the track entity from the database.
             trackDao.delete(track)
+            _trackDeletions.tryEmit(track.id)
         }
 
         android.util.Log.i(
