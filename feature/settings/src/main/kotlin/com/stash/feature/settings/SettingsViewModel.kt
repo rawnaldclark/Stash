@@ -6,10 +6,16 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.youtube.YouTubeCookieHelper
+import android.content.Context
 import android.net.Uri
+import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.prefs.StoragePreference
 import com.stash.core.data.prefs.ThemePreference
+import com.stash.core.data.sync.workers.StashDiscoveryWorker
+import com.stash.core.data.sync.workers.TagEnrichmentWorker
+import com.stash.core.model.DownloadNetworkMode
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmScrobbler
@@ -47,11 +53,13 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val tokenManager: TokenManager,
     private val musicRepository: MusicRepository,
     private val qualityPreference: QualityPreference,
     private val themePreference: ThemePreference,
     private val storagePreference: StoragePreference,
+    private val downloadNetworkPreference: DownloadNetworkPreference,
     private val moveLibraryCoordinator: MoveLibraryCoordinator,
     private val youTubeCookieHelper: YouTubeCookieHelper,
     private val equalizerManager: com.stash.core.media.equalizer.EqualizerManager,
@@ -85,6 +93,7 @@ class SettingsViewModel @Inject constructor(
         moveLibraryCoordinator.state,
         lastFmSessionPreference.session,
         listeningEventDao.pendingScrobbleCount(),
+        downloadNetworkPreference.mode,
         _localState,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -98,7 +107,8 @@ class SettingsViewModel @Inject constructor(
         val moveState = values[7] as MoveLibraryState
         val lastFmSession = values[8] as LastFmSession?
         val pendingScrobbles = values[9] as Int
-        val local = values[10] as LocalState
+        val downloadNetworkMode = values[10] as DownloadNetworkMode
+        val local = values[11] as LocalState
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
@@ -115,6 +125,7 @@ class SettingsViewModel @Inject constructor(
             youTubeAuthState = youTubeAuth,
             audioQuality = quality,
             themeMode = theme,
+            downloadNetworkMode = downloadNetworkMode,
             totalStorageBytes = storageBytes,
             totalTracks = trackCount,
             showSpotifyWebLogin = local.showSpotifyWebLogin,
@@ -513,6 +524,22 @@ class SettingsViewModel @Inject constructor(
     fun onThemeChanged(mode: ThemeMode) {
         viewModelScope.launch {
             themePreference.setThemeMode(mode)
+        }
+    }
+
+    /**
+     * Persists a new download-network mode AND re-schedules the two
+     * workers that depend on it ([StashDiscoveryWorker],
+     * [TagEnrichmentWorker]) so the updated `Constraints` take effect
+     * immediately. WorkManager snapshots constraints at enqueue time —
+     * without the re-schedule, the setting would only apply to future
+     * installs, not the current one.
+     */
+    fun onDownloadNetworkModeChanged(mode: DownloadNetworkMode) {
+        viewModelScope.launch {
+            downloadNetworkPreference.setMode(mode)
+            StashDiscoveryWorker.schedulePeriodic(appContext, mode)
+            TagEnrichmentWorker.schedulePeriodic(appContext, mode)
         }
     }
 

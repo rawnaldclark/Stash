@@ -3,14 +3,13 @@ package com.stash.core.data.sync.workers
 import android.content.Context
 import android.util.Log
 import androidx.hilt.work.HiltWorker
-import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.stash.core.data.db.dao.DiscoveryQueueDao
+import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
@@ -64,35 +63,51 @@ class StashDiscoveryWorker @AssistedInject constructor(
         private const val TAG = "StashDiscovery"
         private const val WORK_NAME = "stash_discovery"
         private const val BATCH_SIZE = 60
-        // Raised from 10 → 30 on 2026-04-21. Combined with the wipe-
-        // on-refresh fix (StashMixRefreshWorker re-links DONE discovery
-        // tracks) this lets the mix actually fill its ~30-slot discovery
-        // quota inside one week instead of dribbling tracks in over a
-        // month and getting wiped before they land.
-        private const val PER_RECIPE_WEEKLY_CAP = 30
+        // Raised from 30 → 100 on 2026-04-22. With Stash Discover at 100%
+        // discovery ratio + targetLength=50, a 30/week drain couldn't
+        // sustain a fresh mix; Last.fm was producing candidates 3× faster
+        // than downloads could complete them. 100/week tracks a steady-
+        // state of "full mix refresh every 10-14 days" — in line with the
+        // 14-day freshness window the recipe filters on.
+        private const val PER_RECIPE_WEEKLY_CAP = 100
         private const val WEEK_MS = 7L * 24 * 60 * 60 * 1000
+        /** Age-out cutoff for PENDING discovery rows — 30 days. */
+        private const val PENDING_TTL_MS = 30L * 24 * 60 * 60 * 1000
 
-        fun schedulePeriodic(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.UNMETERED)
-                .setRequiresCharging(true)
-                .setRequiresBatteryNotLow(true)
-                .build()
+        /**
+         * Schedule / re-schedule the periodic worker with [mode]'s
+         * constraints. Uses `UPDATE` policy so a running schedule is
+         * replaced in place when the user changes their download-network
+         * preference — WorkManager snapshots constraints at enqueue time,
+         * so the re-schedule is what makes a setting change take effect.
+         */
+        fun schedulePeriodic(context: Context, mode: DownloadNetworkMode) {
             val work = PeriodicWorkRequestBuilder<StashDiscoveryWorker>(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
             )
-                .setConstraints(constraints)
+                .setConstraints(constraintsFor(mode))
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 work,
             )
         }
     }
 
     override suspend fun doWork(): Result {
+        // TTL pass: drop PENDING rows that have been sitting longer than
+        // 30 days. Stale candidates clog the drain order without value —
+        // fresher similar-artist queries in newer refresh cycles would
+        // re-surface anything still relevant to the user's taste today.
+        val aged = discoveryQueueDao.deleteStalePending(
+            cutoffMillis = System.currentTimeMillis() - PENDING_TTL_MS,
+        )
+        if (aged > 0) {
+            Log.i(TAG, "aged out $aged stale PENDING row(s) older than 30 days")
+        }
+
         val pending = discoveryQueueDao.getPending(BATCH_SIZE)
         if (pending.isEmpty()) {
             Log.d(TAG, "no pending discoveries")

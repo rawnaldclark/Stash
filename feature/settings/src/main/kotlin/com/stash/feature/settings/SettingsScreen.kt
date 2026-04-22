@@ -45,6 +45,7 @@ import android.widget.Toast
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
 import com.stash.core.ui.components.GlassCard
@@ -135,6 +136,7 @@ fun SettingsScreen(
         onConnectYouTube = viewModel::onConnectYouTube,
         onDisconnectYouTube = viewModel::onDisconnectYouTube,
         onQualityChanged = viewModel::onQualityChanged,
+        onDownloadNetworkModeChanged = viewModel::onDownloadNetworkModeChanged,
         onThemeChanged = viewModel::onThemeChanged,
         onEqEnabledChanged = viewModel::setEqEnabled,
         onEqPresetSelected = viewModel::setEqPreset,
@@ -168,6 +170,7 @@ private fun SettingsContent(
     onConnectYouTube: () -> Unit,
     onDisconnectYouTube: () -> Unit,
     onQualityChanged: (QualityTier) -> Unit,
+    onDownloadNetworkModeChanged: (DownloadNetworkMode) -> Unit,
     onThemeChanged: (ThemeMode) -> Unit,
     onEqEnabledChanged: (Boolean) -> Unit,
     onEqPresetSelected: (String) -> Unit,
@@ -365,6 +368,62 @@ private fun SettingsContent(
                             )
                             Text(
                                 text = "${tier.bitrateKbps} kbps  ~${tier.sizeMbPerMinute} MB/min",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // -- Downloads section ------------------------------------------------
+        // Governs when background workers (Stash Discover, tag enrichment)
+        // are allowed to run. Default is WiFi + charging (safest); power
+        // users can loosen this to WiFi-any-time or any-network.
+        SectionHeader(title = "Downloads")
+
+        GlassCard {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
+            ) {
+                Text(
+                    text = "Run recommendations when",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                DownloadNetworkMode.entries.forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = uiState.downloadNetworkMode == mode,
+                                onClick = { onDownloadNetworkModeChanged(mode) },
+                                role = Role.RadioButton,
+                            )
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = uiState.downloadNetworkMode == mode,
+                            onClick = null, // handled by Row's selectable
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(
+                                text = mode.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = mode.description,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

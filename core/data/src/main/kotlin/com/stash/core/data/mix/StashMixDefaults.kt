@@ -30,24 +30,30 @@ object StashMixDefaults {
      *  - No tag filter — works on every library size, including ones
      *    that haven't finished tag enrichment. Once enrichment is deep,
      *    we can layer tag-biased variants on top.
-     *  - Slight positive affinity bias so the mix leans into what you
-     *    already like without turning into straight Heavy Rotation.
+     *  - Slight positive affinity bias — kept for when we add mixes that
+     *    do include library slots; Discover itself is 100% discovery so
+     *    affinity only influences the seed selection upstream.
      *  - 14-day freshness window so you don't hear the same tracks the
      *    mix surfaced yesterday.
-     *  - 60% discovery ratio (raised from 0.25 on 2026-04-21 after user
-     *    testing — library-only slots dominated the mix and the user
-     *    "recognized" most tracks from their Spotify/YouTube imports).
-     *    30 discovery slots + 20 library anchors means the mix stays
-     *    mostly-fresh while keeping stylistic familiarity.
+     *  - **1.0 discovery ratio** (raised from 0.6 on 2026-04-22). Stash
+     *    Discover is *pure* Last.fm recommendations — no library tracks
+     *    mixed in. The user's top artists still seed the similar-artist
+     *    query (see [StashMixRefreshWorker.queueDiscoveryForRecipe]), and
+     *    fresh-install users with no listening history fall back to
+     *    library-top-artists so the mix populates on day one instead of
+     *    waiting for scrobbles to accumulate. `StashMixRefreshWorker`'s
+     *    re-link pass is what actually fills the playlist — downloaded
+     *    Discovery candidates get appended after the (empty) library
+     *    slots on every refresh.
      */
     val ALL: List<StashMixRecipeEntity> = listOf(
         StashMixRecipeEntity(
             name = "Stash Discover",
-            description = "Your favorites blended with new tracks Stash thinks you'll like.",
+            description = "Fresh tracks Last.fm thinks you'll like — 100% new.",
             includeTagsCsv = "",
             affinityBias = 0.2f,
             freshnessWindowDays = 14,
-            discoveryRatio = 0.6f,
+            discoveryRatio = 1.0f,
             targetLength = 50,
             isBuiltin = true,
         ),

@@ -117,4 +117,25 @@ interface DiscoveryQueueDao {
         """
     )
     suspend fun existsForRecipe(recipeId: Long, artist: String, title: String): Boolean
+
+    /**
+     * Age-out pass: delete PENDING rows that have been queued longer than
+     * [cutoffMillis] ago (typically now − 30 days). Stale pending
+     * candidates clog the queue's drain order without contributing value
+     * — the user's taste has usually moved on, and newer refreshes will
+     * surface any still-relevant similar-artist suggestions anyway.
+     * Completed (DONE) / failed rows are left alone so the per-recipe
+     * weekly-cap query and the re-link step still see accurate history.
+     *
+     * Returns the number of rows deleted — non-zero values are logged by
+     * [StashDiscoveryWorker] as a diagnostic signal.
+     */
+    @Query(
+        """
+        DELETE FROM discovery_queue
+        WHERE status = 'PENDING'
+          AND queued_at < :cutoffMillis
+        """
+    )
+    suspend fun deleteStalePending(cutoffMillis: Long): Int
 }

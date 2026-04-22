@@ -15,6 +15,7 @@ import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.StashMixRecipeEntity
@@ -63,6 +64,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
     private val playlistDao: PlaylistDao,
     private val discoveryQueueDao: DiscoveryQueueDao,
     private val listeningEventDao: ListeningEventDao,
+    private val trackDao: TrackDao,
     private val mixGenerator: MixGenerator,
     private val lastFmApiClient: LastFmApiClient,
     private val lastFmCredentials: LastFmCredentials,
@@ -142,8 +144,15 @@ class StashMixRefreshWorker @AssistedInject constructor(
 
         for (recipe in active) {
             val tracks = mixGenerator.generate(recipe)
-            if (tracks.isEmpty()) {
-                Log.d(TAG, "'${recipe.name}' produced 0 tracks — skipping materialize")
+            // Empty-tracks skip is only safe for library-only recipes
+            // (discoveryRatio == 0). Pure-discovery recipes like "Stash
+            // Discover" (ratio = 1.0) produce an empty generator result
+            // by design — the playlist gets its content from the
+            // discovery re-link pass inside materializeMix + the async
+            // StashDiscoveryWorker. Skipping them here would keep stale
+            // pre-retune content in the playlist forever.
+            if (tracks.isEmpty() && recipe.discoveryRatio == 0f) {
+                Log.d(TAG, "'${recipe.name}' produced 0 tracks and has no discovery — skipping materialize")
                 continue
             }
 
@@ -256,12 +265,35 @@ class StashMixRefreshWorker @AssistedInject constructor(
     private suspend fun queueDiscoveryForRecipe(recipe: StashMixRecipeEntity) {
         val since = System.currentTimeMillis() -
             AFFINITY_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
-        val topArtists = listeningEventDao
+
+        // Seed-artist fallback chain. Listening history is the best signal
+        // when it exists — it reflects what the user actually plays in
+        // Stash, not just what they imported. But the original gate here
+        // ("no listening events → skip discovery entirely") stranded every
+        // fresh-install user with an empty mix until they accumulated a
+        // few scrobbles. The library-top-artists fallback uses what
+        // they've already synced as a taste proxy so Stash Discover
+        // populates on day one. When even the library is empty (installed
+        // but never synced), there's nothing to seed from and we skip.
+        val listeningSeeds = listeningEventDao
             .getTopArtistsSince(since, TOP_ARTISTS_LIMIT)
             .map { it.artist }
+        val topArtists = if (listeningSeeds.isNotEmpty()) {
+            listeningSeeds
+        } else {
+            val librarySeeds = trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT)
+            if (librarySeeds.isNotEmpty()) {
+                Log.i(
+                    TAG,
+                    "'${recipe.name}': no listening history yet — seeding discovery " +
+                        "from ${librarySeeds.size} top library artist(s)",
+                )
+            }
+            librarySeeds
+        }
 
         if (topArtists.isEmpty()) {
-            Log.d(TAG, "'${recipe.name}': no top artists yet — skipping discovery")
+            Log.d(TAG, "'${recipe.name}': no seeds — listening history and library both empty")
             return
         }
 

@@ -92,6 +92,28 @@ interface TrackDao {
     @Delete
     suspend fun delete(track: TrackEntity)
 
+    /**
+     * Top artists in the library ranked by track count. Used by the
+     * Stash Discover seeding fallback — when a fresh-install user has no
+     * listening_events yet, their library's most-present artists are the
+     * best proxy for "what they care about" to feed Last.fm's
+     * `artist.getSimilar`. Only considers downloaded, non-blacklisted
+     * tracks so pending-download stubs don't skew the ranking.
+     */
+    @Query(
+        """
+        SELECT artist
+        FROM tracks
+        WHERE is_downloaded = 1
+          AND is_blacklisted = 0
+          AND artist != ''
+        GROUP BY LOWER(artist)
+        ORDER BY COUNT(*) DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getTopArtistsByTrackCount(limit: Int): List<String>
+
     // ── List queries (all reactive) ─────────────────────────────────────
 
     /** All tracks ordered by most-recently-added first. */

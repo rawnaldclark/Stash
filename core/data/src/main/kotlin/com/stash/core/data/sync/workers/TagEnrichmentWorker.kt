@@ -3,10 +3,8 @@ package com.stash.core.data.sync.workers
 import android.content.Context
 import android.util.Log
 import androidx.hilt.work.HiltWorker
-import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -16,6 +14,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmTag
+import com.stash.core.model.DownloadNetworkMode
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.delay
@@ -58,25 +57,20 @@ class TagEnrichmentWorker @AssistedInject constructor(
         private const val MAX_TAGS_PER_TRACK = 5
 
         /**
-         * Schedule the periodic enrichment. Runs once per day, with
-         * unmetered + charging constraints so we don't burn data or
-         * battery. Idempotent — safe to call from app startup.
+         * Schedule / re-schedule the periodic enrichment with [mode]'s
+         * constraints. `UPDATE` policy so a preference change replaces
+         * the running schedule in place.
          */
-        fun schedulePeriodic(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.UNMETERED)
-                .setRequiresCharging(true)
-                .setRequiresBatteryNotLow(true)
-                .build()
+        fun schedulePeriodic(context: Context, mode: DownloadNetworkMode) {
             val work = PeriodicWorkRequestBuilder<TagEnrichmentWorker>(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
             )
-                .setConstraints(constraints)
+                .setConstraints(constraintsFor(mode))
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 work,
             )
         }

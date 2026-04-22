@@ -10,6 +10,7 @@ import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.mix.StashMixDefaults
+import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.media.listening.ListeningRecorder
 import com.stash.core.data.repository.MusicRepositoryImpl
 import com.stash.core.data.sync.SyncNotificationManager
@@ -71,6 +72,9 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var stashMixRecipeDao: StashMixRecipeDao
 
+    @Inject
+    lateinit var downloadNetworkPreference: DownloadNetworkPreference
+
     /** Application-scoped coroutine scope for one-shot startup tasks. */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -128,8 +132,16 @@ class StashApplication : Application(), Configuration.Provider {
             StashMixRefreshWorker.enqueueOneTime(this@StashApplication)
         }
         StashMixRefreshWorker.schedulePeriodic(this)
-        TagEnrichmentWorker.schedulePeriodic(this)
-        StashDiscoveryWorker.schedulePeriodic(this)
+        // Tag enrichment + discovery worker constraints come from the
+        // user's DownloadNetworkMode preference. Re-scheduling when the
+        // setting changes is the Settings ViewModel's job — this path is
+        // only the startup register. `UPDATE` policy on those workers
+        // means a mode change at runtime replaces the pending schedule.
+        applicationScope.launch {
+            val mode = downloadNetworkPreference.current()
+            TagEnrichmentWorker.schedulePeriodic(this@StashApplication, mode)
+            StashDiscoveryWorker.schedulePeriodic(this@StashApplication, mode)
+        }
         // Repair missing album_art_url on tracks downloaded before 0.5.3 —
         // primarily Stash Discover candidates whose match pipeline surfaced
         // no thumbnail (see ArtBackfillWorker KDoc). KEEP policy means the
@@ -212,14 +224,14 @@ class StashApplication : Application(), Configuration.Provider {
         if (stored < STASH_DISCOVER_TUNING_VERSION) {
             val updated = stashMixRecipeDao.retuneBuiltin(
                 name = "Stash Discover",
-                discoveryRatio = 0.6f,
+                discoveryRatio = 1.0f,
                 freshnessWindowDays = 14,
                 targetLength = 50,
             )
             if (updated > 0) {
                 Log.i(
                     "StashMigration",
-                    "Retuned Stash Discover to discovery_ratio=0.6 ($updated row)",
+                    "Retuned Stash Discover to discovery_ratio=1.0 ($updated row)",
                 )
             }
             prefs.edit()
@@ -307,10 +319,15 @@ class StashApplication : Application(), Configuration.Provider {
 
         /**
          * Bump when the built-in Stash Discover recipe's tunables change
-         * and existing installs should adopt them. v1 = 2026-04-21 bump
-         * of discovery_ratio from 0.25 → 0.6 after audit showed the mix
-         * was 100% library.
+         * and existing installs should adopt them.
+         *  - v1 = 2026-04-21 bump of discovery_ratio from 0.25 → 0.6
+         *    after audit showed the mix was 100% library.
+         *  - v2 = 2026-04-22 bump to 1.0: Stash Discover is now pure
+         *    Last.fm recommendations (library slots removed). Tracks
+         *    already downloaded from prior Discovery runs stay in the
+         *    mix via the re-link pass; the 20-ish library anchors that
+         *    used to fill the non-discovery slots drop on next refresh.
          */
-        private const val STASH_DISCOVER_TUNING_VERSION = 1
+        private const val STASH_DISCOVER_TUNING_VERSION = 2
     }
 }

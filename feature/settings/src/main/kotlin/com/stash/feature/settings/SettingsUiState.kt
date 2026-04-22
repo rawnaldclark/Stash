@@ -1,6 +1,7 @@
 package com.stash.feature.settings
 
 import com.stash.core.auth.model.AuthState
+import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
 
@@ -30,6 +31,12 @@ data class SettingsUiState(
     val youTubeAuthState: AuthState = AuthState.NotConnected,
     val audioQuality: QualityTier = QualityTier.BEST,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /**
+     * Network + power conditions under which Stash runs background
+     * downloads (Stash Discover, tag enrichment). Changing this in
+     * Settings re-schedules both workers with new WorkManager constraints.
+     */
+    val downloadNetworkMode: DownloadNetworkMode = DownloadNetworkMode.WIFI_AND_CHARGING,
     val totalStorageBytes: Long = 0,
     val totalTracks: Int = 0,
     val showYouTubeCookieDialog: Boolean = false,

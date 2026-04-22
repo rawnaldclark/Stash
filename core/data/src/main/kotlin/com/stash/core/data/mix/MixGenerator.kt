@@ -139,13 +139,19 @@ class MixGenerator @Inject constructor(
             desired = librarySlots.coerceAtMost(pool.size),
         )
 
-        // Step 8: if we couldn't fill library slots AND have no discovery,
-        // top up from the remaining pool so we don't deliver a half-empty
-        // mix. Better to repeat a little than to look broken.
-        val shortfall = recipe.targetLength - picked.size
-        if (shortfall > 0 && picked.size < pool.size) {
-            val extra = ordered.filter { it !in picked }.take(shortfall)
-            return picked + extra
+        // Step 8: shortfall backfill from the remaining library pool.
+        // Gated on discoveryRatio < 1.0 — pure-discovery recipes like
+        // "Stash Discover" (ratio = 1.0) must NEVER fall back to library
+        // tracks, even at the cost of a sparser mix until Discovery
+        // downloads more candidates. The user has explicitly asked for
+        // zero familiarity; respecting that beats the old "better to
+        // repeat a little than look broken" heuristic.
+        if (recipe.discoveryRatio < 1.0f) {
+            val shortfall = recipe.targetLength - picked.size
+            if (shortfall > 0 && picked.size < pool.size) {
+                val extra = ordered.filter { it !in picked }.take(shortfall)
+                return picked + extra
+            }
         }
 
         return picked
