@@ -12,6 +12,10 @@ import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.prefs.StoragePreference
 import com.stash.core.data.prefs.ThemePreference
+import com.stash.core.data.prefs.YouTubeHistoryPreference
+import com.stash.core.data.youtube.YouTubeHistoryScrobbler
+import com.stash.core.data.youtube.YouTubeScrobblerHealth
+import com.stash.core.data.youtube.YouTubeScrobblerState
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.model.DownloadNetworkMode
@@ -69,6 +73,9 @@ class SettingsViewModel @Inject constructor(
     private val lastFmCredentials: LastFmCredentials,
     private val listeningEventDao: ListeningEventDao,
     private val lastFmScrobbler: LastFmScrobbler,
+    private val youTubeHistoryPreference: YouTubeHistoryPreference,
+    private val youTubeHistoryScrobbler: YouTubeHistoryScrobbler,
+    private val youTubeScrobblerState: YouTubeScrobblerState,
 ) : ViewModel() {
 
     /** Internal mutable UI state that is combined with token-manager flows. */
@@ -95,6 +102,9 @@ class SettingsViewModel @Inject constructor(
         listeningEventDao.pendingScrobbleCount(),
         downloadNetworkPreference.mode,
         _localState,
+        youTubeHistoryPreference.enabled,
+        youTubeHistoryScrobbler.health,
+        listeningEventDao.pendingYtScrobbleCount(),
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val spotifyAuth = values[0] as AuthState
@@ -109,6 +119,9 @@ class SettingsViewModel @Inject constructor(
         val pendingScrobbles = values[9] as Int
         val downloadNetworkMode = values[10] as DownloadNetworkMode
         val local = values[11] as LocalState
+        val ytHistoryEnabled = values[12] as Boolean
+        val ytHistoryHealth = values[13] as YouTubeScrobblerHealth
+        val ytPendingCount = values[14] as Int
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
@@ -146,6 +159,9 @@ class SettingsViewModel @Inject constructor(
             lastFmState = lastFmState,
             isScrobbleDraining = local.isScrobbleDraining,
             scrobbleDrainResult = local.lastScrobbleDrainResult,
+            ytHistoryEnabled = ytHistoryEnabled,
+            ytHistoryHealth = ytHistoryHealth,
+            ytPendingCount = ytPendingCount,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -609,6 +625,25 @@ class SettingsViewModel @Inject constructor(
     fun setVirtualizer(normalized: Float) {
         _localState.update { it.copy(eqVirtualizer = normalized.coerceIn(0f, 1f)) }
         equalizerManager.setVirtualizer((normalized * 1000).toInt())
+    }
+
+    // -- YouTube History actions ----------------------------------------------
+
+    /** Flip the YT-history opt-in. Settings screen shows the first-enable
+     *  dialog; by the time this is called, the user has already confirmed. */
+    fun onYouTubeHistoryEnabledChanged(enabled: Boolean) {
+        viewModelScope.launch {
+            youTubeHistoryPreference.setEnabled(enabled)
+        }
+    }
+
+    /** Clear the kill-switch after PROTOCOL_BROKEN. Exposed to the Settings
+     *  UI's "Retry YouTube sync" button on the red health badge. */
+    fun onRetryYouTubeHistory() {
+        viewModelScope.launch {
+            youTubeScrobblerState.setDisabledReason(null)
+            youTubeScrobblerState.resetConsecutiveFailures()
+        }
     }
 
     // -- Internal state -------------------------------------------------------
