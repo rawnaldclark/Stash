@@ -285,6 +285,26 @@ private fun SettingsContent(
             authState = uiState.youTubeAuthState,
             onConnect = onConnectYouTube,
             onDisconnect = onDisconnectYouTube,
+            // Sync toggle lives INSIDE the YT Music card, below the connect
+            // row, only when the user is connected. Hiding it entirely when
+            // disconnected keeps the card compact — the user can reach
+            // "Connect" from the same row and the sub-setting appears the
+            // moment they're authenticated.
+            extraContent = if (uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected) {
+                {
+                    YouTubeHistorySyncSection(
+                        enabled = uiState.ytHistoryEnabled,
+                        health = uiState.ytHistoryHealth,
+                        pendingCount = uiState.ytPendingCount,
+                        ytConnected = true,
+                        onToggle = onYouTubeHistoryEnabledChanged,
+                        onRetry = onRetryYouTubeHistory,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+            } else {
+                null
+            },
         )
 
         // Last.fm lives in the Accounts group (v0.4.1 relocation) so
@@ -436,20 +456,6 @@ private fun SettingsContent(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                androidx.compose.material3.HorizontalDivider(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                YouTubeHistorySyncSection(
-                    enabled = uiState.ytHistoryEnabled,
-                    health = uiState.ytHistoryHealth,
-                    pendingCount = uiState.ytPendingCount,
-                    ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected,
-                    onToggle = onYouTubeHistoryEnabledChanged,
-                    onRetry = onRetryYouTubeHistory,
-                )
             }
         }
 

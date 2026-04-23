@@ -165,7 +165,14 @@ class YouTubeHistoryScrobbler @Inject constructor(
                 when {
                     disabledReason != null -> _health.value = YouTubeScrobblerHealth.PROTOCOL_BROKEN
                     !enabled || !ytConnected -> _health.value = YouTubeScrobblerHealth.DISABLED
-                    else -> drainQueue()
+                    else -> {
+                        // Flip to OK on entering the active branch so the
+                        // UI reflects "enabled, nothing pending" immediately.
+                        // submit() will overwrite with AUTH_FAILED / OFFLINE /
+                        // PROTOCOL_BROKEN if subsequent pings fail.
+                        _health.value = YouTubeScrobblerHealth.OK
+                        drainQueue()
+                    }
                 }
             }
         }

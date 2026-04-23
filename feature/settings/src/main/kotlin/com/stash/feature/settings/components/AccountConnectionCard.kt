@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -45,6 +47,12 @@ import com.stash.core.ui.theme.StashTheme
  * @param onConnect     Callback invoked when the user taps "Connect".
  * @param onDisconnect  Callback invoked when the user taps "Disconnect".
  * @param modifier      Optional [Modifier] for the root layout.
+ * @param extraContent  Optional per-service sub-settings rendered inside the
+ *   same card, below a subtle divider. Used by e.g. YouTube Music to nest the
+ *   "Send plays to YouTube Music" toggle directly under its connect row so
+ *   the sync feature visually reads as a property of the connection rather
+ *   than a separate settings row living in an unrelated card.
+ *   Null ( = no extras) is the default; most services pass nothing.
  */
 @Composable
 fun AccountConnectionCard(
@@ -55,6 +63,7 @@ fun AccountConnectionCard(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
+    extraContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -64,12 +73,13 @@ fun AccountConnectionCard(
         shape = MaterialTheme.shapes.large,
         border = BorderStroke(1.dp, extendedColors.glassBorder),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
             // Service icon with accent colour
             Icon(
                 imageVector = icon,
@@ -147,6 +157,14 @@ fun AccountConnectionCard(
                     }
                 }
             }
-        }
+            } // close Row
+            if (extraContent != null) {
+                HorizontalDivider(
+                    color = extendedColors.glassBorder,
+                    thickness = 1.dp,
+                )
+                extraContent()
+            }
+        } // close Column
     }
 }
