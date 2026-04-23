@@ -1,7 +1,9 @@
 package com.stash.data.ytmusic
 
+import android.util.Log
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.youtube.YouTubeCookieHelper
+import com.stash.data.ytmusic.model.MusicVideoType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -15,7 +17,6 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import android.util.Log
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
@@ -242,6 +243,139 @@ class InnerTubeClient @Inject constructor(
             mime.startsWith("audio/") && obj["url"] != null
         }
     }
+
+    /**
+     * Fetches the `playbackTracking.videostatsPlaybackUrl.baseUrl` for a
+     * video id by posting to `/youtubei/v1/player`.
+     *
+     * This is the URL that registers a view in the user's YouTube Watch
+     * History. Hitting it on behalf of a known-played track is what
+     * `YouTubeHistoryScrobbler` uses to retroactively write history entries.
+     *
+     * Mirrors the [player] POST exactly — same context / auth / headers —
+     * and delegates field extraction to [PlaybackTrackingParser].
+     *
+     * @param videoId The YouTube video ID.
+     * @return The playback-tracking base URL, or null on HTTP failure or if
+     *   the `playbackTracking` block is absent from the response.
+     */
+    suspend fun getPlaybackTracking(videoId: String): String? =
+        withContext(Dispatchers.IO) {
+            val cookie = tokenManager.getYouTubeCookie()
+            val variant = InnerTubeVariant.WEB_REMIX
+            val body = buildJsonObject {
+                put("context", buildContext(variant))
+                put("videoId", videoId)
+            }
+            val response = executeRequest("$BASE_URL/player", body, cookie, variant)
+                ?: return@withContext null
+            PlaybackTrackingParser().extract(response)
+                .also { url ->
+                    if (url == null) {
+                        Log.w(TAG, "getPlaybackTracking: no playbackTracking block for $videoId")
+                    }
+                }
+        }
+
+    /**
+     * Finds the canonical YouTube Music video id for a track, preferring
+     * ATV (Topic-channel audio) over OMV (official music video), and
+     * skipping UGC and other non-music types.
+     *
+     * Uses the standard InnerTube `search` endpoint and walks the Songs
+     * shelf results. For each candidate the `watchEndpointMusicConfig
+     * .musicVideoType` field is read directly from the InnerTube JSON so
+     * that the filter can run without a separate round-trip.
+     *
+     * Scoring is intentionally simple: the first ATV result wins, then the
+     * first OMV result. The kill-switch in `YouTubeHistoryScrobbler` and the
+     * strict ATV/OMV filter here are the real safeguards; replicating the
+     * full [com.stash.data.download.matching.MatchScorer] heuristics would
+     * be over-engineering for a caller that already has a confirmed
+     * artist + title from the user's own watch history.
+     *
+     * @param artist The track artist.
+     * @param title  The track title.
+     * @return The video id of the best ATV or OMV match, or null if none found.
+     */
+    suspend fun searchCanonical(artist: String, title: String): String? =
+        withContext(Dispatchers.IO) {
+            val query = "$artist $title"
+            val response = search(query) ?: return@withContext null
+
+            // Walk the Songs shelf(ves) inside the search response. Each row is a
+            // musicResponsiveListItemRenderer; we extract videoId and musicVideoType
+            // inline so no separate parser dependency is needed.
+            val shelves: JsonArray = response["contents"]
+                ?.jsonObject?.get("tabbedSearchResultsRenderer")
+                ?.jsonObject?.get("tabs")
+                ?.jsonArray?.firstOrNull()
+                ?.jsonObject?.get("tabRenderer")
+                ?.jsonObject?.get("content")
+                ?.jsonObject?.get("sectionListRenderer")
+                ?.jsonObject?.get("contents")
+                ?.jsonArray ?: return@withContext null
+
+            // Collect (videoId, musicVideoType) pairs from Songs shelves only.
+            data class Candidate(val videoId: String, val type: MusicVideoType?)
+            val candidates = mutableListOf<Candidate>()
+
+            for (shelf in shelves) {
+                val shelfObj = shelf.jsonObject
+                val renderer = shelfObj["musicShelfRenderer"]?.jsonObject ?: continue
+                // Only process the Songs shelf (skip Artists, Albums, etc.)
+                val shelfTitle = renderer["title"]?.jsonObject
+                    ?.get("runs")?.jsonArray
+                    ?.firstOrNull()?.jsonObject
+                    ?.get("text")?.jsonPrimitive?.content
+                if (shelfTitle != null && shelfTitle != "Songs") continue
+
+                val items = renderer["contents"]?.jsonArray ?: continue
+                for (item in items) {
+                    val row = item.jsonObject["musicResponsiveListItemRenderer"]?.jsonObject
+                        ?: continue
+
+                    val videoId = row["playlistItemData"]?.jsonObject
+                        ?.get("videoId")?.jsonPrimitive?.content
+                        ?: row["overlay"]?.jsonObject
+                            ?.get("musicItemThumbnailOverlayRenderer")?.jsonObject
+                            ?.get("content")?.jsonObject
+                            ?.get("musicPlayButtonRenderer")?.jsonObject
+                            ?.get("playNavigationEndpoint")?.jsonObject
+                            ?.get("watchEndpoint")?.jsonObject
+                            ?.get("videoId")?.jsonPrimitive?.content
+                        ?: continue
+
+                    val rawType = row["overlay"]?.jsonObject
+                        ?.get("musicItemThumbnailOverlayRenderer")?.jsonObject
+                        ?.get("content")?.jsonObject
+                        ?.get("musicPlayButtonRenderer")?.jsonObject
+                        ?.get("playNavigationEndpoint")?.jsonObject
+                        ?.get("watchEndpoint")?.jsonObject
+                        ?.get("watchEndpointMusicSupportedConfigs")?.jsonObject
+                        ?.get("watchEndpointMusicConfig")?.jsonObject
+                        ?.get("musicVideoType")?.jsonPrimitive?.content
+
+                    candidates.add(Candidate(videoId, MusicVideoType.fromInnerTube(rawType)))
+                }
+            }
+
+            Log.d(TAG, "searchCanonical('$query'): ${candidates.size} candidates, " +
+                "atv=${candidates.count { it.type == MusicVideoType.ATV }}, " +
+                "omv=${candidates.count { it.type == MusicVideoType.OMV }}, " +
+                "ugc=${candidates.count { it.type == MusicVideoType.UGC }}")
+
+            // Prefer ATV first, then OMV; skip UGC and everything else.
+            val best = candidates.firstOrNull { it.type == MusicVideoType.ATV }
+                ?: candidates.firstOrNull { it.type == MusicVideoType.OMV }
+
+            if (best == null) {
+                Log.w(TAG, "searchCanonical('$query'): no ATV/OMV candidate found")
+            } else {
+                Log.d(TAG, "searchCanonical('$query'): resolved → ${best.videoId} (${best.type})")
+            }
+            best?.videoId
+        }
 
     /**
      * Builds the InnerTube client context object required by every request.
