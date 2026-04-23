@@ -395,6 +395,22 @@ interface TrackDao {
     suspend fun updateYoutubeId(trackId: Long, youtubeId: String)
 
     /**
+     * Set the cached canonical ATV/OMV video id for this track. Called once
+     * per track by [com.stash.core.data.youtube.YtCanonicalResolver] when it
+     * resolves a non-ATV/OMV track via InnerTube search. Never re-runs —
+     * the resolver only fills when `yt_canonical_video_id IS NULL`.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET yt_canonical_video_id = :videoId
+        WHERE id = :trackId
+          AND yt_canonical_video_id IS NULL
+        """
+    )
+    suspend fun updateYtCanonicalVideoId(trackId: Long, videoId: String)
+
+    /**
      * Atomically refresh the display + lookup metadata for a track after
      * [com.stash.data.download.matching.YtLibraryCanonicalizer] swaps its
      * videoId. The title/canonical fields drive playlist display, search,
