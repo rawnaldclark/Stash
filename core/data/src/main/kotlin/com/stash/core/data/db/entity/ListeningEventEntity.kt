@@ -36,6 +36,7 @@ import androidx.room.PrimaryKey
         Index(value = ["track_id"]),
         Index(value = ["started_at"]),
         Index(value = ["scrobbled"]),
+        Index(value = ["yt_scrobbled"]),
     ],
 )
 data class ListeningEventEntity(
@@ -56,4 +57,14 @@ data class ListeningEventEntity(
      */
     @ColumnInfo(name = "scrobbled")
     val scrobbled: Boolean = false,
+
+    /**
+     * True once successfully submitted to YouTube Music as a history ping.
+     * Mirrors [scrobbled] but for the YT Music recommender-graph write path.
+     * Set to `true` when a ping lands (2xx), when the track is UGC-only and
+     * has no canonical ATV/OMV equivalent (don't pollute Recap), and when
+     * the feature is disabled and we want to skip processing the backlog.
+     */
+    @ColumnInfo(name = "yt_scrobbled", defaultValue = "0")
+    val ytScrobbled: Boolean = false,
 )
