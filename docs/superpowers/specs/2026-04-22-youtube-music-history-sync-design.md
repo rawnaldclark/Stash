@@ -23,7 +23,7 @@ Send Stash's local play events to the user's YouTube Music Watch History so that
 - **FR2.** Skip submission entirely when the canonical video cannot be resolved (i.e., track is UGC-only or search misses). Prefer a missing Recap entry over polluting YT Music with a UGC reupload signal.
 - **FR3.** Gate the feature behind an explicit opt-in toggle in Settings that requires an already-connected YouTube Music account.
 - **FR4.** Show the user a pending-count and a health badge so they can tell the difference between "queued offline" and "auth / protocol broken."
-- **FR5.** Auto-pause submission when ≥5 consecutive non-auth failures occur; surface via the red health badge; self-heal on next app update.
+- **FR5.** Auto-pause submission when ≥5 **consecutive** non-auth failures occur (the counter resets on any successful ping). Surface via the red health badge; self-heal on next app update.
 
 ### 3.2 Non-functional
 
@@ -84,7 +84,7 @@ PlayerRepository.playerState ────────────▶ ListeningRe
 | `YouTubeHistoryScrobbler` | `core:data/lastfm/` (or new `core:data/youtube/` — TBD in plan) | Singleton with `scope.launch { combine(tokenManager.youTubeAuthState, ytEnabledPreference.enabled, listeningEventDao.pendingYtScrobbleCount()) ... }`. Drains reactively on any state change. |
 | `YouTubeHistoryPreference` | `core:data/prefs/` | Wraps the user's opt-in toggle (DataStore). Default = `false`. First-enable also records a timestamp for audit. |
 | `YtCanonicalResolver` | `core:data/youtube/` | Pure class. Given a `TrackEntity`, returns either `track.youtubeId` (if ATV/OMV), or performs a cached InnerTube search, or returns null (skip). Writes the resolved id to `tracks.yt_canonical_video_id`. |
-| `InnerTubeClient.getPlaybackTracking(videoId)` | `data:ytmusic/` | New method: POST `/youtubei/v1/player` with videoId, parse `playbackTracking.videostatsPlaybackUrl` from response. |
+| `InnerTubeClient.getPlaybackTracking(videoId)` | `data:ytmusic/` | New method: POST `/youtubei/v1/player` with videoId, parse **`playbackTracking.videostatsPlaybackUrl`** from the response (NOT `videostatsWatchtimeUrl` — the playback URL is the one `ytmusicapi.add_history_item` + SimpMusic use for history submission; the watchtime URL is a separate periodic-progress ping for in-app playback that we are not simulating). |
 | `YouTubeHistoryScrobblerHealth` | in-memory state | `Flow<Health>` — { OK, OFFLINE, AUTH_FAILED, PROTOCOL_BROKEN, DISABLED }. Backs the Settings badge. |
 | Settings row + first-enable dialog | `feature:settings/` | Toggle. First tap on `false → true` shows a one-shot confirmation modal with risk copy. |
 
@@ -126,8 +126,8 @@ Both via a single Room migration (database version +1).
 2. `YouTubeHistoryScrobbler`'s combine flow fires (pending count changed).
 3. Worker calls `YtCanonicalResolver.resolve(track)`:
    - Track 123's `musicVideoType` = ATV → returns `track.youtubeId` unchanged.
-4. Worker calls `InnerTubeClient.getPlaybackTracking(videoId)`.
-5. Extracts the URL, POSTs it signed with SAPISIDHASH.
+4. Worker calls `InnerTubeClient.getPlaybackTracking(videoId)`, receives `playbackTracking.videostatsPlaybackUrl`.
+5. POSTs that URL (empty body), signed with SAPISIDHASH via `YouTubeCookieHelper.generateAuthHeader`.
 6. 2xx → `listeningEventDao.markYtScrobbled(eventId)` → health = OK.
 7. Delay 750ms±250ms, drain next pending event.
 
@@ -143,12 +143,19 @@ Both via a single Room migration (database version +1).
 
 ### 5.4 Kill-switch lifecycle
 
-1. Local DataStore flag `yt_scrobbler_disabled_reason` starts null.
-2. On each ping failure that's not 401/403, increment a sliding 5-event counter.
-3. If counter >= 5: set flag to `"protocol_errors"`. Health = PROTOCOL_BROKEN.
-4. Scrobbler checks the flag at start of each drain pass — if set, no-op.
-5. On app update (we read the installed `versionCode` vs. last-known): clear the flag, counter resets.
-6. User can also manually clear via a "Retry YouTube sync" button on the red health badge.
+State lives in a single dedicated DataStore (`yt_scrobbler_state`), keys:
+- `disabled_reason: String?` — null when healthy; `"protocol_errors"` when tripped.
+- `consecutive_failures: Int` — counter, reset to 0 on any successful ping.
+- `last_known_version_code: Int` — used for the "clear on app update" check.
+
+Lifecycle:
+1. `disabled_reason` starts null.
+2. On each ping failure that's NOT 401/403: increment `consecutive_failures`.
+3. On each ping success: reset `consecutive_failures` to 0.
+4. When `consecutive_failures` >= 5: set `disabled_reason = "protocol_errors"`. Health = PROTOCOL_BROKEN.
+5. Scrobbler checks `disabled_reason` at start of each drain pass — if set, no-op.
+6. At `YouTubeHistoryScrobbler.start()`: compare current `BuildConfig.VERSION_CODE` with `last_known_version_code`. If current > stored → clear `disabled_reason`, reset counter, update `last_known_version_code`. This is the "fresh install / app update clears the flag" mechanism.
+7. User can also manually clear via a "Retry YouTube sync" action on the red health badge.
 
 ## 6. Back-catalog policy
 
@@ -169,7 +176,7 @@ Rationale from approval session: (a) user's priority is the recommender graph, n
 
 - Single happy-path loop: opt in, play one track with known ATV id, wait 60s, verify it appears at the top of `https://music.youtube.com/history` via the user's own browser.
 - Offline drain: turn WiFi off, play 3 tracks, turn WiFi on, observe queue drain in logs + health badge transitioning OFFLINE → OK.
-- Auth failure simulation: rotate SAPISID cookie (user action), verify badge goes red with "Reconnect" action.
+- Auth failure simulation: test via a stubbed `YouTubeCookieHelper` that returns an invalid hash (scripting cookie rotation by hand is too fragile for a regression check). Verify badge goes red with "Reconnect" action.
 
 ### 7.3 Not tested
 
