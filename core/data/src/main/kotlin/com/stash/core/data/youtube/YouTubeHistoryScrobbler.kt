@@ -22,7 +22,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
@@ -44,30 +43,78 @@ fun interface PingSubmitter {
 /**
  * Production [PingSubmitter] backed by the app-wide [OkHttpClient].
  *
- * Assembles the SAPISIDHASH-authenticated POST that registers a watch-history
- * event, then executes it synchronously inside the scrobbler's IO dispatcher.
+ * Issues the SAPISIDHASH-authenticated GET that registers a watch-history
+ * event with YT Music. The request shape mirrors `ytmusicapi.add_history_item`
+ * and SimpMusic's implementation:
+ *
+ *   - **GET** (not POST). The `api/stats/playback` endpoint is a tracking-
+ *     pixel style GET that reads its state from the query string; the
+ *     `videostatsPlaybackUrl.baseUrl` InnerTube returns already contains
+ *     `docid` + the signed session id.
+ *   - Append **`cpn`** (16-char random content-playback-nonce), **`ver=2`**,
+ *     and **`c=WEB_REMIX`** as query params. Without these YT silently
+ *     accepts the request (2xx) but never records it in history. This is
+ *     what caused the initial "pings marked scrobbled but YT history
+ *     stays empty" bug during end-to-end testing.
+ *   - Standard SAPISIDHASH auth header with origin `https://music.youtube.com`
+ *     (matches the hash computed by [YouTubeCookieHelper.generateAuthHeader]).
+ *   - `X-Origin` mirrors `Origin` — real YT Music clients send both.
  */
 class OkHttpPingSubmitter @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val cookieHelper: YouTubeCookieHelper,
 ) : PingSubmitter {
     override suspend fun submit(url: String, cookies: String, sapiSid: String): Int {
+        val fullUrl = appendPlaybackParams(url)
         val request = Request.Builder()
-            .url(url)
-            .post("".toRequestBody())
+            .url(fullUrl)
+            .get()
             .header("Authorization", cookieHelper.generateAuthHeader(sapiSid))
             .header("Cookie", cookies)
             .header("Origin", "https://music.youtube.com")
+            .header("X-Origin", "https://music.youtube.com")
             .header("X-Goog-AuthUser", "0")
             .header("User-Agent", USER_AGENT)
             .build()
         return okHttpClient.newCall(request).execute().use { it.code }
     }
 
+    /**
+     * Appends the three query parameters YT's stats endpoint requires to
+     * actually record a play: `cpn` (new 16-char random), `ver=2`, and
+     * `c=WEB_REMIX`. The `videostatsPlaybackUrl` baseUrl already contains
+     * `docid`, signed state, etc.; we're layering on the per-request fields.
+     */
+    private fun appendPlaybackParams(baseUrl: String): String {
+        val cpn = generateCpn()
+        val separator = if (baseUrl.contains('?')) '&' else '?'
+        return "$baseUrl${separator}ver=2&c=WEB_REMIX&cpn=$cpn"
+    }
+
+    /**
+     * 16-char content-playback-nonce using YT's charset. Matches the
+     * generation code in `ytmusicapi.mixins.library.add_history_item`.
+     */
+    private fun generateCpn(): String {
+        val sb = StringBuilder(16)
+        repeat(16) {
+            sb.append(CPN_ALPHABET[Random.nextInt(256) and 63])
+        }
+        return sb.toString()
+    }
+
     companion object {
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+
+        /**
+         * 64-character alphabet YT uses for cpn generation (Base64-ish:
+         * A-Z, a-z, 0-9, `-`, `_`). The `& 63` in [generateCpn] selects a
+         * 6-bit slice from each random byte to index into this string.
+         */
+        private const val CPN_ALPHABET =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
     }
 }
 
