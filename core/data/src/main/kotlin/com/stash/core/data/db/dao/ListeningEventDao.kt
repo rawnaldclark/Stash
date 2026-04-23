@@ -46,6 +46,34 @@ interface ListeningEventDao {
     fun pendingScrobbleCount(): Flow<Int>
 
     /**
+     * Unscrobbled-to-YT events awaiting submission to the YouTube Music
+     * recommender graph. Same shape as [pendingScrobbles] but gated on
+     * `yt_scrobbled` instead of `scrobbled`. Oldest first so submissions
+     * chronologically mirror actual listening order.
+     */
+    @Query(
+        """
+        SELECT * FROM listening_events
+        WHERE yt_scrobbled = 0
+        ORDER BY started_at ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun pendingYtScrobbles(limit: Int = 100): List<ListeningEventEntity>
+
+    @Query(
+        """
+        UPDATE listening_events SET yt_scrobbled = 1
+        WHERE id = :eventId
+        """
+    )
+    suspend fun markYtScrobbled(eventId: Long)
+
+    /** Count of unscrobbled-to-YT events. Drives the Settings health badge. */
+    @Query("SELECT COUNT(*) FROM listening_events WHERE yt_scrobbled = 0")
+    fun pendingYtScrobbleCount(): Flow<Int>
+
+    /**
      * Per-track play counts in a recency window, used by the (future)
      * Stash Mixes engine. Window is expressed as a cutoff epoch millis;
      * callers pass `now - 30 days` or similar.
