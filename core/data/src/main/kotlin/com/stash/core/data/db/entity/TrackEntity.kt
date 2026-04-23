@@ -145,4 +145,15 @@ data class TrackEntity(
      */
     @ColumnInfo(name = "music_video_type")
     val musicVideoType: String? = null,
+
+    /**
+     * Cached canonical ATV/OMV video id for YouTube Music recommender-graph
+     * scrobbling. Null when uncached. Populated the first time
+     * [com.stash.core.data.youtube.YtCanonicalResolver] resolves a
+     * non-ATV/OMV track (UGC uploads, YouTube-Library imports) so we don't
+     * re-search InnerTube every time the user re-plays it. Never overwritten
+     * once set — the canonical id for a given (artist, title) doesn't move.
+     */
+    @ColumnInfo(name = "yt_canonical_video_id")
+    val ytCanonicalVideoId: String? = null,
 )
