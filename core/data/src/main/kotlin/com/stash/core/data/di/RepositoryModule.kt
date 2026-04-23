@@ -6,6 +6,8 @@ import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.data.prefs.ThemePreferencesManager
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.repository.MusicRepositoryImpl
+import com.stash.core.data.youtube.OkHttpPingSubmitter
+import com.stash.core.data.youtube.PingSubmitter
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -31,4 +33,8 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindStoragePreference(impl: StoragePreferencesManager): StoragePreference
+
+    @Binds
+    @Singleton
+    abstract fun bindPingSubmitter(impl: OkHttpPingSubmitter): PingSubmitter
 }

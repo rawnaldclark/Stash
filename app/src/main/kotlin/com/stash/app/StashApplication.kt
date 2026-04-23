@@ -9,6 +9,7 @@ import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.lastfm.LastFmScrobbler
+import com.stash.core.data.youtube.YouTubeHistoryScrobbler
 import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.media.listening.ListeningRecorder
@@ -68,6 +69,9 @@ class StashApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var lastFmScrobbler: LastFmScrobbler
+
+    @Inject
+    lateinit var youTubeHistoryScrobbler: YouTubeHistoryScrobbler
 
     @Inject
     lateinit var stashMixRecipeDao: StashMixRecipeDao
@@ -157,11 +161,12 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch { maybeHideEmptyYouTubePlaylists() }
 
         // Start the local listening-history recorder + optional Last.fm
-        // scrobbler. Both are safe to start unconditionally — the scrobbler
-        // no-ops until a session key is stored, and the recorder just
-        // observes the player regardless of whether scrobbling is on.
+        // and YouTube Music scrobbler. All are safe to start unconditionally —
+        // they no-op until configuration/authentication is in place, and the
+        // recorder just observes the player regardless of whether scrobbling is on.
         listeningRecorder.start()
         lastFmScrobbler.start()
+        youTubeHistoryScrobbler.start()
     }
 
     /**
