@@ -64,7 +64,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         StashMixRecipeEntity::class,
         DiscoveryQueueEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -324,6 +324,27 @@ abstract class StashDatabase : RoomDatabase() {
         val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE tracks ADD COLUMN music_video_type TEXT")
+            }
+        }
+
+        /**
+         * v14 → v15: add YouTube history sync columns.
+         * `yt_scrobbled` on listening_events tracks whether a play event
+         * was already sent to YouTube Music history. `yt_canonical_video_id`
+         * on tracks holds the YouTube Music video ID for canonical matching.
+         */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE listening_events ADD COLUMN yt_scrobbled INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_listening_events_yt_scrobbled " +
+                        "ON listening_events(yt_scrobbled)"
+                )
+                db.execSQL(
+                    "ALTER TABLE tracks ADD COLUMN yt_canonical_video_id TEXT"
+                )
             }
         }
     }
