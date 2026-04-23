@@ -56,6 +56,7 @@ import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SpotifyCookieDialog
 import com.stash.feature.settings.components.EqualizerSection
 import com.stash.feature.settings.components.YouTubeCookieDialog
+import com.stash.feature.settings.components.YouTubeHistorySyncSection
 
 /**
  * Top-level Settings screen composable.
@@ -154,6 +155,8 @@ fun SettingsScreen(
         onDismissLastFmError = viewModel::onDismissLastFmError,
         onSyncScrobblesNow = viewModel::onSyncScrobblesNow,
         onClearScrobbleDrainResult = viewModel::onClearScrobbleDrainResult,
+        onYouTubeHistoryEnabledChanged = viewModel::onYouTubeHistoryEnabledChanged,
+        onRetryYouTubeHistory = viewModel::onRetryYouTubeHistory,
         modifier = modifier,
     )
 }
@@ -188,6 +191,8 @@ private fun SettingsContent(
     onDismissLastFmError: () -> Unit,
     onSyncScrobblesNow: () -> Unit,
     onClearScrobbleDrainResult: () -> Unit,
+    onYouTubeHistoryEnabledChanged: (Boolean) -> Unit,
+    onRetryYouTubeHistory: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -430,6 +435,21 @@ private fun SettingsContent(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                androidx.compose.material3.HorizontalDivider(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                YouTubeHistorySyncSection(
+                    enabled = uiState.ytHistoryEnabled,
+                    health = uiState.ytHistoryHealth,
+                    pendingCount = uiState.ytPendingCount,
+                    ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected,
+                    onToggle = onYouTubeHistoryEnabledChanged,
+                    onRetry = onRetryYouTubeHistory,
+                )
             }
         }
 
