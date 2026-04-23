@@ -1,6 +1,7 @@
 package com.stash.feature.settings
 
 import com.stash.core.auth.model.AuthState
+import com.stash.core.data.youtube.YouTubeScrobblerHealth
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
@@ -37,6 +38,9 @@ data class SettingsUiState(
      * Settings re-schedules both workers with new WorkManager constraints.
      */
     val downloadNetworkMode: DownloadNetworkMode = DownloadNetworkMode.WIFI_AND_CHARGING,
+    val ytHistoryEnabled: Boolean = false,
+    val ytHistoryHealth: YouTubeScrobblerHealth = YouTubeScrobblerHealth.DISABLED,
+    val ytPendingCount: Int = 0,
     val totalStorageBytes: Long = 0,
     val totalTracks: Int = 0,
     val showYouTubeCookieDialog: Boolean = false,
