@@ -216,7 +216,20 @@ class PlayerRepositoryImpl @Inject constructor(
     private val playerListener = object : Player.Listener {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            controllerDeferred?.let { updateState(it) }
+            val controller = controllerDeferred ?: return
+            // Defense in depth: the existing onPlayerError recovery catches
+            // PlaybackException-driven failures, but some failure modes (audio
+            // offload sink stalls before we removed offload, plus any future
+            // codec/format edge case) can leave the player in STATE_IDLE on the
+            // next track WITHOUT firing onPlayerError. The user-visible symptom
+            // is "next song appears, play button does nothing." A single
+            // prepare() call is a no-op when the player is already READY and
+            // rescues the IDLE case automatically.
+            if (controller.playbackState == Player.STATE_IDLE && controller.currentMediaItem != null) {
+                Log.w(TAG, "onMediaItemTransition landed in STATE_IDLE — defensive prepare()")
+                controller.prepare()
+            }
+            updateState(controller)
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
