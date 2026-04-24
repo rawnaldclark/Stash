@@ -103,6 +103,9 @@ class StashApplication : Application(), Configuration.Provider {
             musicRepository.runMigrations()
         }
         applicationScope.launch {
+            musicRepository.ensureDownloadsMixSeeded()
+        }
+        applicationScope.launch {
             ytDlpManager.initialize()
             // Kick a background warmup extraction right after init. Primes the
             // player-JS + QuickJS caches so the first real user preview doesn't
