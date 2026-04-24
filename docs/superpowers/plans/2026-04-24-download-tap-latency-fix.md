@@ -42,7 +42,14 @@ Feature-memory note: per `feedback_worktree_local_properties.md`, `git worktree 
 
 - [ ] **Step 1: Write failing tests**
 
-Open the existing test file. Add these tests alongside the existing ones (preserving whatever setup/test-hook infrastructure is already there):
+Open the existing test file. Add these tests alongside the existing ones (preserving whatever setup/test-hook infrastructure is already there).
+
+The new tests use assertions not already imported in the existing test file — add these imports at the top if missing:
+```kotlin
+import kotlin.test.assertFailsWith
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
+```
 
 ```kotlin
 @Test
@@ -338,7 +345,9 @@ cd C:/Users/theno/Projects/MP3APK/.worktrees/preview-latency-fix && \
 ./gradlew :data:download:test --tests "com.stash.data.download.preview.PreviewUrlExtractorTest"
 ```
 
-If any pre-existing test that calls `raceForTest` without a hedge param was asserting "yt-dlp started" behavior that's now suppressed by the 500ms hedge, update those callers to pass `hedgeDelayMs = 0` explicitly — they were testing the old simultaneous-start contract.
+**Known pre-existing test to update:** `race cancels ytdlp when innertube wins` (in the same test file) asserts `ytDlpCancelled.get() == true` after the race. With the new 500ms default hedge, the yt-dlp lambda body never runs (the cancel fires during the hedge delay before the yt-dlp lambda executes). Update this test to pass `hedgeDelayMs = 0` so it continues to exercise the old simultaneous-start contract.
+
+Scan the file for any other call to `raceForTest(...)` without a hedge arg — any test asserting yt-dlp body execution (e.g., `ytDlpStarted = true`) under a fast InnerTube win needs the same `hedgeDelayMs = 0` override.
 
 Expected: all tests PASS.
 
@@ -431,19 +440,22 @@ fun `phase 2 is serialized across multiple ciphered ids`() = runTest {
 
 @Test
 fun `phase 2 short-circuits if cache is filled while waiting for mutex`() = runTest {
+    // Declare cache BEFORE the mock so the doAnswer lambda below can close
+    // over it (Kotlin requires the symbol to be in scope at lambda creation).
+    val cache = mutableMapOf<String, String>()
     val extractor = mock<PreviewUrlExtractor> {
         onBlocking { extractForPrefetch("v1") } doReturn null
         onBlocking { extractForPrefetch("v2") } doReturn null
         onBlocking { extractViaYtDlpForRetry("v1") } doAnswer {
-            // While v1's yt-dlp is running, simulate v2 getting filled by on-demand
-            cacheRef.value?.put("v2", "https://ondemand/v2")
+            // While v1's yt-dlp is running, simulate v2 getting filled
+            // by an on-demand tap via the shared cache.
+            cache["v2"] = "https://ondemand/v2"
             "https://yt/v1"
         }
-        // v2's yt-dlp should NEVER run because cache was filled
+        // v2's yt-dlp should NEVER run because cache was filled while
+        // v2's phase-2 job was waiting on the mutex.
         onBlocking { extractViaYtDlpForRetry("v2") } doThrow AssertionError("should not be called")
     }
-    val cache = mutableMapOf<String, String>()
-    val cacheRef = AtomicReference(cache)  // captured by the doAnswer lambda
     val prefetcher = PreviewPrefetcher(extractor, cache, this)
 
     prefetcher.prefetch(listOf("v1", "v2"))
