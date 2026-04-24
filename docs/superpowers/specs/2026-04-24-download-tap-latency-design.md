@@ -193,7 +193,8 @@ class PreviewUrlCache @Inject constructor() {
         }
         override fun get(key: String): String? = this@PreviewUrlCache[key]
         override fun containsKey(key: String): Boolean = key in this@PreviewUrlCache
-        override val entries = error("not used by prefetcher").let { emptySet<MutableMap.MutableEntry<String, String>>() }.toMutableSet()
+        override val entries: MutableSet<MutableMap.MutableEntry<String, String>>
+            get() = error("PreviewUrlCache.asMutableMap.entries is not supported")
     }
 
     companion object {
@@ -212,7 +213,7 @@ Implementation note: the `asMutableMap` adapter exists only to keep `PreviewPref
 
 | File | Change |
 |------|--------|
-| `data/download/src/main/kotlin/com/stash/data/download/preview/PreviewUrlExtractor.kt` | Add `extractForPrefetch(id): String?`; update `race(...)` to hedge yt-dlp by 500ms; add `YTDLP_HEDGE_DELAY_MS` constant |
+| `data/download/src/main/kotlin/com/stash/data/download/preview/PreviewUrlExtractor.kt` | Add `extractForPrefetch(id): String?`; update `race(...)` to hedge yt-dlp by 500ms; add `YTDLP_HEDGE_DELAY_MS` constant; extend `raceForTest` seam to accept `hedgeDelayMs` parameter so tests can advance virtual time deterministically |
 | `feature/search/src/main/kotlin/com/stash/feature/search/PreviewPrefetcher.kt` | Two-phase prefetch body; add `ytDlpPrefetchMutex`; log every failure path |
 | `data/download/src/main/kotlin/com/stash/data/download/preview/PreviewUrlCache.kt` | TTL wrapper (`Entry(url, cachedAtMs)`); expire on read; 5h constant |
 | `data/download/src/test/kotlin/com/stash/data/download/preview/PreviewUrlExtractorTest.kt` (likely exists; extend) | Tests for hedge behavior + `extractForPrefetch` |
