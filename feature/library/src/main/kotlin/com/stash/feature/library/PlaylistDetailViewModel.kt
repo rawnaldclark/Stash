@@ -7,6 +7,7 @@ import android.net.Uri
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.Playlist
+import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.core.ui.util.withSearchFilter
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -187,21 +188,26 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun deleteTrackFromPlaylist(track: Track, alsoBlacklist: Boolean) {
         viewModelScope.launch {
+            val isDownloadsMix = uiState.value.playlist?.type == PlaylistType.DOWNLOADS_MIX
             val summary = musicRepository.removeTrackFromPlaylistAndMaybeDelete(
                 trackId = track.id,
                 fromPlaylistId = playlistId,
                 alsoBlacklist = alsoBlacklist,
             )
-            val msg = when {
-                summary.keptProtected > 0 ->
-                    "Removed from this playlist. Kept on disk (also in Liked Songs or a custom playlist)."
-                summary.keptElsewhere > 0 ->
-                    "Removed from this playlist. Kept on disk (in other playlists)."
-                summary.blacklisted > 0 ->
-                    "Deleted and blocked from future syncs."
-                summary.deleted > 0 ->
-                    "Deleted from your device."
-                else -> "Removed."
+            val msg = if (isDownloadsMix) {
+                "Deleted from your library."
+            } else {
+                when {
+                    summary.keptProtected > 0 ->
+                        "Removed from this playlist. Kept on disk (also in Liked Songs or a custom playlist)."
+                    summary.keptElsewhere > 0 ->
+                        "Removed from this playlist. Kept on disk (in other playlists)."
+                    summary.blacklisted > 0 ->
+                        "Deleted and blocked from future syncs."
+                    summary.deleted > 0 ->
+                        "Deleted from your device."
+                    else -> "Removed."
+                }
             }
             _userMessages.tryEmit(msg)
         }

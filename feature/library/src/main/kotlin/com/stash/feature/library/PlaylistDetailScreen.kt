@@ -259,36 +259,47 @@ fun PlaylistDetailScreen(
 
     // ── Delete track confirmation dialog ──────────────────────────────────
     trackToDelete?.let { track ->
+        val isDownloadsMix = state.playlist?.type == PlaylistType.DOWNLOADS_MIX
         var alsoBlacklist by remember(track.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { trackToDelete = null },
-            title = { Text("Delete ${track.title}?") },
+            title = {
+                Text(
+                    if (isDownloadsMix) "Delete from library?" else "Delete ${track.title}?"
+                )
+            },
             text = {
                 Column {
                     Text(
-                        text = "Removes the song from this playlist. If it's also in Liked Songs or an in-app playlist, the file stays so those lists keep playing.",
+                        text = if (isDownloadsMix) {
+                            "This track will be deleted from your library and the audio file removed from disk."
+                        } else {
+                            "Removes the song from this playlist. If it's also in Liked Songs or an in-app playlist, the file stays so those lists keep playing."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { alsoBlacklist = !alsoBlacklist },
-                    ) {
-                        Checkbox(
-                            checked = alsoBlacklist,
-                            onCheckedChange = { alsoBlacklist = it },
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Also block this song from future syncs",
-                                style = MaterialTheme.typography.bodyMedium,
+                    if (!isDownloadsMix) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { alsoBlacklist = !alsoBlacklist },
+                        ) {
+                            Checkbox(
+                                checked = alsoBlacklist,
+                                onCheckedChange = { alsoBlacklist = it },
                             )
-                            Text(
-                                text = "Blocked songs never re-download. Unblock in Settings later.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Also block this song from future syncs",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    text = "Blocked songs never re-download. Unblock in Settings later.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
@@ -301,7 +312,7 @@ fun PlaylistDetailScreen(
                     },
                 ) {
                     Text(
-                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
