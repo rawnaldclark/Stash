@@ -140,7 +140,9 @@ class HomeViewModel @Inject constructor(
     ) { musicData, syncStatus, authInfo, sourceCounts, playlistSortOrder ->
         // Stash Mixes — recipe-driven, generated locally. Separate from
         // sync-imported Daily Mixes so the UI can label them distinctly.
-        val stashMixes = musicData.playlists.filter { it.type == PlaylistType.STASH_MIX }
+        val stashMixes = musicData.playlists.filter {
+            it.type == PlaylistType.STASH_MIX || it.type == PlaylistType.DOWNLOADS_MIX
+        }
 
         // Split daily mixes by source
         val dailyMixes = musicData.playlists.filter { it.type == PlaylistType.DAILY_MIX }
