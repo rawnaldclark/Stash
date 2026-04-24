@@ -46,4 +46,13 @@ enum class PlaylistType {
      * treat mixes as user-curated untouchables.
      */
     STASH_MIX,
+
+    /**
+     * Protected system-owned playlist holding one-off user downloads
+     * from the Search tab and Artist Profile. Exactly one row per install,
+     * seeded at startup. Prevents `cleanOrphanedMixTracks` from deleting
+     * manually-downloaded tracks that would otherwise have no playlist
+     * membership. The Stash Mix engine ignores this type.
+     */
+    DOWNLOADS_MIX,
 }
