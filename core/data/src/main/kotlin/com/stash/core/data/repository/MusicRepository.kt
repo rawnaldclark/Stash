@@ -112,6 +112,28 @@ interface MusicRepository {
     /** Remove a playlist from the library without deleting its tracks from disk. */
     suspend fun removePlaylist(playlist: Playlist)
 
+    /**
+     * Ensures exactly one "Your Downloads" playlist exists for this install.
+     * Idempotent — safe to call on every app launch. Returns the playlist's id.
+     *
+     * The seeded playlist has type = [PlaylistType.DOWNLOADS_MIX], source =
+     * [MusicSource.BOTH], and a reserved `sourceId` ("stash_downloads_mix")
+     * that guarantees the unique `source_id` index holds.
+     *
+     * Called from [com.stash.app.StashApplication.onCreate]; also called
+     * defensively by [linkTrackToDownloadsMix] so a track download never
+     * fails due to a missing-playlist race.
+     */
+    suspend fun ensureDownloadsMixSeeded(): Long
+
+    /**
+     * Links [trackId] to the seeded DOWNLOADS_MIX playlist. Idempotent — a
+     * re-link of an already-linked track is a no-op. Called from
+     * [com.stash.core.media.actions.TrackActionsDelegate.handleDownloadSuccess]
+     * so manual downloads survive the startup orphan sweep.
+     */
+    suspend fun linkTrackToDownloadsMix(trackId: Long)
+
     /** Update a playlist's cover art URL (local file path or remote URL). */
     suspend fun updatePlaylistArtUrl(playlistId: Long, artUrl: String?)
 

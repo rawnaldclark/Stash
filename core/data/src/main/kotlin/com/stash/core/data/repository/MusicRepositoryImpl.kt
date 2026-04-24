@@ -272,6 +272,25 @@ class MusicRepositoryImpl @Inject constructor(
         playlistDao.updateTrackCount(playlistId, count)
     }
 
+    override suspend fun ensureDownloadsMixSeeded(): Long {
+        val existing = playlistDao.findBySourceId(DOWNLOADS_MIX_SOURCE_ID)
+        if (existing != null) return existing.id
+        val entity = com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Your Downloads",
+            source = com.stash.core.model.MusicSource.BOTH,
+            sourceId = DOWNLOADS_MIX_SOURCE_ID,
+            type = com.stash.core.model.PlaylistType.DOWNLOADS_MIX,
+            syncEnabled = false,
+        )
+        return playlistDao.insert(entity)
+    }
+
+    override suspend fun linkTrackToDownloadsMix(trackId: Long) {
+        val playlistId = ensureDownloadsMixSeeded()
+        if (playlistDao.getCrossRef(playlistId, trackId) != null) return
+        addTrackToPlaylist(trackId = trackId, playlistId = playlistId)
+    }
+
     override suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long) {
         playlistDao.softDeleteTrackFromPlaylist(playlistId, trackId)
         val count = trackDao.getByPlaylist(playlistId).first().size
@@ -552,5 +571,9 @@ class MusicRepositoryImpl @Inject constructor(
 
         toUpdate.forEach { trackDao.update(it) }
         android.util.Log.i("StashMigrations", "Upgraded ${toUpdate.size} album art URLs to high-res")
+    }
+
+    companion object {
+        private const val DOWNLOADS_MIX_SOURCE_ID = "stash_downloads_mix"
     }
 }

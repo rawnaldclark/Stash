@@ -56,4 +56,5 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.13")
     testImplementation("org.mockito:mockito-core:5.11.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    testImplementation("io.mockk:mockk:1.13.8")
 }
