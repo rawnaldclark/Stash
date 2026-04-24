@@ -515,6 +515,43 @@ class TrackActionsDelegateTest {
         }
     }
 
+    @Test
+    fun `downloadTrack marks track downloaded even when link fails`() = runTest {
+        val tempFile = File.createTempFile("tad_fail_link_tmp_", ".mp3").apply { writeText("x") }
+        val finalFile = File.createTempFile("tad_fail_link_final_", ".mp3").apply { delete() }
+        try {
+            val executor = mock<DownloadExecutor> {
+                onBlocking { download(any(), any(), any(), any(), any()) } doReturn
+                    DownloadResult.Success(tempFile)
+            }
+            val fileOrganizer = mock<FileOrganizer> {
+                on { getTempDir() } doReturn tempFile.parentFile!!
+                onBlocking {
+                    commitDownload(any(), any(), anyOrNull(), any(), any())
+                } doReturn FileOrganizer.CommittedTrack(finalFile.absolutePath, 1L)
+            }
+            val repo = mock<MusicRepository> {
+                onBlocking { insertTrack(any()) } doReturn 123L
+                onBlocking { linkTrackToDownloadsMix(any()) } doThrow RuntimeException("db boom")
+            }
+
+            val d = delegate(
+                downloadExecutor = executor,
+                fileOrganizer = fileOrganizer,
+                musicRepository = repo,
+            )
+
+            d.downloadTrack(TrackItem("abc123", "Test", "Artist", 180.0, null))
+            advanceUntilIdle()
+
+            assertEquals(setOf("abc123"), d.downloadedIds.value)
+            assertEquals(emptySet<String>(), d.downloadingIds.value)
+        } finally {
+            tempFile.delete()
+            finalFile.delete()
+        }
+    }
+
     // ------------------------------------------------------------------
     // stopPreview
     // ------------------------------------------------------------------

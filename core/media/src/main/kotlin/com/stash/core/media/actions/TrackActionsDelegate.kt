@@ -312,7 +312,7 @@ class TrackActionsDelegate @Inject constructor(
         // is already in the library; a missing link self-heals on the next
         // download (seeder re-runs) or on the next startup seeder pass.
         runCatching { musicRepository.linkTrackToDownloadsMix(trackId) }
-            .onFailure { Log.w(TAG, "linkTrackToDownloadsMix failed for id=$trackId", it) }
+            .onFailure { Log.e(TAG, "linkTrackToDownloadsMix failed for id=$trackId", it) }
 
         _downloadingIds.update { it - item.videoId }
         _downloadedIds.update { it + item.videoId }
