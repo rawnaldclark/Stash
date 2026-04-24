@@ -111,12 +111,12 @@ git commit -m "feat(model): add PlaylistType.DOWNLOADS_MIX enum value"
 
 ---
 
-## Task 2: Add `ensureDownloadsMixSeeded` to `MusicRepository` interface
+## Task 2: Add `ensureDownloadsMixSeeded` + `linkTrackToDownloadsMix` to `MusicRepository` interface
 
 **Files:**
 - Modify: `core/data/src/main/kotlin/com/stash/core/data/repository/MusicRepository.kt`
 
-- [ ] **Step 1: Add the method to the interface**
+- [ ] **Step 1: Add the methods to the interface**
 
 Find the playlist-related method group (around line 110, next to `insertPlaylist` / `removePlaylist`). Add:
 
@@ -144,72 +144,60 @@ suspend fun ensureDownloadsMixSeeded(): Long
 suspend fun linkTrackToDownloadsMix(trackId: Long)
 ```
 
-- [ ] **Step 2: Commit the interface change**
-
-This commit is stub-only; implementation comes in Task 3. Kotlin will fail to compile until then — that's OK for this intermediate commit if you squash, OR you can defer commit to end of Task 3. Pick one style:
-
-**Style A (one commit per task):** commit now with `[WIP]` tag, fix compile in Task 3.
-**Style B (combined commit):** skip commit here; commit after Task 3.
-
-Style B is cleaner. No commit in Task 2 — proceed.
+Do not commit yet — the interface addition alone leaves `MusicRepositoryImpl` failing compilation. Commit happens at the end of Task 3 once the implementation lands.
 
 ---
 
 ## Task 3: Implement `ensureDownloadsMixSeeded` + `linkTrackToDownloadsMix` in `MusicRepositoryImpl`
 
+**Verified facts (from code read, do not re-verify — just use):**
+- `PlaylistDao.findBySourceId(sourceId: String): PlaylistEntity?` exists at `PlaylistDao.kt:147`.
+- `PlaylistDao.insert(playlist): Long` uses `OnConflictStrategy.REPLACE`.
+- `PlaylistDao.getCrossRef(playlistId, trackId): PlaylistTrackCrossRef?` exists at `PlaylistDao.kt:55` — use this for idempotency.
+- `MusicRepositoryImpl.addTrackToPlaylist(trackId, playlistId)` exists (`MusicRepositoryImpl.kt:262`) and already handles position assignment + `insertCrossRef`. **Reuse it** — do NOT introduce a parallel path.
+- There is **no** `PlaylistTrackCrossRefDao`. Cross-ref ops live on `PlaylistDao`.
+
 **Files:**
 - Modify: `core/data/src/main/kotlin/com/stash/core/data/repository/MusicRepositoryImpl.kt`
 - Test: `core/data/src/test/kotlin/com/stash/core/data/repository/MusicRepositoryDownloadsMixTest.kt` (new)
 
-- [ ] **Step 1: Read the existing `MusicRepositoryImpl.kt` playlist section**
+- [ ] **Step 1: Write the failing tests**
 
-Skim the file to find:
-- The `playlistDao` field (confirm name)
-- How other `insertPlaylist`/`addTrackToPlaylist` calls flow (you'll reuse these primitives or inline similar Room calls)
-- How existing methods handle coroutine dispatch (likely `withContext(Dispatchers.IO)` or the DAO already suspends)
-
-- [ ] **Step 2: Write the failing tests**
-
-Create `core/data/src/test/kotlin/com/stash/core/data/repository/MusicRepositoryDownloadsMixTest.kt`:
+Create `core/data/src/test/kotlin/com/stash/core/data/repository/MusicRepositoryDownloadsMixTest.kt`. Mirror the full `MusicRepositoryImpl` constructor — every injected dep gets `mockk(relaxed = true)`. Open `MusicRepositoryImpl.kt` and copy the class header/constructor to get the exact parameter list; every param becomes a `mockk` in `buildRepo`:
 
 ```kotlin
 package com.stash.core.data.repository
 
 import com.stash.core.data.db.dao.PlaylistDao
-import com.stash.core.data.db.dao.PlaylistTrackCrossRefDao  // confirm actual name
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * Unit tests for the DOWNLOADS_MIX seeder + link path on
- * [MusicRepositoryImpl]. Uses mocked DAOs — a full Room integration
- * test is covered by the manual acceptance checklist.
- */
 class MusicRepositoryDownloadsMixTest {
 
     @Test
     fun `ensureDownloadsMixSeeded inserts a new playlist when none exists`() = runTest {
         val playlistDao = mockk<PlaylistDao>(relaxed = true)
         coEvery { playlistDao.findBySourceId("stash_downloads_mix") } returns null
-        coEvery { playlistDao.insert(any()) } returns 42L
+        val inserted = slot<PlaylistEntity>()
+        coEvery { playlistDao.insert(capture(inserted)) } returns 42L
 
         val repo = buildRepo(playlistDao = playlistDao)
         val id = repo.ensureDownloadsMixSeeded()
 
         assertEquals(42L, id)
-        coVerify(exactly = 1) { playlistDao.insert(match {
-            it.type == PlaylistType.DOWNLOADS_MIX &&
-                it.source == MusicSource.BOTH &&
-                it.sourceId == "stash_downloads_mix" &&
-                it.name == "Your Downloads"
-        }) }
+        assertEquals(PlaylistType.DOWNLOADS_MIX, inserted.captured.type)
+        assertEquals(MusicSource.BOTH, inserted.captured.source)
+        assertEquals("stash_downloads_mix", inserted.captured.sourceId)
+        assertEquals("Your Downloads", inserted.captured.name)
+        assertEquals(false, inserted.captured.syncEnabled)
     }
 
     @Test
@@ -232,38 +220,67 @@ class MusicRepositoryDownloadsMixTest {
     }
 
     @Test
-    fun `linkTrackToDownloadsMix seeds then inserts cross-ref`() = runTest {
+    fun `linkTrackToDownloadsMix seeds then adds track when no existing link`() = runTest {
         val playlistDao = mockk<PlaylistDao>(relaxed = true)
-        val crossRefDao = mockk<PlaylistTrackCrossRefDao>(relaxed = true)
         coEvery { playlistDao.findBySourceId("stash_downloads_mix") } returns null
         coEvery { playlistDao.insert(any()) } returns 42L
+        coEvery { playlistDao.getCrossRef(42L, 99L) } returns null
+        coEvery { playlistDao.getNextPosition(42L) } returns 0
 
-        val repo = buildRepo(playlistDao = playlistDao, crossRefDao = crossRefDao)
+        val repo = buildRepo(playlistDao = playlistDao)
         repo.linkTrackToDownloadsMix(trackId = 99L)
 
-        coVerify { crossRefDao.insertOrIgnore(match { it.playlistId == 42L && it.trackId == 99L }) }
+        // addTrackToPlaylist internally calls insertCrossRef after computing position.
+        coVerify { playlistDao.insertCrossRef(match { it.playlistId == 42L && it.trackId == 99L }) }
     }
 
-    // Helper; adjust signature to match the real MusicRepositoryImpl constructor.
+    @Test
+    fun `linkTrackToDownloadsMix is a no-op when link already exists`() = runTest {
+        val playlistDao = mockk<PlaylistDao>(relaxed = true)
+        val existing = PlaylistEntity(
+            id = 7L,
+            name = "Your Downloads",
+            source = MusicSource.BOTH,
+            sourceId = "stash_downloads_mix",
+            type = PlaylistType.DOWNLOADS_MIX,
+        )
+        coEvery { playlistDao.findBySourceId("stash_downloads_mix") } returns existing
+        coEvery { playlistDao.getCrossRef(7L, 99L) } returns
+            com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+                playlistId = 7L, trackId = 99L, position = 0,
+            )
+
+        val repo = buildRepo(playlistDao = playlistDao)
+        repo.linkTrackToDownloadsMix(trackId = 99L)
+
+        coVerify(exactly = 0) { playlistDao.insertCrossRef(any()) }
+    }
+
+    /**
+     * Mirrors the real MusicRepositoryImpl constructor. Read the class header
+     * in MusicRepositoryImpl.kt and mock each param. Only override the ones
+     * this test asserts on.
+     */
     private fun buildRepo(
         playlistDao: PlaylistDao = mockk(relaxed = true),
-        crossRefDao: PlaylistTrackCrossRefDao = mockk(relaxed = true),
-    ): MusicRepositoryImpl = TODO("wire remaining deps from the real constructor")
+        // ... mock every other constructor param with `= mockk(relaxed = true)`
+    ): MusicRepositoryImpl = MusicRepositoryImpl(
+        playlistDao = playlistDao,
+        // ... wire the rest
+    )
 }
 ```
 
-Note: the `TODO("wire remaining deps")` means you'll mirror the real constructor with `mockk(relaxed = true)` for every parameter. If `MusicRepositoryImpl` has many deps, consider extracting the seeder/link logic into a smaller collaborator (e.g. a `DownloadsMixRepository`) — but first attempt in-place; only extract if the constructor balloons.
-
-- [ ] **Step 3: Run tests to verify they fail**
+- [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
 ./gradlew :core:data:test --tests "com.stash.core.data.repository.MusicRepositoryDownloadsMixTest"
 ```
-Expected: FAIL (method doesn't exist).
+Expected: FAIL — `ensureDownloadsMixSeeded` / `linkTrackToDownloadsMix` not defined on `MusicRepositoryImpl`.
 
-- [ ] **Step 4: Implement the methods**
+- [ ] **Step 3: Implement the methods**
 
-In `MusicRepositoryImpl.kt`, near the other playlist ops:
+In `MusicRepositoryImpl.kt`, next to the existing `addTrackToPlaylist` method:
 
 ```kotlin
 override suspend fun ensureDownloadsMixSeeded(): Long {
@@ -282,9 +299,11 @@ override suspend fun ensureDownloadsMixSeeded(): Long {
 
 override suspend fun linkTrackToDownloadsMix(trackId: Long) {
     val playlistId = ensureDownloadsMixSeeded()
-    playlistTrackCrossRefDao.insertOrIgnore(
-        PlaylistTrackCrossRef(playlistId = playlistId, trackId = trackId),
-    )
+    // Idempotency: getCrossRef returns the existing link if any; skip insert
+    // in that case so we don't re-run the position/trackCount update paths
+    // in addTrackToPlaylist on every re-download.
+    if (playlistDao.getCrossRef(playlistId, trackId) != null) return
+    addTrackToPlaylist(trackId = trackId, playlistId = playlistId)
 }
 
 companion object {
@@ -292,23 +311,26 @@ companion object {
 }
 ```
 
-Confirm the actual DAO method names (`findBySourceId`, `insert`, `insertOrIgnore`) exist; if not, the closest equivalents will. Add new DAO query annotations if a `findBySourceId` doesn't exist, using `@Query("SELECT * FROM playlists WHERE source_id = :sourceId LIMIT 1")`.
+Notes:
+- Reuse `addTrackToPlaylist` (don't re-implement the cross-ref insert). It already handles `getNextPosition` and any trackCount bookkeeping.
+- `PlaylistDao.insert` is REPLACE-on-conflict — since `source_id` is unique, an accidental second call would overwrite the row (same content → harmless). But the `findBySourceId` guard means we never reach `insert` twice in practice.
+- `Instant.now()` requires `import java.time.Instant`.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
 ./gradlew :core:data:test --tests "com.stash.core.data.repository.MusicRepositoryDownloadsMixTest"
-./gradlew :core:model:test  # still green
+./gradlew :core:model:test
 ```
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add core/data/src/main/kotlin/com/stash/core/data/repository/MusicRepository.kt \
         core/data/src/main/kotlin/com/stash/core/data/repository/MusicRepositoryImpl.kt \
         core/data/src/test/kotlin/com/stash/core/data/repository/MusicRepositoryDownloadsMixTest.kt
-git commit -m "feat(data): seeder + link for DOWNLOADS_MIX playlist"
+git commit -m "feat(data): seeder + idempotent link for DOWNLOADS_MIX playlist"
 ```
 
 ---
@@ -349,6 +371,9 @@ git commit -m "feat(app): seed DOWNLOADS_MIX playlist on startup"
 
 ## Task 5: Link new downloads in `TrackActionsDelegate`
 
+**Verified facts:**
+- `MusicRepository.insertTrack(track: Track): Long` returns the newly inserted row id — use the return value directly. No need for `trackDao.findByYoutubeId` fallback.
+
 **Files:**
 - Modify: `core/media/src/main/kotlin/com/stash/core/media/actions/TrackActionsDelegate.kt:285-312`
 - Test: extend existing test class if one exists, or create `core/media/src/test/kotlin/com/stash/core/media/actions/TrackActionsDelegateTest.kt`
@@ -358,28 +383,38 @@ git commit -m "feat(app): seed DOWNLOADS_MIX playlist on startup"
 ```bash
 find core/media -name "TrackActionsDelegate*Test*.kt"
 ```
-If present, extend it. If absent, the hook below creates a new test file.
+If present, add a new `@Test` to it. If absent, create the file below.
 
 - [ ] **Step 2: Write the failing test**
 
-The existing `handleDownloadSuccess` flow is:
-
-```kotlin
-musicRepository.insertTrack(track)
-_downloadingIds.update { it - item.videoId }
-_downloadedIds.update { it + item.videoId }
-```
-
-We need a test asserting `linkTrackToDownloadsMix` is called with the inserted track's id. Example test:
+Add this test (mirror the delegate constructor's full dep list with `mockk(relaxed = true)` for every param):
 
 ```kotlin
 @Test
 fun `handleDownloadSuccess links the new track to DOWNLOADS_MIX`() = runTest {
     val musicRepository = mockk<MusicRepository>(relaxed = true)
-    coEvery { musicRepository.insertTrack(any()) } returns 123L  // new track id
+    coEvery { musicRepository.insertTrack(any()) } returns 123L
 
-    // ... build delegate with mocked deps (fileOrganizer, etc.) ...
-    val delegate = TrackActionsDelegate(...)
+    val delegate = TrackActionsDelegate(
+        previewPlayer = mockk(relaxed = true),
+        previewUrlExtractor = mockk(relaxed = true),
+        previewUrlCache = mockk(relaxed = true),
+        downloadExecutor = mockk(relaxed = true) {
+            // Stub to return Success so handleDownloadSuccess runs.
+            coEvery { download(any(), any(), any(), any()) } returns
+                DownloadResult.Success(file = createTempFile().toFile())
+        },
+        trackDao = mockk(relaxed = true),
+        fileOrganizer = mockk(relaxed = true) {
+            every { getTempDir() } returns createTempDirectory().toFile()
+            coEvery { commitDownload(any(), any(), any(), any(), any()) } returns
+                CommittedFile(filePath = "/tmp/x.m4a", sizeBytes = 100L)
+        },
+        qualityPrefs = mockk(relaxed = true) {
+            every { qualityTier } returns flowOf(QualityTier.HIGH)
+        },
+        musicRepository = musicRepository,
+    )
     delegate.bindToScope(this)
 
     delegate.downloadTrack(TrackItem(
@@ -395,45 +430,41 @@ fun `handleDownloadSuccess links the new track to DOWNLOADS_MIX`() = runTest {
 }
 ```
 
-If `musicRepository.insertTrack` currently returns `Unit` (not a Long), that's the blocker — find what the insert actually returns and how the repo exposes the new track's id. Options:
-1. If `insertTrack(track): Long` (returns id): trivial.
-2. If it returns `Unit`: either change the signature (and callers) to return id, OR after insert call `trackDao.findByYoutubeId(videoId)?.id` to recover it.
-
-Check current signature:
-```bash
-grep -n "fun insertTrack" core/data/src/main/kotlin/com/stash/core/data/repository/MusicRepository*.kt
-```
-
-Pick the smallest change. If the signature change ripples, go with the find-by-youtube-id fallback.
+If the above stub list is too brittle or doesn't match the actual constructor, **open `TrackActionsDelegate.kt` top-level constructor and mirror it verbatim**. Don't guess field names.
 
 - [ ] **Step 3: Run test to verify it fails**
 
 ```bash
 ./gradlew :core:media:test --tests "com.stash.core.media.actions.TrackActionsDelegateTest"
 ```
-Expected: FAIL.
+Expected: FAIL — `linkTrackToDownloadsMix` never invoked.
 
 - [ ] **Step 4: Implement**
 
-In `TrackActionsDelegate.handleDownloadSuccess`, after `musicRepository.insertTrack(track)`:
-
-```kotlin
-// Link to the protected Your Downloads playlist so the orphan-cleanup
-// sweep on next launch doesn't wipe this track. See
-// docs/superpowers/specs/2026-04-24-search-download-orphan-fix-design.md.
-val trackId = musicRepository.insertTrack(track)  // if signature returns id
-musicRepository.linkTrackToDownloadsMix(trackId)
-```
-
-OR (fallback path if `insertTrack` returns `Unit`):
+In `TrackActionsDelegate.handleDownloadSuccess` (`TrackActionsDelegate.kt:285-312`), change:
 
 ```kotlin
 musicRepository.insertTrack(track)
-val row = trackDao.findByYoutubeId(item.videoId)
-row?.id?.let { musicRepository.linkTrackToDownloadsMix(it) }
+
+_downloadingIds.update { it - item.videoId }
+_downloadedIds.update { it + item.videoId }
 ```
 
-Wrap the link call in a `runCatching { ... }.onFailure { Log.w(TAG, "link-to-downloads failed", it) }` so a link failure doesn't cause the overall download to be reported as failed — the track is already in the library.
+to:
+
+```kotlin
+val trackId = musicRepository.insertTrack(track)
+
+// Link to the protected "Your Downloads" playlist so the next-launch
+// orphan sweep leaves this track alone. Swallow failures — the track
+// is already in the library; a missing link self-heals on the next
+// download (seeder re-runs) or on the next startup seeder pass.
+runCatching { musicRepository.linkTrackToDownloadsMix(trackId) }
+    .onFailure { Log.w(TAG, "linkTrackToDownloadsMix failed for id=$trackId", it) }
+
+_downloadingIds.update { it - item.videoId }
+_downloadedIds.update { it + item.videoId }
+```
 
 - [ ] **Step 5: Run test to verify it passes**
 
@@ -494,46 +525,60 @@ git commit -m "feat(home): include DOWNLOADS_MIX in Stash Mixes section"
 
 ---
 
-## Task 7: Collapse "Remove from playlist" into full delete for `DOWNLOADS_MIX`
+## Task 7: Adjust PlaylistDetailScreen copy for `DOWNLOADS_MIX`
+
+**Verified facts:**
+- `PlaylistDetailScreen.kt` does NOT have a "Remove from playlist" menu item. It uses a delete confirmation dialog that calls `viewModel.deleteTrackFromPlaylist(track, alsoBlacklist)` → `musicRepository.removeTrackFromPlaylistAndMaybeDelete(...)`.
+- That existing cascade already does the right thing for `DOWNLOADS_MIX` tracks: unlinks, observes no other playlist claims, deletes file + row.
+- So the **functional behavior is already correct**. What's wrong is only the **copy** — and the "Also block this song from future syncs" checkbox, which is nonsensical for a manual download.
 
 **Files:**
-- Modify: `feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailScreen.kt`
+- Read: `feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailScreen.kt` and `PlaylistDetailViewModel.kt`
+- Modify: `feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailScreen.kt` (dialog copy + checkbox visibility)
 
-- [ ] **Step 1: Locate the "Remove from playlist" action**
+- [ ] **Step 1: Locate the delete confirmation dialog and post-action snackbar**
 
 ```bash
-grep -n "Remove from playlist\|removeTrackFromPlaylist\|removeTrack" \
+grep -n "deleteTrackFromPlaylist\|Removed from this playlist\|Also block" \
+    feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailScreen.kt
+grep -n "Removed from\|Deleted from\|Kept on disk" \
     feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailScreen.kt
 ```
 
-Find the long-press menu item that invokes `removeTrackFromPlaylist` (or equivalent). Note the surrounding composable (usually inside a `DropdownMenuItem` or `ModalBottomSheet`).
+Identify:
+- The dialog title + body text for the normal-playlist case
+- The checkbox label ("Also block this song from future syncs" or similar)
+- The post-action snackbar copy
 
-- [ ] **Step 2: Gate the action on playlist type**
+- [ ] **Step 2: Gate copy on `playlist.type == DOWNLOADS_MIX`**
 
-Where the action is currently:
+Three adjustments, all inside the delete-confirmation composable and its snackbar:
+
 ```kotlin
-onClick = { viewModel.removeTrackFromPlaylist(track.id, playlist.id) }
-```
+val isDownloadsMix = playlist.type == PlaylistType.DOWNLOADS_MIX
 
-Change to:
-```kotlin
-onClick = {
-    if (playlist.type == PlaylistType.DOWNLOADS_MIX) {
-        // This is the track's only home. "Remove from playlist" here
-        // would re-orphan it and the next startup sweep would delete it
-        // anyway — collapse into an honest full-track delete.
-        viewModel.deleteTrack(track.id)
-    } else {
-        viewModel.removeTrackFromPlaylist(track.id, playlist.id)
-    }
+// Dialog title
+title = if (isDownloadsMix) "Delete from library?" else "Remove from this playlist?",
+
+// Dialog body
+text = if (isDownloadsMix) {
+    "This track will be deleted from your library and the audio file removed from disk."
+} else {
+    "Removing the song from this playlist will keep it in your library."
+},
+
+// Hide the 'Also block from future syncs' checkbox for DOWNLOADS_MIX —
+// blacklisting a one-off manual download is meaningless.
+if (!isDownloadsMix) {
+    Checkbox(...)  // existing code
+    Text("Also block this song from future syncs")
 }
+
+// Snackbar after the action
+val message = if (isDownloadsMix) "Deleted from your library." else "Removed from this playlist. Kept on disk."
 ```
 
-If the VM lacks a `deleteTrack(id: Long)` method, follow the existing pattern elsewhere in the screen (there's almost certainly a delete path for the track-level menu) and reuse that. If the label "Remove from playlist" is misleading in the DOWNLOADS_MIX case, also branch the label:
-
-```kotlin
-text = if (playlist.type == PlaylistType.DOWNLOADS_MIX) "Delete from library" else "Remove from playlist",
-```
+No VM changes needed — the existing `deleteTrackFromPlaylist(track, alsoBlacklist = false)` call produces the correct cascade when `DOWNLOADS_MIX` is the only playlist the track belongs to.
 
 - [ ] **Step 3: Build**
 
@@ -546,36 +591,30 @@ Expected: BUILD SUCCESSFUL.
 
 ```bash
 git add feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailScreen.kt
-git commit -m "feat(library): 'Remove from playlist' = full delete for DOWNLOADS_MIX"
+git commit -m "feat(library): DOWNLOADS_MIX dialog/snackbar copy — 'Delete from library', hide blacklist toggle"
 ```
 
 ---
 
-## Task 8: Audit Sync screen and mix refresh worker (verify no interference)
+## Task 8: Audit Sync screen and mix refresh worker
+
+**Verified facts:**
+- `PlaylistDao.getSpotifyPlaylistsForPreferences()` and `getYouTubePlaylistsForPreferences()` already filter by `source = 'SPOTIFY'` / `source = 'YOUTUBE'` respectively, so `DOWNLOADS_MIX` (source=BOTH) is naturally excluded from both Sync-screen lists upstream. **No change needed for SyncScreen.**
 
 **Files:**
-- Read only: `feature/sync/src/main/kotlin/com/stash/feature/sync/SyncScreen.kt`
 - Read only: `core/data/src/main/kotlin/com/stash/core/data/sync/workers/StashMixRefreshWorker.kt`
 
-- [ ] **Step 1: Verify Sync screen leaves DOWNLOADS_MIX alone**
+- [ ] **Step 1: Verify StashMixRefreshWorker only touches STASH_MIX**
 
-The Sync screen filters playlists by `spotifyPlaylists` / `youTubePlaylists`, which are already source-scoped. `DOWNLOADS_MIX` has `source = BOTH` so it won't match either list. Confirm by reading lines 240-470 and tracing how `uiState.spotifyPlaylists` / `uiState.youTubePlaylists` are populated upstream (in `SyncViewModel`).
+Read the worker top-to-bottom. Every query/write should be gated on `type == STASH_MIX` or a recipe-driven lookup (recipes map 1:1 to STASH_MIX playlists). Flag any broader query (e.g., `SELECT * FROM playlists WHERE ...` without a type filter or recipe join) — if one exists, tighten it to `type = 'STASH_MIX'` explicitly.
 
-Expected: no change needed. If upstream accidentally includes `source = BOTH` playlists in one of the lists, add a `type != DOWNLOADS_MIX` filter to the upstream.
+Expected: no change needed. If a broader query exists, tighten it and include the fix in the commit below.
 
-Document the finding in the commit message (even if no code change).
-
-- [ ] **Step 2: Verify StashMixRefreshWorker only touches STASH_MIX**
-
-Read the worker from top to bottom. Every query/write should be gated on `type == STASH_MIX` or a recipe-driven lookup (which maps to STASH_MIX via the recipe). Flag any broader query (e.g., `SELECT * FROM playlists WHERE ...` without type filter) — fix by adding a `type = 'STASH_MIX'` clause.
-
-Expected: no change needed (STASH_MIX is already the engine's domain). If a broader query exists, tighten it.
-
-- [ ] **Step 3: Commit (empty or with small fix)**
+- [ ] **Step 2: Commit (empty or with small fix)**
 
 If truly no change needed:
 ```bash
-git commit --allow-empty -m "chore: audit sync screen + StashMixRefreshWorker — no changes needed for DOWNLOADS_MIX"
+git commit --allow-empty -m "chore: audit StashMixRefreshWorker — no changes needed for DOWNLOADS_MIX"
 ```
 
 Otherwise commit the tightening change with a descriptive message.
@@ -600,7 +639,7 @@ This is not a Gradle task — it exercises the real Room DB + startup wiring.
 4. Tap the card, verify the downloaded track is listed and plays.
 5. Force-close the app (Recents → swipe away, OR `adb shell am force-stop com.stash.app.debug`).
 6. Relaunch. **Expected:** "Your Downloads" card still shows 1 track, the track is still playable, the audio file is still on disk.
-7. Long-press the track in "Your Downloads" → tap "Delete from library" (or "Remove from playlist"). **Expected:** track + audio file are gone, card still exists (now empty).
+7. Long-press the track in "Your Downloads" → tap the delete affordance. The confirmation dialog should read "Delete from library?" (not "Remove from this playlist?") and should NOT show the "Also block this song from future syncs" checkbox. Confirm. **Expected:** track + audio file are gone, card still exists (now empty).
 8. From Artist Profile on any artist, tap download on a track. Verify it appears in "Your Downloads."
 
 If any step fails, STOP and debug. Do not move to release.
