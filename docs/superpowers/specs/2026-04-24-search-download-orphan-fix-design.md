@@ -77,6 +77,8 @@ Error handling: if linking fails after insert succeeds, log and swallow. The tra
 
 No change to `MusicRepositoryImpl.cleanOrphanedMixTracks` or `TrackDao.getOrphanedDownloadedTracks`. Once linked, tracks naturally fall out of the orphan set via the existing `NOT IN (SELECT track_id FROM playlist_tracks WHERE removed_at IS NULL)` clause. Zero risk of accidentally deleting linked tracks.
 
+Note for implementers: `cleanOrphanedMixTracks` also consults `discoveryQueueDao.getActiveTrackIds()` to protect tracks mid-flight through the Discovery pipeline. That protection list is independent of this fix and remains in place.
+
 ### UI surfacing
 
 **Single surface: Home → "Stash Mixes (beta)" section.**
@@ -122,7 +124,7 @@ Implementation: in the `PlaylistDetailScreen` long-press menu, when `playlist.ty
 | `core/media/src/main/kotlin/com/stash/core/media/actions/TrackActionsDelegate.kt:285-312` | Call `linkTrackToDownloadsMix` after `insertTrack` |
 | `feature/home/.../HomeViewModel.kt` | Widen Stash Mixes section filter to include `DOWNLOADS_MIX` |
 | `feature/library/.../PlaylistDetailScreen.kt` | "Remove from playlist" → full delete when `type == DOWNLOADS_MIX` |
-| Mosaic-art generator (TBD during implementation) | Include `DOWNLOADS_MIX` in mosaic-tile computation |
+| `core/data/.../mapper/PlaylistMapper.kt` + (if present) mosaic-computing paths in `StashMixRefreshWorker.kt` / `DiffWorker.kt` | Include `DOWNLOADS_MIX` alongside `DAILY_MIX` in mosaic-tile computation |
 | `feature/sync/.../SyncScreen.kt` | Verify `DOWNLOADS_MIX` is excluded from sync-toggle filters |
 
 Estimated size: small. ~7 files, no schema migration, one new enum value, one new repo method.
