@@ -477,6 +477,45 @@ class TrackActionsDelegateTest {
     }
 
     // ------------------------------------------------------------------
+    // Download — DOWNLOADS_MIX link
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `handleDownloadSuccess links the new track to DOWNLOADS_MIX`() = runTest {
+        val tempFile = File.createTempFile("tad_link_tmp_", ".mp3").apply { writeText("x") }
+        val finalFile = File.createTempFile("tad_link_final_", ".mp3").apply { delete() }
+        try {
+            val executor = mock<DownloadExecutor> {
+                onBlocking { download(any(), any(), any(), any(), any()) } doReturn
+                    DownloadResult.Success(tempFile)
+            }
+            val fileOrganizer = mock<FileOrganizer> {
+                on { getTempDir() } doReturn tempFile.parentFile!!
+                onBlocking {
+                    commitDownload(any(), any(), anyOrNull(), any(), any())
+                } doReturn FileOrganizer.CommittedTrack(finalFile.absolutePath, 1L)
+            }
+            val repo = mock<MusicRepository> {
+                onBlocking { insertTrack(any()) } doReturn 123L
+            }
+
+            val d = delegate(
+                downloadExecutor = executor,
+                fileOrganizer = fileOrganizer,
+                musicRepository = repo,
+            )
+
+            d.downloadTrack(TrackItem("abc123", "Test", "Artist", 180.0, null))
+            advanceUntilIdle()
+
+            org.mockito.kotlin.verifyBlocking(repo) { linkTrackToDownloadsMix(123L) }
+        } finally {
+            tempFile.delete()
+            finalFile.delete()
+        }
+    }
+
+    // ------------------------------------------------------------------
     // stopPreview
     // ------------------------------------------------------------------
 

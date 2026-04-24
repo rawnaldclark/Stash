@@ -305,7 +305,14 @@ class TrackActionsDelegate @Inject constructor(
             isDownloaded = true,
             albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(item.thumbnailUrl),
         )
-        musicRepository.insertTrack(track)
+        val trackId = musicRepository.insertTrack(track)
+
+        // Link to the protected "Your Downloads" playlist so the next-launch
+        // orphan sweep leaves this track alone. Swallow failures — the track
+        // is already in the library; a missing link self-heals on the next
+        // download (seeder re-runs) or on the next startup seeder pass.
+        runCatching { musicRepository.linkTrackToDownloadsMix(trackId) }
+            .onFailure { Log.w(TAG, "linkTrackToDownloadsMix failed for id=$trackId", it) }
 
         _downloadingIds.update { it - item.videoId }
         _downloadedIds.update { it + item.videoId }
