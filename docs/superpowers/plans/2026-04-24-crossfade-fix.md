@@ -31,166 +31,132 @@ Memory `feedback_worktree_local_properties.md`: `git worktree add` doesn't carry
 ## Task 1: `CrossfadePreferences` (DataStore foundation)
 
 **Verified facts:**
-- The codebase already has a DataStore-backed preference pattern: `core/data/src/main/kotlin/com/stash/core/data/prefs/YouTubeHistoryPreference.kt`. Mirror its structure.
-- DataStore + `androidx.datastore` is wired into the existing prefs; no new Hilt module needed if you follow the existing pattern (Hilt finds the new class via `@Singleton @Inject constructor`).
+- `core/data/src/main/kotlin/com/stash/core/data/prefs/YouTubeHistoryPreference.kt` is the canonical existing preference. It uses `@ApplicationContext context: Context` + a file-scoped `Context.preferencesDataStore(name = ...)` extension property. **Mirror this pattern exactly** — there is no project convention for Hilt-injected `DataStore<Preferences>`.
+- The project does **not** unit-test preferences (`core/data/src/test/.../prefs/` does not exist). The DataStore round-trip layer is trusted upstream.
+- Therefore: no DataStore round-trip tests. The only logic worth testing is the duration clamp, which we extract to a pure-function companion.
 
 **Files:**
 - Create: `core/data/src/main/kotlin/com/stash/core/data/prefs/CrossfadePreferences.kt`
-- Test (new): `core/data/src/test/kotlin/com/stash/core/data/prefs/CrossfadePreferencesTest.kt`
+- Test (new, but small): `core/data/src/test/kotlin/com/stash/core/data/prefs/CrossfadePreferencesClampTest.kt`
 
-- [ ] **Step 1: Read existing `YouTubeHistoryPreference.kt`** to confirm the exact DataStore + Hilt pattern. Mirror it.
-
-- [ ] **Step 2: Write failing tests**
+- [ ] **Step 1: Implement `CrossfadePreferences` mirroring `YouTubeHistoryPreference`**
 
 ```kotlin
 package com.stash.core.data.prefs
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.MutablePreferences
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.preferencesOf
-import io.mockk.mockk
-// ... mirror the imports YouTubeHistoryPreferenceTest uses
-
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.flow.first
-import org.junit.Test
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-
-class CrossfadePreferencesTest {
-
-    // The exact DataStore-stubbing pattern depends on how YouTubeHistoryPreferenceTest does it.
-    // Most likely: an in-memory FakeDataStore or a real PreferenceDataStoreFactory pointed at a temp file.
-    // Read YouTubeHistoryPreferenceTest.kt for the canonical pattern and mirror it exactly.
-
-    @Test
-    fun `enabled defaults to false`() = runTest {
-        val prefs = buildCrossfadePreferences()
-        assertFalse(prefs.enabled.first())
-    }
-
-    @Test
-    fun `durationMs defaults to 4000`() = runTest {
-        val prefs = buildCrossfadePreferences()
-        assertEquals(4000L, prefs.durationMs.first())
-    }
-
-    @Test
-    fun `setEnabled persists and reflects in flow`() = runTest {
-        val prefs = buildCrossfadePreferences()
-        prefs.setEnabled(true)
-        assertTrue(prefs.enabled.first())
-        prefs.setEnabled(false)
-        assertFalse(prefs.enabled.first())
-    }
-
-    @Test
-    fun `setDurationMs persists and reflects in flow`() = runTest {
-        val prefs = buildCrossfadePreferences()
-        prefs.setDurationMs(7000L)
-        assertEquals(7000L, prefs.durationMs.first())
-    }
-
-    @Test
-    fun `setDurationMs clamps below minimum`() = runTest {
-        val prefs = buildCrossfadePreferences()
-        prefs.setDurationMs(500L)  // below 1000ms minimum
-        assertEquals(1000L, prefs.durationMs.first())
-    }
-
-    @Test
-    fun `setDurationMs clamps above maximum`() = runTest {
-        val prefs = buildCrossfadePreferences()
-        prefs.setDurationMs(20_000L)  // above 12_000ms maximum
-        assertEquals(12_000L, prefs.durationMs.first())
-    }
-
-    private fun buildCrossfadePreferences(): CrossfadePreferences {
-        // TODO: mirror the pattern from YouTubeHistoryPreferenceTest's setup — most likely
-        // a temp-file DataStore or in-memory fake.
-        TODO("wire DataStore the same way the existing test does")
-    }
-}
-```
-
-- [ ] **Step 3: Run tests to verify they fail**
-
-```bash
-cd C:/Users/theno/Projects/MP3APK/.worktrees/crossfade && \
-./gradlew :core:data:test --tests "com.stash.core.data.prefs.CrossfadePreferencesTest"
-```
-
-Expected: FAIL with `Unresolved reference: CrossfadePreferences`.
-
-- [ ] **Step 4: Implement `CrossfadePreferences`**
-
-```kotlin
-package com.stash.core.data.prefs
-
+import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Dedicated DataStore for crossfade settings. */
+private val Context.crossfadeDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "crossfade_preference",
+)
+
 /**
  * User preferences for the track-to-track crossfade feature (#16).
  *
- * Defaults: disabled, with a 4-second crossfade when enabled. The duration
- * is clamped to [MIN_DURATION_MS] .. [MAX_DURATION_MS] (1-12 seconds) on
- * write so the slider UI doesn't have to validate.
+ * Defaults: disabled, with a 4-second crossfade when enabled. Duration is
+ * clamped to [MIN_DURATION_MS]..[MAX_DURATION_MS] (1-12 s) on write via
+ * the pure [clampDurationMs] companion fn so the slider UI doesn't have to.
  */
 @Singleton
 class CrossfadePreferences @Inject constructor(
-    private val dataStore: DataStore<Preferences>,
+    @ApplicationContext private val context: Context,
 ) {
-    val enabled: Flow<Boolean> = dataStore.data.map { it[KEY_ENABLED] ?: DEFAULT_ENABLED }
-    val durationMs: Flow<Long> = dataStore.data.map { it[KEY_DURATION_MS] ?: DEFAULT_DURATION_MS }
+    val enabled: Flow<Boolean> = context.crossfadeDataStore.data.map { prefs ->
+        prefs[KEY_ENABLED] ?: DEFAULT_ENABLED
+    }
+
+    val durationMs: Flow<Long> = context.crossfadeDataStore.data.map { prefs ->
+        prefs[KEY_DURATION_MS] ?: DEFAULT_DURATION_MS
+    }
+
+    suspend fun currentEnabled(): Boolean = enabled.first()
+    suspend fun currentDurationMs(): Long = durationMs.first()
 
     suspend fun setEnabled(value: Boolean) {
-        dataStore.edit { it[KEY_ENABLED] = value }
+        context.crossfadeDataStore.edit { it[KEY_ENABLED] = value }
     }
 
     suspend fun setDurationMs(value: Long) {
-        val clamped = value.coerceIn(MIN_DURATION_MS, MAX_DURATION_MS)
-        dataStore.edit { it[KEY_DURATION_MS] = clamped }
+        context.crossfadeDataStore.edit { it[KEY_DURATION_MS] = clampDurationMs(value) }
     }
 
     companion object {
-        private val KEY_ENABLED = booleanPreferencesKey("crossfade_enabled")
-        private val KEY_DURATION_MS = longPreferencesKey("crossfade_duration_ms")
+        private val KEY_ENABLED = booleanPreferencesKey("enabled")
+        private val KEY_DURATION_MS = longPreferencesKey("duration_ms")
 
         const val DEFAULT_ENABLED = false
         const val DEFAULT_DURATION_MS = 4_000L
         const val MIN_DURATION_MS = 1_000L
         const val MAX_DURATION_MS = 12_000L
+
+        /** Pure-function clamp; tested directly in [CrossfadePreferencesClampTest]. */
+        fun clampDurationMs(value: Long): Long = value.coerceIn(MIN_DURATION_MS, MAX_DURATION_MS)
     }
 }
 ```
 
-If `YouTubeHistoryPreference.kt` injects a DataStore differently (e.g., a Hilt-provided named instance), mirror that. The constructor parameter type might need to be `DataStore<Preferences>` qualified with a Hilt `@Named(...)` if that's the existing convention.
+- [ ] **Step 2: Write the clamp test**
 
-- [ ] **Step 5: Run tests to verify they pass**
+`core/data/src/test/kotlin/com/stash/core/data/prefs/CrossfadePreferencesClampTest.kt`:
+
+```kotlin
+package com.stash.core.data.prefs
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class CrossfadePreferencesClampTest {
+
+    @Test
+    fun `clamp passes through value within range`() {
+        assertEquals(4_000L, CrossfadePreferences.clampDurationMs(4_000L))
+        assertEquals(1_000L, CrossfadePreferences.clampDurationMs(1_000L))  // boundary
+        assertEquals(12_000L, CrossfadePreferences.clampDurationMs(12_000L))  // boundary
+    }
+
+    @Test
+    fun `clamp raises below minimum`() {
+        assertEquals(1_000L, CrossfadePreferences.clampDurationMs(500L))
+        assertEquals(1_000L, CrossfadePreferences.clampDurationMs(0L))
+        assertEquals(1_000L, CrossfadePreferences.clampDurationMs(-1_000L))
+    }
+
+    @Test
+    fun `clamp lowers above maximum`() {
+        assertEquals(12_000L, CrossfadePreferences.clampDurationMs(20_000L))
+        assertEquals(12_000L, CrossfadePreferences.clampDurationMs(Long.MAX_VALUE))
+    }
+}
+```
+
+- [ ] **Step 3: Run tests**
 
 ```bash
 cd C:/Users/theno/Projects/MP3APK/.worktrees/crossfade && \
-./gradlew :core:data:test --tests "com.stash.core.data.prefs.CrossfadePreferencesTest"
+./gradlew :core:data:test --tests "com.stash.core.data.prefs.CrossfadePreferencesClampTest"
 ```
 
-Expected: all 6 tests pass.
+Expected: 3 tests pass. (No DataStore round-trip tests; no temp-file fixtures; no JUnit `@Rule` needed.)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 cd C:/Users/theno/Projects/MP3APK/.worktrees/crossfade && \
 git add core/data/src/main/kotlin/com/stash/core/data/prefs/CrossfadePreferences.kt \
-        core/data/src/test/kotlin/com/stash/core/data/prefs/CrossfadePreferencesTest.kt && \
+        core/data/src/test/kotlin/com/stash/core/data/prefs/CrossfadePreferencesClampTest.kt && \
 git commit -m "feat(prefs): CrossfadePreferences (toggle + duration, clamped 1-12s)"
 ```
 
@@ -205,11 +171,36 @@ This task builds the wrapper's foundation: extends `ForwardingPlayer`, owns two 
 **Verified facts:**
 - Media3 1.9.2 ships `androidx.media3.common.ForwardingPlayer` (not deprecated)
 - `Player.STATE_*` and `Player.MEDIA_ITEM_TRANSITION_REASON_*` constants are stable across Media3 1.x
-- The codebase tests use mockito-kotlin for player mocks (precedent: existing `:core:media:test`)
+- `:core:media`'s existing `TrackActionsDelegateTest` uses mockito-kotlin. **The new `CrossfadingPlayerTest` below uses mockk** because the wrapper has many dependencies and mockk's `relaxed = true` saves substantial scaffolding. Adding mockk to `:core:media` as a test dep is the smallest and least error-prone change.
 
 **Files:**
+- Modify: `core/media/build.gradle.kts` (add mockk test dep — Step 0 below)
 - Create: `core/media/src/main/kotlin/com/stash/core/media/service/CrossfadingPlayer.kt`
 - Test (new): `core/media/src/test/kotlin/com/stash/core/media/service/CrossfadingPlayerTest.kt`
+
+- [ ] **Step 0: Add mockk to `:core:media` test dependencies**
+
+Edit `core/media/build.gradle.kts` and add this line in the `dependencies { ... }` block (alongside the existing mockito-kotlin testImplementation):
+
+```kotlin
+testImplementation("io.mockk:mockk:1.13.8")
+```
+
+(Same version `:core:data` uses since the orphan-fix work — keep them aligned.)
+
+Verify it compiles before writing the new test:
+```bash
+cd C:/Users/theno/Projects/MP3APK/.worktrees/crossfade && \
+./gradlew :core:media:test
+```
+Expected: BUILD SUCCESSFUL (existing tests still green; nothing new added yet).
+
+Commit:
+```bash
+cd C:/Users/theno/Projects/MP3APK/.worktrees/crossfade && \
+git add core/media/build.gradle.kts && \
+git commit -m "build(media): add mockk to test deps for CrossfadingPlayer tests"
+```
 
 - [ ] **Step 1: Write failing tests for queue + setMediaItems**
 
@@ -595,6 +586,31 @@ fun `during CROSSFADING currentMediaItem returns next player's item`() = runTest
 }
 
 @Test
+fun `seekTo during CROSSFADING aborts fade and seeks the incoming track`() = runTest(testDispatcher) {
+    val playerA = buildMockExoPlayer()
+    val playerB = buildMockExoPlayer()
+    every { playerA.duration } returns 60_000L
+    every { playerA.isPlaying } returns true
+
+    val crossfade = buildCrossfadingPlayer(playerA, playerB, enabled = true, durationMs = 4_000L)
+    crossfade.setMediaItems(listOf(item("v1"), item("v2")), 0, 0L)
+    crossfade.play()
+    every { playerA.currentPosition } returns 57_000L  // crossfade triggers
+    advanceUntilIdle()
+    assertEquals(CrossfadingPlayer.State.CROSSFADING, crossfade.state.value)
+
+    crossfade.seekTo(30_000L)
+    advanceUntilIdle()
+
+    // Seek goes to the incoming track only. Crossfade aborts: vols snap to 0/1.
+    verify { playerB.seekTo(30_000L) }
+    verify(exactly = 0) { playerA.seekTo(30_000L) }
+    verify { playerA.volume = 0f }
+    verify { playerB.volume = 1f }
+    assertEquals(CrossfadingPlayer.State.SINGLE_ACTIVE, crossfade.state.value)
+}
+
+@Test
 fun `play during CROSSFADING calls play on both players`() = runTest(testDispatcher) {
     // Drive into CROSSFADING state, then verify play() routes to both
     val playerA = buildMockExoPlayer()
@@ -777,6 +793,29 @@ override fun pause() {
         State.CROSSFADING -> { activePlayer().pause(); nextPlayer().pause() }
     }
 }
+
+override fun seekTo(positionMs: Long) {
+    when (_state.value) {
+        State.SINGLE_ACTIVE -> activePlayer().seekTo(positionMs)
+        State.CROSSFADING -> {
+            // User wants to jump somewhere — abort the fade, land on the incoming track.
+            // Per spec §2: snap volumes to 0/1, complete the role-swap, seek the incoming.
+            rampJob?.cancel()
+            val outgoing = activePlayer()
+            val incoming = nextPlayer()
+            outgoing.volume = 0f
+            incoming.volume = 1f
+            incoming.seekTo(positionMs)
+            // Complete the role-swap so the SINGLE_ACTIVE invariant holds.
+            outgoing.stop()
+            outgoing.clearMediaItems()
+            activeRef.set(incoming); nextRef.set(outgoing)
+            currentIndex += 1
+            _state.value = State.SINGLE_ACTIVE
+            preloadNextOnNextPlayer()
+        }
+    }
+}
 ```
 
 You'll need `kotlinx.coroutines.flow.first` import for `crossfadePreferences.enabled.first()`.
@@ -874,6 +913,11 @@ fun `rebound skip during crossfade swaps to next-next item`() = runTest(testDisp
     // v2 should now be the active (snapped to vol 1, not faded out further)
     // v3 should be loaded on the formerly-active player at vol 0, fading in
     verify { playerA.setMediaItem(item("v3")) }
+
+    // Settle the rebound fade and assert the index landed on v3 (index 2).
+    advanceTimeBy(5_000L)
+    advanceUntilIdle()
+    assertEquals(2, crossfade.currentMediaItemIndex)
 }
 
 @Test
