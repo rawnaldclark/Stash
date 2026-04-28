@@ -982,6 +982,41 @@ class YTMusicApiClient @Inject constructor(
     /** Test seam — allows unit tests to call [parseContinuationPage] without reflection. */
     internal fun parseContinuationPageForTest(response: JsonObject): List<YTMusicTrack> =
         parseContinuationPage(response)
+
+    private val expectedCountRegex = Regex("""([\d,]+)\s+(?:songs?|tracks?|videos?)""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Reads the playlist's reported track count from the response header. Used
+     * by [paginateBrowse] callers to verify that pagination didn't silently
+     * stop short.
+     *
+     * Walks two known header shapes (modern editable header, legacy detail
+     * header), concatenates the secondSubtitle runs, and matches the first
+     * "X songs" / "X tracks" / "X videos" pattern. Comma thousands separators
+     * are stripped.
+     *
+     * Returns null when the header is absent (Liked Songs, library list, Home
+     * Mixes) or the count can't be parsed.
+     */
+    private fun extractExpectedTrackCount(response: JsonObject): Int? {
+        val runs = response.navigatePath(
+            "header", "musicEditablePlaylistDetailHeaderRenderer", "header",
+            "musicResponsiveHeaderRenderer", "secondSubtitle", "runs",
+        )?.asArray()
+            ?: response.navigatePath(
+                "header", "musicDetailHeaderRenderer", "secondSubtitle", "runs",
+            )?.asArray()
+            ?: return null
+
+        val text = runs.joinToString(separator = "") {
+            it.asObject()?.get("text")?.asString() ?: ""
+        }
+        val match = expectedCountRegex.find(text) ?: return null
+        return match.groupValues[1].replace(",", "").toIntOrNull()
+    }
+
+    internal fun extractExpectedTrackCountForTest(response: JsonObject): Int? =
+        extractExpectedTrackCount(response)
 }
 
 // ── JsonElement navigation extensions ────────────────────────────────────────

@@ -397,4 +397,52 @@ class YTMusicApiClientTest {
         assertEquals("MPLARZabc", normalizeArtistBrowseId("MPLARZabc"))
         assertEquals("MPLAxyz", normalizeArtistBrowseId("MPLAxyz"))
     }
+
+    @Test fun `extractExpectedTrackCount handles playlist_long_page1 (Home Mix has no header)`() {
+        val json = loadFixture("playlist_long_page1.json")
+        val parsed = Json.parseToJsonElement(json).jsonObject
+        val client = fakeBrowseClient("{}")
+        val count = client.extractExpectedTrackCountForTest(parsed)
+        // This particular fixture is a Home Mix — no header, so null is expected.
+        // Real user-playlist fixtures with a header are exercised via the synthetic tests below.
+        assertNull(count)
+    }
+
+    @Test fun `extractExpectedTrackCount returns null for liked songs (no header)`() {
+        val json = loadFixture("liked_songs_page1.json")
+        val parsed = Json.parseToJsonElement(json).jsonObject
+        val client = fakeBrowseClient("{}")
+        val count = client.extractExpectedTrackCountForTest(parsed)
+        assertNull(count)
+    }
+
+    @Test fun `extractExpectedTrackCount handles plain '42 songs' (no comma)`() {
+        val synthetic = """
+        {"header":{"musicDetailHeaderRenderer":{"secondSubtitle":{"runs":[
+            {"text":"42 songs"},{"text":" • "},{"text":"3:14:00"}
+        ]}}}}""".trimIndent()
+        val parsed = Json.parseToJsonElement(synthetic).jsonObject
+        val client = fakeBrowseClient("{}")
+        assertEquals(42, client.extractExpectedTrackCountForTest(parsed))
+    }
+
+    @Test fun `extractExpectedTrackCount handles 'X tracks' variant`() {
+        val synthetic = """
+        {"header":{"musicDetailHeaderRenderer":{"secondSubtitle":{"runs":[
+            {"text":"7 tracks"}
+        ]}}}}""".trimIndent()
+        val parsed = Json.parseToJsonElement(synthetic).jsonObject
+        val client = fakeBrowseClient("{}")
+        assertEquals(7, client.extractExpectedTrackCountForTest(parsed))
+    }
+
+    @Test fun `extractExpectedTrackCount parses 1234 songs with comma from modern editable header`() {
+        val synthetic = """
+        {"header":{"musicEditablePlaylistDetailHeaderRenderer":{"header":{"musicResponsiveHeaderRenderer":{"secondSubtitle":{"runs":[
+            {"text":"1,234 songs"}
+        ]}}}}}}""".trimIndent()
+        val parsed = Json.parseToJsonElement(synthetic).jsonObject
+        val client = fakeBrowseClient("{}")
+        assertEquals(1234, client.extractExpectedTrackCountForTest(parsed))
+    }
 }
