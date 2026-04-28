@@ -100,6 +100,8 @@ When the user flips the toggle ON, no immediate action is taken. The next sync (
 
 Storing the post-filter count (rather than the pre-filter total) on `itemCount` is intentional: that field is "tracks landed in the snapshot", which is the actionable number. The pre-filter total is preserved in `errorMessage` for context.
 
+**Implementation note** — `errorMessage` is currently surfaced in the Sync History detail screen. The implementation plan should verify the "filtered N tracks (studio-only mode)" annotation reads naturally in that context (it's an informational note, not an error). If the UI presents the field with strong error styling, route the filter note through a separate diagnostic field or styling path instead of overloading the error channel.
+
 ## Data flow (post-change)
 
 ```
@@ -172,6 +174,6 @@ After implementation, manual verification on device:
 1. Start with filter OFF (default), run sync — expect ~1700 Liked Songs (current count).
 2. Open Settings → Sync Preferences → YouTube Music → toggle "Studio recordings only" ON.
 3. Run Sync Now.
-4. Inspect via `adb`/sqlite the count of `remote_track_snapshots` rows under the Liked Songs `RemotePlaylistSnapshotEntity`. Expect a meaningful drop (probably 30-50% reduction depending on the user's mix).
+4. Inspect via `adb`/sqlite the count of `remote_track_snapshots` rows under the Liked Songs `RemotePlaylistSnapshotEntity`. The pre-filter count for this developer's library was ~1700; an arbitrary user's reduction percentage will vary. The reliable verification signal is the `Log.d`/`SyncStepResult.errorMessage` diagnostic showing a non-zero filtered count when UGC tracks exist in the source — confirm via `adb logcat -s StashSync` that the "filtered N UGC/podcast tracks" line appears.
 5. Spot-check that filtered tracks are the obvious covers/lives/podcasts (titles will reveal it).
 6. Toggle OFF, sync again, verify count returns to the unfiltered total.
