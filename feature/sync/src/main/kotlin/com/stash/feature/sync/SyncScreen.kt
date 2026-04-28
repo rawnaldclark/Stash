@@ -69,6 +69,7 @@ import com.stash.core.ui.theme.StashTheme
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.stash.feature.sync.components.SyncHeroCard
 import com.stash.feature.sync.components.SyncActionProgress
+import com.stash.feature.sync.components.StatusPill
 
 /**
  * Main Sync screen.
@@ -151,155 +152,27 @@ fun SyncScreen(
                 val everythingOff = uiState.spotifyPlaylists.isNotEmpty() &&
                     uiState.spotifyPlaylists.none { it.syncEnabled }
                 val startExpanded = uiState.spotifyPlaylists.isEmpty() || everythingOff
-                var expanded by remember(startExpanded) { mutableStateOf(startExpanded) }
-                val purple = MaterialTheme.colorScheme.primary
-
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = !expanded },
-                    color = purple.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp, purple.copy(alpha = 0.3f),
-                    ),
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                            .animateContentSize(),
-                    ) {
-                        // Header row — always visible, purple accent
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Spotify Sync Preferences",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = purple,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Text(
-                                    text = "Choose which playlists to sync and download",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Icon(
-                                imageVector = if (expanded) Icons.Filled.ExpandLess
-                                else Icons.Filled.ExpandMore,
-                                contentDescription = null,
-                                tint = purple,
-                            )
-                        }
-
-                        // Expanded content
-                        if (expanded && uiState.spotifyPlaylists.isEmpty()) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Your Spotify playlists and daily mixes will appear here after the first sync. Tap Sync Now to load them — nothing downloads until you toggle it on.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                        } else if (expanded) {
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            SyncModeChipRow(
-                                mode = uiState.spotifySyncMode,
-                                onChange = viewModel::onSpotifySyncModeChanged,
-                                accent = purple,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            val liked = uiState.spotifyPlaylists.filter {
-                                it.type == com.stash.core.model.PlaylistType.LIKED_SONGS
-                            }
-                            val custom = uiState.spotifyPlaylists.filter {
-                                it.type == com.stash.core.model.PlaylistType.CUSTOM
-                            }
-                            // Split DAILY_MIX type into actual Daily Mixes vs other
-                            // Spotify-generated mixes (Release Radar, Discover Weekly, etc.)
-                            val allMixes = uiState.spotifyPlaylists.filter {
-                                it.type == com.stash.core.model.PlaylistType.DAILY_MIX
-                            }
-                            val dailyMixes = allMixes.filter {
-                                it.name.matches(Regex("""Daily Mix \d+"""))
-                            }
-                            val otherMixes = allMixes.filter {
-                                !it.name.matches(Regex("""Daily Mix \d+"""))
-                            }
-
-                            // Liked Songs
-                            liked.forEach { playlist ->
-                                SpotifySyncToggleRow(
-                                    name = playlist.name,
-                                    trackCount = playlist.trackCount,
-                                    enabled = playlist.syncEnabled,
-                                    onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
-                                )
-                            }
-
-                            // Spotify-generated mixes (each gets its own toggle)
-                            if (otherMixes.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Spotify Mixes",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = purple,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                otherMixes.forEach { playlist ->
-                                    SpotifySyncToggleRow(
-                                        name = playlist.name,
-                                        trackCount = playlist.trackCount,
-                                        enabled = playlist.syncEnabled,
-                                        onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
-                                    )
-                                }
-                            }
-
-                            // Daily Mixes 1-6 — single toggle for all
-                            if (dailyMixes.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                val totalMixTracks = dailyMixes.sumOf { it.trackCount }
-                                val allMixesEnabled = dailyMixes.all { it.syncEnabled }
-                                SpotifySyncToggleRow(
-                                    name = "Daily Mixes (${dailyMixes.size})",
-                                    trackCount = totalMixTracks,
-                                    enabled = allMixesEnabled,
-                                    onToggle = { enabled ->
-                                        dailyMixes.forEach { mix ->
-                                            viewModel.onTogglePlaylistSync(mix.id, enabled)
-                                        }
-                                    },
-                                )
-                            }
-
-                            // User Playlists
-                            if (custom.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Your Playlists",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = purple,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                custom.forEach { playlist ->
-                                    SpotifySyncToggleRow(
-                                        name = playlist.name,
-                                        trackCount = playlist.trackCount,
-                                        enabled = playlist.syncEnabled,
-                                        onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
-                                    )
-                                }
-                            }
-                        }
-                    }
+                val spotifySummaryLine = remember(uiState.spotifyPlaylists) {
+                    val enabled = uiState.spotifyPlaylists.count { it.syncEnabled }
+                    val total = uiState.spotifyPlaylists.size
+                    val tracks = uiState.spotifyPlaylists.filter { it.syncEnabled }.sumOf { it.trackCount }
+                    "$enabled of $total playlists · ${"%,d".format(tracks)} tracks"
                 }
+                com.stash.feature.sync.components.SourcePreferencesCard(
+                    name = "Spotify",
+                    brandColor = StashTheme.extendedColors.spotifyGreen,
+                    connected = uiState.spotifyConnected,
+                    statusPills = { SpotifySummaryPills(uiState) },
+                    summaryLine = spotifySummaryLine,
+                    initiallyExpanded = startExpanded,
+                    expandedContent = {
+                        SpotifyExpandedContent(
+                            uiState = uiState,
+                            onSyncModeChanged = viewModel::onSpotifySyncModeChanged,
+                            onPlaylistToggled = viewModel::onTogglePlaylistSync,
+                        )
+                    },
+                )
             }
         }
 
@@ -314,145 +187,28 @@ fun SyncScreen(
                 val everythingOff = hasPlaylists &&
                     uiState.youTubePlaylists.none { it.syncEnabled }
                 val startExpanded = !hasPlaylists || everythingOff
-                var expanded by remember(startExpanded) { mutableStateOf(startExpanded) }
-                val accent = MaterialTheme.colorScheme.primary
-                // Amber highlight when user action is needed (post-fetch,
-                // pre-selection) so the card doesn't blend into the rest
-                // of the glass-y Sync screen.
-                val attentionColor = MaterialTheme.colorScheme.tertiary
-                val needsAction = everythingOff
-                val cardAccent = if (needsAction) attentionColor else accent
-
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = !expanded },
-                    color = cardAccent.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp, cardAccent.copy(alpha = 0.3f),
-                    ),
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                            .animateContentSize(),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (needsAction)
-                                        "Pick what to download from YouTube"
-                                    else
-                                        "YouTube Music Sync Preferences",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = cardAccent,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Text(
-                                    text = when {
-                                        needsAction -> "Found ${uiState.youTubePlaylists.size} playlists — enable the ones you want, then tap Sync Now again"
-                                        !hasPlaylists -> "Tap Sync Now to discover your YouTube Music library"
-                                        else -> "Choose which mixes and playlists to keep synced"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Icon(
-                                imageVector = if (expanded) Icons.Filled.ExpandLess
-                                else Icons.Filled.ExpandMore,
-                                contentDescription = null,
-                                tint = cardAccent,
-                            )
-                        }
-
-                        if (expanded && !hasPlaylists) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Your Home Mixes, Liked Songs, and playlists from your YouTube Music library will appear here after the first sync. Nothing downloads until you pick what you want — no surprise downloads.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                        } else if (expanded) {
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            SyncModeChipRow(
-                                mode = uiState.youtubeSyncMode,
-                                onChange = viewModel::onYoutubeSyncModeChanged,
-                                accent = accent,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            StudioOnlyToggleRow(
-                                enabled = uiState.youtubeLikedStudioOnly,
-                                onChange = viewModel::onYoutubeLikedStudioOnlyChanged,
-                                accent = accent,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            val ytLiked = uiState.youTubePlaylists.filter {
-                                it.type == com.stash.core.model.PlaylistType.LIKED_SONGS
-                            }
-                            val ytMixes = uiState.youTubePlaylists.filter {
-                                it.type == com.stash.core.model.PlaylistType.DAILY_MIX
-                            }
-                            val ytOther = uiState.youTubePlaylists.filter {
-                                it.type != com.stash.core.model.PlaylistType.LIKED_SONGS &&
-                                    it.type != com.stash.core.model.PlaylistType.DAILY_MIX
-                            }
-
-                            ytLiked.forEach { playlist ->
-                                SpotifySyncToggleRow(
-                                    name = playlist.name,
-                                    trackCount = playlist.trackCount,
-                                    enabled = playlist.syncEnabled,
-                                    onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
-                                )
-                            }
-
-                            if (ytMixes.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Home Mixes",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = accent,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                ytMixes.forEach { playlist ->
-                                    SpotifySyncToggleRow(
-                                        name = playlist.name,
-                                        trackCount = playlist.trackCount,
-                                        enabled = playlist.syncEnabled,
-                                        onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
-                                    )
-                                }
-                            }
-
-                            if (ytOther.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Other Playlists",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = accent,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                ytOther.forEach { playlist ->
-                                    SpotifySyncToggleRow(
-                                        name = playlist.name,
-                                        trackCount = playlist.trackCount,
-                                        enabled = playlist.syncEnabled,
-                                        onToggle = { viewModel.onTogglePlaylistSync(playlist.id, it) },
-                                    )
-                                }
-                            }
-                        }
-                    }
+                val youtubeSummaryLine = remember(uiState.youTubePlaylists) {
+                    val enabled = uiState.youTubePlaylists.count { it.syncEnabled }
+                    val total = uiState.youTubePlaylists.size
+                    val tracks = uiState.youTubePlaylists.filter { it.syncEnabled }.sumOf { it.trackCount }
+                    "$enabled of $total playlists · ${"%,d".format(tracks)} tracks"
                 }
+                com.stash.feature.sync.components.SourcePreferencesCard(
+                    name = "YouTube Music",
+                    brandColor = StashTheme.extendedColors.youtubeRed,
+                    connected = uiState.youTubeConnected,
+                    statusPills = { YouTubeSummaryPills(uiState) },
+                    summaryLine = youtubeSummaryLine,
+                    initiallyExpanded = startExpanded,
+                    expandedContent = {
+                        YouTubeExpandedContent(
+                            uiState = uiState,
+                            onSyncModeChanged = viewModel::onYoutubeSyncModeChanged,
+                            onStudioOnlyChanged = viewModel::onYoutubeLikedStudioOnlyChanged,
+                            onPlaylistToggled = viewModel::onTogglePlaylistSync,
+                        )
+                    },
+                )
             }
         }
 
@@ -1146,5 +902,280 @@ private fun StudioOnlyToggleRow(
                 checkedTrackColor = accent.copy(alpha = 0.5f),
             ),
         )
+    }
+}
+
+// ── SourcePreferencesCard helpers ────────────────────────────────────────────
+
+@Composable
+private fun SpotifySummaryPills(uiState: SyncUiState) {
+    val ec = StashTheme.extendedColors
+    val likedSyncing = uiState.spotifyPlaylists.any {
+        it.type == com.stash.core.model.PlaylistType.LIKED_SONGS && it.syncEnabled
+    }
+    val mixesEnabled = uiState.spotifyPlaylists.count {
+        it.type == com.stash.core.model.PlaylistType.DAILY_MIX && it.syncEnabled
+    }
+    val mixesTotal = uiState.spotifyPlaylists.count {
+        it.type == com.stash.core.model.PlaylistType.DAILY_MIX
+    }
+    val customEnabled = uiState.spotifyPlaylists.count {
+        it.type == com.stash.core.model.PlaylistType.CUSTOM && it.syncEnabled
+    }
+    val customTotal = uiState.spotifyPlaylists.count {
+        it.type == com.stash.core.model.PlaylistType.CUSTOM
+    }
+    if (likedSyncing) {
+        StatusPill("Liked \u2713", brandColor = ec.spotifyGreen)
+    }
+    if (mixesTotal > 0) {
+        StatusPill("Mixes $mixesEnabled/$mixesTotal")
+    }
+    if (customTotal > 0) {
+        StatusPill("Custom $customEnabled/$customTotal")
+    }
+    StatusPill(
+        text = if (uiState.spotifySyncMode == SyncMode.REFRESH) "Refresh" else "Accumulate",
+        primary = true,
+    )
+}
+
+@Composable
+private fun SpotifyExpandedContent(
+    uiState: SyncUiState,
+    onSyncModeChanged: (SyncMode) -> Unit,
+    onPlaylistToggled: (Long, Boolean) -> Unit,
+) {
+    val purple = MaterialTheme.colorScheme.primary
+    if (uiState.spotifyPlaylists.isEmpty()) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "Your Spotify playlists and daily mixes will appear here after the first sync. Tap Sync Now to load them — nothing downloads until you toggle it on.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+    } else {
+        Spacer(modifier = Modifier.height(12.dp))
+        SyncModeChipRow(
+            mode = uiState.spotifySyncMode,
+            onChange = onSyncModeChanged,
+            accent = purple,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val liked = uiState.spotifyPlaylists.filter {
+            it.type == com.stash.core.model.PlaylistType.LIKED_SONGS
+        }
+        val custom = uiState.spotifyPlaylists.filter {
+            it.type == com.stash.core.model.PlaylistType.CUSTOM
+        }
+        // Split DAILY_MIX type into actual Daily Mixes vs other
+        // Spotify-generated mixes (Release Radar, Discover Weekly, etc.)
+        val allMixes = uiState.spotifyPlaylists.filter {
+            it.type == com.stash.core.model.PlaylistType.DAILY_MIX
+        }
+        val dailyMixes = allMixes.filter {
+            it.name.matches(Regex("""Daily Mix \d+"""))
+        }
+        val otherMixes = allMixes.filter {
+            !it.name.matches(Regex("""Daily Mix \d+"""))
+        }
+
+        // Liked Songs
+        liked.forEach { playlist ->
+            SpotifySyncToggleRow(
+                name = playlist.name,
+                trackCount = playlist.trackCount,
+                enabled = playlist.syncEnabled,
+                onToggle = { onPlaylistToggled(playlist.id, it) },
+            )
+        }
+
+        // Spotify-generated mixes (each gets its own toggle)
+        if (otherMixes.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Spotify Mixes",
+                style = MaterialTheme.typography.labelMedium,
+                color = purple,
+                fontWeight = FontWeight.SemiBold,
+            )
+            otherMixes.forEach { playlist ->
+                SpotifySyncToggleRow(
+                    name = playlist.name,
+                    trackCount = playlist.trackCount,
+                    enabled = playlist.syncEnabled,
+                    onToggle = { onPlaylistToggled(playlist.id, it) },
+                )
+            }
+        }
+
+        // Daily Mixes 1-6 — single toggle for all
+        if (dailyMixes.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            val totalMixTracks = dailyMixes.sumOf { it.trackCount }
+            val allMixesEnabled = dailyMixes.all { it.syncEnabled }
+            SpotifySyncToggleRow(
+                name = "Daily Mixes (${dailyMixes.size})",
+                trackCount = totalMixTracks,
+                enabled = allMixesEnabled,
+                onToggle = { enabled ->
+                    dailyMixes.forEach { mix -> onPlaylistToggled(mix.id, enabled) }
+                },
+            )
+        }
+
+        // User Playlists
+        if (custom.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Your Playlists",
+                style = MaterialTheme.typography.labelMedium,
+                color = purple,
+                fontWeight = FontWeight.SemiBold,
+            )
+            custom.forEach { playlist ->
+                SpotifySyncToggleRow(
+                    name = playlist.name,
+                    trackCount = playlist.trackCount,
+                    enabled = playlist.syncEnabled,
+                    onToggle = { onPlaylistToggled(playlist.id, it) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun YouTubeSummaryPills(uiState: SyncUiState) {
+    val ec = StashTheme.extendedColors
+    val likedSyncing = uiState.youTubePlaylists.any {
+        it.type == com.stash.core.model.PlaylistType.LIKED_SONGS && it.syncEnabled
+    }
+    val mixesEnabled = uiState.youTubePlaylists.count {
+        it.type == com.stash.core.model.PlaylistType.DAILY_MIX && it.syncEnabled
+    }
+    val mixesTotal = uiState.youTubePlaylists.count {
+        it.type == com.stash.core.model.PlaylistType.DAILY_MIX
+    }
+    val otherEnabled = uiState.youTubePlaylists.count {
+        it.type !in setOf(
+            com.stash.core.model.PlaylistType.LIKED_SONGS,
+            com.stash.core.model.PlaylistType.DAILY_MIX,
+        ) && it.syncEnabled
+    }
+    val otherTotal = uiState.youTubePlaylists.count {
+        it.type !in setOf(
+            com.stash.core.model.PlaylistType.LIKED_SONGS,
+            com.stash.core.model.PlaylistType.DAILY_MIX,
+        )
+    }
+    if (likedSyncing) {
+        StatusPill(
+            text = if (uiState.youtubeLikedStudioOnly) "Liked \u00b7 Studio only" else "Liked \u2713",
+            brandColor = ec.youtubeRed,
+        )
+    }
+    if (mixesTotal > 0) {
+        StatusPill("$mixesEnabled/$mixesTotal mixes")
+    }
+    if (otherTotal > 0) {
+        StatusPill("$otherEnabled/$otherTotal playlists")
+    }
+    StatusPill(
+        text = if (uiState.youtubeSyncMode == SyncMode.REFRESH) "Refresh" else "Accumulate",
+        primary = true,
+    )
+}
+
+@Composable
+private fun YouTubeExpandedContent(
+    uiState: SyncUiState,
+    onSyncModeChanged: (SyncMode) -> Unit,
+    onStudioOnlyChanged: (Boolean) -> Unit,
+    onPlaylistToggled: (Long, Boolean) -> Unit,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val hasPlaylists = uiState.youTubePlaylists.isNotEmpty()
+
+    if (!hasPlaylists) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "Your Home Mixes, Liked Songs, and playlists from your YouTube Music library will appear here after the first sync. Nothing downloads until you pick what you want — no surprise downloads.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+    } else {
+        Spacer(modifier = Modifier.height(12.dp))
+        SyncModeChipRow(
+            mode = uiState.youtubeSyncMode,
+            onChange = onSyncModeChanged,
+            accent = accent,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        StudioOnlyToggleRow(
+            enabled = uiState.youtubeLikedStudioOnly,
+            onChange = onStudioOnlyChanged,
+            accent = accent,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val ytLiked = uiState.youTubePlaylists.filter {
+            it.type == com.stash.core.model.PlaylistType.LIKED_SONGS
+        }
+        val ytMixes = uiState.youTubePlaylists.filter {
+            it.type == com.stash.core.model.PlaylistType.DAILY_MIX
+        }
+        val ytOther = uiState.youTubePlaylists.filter {
+            it.type != com.stash.core.model.PlaylistType.LIKED_SONGS &&
+                it.type != com.stash.core.model.PlaylistType.DAILY_MIX
+        }
+
+        ytLiked.forEach { playlist ->
+            SpotifySyncToggleRow(
+                name = playlist.name,
+                trackCount = playlist.trackCount,
+                enabled = playlist.syncEnabled,
+                onToggle = { onPlaylistToggled(playlist.id, it) },
+            )
+        }
+
+        if (ytMixes.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Home Mixes",
+                style = MaterialTheme.typography.labelMedium,
+                color = accent,
+                fontWeight = FontWeight.SemiBold,
+            )
+            ytMixes.forEach { playlist ->
+                SpotifySyncToggleRow(
+                    name = playlist.name,
+                    trackCount = playlist.trackCount,
+                    enabled = playlist.syncEnabled,
+                    onToggle = { onPlaylistToggled(playlist.id, it) },
+                )
+            }
+        }
+
+        if (ytOther.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Other Playlists",
+                style = MaterialTheme.typography.labelMedium,
+                color = accent,
+                fontWeight = FontWeight.SemiBold,
+            )
+            ytOther.forEach { playlist ->
+                SpotifySyncToggleRow(
+                    name = playlist.name,
+                    trackCount = playlist.trackCount,
+                    enabled = playlist.syncEnabled,
+                    onToggle = { onPlaylistToggled(playlist.id, it) },
+                )
+            }
+        }
     }
 }
