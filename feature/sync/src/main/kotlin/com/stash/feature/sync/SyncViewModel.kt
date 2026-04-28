@@ -104,6 +104,11 @@ data class SyncUiState(
      */
     val spotifySyncMode: SyncMode = SyncMode.REFRESH,
     val youtubeSyncMode: SyncMode = SyncMode.REFRESH,
+    /**
+     * When true, the YT Music Liked Songs sync filters out UGC, cover,
+     * live, and podcast tracks. Other YT content is unaffected. Default false.
+     */
+    val youtubeLikedStudioOnly: Boolean = false,
     /** Number of tracks that could not be matched to a YouTube video. */
     val unmatchedCount: Int = 0,
     /**
@@ -283,6 +288,13 @@ class SyncViewModel @Inject constructor(
         }
     }
 
+    /** Persists the user's choice for the studio-only Liked Songs filter. */
+    fun onYoutubeLikedStudioOnlyChanged(enabled: Boolean) {
+        viewModelScope.launch {
+            syncPreferencesManager.setYoutubeLikedStudioOnly(enabled)
+        }
+    }
+
     // -- Internal observers ---------------------------------------------------
 
     private fun observeSyncPhase() {
@@ -318,6 +330,11 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             syncPreferencesManager.youtubeSyncMode.collect { mode ->
                 _uiState.update { it.copy(youtubeSyncMode = mode) }
+            }
+        }
+        viewModelScope.launch {
+            syncPreferencesManager.youtubeLikedStudioOnly.collect { enabled ->
+                _uiState.update { it.copy(youtubeLikedStudioOnly = enabled) }
             }
         }
     }
