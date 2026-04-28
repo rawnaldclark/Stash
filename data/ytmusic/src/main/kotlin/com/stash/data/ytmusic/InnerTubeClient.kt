@@ -139,6 +139,42 @@ class InnerTubeClient @Inject constructor(
         )
     }
 
+    @Volatile private var sessionActive: Boolean = false
+    @Volatile private var cachedCookie: String? = null
+    @Volatile private var cachedSapiSid: String? = null
+    @Volatile private var cachedAuthHeader: String? = null
+
+    /**
+     * Marks the start of a sync run. The first authenticated request inside the
+     * session populates the cookie / SAPISID / auth-header cache; subsequent
+     * requests reuse it. A 401 response anywhere in the session clears the
+     * cache so the next call re-resolves (typically forcing re-auth).
+     *
+     * Safe to call from any thread. Non-sync callers (search, player, etc.)
+     * are unaffected — they continue to resolve auth per call.
+     */
+    suspend fun beginSyncSession() {
+        sessionActive = true
+        cachedCookie = null
+        cachedSapiSid = null
+        cachedAuthHeader = null
+    }
+
+    /** Ends the sync session and clears the auth cache. Idempotent. */
+    fun endSyncSession() {
+        sessionActive = false
+        cachedCookie = null
+        cachedSapiSid = null
+        cachedAuthHeader = null
+    }
+
+    /** Internal: invalidate cached auth on receipt of a 401. */
+    private fun invalidateAuthCache() {
+        cachedCookie = null
+        cachedSapiSid = null
+        cachedAuthHeader = null
+    }
+
     /**
      * Internal representation of an HTTP outcome that carries both the parsed
      * body (if any) and the HTTP status code. Status code is needed by callers
@@ -166,13 +202,12 @@ class InnerTubeClient @Inject constructor(
      * @return The parsed JSON response, or null on failure.
      */
     suspend fun browse(browseId: String): JsonObject? = withContext(Dispatchers.IO) {
-        val cookie = tokenManager.getYouTubeCookie()
         val variant = InnerTubeVariant.WEB_REMIX
         val body = buildJsonObject {
             put("context", buildContext(variant))
             put("browseId", browseId)
         }
-        executeRequest("$BASE_URL/browse", body, cookie, variant)
+        executeRequest("$BASE_URL/browse", body, null, variant)
     }
 
     /**
@@ -188,7 +223,6 @@ class InnerTubeClient @Inject constructor(
      * @return The parsed JSON response, or null on failure.
      */
     suspend fun browseContinuation(continuation: String): JsonObject? = withContext(Dispatchers.IO) {
-        val cookie = tokenManager.getYouTubeCookie()
         val variant = InnerTubeVariant.WEB_REMIX
         val body = buildJsonObject {
             put("context", buildContext(variant))
@@ -196,7 +230,7 @@ class InnerTubeClient @Inject constructor(
         executeRequestWithStatus(
             url = "$BASE_URL/browse?ctoken=$continuation&continuation=$continuation&type=next",
             body = body,
-            cookie = cookie,
+            cookie = null,
             variant = variant,
         ).body
     }
@@ -443,31 +477,22 @@ class InnerTubeClient @Inject constructor(
     }
 
     /**
-     * Executes a POST request against the InnerTube API.
-     *
-     * If a [cookie] string is provided, it is sent along with a SAPISIDHASH
-     * authorization header derived from the SAPISID cookie value. This mimics
-     * an authenticated browser session and returns personalized results.
-     * Otherwise, the public API key is appended as a query parameter for
-     * unauthenticated access.
-     *
-     * @param url    The full endpoint URL (without query parameters).
-     * @param body   The JSON request body.
-     * @param cookie An optional cookie string from the user's browser session.
-     * @return The parsed JSON response, or null on HTTP failure.
-     */
-    /**
      * Executes a POST against the InnerTube API. Returns both the parsed body
      * (if 2xx) and the HTTP status code so callers can distinguish retryable
      * (5xx, network) from non-retryable (4xx) failures.
+     *
+     * When a sync session is active ([beginSyncSession] was called), auth
+     * resolution is cached across calls: cookie + SAPISID + Authorization
+     * header are fetched once and reused. A 401 response clears the cache so
+     * the next call re-resolves. Non-session callers resolve auth per request.
      */
-    internal fun executeRequestWithStatus(
+    internal suspend fun executeRequestWithStatus(
         url: String,
         body: JsonObject,
         cookie: String?,
         variant: InnerTubeVariant,
-    ): RequestOutcome {
-        val sapiSid = cookie?.let { cookieHelper.extractSapiSid(it) }
+    ): RequestOutcome = withContext(Dispatchers.IO) {
+        val (effectiveCookie, sapiSid, authHeader) = resolveAuth(cookie, variant)
 
         val separator = if (url.contains('?')) '&' else '?'
         val fullUrl = if (sapiSid != null) {
@@ -476,10 +501,7 @@ class InnerTubeClient @Inject constructor(
             "${url}${separator}key=$API_KEY&prettyPrint=false"
         }
 
-        Log.d(
-            TAG,
-            "executeRequest: POST $fullUrl (authenticated=${sapiSid != null}, variant=$variant)",
-        )
+        Log.d(TAG, "executeRequest: POST $fullUrl (authenticated=${sapiSid != null}, variant=$variant)")
 
         val requestBuilder = Request.Builder()
             .url(fullUrl)
@@ -492,19 +514,18 @@ class InnerTubeClient @Inject constructor(
         // Cookies + SAPISIDHASH auth only make sense against the WEB family;
         // sending them to IOS / ANDROID_VR clients either no-ops or in some
         // cases earns the request a server-side reject. Skip for non-WEB.
-        if (variant == InnerTubeVariant.WEB_REMIX &&
-            sapiSid != null && cookie != null
-        ) {
+        if (variant == InnerTubeVariant.WEB_REMIX && sapiSid != null && effectiveCookie != null && authHeader != null) {
             requestBuilder
-                .header("Cookie", cookie)
-                .header("Authorization", cookieHelper.generateAuthHeader(sapiSid))
+                .header("Cookie", effectiveCookie)
+                .header("Authorization", authHeader)
                 .header("Origin", "https://music.youtube.com")
                 .header("Referer", "https://music.youtube.com/")
                 .header("X-Goog-AuthUser", "0")
         }
 
-        return try {
+        try {
             okHttpClient.newCall(requestBuilder.build()).execute().use { resp ->
+                if (resp.code == 401) invalidateAuthCache()
                 if (!resp.isSuccessful) {
                     val errorBodyLen = resp.body?.string()?.length ?: 0
                     Log.e(TAG, "executeRequest: HTTP ${resp.code}, errorBodyLen=$errorBodyLen")
@@ -521,8 +542,45 @@ class InnerTubeClient @Inject constructor(
         }
     }
 
+    /**
+     * Resolves auth credentials for a request, using the session cache when a
+     * sync session is active and falling back to per-call resolution otherwise.
+     *
+     * @param explicitCookie A cookie provided directly by the caller (rare); if
+     *   null the token manager is queried.
+     * @param variant        The InnerTube client variant (auth is only used for
+     *   [InnerTubeVariant.WEB_REMIX]).
+     * @return Triple of (cookie, sapiSid, authHeader); any element may be null
+     *   if auth is unavailable or not needed for the given variant.
+     */
+    private suspend fun resolveAuth(
+        explicitCookie: String?,
+        variant: InnerTubeVariant,
+    ): Triple<String?, String?, String?> {
+        if (!sessionActive) {
+            val c = explicitCookie ?: tokenManager.getYouTubeCookie()
+            val s = c?.let { cookieHelper.extractSapiSid(it) }
+            val a = s?.let { cookieHelper.generateAuthHeader(it) }
+            return Triple(c, s, a)
+        }
+        // Session active: serve from cache, populate on first miss.
+        val cachedC = cachedCookie
+        val cachedS = cachedSapiSid
+        val cachedA = cachedAuthHeader
+        if (cachedC != null && cachedS != null && cachedA != null) {
+            return Triple(cachedC, cachedS, cachedA)
+        }
+        val c = explicitCookie ?: tokenManager.getYouTubeCookie()
+        val s = c?.let { cookieHelper.extractSapiSid(it) }
+        val a = s?.let { cookieHelper.generateAuthHeader(it) }
+        cachedCookie = c
+        cachedSapiSid = s
+        cachedAuthHeader = a
+        return Triple(c, s, a)
+    }
+
     /** Backwards-compatible wrapper for callers that don't need the status code. */
-    private fun executeRequest(
+    private suspend fun executeRequest(
         url: String,
         body: JsonObject,
         cookie: String?,
@@ -530,7 +588,7 @@ class InnerTubeClient @Inject constructor(
     ): JsonObject? = executeRequestWithStatus(url, body, cookie, variant).body
 
     /** Test-only convenience that builds a minimal request and returns the outcome. */
-    internal fun executeRequestWithStatusForTest(url: String): RequestOutcome =
+    internal suspend fun executeRequestWithStatusForTest(url: String): RequestOutcome =
         executeRequestWithStatus(
             url = url,
             body = buildJsonObject { put("test", "true") },
@@ -545,13 +603,12 @@ class InnerTubeClient @Inject constructor(
      */
     internal suspend fun browseContinuationForTest(continuation: String, baseUrl: String): JsonObject? =
         withContext(Dispatchers.IO) {
-            val cookie = tokenManager.getYouTubeCookie()
             val variant = InnerTubeVariant.WEB_REMIX
             val body = buildJsonObject { put("context", buildContext(variant)) }
             executeRequestWithStatus(
                 url = "$baseUrl/youtubei/v1/browse?ctoken=$continuation&continuation=$continuation&type=next",
                 body = body,
-                cookie = cookie,
+                cookie = null,
                 variant = variant,
             ).body
         }
