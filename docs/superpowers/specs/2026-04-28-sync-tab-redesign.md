@@ -157,10 +157,12 @@ If the existing card has multiple actions (cleanup, etc.), each becomes one row.
 
 ### Removed surfaces
 
-- The two `SourceCard` composables in the top "Connected Sources" Row (around `SyncScreen.kt:111-136`) and the helper composable `SourceCard` itself (line 651). Connection state moves into the Source Preferences cards as a `Connected` chip.
-- The standalone `SyncActionSection` composable (line 687) that today renders the "Sync Now" button and progress. Absorbed into the new Hero card.
-- `phaseLabel` (line 785), if it was only used by `SyncActionSection`, moves with the absorbed code (or stays at file scope if used elsewhere).
-- The `ScheduleCard` (line 800) and `TimePickerDialog` (line 928) are replaced wholesale.
+- The two `SourceCard` composables in the top "Connected Sources" Row (search hint: `SyncScreen.kt` ~line 111-136 as of branch `feat/yt-sync-pagination`) and the helper composable `SourceCard` itself (~line 651). Connection state moves into the Source Preferences cards as a `Connected` chip.
+- The standalone `SyncActionSection` composable (~line 687) that today renders the "Sync Now" button and progress. Absorbed into the new Hero card.
+- `phaseLabel` (~line 785), if it was only used by `SyncActionSection`, moves with the absorbed code (or stays at file scope if used elsewhere).
+- The `ScheduleCard` (~line 800) and `TimePickerDialog` (~line 928) are replaced wholesale.
+
+> All line numbers above are search hints; treat them as approximate. The implementation plan should grep the file fresh.
 
 ## Component breakdown — new files
 
@@ -202,7 +204,7 @@ re-computes next firing time, honors the bitmask
 
 ## Error handling
 
-- **Empty bitmask (0).** UI shows `Auto-sync` switch as ON but the sentence reads `"Not scheduled — pick at least one day"` with the days chip styled in error red. Scheduler explicitly does nothing. This is treated as user-state, not error-state — they can enable a day at any time.
+- **Empty bitmask (0).** UI shows `Auto-sync` switch as ON but the sentence reads `"Not scheduled — pick at least one day"` with the days chip styled in error red. Scheduler explicitly does nothing. This is treated as user-state, not error-state — they can enable a day at any time. The day-circle toggle logic does NOT veto the last deselection — the user is allowed to reach the zero state and the UI handles it gracefully.
 - **Scheduler day-advance.** The `while (firingDay !in bitmask) advance 1 day` loop is bounded by 7 iterations (day cycle); if for some reason no day matches after 7 hops, log a warning and skip scheduling (this implies bitmask is 0, which the UI prevents — defensive only).
 - **TimePicker bottom sheet dismissal.** If the user dismisses without confirming, no state change. Standard.
 - **DataStore corruption on `syncDays` read.** `runCatching { ... }.getOrDefault(0b1111111)` — same fallback discipline as `youtubeLikedStudioOnly`. Falls back to "every day" on read failure, which is the safe default.
@@ -215,7 +217,7 @@ A pure value-class with no dependencies. Test in `:core:data` test:
 
 - `contains(DayOfWeek)` returns the right boolean for each of the 7 bits.
 - `with(DayOfWeek, on)` sets and unsets correctly without affecting other bits.
-- `isDaily`, `isWeekdays`, `isWeekends` true on the canonical bitmasks (127, 31, 96) and false otherwise.
+- `isDaily`, `isWeekdays`, `isWeekends` true on the canonical bitmasks (127 = `0b1111111`; 31 = `0b0011111` for M-F = bits 0-4; 96 = `0b1100000` for Sat-Sun = bits 5-6) and false otherwise. Bit ordering is fixed: bit 0 = Monday, bit 6 = Sunday — matches `java.time.DayOfWeek.value - 1`.
 - `presetLabel()` returns `"daily"`, `"weekdays"`, `"weekends"`, or `compactLabel()` for arbitrary bitmasks.
 - `compactLabel()` returns `"Mon · Wed · Fri"` style for 0b0010101.
 
