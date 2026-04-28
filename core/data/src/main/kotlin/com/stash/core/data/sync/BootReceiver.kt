@@ -39,6 +39,7 @@ class BootReceiver : BroadcastReceiver() {
                         prefs.syncHour,
                         prefs.syncMinute,
                         wifiOnly = prefs.wifiOnly,
+                        days = DayOfWeekSet(prefs.syncDays),
                     )
                 }
             } finally {

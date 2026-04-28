@@ -16,6 +16,7 @@ import com.stash.core.data.sync.SyncPhase
 import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.model.SyncMode
+import com.stash.core.data.sync.DayOfWeekSet
 import com.stash.core.data.sync.SyncScheduler
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.toDisplayStatus
@@ -242,7 +243,12 @@ class SyncViewModel @Inject constructor(
             syncPreferencesManager.setSyncTime(hour, minute)
             val prefs = _uiState.value.syncPreferences
             if (prefs.autoSyncEnabled) {
-                syncScheduler.scheduleDailySync(hour, minute, wifiOnly = prefs.wifiOnly)
+                syncScheduler.scheduleDailySync(
+                    hour,
+                    minute,
+                    wifiOnly = prefs.wifiOnly,
+                    days = DayOfWeekSet(prefs.syncDays),
+                )
             }
         }
     }
@@ -259,6 +265,7 @@ class SyncViewModel @Inject constructor(
                     prefs.syncHour,
                     prefs.syncMinute,
                     wifiOnly = prefs.wifiOnly,
+                    days = DayOfWeekSet(prefs.syncDays),
                 )
             } else {
                 syncScheduler.cancelSync()
