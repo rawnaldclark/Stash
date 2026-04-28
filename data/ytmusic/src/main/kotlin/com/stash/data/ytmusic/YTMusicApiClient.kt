@@ -819,6 +819,111 @@ class YTMusicApiClient @Inject constructor(
     // can grow without pushing this file past 1000 LOC.
 
     private val TRACK_COUNT_REGEX = Regex("""(\d+)\s+(?:songs?|tracks?)""")
+
+    /**
+     * Extracts the continuation token from any of the four InnerTube response
+     * shapes that can carry it.
+     *
+     * Shape 1 – `continuationContents.musicPlaylistShelfContinuation` or
+     *   `musicShelfContinuation` (liked-songs page 2+):
+     *   token at `.continuations[0].nextContinuationData.continuation`
+     *
+     * Shape 2 – `onResponseReceivedActions[*].appendContinuationItemsAction`
+     *   (playlist page 2+, the shape our captured fixtures actually return):
+     *   last item in `continuationItems` → `continuationItemRenderer
+     *   .continuationEndpoint.continuationCommand.token`
+     *
+     * Shape 3 – initial twoColumn browse (`contents.twoColumnBrowseResultsRenderer`):
+     *   last item in `...musicPlaylistShelfRenderer.contents` → same
+     *   `continuationItemRenderer` path as Shape 2.
+     *
+     * Shape 4 – initial singleColumn browse (`contents.singleColumnBrowseResultsRenderer`):
+     *   last item in `...musicShelfRenderer.contents` → same
+     *   `continuationItemRenderer` path as Shape 2.
+     *
+     * Returns the first token found across all shapes, or null if none present.
+     */
+    private fun extractContinuationToken(response: JsonObject): String? {
+        // Shape 1: continuationContents.musicPlaylistShelfContinuation or musicShelfContinuation
+        val continuationContents = response["continuationContents"]?.asObject()
+        if (continuationContents != null) {
+            val shelf = continuationContents["musicPlaylistShelfContinuation"]?.asObject()
+                ?: continuationContents["musicShelfContinuation"]?.asObject()
+            val token = shelf?.get("continuations")?.asArray()
+                ?.firstOrNull()?.asObject()
+                ?.navigatePath("nextContinuationData", "continuation")?.asString()
+            if (token != null) return token
+            // Also check last item for continuationItemRenderer (some continuation responses
+            // embed the next-page token as the last item rather than a top-level continuations key).
+            val lastItemToken = shelf?.get("contents")?.asArray()
+                ?.lastOrNull()?.asObject()
+                ?.navigatePath(
+                    "continuationItemRenderer", "continuationEndpoint",
+                    "continuationCommand", "token",
+                )?.asString()
+            if (lastItemToken != null) return lastItemToken
+        }
+
+        // Shape 2: onResponseReceivedActions[*].appendContinuationItemsAction.continuationItems
+        val actions = response["onResponseReceivedActions"]?.asArray()
+        if (actions != null) {
+            for (action in actions) {
+                val items = action.asObject()
+                    ?.navigatePath("appendContinuationItemsAction", "continuationItems")
+                    ?.asArray()
+                    ?: continue
+                val token = items.lastOrNull()?.asObject()
+                    ?.navigatePath(
+                        "continuationItemRenderer", "continuationEndpoint",
+                        "continuationCommand", "token",
+                    )?.asString()
+                if (token != null) return token
+            }
+        }
+
+        // Shape 3: initial twoColumn browse — last item in musicPlaylistShelfRenderer.contents
+        val twoColumnShelfContents = response.navigatePath(
+            "contents", "twoColumnBrowseResultsRenderer",
+            "secondaryContents", "sectionListRenderer", "contents",
+        )?.asArray()?.firstOrNull()?.asObject()
+            ?.get("musicPlaylistShelfRenderer")?.asObject()
+            ?.get("contents")?.asArray()
+        if (twoColumnShelfContents != null) {
+            val token = twoColumnShelfContents.lastOrNull()?.asObject()
+                ?.navigatePath(
+                    "continuationItemRenderer", "continuationEndpoint",
+                    "continuationCommand", "token",
+                )?.asString()
+            if (token != null) return token
+        }
+
+        // Shape 4: initial singleColumn browse — last item in any musicShelfRenderer.contents
+        val singleColumnSections = response.navigatePath(
+            "contents", "singleColumnBrowseResultsRenderer", "tabs",
+        )?.firstArray()?.firstOrNull()?.asObject()
+            ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
+            ?.asArray()
+        if (singleColumnSections != null) {
+            for (section in singleColumnSections) {
+                val shelfContents = section.asObject()
+                    ?.get("musicShelfRenderer")?.asObject()
+                    ?.get("contents")?.asArray()
+                    ?: continue
+                val token = shelfContents.lastOrNull()?.asObject()
+                    ?.navigatePath(
+                        "continuationItemRenderer", "continuationEndpoint",
+                        "continuationCommand", "token",
+                    )?.asString()
+                if (token != null) return token
+            }
+        }
+
+        return null
+    }
+
+    /** Test seam — allows unit tests to call [extractContinuationToken] without reflection. */
+    internal fun extractContinuationTokenForTest(response: JsonObject): String? =
+        extractContinuationToken(response)
 }
 
 // ── JsonElement navigation extensions ────────────────────────────────────────

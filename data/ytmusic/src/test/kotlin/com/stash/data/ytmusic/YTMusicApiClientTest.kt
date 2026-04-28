@@ -16,6 +16,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
@@ -327,6 +328,43 @@ class YTMusicApiClientTest {
         val omv = tracks.firstOrNull { it.videoId == "h_D3VFfhvs4" }
         assertNotNull("OMV track must be parsed — this is the Mode B canonicalization trigger", omv)
         assertEquals(MusicVideoType.OMV, omv!!.musicVideoType)
+    }
+
+    @Test fun `extractContinuationToken finds token in twoColumn initial response`() {
+        val json = loadFixture("playlist_long_page1.json")
+        val parsed = Json.parseToJsonElement(json).jsonObject
+        val client = fakeBrowseClient("{}")  // any client; we call the helper directly
+        val token = client.extractContinuationTokenForTest(parsed)
+        assertNotNull("page1 should have a continuation token", token)
+        assertTrue("token should be non-empty", token!!.isNotEmpty())
+    }
+
+    @Test fun `extractContinuationToken finds token in continuation response`() {
+        val json = loadFixture("playlist_long_page2.json")
+        val parsed = Json.parseToJsonElement(json).jsonObject
+        val client = fakeBrowseClient("{}")
+        val token = client.extractContinuationTokenForTest(parsed)
+        // page2 may or may not have a token depending on whether playlist has >2 pages —
+        // assert non-throw rather than non-null.
+        assertTrue(token == null || token.isNotEmpty())
+    }
+
+    @Test fun `extractContinuationToken returns null for response with no token`() {
+        val noToken = """{"contents":{"twoColumnBrowseResultsRenderer":{"secondaryContents":{"sectionListRenderer":{"contents":[{"musicPlaylistShelfRenderer":{"contents":[]}}]}}}}}"""
+        val parsed = Json.parseToJsonElement(noToken).jsonObject
+        val client = fakeBrowseClient("{}")
+        assertNull(client.extractContinuationTokenForTest(parsed))
+    }
+
+    @Test fun `extractContinuationToken finds token in appendContinuationItemsAction shape`() {
+        // Our captured playlist_long_page2 actually uses onResponseReceivedActions[0].appendContinuationItemsAction
+        // with token at <last item>.continuationItemRenderer.continuationEndpoint.continuationCommand.token.
+        val json = loadFixture("playlist_long_page2.json")
+        val parsed = Json.parseToJsonElement(json).jsonObject
+        val client = fakeBrowseClient("{}")
+        val token = client.extractContinuationTokenForTest(parsed)
+        assertNotNull("appendContinuationItemsAction shape should yield a token", token)
+        assertTrue("token should be non-empty", token!!.isNotEmpty())
     }
 
     @Test
