@@ -4,17 +4,22 @@ import com.stash.core.model.SyncResult
 import com.stash.data.ytmusic.model.MusicVideoType
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
+import com.stash.data.ytmusic.InnerTubeClient.RequestOutcome
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -444,5 +449,137 @@ class YTMusicApiClientTest {
         val parsed = Json.parseToJsonElement(synthetic).jsonObject
         val client = fakeBrowseClient("{}")
         assertEquals(1234, client.extractExpectedTrackCountForTest(parsed))
+    }
+
+    // ── paginateBrowse helpers ────────────────────────────────────────────
+
+    /**
+     * Builds an InnerTubeClient mock whose browseWithStatus(continuation)
+     * returns scripted outcomes in order. A null entry maps to a transient
+     * (null body, 503) outcome so callers can simply pass null for "transient
+     * failure here."
+     */
+    private fun scriptedInner(vararg outcomes: RequestOutcome?): InnerTubeClient {
+        val inner = mock<InnerTubeClient>()
+        var i = 0
+        runBlocking {
+            whenever(inner.browseWithStatus(any())).thenAnswer {
+                val r = outcomes.getOrNull(i) ?: RequestOutcome(null, 503)
+                i++
+                r ?: RequestOutcome(null, 503)
+            }
+        }
+        return inner
+    }
+
+    private fun success(json: String): RequestOutcome =
+        RequestOutcome(Json.parseToJsonElement(json).jsonObject, 200)
+    private val transient503 = RequestOutcome(body = null, statusCode = 503)
+    private val permanent401 = RequestOutcome(body = null, statusCode = 401)
+
+    private fun pageWithToken(token: String, marker: List<String>): JsonObject =
+        Json.parseToJsonElement("""
+            {
+              "marker": [${marker.joinToString(",") { "\"$it\"" }}],
+              "continuationContents": {
+                "musicPlaylistShelfContinuation": {
+                  "contents": [],
+                  "continuations": [{"nextContinuationData": {"continuation": "$token"}}]
+                }
+              }
+            }
+        """.trimIndent()).jsonObject
+
+    private fun pageWithoutToken(marker: List<String>): JsonObject =
+        Json.parseToJsonElement("""
+            {
+              "marker": [${marker.joinToString(",") { "\"$it\"" }}],
+              "continuationContents": {
+                "musicPlaylistShelfContinuation": {"contents": []}
+              }
+            }
+        """.trimIndent()).jsonObject
+
+    // ── paginateBrowse tests ──────────────────────────────────────────────
+
+    @Test fun `paginateBrowse stops when first response has no token`() = runTest {
+        val initial = Json.parseToJsonElement("""{"contents":{}}""").jsonObject
+        val inner = scriptedInner()
+        val client = YTMusicApiClient(inner)
+        val result = client.paginateBrowseForTest(initial) { listOf("page0-item") }
+        assertEquals(listOf("page0-item"), result.items)
+        assertEquals(1, result.pagesFetched)
+        assertFalse(result.partial)
+    }
+
+    @Test fun `paginateBrowse follows token to page 2 then stops`() = runTest {
+        val page1 = pageWithToken("ABC", listOf("a", "b"))
+        val page2 = pageWithoutToken(listOf("c", "d"))
+        val inner = scriptedInner(RequestOutcome(page2, 200))
+        val client = YTMusicApiClient(inner)
+        val result = client.paginateBrowseForTest(page1) { jsonObj ->
+            jsonObj["marker"]?.jsonArray?.map { (it as JsonPrimitive).content } ?: emptyList()
+        }
+        assertEquals(listOf("a","b","c","d"), result.items)
+        assertEquals(2, result.pagesFetched)
+        assertFalse(result.partial)
+    }
+
+    @Test fun `paginateBrowse retries transient failure once then succeeds`() = runTest {
+        val page1 = pageWithToken("ABC", listOf("a"))
+        val page2 = pageWithoutToken(listOf("b"))
+        val inner = scriptedInner(transient503, RequestOutcome(page2, 200))
+        val client = YTMusicApiClient(inner)
+        val result = client.paginateBrowseForTest(page1) { jsonObj ->
+            jsonObj["marker"]?.jsonArray?.map { (it as JsonPrimitive).content } ?: emptyList()
+        }
+        assertEquals(listOf("a","b"), result.items)
+        assertFalse(result.partial)
+    }
+
+    @Test fun `paginateBrowse marks partial after exhausting retries`() = runTest {
+        val page1 = pageWithToken("ABC", listOf("a"))
+        val inner = scriptedInner(transient503, transient503, transient503)
+        val client = YTMusicApiClient(inner)
+        val result = client.paginateBrowseForTest(page1) { jsonObj ->
+            jsonObj["marker"]?.jsonArray?.map { (it as JsonPrimitive).content } ?: emptyList()
+        }
+        assertEquals(listOf("a"), result.items)
+        assertTrue(result.partial)
+        assertNotNull(result.partialReason)
+    }
+
+    @Test fun `paginateBrowse stops at MAX_PAGES safety cap`() = runTest {
+        val page = pageWithToken("ABC", listOf("x"))
+        val inner = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(inner.browseWithStatus(any())).thenReturn(RequestOutcome(page, 200))
+        }
+        val client = YTMusicApiClient(inner)
+        val result = client.paginateBrowseForTest(page) { jsonObj ->
+            jsonObj["marker"]?.jsonArray?.map { (it as JsonPrimitive).content } ?: emptyList()
+        }
+        assertEquals(YTMusicApiClient.MAX_PAGES, result.pagesFetched)
+        assertTrue(result.partial)
+        assertTrue(result.partialReason!!.contains("MAX_PAGES"))
+    }
+
+    @Test fun `paginateBrowse does not retry on 4xx`() = runTest {
+        val page1 = pageWithToken("ABC", listOf("a"))
+        val inner = mock<InnerTubeClient>()
+        var calls = 0
+        runBlocking {
+            whenever(inner.browseWithStatus(any())).thenAnswer {
+                calls++
+                RequestOutcome(body = null, statusCode = 401)
+            }
+        }
+        val client = YTMusicApiClient(inner)
+        val result = client.paginateBrowseForTest(page1) { jsonObj ->
+            jsonObj["marker"]?.jsonArray?.map { (it as JsonPrimitive).content } ?: emptyList()
+        }
+        assertEquals(1, calls)  // no retries
+        assertTrue(result.partial)
+        assertEquals(listOf("a"), result.items)
     }
 }

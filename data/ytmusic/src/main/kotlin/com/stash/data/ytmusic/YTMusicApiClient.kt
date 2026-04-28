@@ -59,6 +59,12 @@ class YTMusicApiClient @Inject constructor(
          * system, so [getPlaylistTracks] works without modification.
          */
         private const val BROWSE_LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
+
+        /** Safety cap on continuation depth. ~10K items @ 100/page. */
+        internal const val MAX_PAGES = 100
+
+        /** Backoff delays (ms) between retries on transient failures. */
+        private val RETRY_BACKOFFS_MS = listOf(500L, 1500L)
     }
 
     /**
@@ -1017,6 +1023,96 @@ class YTMusicApiClient @Inject constructor(
 
     internal fun extractExpectedTrackCountForTest(response: JsonObject): Int? =
         extractExpectedTrackCount(response)
+
+    // ── Pagination ───────────────────────────────────────────────────────
+
+    /**
+     * Result of a paginated browse walk.
+     *
+     * @property items         Accumulated parsed items from all successful pages.
+     * @property pagesFetched  Including the initial page (always >= 1).
+     * @property partial       True if a continuation page failed after retries OR
+     *                         the safety cap was hit.
+     * @property partialReason Human-readable explanation when partial.
+     */
+    internal data class PaginationResult<T>(
+        val items: List<T>,
+        val pagesFetched: Int,
+        val partial: Boolean,
+        val partialReason: String?,
+    )
+
+    /**
+     * Walks an InnerTube browse response's continuation chain, accumulating
+     * items via [parsePage].
+     *
+     * Retry policy:
+     *   - Transient failure (null body, HTTP 5xx, network error): retry up to
+     *     2 times with [RETRY_BACKOFFS_MS] backoff, then mark partial.
+     *   - Permanent failure (HTTP 4xx, esp. 401/403): no retry, mark partial.
+     *   - [MAX_PAGES] reached with token still pending: stop, mark partial.
+     *
+     * The [parsePage] lambda is called once per page (initial + continuations).
+     */
+    private suspend fun <T> paginateBrowse(
+        initialResponse: JsonObject,
+        parsePage: (JsonObject) -> List<T>,
+    ): PaginationResult<T> {
+        val items = mutableListOf<T>()
+        items += parsePage(initialResponse)
+        var token = extractContinuationToken(initialResponse)
+        var pages = 1
+        var partial = false
+        var partialReason: String? = null
+
+        while (token != null && pages < MAX_PAGES) {
+            val (next, attempts) = browseWithRetry(token)
+            if (next == null) {
+                partial = true
+                partialReason = "page ${pages + 1} failed after $attempts attempts"
+                Log.w(TAG, "paginateBrowse: $partialReason")
+                break
+            }
+            items += parsePage(next)
+            token = extractContinuationToken(next)
+            pages++
+        }
+
+        if (token != null && pages >= MAX_PAGES) {
+            partial = true
+            partialReason = "hit MAX_PAGES=$MAX_PAGES safety cap"
+            Log.w(TAG, "paginateBrowse: $partialReason")
+        }
+
+        return PaginationResult(items, pages, partial, partialReason)
+    }
+
+    /**
+     * Calls [InnerTubeClient.browseWithStatus] with retry-on-transient policy.
+     * Returns (body or null, total attempt count). On 4xx, does not retry.
+     */
+    private suspend fun browseWithRetry(token: String): Pair<JsonObject?, Int> {
+        var attempts = 0
+        var outcome = innerTubeClient.browseWithStatus(token)
+        attempts++
+        if (outcome.body != null) return outcome.body to attempts
+        if (outcome.statusCode in 400..499) return null to attempts  // permanent
+
+        for (backoff in RETRY_BACKOFFS_MS) {
+            kotlinx.coroutines.delay(backoff)
+            outcome = innerTubeClient.browseWithStatus(token)
+            attempts++
+            if (outcome.body != null) return outcome.body to attempts
+            if (outcome.statusCode in 400..499) return null to attempts  // permanent
+        }
+        return null to attempts
+    }
+
+    /** Test seam — allows unit tests to call [paginateBrowse] without reflection. */
+    internal suspend fun <T> paginateBrowseForTest(
+        initialResponse: JsonObject,
+        parsePage: (JsonObject) -> List<T>,
+    ): PaginationResult<T> = paginateBrowse(initialResponse, parsePage)
 }
 
 // ── JsonElement navigation extensions ────────────────────────────────────────

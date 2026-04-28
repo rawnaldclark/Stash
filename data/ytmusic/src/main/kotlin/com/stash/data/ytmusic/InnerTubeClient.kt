@@ -236,6 +236,24 @@ class InnerTubeClient @Inject constructor(
     }
 
     /**
+     * Like [browseContinuation] but returns the full HTTP outcome so callers
+     * (specifically [YTMusicApiClient.paginateBrowse]) can distinguish 4xx
+     * (no retry, likely auth) from 5xx/network (retry).
+     */
+    internal suspend fun browseWithStatus(continuation: String): RequestOutcome =
+        withContext(Dispatchers.IO) {
+            val cookie = tokenManager.getYouTubeCookie()
+            val variant = InnerTubeVariant.WEB_REMIX
+            val body = buildJsonObject { put("context", buildContext(variant)) }
+            executeRequestWithStatus(
+                url = "$BASE_URL/browse?ctoken=$continuation&continuation=$continuation&type=next",
+                body = body,
+                cookie = cookie,
+                variant = variant,
+            )
+        }
+
+    /**
      * Calls the InnerTube `search` action.
      *
      * @param query The search query string.
