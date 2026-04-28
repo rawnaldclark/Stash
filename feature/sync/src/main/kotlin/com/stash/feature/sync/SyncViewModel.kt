@@ -110,6 +110,11 @@ data class SyncUiState(
      * live, and podcast tracks. Other YT content is unaffected. Default false.
      */
     val youtubeLikedStudioOnly: Boolean = false,
+    /**
+     * Days-of-week bitmask for the auto-sync schedule. Bit 0 = Mon … bit 6 = Sun.
+     * Default 127 = every day.
+     */
+    val syncDays: Int = 0b1111111,
     /** Number of tracks that could not be matched to a YouTube video. */
     val unmatchedCount: Int = 0,
     /**
@@ -302,6 +307,13 @@ class SyncViewModel @Inject constructor(
         }
     }
 
+    /** Persists the days-of-week selection. UI passes the new bitmask. */
+    fun onSyncDaysChanged(bitmask: Int) {
+        viewModelScope.launch {
+            syncPreferencesManager.setSyncDays(bitmask)
+        }
+    }
+
     // -- Internal observers ---------------------------------------------------
 
     private fun observeSyncPhase() {
@@ -342,6 +354,11 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             syncPreferencesManager.youtubeLikedStudioOnly.collect { enabled ->
                 _uiState.update { it.copy(youtubeLikedStudioOnly = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            syncPreferencesManager.syncDays.collect { bitmask ->
+                _uiState.update { it.copy(syncDays = bitmask) }
             }
         }
     }
