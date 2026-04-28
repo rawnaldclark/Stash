@@ -29,8 +29,15 @@ import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.spotify.SpotifyApiException
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.YTMusicApiClient
+import com.stash.data.ytmusic.model.YTMusicPlaylist
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.Instant
@@ -59,6 +66,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
     companion object {
         const val KEY_SYNC_ID = "sync_id"
         private const val TAG = "StashSync"
+        /** Cap on concurrent in-flight YT browse calls during a sync. */
+        private const val MAX_PARALLEL_YT_FETCHES = 3
     }
 
     /**
@@ -95,7 +104,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             startedAt = Instant.now(),
         )
         val syncId = syncHistoryDao.insert(syncEntry)
-        val diagnostics = mutableListOf<SyncStepResult>()
+        val diagnostics = java.util.Collections.synchronizedList(mutableListOf<SyncStepResult>())
 
         try {
             // Step 2: Authenticating phase.
@@ -421,66 +430,28 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * and writes snapshot rows. Wraps the whole fetch in a single InnerTube
      * auth-cache session so all paginated requests reuse the same cached
      * visitor data / cookies rather than re-fetching them per page.
+     *
+     * Parallelism is capped by a shared [Semaphore] so no more than
+     * [MAX_PARALLEL_YT_FETCHES] browse requests are in-flight at once.
+     * Liked Songs runs concurrently with user-playlist discovery and
+     * per-playlist fan-out — they are fully independent.
      */
     private suspend fun fetchYouTubePlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>) {
         innerTubeClient.beginSyncSession()
+        val sem = Semaphore(MAX_PARALLEL_YT_FETCHES)
         try {
             Log.d(TAG, "fetchYouTubePlaylists: starting for syncId=$syncId")
 
-            // Fetch Home Mixes.
+            // 1. Discover home mixes (1 serial call — needs the list before fanning out).
             when (val result = ytMusicApiClient.getHomeMixes()) {
                 is SyncResult.Success -> {
                     val homeMixes = result.data
                     diagnostics.add(SyncStepResult("YOUTUBE", "getHomeMixes", StepStatus.SUCCESS, homeMixes.size))
                     Log.d(TAG, "fetchYouTubePlaylists: found ${homeMixes.size} home mixes")
-
-                    for ((index, mix) in homeMixes.withIndex()) {
-                        // Fetch tracks FIRST so we know partial/expectedCount before
-                        // inserting the snapshot row.
-                        when (val tracksResult = ytMusicApiClient.getPlaylistTracks(mix.playlistId)) {
-                            is SyncResult.Success -> {
-                                val paged = tracksResult.data
-                                val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
-                                    RemotePlaylistSnapshotEntity(
-                                        syncId = syncId,
-                                        source = MusicSource.YOUTUBE,
-                                        sourcePlaylistId = mix.playlistId,
-                                        playlistName = mix.title,
-                                        playlistType = PlaylistType.DAILY_MIX,
-                                        mixNumber = index + 1,
-                                        trackCount = paged.tracks.size,
-                                        artUrl = mix.thumbnailUrl,
-                                        partial = paged.partial,
-                                        expectedCount = paged.expectedCount,
-                                    )
-                                )
-                                val trackSnapshots = paged.tracks.mapIndexed { position, track ->
-                                    RemoteTrackSnapshotEntity(
-                                        syncId = syncId,
-                                        snapshotPlaylistId = playlistSnapshotId,
-                                        title = track.title,
-                                        artist = track.artists,
-                                        album = track.album,
-                                        durationMs = track.durationMs ?: 0L,
-                                        youtubeId = track.videoId,
-                                        albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.thumbnailUrl),
-                                        position = position,
-                                    )
-                                }
-                                if (trackSnapshots.isNotEmpty()) {
-                                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
-                                }
-                                if (paged.partial) {
-                                    Log.w(TAG, "fetchYouTubePlaylists: partial fetch for '${mix.title}': ${paged.partialReason}")
-                                }
-                            }
-                            is SyncResult.Empty -> {
-                                Log.d(TAG, "fetchYouTubePlaylists: no tracks for '${mix.title}': ${tracksResult.reason}")
-                            }
-                            is SyncResult.Error -> {
-                                Log.e(TAG, "fetchYouTubePlaylists: failed to fetch tracks for '${mix.title}': ${tracksResult.message}")
-                            }
-                        }
+                    coroutineScope {
+                        homeMixes.mapIndexed { index, mix ->
+                            async { sem.withPermit { fetchAndSnapshotMix(mix, index, syncId, diagnostics) } }
+                        }.awaitAll()
                     }
                 }
                 is SyncResult.Empty -> {
@@ -493,7 +464,126 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
             }
 
-            // Fetch Liked Songs.
+            // 2. Liked Songs runs concurrently with user-playlist discovery + per-playlist fan-out.
+            coroutineScope {
+                launch { sem.withPermit { fetchAndSnapshotLikedSongs(syncId, diagnostics) } }
+
+                // Fetch user-library playlists (user-created + user-saved from
+                // Library → Playlists). These come with `PlaylistType.CUSTOM`
+                // and land in the "Other Playlists" toggle group on the Sync
+                // screen, alongside Home Mixes / Liked Songs. Built-ins
+                // (Liked Music, Episodes for Later) are filtered out by
+                // parseUserPlaylists, so no duplicate snapshot rows.
+                when (val result = ytMusicApiClient.getUserPlaylists()) {
+                    is SyncResult.Success -> {
+                        val paged = result.data
+                        val userPlaylists = paged.playlists
+                        val partialMsg = if (paged.partial) "partial library list: ${paged.partialReason}" else null
+                        diagnostics.add(
+                            SyncStepResult(
+                                "YOUTUBE",
+                                "getUserPlaylists",
+                                StepStatus.SUCCESS,
+                                userPlaylists.size,
+                                errorMessage = partialMsg,
+                            )
+                        )
+                        if (paged.partial) {
+                            Log.w(TAG, "fetchYouTubePlaylists: user playlists list partial — ${paged.partialReason}")
+                        }
+                        Log.d(TAG, "fetchYouTubePlaylists: found ${userPlaylists.size} user playlists")
+                        userPlaylists.map { playlist ->
+                            async { sem.withPermit { fetchAndSnapshotUserPlaylist(playlist, syncId, diagnostics) } }
+                        }.awaitAll()
+                    }
+                    is SyncResult.Empty -> {
+                        diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.EMPTY, errorMessage = result.reason))
+                        Log.d(TAG, "fetchYouTubePlaylists: user playlists empty: ${result.reason}")
+                    }
+                    is SyncResult.Error -> {
+                        diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.ERROR, errorMessage = result.message))
+                        Log.e(TAG, "fetchYouTubePlaylists: user playlists error: ${result.message}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "YouTube Music fetch failed, continuing with other services", e)
+            diagnostics.add(SyncStepResult("YOUTUBE", "fetchYouTubePlaylists", StepStatus.ERROR, errorMessage = e.message))
+        } finally {
+            innerTubeClient.endSyncSession()
+        }
+    }
+
+    /**
+     * Fetches tracks for a single home mix and writes snapshot rows.
+     * Own try/catch so one failure does not abort the parallel group.
+     */
+    private suspend fun fetchAndSnapshotMix(
+        mix: YTMusicPlaylist,
+        index: Int,
+        syncId: Long,
+        diagnostics: MutableList<SyncStepResult>,
+    ) {
+        try {
+            // Fetch tracks FIRST so we know partial/expectedCount before inserting snapshot row.
+            when (val tracksResult = ytMusicApiClient.getPlaylistTracks(mix.playlistId)) {
+                is SyncResult.Success -> {
+                    val paged = tracksResult.data
+                    val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
+                        RemotePlaylistSnapshotEntity(
+                            syncId = syncId,
+                            source = MusicSource.YOUTUBE,
+                            sourcePlaylistId = mix.playlistId,
+                            playlistName = mix.title,
+                            playlistType = PlaylistType.DAILY_MIX,
+                            mixNumber = index + 1,
+                            trackCount = paged.tracks.size,
+                            artUrl = mix.thumbnailUrl,
+                            partial = paged.partial,
+                            expectedCount = paged.expectedCount,
+                        )
+                    )
+                    val trackSnapshots = paged.tracks.mapIndexed { position, track ->
+                        RemoteTrackSnapshotEntity(
+                            syncId = syncId,
+                            snapshotPlaylistId = playlistSnapshotId,
+                            title = track.title,
+                            artist = track.artists,
+                            album = track.album,
+                            durationMs = track.durationMs ?: 0L,
+                            youtubeId = track.videoId,
+                            albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.thumbnailUrl),
+                            position = position,
+                        )
+                    }
+                    if (trackSnapshots.isNotEmpty()) {
+                        remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                    }
+                    if (paged.partial) {
+                        Log.w(TAG, "fetchAndSnapshotMix: partial fetch for '${mix.title}': ${paged.partialReason}")
+                    }
+                }
+                is SyncResult.Empty -> {
+                    Log.d(TAG, "fetchAndSnapshotMix: no tracks for '${mix.title}': ${tracksResult.reason}")
+                }
+                is SyncResult.Error -> {
+                    Log.e(TAG, "fetchAndSnapshotMix: failed to fetch tracks for '${mix.title}': ${tracksResult.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchAndSnapshotMix: exception for '${mix.title}'", e)
+        }
+    }
+
+    /**
+     * Fetches YouTube Music Liked Songs and writes snapshot rows.
+     * Own try/catch so a failure here does not abort the parallel group.
+     */
+    private suspend fun fetchAndSnapshotLikedSongs(
+        syncId: Long,
+        diagnostics: MutableList<SyncStepResult>,
+    ) {
+        try {
             when (val result = ytMusicApiClient.getLikedSongs()) {
                 is SyncResult.Success -> {
                     val paged = result.data
@@ -509,7 +599,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         )
                     )
                     if (paged.partial) {
-                        Log.w(TAG, "fetchYouTubePlaylists: liked songs partial — $partialMsg")
+                        Log.w(TAG, "fetchAndSnapshotLikedSongs: liked songs partial — $partialMsg")
                     }
 
                     val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
@@ -544,107 +634,75 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
                 is SyncResult.Empty -> {
                     diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.EMPTY, errorMessage = result.reason))
-                    Log.d(TAG, "fetchYouTubePlaylists: liked songs empty: ${result.reason}")
+                    Log.d(TAG, "fetchAndSnapshotLikedSongs: liked songs empty: ${result.reason}")
                 }
                 is SyncResult.Error -> {
                     diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.ERROR, errorMessage = result.message))
-                    Log.e(TAG, "fetchYouTubePlaylists: liked songs error: ${result.message}")
-                }
-            }
-
-            // Fetch user-library playlists (user-created + user-saved from
-            // Library → Playlists). These come with `PlaylistType.CUSTOM`
-            // and land in the "Other Playlists" toggle group on the Sync
-            // screen, alongside Home Mixes / Liked Songs. Built-ins
-            // (Liked Music, Episodes for Later) are filtered out by
-            // parseUserPlaylists, so no duplicate snapshot rows.
-            when (val result = ytMusicApiClient.getUserPlaylists()) {
-                is SyncResult.Success -> {
-                    val paged = result.data
-                    val userPlaylists = paged.playlists
-                    val partialMsg = if (paged.partial) "partial — ${paged.partialReason}" else null
-                    diagnostics.add(
-                        SyncStepResult(
-                            "YOUTUBE",
-                            "getUserPlaylists",
-                            StepStatus.SUCCESS,
-                            userPlaylists.size,
-                            errorMessage = partialMsg,
-                        )
-                    )
-                    if (paged.partial) {
-                        Log.w(TAG, "fetchYouTubePlaylists: user playlists list partial — ${paged.partialReason}")
-                    }
-                    Log.d(TAG, "fetchYouTubePlaylists: found ${userPlaylists.size} user playlists")
-
-                    for (playlist in userPlaylists) {
-                        // Fetch tracks FIRST so we know partial/expectedCount before
-                        // inserting the snapshot row.
-                        when (val tracksResult = ytMusicApiClient.getPlaylistTracks(playlist.playlistId)) {
-                            is SyncResult.Success -> {
-                                val trackedPaged = tracksResult.data
-                                val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
-                                    RemotePlaylistSnapshotEntity(
-                                        syncId = syncId,
-                                        source = MusicSource.YOUTUBE,
-                                        sourcePlaylistId = playlist.playlistId,
-                                        playlistName = playlist.title,
-                                        playlistType = PlaylistType.CUSTOM,
-                                        trackCount = trackedPaged.tracks.size,
-                                        artUrl = playlist.thumbnailUrl,
-                                        partial = trackedPaged.partial,
-                                        expectedCount = trackedPaged.expectedCount,
-                                    )
-                                )
-                                val trackSnapshots = trackedPaged.tracks.mapIndexed { position, track ->
-                                    RemoteTrackSnapshotEntity(
-                                        syncId = syncId,
-                                        snapshotPlaylistId = playlistSnapshotId,
-                                        title = track.title,
-                                        artist = track.artists,
-                                        album = track.album,
-                                        durationMs = track.durationMs ?: 0L,
-                                        youtubeId = track.videoId,
-                                        albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.thumbnailUrl),
-                                        position = position,
-                                    )
-                                }
-                                if (trackSnapshots.isNotEmpty()) {
-                                    remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
-                                }
-                                if (trackedPaged.partial) {
-                                    Log.w(TAG, "fetchYouTubePlaylists: partial fetch for user playlist '${playlist.title}': ${trackedPaged.partialReason}")
-                                }
-                            }
-                            is SyncResult.Empty -> {
-                                Log.d(
-                                    TAG,
-                                    "fetchYouTubePlaylists: no tracks for user playlist '${playlist.title}': ${tracksResult.reason}",
-                                )
-                            }
-                            is SyncResult.Error -> {
-                                Log.e(
-                                    TAG,
-                                    "fetchYouTubePlaylists: failed tracks for user playlist '${playlist.title}': ${tracksResult.message}",
-                                )
-                            }
-                        }
-                    }
-                }
-                is SyncResult.Empty -> {
-                    diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.EMPTY, errorMessage = result.reason))
-                    Log.d(TAG, "fetchYouTubePlaylists: user playlists empty: ${result.reason}")
-                }
-                is SyncResult.Error -> {
-                    diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.ERROR, errorMessage = result.message))
-                    Log.e(TAG, "fetchYouTubePlaylists: user playlists error: ${result.message}")
+                    Log.e(TAG, "fetchAndSnapshotLikedSongs: liked songs error: ${result.message}")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "YouTube Music fetch failed, continuing with other services", e)
-            diagnostics.add(SyncStepResult("YOUTUBE", "fetchYouTubePlaylists", StepStatus.ERROR, errorMessage = e.message))
-        } finally {
-            innerTubeClient.endSyncSession()
+            Log.e(TAG, "fetchAndSnapshotLikedSongs: exception", e)
+            diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message))
+        }
+    }
+
+    /**
+     * Fetches tracks for a single user playlist and writes snapshot rows.
+     * Own try/catch so one failure does not abort the parallel group.
+     */
+    private suspend fun fetchAndSnapshotUserPlaylist(
+        playlist: YTMusicPlaylist,
+        syncId: Long,
+        diagnostics: MutableList<SyncStepResult>,
+    ) {
+        try {
+            // Fetch tracks FIRST so we know partial/expectedCount before inserting snapshot row.
+            when (val tracksResult = ytMusicApiClient.getPlaylistTracks(playlist.playlistId)) {
+                is SyncResult.Success -> {
+                    val trackedPaged = tracksResult.data
+                    val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
+                        RemotePlaylistSnapshotEntity(
+                            syncId = syncId,
+                            source = MusicSource.YOUTUBE,
+                            sourcePlaylistId = playlist.playlistId,
+                            playlistName = playlist.title,
+                            playlistType = PlaylistType.CUSTOM,
+                            trackCount = trackedPaged.tracks.size,
+                            artUrl = playlist.thumbnailUrl,
+                            partial = trackedPaged.partial,
+                            expectedCount = trackedPaged.expectedCount,
+                        )
+                    )
+                    val trackSnapshots = trackedPaged.tracks.mapIndexed { position, track ->
+                        RemoteTrackSnapshotEntity(
+                            syncId = syncId,
+                            snapshotPlaylistId = playlistSnapshotId,
+                            title = track.title,
+                            artist = track.artists,
+                            album = track.album,
+                            durationMs = track.durationMs ?: 0L,
+                            youtubeId = track.videoId,
+                            albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.thumbnailUrl),
+                            position = position,
+                        )
+                    }
+                    if (trackSnapshots.isNotEmpty()) {
+                        remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                    }
+                    if (trackedPaged.partial) {
+                        Log.w(TAG, "fetchAndSnapshotUserPlaylist: partial fetch for '${playlist.title}': ${trackedPaged.partialReason}")
+                    }
+                }
+                is SyncResult.Empty -> {
+                    Log.d(TAG, "fetchAndSnapshotUserPlaylist: no tracks for '${playlist.title}': ${tracksResult.reason}")
+                }
+                is SyncResult.Error -> {
+                    Log.e(TAG, "fetchAndSnapshotUserPlaylist: failed tracks for '${playlist.title}': ${tracksResult.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchAndSnapshotUserPlaylist: exception for '${playlist.title}'", e)
         }
     }
 }
