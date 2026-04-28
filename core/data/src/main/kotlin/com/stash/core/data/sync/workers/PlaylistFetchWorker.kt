@@ -29,7 +29,9 @@ import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.spotify.SpotifyApiException
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.YTMusicApiClient
+import com.stash.data.ytmusic.model.MusicVideoType
 import com.stash.data.ytmusic.model.YTMusicPlaylist
+import com.stash.data.ytmusic.model.YTMusicTrack
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.async
@@ -713,3 +715,18 @@ class PlaylistFetchWorker @AssistedInject constructor(
         }
     }
 }
+
+/**
+ * Filters out UGC and PODCAST_EPISODE tracks. Used by the
+ * "Studio recordings only" Liked Songs preference.
+ *
+ * Tracks with [MusicVideoType.ATV], [MusicVideoType.OMV],
+ * [MusicVideoType.OFFICIAL_SOURCE_MUSIC], or `null` (parser-couldn't-classify)
+ * pass through. Null is preserved deliberately so a parser regression
+ * doesn't silently drop legitimate studio tracks.
+ */
+internal fun filterStudioOnly(tracks: List<YTMusicTrack>): List<YTMusicTrack> =
+    tracks.filter {
+        it.musicVideoType != MusicVideoType.UGC &&
+        it.musicVideoType != MusicVideoType.PODCAST_EPISODE
+    }
