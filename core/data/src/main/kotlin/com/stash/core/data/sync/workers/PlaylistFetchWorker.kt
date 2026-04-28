@@ -17,6 +17,7 @@ import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.sync.SyncNotificationManager
+import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
@@ -37,6 +38,7 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -63,6 +65,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val remoteSnapshotDao: RemoteSnapshotDao,
     private val syncStateManager: SyncStateManager,
     private val syncNotificationManager: SyncNotificationManager,
+    private val syncPreferencesManager: SyncPreferencesManager,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -596,19 +599,45 @@ class PlaylistFetchWorker @AssistedInject constructor(
             when (val result = ytMusicApiClient.getLikedSongs()) {
                 is SyncResult.Success -> {
                     val paged = result.data
-                    val likedSongs = paged.tracks
-                    val partialMsg = if (paged.partial) "partial: ${likedSongs.size}/${paged.expectedCount ?: "?"} — ${paged.partialReason}" else null
+                    val rawTracks = paged.tracks
+                    // Spec: DataStore corruption falls back to "everything syncs" rather than
+                    // aborting this entire sync step. runCatching keeps that fallback explicit
+                    // even though the outer try/catch would also handle a thrown exception.
+                    val studioOnly = runCatching {
+                        syncPreferencesManager.youtubeLikedStudioOnly.first()
+                    }.getOrDefault(false)
+                    val likedSongs = if (studioOnly) filterStudioOnly(rawTracks) else rawTracks
+                    val filteredCount = rawTracks.size - likedSongs.size
+
+                    // Build the annotation: partial-fetch reason + filter note (either, both, or neither).
+                    val partialNote = if (paged.partial) {
+                        "partial: ${rawTracks.size}/${paged.expectedCount ?: "?"} — ${paged.partialReason}"
+                    } else null
+                    val filterNote = if (studioOnly && filteredCount > 0) {
+                        "filtered $filteredCount UGC/podcast tracks (studio-only mode)"
+                    } else null
+                    val combinedNote = listOfNotNull(partialNote, filterNote).joinToString("; ").ifEmpty { null }
+
                     diagnostics.add(
                         SyncStepResult(
                             "YOUTUBE",
                             "getLikedSongs",
                             StepStatus.SUCCESS,
                             likedSongs.size,
-                            errorMessage = partialMsg,
+                            errorMessage = combinedNote,
                         )
                     )
                     if (paged.partial) {
-                        Log.w(TAG, "fetchAndSnapshotLikedSongs: liked songs partial — $partialMsg")
+                        Log.w(TAG, "fetchAndSnapshotLikedSongs: liked songs partial — $partialNote")
+                    }
+                    if (filterNote != null) {
+                        Log.d(TAG, "fetchAndSnapshotLikedSongs: $filterNote")
+                    }
+
+                    // Empty-after-filter: don't write a phantom playlist row.
+                    if (likedSongs.isEmpty()) {
+                        Log.d(TAG, "fetchAndSnapshotLikedSongs: all ${rawTracks.size} liked songs filtered (studio-only mode)")
+                        return  // exits the inner block; the outer try/catch around fetchAndSnapshotLikedSongs is unaffected
                     }
 
                     val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
