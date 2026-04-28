@@ -412,6 +412,12 @@ fun SyncScreen(
                                 accent = accent,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
+                            StudioOnlyToggleRow(
+                                enabled = uiState.youtubeLikedStudioOnly,
+                                onChange = viewModel::onYoutubeLikedStudioOnlyChanged,
+                                accent = accent,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             val ytLiked = uiState.youTubePlaylists.filter {
                                 it.type == com.stash.core.model.PlaylistType.LIKED_SONGS
@@ -1274,6 +1280,42 @@ private fun SpotifySyncToggleRow(
             colors = SwitchDefaults.colors(
                 checkedThumbColor = MaterialTheme.colorScheme.primary,
                 checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun StudioOnlyToggleRow(
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+    accent: Color,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(!enabled) }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Studio recordings only",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "Excludes covers, live recordings, and UGC uploads from your Liked Songs. Other YouTube playlists are unaffected.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = accent,
+                checkedTrackColor = accent.copy(alpha = 0.5f),
             ),
         )
     }
