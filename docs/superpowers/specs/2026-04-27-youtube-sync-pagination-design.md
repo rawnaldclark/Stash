@@ -104,8 +104,10 @@ private suspend fun <T> paginateBrowse(
 ```
 
 Walks `continuations[0].nextContinuationData.continuation` from the initial
-response, calls `innerTubeClient.browse(token)` for each subsequent page,
-parses with the supplied lambda, accumulates items. Returns:
+response via `extractContinuationToken` (one helper used for both the
+initial-response and continuation-response shapes — see below), calls
+`innerTubeClient.browse(token)` for each subsequent page, parses with the
+supplied lambda, accumulates items. Returns:
 
 ```kotlin
 data class PaginationResult<T>(
@@ -146,6 +148,11 @@ suspend fun getLikedSongs(): SyncResult<PagedTracks>
 suspend fun getPlaylistTracks(playlistId: String): SyncResult<PagedTracks>
 suspend fun getUserPlaylists(): SyncResult<PagedPlaylists>
 ```
+
+`getHomeMixes()` is **unchanged**. The home feed is a single carousel of mix
+metadata (not a paginated track shelf) and InnerTube does not return
+continuation tokens for it. The shape of `parseMixesFromHome` is unaffected
+by this work.
 
 Where:
 
@@ -243,17 +250,20 @@ remoteSnapshotDao.insertPlaylistSnapshot(
 
 ```kotlin
 diagnostics.add(SyncStepResult(
-    "YOUTUBE", "getLikedSongs",
-    if (pagedTracks.partial) StepStatus.SUCCESS else StepStatus.SUCCESS,
-    pagedTracks.tracks.size,
+    source = "YOUTUBE",
+    step = "getLikedSongs",
+    status = StepStatus.SUCCESS,  // partial fetch is not a failure
+    count = pagedTracks.tracks.size,
     errorMessage = if (pagedTracks.partial) {
         "partial: ${pagedTracks.tracks.size}/${pagedTracks.expectedCount ?: "?"} — ${pagedTracks.partialReason}"
     } else null,
 ))
 ```
 
-(Status stays SUCCESS — partial fetch is not a failure. The errorMessage
-field carries the partial annotation for the Sync screen.)
+Status stays SUCCESS for both partial and complete fetches — a partial sync
+is degraded data, not a failed step. The `errorMessage` field carries the
+partial annotation for the Sync screen, where the existing UI already
+renders it under each step row.
 
 ## Pagination Loop Semantics
 
@@ -327,8 +337,13 @@ fetchYouTubePlaylists(syncId)
 - Failure isolation preserved: each `async` block's body is wrapped in the
   same try/catch the existing serial code uses; a failed playlist is logged
   and skipped, siblings continue.
-- Auth cache is hit by every concurrent fetch — no synchronization needed
-  because writes happen only at session boundaries (begin/end + 401-clear).
+- Auth cache is hit by every concurrent fetch. `@Volatile` fields make
+  individual reads/writes safe; the only race is that a 401-driven cache
+  clear during one in-flight fetch can briefly overlap with reads from a
+  sibling `async`. The worst-case outcome is one extra failed call on a
+  sibling before it re-resolves auth from `tokenManager`. Acceptable —
+  the alternative (synchronizing the cache) buys nothing once cookies
+  have actually expired.
 
 ## Verification & Error Handling
 
@@ -421,7 +436,7 @@ Room builder where existing migrations are registered.
 |---|---|
 | `data/ytmusic/.../InnerTubeClient.kt` | Add `browse(continuation: String)` overload; add `beginSyncSession`/`endSyncSession` + cache fields; refactor `executeRequest` to expose status code internally. |
 | `data/ytmusic/.../YTMusicApiClient.kt` | Add `paginateBrowse`, `extractContinuationToken`, `parseContinuationPage`, `extractExpectedTrackCount`. Change return types of `getLikedSongs`, `getPlaylistTracks`, `getUserPlaylists` to `SyncResult<PagedTracks>` / `SyncResult<PagedPlaylists>`. |
-| `data/ytmusic/.../model/PagedTracks.kt` (new) | Data classes for paged results. |
+| `data/ytmusic/.../model/YTMusicModels.kt` | Append `PagedTracks` and `PagedPlaylists` data classes alongside existing `YTMusicTrack` / `YTMusicPlaylist` (same file, established convention — no new file needed). |
 | `core/data/.../db/entity/RemotePlaylistSnapshotEntity.kt` | Add `partial: Boolean = false`, `expectedCount: Int? = null` columns. |
 | `core/data/.../db/StashDatabase.kt` | Bump `version = 16`, add `MIGRATION_15_16`, register it. |
 | `core/data/.../sync/workers/PlaylistFetchWorker.kt` | Inject `InnerTubeClient`. Wrap `fetchYouTubePlaylists` in begin/end session. Replace serial loops with `Semaphore(3) + coroutineScope { async { … } }`. Read paged-result fields, write to snapshot rows and diagnostics. |
@@ -446,6 +461,7 @@ Room builder where existing migrations are registered.
 
 ## Out of scope (explicitly)
 
+- `getHomeMixes()` is unchanged — see Layer 2 note above.
 - Spotify pagination audit.
 - Spotify→YT matching improvements.
 - DiffWorker changes.
