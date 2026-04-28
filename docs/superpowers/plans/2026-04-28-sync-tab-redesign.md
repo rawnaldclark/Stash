@@ -477,11 +477,10 @@ class SyncSchedulerComputeTest {
         return Clock.fixed(instant, zone)
     }
 
-    /** A SyncScheduler instance whose context is unused by the tested method. */
-    @Suppress("CAST_NEVER_SUCCEEDS")
+    /** A SyncScheduler instance whose deps are mocked — the tested method does not touch them. */
     private val scheduler = SyncScheduler(
-        context = null as android.content.Context,
-        syncStateManager = null as SyncStateManager,
+        context = org.mockito.kotlin.mock(),
+        syncStateManager = org.mockito.kotlin.mock(),
     )
 
     @Test fun `daily mask, current is Mon 10am, target 6am — schedules Tue 6am`() {
@@ -541,7 +540,7 @@ class SyncSchedulerComputeTest {
 }
 ```
 
-The test instantiates `SyncScheduler` with two `null` casts — this works because none of the tested code paths reach `context` or `syncStateManager`. If Kotlin warns or rejects the `as` cast at runtime in newer compilers, fall back to `mock<Context>()` and `mock<SyncStateManager>()` from `mockito-kotlin` (already a test-implementation dependency on this module).
+The test instantiates `SyncScheduler` with `mockito-kotlin` mocks for both deps — neither is touched by the tested method, but mocks are safer than null-casts in case a future `init {}` ever reaches a field. `mockito-kotlin` is already a test-implementation dependency on this module.
 
 - [ ] **Step 4: Run the new test — expect PASS**
 
@@ -1492,12 +1491,8 @@ fun ScheduleCard(
     val errorColor = androidx.compose.ui.graphics.Color(0xFFEF4444)
 
     GlassCard(modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .animateContentSize()
-                .alpha(if (autoSyncEnabled) 1f else 0.5f),
-        ) {
-            // Auto-sync row
+        Column(modifier = Modifier.animateContentSize()) {
+            // Auto-sync row — never dimmed, so users can always re-enable
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1514,6 +1509,8 @@ fun ScheduleCard(
                 )
             }
             Spacer(Modifier.height(12.dp))
+            // Everything below dims when auto-sync is off (sentence, days panel, hint)
+            Column(modifier = Modifier.alpha(if (autoSyncEnabled) 1f else 0.5f)) {
 
             // Sentence
             if (emptyDays) {
@@ -1556,12 +1553,13 @@ fun ScheduleCard(
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "Tap any chip to change",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Tap any chip to change",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } // end of dimmed Column
         }
     }
 
