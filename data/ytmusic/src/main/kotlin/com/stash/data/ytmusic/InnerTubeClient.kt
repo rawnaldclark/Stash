@@ -140,6 +140,21 @@ class InnerTubeClient @Inject constructor(
     }
 
     /**
+     * Internal representation of an HTTP outcome that carries both the parsed
+     * body (if any) and the HTTP status code. Status code is needed by callers
+     * that retry on 5xx but not on 4xx (e.g. [YTMusicApiClient.paginateBrowse]).
+     *
+     * @property body       Parsed JSON body on 2xx, null otherwise.
+     * @property statusCode HTTP status code, or [STATUS_NETWORK_ERROR] if the
+     *                      call threw before completing.
+     */
+    internal data class RequestOutcome(val body: JsonObject?, val statusCode: Int) {
+        companion object {
+            const val STATUS_NETWORK_ERROR = -1
+        }
+    }
+
+    /**
      * Calls the InnerTube `browse` action.
      *
      * Browse is the primary way to fetch pages in YouTube Music, including:
@@ -415,12 +430,17 @@ class InnerTubeClient @Inject constructor(
      * @param cookie An optional cookie string from the user's browser session.
      * @return The parsed JSON response, or null on HTTP failure.
      */
-    private fun executeRequest(
+    /**
+     * Executes a POST against the InnerTube API. Returns both the parsed body
+     * (if 2xx) and the HTTP status code so callers can distinguish retryable
+     * (5xx, network) from non-retryable (4xx) failures.
+     */
+    internal fun executeRequestWithStatus(
         url: String,
         body: JsonObject,
         cookie: String?,
         variant: InnerTubeVariant,
-    ): JsonObject? {
+    ): RequestOutcome {
         val sapiSid = cookie?.let { cookieHelper.extractSapiSid(it) }
 
         val fullUrl = if (sapiSid != null) {
@@ -456,17 +476,38 @@ class InnerTubeClient @Inject constructor(
                 .header("X-Goog-AuthUser", "0")
         }
 
-        val response = okHttpClient.newCall(requestBuilder.build()).execute()
-        return response.use { resp ->
-            if (!resp.isSuccessful) {
-                val errorBodyLen = resp.body?.string()?.length ?: 0
-                Log.e(TAG, "executeRequest: HTTP ${resp.code}, errorBodyLen=$errorBodyLen")
-                return@use null
+        return try {
+            okHttpClient.newCall(requestBuilder.build()).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val errorBodyLen = resp.body?.string()?.length ?: 0
+                    Log.e(TAG, "executeRequest: HTTP ${resp.code}, errorBodyLen=$errorBodyLen")
+                    return@use RequestOutcome(body = null, statusCode = resp.code)
+                }
+                val responseBody = resp.body?.string()
+                    ?: return@use RequestOutcome(body = null, statusCode = resp.code)
+                Log.d(TAG, "executeRequest: success, response length=${responseBody.length}")
+                RequestOutcome(json.parseToJsonElement(responseBody).jsonObject, resp.code)
             }
-
-            val responseBody = resp.body?.string() ?: return@use null
-            Log.d(TAG, "executeRequest: success, response length=${responseBody.length}")
-            json.parseToJsonElement(responseBody).jsonObject
+        } catch (e: Exception) {
+            Log.w(TAG, "executeRequest: threw ${e.javaClass.simpleName}: ${e.message}")
+            RequestOutcome(body = null, statusCode = RequestOutcome.STATUS_NETWORK_ERROR)
         }
     }
+
+    /** Backwards-compatible wrapper for callers that don't need the status code. */
+    private fun executeRequest(
+        url: String,
+        body: JsonObject,
+        cookie: String?,
+        variant: InnerTubeVariant,
+    ): JsonObject? = executeRequestWithStatus(url, body, cookie, variant).body
+
+    /** Test-only convenience that builds a minimal request and returns the outcome. */
+    internal fun executeRequestWithStatusForTest(url: String): RequestOutcome =
+        executeRequestWithStatus(
+            url = url,
+            body = buildJsonObject { put("test", "true") },
+            cookie = null,
+            variant = InnerTubeVariant.WEB_REMIX,
+        )
 }
