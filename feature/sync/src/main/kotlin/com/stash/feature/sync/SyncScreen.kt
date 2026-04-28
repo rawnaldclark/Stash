@@ -1,7 +1,5 @@
 package com.stash.feature.sync
 
-import android.text.format.DateUtils
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,17 +16,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -40,12 +32,9 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,10 +45,13 @@ import com.stash.core.model.SyncDisplayStatus
 import com.stash.core.model.SyncMode
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
-import androidx.compose.ui.graphics.vector.ImageVector
+import com.stash.feature.sync.components.RecentSyncRow
+import com.stash.feature.sync.components.RecentSyncsCard
+import com.stash.feature.sync.components.SyncRowStatus
 import com.stash.feature.sync.components.SyncHeroCard
 import com.stash.feature.sync.components.SyncActionProgress
 import com.stash.feature.sync.components.StatusPill
+import com.stash.feature.sync.components.formatRelativeTime
 
 /**
  * Main Sync screen.
@@ -256,8 +248,29 @@ fun SyncScreen(
                     color = MaterialTheme.colorScheme.onBackground,
                 )
             }
-            items(uiState.recentSyncs, key = { it.id }) { sync ->
-                SyncHistoryRow(sync)
+            item {
+                val rows = uiState.recentSyncs.map { sync ->
+                    RecentSyncRow(
+                        id = sync.id,
+                        timestamp = formatRelativeTime(sync.startedAt),
+                        summary = buildString {
+                            append("Found ${sync.newTracksFound}")
+                            append(" / ${sync.tracksDownloaded} downloaded")
+                            if (sync.tracksFailed > 0) append(" / ${sync.tracksFailed} failed")
+                        },
+                        status = when (sync.displayStatus) {
+                            SyncDisplayStatus.Success -> SyncRowStatus.HEALTHY
+                            is SyncDisplayStatus.PartialSuccess -> SyncRowStatus.PARTIAL
+                            is SyncDisplayStatus.Interrupted -> SyncRowStatus.PARTIAL
+                            is SyncDisplayStatus.Failed -> SyncRowStatus.FAILED
+                            SyncDisplayStatus.Running -> SyncRowStatus.PARTIAL
+                            SyncDisplayStatus.Idle -> SyncRowStatus.PARTIAL
+                        },
+                        errorMessage = sync.errorMessage,
+                        diagnostics = sync.diagnostics,
+                    )
+                }
+                RecentSyncsCard(rows)
             }
         }
 
@@ -365,143 +378,6 @@ private fun LibraryMaintenanceCard(
                 )
             }
 
-        }
-    }
-}
-
-// -- Sync history row ---------------------------------------------------------
-
-@Composable
-private fun SyncHistoryRow(sync: SyncHistoryInfo) {
-    val extendedColors = StashTheme.extendedColors
-    var expanded by remember { mutableStateOf(false) }
-
-    // Derive icon, tint and label directly from the richer displayStatus so
-    // Partial and Interrupted outcomes don't read as a generic "Failed".
-    val icon: ImageVector = when (sync.displayStatus) {
-        SyncDisplayStatus.Success -> Icons.Filled.CheckCircle
-        is SyncDisplayStatus.PartialSuccess -> Icons.Filled.Warning
-        is SyncDisplayStatus.Interrupted -> Icons.Filled.PauseCircle
-        is SyncDisplayStatus.Failed -> Icons.Filled.Error
-        SyncDisplayStatus.Running -> Icons.Filled.Sync
-        SyncDisplayStatus.Idle -> Icons.Filled.Schedule
-    }
-    val tint: Color = when (sync.displayStatus) {
-        SyncDisplayStatus.Success -> extendedColors.success
-        is SyncDisplayStatus.PartialSuccess -> extendedColors.warning
-        is SyncDisplayStatus.Interrupted -> extendedColors.warning
-        is SyncDisplayStatus.Failed -> MaterialTheme.colorScheme.error
-        SyncDisplayStatus.Running,
-        SyncDisplayStatus.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val badgeLabel: String = when (sync.displayStatus) {
-        SyncDisplayStatus.Success -> "Completed"
-        is SyncDisplayStatus.PartialSuccess -> "Partial"
-        is SyncDisplayStatus.Interrupted -> "Interrupted"
-        is SyncDisplayStatus.Failed -> "Failed"
-        SyncDisplayStatus.Running -> "Running"
-        SyncDisplayStatus.Idle -> "Idle"
-    }
-    val badgeBg: Color = when (sync.displayStatus) {
-        SyncDisplayStatus.Success -> extendedColors.success.copy(alpha = 0.12f)
-        is SyncDisplayStatus.PartialSuccess -> extendedColors.warning.copy(alpha = 0.14f)
-        is SyncDisplayStatus.Interrupted -> extendedColors.warning.copy(alpha = 0.14f)
-        is SyncDisplayStatus.Failed -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
-        else -> MaterialTheme.colorScheme.surfaceVariant
-    }
-
-    GlassCard(
-        modifier = Modifier.clickable { expanded = !expanded },
-    ) {
-        Column(modifier = Modifier.animateContentSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = tint,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = DateUtils.getRelativeTimeSpanString(
-                                sync.startedAt,
-                                System.currentTimeMillis(),
-                                DateUtils.MINUTE_IN_MILLIS,
-                            ).toString(),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            text = buildString {
-                                append("Found ${sync.newTracksFound}")
-                                append(" / ${sync.tracksDownloaded} downloaded")
-                                if (sync.tracksFailed > 0) append(" / ${sync.tracksFailed} failed")
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                // Status badge
-                Text(
-                    text = badgeLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tint,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(badgeBg)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                )
-            }
-
-            // Expanded details: show error and diagnostics so user can debug on-device
-            if (expanded) {
-                Spacer(Modifier.height(8.dp))
-
-                if (!sync.errorMessage.isNullOrBlank()) {
-                    Text(
-                        text = "Error: ${sync.errorMessage}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                }
-
-                if (!sync.diagnostics.isNullOrBlank()) {
-                    Text(
-                        text = "Diagnostics:",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = sync.diagnostics,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 20,
-                    )
-                }
-
-                if (sync.errorMessage.isNullOrBlank() && sync.diagnostics.isNullOrBlank()) {
-                    Text(
-                        text = "No additional details available",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
         }
     }
 }
