@@ -176,6 +176,32 @@ class InnerTubeClient @Inject constructor(
     }
 
     /**
+     * Calls the InnerTube `browse` action with a continuation token.
+     *
+     * Continuation requests fetch the next page of a previously-browsed surface
+     * (Liked Songs, a playlist, a long mix). The token comes from the previous
+     * response's `continuations[0].nextContinuationData.continuation` field.
+     * The body carries the same `context` object but no `browseId` — the URL
+     * query string identifies the continuation chain.
+     *
+     * @param continuation The continuation token from the prior page.
+     * @return The parsed JSON response, or null on failure.
+     */
+    suspend fun browseContinuation(continuation: String): JsonObject? = withContext(Dispatchers.IO) {
+        val cookie = tokenManager.getYouTubeCookie()
+        val variant = InnerTubeVariant.WEB_REMIX
+        val body = buildJsonObject {
+            put("context", buildContext(variant))
+        }
+        executeRequestWithStatus(
+            url = "$BASE_URL/browse?ctoken=$continuation&continuation=$continuation&type=next",
+            body = body,
+            cookie = cookie,
+            variant = variant,
+        ).body
+    }
+
+    /**
      * Calls the InnerTube `search` action.
      *
      * @param query The search query string.
@@ -443,10 +469,11 @@ class InnerTubeClient @Inject constructor(
     ): RequestOutcome {
         val sapiSid = cookie?.let { cookieHelper.extractSapiSid(it) }
 
+        val separator = if (url.contains('?')) '&' else '?'
         val fullUrl = if (sapiSid != null) {
-            "$url?prettyPrint=false"
+            "${url}${separator}prettyPrint=false"
         } else {
-            "$url?key=$API_KEY&prettyPrint=false"
+            "${url}${separator}key=$API_KEY&prettyPrint=false"
         }
 
         Log.d(
@@ -510,4 +537,22 @@ class InnerTubeClient @Inject constructor(
             cookie = null,
             variant = InnerTubeVariant.WEB_REMIX,
         )
+
+    /**
+     * Test-only entry point that lets the test redirect [BASE_URL] to a
+     * MockWebServer. Identical to [browseContinuation] except the host is
+     * supplied externally.
+     */
+    internal suspend fun browseContinuationForTest(continuation: String, baseUrl: String): JsonObject? =
+        withContext(Dispatchers.IO) {
+            val cookie = tokenManager.getYouTubeCookie()
+            val variant = InnerTubeVariant.WEB_REMIX
+            val body = buildJsonObject { put("context", buildContext(variant)) }
+            executeRequestWithStatus(
+                url = "$baseUrl/youtubei/v1/browse?ctoken=$continuation&continuation=$continuation&type=next",
+                body = body,
+                cookie = cookie,
+                variant = variant,
+            ).body
+        }
 }
