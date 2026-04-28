@@ -25,6 +25,7 @@ private val Context.syncPrefsDataStore by preferencesDataStore(name = "sync_pref
  * @property wifiOnly   Whether sync should only run on unmetered (Wi-Fi) connections.
  * @property spotifySyncMode Refresh/accumulate mode applied to Spotify-sourced playlists.
  * @property youtubeSyncMode Refresh/accumulate mode applied to YouTube-sourced playlists.
+ * @property youtubeLikedStudioOnly When true, filters UGC, cover, live, and podcast tracks from YT Music Liked Songs sync.
  */
 data class SyncPreferences(
     val syncHour: Int = 6,
@@ -33,6 +34,13 @@ data class SyncPreferences(
     val wifiOnly: Boolean = true,
     val spotifySyncMode: SyncMode = SyncMode.REFRESH,
     val youtubeSyncMode: SyncMode = SyncMode.REFRESH,
+    /**
+     * When true, the YouTube Music Liked Songs sync filters out UGC, cover,
+     * live, and podcast tracks (anything that isn't ATV / OMV /
+     * OFFICIAL_SOURCE_MUSIC). Other YT Music content (Home Mixes, custom
+     * user playlists) is unaffected. Defaults to false — everything syncs.
+     */
+    val youtubeLikedStudioOnly: Boolean = false,
 )
 
 /**
@@ -61,6 +69,7 @@ class SyncPreferencesManager @Inject constructor(
         val LEGACY_SYNC_MODE = stringPreferencesKey("sync_mode")
         val SPOTIFY_SYNC_MODE = stringPreferencesKey("spotify_sync_mode")
         val YOUTUBE_SYNC_MODE = stringPreferencesKey("youtube_sync_mode")
+        val YOUTUBE_LIKED_STUDIO_ONLY = booleanPreferencesKey("youtube_liked_studio_only")
     }
 
     /** Reactive stream of the current [SyncPreferences]. */
@@ -72,6 +81,7 @@ class SyncPreferencesManager @Inject constructor(
             wifiOnly = prefs[Keys.WIFI_ONLY] ?: true,
             spotifySyncMode = resolveSpotifyMode(prefs),
             youtubeSyncMode = resolveYoutubeMode(prefs),
+            youtubeLikedStudioOnly = prefs[Keys.YOUTUBE_LIKED_STUDIO_ONLY] ?: false,
         )
     }
 
@@ -87,6 +97,14 @@ class SyncPreferencesManager @Inject constructor(
     /** Reactive stream of YouTube's sync mode. Defaults to REFRESH. */
     val youtubeSyncMode: Flow<SyncMode> =
         context.syncPrefsDataStore.data.map { resolveYoutubeMode(it) }
+
+    /**
+     * Reactive stream of the YT Music Liked Songs studio-only filter.
+     * Read once per sync run via `.first()` inside [PlaylistFetchWorker].
+     * Default false: everything syncs.
+     */
+    val youtubeLikedStudioOnly: Flow<Boolean> =
+        context.syncPrefsDataStore.data.map { it[Keys.YOUTUBE_LIKED_STUDIO_ONLY] ?: false }
 
     private fun resolveSpotifyMode(
         prefs: androidx.datastore.preferences.core.Preferences,
@@ -141,6 +159,11 @@ class SyncPreferencesManager @Inject constructor(
     /** Persist YouTube's sync mode. */
     suspend fun setYoutubeSyncMode(mode: SyncMode) {
         context.syncPrefsDataStore.edit { it[Keys.YOUTUBE_SYNC_MODE] = mode.name }
+    }
+
+    /** Persist the YT Music Liked Songs studio-only filter. */
+    suspend fun setYoutubeLikedStudioOnly(enabled: Boolean) {
+        context.syncPrefsDataStore.edit { it[Keys.YOUTUBE_LIKED_STUDIO_ONLY] = enabled }
     }
 
     /**
