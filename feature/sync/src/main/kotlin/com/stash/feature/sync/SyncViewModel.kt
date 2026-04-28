@@ -1,6 +1,7 @@
 package com.stash.feature.sync
 
 import android.content.Context
+import android.text.format.DateUtils
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.Constraints
@@ -123,6 +124,16 @@ data class SyncUiState(
      * so flagged tracks are reachable even when no sync failures exist.
      */
     val flaggedCount: Int = 0,
+
+    // -- Hero card: last-sync metadata ----------------------------------------
+    /** Relative time string for the most recent sync, e.g. "2 hours ago". Empty if never synced. */
+    val lastSyncRelativeTime: String = "",
+    /** Tracks downloaded in the most recent sync, or null if never synced. */
+    val lastSyncTrackCount: Int? = null,
+    /** Short health label: "✓ healthy", "! partial", "× failed", or "". */
+    val lastSyncHealthLabel: String = "",
+    /** Tint colour for [lastSyncHealthLabel]. */
+    val lastSyncHealthColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Transparent,
 )
 
 /**
@@ -166,6 +177,7 @@ class SyncViewModel @Inject constructor(
         observeSyncMode()
         observeAuthStates()
         observeHistory()
+        observeLastSync()
         observeSpotifyPlaylists()
         observeYouTubePlaylists()
         observeUnmatchedCount()
@@ -386,6 +398,53 @@ class SyncViewModel @Inject constructor(
             syncHistoryDao.getRecentSyncs(limit = 10).collect { entities ->
                 _uiState.update {
                     it.copy(recentSyncs = entities.map { e -> e.toInfo() })
+                }
+            }
+        }
+    }
+
+    /**
+     * Derives hero-card last-sync metadata from the most recent history entry.
+     * Uses a limit-1 query so only the minimum data is loaded for this purpose.
+     * Health is derived from [SyncDisplayStatus] — same source used by
+     * [SyncHistoryRow] to render icons and badge colours.
+     */
+    private fun observeLastSync() {
+        viewModelScope.launch {
+            syncHistoryDao.getRecentSyncs(limit = 1).collect { entities ->
+                val latest = entities.firstOrNull()?.toInfo()
+                val relativeTime = latest?.let {
+                    DateUtils.getRelativeTimeSpanString(
+                        it.startedAt,
+                        System.currentTimeMillis(),
+                        DateUtils.MINUTE_IN_MILLIS,
+                    ).toString()
+                } ?: ""
+                val healthLabel = when (latest?.displayStatus) {
+                    null -> ""
+                    SyncDisplayStatus.Success -> "✓ healthy"
+                    is SyncDisplayStatus.PartialSuccess -> "! partial"
+                    is SyncDisplayStatus.Interrupted -> "! partial"
+                    is SyncDisplayStatus.Failed -> "× failed"
+                    else -> ""
+                }
+                val healthColor = when (latest?.displayStatus) {
+                    SyncDisplayStatus.Success ->
+                        androidx.compose.ui.graphics.Color(0xFF10B981)
+                    is SyncDisplayStatus.PartialSuccess,
+                    is SyncDisplayStatus.Interrupted ->
+                        androidx.compose.ui.graphics.Color(0xFFF59E0B)
+                    is SyncDisplayStatus.Failed ->
+                        androidx.compose.ui.graphics.Color(0xFFEF4444)
+                    else -> androidx.compose.ui.graphics.Color.Transparent
+                }
+                _uiState.update { state ->
+                    state.copy(
+                        lastSyncRelativeTime = relativeTime,
+                        lastSyncTrackCount = latest?.tracksDownloaded,
+                        lastSyncHealthLabel = healthLabel,
+                        lastSyncHealthColor = healthColor,
+                    )
                 }
             }
         }

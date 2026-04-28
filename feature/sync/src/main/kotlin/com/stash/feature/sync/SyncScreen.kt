@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -32,18 +30,15 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.MaterialTheme
@@ -67,12 +62,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.stash.core.data.sync.SyncPhase
 import com.stash.core.model.SyncDisplayStatus
 import com.stash.core.model.SyncMode
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.stash.feature.sync.components.SyncHeroCard
+import com.stash.feature.sync.components.SyncActionProgress
 
 /**
  * Main Sync screen.
@@ -107,42 +103,22 @@ fun SyncScreen(
             )
         }
 
-        // -- Connected Sources ------------------------------------------------
+        // -- Hero Card: last-sync stats + Sync Now / progress -----------------
         item {
-            Text(
-                text = "Connected Sources",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-        }
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                SourceCard(
-                    name = "Spotify",
-                    connected = uiState.spotifyConnected,
-                    accentColor = StashTheme.extendedColors.spotifyGreen,
-                    modifier = Modifier.weight(1f),
-                )
-                SourceCard(
-                    name = "YouTube",
-                    connected = uiState.youTubeConnected,
-                    accentColor = StashTheme.extendedColors.youtubeRed,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        // -- Manual Sync Button + Progress ------------------------------------
-        item {
-            SyncActionSection(
+            SyncHeroCard(
+                lastSyncRelativeTime = uiState.lastSyncRelativeTime,
+                lastSyncTrackCount = uiState.lastSyncTrackCount,
+                healthLabel = uiState.lastSyncHealthLabel,
+                healthColor = uiState.lastSyncHealthColor,
                 isSyncing = uiState.isSyncing,
-                phase = uiState.syncPhase,
-                progress = uiState.overallProgress,
                 onSyncNow = viewModel::onSyncNow,
-                onStopSync = viewModel::onStopSync,
+                progressContent = {
+                    SyncActionProgress(
+                        phase = uiState.syncPhase,
+                        progress = uiState.overallProgress,
+                        onStopSync = viewModel::onStopSync,
+                    )
+                },
             )
         }
 
@@ -643,154 +619,6 @@ private fun LibraryMaintenanceCard(
 
         }
     }
-}
-
-// -- Connected-source card ----------------------------------------------------
-
-@Composable
-private fun SourceCard(
-    name: String,
-    connected: Boolean,
-    accentColor: Color,
-    modifier: Modifier = Modifier,
-) {
-    GlassCard(modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // Status dot
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(if (connected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
-            )
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = if (connected) "Connected" else "Not connected",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (connected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-// -- Sync action button + progress --------------------------------------------
-
-@Composable
-private fun SyncActionSection(
-    isSyncing: Boolean,
-    phase: SyncPhase,
-    progress: Float,
-    onSyncNow: () -> Unit,
-    onStopSync: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        if (isSyncing) {
-            // Primary Sync button flips into a disabled "Syncing…" row that
-            // mirrors the current phase, plus a distinct error-coloured
-            // "Stop sync" button so the user can always bail out. Before this
-            // landed the only way to stop an in-flight sync was to
-            // force-quit the app.
-            Button(
-                onClick = { /* disabled while syncing */ },
-                enabled = false,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                    disabledContentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    strokeWidth = 2.dp,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = phaseLabel(phase),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
-            Button(
-                onClick = onStopSync,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                ),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.PauseCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Stop sync",
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
-        } else {
-            Button(
-                onClick = onSyncNow,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                ),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Sync,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Sync Now",
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
-        }
-
-        if (isSyncing) {
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            )
-        }
-    }
-}
-
-/** Human-readable label for the current sync phase. */
-private fun phaseLabel(phase: SyncPhase): String = when (phase) {
-    is SyncPhase.Authenticating -> "Authenticating..."
-    is SyncPhase.FetchingPlaylists -> "Fetching playlists..."
-    is SyncPhase.Diffing -> "Comparing changes..."
-    is SyncPhase.Downloading -> "Downloading ${phase.downloaded}/${phase.total}..."
-    is SyncPhase.Finalizing -> "Finalizing..."
-    is SyncPhase.Completed -> "Complete"
-    is SyncPhase.Error -> "Error"
-    else -> "Syncing..."
 }
 
 // -- Schedule card ------------------------------------------------------------
