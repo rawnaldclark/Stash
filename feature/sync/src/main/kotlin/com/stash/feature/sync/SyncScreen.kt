@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.SyncDisplayStatus
@@ -123,6 +124,9 @@ fun SyncScreen(
             }
         }
 
+        // -- Sources section -------------------------------------------------
+        item { SyncSectionLabel("Sources") }
+
         // -- Spotify Sync Preferences (above schedule) ------------------------
         // Rendered whenever Spotify is connected, even before the first sync
         // has populated the playlist list — so users can see what's coming
@@ -194,14 +198,8 @@ fun SyncScreen(
             }
         }
 
-        // -- Schedule ---------------------------------------------------------
-        item {
-            Text(
-                text = "Schedule",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-        }
+        // -- Schedule section -------------------------------------------------
+        item { SyncSectionLabel("Schedule") }
         item {
             com.stash.feature.sync.components.ScheduleCard(
                 autoSyncEnabled = uiState.syncPreferences.autoSyncEnabled,
@@ -216,7 +214,7 @@ fun SyncScreen(
             )
         }
 
-        // -- Library maintenance ----------------------------------------------
+        // -- Library section --------------------------------------------------
         // Blocked Songs + Fix wrong-version downloads were previously in
         // Settings → Library. They live here now because both are
         // sync-adjacent operations: blocked songs gate what sync will re-
@@ -224,13 +222,7 @@ fun SyncScreen(
         // YT library imports (which is literally a sync operation). Sits
         // above Recent Syncs so maintenance actions stay glanceable
         // without scrolling past the (potentially long) history log.
-        item {
-            Text(
-                text = "Library",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-        }
+        item { SyncSectionLabel("Library") }
         item {
             LibraryMaintenanceCard(
                 blockedCount = blockedCount,
@@ -239,15 +231,9 @@ fun SyncScreen(
             )
         }
 
-        // -- Recent History ---------------------------------------------------
+        // -- Recent Syncs section ---------------------------------------------
         if (uiState.recentSyncs.isNotEmpty()) {
-            item {
-                Text(
-                    text = "Recent Syncs",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-            }
+            item { SyncSectionLabel("Recent syncs") }
             item {
                 val rows = uiState.recentSyncs.map { sync ->
                     RecentSyncRow(
@@ -277,6 +263,23 @@ fun SyncScreen(
         // Bottom spacing so content isn't hidden behind nav bar
         item { Spacer(Modifier.height(80.dp)) }
     }
+}
+
+// -- Section Label ──────────────────────────────────────────────────────────
+
+/**
+ * Uppercase section label with small typography and subtle color.
+ */
+@Composable
+private fun SyncSectionLabel(text: String) {
+    Text(
+        text = text.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.7.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+    )
 }
 
 /**
