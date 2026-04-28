@@ -338,7 +338,12 @@ Find the `is SyncResult.Success ->` block inside `fetchAndSnapshotLikedSongs` (l
 is SyncResult.Success -> {
     val paged = result.data
     val rawTracks = paged.tracks
-    val studioOnly = syncPreferencesManager.youtubeLikedStudioOnly.first()
+    // Spec: DataStore corruption falls back to "everything syncs" rather than
+    // aborting this entire sync step. runCatching keeps that fallback explicit
+    // even though the outer try/catch would also handle a thrown exception.
+    val studioOnly = runCatching {
+        syncPreferencesManager.youtubeLikedStudioOnly.first()
+    }.getOrDefault(false)
     val likedSongs = if (studioOnly) filterStudioOnly(rawTracks) else rawTracks
     val filteredCount = rawTracks.size - likedSongs.size
 
