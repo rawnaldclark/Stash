@@ -7,8 +7,11 @@ package com.stash.core.common
  *
  * **YouTube Music (`lh3.googleusercontent.com`):**
  * InnerTube returns thumbnails as small as 60x60. The CDN supports
- * arbitrary sizes via the `=wN-hN` URL suffix. We upgrade to 544x544
- * which matches Spotify's standard quality and is sharp on any screen.
+ * arbitrary sizes via the `=wN-hN` URL suffix. We upgrade to 1024x1024
+ * — large enough for the 260dp NowPlaying surface on a 3x display
+ * (780px) with headroom. Coil downsamples the in-memory bitmap to
+ * view size, so the only cost is download bandwidth; the on-CDN file
+ * is cached.
  *
  * **YouTube video thumbnails (`i.ytimg.com`):**
  * `sddefault.jpg` is 640x480. We upgrade to `hqdefault.jpg` (480x360)
@@ -28,7 +31,7 @@ package com.stash.core.common
 object ArtUrlUpgrader {
 
     private val LH3_SIZE_REGEX = Regex("""=w\d+-h\d+""")
-    private const val LH3_TARGET_SIZE = "=w544-h544"
+    private const val LH3_TARGET_SIZE = "=w1024-h1024"
 
     private const val SPOTIFY_64 = "ab67616d00004851"
     private const val SPOTIFY_300 = "ab67616d00001e02"

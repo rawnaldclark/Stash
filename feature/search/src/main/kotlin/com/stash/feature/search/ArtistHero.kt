@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.stash.core.common.ArtUrlUpgrader
 
 /**
  * Artist Profile hero card.
@@ -75,9 +76,7 @@ fun ArtistHero(
             verticalArrangement = Arrangement.Center,
         ) {
             AsyncImage(
-                // Same size-knob pattern as ArtistAvatarCard — strip any
-                // pre-existing =suffix and ask the CDN for a 240px image.
-                model = hero.avatarUrl?.let { it.substringBefore("=") + "=w240-h240" },
+                model = ArtUrlUpgrader.upgrade(hero.avatarUrl),
                 contentDescription = hero.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(120.dp).clip(CircleShape),

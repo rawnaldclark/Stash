@@ -13,6 +13,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.stash.core.common.ArtUrlUpgrader
 
 /**
  * 140dp square album card with rounded thumbnail, title, and "year • artist" subtitle.
@@ -21,7 +22,9 @@ import coil3.compose.AsyncImage
  *
  * @param title Album title shown on the first text row.
  * @param artist Artist name for the subtitle.
- * @param thumbnailUrl Optional cover art URL; rewritten with a `=w300-h300` size knob.
+ * @param thumbnailUrl Optional cover art URL; passed through [ArtUrlUpgrader] which
+ *   asks the CDN for 1024x1024. Coil downsamples to the 140dp render target — the
+ *   high-res request just guarantees crispness on high-DPI screens.
  * @param year Optional release year. When present the subtitle is `"$year • $artist"`,
  *   otherwise just the artist name.
  * @param modifier Optional layout modifier applied to the root column.
@@ -38,10 +41,7 @@ fun AlbumSquareCard(
 ) {
     Column(modifier = modifier.width(140.dp).clickable(onClick = onClick)) {
         AsyncImage(
-            // Size knob for lh3.googleusercontent.com / YouTube thumbnail CDNs.
-            // Strip any existing =... suffix before appending our own, or the URL
-            // becomes invalid (e.g. a pre-existing =w60-h60 would concatenate).
-            model = thumbnailUrl?.let { it.substringBefore("=") + "=w300-h300" },
+            model = ArtUrlUpgrader.upgrade(thumbnailUrl),
             contentDescription = title,
             contentScale = ContentScale.Crop,
             modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),

@@ -15,6 +15,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.stash.core.common.ArtUrlUpgrader
 
 /**
  * Circular 96dp artist avatar tile with a centered name label.
@@ -23,8 +24,9 @@ import coil3.compose.AsyncImage
  * invokes [onClick] — typically a navigation to the artist profile.
  *
  * @param name The artist's display name. Shown beneath the avatar, single-line ellipsized.
- * @param avatarUrl Optional avatar URL. When non-null the URL is rewritten with a
- *   `=w96-h96` size knob so the server returns a correctly sized image.
+ * @param avatarUrl Optional avatar URL; passed through [ArtUrlUpgrader] which asks the
+ *   CDN for 1024x1024. Coil downsamples in-memory to the 96dp render target — the
+ *   high-res source guarantees crispness on 3x displays where 96dp = 288px.
  * @param modifier Optional layout modifier applied to the root column.
  * @param onClick Invoked on tap.
  */
@@ -40,10 +42,7 @@ fun ArtistAvatarCard(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         AsyncImage(
-            // Size knob for lh3.googleusercontent.com / YouTube avatar CDNs.
-            // Strip any existing =... suffix (e.g. =s88-c-k-c0x00ffffff-no-rj)
-            // before appending our own, otherwise the URL is invalid.
-            model = avatarUrl?.let { it.substringBefore("=") + "=w96-h96" },
+            model = ArtUrlUpgrader.upgrade(avatarUrl),
             contentDescription = name,
             contentScale = ContentScale.Crop,
             modifier = Modifier.size(96.dp).clip(CircleShape),
