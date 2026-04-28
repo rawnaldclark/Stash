@@ -169,14 +169,17 @@ class YTMusicApiClient @Inject constructor(
      * @return [SyncResult.Success] wrapping [PagedTracks], [SyncResult.Empty]
      *   if no tracks were found, or [SyncResult.Error] on a null initial response.
      */
-    suspend fun getPlaylistTracks(playlistId: String): SyncResult<PagedTracks> {
+    suspend fun getPlaylistTracks(
+        playlistId: String,
+        maxPages: Int = MAX_PAGES,
+    ): SyncResult<PagedTracks> {
         val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
         val response = innerTubeClient.browse(browseId)
             ?: return SyncResult.Error("InnerTube browse($browseId) returned null")
         Log.d(TAG, "getPlaylistTracks: response top-level keys: ${response.keys}")
 
         val expectedCount = extractExpectedTrackCount(response)
-        val paginated = paginateBrowse(response) { page ->
+        val paginated = paginateBrowse(response, maxPages = maxPages) { page ->
             val isContinuation = page["continuationContents"] != null || page["onResponseReceivedActions"] != null
             if (isContinuation) parseContinuationPage(page) else parseTracksFromBrowse(page)
         }
@@ -1159,6 +1162,7 @@ class YTMusicApiClient @Inject constructor(
      */
     private suspend fun <T> paginateBrowse(
         initialResponse: JsonObject,
+        maxPages: Int = MAX_PAGES,
         parsePage: (JsonObject) -> List<T>,
     ): PaginationResult<T> {
         val items = mutableListOf<T>()
@@ -1168,7 +1172,7 @@ class YTMusicApiClient @Inject constructor(
         var partial = false
         var partialReason: String? = null
 
-        while (token != null && pages < MAX_PAGES) {
+        while (token != null && pages < maxPages) {
             val (next, attempts) = browseWithRetry(token)
             if (next == null) {
                 partial = true
@@ -1181,7 +1185,11 @@ class YTMusicApiClient @Inject constructor(
             pages++
         }
 
-        if (token != null && pages >= MAX_PAGES) {
+        // Hitting the caller-supplied cap with a token still pending is only
+        // partial when the cap is the safety MAX_PAGES. A caller-imposed cap
+        // (e.g. home-mix radio capped at 1 page) is "as much as we wanted",
+        // not a partial fetch.
+        if (token != null && pages >= maxPages && maxPages == MAX_PAGES) {
             partial = true
             partialReason = "hit MAX_PAGES=$MAX_PAGES safety cap"
             Log.w(TAG, "paginateBrowse: $partialReason")
@@ -1214,8 +1222,9 @@ class YTMusicApiClient @Inject constructor(
     /** Test seam — allows unit tests to call [paginateBrowse] without reflection. */
     internal suspend fun <T> paginateBrowseForTest(
         initialResponse: JsonObject,
+        maxPages: Int = MAX_PAGES,
         parsePage: (JsonObject) -> List<T>,
-    ): PaginationResult<T> = paginateBrowse(initialResponse, parsePage)
+    ): PaginationResult<T> = paginateBrowse(initialResponse, maxPages, parsePage)
 }
 
 // ── JsonElement navigation extensions ────────────────────────────────────────

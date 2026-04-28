@@ -68,6 +68,12 @@ class PlaylistFetchWorker @AssistedInject constructor(
         private const val TAG = "StashSync"
         /** Cap on concurrent in-flight YT browse calls during a sync. */
         private const val MAX_PARALLEL_YT_FETCHES = 3
+
+        // Home Mixes (Daily Mix etc.) are infinite radio — every page returns
+        // another continuation token. Cap to the initial page (~100 tracks)
+        // so a sync doesn't spend minutes walking radio. User playlists +
+        // Liked Songs use the full MAX_PAGES default in YTMusicApiClient.
+        private const val HOME_MIX_MAX_PAGES = 1
     }
 
     /**
@@ -526,7 +532,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
     ) {
         try {
             // Fetch tracks FIRST so we know partial/expectedCount before inserting snapshot row.
-            when (val tracksResult = ytMusicApiClient.getPlaylistTracks(mix.playlistId)) {
+            // Home mixes are radio: cap at the initial page to avoid walking infinite continuations.
+            when (val tracksResult = ytMusicApiClient.getPlaylistTracks(mix.playlistId, maxPages = HOME_MIX_MAX_PAGES)) {
                 is SyncResult.Success -> {
                     val paged = tracksResult.data
                     val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
