@@ -924,6 +924,64 @@ class YTMusicApiClient @Inject constructor(
     /** Test seam — allows unit tests to call [extractContinuationToken] without reflection. */
     internal fun extractContinuationTokenForTest(response: JsonObject): String? =
         extractContinuationToken(response)
+
+    /**
+     * Parses tracks from a continuation-response shape. Handles two envelopes:
+     *
+     *   1) continuationContents.{musicPlaylistShelfContinuation | musicShelfContinuation}
+     *      .contents[*].musicResponsiveListItemRenderer (used by liked-songs
+     *      continuation responses).
+     *
+     *   2) onResponseReceivedActions[*].appendContinuationItemsAction
+     *      .continuationItems[*].musicResponsiveListItemRenderer (used by
+     *      twoColumn playlist continuation responses; the trailing
+     *      continuationItemRenderer is skipped).
+     *
+     * Each item is the same musicResponsiveListItemRenderer that
+     * [parseTrackFromRenderer] already understands.
+     */
+    private fun parseContinuationPage(response: JsonObject): List<YTMusicTrack> {
+        val out = mutableListOf<YTMusicTrack>()
+
+        // Shape 1: continuationContents.{musicPlaylistShelfContinuation | musicShelfContinuation}
+        val cc = response["continuationContents"]?.asObject()
+        if (cc != null) {
+            val shelf = cc["musicPlaylistShelfContinuation"]?.asObject()
+                ?: cc["musicShelfContinuation"]?.asObject()
+            val items = shelf?.get("contents")?.asArray()
+            if (items != null) {
+                for (item in items) {
+                    val renderer = item.asObject()
+                        ?.get("musicResponsiveListItemRenderer")?.asObject()
+                        ?: continue
+                    parseTrackFromRenderer(renderer)?.let { out.add(it) }
+                }
+            }
+        }
+
+        // Shape 2: onResponseReceivedActions[*].appendContinuationItemsAction.continuationItems
+        val actions = response["onResponseReceivedActions"]?.asArray()
+        if (actions != null) {
+            for (action in actions) {
+                val items = action.asObject()
+                    ?.get("appendContinuationItemsAction")?.asObject()
+                    ?.get("continuationItems")?.asArray()
+                    ?: continue
+                for (item in items) {
+                    val renderer = item.asObject()
+                        ?.get("musicResponsiveListItemRenderer")?.asObject()
+                        ?: continue  // skips continuationItemRenderer entries
+                    parseTrackFromRenderer(renderer)?.let { out.add(it) }
+                }
+            }
+        }
+
+        return out
+    }
+
+    /** Test seam — allows unit tests to call [parseContinuationPage] without reflection. */
+    internal fun parseContinuationPageForTest(response: JsonObject): List<YTMusicTrack> =
+        parseContinuationPage(response)
 }
 
 // ── JsonElement navigation extensions ────────────────────────────────────────

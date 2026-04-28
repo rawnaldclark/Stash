@@ -367,6 +367,24 @@ class YTMusicApiClientTest {
         assertTrue("token should be non-empty", token!!.isNotEmpty())
     }
 
+    @Test fun `parseContinuationPage parses tracks from playlist continuation`() {
+        val json = loadFixture("playlist_long_page2.json")
+        val parsed = Json.parseToJsonElement(json).jsonObject
+        val client = fakeBrowseClient("{}")
+        val tracks = client.parseContinuationPageForTest(parsed)
+        assertTrue("page2 should yield at least one track", tracks.isNotEmpty())
+        tracks.forEach { assertNotNull(it.videoId); assertTrue(it.videoId.isNotEmpty()) }
+    }
+
+    @Test fun `parseContinuationPage parses tracks from liked-songs continuation`() {
+        val json = loadFixture("liked_songs_page2.json")
+        val parsed = Json.parseToJsonElement(json).jsonObject
+        val client = fakeBrowseClient("{}")
+        val tracks = client.parseContinuationPageForTest(parsed)
+        assertTrue("liked songs page2 should yield at least one track", tracks.isNotEmpty())
+        tracks.forEach { assertNotNull(it.videoId); assertTrue(it.videoId.isNotEmpty()) }
+    }
+
     @Test
     fun `normalizeArtistBrowseId strips MPLA only before UC`() {
         // `MPLAUC…` is the music-channel variant — strip `MPLA` to expose the
