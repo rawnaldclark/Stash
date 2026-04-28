@@ -65,4 +65,23 @@ data class RemotePlaylistSnapshotEntity(
     /** Timestamp when this snapshot was captured. */
     @ColumnInfo(name = "fetched_at")
     val fetchedAt: Instant = Instant.now(),
+
+    /**
+     * True when the remote source returned a partial result for this playlist
+     * — either continuation pagination failed mid-walk, or the fetched count
+     * fell below 95% of the source-reported [expectedCount].
+     *
+     * Defaults to false for back-compat with rows written before v16.
+     */
+    @ColumnInfo(name = "partial")
+    val partial: Boolean = false,
+
+    /**
+     * The remote source's reported track count for this playlist (when the
+     * response carries a header that exposes it). Used together with
+     * [partial] to render diagnostics like "1247 / 2000 (partial)". Null
+     * when the source provides no count (e.g. YT Music Liked Songs).
+     */
+    @ColumnInfo(name = "expected_count")
+    val expectedCount: Int? = null,
 )

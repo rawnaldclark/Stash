@@ -64,7 +64,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         StashMixRecipeEntity::class,
         DiscoveryQueueEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -344,6 +344,22 @@ abstract class StashDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "ALTER TABLE tracks ADD COLUMN yt_canonical_video_id TEXT"
+                )
+            }
+        }
+
+        /**
+         * v15 → v16: add `partial` + `expected_count` columns to
+         * remote_playlist_snapshots. Surfaces YouTube continuation-pagination
+         * partial results from the new [YTMusicApiClient] paged-result types.
+         */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE remote_playlist_snapshots ADD COLUMN partial INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE remote_playlist_snapshots ADD COLUMN expected_count INTEGER DEFAULT NULL"
                 )
             }
         }
