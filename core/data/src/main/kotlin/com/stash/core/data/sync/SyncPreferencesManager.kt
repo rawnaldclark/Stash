@@ -26,6 +26,7 @@ private val Context.syncPrefsDataStore by preferencesDataStore(name = "sync_pref
  * @property spotifySyncMode Refresh/accumulate mode applied to Spotify-sourced playlists.
  * @property youtubeSyncMode Refresh/accumulate mode applied to YouTube-sourced playlists.
  * @property youtubeLikedStudioOnly When true, filters UGC, cover, live, and podcast tracks from YT Music Liked Songs sync.
+ * @property syncDays 7-bit bitmask of days the auto-sync should run (bit 0 = Monday … bit 6 = Sunday).
  */
 data class SyncPreferences(
     val syncHour: Int = 6,
@@ -41,6 +42,13 @@ data class SyncPreferences(
      * user playlists) is unaffected. Defaults to false — everything syncs.
      */
     val youtubeLikedStudioOnly: Boolean = false,
+    /**
+     * 7-bit bitmask of days the auto-sync should run. Bit 0 = Monday … bit 6 = Sunday.
+     * Default 0b1111111 (127) = every day, matching the prior daily behavior.
+     * 0 means no day is enabled — UI surfaces a "pick at least one day" hint and
+     * the scheduler does not enqueue work.
+     */
+    val syncDays: Int = 0b1111111,
 )
 
 /**
@@ -70,6 +78,7 @@ class SyncPreferencesManager @Inject constructor(
         val SPOTIFY_SYNC_MODE = stringPreferencesKey("spotify_sync_mode")
         val YOUTUBE_SYNC_MODE = stringPreferencesKey("youtube_sync_mode")
         val YOUTUBE_LIKED_STUDIO_ONLY = booleanPreferencesKey("youtube_liked_studio_only")
+        val SYNC_DAYS = intPreferencesKey("sync_days")
     }
 
     /** Reactive stream of the current [SyncPreferences]. */
@@ -82,6 +91,7 @@ class SyncPreferencesManager @Inject constructor(
             spotifySyncMode = resolveSpotifyMode(prefs),
             youtubeSyncMode = resolveYoutubeMode(prefs),
             youtubeLikedStudioOnly = prefs[Keys.YOUTUBE_LIKED_STUDIO_ONLY] ?: false,
+            syncDays = prefs[Keys.SYNC_DAYS] ?: 0b1111111,
         )
     }
 
@@ -105,6 +115,13 @@ class SyncPreferencesManager @Inject constructor(
      */
     val youtubeLikedStudioOnly: Flow<Boolean> =
         context.syncPrefsDataStore.data.map { it[Keys.YOUTUBE_LIKED_STUDIO_ONLY] ?: false }
+
+    /**
+     * Reactive stream of the days-of-week bitmask. Read via .first() inside
+     * [SyncScheduler] when computing the next firing time. Default 127 = every day.
+     */
+    val syncDays: Flow<Int> =
+        context.syncPrefsDataStore.data.map { it[Keys.SYNC_DAYS] ?: 0b1111111 }
 
     private fun resolveSpotifyMode(
         prefs: androidx.datastore.preferences.core.Preferences,
@@ -164,6 +181,11 @@ class SyncPreferencesManager @Inject constructor(
     /** Persist the YT Music Liked Songs studio-only filter. */
     suspend fun setYoutubeLikedStudioOnly(enabled: Boolean) {
         context.syncPrefsDataStore.edit { it[Keys.YOUTUBE_LIKED_STUDIO_ONLY] = enabled }
+    }
+
+    /** Persist the days-of-week bitmask. UI passes [DayOfWeekSet.bitmask]. */
+    suspend fun setSyncDays(bitmask: Int) {
+        context.syncPrefsDataStore.edit { it[Keys.SYNC_DAYS] = bitmask }
     }
 
     /**
