@@ -7,6 +7,7 @@ import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.ArtistSummary
 import com.stash.data.ytmusic.model.MusicVideoType
+import com.stash.data.ytmusic.model.PagedPlaylists
 import com.stash.data.ytmusic.model.PagedTracks
 import com.stash.data.ytmusic.model.SearchAllResults
 import com.stash.data.ytmusic.model.SearchResultSection
@@ -134,17 +135,25 @@ class YTMusicApiClient @Inject constructor(
      * Requires a valid SAPISID cookie; an unauthenticated browse returns
      * an empty library.
      */
-    suspend fun getUserPlaylists(): SyncResult<List<YTMusicPlaylist>> {
+    suspend fun getUserPlaylists(): SyncResult<PagedPlaylists> {
         val response = innerTubeClient.browse(BROWSE_LIBRARY_PLAYLISTS)
-        if (response == null) {
-            return SyncResult.Error("InnerTube browse($BROWSE_LIBRARY_PLAYLISTS) returned null")
+            ?: return SyncResult.Error("InnerTube browse($BROWSE_LIBRARY_PLAYLISTS) returned null")
+
+        val paginated = paginateBrowse(response) { page ->
+            val isContinuation = page["continuationContents"] != null || page["onResponseReceivedActions"] != null
+            if (isContinuation) parseUserPlaylistsContinuationPage(page) else parseUserPlaylists(page)
         }
-        val playlists = parseUserPlaylists(response)
-        return if (playlists.isEmpty()) {
-            SyncResult.Empty("Library returned no playlists")
-        } else {
-            SyncResult.Success(playlists)
+
+        if (paginated.items.isEmpty()) {
+            return SyncResult.Empty("Library returned no playlists")
         }
+        return SyncResult.Success(
+            PagedPlaylists(
+                playlists = paginated.items,
+                partial = paginated.partial,
+                partialReason = paginated.partialReason,
+            )
+        )
     }
 
     /**
@@ -778,61 +787,87 @@ class YTMusicApiClient @Inject constructor(
                             ?.get("musicResponsiveListItemRenderer")?.asObject()
                         ?: continue
 
-                    val browseId = renderer.navigatePath(
-                        "navigationEndpoint", "browseEndpoint", "browseId",
-                    )?.asString()
-                        ?: continue
-
-                    // Accept only playlist browseIds (VL-prefixed). Filter
-                    // out built-ins and non-playlist tiles.
-                    if (!browseId.startsWith("VL")) continue
-                    if (browseId == "VLLM" || browseId == "VLSE") continue
-
-                    val playlistId = browseId.removePrefix("VL")
-                    if (!seenIds.add(playlistId)) continue
-
-                    val title = renderer["title"]?.asObject()
-                        ?.get("runs")?.asArray()
-                        ?.firstOrNull()?.asObject()
-                        ?.get("text")?.asString()
-                        ?: renderer["flexColumns"]?.asArray()
-                            ?.firstOrNull()?.asObject()
-                            ?.navigatePath(
-                                "musicResponsiveListItemFlexColumnRenderer",
-                                "text",
-                                "runs",
-                            )?.asArray()
-                            ?.firstOrNull()?.asObject()
-                            ?.get("text")?.asString()
-                        ?: continue
-
-                    val thumbnailUrl = renderer.navigatePath(
-                        "thumbnailRenderer", "musicThumbnailRenderer",
-                        "thumbnail", "thumbnails",
-                    )?.firstArray()?.lastOrNull()
-                        ?.asObject()?.get("url")?.asString()
-
-                    val subtitleText = renderer["subtitle"]?.asObject()
-                        ?.get("runs")?.asArray()
-                        ?.mapNotNull { it.asObject()?.get("text")?.asString() }
-                        ?.joinToString("")
-                    val trackCount = subtitleText?.let { TRACK_COUNT_REGEX.find(it) }
-                        ?.groupValues?.getOrNull(1)?.toIntOrNull()
-
-                    playlists.add(
-                        YTMusicPlaylist(
-                            playlistId = playlistId,
-                            title = title,
-                            thumbnailUrl = thumbnailUrl,
-                            trackCount = trackCount,
-                        )
-                    )
+                    val playlist = parseSinglePlaylistFromTwoRowRenderer(renderer) ?: continue
+                    if (!seenIds.add(playlist.playlistId)) continue
+                    playlists.add(playlist)
                 }
             }
         }
 
         Log.d(TAG, "parseUserPlaylists: found ${playlists.size} library playlists")
         return playlists
+    }
+
+    /**
+     * Continuation-shape parser for the user-library playlist list. Mirrors
+     * [parseUserPlaylists] but reads from `continuationContents.musicShelfContinuation`.
+     */
+    private fun parseUserPlaylistsContinuationPage(response: JsonObject): List<YTMusicPlaylist> {
+        val items = response.navigatePath(
+            "continuationContents", "musicShelfContinuation", "contents",
+        )?.asArray() ?: return emptyList()
+        val out = mutableListOf<YTMusicPlaylist>()
+        for (item in items) {
+            val renderer = item.asObject()?.get("musicTwoRowItemRenderer")?.asObject() ?: continue
+            parseSinglePlaylistFromTwoRowRenderer(renderer)?.let { out.add(it) }
+        }
+        return out
+    }
+
+    /**
+     * Parses a single playlist entry from a `musicTwoRowItemRenderer` (or
+     * `musicResponsiveListItemRenderer`) object. Shared by [parseUserPlaylists]
+     * and [parseUserPlaylistsContinuationPage].
+     *
+     * Returns `null` if the renderer does not represent an accepted user playlist
+     * (e.g. missing browseId, non-VL prefix, built-in pseudo-playlists, or no title).
+     */
+    private fun parseSinglePlaylistFromTwoRowRenderer(renderer: JsonObject): YTMusicPlaylist? {
+        val browseId = renderer.navigatePath(
+            "navigationEndpoint", "browseEndpoint", "browseId",
+        )?.asString() ?: return null
+
+        // Accept only playlist browseIds (VL-prefixed). Filter
+        // out built-ins and non-playlist tiles.
+        if (!browseId.startsWith("VL")) return null
+        if (browseId == "VLLM" || browseId == "VLSE") return null
+
+        val playlistId = browseId.removePrefix("VL")
+
+        val title = renderer["title"]?.asObject()
+            ?.get("runs")?.asArray()
+            ?.firstOrNull()?.asObject()
+            ?.get("text")?.asString()
+            ?: renderer["flexColumns"]?.asArray()
+                ?.firstOrNull()?.asObject()
+                ?.navigatePath(
+                    "musicResponsiveListItemFlexColumnRenderer",
+                    "text",
+                    "runs",
+                )?.asArray()
+                ?.firstOrNull()?.asObject()
+                ?.get("text")?.asString()
+            ?: return null
+
+        val thumbnailUrl = renderer.navigatePath(
+            "thumbnailRenderer", "musicThumbnailRenderer",
+            "thumbnail", "thumbnails",
+        )?.firstArray()?.lastOrNull()
+            ?.asObject()?.get("url")?.asString()
+
+        val subtitleText = renderer["subtitle"]?.asObject()
+            ?.get("runs")?.asArray()
+            ?.mapNotNull { it.asObject()?.get("text")?.asString() }
+            ?.joinToString("")
+        val trackCount = subtitleText?.let { TRACK_COUNT_REGEX.find(it) }
+            ?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+        return YTMusicPlaylist(
+            playlistId = playlistId,
+            title = title,
+            thumbnailUrl = thumbnailUrl,
+            trackCount = trackCount,
+        )
     }
 
     // ── Utility helpers ──────────────────────────────────────────────────

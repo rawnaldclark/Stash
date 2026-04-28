@@ -2,6 +2,7 @@ package com.stash.data.ytmusic
 
 import com.stash.core.model.SyncResult
 import com.stash.data.ytmusic.model.MusicVideoType
+import com.stash.data.ytmusic.model.PagedPlaylists
 import com.stash.data.ytmusic.model.PagedTracks
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
@@ -679,5 +680,28 @@ class YTMusicApiClientTest {
         val paged = (result as SyncResult.Success).data
         assertTrue(paged.partial)
         assertNotNull(paged.partialReason)
+    }
+
+    // ── getUserPlaylists pagination tests ─────────────────────────────────
+
+    @Test fun `getUserPlaylists returns PagedPlaylists shape`() = runTest {
+        val response = """
+        {
+          "contents":{"singleColumnBrowseResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{"contents":[
+            {"musicShelfRenderer":{"contents":[
+              {"musicTwoRowItemRenderer":{
+                "navigationEndpoint":{"browseEndpoint":{"browseId":"VLPLfake"}},
+                "title":{"runs":[{"text":"My Playlist"}]},
+                "thumbnailRenderer":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://x"}]}}}
+              }}
+            ]}}
+          ]}}}}]}}
+        }""".trimIndent()
+        val client = fakeBrowseClient(response)
+        val result = client.getUserPlaylists()
+        assertTrue(result is SyncResult.Success)
+        val paged = (result as SyncResult.Success).data
+        assertTrue(paged.playlists.isNotEmpty())
+        assertFalse(paged.partial)
     }
 }
