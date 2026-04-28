@@ -2,6 +2,7 @@ package com.stash.data.ytmusic
 
 import com.stash.core.model.SyncResult
 import com.stash.data.ytmusic.model.MusicVideoType
+import com.stash.data.ytmusic.model.PagedTracks
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.InnerTubeClient.RequestOutcome
@@ -581,5 +582,54 @@ class YTMusicApiClientTest {
         assertEquals(1, calls)  // no retries
         assertTrue(result.partial)
         assertEquals(listOf("a"), result.items)
+    }
+
+    // ── getLikedSongs pagination tests ────────────────────────────────────
+
+    @Test fun `getLikedSongs paginates across two pages and merges`() = runTest {
+        val page1 = loadFixture("liked_songs_page1.json")
+        val page2 = loadFixture("liked_songs_page2.json")
+        // page2 fixture itself carries a continuation token; return a no-token terminal
+        // response on the second browseWithStatus call so pagination stops cleanly.
+        val terminal = RequestOutcome(
+            body = Json.parseToJsonElement("""{"continuationContents":{"musicShelfContinuation":{"contents":[]}}}""").jsonObject,
+            statusCode = 200,
+        )
+
+        val inner = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(inner.browse("FEmusic_liked_videos")).thenReturn(
+                Json.parseToJsonElement(page1).jsonObject
+            )
+            whenever(inner.browseWithStatus(any()))
+                .thenReturn(RequestOutcome(body = Json.parseToJsonElement(page2).jsonObject, statusCode = 200))
+                .thenReturn(terminal)
+        }
+        val client = YTMusicApiClient(inner)
+        val result = client.getLikedSongs()
+        assertTrue(result is SyncResult.Success)
+        val paged = (result as SyncResult.Success).data
+        assertTrue("must merge across pages, got ${paged.tracks.size}", paged.tracks.size > 24)  // page1 alone is ~24
+        assertNull("liked songs has no header count", paged.expectedCount)
+        assertFalse("should not be partial", paged.partial)
+    }
+
+    @Test fun `getLikedSongs marks partial when continuation fails`() = runTest {
+        val page1 = loadFixture("liked_songs_page1.json")
+        val inner = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(inner.browse("FEmusic_liked_videos")).thenReturn(
+                Json.parseToJsonElement(page1).jsonObject
+            )
+            whenever(inner.browseWithStatus(any())).thenReturn(
+                RequestOutcome(body = null, statusCode = 503)
+            )
+        }
+        val client = YTMusicApiClient(inner)
+        val result = client.getLikedSongs()
+        assertTrue(result is SyncResult.Success)
+        val paged = (result as SyncResult.Success).data
+        assertTrue(paged.partial)
+        assertNotNull(paged.partialReason)
     }
 }

@@ -7,6 +7,7 @@ import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.ArtistSummary
 import com.stash.data.ytmusic.model.MusicVideoType
+import com.stash.data.ytmusic.model.PagedTracks
 import com.stash.data.ytmusic.model.SearchAllResults
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TrackSummary
@@ -68,24 +69,37 @@ class YTMusicApiClient @Inject constructor(
     }
 
     /**
-     * Fetches the authenticated user's liked songs from YouTube Music.
+     * Fetches the authenticated user's liked songs from YouTube Music,
+     * walking all continuation pages and returning a [PagedTracks] result.
      *
-     * Requires a valid YouTube access token; returns an empty list if
-     * unauthenticated or if the response cannot be parsed.
+     * Requires a valid YouTube access token; returns [SyncResult.Error] if
+     * the initial browse returns null. Continuation failures are surfaced as
+     * [PagedTracks.partial] rather than a hard error so callers can work with
+     * whatever tracks were successfully retrieved.
      *
-     * @return List of [YTMusicTrack] representing liked songs.
+     * @return [SyncResult.Success] wrapping [PagedTracks], [SyncResult.Empty]
+     *   if no tracks were found, or [SyncResult.Error] on a null initial response.
      */
-    suspend fun getLikedSongs(): SyncResult<List<YTMusicTrack>> {
+    suspend fun getLikedSongs(): SyncResult<PagedTracks> {
         val response = innerTubeClient.browse(BROWSE_LIKED_SONGS)
-        if (response == null) {
-            return SyncResult.Error("InnerTube browse($BROWSE_LIKED_SONGS) returned null")
+            ?: return SyncResult.Error("InnerTube browse($BROWSE_LIKED_SONGS) returned null — check CLIENT_VERSION or cookie")
+
+        val paginated = paginateBrowse(response) { page ->
+            val isContinuation = page["continuationContents"] != null || page["onResponseReceivedActions"] != null
+            if (isContinuation) parseContinuationPage(page) else parseTracksFromBrowse(page)
         }
-        val tracks = parseTracksFromBrowse(response)
-        return if (tracks.isEmpty()) {
-            SyncResult.Empty("Liked songs returned no tracks")
-        } else {
-            SyncResult.Success(tracks)
+
+        if (paginated.items.isEmpty()) {
+            return SyncResult.Empty("Liked songs returned no tracks")
         }
+        return SyncResult.Success(
+            PagedTracks(
+                tracks = paginated.items,
+                expectedCount = null,  // FEmusic_liked_videos has no header count
+                partial = paginated.partial,
+                partialReason = paginated.partialReason,
+            )
+        )
     }
 
     /**
@@ -844,8 +858,11 @@ class YTMusicApiClient @Inject constructor(
      *   `continuationItemRenderer` path as Shape 2.
      *
      * Shape 4 – initial singleColumn browse (`contents.singleColumnBrowseResultsRenderer`):
-     *   last item in `...musicShelfRenderer.contents` → same
-     *   `continuationItemRenderer` path as Shape 2.
+     *   4a) last item in `...musicShelfRenderer.contents` → same
+     *       `continuationItemRenderer` path as Shape 2.
+     *   4b) `...musicShelfRenderer.continuations[0].nextContinuationData.continuation`
+     *       (liked-songs / `FEmusic_liked_videos` — token lives at shelf level, not
+     *       as a synthetic last item in `contents`).
      *
      * Returns the first token found across all shapes, or null if none present.
      */
@@ -903,7 +920,11 @@ class YTMusicApiClient @Inject constructor(
             if (token != null) return token
         }
 
-        // Shape 4: initial singleColumn browse — last item in any musicShelfRenderer.contents
+        // Shape 4: initial singleColumn browse — two sub-shapes:
+        //   4a) last item in musicShelfRenderer.contents → continuationItemRenderer
+        //   4b) musicShelfRenderer.continuations[0].nextContinuationData.continuation
+        //       (used by FEmusic_liked_videos; the token sits at the shelf level, not as
+        //        a synthetic last item in contents)
         val singleColumnSections = response.navigatePath(
             "contents", "singleColumnBrowseResultsRenderer", "tabs",
         )?.firstArray()?.firstOrNull()?.asObject()
@@ -911,16 +932,20 @@ class YTMusicApiClient @Inject constructor(
             ?.asArray()
         if (singleColumnSections != null) {
             for (section in singleColumnSections) {
-                val shelfContents = section.asObject()
-                    ?.get("musicShelfRenderer")?.asObject()
-                    ?.get("contents")?.asArray()
-                    ?: continue
-                val token = shelfContents.lastOrNull()?.asObject()
+                val shelf = section.asObject()?.get("musicShelfRenderer")?.asObject() ?: continue
+                // 4a: last content item may be a continuationItemRenderer
+                val contItemToken = shelf["contents"]?.asArray()
+                    ?.lastOrNull()?.asObject()
                     ?.navigatePath(
                         "continuationItemRenderer", "continuationEndpoint",
                         "continuationCommand", "token",
                     )?.asString()
-                if (token != null) return token
+                if (contItemToken != null) return contItemToken
+                // 4b: liked-songs / singleColumn shelf-level continuations array
+                val shelfContToken = shelf["continuations"]?.asArray()
+                    ?.firstOrNull()?.asObject()
+                    ?.navigatePath("nextContinuationData", "continuation")?.asString()
+                if (shelfContToken != null) return shelfContToken
             }
         }
 
