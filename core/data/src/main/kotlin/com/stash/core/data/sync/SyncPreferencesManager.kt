@@ -31,7 +31,7 @@ private val Context.syncPrefsDataStore by preferencesDataStore(name = "sync_pref
 data class SyncPreferences(
     val syncHour: Int = 6,
     val syncMinute: Int = 0,
-    val autoSyncEnabled: Boolean = true,
+    val autoSyncEnabled: Boolean = false,
     val wifiOnly: Boolean = true,
     val spotifySyncMode: SyncMode = SyncMode.REFRESH,
     val youtubeSyncMode: SyncMode = SyncMode.REFRESH,
@@ -86,7 +86,7 @@ class SyncPreferencesManager @Inject constructor(
         SyncPreferences(
             syncHour = prefs[Keys.SYNC_HOUR] ?: 6,
             syncMinute = prefs[Keys.SYNC_MINUTE] ?: 0,
-            autoSyncEnabled = prefs[Keys.AUTO_SYNC] ?: true,
+            autoSyncEnabled = prefs[Keys.AUTO_SYNC] ?: false,
             wifiOnly = prefs[Keys.WIFI_ONLY] ?: true,
             spotifySyncMode = resolveSpotifyMode(prefs),
             youtubeSyncMode = resolveYoutubeMode(prefs),
