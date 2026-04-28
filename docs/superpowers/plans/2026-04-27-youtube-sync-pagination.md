@@ -1259,31 +1259,39 @@ git commit -m "feat(ytmusic): extractExpectedTrackCount parses '1,234 songs' hea
 - Modify: `data/ytmusic/src/main/kotlin/com/stash/data/ytmusic/YTMusicApiClient.kt`
 - Modify (test): `data/ytmusic/src/test/kotlin/com/stash/data/ytmusic/YTMusicApiClientTest.kt`
 
+**Implementation note up front:** `paginateBrowse` calls `InnerTubeClient.browseWithStatus(continuation)` (added in this same task — Step 3 below) so it can distinguish 4xx (no retry, likely 401) from 5xx/network (retry). All test mocks use `browseWithStatus`, returning `RequestOutcome(body, statusCode)`. This is the only path to ship; ignore any earlier mention of mocking `browse(continuation)` directly.
+
 - [ ] **Step 1: Write the failing tests**
 
-In `YTMusicApiClientTest.kt`, add a helper at the top of the class for scripting `InnerTubeClient.browse(continuation)`:
+In `YTMusicApiClientTest.kt`, add a helper at the top of the class for scripting `InnerTubeClient.browseWithStatus(continuation)`:
 
 ```kotlin
 /**
- * Builds an InnerTubeClient mock whose browse(continuation) method returns
- * scripted responses in order. Pass `null` in the script for "transient
- * failure (null body)". Pass JsonObject for a successful response.
+ * Builds an InnerTubeClient mock whose browseWithStatus(continuation)
+ * returns scripted outcomes in order. Use [transient] for "null body,
+ * non-4xx" (eligible for retry) and [permanent4xx] for "401-style; no
+ * retry."
  */
-private fun scriptedInner(vararg responses: JsonObject?): InnerTubeClient {
+private fun scriptedInner(vararg outcomes: RequestOutcome): InnerTubeClient {
     val inner = mock<InnerTubeClient>()
     var i = 0
     runBlocking {
-        whenever(inner.browse(any<String>())).thenAnswer {
-            val r = responses.getOrNull(i)
+        whenever(inner.browseWithStatus(any())).thenAnswer {
+            val r = outcomes.getOrNull(i) ?: RequestOutcome(null, 503)
             i++
             r
         }
     }
     return inner
 }
+
+private fun success(json: String): RequestOutcome =
+    RequestOutcome(Json.parseToJsonElement(json).jsonObject, 200)
+private val transient503 = RequestOutcome(body = null, statusCode = 503)
+private val permanent401 = RequestOutcome(body = null, statusCode = 401)
 ```
 
-Then add the tests:
+Then add the tests (each constructs its `inner` with `scriptedInner(success(...), transient503, ...)` etc.):
 
 ```kotlin
 @Test fun `paginateBrowse stops when first response has no token`() = runTest {
@@ -1378,15 +1386,7 @@ private fun pageWithoutToken(marker: List<String>): JsonObject =
 
 (Add `import kotlinx.serialization.json.JsonPrimitive` and `import kotlinx.serialization.json.jsonArray` to the test imports. Add `import org.junit.Assert.assertFalse`.)
 
-Note that `scriptedInner` returns `null` for "transient" — but `paginateBrowse` differentiates 4xx (status code 4xx) from other failures using `RequestOutcome`. **However**, `paginateBrowse` calls `innerTubeClient.browse(continuation)` which returns `JsonObject?` (no status code). So `null` from `browse(continuation)` covers both 5xx + network errors AND 4xx — `paginateBrowse` cannot distinguish them.
-
-This is OK for the **first iteration** of this plan: the retry policy treats all `null` returns as transient. That gives 4xx an extra 2 retries before partial-marking, which is mildly wasteful but not harmful. A future enhancement (deferred — explicitly out of scope here) is to add `browseWithStatus(continuation): RequestOutcome` to `InnerTubeClient` and have `paginateBrowse` use it. **The spec's retry table already documents this distinction as desired behavior**; the simpler implementation is documented as a known divergence in the spec's "Risks & open questions" section, but is in fact acceptable to ship — the wasted retries are bounded at 2 per failed page.
-
-If you (the implementer) want to honor the spec exactly, add `internal suspend fun browseWithStatus(continuation: String): RequestOutcome` to `InnerTubeClient` (mirror the existing `browse(continuation)` but return `executeRequestWithStatus(...)` directly), have `paginateBrowse` call that, and short-circuit retries when `outcome.statusCode in 400..499`. Add a dedicated test case for the 401-no-retry path. This is a ~30 LOC delta and is the recommended path.
-
-For the rest of this plan, **assume you took the recommended path**: `paginateBrowse` calls `browseWithStatus`, distinguishes 4xx from other failures, and the test for 401 is included.
-
-Add this test:
+Add the 4xx-no-retry test:
 
 ```kotlin
 @Test fun `paginateBrowse does not retry on 4xx`() = runTest {
@@ -1923,7 +1923,7 @@ private fun parseUserPlaylistsContinuationPage(response: JsonObject): List<YTMus
 }
 ```
 
-(`parseSinglePlaylistFromTwoRowRenderer` is the existing helper used by `parseUserPlaylists` — if it doesn't exist as a separate fn, factor it out from `parseUserPlaylists` so both initial and continuation parsers can share it.)
+(`parseSinglePlaylistFromTwoRowRenderer` is the existing helper used by `parseUserPlaylists` — if it doesn't exist as a separate fn, factor it out from `parseUserPlaylists` so both initial and continuation parsers can share it. **Effort note:** the existing inline per-item block in `parseUserPlaylists` spans ~55 lines covering navigation paths, title fallbacks, dedup logic, and trackCount parsing — extracting it cleanly is a real refactor, not a 5-minute lift. Plan a ~20-30 minute window for this step alone.)
 
 - [ ] **Step 4: Run — expect PASS**
 
@@ -2202,6 +2202,14 @@ when (val tracksResult = ytMusicApiClient.getPlaylistTracks(mix.playlistId)) {
 ```
 
 Note: previously the playlist snapshot row was inserted **before** `getPlaylistTracks`. We have to move the insertion to **after** the fetch so we know `partial` and `expectedCount`. Restructure the loop body accordingly.
+
+**Ordering caveat:** Before reordering, grep for downstream observers of `insertPlaylistSnapshot` to confirm nothing relies on the snapshot row landing strictly before its tracks:
+
+```bash
+cd C:/Users/theno/Projects/MP3APK/.worktrees/yt-sync-pagination && grep -rn "insertPlaylistSnapshot\|RemotePlaylistSnapshotEntity" --include="*.kt" core/data app
+```
+
+Expected: only `PlaylistFetchWorker` writes; readers (DiffWorker, UI) consume both rows after `PlaylistFetchWorker` finishes via WorkManager chaining, so ordering inside one worker run is irrelevant. If the grep surprises you (e.g., a reactive Flow observer on the playlist snapshots that reads tracks separately), surface it before continuing.
 
 - [ ] **Step 5: Adopt new shape for User Playlists (`getUserPlaylists` + per-playlist `getPlaylistTracks`)**
 
