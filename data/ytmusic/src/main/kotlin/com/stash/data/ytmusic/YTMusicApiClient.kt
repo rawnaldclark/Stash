@@ -46,9 +46,6 @@ class YTMusicApiClient @Inject constructor(
     companion object {
         private const val TAG = "StashYTApi"
 
-        /** InnerTube browse ID for the user's liked music videos. */
-        private const val BROWSE_LIKED_SONGS = "FEmusic_liked_videos"
-
         /** InnerTube browse ID for the YouTube Music home feed. */
         private const val BROWSE_HOME = "FEmusic_home"
 
@@ -78,38 +75,21 @@ class YTMusicApiClient @Inject constructor(
     }
 
     /**
-     * Fetches the authenticated user's liked songs from YouTube Music,
-     * walking all continuation pages and returning a [PagedTracks] result.
+     * Fetches the authenticated user's YT Music Liked Songs — the playlist
+     * surface marked with the red heart icon in the YT Music Library.
      *
-     * Requires a valid YouTube access token; returns [SyncResult.Error] if
-     * the initial browse returns null. Continuation failures are surfaced as
-     * [PagedTracks.partial] rather than a hard error so callers can work with
-     * whatever tracks were successfully retrieved.
+     * Identified by the special playlist ID `LM` (browseId `VLLM`), this is
+     * the same playlist endpoint as any other user playlist — it just has a
+     * fixed ID. ytmusicapi's `get_liked_songs()` resolves to `get_playlist("LM")`
+     * for the same reason.
      *
-     * @return [SyncResult.Success] wrapping [PagedTracks], [SyncResult.Empty]
-     *   if no tracks were found, or [SyncResult.Error] on a null initial response.
+     * Note: this is **distinct** from `FEmusic_liked_videos`, which is YouTube
+     * proper's "Liked Videos" feature (mostly non-music thumb-ups). Earlier
+     * versions of this method incorrectly used that endpoint and capped at
+     * the user's much smaller liked-videos count rather than their actual
+     * Liked Songs library.
      */
-    suspend fun getLikedSongs(): SyncResult<PagedTracks> {
-        val response = innerTubeClient.browse(BROWSE_LIKED_SONGS)
-            ?: return SyncResult.Error("InnerTube browse($BROWSE_LIKED_SONGS) returned null — check CLIENT_VERSION or cookie")
-
-        val paginated = paginateBrowse(response) { page ->
-            val isContinuation = page["continuationContents"] != null || page["onResponseReceivedActions"] != null
-            if (isContinuation) parseContinuationPage(page) else parseTracksFromBrowse(page)
-        }
-
-        if (paginated.items.isEmpty()) {
-            return SyncResult.Empty("Liked songs returned no tracks")
-        }
-        return SyncResult.Success(
-            PagedTracks(
-                tracks = paginated.items,
-                expectedCount = null,  // FEmusic_liked_videos has no header count
-                partial = paginated.partial,
-                partialReason = paginated.partialReason,
-            )
-        )
-    }
+    suspend fun getLikedSongs(): SyncResult<PagedTracks> = getPlaylistTracks("LM")
 
     /**
      * Fetches mix playlists from the YouTube Music home feed.

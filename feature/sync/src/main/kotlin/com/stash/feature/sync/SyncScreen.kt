@@ -154,7 +154,6 @@ fun SyncScreen(
                     expandedContent = {
                         SpotifyExpandedContent(
                             uiState = uiState,
-                            onSyncModeChanged = viewModel::onSpotifySyncModeChanged,
                             onPlaylistToggled = viewModel::onTogglePlaylistSync,
                         )
                     },
@@ -189,7 +188,6 @@ fun SyncScreen(
                     expandedContent = {
                         YouTubeExpandedContent(
                             uiState = uiState,
-                            onSyncModeChanged = viewModel::onYoutubeSyncModeChanged,
                             onStudioOnlyChanged = viewModel::onYoutubeLikedStudioOnlyChanged,
                             onPlaylistToggled = viewModel::onTogglePlaylistSync,
                         )
@@ -477,51 +475,6 @@ private fun UnmatchedSongsCard(
     }
 }
 
-// ── Refresh / Accumulate chip row (shared Spotify + YouTube) ────────────────
-
-/**
- * Section header + two chips letting the user pick between REFRESH and
- * ACCUMULATE for a single source. Rendered in each service's Sync
- * Preferences card with its own accent color. Bound per-source as of
- * v0.5 — the two cards control independent DataStore keys.
- */
-@Composable
-private fun SyncModeChipRow(
-    mode: SyncMode,
-    onChange: (SyncMode) -> Unit,
-    accent: Color,
-) {
-    Text(
-        text = "Mix sync mode",
-        style = MaterialTheme.typography.labelMedium,
-        color = accent,
-        fontWeight = FontWeight.SemiBold,
-    )
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        FilterChip(
-            selected = mode == SyncMode.REFRESH,
-            onClick = { onChange(SyncMode.REFRESH) },
-            label = { Text("Refresh") },
-        )
-        FilterChip(
-            selected = mode == SyncMode.ACCUMULATE,
-            onClick = { onChange(SyncMode.ACCUMULATE) },
-            label = { Text("Accumulate") },
-        )
-    }
-    Text(
-        text = if (mode == SyncMode.REFRESH)
-            "Mixes update with fresh tracks each sync"
-        else
-            "New tracks stack on top of old ones",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
 // ── Spotify sync toggle row ─────────────────────────────────────────────────
 
 @Composable
@@ -628,16 +581,11 @@ private fun SpotifySummaryPills(uiState: SyncUiState) {
     if (customTotal > 0) {
         StatusPill("Custom $customEnabled/$customTotal")
     }
-    StatusPill(
-        text = if (uiState.spotifySyncMode == SyncMode.REFRESH) "Refresh" else "Accumulate",
-        primary = true,
-    )
 }
 
 @Composable
 private fun SpotifyExpandedContent(
     uiState: SyncUiState,
-    onSyncModeChanged: (SyncMode) -> Unit,
     onPlaylistToggled: (Long, Boolean) -> Unit,
 ) {
     val purple = MaterialTheme.colorScheme.primary
@@ -651,12 +599,6 @@ private fun SpotifyExpandedContent(
         Spacer(modifier = Modifier.height(8.dp))
     } else {
         Spacer(modifier = Modifier.height(12.dp))
-        SyncModeChipRow(
-            mode = uiState.spotifySyncMode,
-            onChange = onSyncModeChanged,
-            accent = purple,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
 
         val liked = uiState.spotifyPlaylists.filter {
             it.type == com.stash.core.model.PlaylistType.LIKED_SONGS
@@ -777,16 +719,11 @@ private fun YouTubeSummaryPills(uiState: SyncUiState) {
     if (otherTotal > 0) {
         StatusPill("$otherEnabled/$otherTotal playlists")
     }
-    StatusPill(
-        text = if (uiState.youtubeSyncMode == SyncMode.REFRESH) "Refresh" else "Accumulate",
-        primary = true,
-    )
 }
 
 @Composable
 private fun YouTubeExpandedContent(
     uiState: SyncUiState,
-    onSyncModeChanged: (SyncMode) -> Unit,
     onStudioOnlyChanged: (Boolean) -> Unit,
     onPlaylistToggled: (Long, Boolean) -> Unit,
 ) {
@@ -803,12 +740,6 @@ private fun YouTubeExpandedContent(
         Spacer(modifier = Modifier.height(8.dp))
     } else {
         Spacer(modifier = Modifier.height(12.dp))
-        SyncModeChipRow(
-            mode = uiState.youtubeSyncMode,
-            onChange = onSyncModeChanged,
-            accent = accent,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
         StudioOnlyToggleRow(
             enabled = uiState.youtubeLikedStudioOnly,
             onChange = onStudioOnlyChanged,

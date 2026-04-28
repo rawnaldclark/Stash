@@ -422,10 +422,10 @@ class SyncViewModel @Inject constructor(
                 } ?: ""
                 val healthLabel = when (latest?.displayStatus) {
                     null -> ""
-                    SyncDisplayStatus.Success -> "✓ healthy"
-                    is SyncDisplayStatus.PartialSuccess -> "! partial"
-                    is SyncDisplayStatus.Interrupted -> "! partial"
-                    is SyncDisplayStatus.Failed -> "× failed"
+                    SyncDisplayStatus.Success -> "✓"
+                    is SyncDisplayStatus.PartialSuccess -> "!"
+                    is SyncDisplayStatus.Interrupted -> "!"
+                    is SyncDisplayStatus.Failed -> "×"
                     else -> ""
                 }
                 val healthColor = when (latest?.displayStatus) {

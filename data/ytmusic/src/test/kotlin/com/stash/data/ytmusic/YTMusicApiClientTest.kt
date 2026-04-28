@@ -647,7 +647,7 @@ class YTMusicApiClientTest {
 
         val inner = mock<InnerTubeClient>()
         runBlocking {
-            whenever(inner.browse("FEmusic_liked_videos")).thenReturn(
+            whenever(inner.browse("VLLM")).thenReturn(
                 Json.parseToJsonElement(page1).jsonObject
             )
             whenever(inner.browseWithStatus(any()))
@@ -667,7 +667,7 @@ class YTMusicApiClientTest {
         val page1 = loadFixture("liked_songs_page1.json")
         val inner = mock<InnerTubeClient>()
         runBlocking {
-            whenever(inner.browse("FEmusic_liked_videos")).thenReturn(
+            whenever(inner.browse("VLLM")).thenReturn(
                 Json.parseToJsonElement(page1).jsonObject
             )
             whenever(inner.browseWithStatus(any())).thenReturn(
