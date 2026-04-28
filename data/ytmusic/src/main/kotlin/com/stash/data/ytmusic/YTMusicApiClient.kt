@@ -148,26 +148,69 @@ class YTMusicApiClient @Inject constructor(
     }
 
     /**
-     * Fetches all tracks in a specific YouTube Music playlist.
+     * Fetches all tracks in a specific YouTube Music playlist, walking all
+     * continuation pages and returning a [PagedTracks] result.
      *
      * The browse ID for playlists is `VL` + the playlist ID (e.g. `VLPLxxxxxx`).
+     * If the playlist header contains a track count, [PagedTracks.expectedCount] is
+     * populated and a 95%-threshold check is applied — if fewer than 95% of the
+     * expected tracks were fetched, [PagedTracks.partial] is set to true.
      *
      * @param playlistId The playlist ID (without the `VL` prefix).
-     * @return List of [YTMusicTrack] in the playlist.
+     * @return [SyncResult.Success] wrapping [PagedTracks], [SyncResult.Empty]
+     *   if no tracks were found, or [SyncResult.Error] on a null initial response.
      */
-    suspend fun getPlaylistTracks(playlistId: String): SyncResult<List<YTMusicTrack>> {
+    suspend fun getPlaylistTracks(playlistId: String): SyncResult<PagedTracks> {
         val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
         val response = innerTubeClient.browse(browseId)
-        if (response == null) {
-            return SyncResult.Error("InnerTube browse($browseId) returned null")
-        }
+            ?: return SyncResult.Error("InnerTube browse($browseId) returned null")
         Log.d(TAG, "getPlaylistTracks: response top-level keys: ${response.keys}")
-        val tracks = parseTracksFromBrowse(response)
-        return if (tracks.isEmpty()) {
-            SyncResult.Empty("Playlist $playlistId returned no tracks")
-        } else {
-            SyncResult.Success(tracks)
+
+        val expectedCount = extractExpectedTrackCount(response)
+        val paginated = paginateBrowse(response) { page ->
+            val isContinuation = page["continuationContents"] != null || page["onResponseReceivedActions"] != null
+            if (isContinuation) parseContinuationPage(page) else parseTracksFromBrowse(page)
         }
+
+        if (paginated.items.isEmpty()) {
+            return SyncResult.Empty("Playlist $playlistId returned no tracks")
+        }
+
+        val (partial, partialReason) = verifyExpectedCount(
+            fetched = paginated.items.size,
+            expected = expectedCount,
+            existingPartial = paginated.partial,
+            existingReason = paginated.partialReason,
+        )
+
+        return SyncResult.Success(
+            PagedTracks(
+                tracks = paginated.items,
+                expectedCount = expectedCount,
+                partial = partial,
+                partialReason = partialReason,
+            )
+        )
+    }
+
+    /**
+     * Extends [paginateBrowse]'s partial signal with the count-vs-header check.
+     * If fetched count is below 95% of expected, mark partial (and append the
+     * count info to the existing reason if there already was one).
+     */
+    private fun verifyExpectedCount(
+        fetched: Int,
+        expected: Int?,
+        existingPartial: Boolean,
+        existingReason: String?,
+    ): Pair<Boolean, String?> {
+        if (expected == null) return existingPartial to existingReason
+        if (fetched >= expected * 0.95) return existingPartial to existingReason
+
+        val countReason = "fetched $fetched of $expected expected"
+        Log.w(TAG, "verifyExpectedCount: $countReason")
+        val combined = if (existingReason == null) countReason else "$existingReason; $countReason"
+        return true to combined
     }
 
     /**
