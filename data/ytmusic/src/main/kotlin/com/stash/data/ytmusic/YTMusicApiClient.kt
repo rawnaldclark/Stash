@@ -65,6 +65,14 @@ class YTMusicApiClient @Inject constructor(
         /** Safety cap on continuation depth. ~10K items @ 100/page. */
         internal const val MAX_PAGES = 100
 
+        /**
+         * Cap for radio playlists (browseId VLRD*, raw RD*). YT Music radios
+         * emit a continuation token after every page — walking them is
+         * effectively infinite. The initial page (~100 tracks) already
+         * exceeds the user's expectation for these "Daily Mix"-style surfaces.
+         */
+        internal const val RADIO_MAX_PAGES = 1
+
         /** Backoff delays (ms) between retries on transient failures. */
         private val RETRY_BACKOFFS_MS = listOf(500L, 1500L)
     }
@@ -174,12 +182,21 @@ class YTMusicApiClient @Inject constructor(
         maxPages: Int = MAX_PAGES,
     ): SyncResult<PagedTracks> {
         val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
+        // Radio IDs (RD*, including VLRD*) are infinite continuation chains.
+        // Auto-cap at 1 page regardless of caller — getUserPlaylists() can also
+        // return radios that the user has saved to their library, and we must
+        // not walk those greedily. Caller-supplied lower caps still win.
+        val isRadio = browseId.startsWith("VLRD") || browseId.startsWith("RD")
+        val effectiveMaxPages = if (isRadio) minOf(maxPages, RADIO_MAX_PAGES) else maxPages
+        if (isRadio && effectiveMaxPages < maxPages) {
+            Log.d(TAG, "getPlaylistTracks: $browseId is radio, capping to $effectiveMaxPages page(s)")
+        }
         val response = innerTubeClient.browse(browseId)
             ?: return SyncResult.Error("InnerTube browse($browseId) returned null")
         Log.d(TAG, "getPlaylistTracks: response top-level keys: ${response.keys}")
 
         val expectedCount = extractExpectedTrackCount(response)
-        val paginated = paginateBrowse(response, maxPages = maxPages) { page ->
+        val paginated = paginateBrowse(response, maxPages = effectiveMaxPages) { page ->
             val isContinuation = page["continuationContents"] != null || page["onResponseReceivedActions"] != null
             if (isContinuation) parseContinuationPage(page) else parseTracksFromBrowse(page)
         }
