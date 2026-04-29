@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.stash.core.model.PlaylistType
 import androidx.room.withTransaction
 import androidx.work.workDataOf
 import com.stash.core.data.db.StashDatabase
@@ -206,13 +207,15 @@ class DiffWorker @AssistedInject constructor(
     ): PlaylistEntity {
         val existing = playlistDao.findBySourceId(snapshot.sourcePlaylistId)
         if (existing != null) {
-            // Refresh metadata from the remote snapshot so the Home page
-            // picks up new cover art and renamed mixes. Without this, a
-            // Daily Mix would render the same cover art forever even
-            // though the tracks rotate — making mixes "feel stale."
-            // Only write when the value actually changed so Room doesn't
-            // broadcast spurious Flow emissions on every sync.
-            if (snapshot.artUrl != null && snapshot.artUrl != existing.artUrl) {
+            // Art refresh: ONLY for DAILY_MIX. Daily Mixes (and Spotify's
+            // weekly mixes — Discover Weekly, Release Radar, etc., which
+            // share the DAILY_MIX type) rotate, so their cover should
+            // follow the tracks. Curated content (LIKED_SONGS, CUSTOM,
+            // STASH_MIX) keeps whatever art was imported on first sync —
+            // overwriting it surprises users whose personal playlists
+            // would otherwise look different every sync.
+            val rotatesArt = existing.type == PlaylistType.DAILY_MIX
+            if (rotatesArt && snapshot.artUrl != null && snapshot.artUrl != existing.artUrl) {
                 playlistDao.updateArtUrl(existing.id, snapshot.artUrl)
             }
             if (snapshot.playlistName.isNotBlank() &&
@@ -228,7 +231,7 @@ class DiffWorker @AssistedInject constructor(
                 playlistDao.reactivateById(existing.id)
             }
             return existing.copy(
-                artUrl = snapshot.artUrl ?: existing.artUrl,
+                artUrl = if (rotatesArt) snapshot.artUrl ?: existing.artUrl else existing.artUrl,
                 name = snapshot.playlistName.ifBlank { existing.name },
                 isActive = true,
             )
@@ -404,16 +407,23 @@ class DiffWorker @AssistedInject constructor(
         playlistDao.updateTrackCount(localPlaylist.id, trackSnapshots.size)
 
         // Refresh the playlist's cover art from the first unique track
-        // album art (Spotify's Daily Mix mosaic URL is aggressively
-        // cached upstream and often doesn't rotate between syncs —
-        // deriving the cover from the current tracks guarantees a
-        // visible change every time the tracklist rotates).
-        val coverToSet = trackSnapshots
-            .mapNotNull { it.albumArtUrl }
-            .firstOrNull()
-            ?: playlistSnapshot.artUrl
-        if (coverToSet != null && coverToSet != localPlaylist.artUrl) {
-            playlistDao.updateArtUrl(localPlaylist.id, coverToSet)
+        // album art — but ONLY for DAILY_MIX, which rotates. Curated
+        // content (LIKED_SONGS, CUSTOM, STASH_MIX) keeps the art that
+        // was imported on first sync; overwriting it on every sync
+        // surprises users whose personal playlists would otherwise
+        // visually drift toward whatever the latest first track happens
+        // to be. Spotify's Daily Mix mosaic URL is aggressively cached
+        // upstream and often doesn't rotate between syncs — deriving
+        // the cover from current tracks guarantees a visible change
+        // when the tracklist rotates.
+        if (localPlaylist.type == PlaylistType.DAILY_MIX) {
+            val coverToSet = trackSnapshots
+                .mapNotNull { it.albumArtUrl }
+                .firstOrNull()
+                ?: playlistSnapshot.artUrl
+            if (coverToSet != null && coverToSet != localPlaylist.artUrl) {
+                playlistDao.updateArtUrl(localPlaylist.id, coverToSet)
+            }
         }
 
         return newTrackCount

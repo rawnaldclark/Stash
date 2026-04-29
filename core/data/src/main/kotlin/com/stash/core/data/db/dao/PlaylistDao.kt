@@ -104,28 +104,20 @@ interface PlaylistDao {
     fun getAllActive(): Flow<List<PlaylistEntity>>
 
     /**
-     * All playlists eligible to render on Home/Library. Adds a
-     * `sync_enabled` gate on top of [getAllActive] so a playlist the user
-     * has turned off in Sync Preferences disappears from the Home grid
-     * and Library list, mirroring the way the track-download path already
-     * skips it.
+     * All playlists eligible to render on Home/Library.
      *
-     * The exemption is `source = 'BOTH'`, not `type = 'CUSTOM'`. The
-     * YouTube sync worker classifies a user's personal YouTube playlists
-     * as `type = CUSTOM, source = YOUTUBE` — they look "custom" to us but
-     * they're still imported from YouTube and must honor the user's
-     * sync toggle. Only genuinely local content (in-app-created CUSTOM
-     * and recipe-generated STASH_MIX — both carry `source = BOTH`) is
-     * unconditionally visible.
+     * Visibility is decoupled from the per-playlist `sync_enabled` toggle.
+     * `sync_enabled = 0` means "skip on the next sync" — it does NOT mean
+     * "hide from the library." Once a playlist has been imported, its
+     * tracks live locally and the user's mental model is that they stay
+     * accessible until manually deleted. Sync Preferences are forward-
+     * looking: they choose what the next sync touches.
+     *
+     * To remove a playlist from Home/Library entirely, the user marks it
+     * inactive (or it gets auto-deactivated when missing from a remote
+     * snapshot for sources that prune). `is_active = 0` is the only gate.
      */
-    @Query(
-        """
-        SELECT * FROM playlists
-        WHERE is_active = 1
-          AND (sync_enabled = 1 OR source = 'BOTH')
-        ORDER BY name ASC
-        """
-    )
+    @Query("SELECT * FROM playlists WHERE is_active = 1 ORDER BY name ASC")
     fun getAllVisible(): Flow<List<PlaylistEntity>>
 
     /** All playlists from a specific music source. */
