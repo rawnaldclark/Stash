@@ -37,7 +37,11 @@ class StashRenderersFactory(
             BassShelfProcessor(eqController),
         )
         return DefaultAudioSink.Builder(context)
-            .setEnableFloatOutput(true) // EQ math is float; force float output
+            // setEnableFloatOutput(true) routes high-resolution PCM through
+            // a separate Media3 branch that BYPASSES user-supplied processors —
+            // verified in DefaultAudioSink source. Keep it false so 24-bit
+            // FLAC is downsampled to 16-bit and our chain still applies.
+            .setEnableFloatOutput(false)
             .setAudioProcessors(processors)
             .build()
     }

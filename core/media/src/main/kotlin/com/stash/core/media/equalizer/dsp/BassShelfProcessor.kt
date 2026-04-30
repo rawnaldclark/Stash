@@ -27,7 +27,8 @@ class BassShelfProcessor(
   private var lastAppliedGain = -999f
 
   override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
-    if (inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT)
+    android.util.Log.i("EqDsp", "BassShelf.onConfigure: encoding=${inputAudioFormat.encoding} sr=${inputAudioFormat.sampleRate} ch=${inputAudioFormat.channelCount}")
+    if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT)
       throw UnhandledAudioFormatException(inputAudioFormat)
     sampleRate = inputAudioFormat.sampleRate
     channels = inputAudioFormat.channelCount
@@ -36,15 +37,22 @@ class BassShelfProcessor(
     return inputAudioFormat
   }
 
+  private var loggedFirstBuffer = false
   override fun queueInput(inputBuffer: ByteBuffer) {
     val state = controller.state.value
+    if (!loggedFirstBuffer) {
+      android.util.Log.i("EqDsp", "BassShelf.queueInput[FIRST]: enabled=${state.enabled} bassBoostDb=${state.bassBoostDb} bytes=${inputBuffer.remaining()}")
+      loggedFirstBuffer = true
+    }
     val gain = state.bassBoostDb
     if (!state.enabled || gain == 0f) { passthrough(inputBuffer); return }
     rebuildIfNeeded(gain)
     val out = replaceOutputBuffer(inputBuffer.remaining())
-    while (inputBuffer.hasRemaining()) {
+    while (inputBuffer.remaining() >= 2 * channels) {
       for (ch in 0 until channels) {
-        out.putFloat(filters[ch].process(inputBuffer.float))
+        val sample = inputBuffer.short.toFloat() / 32768f
+        val processed = filters[ch].process(sample).coerceIn(-1f, 1f)
+        out.putShort((processed * 32767f).toInt().toShort())
       }
     }
     out.flip()

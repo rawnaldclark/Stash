@@ -14,10 +14,19 @@ import kotlin.math.pow
 /**
  * Master gain stage at the head of the EQ chain.
  *
- * On bypass (`!state.enabled || preampDb == 0`) returns the input buffer
- * unchanged — bit-perfect passthrough.
+ * Operates on `PCM_16BIT` because that's what Media3's decoder pipeline
+ * actually delivers to user-supplied AudioProcessors for MP3/Opus/M4A
+ * content. (PCM_FLOAT is only used by Media3's internal high-resolution
+ * branch, which bypasses user processors entirely — see
+ * `DefaultAudioSink.shouldUseFloatOutput`.)
  *
- * Allocates only at [onConfigure]; the per-buffer hot path is allocation-free.
+ * Conversion: read int16 → divide by 32768 to get float in [-1, 1] →
+ * multiply by gain → clamp → write back as int16. The biquad math we use
+ * downstream needs float for numerical stability; we pay one cheap
+ * conversion at each end of the chain.
+ *
+ * On bypass (`!state.enabled || preampDb == 0`) the bytes are copied
+ * straight through — bit-perfect passthrough.
  */
 @OptIn(UnstableApi::class)
 class PreampProcessor(
@@ -25,13 +34,19 @@ class PreampProcessor(
 ) : BaseAudioProcessor() {
 
   override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
-    if (inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT)
+    android.util.Log.i("EqDsp", "Preamp.onConfigure: encoding=${inputAudioFormat.encoding} (PCM_16BIT=${C.ENCODING_PCM_16BIT}) sr=${inputAudioFormat.sampleRate} ch=${inputAudioFormat.channelCount}")
+    if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT)
       throw UnhandledAudioFormatException(inputAudioFormat)
     return inputAudioFormat
   }
 
+  private var loggedFirstBuffer = false
   override fun queueInput(inputBuffer: ByteBuffer) {
     val state = controller.state.value
+    if (!loggedFirstBuffer) {
+      android.util.Log.i("EqDsp", "Preamp.queueInput[FIRST]: enabled=${state.enabled} preampDb=${state.preampDb} bytes=${inputBuffer.remaining()}")
+      loggedFirstBuffer = true
+    }
     if (!state.enabled || state.preampDb == 0f) {
       val out = replaceOutputBuffer(inputBuffer.remaining())
       while (inputBuffer.hasRemaining()) out.put(inputBuffer.get())
@@ -40,15 +55,10 @@ class PreampProcessor(
     }
     val gain = 10f.pow(state.preampDb / 20f)
     val out = replaceOutputBuffer(inputBuffer.remaining())
-    while (inputBuffer.hasRemaining()) {
-      val b0 = inputBuffer.get(); val b1 = inputBuffer.get()
-      val b2 = inputBuffer.get(); val b3 = inputBuffer.get()
-      val intBits = (b0.toInt() and 0xFF) or
-                    ((b1.toInt() and 0xFF) shl 8) or
-                    ((b2.toInt() and 0xFF) shl 16) or
-                    ((b3.toInt() and 0xFF) shl 24)
-      val sample = Float.fromBits(intBits) * gain
-      out.putFloat(sample)
+    while (inputBuffer.remaining() >= 2) {
+      val sample = inputBuffer.short.toFloat() / 32768f
+      val gained = (sample * gain).coerceIn(-1f, 1f)
+      out.putShort((gained * 32767f).toInt().toShort())
     }
     out.flip()
   }

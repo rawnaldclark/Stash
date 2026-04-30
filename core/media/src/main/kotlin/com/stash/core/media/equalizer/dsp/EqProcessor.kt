@@ -28,7 +28,8 @@ class EqProcessor(
   private var lastAppliedGains: FloatArray = floatArrayOf()
 
   override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
-    if (inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT)
+    android.util.Log.i("EqDsp", "Eq.onConfigure: encoding=${inputAudioFormat.encoding} sr=${inputAudioFormat.sampleRate} ch=${inputAudioFormat.channelCount}")
+    if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT)
       throw UnhandledAudioFormatException(inputAudioFormat)
     sampleRate = inputAudioFormat.sampleRate
     channels = inputAudioFormat.channelCount
@@ -37,8 +38,13 @@ class EqProcessor(
     return inputAudioFormat
   }
 
+  private var loggedFirstBuffer = false
   override fun queueInput(inputBuffer: ByteBuffer) {
     val state = controller.state.value
+    if (!loggedFirstBuffer) {
+      android.util.Log.i("EqDsp", "Eq.queueInput[FIRST]: enabled=${state.enabled} gains=${state.gainsDb.toList()} bytes=${inputBuffer.remaining()}")
+      loggedFirstBuffer = true
+    }
     if (!state.enabled || isFlat(state.gainsDb)) {
       passthrough(inputBuffer); return
     }
@@ -47,12 +53,14 @@ class EqProcessor(
     }
 
     val out = replaceOutputBuffer(inputBuffer.remaining())
-    while (inputBuffer.hasRemaining()) {
+    // Frame = one short per channel. Iterate frame-by-frame, channel-interleaved.
+    while (inputBuffer.remaining() >= 2 * channels) {
       for (ch in 0 until channels) {
-        var sample = inputBuffer.float
+        var sample = inputBuffer.short.toFloat() / 32768f
         val chFilters = filters[ch]
         for (band in chFilters.indices) sample = chFilters[band].process(sample)
-        out.putFloat(sample)
+        val clamped = sample.coerceIn(-1f, 1f)
+        out.putShort((clamped * 32767f).toInt().toShort())
       }
     }
     out.flip()
