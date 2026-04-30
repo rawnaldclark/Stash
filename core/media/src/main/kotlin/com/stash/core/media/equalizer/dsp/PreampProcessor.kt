@@ -34,19 +34,13 @@ class PreampProcessor(
 ) : BaseAudioProcessor() {
 
   override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
-    android.util.Log.i("EqDsp", "Preamp.onConfigure: encoding=${inputAudioFormat.encoding} (PCM_16BIT=${C.ENCODING_PCM_16BIT}) sr=${inputAudioFormat.sampleRate} ch=${inputAudioFormat.channelCount}")
     if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT)
       throw UnhandledAudioFormatException(inputAudioFormat)
     return inputAudioFormat
   }
 
-  private var loggedFirstBuffer = false
   override fun queueInput(inputBuffer: ByteBuffer) {
     val state = controller.state.value
-    if (!loggedFirstBuffer) {
-      android.util.Log.i("EqDsp", "Preamp.queueInput[FIRST]: enabled=${state.enabled} preampDb=${state.preampDb} bytes=${inputBuffer.remaining()}")
-      loggedFirstBuffer = true
-    }
     if (!state.enabled || state.preampDb == 0f) {
       val out = replaceOutputBuffer(inputBuffer.remaining())
       while (inputBuffer.hasRemaining()) out.put(inputBuffer.get())

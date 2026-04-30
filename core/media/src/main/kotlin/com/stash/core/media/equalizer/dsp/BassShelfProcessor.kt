@@ -27,7 +27,6 @@ class BassShelfProcessor(
   private var lastAppliedGain = -999f
 
   override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
-    android.util.Log.i("EqDsp", "BassShelf.onConfigure: encoding=${inputAudioFormat.encoding} sr=${inputAudioFormat.sampleRate} ch=${inputAudioFormat.channelCount}")
     if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT)
       throw UnhandledAudioFormatException(inputAudioFormat)
     sampleRate = inputAudioFormat.sampleRate
@@ -37,13 +36,8 @@ class BassShelfProcessor(
     return inputAudioFormat
   }
 
-  private var loggedFirstBuffer = false
   override fun queueInput(inputBuffer: ByteBuffer) {
     val state = controller.state.value
-    if (!loggedFirstBuffer) {
-      android.util.Log.i("EqDsp", "BassShelf.queueInput[FIRST]: enabled=${state.enabled} bassBoostDb=${state.bassBoostDb} bytes=${inputBuffer.remaining()}")
-      loggedFirstBuffer = true
-    }
     val gain = state.bassBoostDb
     if (!state.enabled || gain == 0f) { passthrough(inputBuffer); return }
     rebuildIfNeeded(gain)

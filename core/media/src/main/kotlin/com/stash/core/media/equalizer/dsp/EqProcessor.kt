@@ -28,7 +28,6 @@ class EqProcessor(
   private var lastAppliedGains: FloatArray = floatArrayOf()
 
   override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
-    android.util.Log.i("EqDsp", "Eq.onConfigure: encoding=${inputAudioFormat.encoding} sr=${inputAudioFormat.sampleRate} ch=${inputAudioFormat.channelCount}")
     if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT)
       throw UnhandledAudioFormatException(inputAudioFormat)
     sampleRate = inputAudioFormat.sampleRate
@@ -38,13 +37,8 @@ class EqProcessor(
     return inputAudioFormat
   }
 
-  private var loggedFirstBuffer = false
   override fun queueInput(inputBuffer: ByteBuffer) {
     val state = controller.state.value
-    if (!loggedFirstBuffer) {
-      android.util.Log.i("EqDsp", "Eq.queueInput[FIRST]: enabled=${state.enabled} gains=${state.gainsDb.toList()} bytes=${inputBuffer.remaining()}")
-      loggedFirstBuffer = true
-    }
     if (!state.enabled || isFlat(state.gainsDb)) {
       passthrough(inputBuffer); return
     }
