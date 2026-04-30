@@ -31,8 +31,8 @@ import kotlinx.coroutines.runBlocking
 class EqController @Inject constructor(
   private val store: EqStore,
   private val migration: EqMigration,
-  private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
+  private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
   private val _state = MutableStateFlow(EqState())
   val state: StateFlow<EqState> = _state.asStateFlow()
 
