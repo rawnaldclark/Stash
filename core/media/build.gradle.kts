@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.ksp)
     // Compose compiler plugin required for compose-ui-graphics Color usage in ColorExtractor.
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -56,8 +57,12 @@ dependencies {
     // Palette — color extraction from album artwork bitmaps.
     implementation(libs.palette.ktx)
 
+    // Serialization — EqState + future JSON-persisted state.
+    implementation(libs.kotlinx.serialization.json)
+
     // Unit tests — TrackActionsDelegateTest.
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.google.truth:truth:1.4.4")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("org.mockito:mockito-core:5.14.2")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
