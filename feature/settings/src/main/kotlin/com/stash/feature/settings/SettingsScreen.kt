@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.MusicNote
@@ -54,7 +55,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SpotifyCookieDialog
-import com.stash.feature.settings.components.EqualizerSection
 import com.stash.feature.settings.components.YouTubeCookieDialog
 import com.stash.feature.settings.components.YouTubeHistorySyncSection
 
@@ -67,6 +67,7 @@ import com.stash.feature.settings.components.YouTubeHistorySyncSection
  */
 @Composable
 fun SettingsScreen(
+    onNavigateToEqualizer: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -157,6 +158,7 @@ fun SettingsScreen(
         onClearScrobbleDrainResult = viewModel::onClearScrobbleDrainResult,
         onYouTubeHistoryEnabledChanged = viewModel::onYouTubeHistoryEnabledChanged,
         onRetryYouTubeHistory = viewModel::onRetryYouTubeHistory,
+        onNavigateToEqualizer = onNavigateToEqualizer,
         modifier = modifier,
     )
 }
@@ -193,6 +195,7 @@ private fun SettingsContent(
     onClearScrobbleDrainResult: () -> Unit,
     onYouTubeHistoryEnabledChanged: (Boolean) -> Unit,
     onRetryYouTubeHistory: () -> Unit,
+    onNavigateToEqualizer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -512,21 +515,44 @@ private fun SettingsContent(
         }
 
         // -- Audio Effects section --------------------------------------------
+        // The full EQ UI now lives on a dedicated EqualizerScreen. This row
+        // navigates to it. The legacy EqualizerSection composable and its
+        // supporting SettingsViewModel methods (setEqEnabled, setEqBandGain,
+        // etc.) are intentionally left intact — Task 14 will remove them.
         SectionHeader(title = "Audio Effects")
 
-        EqualizerSection(
-            enabled = uiState.eqEnabled,
-            currentPreset = uiState.eqPreset,
-            bandFrequencies = uiState.eqBandFrequencies,
-            bandGains = uiState.eqBandGains,
-            bassBoost = uiState.eqBassBoost,
-            virtualizer = uiState.eqVirtualizer,
-            onEnabledChanged = onEqEnabledChanged,
-            onPresetSelected = onEqPresetSelected,
-            onBandGainChanged = onEqBandGainChanged,
-            onBassBoostChanged = onBassBoostChanged,
-            onVirtualizerChanged = onVirtualizerChanged,
-        )
+        GlassCard(
+            modifier = Modifier.clickable(onClick = onNavigateToEqualizer),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Equalizer,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Equalizer",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = if (uiState.eqEnabled) "On" else "Off",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "Open Equalizer",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         // -- Storage section --------------------------------------------------
         SectionHeader(title = "Storage")
