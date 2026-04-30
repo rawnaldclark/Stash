@@ -30,4 +30,13 @@ class PresetCatalogTest {
     val ids = PresetCatalog.builtIn.map { it.id }
     assertThat(ids).containsNoDuplicates()
   }
+
+  @Test fun `allFor places built-ins first then custom presets`() {
+    val custom = NamedPreset("u1", "My Mix",
+      floatArrayOf(2f, 0f, 0f, 0f, 2f), 0f)
+    val combined = PresetCatalog.allFor(listOf(custom))
+    assertThat(combined).hasSize(PresetCatalog.builtIn.size + 1)
+    assertThat(combined.first().id).isEqualTo("flat")
+    assertThat(combined.last()).isEqualTo(custom)
+  }
 }

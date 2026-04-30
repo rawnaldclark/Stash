@@ -22,6 +22,11 @@ object PresetCatalog {
 
   fun byId(id: String): NamedPreset? = builtIn.firstOrNull { it.id == id }
 
-  /** Combined catalog for UI display; built-ins first, custom after. */
-  fun allFor(state: EqState): List<NamedPreset> = builtIn + state.customPresets
+  /**
+   * Combined catalog for UI display; built-ins first, custom after.
+   *
+   * Takes the bare list rather than [EqState] so the catalog has no
+   * structural dependency on state shape — callers pass `state.customPresets`.
+   */
+  fun allFor(customPresets: List<NamedPreset>): List<NamedPreset> = builtIn + customPresets
 }
