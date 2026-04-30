@@ -246,9 +246,9 @@ class MatchScorer @Inject constructor(
     }
 
     /**
-     * Penalty for content variants (covers, remixes, live, karaoke, instrumental,
-     * sped-up / nightcore / slowed / edit / extended) when the target title
-     * does not contain the same keyword.
+     * Penalty for content variants (covers, remixes, reworks, live, karaoke,
+     * instrumental, sped-up / nightcore / slowed / edit / extended) when the
+     * target title does not contain the same keyword.
      *
      * "music video" / "official video" used to live here too. They were
      * removed in Phase 3: [computeVideoTypeAdjustment] now handles those
@@ -279,6 +279,13 @@ class MatchScorer @Inject constructor(
             "karaoke" in candidateLower -> 0.4f
             "cover" in candidateLower && "cover" !in targetLower -> 0.25f
             "remix" in candidateLower && "remix" !in targetLower -> 0.25f
+            // "Rework" is the fan-edit cousin of "remix" — common in
+            // electronic/ambient music (Conundrum playlists, etc.). Without
+            // this, a candidate like "Stay The Same (Rework)" scored ~0.85
+            // for a target of "Stay The Same (Radio Edit)" and sailed past
+            // the 0.60 auto-accept threshold, silently downloading the
+            // wrong audio under the original track's filename.
+            "rework" in candidateLower && "rework" !in targetLower -> 0.25f
             "instrumental" in candidateLower && "instrumental" !in targetLower -> 0.2f
             isTempoVariant -> 0.2f
             isLikelyLive -> 0.15f
