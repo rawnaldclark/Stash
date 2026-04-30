@@ -71,4 +71,6 @@ dependencies {
     // Robolectric — Android environment for EqStoreTest (DataStore + ApplicationProvider).
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // MockK — pure JVM mocking for EqMigrationTest.
+    testImplementation(libs.mockk)
 }

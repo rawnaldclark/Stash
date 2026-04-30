@@ -25,6 +25,7 @@ coroutines = "1.10.1"
 truth = "1.4.4"
 robolectric = "4.13"
 androidxTestCore = "1.6.1"
+mockk = "1.13.13"
 
 [libraries]
 # Compose
@@ -99,6 +100,7 @@ kotlinx-coroutines-guava = { group = "org.jetbrains.kotlinx", name = "kotlinx-co
 truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
