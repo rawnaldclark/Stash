@@ -1,14 +1,8 @@
 package com.stash.feature.sync
 
-import android.content.Context
 import android.text.format.DateUtils
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.Constraints
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.db.dao.SyncHistoryDao
@@ -22,9 +16,7 @@ import com.stash.core.data.sync.SyncScheduler
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.toDisplayStatus
 import com.stash.core.model.SyncDisplayStatus
-import com.stash.data.download.backfill.YtLibraryBackfillWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -144,7 +136,6 @@ data class SyncUiState(
  */
 @HiltViewModel
 class SyncViewModel @Inject constructor(
-    @ApplicationContext private val appContext: Context,
     private val syncScheduler: SyncScheduler,
     private val syncStateManager: SyncStateManager,
     private val syncPreferencesManager: SyncPreferencesManager,
@@ -198,46 +189,6 @@ class SyncViewModel @Inject constructor(
      * downloads that finish before the cancellation is observed will still
      * complete, but no new tracks are enqueued.
      */
-    /**
-     * Enqueue a one-shot [YtLibraryBackfillWorker] run. Walks YT-source
-     * tracks with music-video title markers, verifies each videoId via
-     * InnerTube's player endpoint, and either reschedules OMVs for
-     * re-download or refreshes stale-metadata ATVs in place.
-     *
-     * `ExistingWorkPolicy.KEEP` — if a backfill is already queued or
-     * running, a second tap is a no-op rather than replacing it.
-     */
-    fun onRunYtLibraryBackfill() = enqueueBackfill(YtLibraryBackfillWorker.MODE_QUICK)
-
-    /**
-     * Deep-scan variant — verifies every downloaded YT-source track
-     * against InnerTube regardless of title. Populates
-     * `tracks.music_video_type` so subsequent Quick scans become
-     * effectively instant. Roughly 1 minute on a ~1,000-track library.
-     */
-    fun onRunYtLibraryDeepScan() = enqueueBackfill(YtLibraryBackfillWorker.MODE_DEEP)
-
-    private fun enqueueBackfill(mode: String) {
-        val work = OneTimeWorkRequestBuilder<YtLibraryBackfillWorker>()
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build(),
-            )
-            .addTag("yt_library_backfill")
-            .setInputData(
-                androidx.work.workDataOf(YtLibraryBackfillWorker.KEY_MODE to mode),
-            )
-            .build()
-        // ExistingWorkPolicy.REPLACE so tapping Deep immediately after
-        // Quick doesn't silently drop the user's upgrade choice.
-        WorkManager.getInstance(appContext).enqueueUniqueWork(
-            YtLibraryBackfillWorker.UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.REPLACE,
-            work,
-        )
-    }
-
     fun onStopSync() {
         syncScheduler.cancelSync()
     }
@@ -533,9 +484,3 @@ class SyncViewModel @Inject constructor(
         displayStatus = toDisplayStatus(),
     )
 }
-
-// Extension function kept outside the class for the same reason the
-// SyncHistoryEntity.toInfo() mapper above lives outside — it's a pure
-// shape transform with no ViewModel state dependency. The WorkManager
-// enqueue logic below, however, lives INSIDE the class because it
-// needs `appContext`.

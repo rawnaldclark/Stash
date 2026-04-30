@@ -92,7 +92,6 @@ import com.stash.core.ui.theme.LocalIsDarkTheme
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
-import com.stash.feature.home.components.StashVinylLogo
 
 /**
  * Home screen composable displaying a premium dark dashboard with sync
@@ -133,14 +132,12 @@ fun HomeScreen(
             .statusBarsPadding(),
         contentPadding = PaddingValues(bottom = 120.dp),
     ) {
-        // ── App title with vinyl logo and Bungee Shade wordmark ──────
+        // ── App title (Bungee Shade wordmark) ────────────────────────
         item {
             Row(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StashVinylLogo(size = 56.dp)
-                Spacer(modifier = Modifier.width(14.dp))
                 // Bungee Shade "Stash" as a VectorDrawable. The light and
                 // dark variants are both in drawable/ and we pick via the
                 // LocalIsDarkTheme CompositionLocal, because the app theme
