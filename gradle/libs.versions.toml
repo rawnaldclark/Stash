@@ -22,6 +22,7 @@ lifecycleCompose = "2.9.0"
 hiltWork = "1.2.0"
 hiltNavigationCompose = "1.2.0"
 coroutines = "1.10.1"
+truth = "1.4.4"
 
 [libraries]
 # Compose
@@ -91,6 +92,9 @@ youtubedl-aria2c = { group = "io.github.junkfood02.youtubedl-android", name = "a
 # Coroutines
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-guava = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-guava", version.ref = "coroutines" }
+
+# Testing
+truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
