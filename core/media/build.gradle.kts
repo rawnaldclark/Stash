@@ -21,6 +21,8 @@ android {
             // production code don't throw "not mocked" during JVM unit tests
             // (e.g. TrackActionsDelegateTest).
             isReturnDefaultValues = true
+            // Required for Robolectric to resolve preferencesDataStoreFile (ApplicationProvider).
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -66,4 +68,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("org.mockito:mockito-core:5.14.2")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    // Robolectric — Android environment for EqStoreTest (DataStore + ApplicationProvider).
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 }

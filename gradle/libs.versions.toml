@@ -23,6 +23,8 @@ hiltWork = "1.2.0"
 hiltNavigationCompose = "1.2.0"
 coroutines = "1.10.1"
 truth = "1.4.4"
+robolectric = "4.13"
+androidxTestCore = "1.6.1"
 
 [libraries]
 # Compose
@@ -95,6 +97,8 @@ kotlinx-coroutines-guava = { group = "org.jetbrains.kotlinx", name = "kotlinx-co
 
 # Testing
 truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
