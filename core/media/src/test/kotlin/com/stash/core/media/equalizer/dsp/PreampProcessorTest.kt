@@ -1,6 +1,7 @@
 // PreampProcessorTest.kt
 package com.stash.core.media.equalizer.dsp
 
+import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor.AudioFormat
 import com.google.common.truth.Truth.assertThat
 import io.mockk.every
@@ -19,33 +20,35 @@ class PreampProcessorTest {
     return ctrl
   }
 
-  private fun pcmBuffer(samples: FloatArray): ByteBuffer {
-    val bb = ByteBuffer.allocateDirect(samples.size * 4).order(ByteOrder.nativeOrder())
-    samples.forEach { bb.putFloat(it) }
+  private fun pcm16Buffer(samples: ShortArray): ByteBuffer {
+    val bb = ByteBuffer.allocateDirect(samples.size * 2).order(ByteOrder.nativeOrder())
+    samples.forEach { bb.putShort(it) }
     bb.flip()
     return bb
   }
 
   @Test fun `disabled state passes input through unchanged`() {
     val p = PreampProcessor(controllerWithState(EqState(enabled = false, preampDb = 6f)))
-    p.configure(AudioFormat(48_000, 2, 4 /* PCM_FLOAT */))
+    p.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
     p.flush()
-    val input = pcmBuffer(floatArrayOf(0.5f, -0.3f))
-    p.queueInput(input)
+    val inSamples = shortArrayOf(0x4000, -0x2000)  // arbitrary mid-range values
+    p.queueInput(pcm16Buffer(inSamples))
     val output = p.getOutput()
-    val outF = FloatArray(2).also { for (i in it.indices) it[i] = output.float }
-    assertThat(outF).usingTolerance(1e-6).containsExactly(0.5f, -0.3f).inOrder()
+    val outSamples = ShortArray(2) { output.short }
+    assertThat(outSamples.toList()).containsExactly(0x4000.toShort(), (-0x2000).toShort()).inOrder()
   }
 
   @Test fun `enabled with +6 dB doubles amplitude`() {
     val p = PreampProcessor(controllerWithState(EqState(enabled = true, preampDb = 6f)))
-    p.configure(AudioFormat(48_000, 2, 4))
+    p.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
     p.flush()
-    val input = pcmBuffer(floatArrayOf(0.5f, -0.3f))
-    p.queueInput(input)
+    // Use small amplitude so +6 dB boost doesn't clip int16 range.
+    val inSamples = shortArrayOf(0x1000, -0x0800)  // 4096, -2048
+    p.queueInput(pcm16Buffer(inSamples))
     val output = p.getOutput()
-    val outF = FloatArray(2).also { for (i in it.indices) it[i] = output.float }
-    assertThat(outF[0]).isWithin(0.01f).of(0.5f * 1.995f)
-    assertThat(outF[1]).isWithin(0.01f).of(-0.3f * 1.995f)
+    val outSamples = ShortArray(2) { output.short }
+    // +6 dB ≈ 1.995× — apply to inputs and compare with int-quantisation tolerance.
+    assertThat(outSamples[0].toInt()).isWithin(50).of((0x1000 * 1.995f).toInt())
+    assertThat(outSamples[1].toInt()).isWithin(50).of((-0x0800 * 1.995f).toInt())
   }
 }
