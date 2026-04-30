@@ -105,6 +105,15 @@ class TrackDownloadWorker @AssistedInject constructor(
             val orphanCounts = downloadQueueDao.getOrphanedTrackCounts()
             Log.i(TAG, "Orphaned undownloaded tracks (no active queue entry): ${orphanCounts.map { "${it.source}=${it.cnt}" }}")
 
+            // Self-healing sweep: drop queue entries whose track has no
+            // currently sync-enabled parent playlist. Without this, queues
+            // built before the predicate fix (when 1 enabled playlist could
+            // pull thousands of orphaned rows) stay bloated forever.
+            val sweptOrphans = downloadQueueDao.deleteOrphanedQueueEntries()
+            if (sweptOrphans > 0) {
+                Log.i(TAG, "Swept $sweptOrphans orphaned queue entries (tracks with no sync-enabled parent playlist)")
+            }
+
             // Reset exhausted retries so tracks get another chance each sync.
             downloadQueueDao.resetExhaustedRetries()
 

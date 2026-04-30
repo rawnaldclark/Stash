@@ -59,20 +59,34 @@ interface DownloadQueueDao {
     @Query("SELECT * FROM download_queue WHERE sync_id = :syncId AND status = 'PENDING' ORDER BY created_at ASC")
     suspend fun getPendingBySyncId(syncId: Long): List<DownloadQueueEntity>
 
-    /** Retrieve ALL pending downloads from any sync, filtered by connected sources.
+    /** Retrieve ALL pending downloads whose track is in a currently
+     *  sync-enabled playlist, filtered by connected sources. Without
+     *  the EXISTS predicate, prior syncs of now-disabled playlists
+     *  leak their PENDING rows into every subsequent sync — turning
+     *  a 55-track sync into thousands of phantom downloads.
      *  Spotify tracks (no youtube_url) are prioritized. */
     @Query("""
         SELECT dq.* FROM download_queue dq
         INNER JOIN tracks t ON t.id = dq.track_id
         WHERE dq.status = 'PENDING'
           AND t.source IN (:sources)
+          AND EXISTS (
+              SELECT 1 FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.track_id = t.id
+                AND pt.removed_at IS NULL
+                AND p.sync_enabled = 1
+          )
         ORDER BY (CASE WHEN dq.youtube_url IS NULL THEN 0 ELSE 1 END) ASC, dq.created_at ASC
     """)
     suspend fun getAllPendingBySources(sources: List<String>): List<DownloadQueueEntity>
 
     /**
      * Retrieve failed downloads that should be retried (max 3 attempts),
-     * filtered to only include tracks from the given [sources].
+     * filtered to only include tracks from the given [sources] AND from
+     * a currently sync-enabled playlist. Without the playlist predicate,
+     * failed entries from disabled playlists keep getting retried every
+     * sync forever.
      * Spotify tracks (needing YouTube search) are prioritized first.
      */
     @Query("""
@@ -80,6 +94,13 @@ interface DownloadQueueDao {
         INNER JOIN tracks t ON t.id = dq.track_id
         WHERE dq.status = 'FAILED' AND dq.retry_count < 3
           AND t.source IN (:sources)
+          AND EXISTS (
+              SELECT 1 FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.track_id = t.id
+                AND pt.removed_at IS NULL
+                AND p.sync_enabled = 1
+          )
         ORDER BY (CASE WHEN dq.youtube_url IS NULL THEN 0 ELSE 1 END) ASC, dq.created_at ASC
     """)
     suspend fun getRetryableBySources(sources: List<String>): List<DownloadQueueEntity>
@@ -156,10 +177,21 @@ interface DownloadQueueDao {
     @Query("SELECT status, COUNT(*) FROM download_queue GROUP BY status")
     suspend fun getStatusCounts(): List<StatusCount>
 
-    /** Diagnostic: count undownloaded tracks with no active queue entry by source. */
+    /** Diagnostic: count undownloaded tracks (in a sync-enabled playlist)
+     *  with no active queue entry, by source. Mirrors the predicate in
+     *  [getUnqueuedTrackIds] so the diagnostic count matches what will
+     *  actually be re-queued. */
     @Query("""
         SELECT t.source, COUNT(*) as cnt FROM tracks t
         WHERE t.is_downloaded = 0
+          AND t.match_dismissed = 0
+          AND EXISTS (
+              SELECT 1 FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.track_id = t.id
+                AND pt.removed_at IS NULL
+                AND p.sync_enabled = 1
+          )
           AND t.id NOT IN (
               SELECT dq.track_id FROM download_queue dq
               WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED')
@@ -183,12 +215,48 @@ interface DownloadQueueDao {
         WHERE t.is_downloaded = 0
           AND t.match_dismissed = 0
           AND t.source IN (:sources)
+          AND EXISTS (
+              SELECT 1 FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.track_id = t.id
+                AND pt.removed_at IS NULL
+                AND p.sync_enabled = 1
+          )
           AND t.id NOT IN (
               SELECT dq.track_id FROM download_queue dq
               WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED')
           )
     """)
     suspend fun getUnqueuedTrackIds(sources: List<String>): List<Long>
+
+    /**
+     * Self-healing sweep: delete PENDING/FAILED queue entries for tracks
+     * whose only parent playlists are sync-disabled. Runs at the start of
+     * each [TrackDownloadWorker] run to evict the stale rows that prior
+     * (pre-fix) syncs left behind. Without this, the user's queue stays
+     * bloated with thousands of phantom downloads even after the predicate
+     * fix lands.
+     *
+     * Spares any track that is still a member of at least one currently
+     * sync-enabled playlist, and any IN_PROGRESS row (which the worker is
+     * actively handling). Tracks with zero playlist memberships at all
+     * (e.g. legacy search-tab orphans) are also evicted, matching the new
+     * "must live in a sync-enabled playlist" contract enforced by the
+     * other queries.
+     *
+     * @return Number of rows deleted.
+     */
+    @Query("""
+        DELETE FROM download_queue
+        WHERE status IN ('PENDING', 'FAILED')
+          AND track_id NOT IN (
+              SELECT pt.track_id FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.removed_at IS NULL
+                AND p.sync_enabled = 1
+          )
+    """)
+    suspend fun deleteOrphanedQueueEntries(): Int
 
     // ── Unmatched track queries ─────────────────────────────────────────
 
