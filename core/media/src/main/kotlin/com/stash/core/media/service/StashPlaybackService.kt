@@ -16,7 +16,6 @@ import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.stash.core.media.equalizer.EqController
-import com.stash.core.media.equalizer.EqualizerManager
 import com.stash.core.media.equalizer.StashRenderersFactory
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -32,7 +31,6 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class StashPlaybackService : MediaSessionService() {
 
-    @Inject lateinit var equalizerManager: EqualizerManager
     @Inject lateinit var eqController: EqController
 
     companion object {
@@ -86,9 +84,6 @@ class StashPlaybackService : MediaSessionService() {
         // Set the pre-generated session ID on the player
         player.audioSessionId = audioSessionId
 
-        // Initialise audio effects with the pre-generated session ID.
-        equalizerManager.initialize(audioSessionId)
-
         // Set session activity so tapping the media notification opens the app.
         // The intent targets the app's launcher activity via the package's launch intent.
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
@@ -122,7 +117,6 @@ class StashPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        equalizerManager.release()
         mediaSession?.run {
             player.release()
             release()

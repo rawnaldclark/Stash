@@ -140,11 +140,6 @@ fun SettingsScreen(
         onQualityChanged = viewModel::onQualityChanged,
         onDownloadNetworkModeChanged = viewModel::onDownloadNetworkModeChanged,
         onThemeChanged = viewModel::onThemeChanged,
-        onEqEnabledChanged = viewModel::setEqEnabled,
-        onEqPresetSelected = viewModel::setEqPreset,
-        onEqBandGainChanged = viewModel::setEqBandGain,
-        onBassBoostChanged = viewModel::setBassBoost,
-        onVirtualizerChanged = viewModel::setVirtualizer,
         onSetExternalStorage = viewModel::setExternalStorageUri,
         onStartMoveLibrary = viewModel::startMoveLibrary,
         onCancelMoveLibrary = viewModel::cancelMoveLibrary,
@@ -177,11 +172,6 @@ private fun SettingsContent(
     onQualityChanged: (QualityTier) -> Unit,
     onDownloadNetworkModeChanged: (DownloadNetworkMode) -> Unit,
     onThemeChanged: (ThemeMode) -> Unit,
-    onEqEnabledChanged: (Boolean) -> Unit,
-    onEqPresetSelected: (String) -> Unit,
-    onEqBandGainChanged: (Int, Float) -> Unit,
-    onBassBoostChanged: (Float) -> Unit,
-    onVirtualizerChanged: (Float) -> Unit,
     onSetExternalStorage: (android.net.Uri?) -> Unit,
     onStartMoveLibrary: (android.net.Uri) -> Unit,
     onCancelMoveLibrary: () -> Unit,
@@ -515,10 +505,8 @@ private fun SettingsContent(
         }
 
         // -- Audio Effects section --------------------------------------------
-        // The full EQ UI now lives on a dedicated EqualizerScreen. This row
-        // navigates to it. The legacy EqualizerSection composable and its
-        // supporting SettingsViewModel methods (setEqEnabled, setEqBandGain,
-        // etc.) are intentionally left intact — Task 14 will remove them.
+        // The full EQ UI lives on a dedicated EqualizerScreen. This row
+        // navigates to it.
         SectionHeader(title = "Audio Effects")
 
         GlassCard(
@@ -534,18 +522,12 @@ private fun SettingsContent(
                     tint = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Equalizer",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = if (uiState.eqEnabled) "On" else "Off",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = "Equalizer",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = "Open Equalizer",

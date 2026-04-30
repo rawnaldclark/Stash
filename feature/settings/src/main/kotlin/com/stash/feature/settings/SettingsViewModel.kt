@@ -51,9 +51,8 @@ import javax.inject.Inject
  * Audio quality changes are persisted to DataStore via [QualityPreference] so they
  * survive app restarts and are picked up by the download pipeline.
  *
- * Equalizer controls update [_localState] immediately for responsive UI, and
- * will persist via EqualizerStore / apply via EqualizerManager once those
- * components are available (currently being built by another agent).
+ * Equalizer state is managed by [EqualizerViewModel] on the dedicated EQ screen;
+ * this ViewModel no longer owns any EQ methods.
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -66,8 +65,6 @@ class SettingsViewModel @Inject constructor(
     private val downloadNetworkPreference: DownloadNetworkPreference,
     private val moveLibraryCoordinator: MoveLibraryCoordinator,
     private val youTubeCookieHelper: YouTubeCookieHelper,
-    private val equalizerManager: com.stash.core.media.equalizer.EqualizerManager,
-    private val equalizerStore: com.stash.core.media.equalizer.EqualizerStore,
     private val lastFmApiClient: LastFmApiClient,
     private val lastFmSessionPreference: LastFmSessionPreference,
     private val lastFmCredentials: LastFmCredentials,
@@ -149,11 +146,6 @@ class SettingsViewModel @Inject constructor(
             youTubeCookieError = local.youTubeCookieError,
             isYouTubeCookieValidating = local.isYouTubeCookieValidating,
             youTubeError = local.youTubeError,
-            eqEnabled = local.eqEnabled,
-            eqPreset = local.eqPreset,
-            eqBandGains = local.eqBandGains,
-            eqBassBoost = local.eqBassBoost,
-            eqVirtualizer = local.eqVirtualizer,
             externalTreeUri = externalTree,
             moveLibraryState = moveState,
             lastFmState = lastFmState,
@@ -559,74 +551,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // -- Equalizer actions ----------------------------------------------------
-
-    /**
-     * Enables or disables the equalizer effect chain.
-     *
-     * When the EqualizerManager is available this will also toggle the
-     * underlying Android [android.media.audiofx.Equalizer] instance.
-     */
-    fun setEqEnabled(enabled: Boolean) {
-        _localState.update { it.copy(eqEnabled = enabled) }
-        equalizerManager.setEnabled(enabled)
-    }
-
-    /**
-     * Selects an equalizer preset and applies its band gains.
-     *
-     * @param preset The preset name (e.g. "Rock", "Jazz", "Flat").
-     */
-    fun setEqPreset(preset: String) {
-        _localState.update { it.copy(eqPreset = preset) }
-        val eqPreset = com.stash.core.media.equalizer.EqPreset.fromName(preset)
-        equalizerManager.applyPreset(eqPreset)
-    }
-
-    /**
-     * Updates the gain for a single equalizer band.
-     *
-     * Automatically switches the preset to "Custom" since the user is
-     * manually adjusting values.
-     *
-     * @param band           Zero-based band index (0..4 for a 5-band EQ).
-     * @param normalizedGain Gain in 0..1 range where 0.5 is flat.
-     */
-    fun setEqBandGain(band: Int, normalizedGain: Float) {
-        _localState.update { state ->
-            val updatedGains = state.eqBandGains.toMutableList().apply {
-                if (band in indices) this[band] = normalizedGain.coerceIn(0f, 1f)
-            }
-            state.copy(
-                eqBandGains = updatedGains,
-                eqPreset = "Custom",
-            )
-        }
-        // Convert normalized 0..1 to millibels (-1200..+1200)
-        val gainMb = ((normalizedGain - 0.5f) * 2400).toInt()
-        equalizerManager.setBandGain(band, gainMb)
-    }
-
-    /**
-     * Updates the bass boost strength.
-     *
-     * @param normalized Strength in 0..1 range (maps to 0..1000 internally).
-     */
-    fun setBassBoost(normalized: Float) {
-        _localState.update { it.copy(eqBassBoost = normalized.coerceIn(0f, 1f)) }
-        equalizerManager.setBassBoost((normalized * 1000).toInt())
-    }
-
-    /**
-     * Updates the virtualizer / surround strength.
-     *
-     * @param normalized Strength in 0..1 range (maps to 0..1000 internally).
-     */
-    fun setVirtualizer(normalized: Float) {
-        _localState.update { it.copy(eqVirtualizer = normalized.coerceIn(0f, 1f)) }
-        equalizerManager.setVirtualizer((normalized * 1000).toInt())
-    }
-
     // -- YouTube History actions ----------------------------------------------
 
     /** Flip the YT-history opt-in. Settings screen shows the first-enable
@@ -662,12 +586,6 @@ class SettingsViewModel @Inject constructor(
         val youTubeCookieError: String? = null,
         val isYouTubeCookieValidating: Boolean = false,
         val youTubeError: String? = null,
-        // Equalizer state -- stored locally until EqualizerStore is available
-        val eqEnabled: Boolean = false,
-        val eqPreset: String = "Flat",
-        val eqBandGains: List<Float> = listOf(0.5f, 0.5f, 0.5f, 0.5f, 0.5f),
-        val eqBassBoost: Float = 0f,
-        val eqVirtualizer: Float = 0f,
         /**
          * Transient Last.fm auth state used to override the session-flow-
          * derived default. Non-null while we're mid-flow (AwaitingAuth
