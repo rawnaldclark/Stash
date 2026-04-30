@@ -15,7 +15,9 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.EqualizerManager
+import com.stash.core.media.equalizer.StashRenderersFactory
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -31,6 +33,7 @@ import javax.inject.Inject
 class StashPlaybackService : MediaSessionService() {
 
     @Inject lateinit var equalizerManager: EqualizerManager
+    @Inject lateinit var eqController: EqController
 
     companion object {
         /** Custom command action for toggling shuffle mode. */
@@ -73,6 +76,7 @@ class StashPlaybackService : MediaSessionService() {
             .build()
 
         val player = ExoPlayer.Builder(this)
+            .setRenderersFactory(StashRenderersFactory(this, eqController))
             .setLoadControl(loadControl)
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)

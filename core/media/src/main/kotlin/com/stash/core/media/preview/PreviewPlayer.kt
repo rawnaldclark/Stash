@@ -2,13 +2,17 @@ package com.stash.core.media.preview
 
 import android.content.Context
 import android.os.SystemClock
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.stash.core.common.perf.PerfLog
+import com.stash.core.media.equalizer.EqController
+import com.stash.core.media.equalizer.StashRenderersFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -75,6 +79,7 @@ data class PreviewErrorEvent(val videoId: String, val error: PlaybackException)
 @Singleton
 class PreviewPlayer @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val eqController: EqController,
 ) {
 
     // ------------------------------------------------------------------
@@ -191,8 +196,10 @@ class PreviewPlayer @Inject constructor(
      *   [playUrl] and release it on [stop]/[release], which in turn triggers
      *   the main player to pause while a preview is active.
      */
+    @OptIn(UnstableApi::class)
     private fun requirePlayer(): ExoPlayer {
         return exoPlayer ?: ExoPlayer.Builder(context)
+            .setRenderersFactory(StashRenderersFactory(context, eqController))
             .setLoadControl(PreviewLoadControlFactory.create())
             .setAudioAttributes(
                 AudioAttributes.Builder()
