@@ -107,7 +107,7 @@ class LikedSongsDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val downloaded = uiState.value.tracks.filter { it.filePath != null }
             if (downloaded.isEmpty()) return@launch
-            playerRepository.setQueue(downloaded, downloaded.indices.random())
+            playerRepository.setQueue(downloaded.shuffled(), 0)
         }
     }
 

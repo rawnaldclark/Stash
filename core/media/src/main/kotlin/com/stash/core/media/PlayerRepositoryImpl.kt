@@ -113,13 +113,26 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override suspend fun addNext(track: Track) {
         val controller = ensureController() ?: return
+        val wasEmpty = controller.mediaItemCount == 0
         val insertIndex = controller.currentMediaItemIndex + 1
         controller.addMediaItem(insertIndex, track.toMediaItem())
+        // If the queue was empty, the user tapped "Play next" with nothing
+        // playing — they expect the song to actually start, not just sit
+        // silently in a queue they can't see. Prepare and play.
+        if (wasEmpty) {
+            controller.prepare()
+            controller.play()
+        }
     }
 
     override suspend fun addToQueue(track: Track) {
         val controller = ensureController() ?: return
+        val wasEmpty = controller.mediaItemCount == 0
         controller.addMediaItem(track.toMediaItem())
+        if (wasEmpty) {
+            controller.prepare()
+            controller.play()
+        }
     }
 
     override suspend fun toggleShuffle() {
@@ -245,6 +258,17 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
+            controllerDeferred?.let { updateState(it) }
+        }
+
+        /**
+         * Fires whenever the queue itself changes — adds, removes, moves.
+         * Without this, addMediaItem / removeMediaItem / moveMediaItem
+         * mutate the underlying timeline but the UI's queue view (built
+         * from _playerState) never sees the change. Symptom: "I tapped
+         * Play Next but the song doesn't appear in the queue."
+         */
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
             controllerDeferred?.let { updateState(it) }
         }
 

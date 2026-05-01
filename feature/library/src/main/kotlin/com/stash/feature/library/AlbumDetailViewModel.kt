@@ -131,15 +131,17 @@ class AlbumDetailViewModel @Inject constructor(
     }
 
     /**
-     * Shuffles all downloaded tracks on this album and begins playback
-     * from a random position.
+     * Shuffles all downloaded tracks on this album and begins playback.
+     *
+     * Shuffles the LIST itself (not just the start index) — picking a
+     * random start index leaves the rest of the album in original order
+     * after the first track, which isn't shuffle.
      */
     fun shuffleAll() {
         viewModelScope.launch {
             val downloaded = uiState.value.tracks.filter { it.filePath != null }
             if (downloaded.isEmpty()) return@launch
-            val randomIndex = (downloaded.indices).random()
-            playerRepository.setQueue(downloaded, randomIndex)
+            playerRepository.setQueue(downloaded.shuffled(), 0)
         }
     }
 

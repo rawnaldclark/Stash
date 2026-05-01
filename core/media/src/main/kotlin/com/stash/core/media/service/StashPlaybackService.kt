@@ -165,8 +165,21 @@ class StashPlaybackService : MediaSessionService() {
             val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
             customCommands.forEach { sessionCommands.add(it) }
 
+            // Default availablePlayerCommands omits COMMAND_CHANGE_MEDIA_ITEMS,
+            // which is what addMediaItem / removeMediaItem / moveMediaItem
+            // require. Without explicitly granting full player commands here,
+            // controller.addMediaItem(...) silently no-ops — the item never
+            // reaches the underlying ExoPlayer's timeline. This is what made
+            // "Play Next" and "Add to Queue" appear broken when a queue
+            // already existed.
+            //
+            // Granting all commands is safe: this MediaSession is internal-
+            // only (no third-party controllers connect to it).
+            val playerCommands = Player.Commands.Builder().addAllCommands().build()
+
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands.build())
+                .setAvailablePlayerCommands(playerCommands)
                 .build()
         }
 

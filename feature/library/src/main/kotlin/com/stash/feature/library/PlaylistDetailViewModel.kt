@@ -144,15 +144,14 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     /**
-     * Shuffles all downloaded tracks in the playlist and begins playback
-     * from a random position.
+     * Shuffles all downloaded tracks in the playlist and begins playback.
+     * Shuffles the list itself (not just the start index).
      */
     fun shuffleAll() {
         viewModelScope.launch {
             val downloaded = uiState.value.tracks.filter { it.filePath != null }
             if (downloaded.isEmpty()) return@launch
-            val randomIndex = (downloaded.indices).random()
-            playerRepository.setQueue(downloaded, randomIndex)
+            playerRepository.setQueue(downloaded.shuffled(), 0)
         }
     }
 
