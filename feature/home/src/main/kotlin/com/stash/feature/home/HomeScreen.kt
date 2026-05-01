@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Delete
@@ -63,8 +65,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.animation.Crossfade
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -135,7 +139,9 @@ fun HomeScreen(
         // ── App title (Bungee Shade wordmark) ────────────────────────
         item {
             Row(
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Bungee Shade "Stash" as a VectorDrawable. The light and
@@ -152,6 +158,8 @@ fun HomeScreen(
                     contentDescription = "Stash",
                     modifier = Modifier.height(48.dp),
                 )
+                Spacer(modifier = Modifier.weight(1f))
+                SupporterPill(supporters = HOME_SUPPORTERS)
             }
         }
 
@@ -1530,6 +1538,98 @@ private fun LastFmConnectBanner(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )
+            }
+        }
+    }
+}
+
+// ── Supporter pill ───────────────────────────────────────────────────────
+
+private data class Supporter(
+    val name: String,
+    val amount: String,
+    val message: String,
+)
+
+private val HOME_SUPPORTERS = listOf(
+    Supporter(
+        name = "Cedric",
+        amount = "$10",
+        message = "Just downloaded Stash to replace Spotify. This is amazing bro. Thanks for your work.",
+    ),
+    Supporter(
+        name = "Slowcab",
+        amount = "$5",
+        message = "Amazing work! Keep sticking it to the man!",
+    ),
+)
+
+/**
+ * Compact pill that sits to the right of the Stash wordmark and crossfades
+ * through Ko-fi supporters. Two-line content shows name · amount on top and
+ * the supporter's message (truncated) below. Tap opens the Ko-fi page. An
+ * outlined heart distinguishes it from the filled-gradient Liked Songs heart.
+ */
+@Composable
+private fun SupporterPill(
+    supporters: List<Supporter>,
+    modifier: Modifier = Modifier,
+) {
+    if (supporters.isEmpty()) return
+    val uriHandler = LocalUriHandler.current
+    val extendedColors = StashTheme.extendedColors
+    var index by remember { mutableStateOf(0) }
+
+    LaunchedEffect(supporters.size) {
+        while (true) {
+            kotlinx.coroutines.delay(5000)
+            index = (index + 1) % supporters.size
+        }
+    }
+
+    Surface(
+        modifier = modifier
+            .widthIn(max = 210.dp)
+            .clickable { uriHandler.openUri("https://ko-fi.com/rawnald") },
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.FavoriteBorder,
+                contentDescription = "Supporters on Ko-fi",
+                tint = Color(0xFFFFC947),
+                modifier = Modifier.size(14.dp),
+            )
+            Crossfade(
+                targetState = index,
+                animationSpec = tween(durationMillis = 600),
+                label = "supporter-cycle",
+            ) { i ->
+                val s = supporters[i]
+                Column {
+                    Text(
+                        text = "${s.name} · ${s.amount}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "\u201C${s.message}\u201D",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
