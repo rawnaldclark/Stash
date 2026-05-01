@@ -66,4 +66,47 @@ class EqMigrationTest {
     EqMigration(newStore, oldStore).migrateIfNeeded()
     coVerify { oldStore.deleteLegacy() }
   }
+
+  // Regression test for the v0.8.0 production crash. Empty legacy gains
+  // ([]) hit `coerceIn(0, -1)` because `List.lastIndex` is -1 for an
+  // empty list. Crashed StashPlaybackService.onCreate via the
+  // runBlocking call inside EqController.<init>, killing every play
+  // attempt for users with the empty-array legacy state.
+  @Test fun `migration with empty legacy gains does not crash`() = runBlocking {
+    coEvery { newStore.read() } returns EqState()
+    coEvery { oldStore.exists() } returns true
+    coEvery { oldStore.readLegacy() } returns LegacySettings(
+      enabled = true,
+      presetName = "FLAT",
+      gains = emptyList(),  // the crashing input
+      bassBoostStrength = 0,
+    )
+
+    EqMigration(newStore, oldStore).migrateIfNeeded()
+
+    coVerify {
+      newStore.write(match {
+        it.gainsDb.contentEquals(floatArrayOf(0f, 0f, 0f, 0f, 0f))
+      })
+    }
+  }
+
+  @Test fun `migration handles non-5 legacy gain sizes gracefully`() = runBlocking {
+    coEvery { newStore.read() } returns EqState()
+    coEvery { oldStore.exists() } returns true
+    coEvery { oldStore.readLegacy() } returns LegacySettings(
+      enabled = false,
+      presetName = "FLAT",
+      gains = listOf(300, -300, 100), // 3-band legacy → must resample to 5
+      bassBoostStrength = 0,
+    )
+
+    // Just verifies no throw — the resample math is best-effort, the
+    // contract is "produce 5 bands without crashing."
+    EqMigration(newStore, oldStore).migrateIfNeeded()
+
+    coVerify {
+      newStore.write(match { it.gainsDb.size == 5 })
+    }
+  }
 }

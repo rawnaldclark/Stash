@@ -52,6 +52,13 @@ class EqMigration @Inject constructor(
   }
 
   private fun adaptGains(legacy: List<Int>): FloatArray {
+    // Empty legacy gains crashed v0.8.0 in the wild — `coerceIn(0, -1)`
+    // throws because lastIndex is -1 for an empty list. Reproduces when
+    // the legacy DataStore had `eq_custom_gains = "[]"` (empty JSON
+    // array), which parses to an empty list and slips past the
+    // `?: listOf(0,0,0,0,0)` null fallback in LegacyEqualizerStoreImpl.
+    // Any empty / missing legacy gains is interpreted as flat (zeros).
+    if (legacy.isEmpty()) return FloatArray(5)
     val mb = if (legacy.size == 5) legacy
             else List(5) { i ->
               val ratio = i.toFloat() * (legacy.size - 1) / 4f

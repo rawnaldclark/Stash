@@ -57,7 +57,11 @@ class LegacyEqualizerStoreImpl @Inject constructor(
 
   private fun parseGainsJson(json: String): List<Int> = try {
     val array = JSONArray(json)
-    List(array.length()) { i -> array.getInt(i) }
+    // Empty JSON array (`"[]"`) was a real failure mode in v0.8.0 —
+    // it parsed to an empty list and crashed EqMigration.adaptGains.
+    // Treat empty just like malformed: fall back to default zeros.
+    if (array.length() == 0) listOf(0, 0, 0, 0, 0)
+    else List(array.length()) { i -> array.getInt(i) }
   } catch (_: Exception) {
     listOf(0, 0, 0, 0, 0)
   }
