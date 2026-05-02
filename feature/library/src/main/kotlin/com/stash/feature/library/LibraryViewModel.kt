@@ -24,6 +24,14 @@ import android.net.Uri
 import javax.inject.Inject
 
 /**
+ * Lossless codec tags. Duplicates the canonical set in
+ * `com.stash.data.download.lossless.AudioFormat.LOSSLESS_CODECS`
+ * to avoid a `:feature:library` → `:data:download` dependency just
+ * for a string set.
+ */
+private val LOSSLESS_CODECS = setOf("flac", "alac", "wav", "ape", "tta", "wv", "aiff")
+
+/**
  * ViewModel for the Library screen.
  *
  * Collects tracks, playlists, artists, albums, and auth state from
@@ -102,6 +110,10 @@ class LibraryViewModel @Inject constructor(
             SourceFilter.ALL -> allTracks
             SourceFilter.YOUTUBE -> allTracks.filter { it.source == MusicSource.YOUTUBE }
             SourceFilter.SPOTIFY -> allTracks.filter { it.source == MusicSource.SPOTIFY || it.source == MusicSource.BOTH }
+            // Codec set kept in sync with com.stash.core.ui.components.FlacBadge
+            // (and com.stash.data.download.lossless.AudioFormat.LOSSLESS_CODECS).
+            // Worth duplicating — short list, short reach across modules.
+            SourceFilter.FLAC -> allTracks.filter { it.fileFormat.lowercase() in LOSSLESS_CODECS }
         }
 
         // -- Apply client-side search filter --

@@ -502,6 +502,7 @@ private fun SourceFilter.displayName(): String = when (this) {
     SourceFilter.ALL -> "All"
     SourceFilter.YOUTUBE -> "YouTube"
     SourceFilter.SPOTIFY -> "Spotify"
+    SourceFilter.FLAC -> "FLAC"
 }
 
 // ── Local import progress strip ─────────────────────────────────────────────
