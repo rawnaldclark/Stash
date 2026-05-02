@@ -55,7 +55,9 @@ The card replaces the existing three cards at the position of the current first 
 └────────────────────────────────────────────────┘
 ```
 
-The `HorizontalDivider` uses `MaterialTheme.colorScheme.outlineVariant` (matches the existing Settings divider style elsewhere). It separates the always-on "Download quality" radios from the conditional/experimental lossless block but keeps both inside one card boundary.
+The `HorizontalDivider` uses `extendedColors.glassBorder` to match the existing in-card divider style used elsewhere in Settings (verified in `SettingsScreen.kt:764-766` Storage card divider, `SettingsScreen.kt:852-854` Move library divider, and `components/AccountConnectionCard.kt:162-165`). Do NOT use `MaterialTheme.colorScheme.outlineVariant` — that would visually announce the consolidation as foreign vs. the surrounding GlassCard chrome.
+
+The card replaces the three existing GlassCards but the `SectionHeader(title = "Audio Quality")` stays where it is (`SettingsScreen.kt:363`), outside the new card, matching the existing pattern.
 
 ### Behaviour
 
@@ -119,7 +121,7 @@ None. The pure UI reorganisation has no logic to unit-test (state and callbacks 
 
 ## Risks & rollback
 
-- **Risk: divider visual stands out as foreign vs current settings cards.** Mitigation: use the same `outlineVariant` colour as elsewhere in Settings; sample one of the existing dividers (search Settings for `HorizontalDivider`) and match its `Modifier.padding(vertical = ...)`.
+- **Risk: divider visual stands out as foreign vs current settings cards.** Mitigation: use `extendedColors.glassBorder` (the project's in-card divider colour, NOT `outlineVariant`) and sample the padding from an existing in-card divider — e.g. `SettingsScreen.kt:764-766` or `components/AccountConnectionCard.kt:162-165`.
 - **Risk: users miss the manual paste / reset controls now that they're behind the expander.** Mitigation: the in-app WebView captures the cookie automatically — the manual paste was already a fallback. Power users who need it will discover the expander on second look.
 - **Risk: `remember(uiState.losslessEnabled) { mutableStateOf(false) }` doesn't behave as expected if Compose recomposes too aggressively.** Mitigation: easily verified in manual test (step 8 → 9).
 - **Rollback:** revert the single commit. Three cards return; user data unaffected.
