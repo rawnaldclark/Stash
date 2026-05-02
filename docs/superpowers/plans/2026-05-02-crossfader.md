@@ -1679,6 +1679,7 @@ Wire the synthesised events at the right call-sites:
 - In the `init` block, register internal `Player.Listener`s on both underlying players that forward `onIsPlayingChanged` / `onPlaybackStateChanged` to `fireIsPlayingChanged` / `firePlaybackStateChanged` aggregated per the rules in spec §3:
   - `isPlaying` aggregates: `true` if either underlying is playing
   - `playbackState` mirrors `nextPlayer` during CROSSFADING, `activePlayer` otherwise
+- **Pass-through events** that the wrapper doesn't synthesise but external observers may need: `onTimelineChanged` (fire `onTimelineChanged(currentTimeline, reason)` when `setMediaItems`/`addMediaItem`/`removeMediaItem`/`moveMediaItem`/`replaceMediaItem`/`clearMediaItems` are called), `onMediaMetadataChanged` (fire when the active item changes — synthesised at the same moments as `onMediaItemTransition`), `onShuffleModeEnabledChanged`, `onRepeatModeChanged`, `onPositionDiscontinuity` (forward from active during SINGLE_ACTIVE; from `nextPlayer` during CROSSFADING). MediaSession's notification/lockscreen rendering depends on `onTimelineChanged` and `onMediaMetadataChanged` to re-render the queue and metadata cards.
 
 Update the commit message in Step 4 to: `feat(media): audio focus + error fallback + listener event forwarding`.
 
