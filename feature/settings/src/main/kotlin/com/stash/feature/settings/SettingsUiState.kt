@@ -35,6 +35,22 @@ data class SettingsUiState(
     val ytHistoryEnabled: Boolean = false,
     val ytHistoryHealth: YouTubeScrobblerHealth = YouTubeScrobblerHealth.DISABLED,
     val ytPendingCount: Int = 0,
+    /**
+     * Master switch for the lossless-source download path
+     * (squid.wtf-proxied Qobuz). Off by default — flipping it on routes
+     * every track through the registry first and falls back to yt-dlp
+     * only when no source has a confident lossless match. Files end up
+     * 5-10× larger than Opus, so the UI should warn at least once
+     * before enabling.
+     */
+    val losslessEnabled: Boolean = false,
+    /**
+     * Manually-pasted `captcha_verified_at` cookie value from
+     * `qobuz.squid.wtf`. Bridges the captcha gate until WebView-based
+     * automation lands — user solves ALTCHA in their browser, copies
+     * the cookie value, pastes here. Empty string == not configured.
+     */
+    val squidWtfCaptchaCookie: String = "",
     val totalStorageBytes: Long = 0,
     val totalTracks: Int = 0,
     val showYouTubeCookieDialog: Boolean = false,

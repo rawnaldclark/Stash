@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.MusicNote
@@ -30,6 +31,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +44,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import com.stash.core.data.sync.workers.UpdateCheckWorker
@@ -68,6 +73,7 @@ import com.stash.feature.settings.components.YouTubeHistorySyncSection
 @Composable
 fun SettingsScreen(
     onNavigateToEqualizer: () -> Unit = {},
+    onNavigateToLibraryHealth: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -153,7 +159,10 @@ fun SettingsScreen(
         onClearScrobbleDrainResult = viewModel::onClearScrobbleDrainResult,
         onYouTubeHistoryEnabledChanged = viewModel::onYouTubeHistoryEnabledChanged,
         onRetryYouTubeHistory = viewModel::onRetryYouTubeHistory,
+        onLosslessEnabledChanged = viewModel::onLosslessEnabledChanged,
+        onSquidWtfCaptchaCookieChanged = viewModel::onSquidWtfCaptchaCookieChanged,
         onNavigateToEqualizer = onNavigateToEqualizer,
+        onNavigateToLibraryHealth = onNavigateToLibraryHealth,
         modifier = modifier,
     )
 }
@@ -185,7 +194,10 @@ private fun SettingsContent(
     onClearScrobbleDrainResult: () -> Unit,
     onYouTubeHistoryEnabledChanged: (Boolean) -> Unit,
     onRetryYouTubeHistory: () -> Unit,
+    onLosslessEnabledChanged: (Boolean) -> Unit,
+    onSquidWtfCaptchaCookieChanged: (String) -> Unit,
     onNavigateToEqualizer: () -> Unit,
+    onNavigateToLibraryHealth: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -395,6 +407,92 @@ private fun SettingsContent(
             }
         }
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // -- Lossless mode toggle ---------------------------------------------
+        // Routes downloads through a public Qobuz proxy (qobuz.squid.wtf)
+        // before falling back to yt-dlp. FLAC files are 5-10× larger than
+        // Opus, so this is opt-in. When OFF, the download pipeline behaves
+        // exactly as it did pre-feature.
+        GlassCard {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Lossless downloads (experimental)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (uiState.losslessEnabled) {
+                            "Tries Qobuz (via squid.wtf) first; FLAC files are ~10× larger"
+                        } else {
+                            "Off — uses YouTube/yt-dlp like before"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = uiState.losslessEnabled,
+                    onCheckedChange = onLosslessEnabledChanged,
+                    modifier = Modifier.semantics { role = Role.Switch },
+                )
+            }
+        }
+
+        // -- squid.wtf captcha cookie ----------------------------------------
+        // Manual paste field while WebView automation is unbuilt.
+        // squid.wtf gates `/api/download-music` behind a `captcha_verified_at`
+        // cookie set after the user solves an ALTCHA in the browser.
+        // Workflow: open qobuz.squid.wtf in browser → solve captcha by
+        // clicking Download once → copy cookie value → paste here.
+        // Cookie expires every ~30 minutes; user repastes when downloads
+        // start failing again.
+        if (uiState.losslessEnabled) {
+            Spacer(modifier = Modifier.height(8.dp))
+            GlassCard {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "squid.wtf captcha cookie",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Open qobuz.squid.wtf in your browser, click Download on " +
+                            "any track to solve the captcha, then copy the value of the " +
+                            "`captcha_verified_at` cookie and paste it here. Re-paste " +
+                            "every ~30 min when downloads start failing.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = uiState.squidWtfCaptchaCookie,
+                        onValueChange = onSquidWtfCaptchaCookieChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("captcha_verified_at value") },
+                        singleLine = true,
+                        placeholder = { Text("e.g. 1777687404951") },
+                    )
+                    if (uiState.squidWtfCaptchaCookie.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Cookie set — squid.wtf downloads should work for ~30min.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+
         // -- Downloads section ------------------------------------------------
         // Governs when background workers (Stash Discover, tag enrichment)
         // are allowed to run. Default is WiFi + charging (safest); power
@@ -531,6 +629,39 @@ private fun SettingsContent(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = "Open Equalizer",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // -- Library Health row -----------------------------------------------
+        // Drilldown into the format/bitrate breakdown of every downloaded
+        // track. Used to verify what the sync is actually pulling and to
+        // measure MAX-tier (format 141) yield empirically.
+        GlassCard(
+            modifier = Modifier.clickable(onClick = onNavigateToLibraryHealth),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.GraphicEq,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Library Health",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "Open Library Health",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

@@ -40,6 +40,34 @@ data class AlbumSummary(
 )
 
 /**
+ * One row of the Library Health histogram. [format] is the codec tag
+ * (`aac` / `opus` / `flac` / `unknown`); [kbpsBucket] is a coarse-grained
+ * label for the bitrate band. [trackCount] is the number of downloaded
+ * tracks falling into this (format, bucket) pair; [avgKbps] is the actual
+ * average bitrate within the bucket so the UI can show "~127 kbps" instead
+ * of just "~128" when relevant.
+ */
+data class LibraryHealthBucket(
+    val format: String,
+    val kbpsBucket: String,
+    val trackCount: Int,
+    val avgKbps: Double,
+)
+
+/**
+ * Minimal projection used by the Library Health backfill: just enough to
+ * hand each row off to `AudioDurationExtractor.extract` and write the
+ * results back via [TrackDao.setFormatAndQuality]. Used by the one-time
+ * fixup that populates `file_format` / `quality_kbps` for tracks
+ * downloaded before the v0.8.1 fix taught the sync writer to record
+ * those columns.
+ */
+data class TrackBackfillRow(
+    val id: Long,
+    val filePath: String,
+)
+
+/**
  * Minimal row projection for the art-backfill pipeline. Returned by
  * [TrackDao.findArtBackfillCandidates] — only the fields needed to
  * attempt a backfill without dragging in the full [TrackEntity] shape.
@@ -249,6 +277,88 @@ interface TrackDao {
         fileSizeBytes: Long,
         downloadedAt: Long = System.currentTimeMillis(),
     )
+
+    /**
+     * Records the codec and bitrate of a downloaded file. Called immediately
+     * after [markAsDownloaded] from the sync path, with values read from the
+     * file's own container via `AudioDurationExtractor.extract`. Historically
+     * these columns sat at their defaults (`"opus"` / `0`) for every
+     * sync-downloaded row even though the file on disk was AAC 128 — Library
+     * Health relies on these being truthful to compute format-141 yield etc.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET file_format = :fileFormat,
+            quality_kbps = :qualityKbps
+        WHERE id = :trackId
+        """
+    )
+    suspend fun setFormatAndQuality(trackId: Long, fileFormat: String, qualityKbps: Int)
+
+    /**
+     * Unconditionally overwrites `duration_ms`. Distinct from the older
+     * [fillMissingDuration] which guards on `duration_ms = 0`. Used by the
+     * download path to reconcile cases where Spotify's track length and
+     * the YouTube match's actual length disagree (live cuts, extended
+     * versions). Don't call this for stub tracks pre-download — use
+     * [fillMissingDuration] if you only want to fill on absence.
+     */
+    @Query("UPDATE tracks SET duration_ms = :durationMs WHERE id = :trackId")
+    suspend fun setDuration(trackId: Long, durationMs: Long)
+
+    // ── Library Health ──────────────────────────────────────────────────
+
+    /**
+     * Returns the format/bitrate breakdown of every downloaded track.
+     * Bitrates are bucketed in SQL into the standard music-codec bands so
+     * the UI doesn't have to render a histogram with one column per
+     * literal kbps value (Opus VBR alone produces dozens of distinct
+     * numbers). Used by the Library Health screen.
+     */
+    @Query(
+        """
+        SELECT
+            file_format AS format,
+            CASE
+                WHEN quality_kbps = 0 THEN 'unknown'
+                WHEN quality_kbps < 100 THEN '<100'
+                WHEN quality_kbps BETWEEN 100 AND 144 THEN '~128'
+                WHEN quality_kbps BETWEEN 145 AND 192 THEN '~160'
+                WHEN quality_kbps BETWEEN 193 AND 244 THEN '~192-224'
+                WHEN quality_kbps BETWEEN 245 AND 288 THEN '~256'
+                WHEN quality_kbps BETWEEN 289 AND 360 THEN '~320'
+                ELSE '>320'
+            END AS kbpsBucket,
+            COUNT(*) AS trackCount,
+            AVG(quality_kbps) AS avgKbps
+        FROM tracks
+        WHERE is_downloaded = 1
+        GROUP BY format, kbpsBucket
+        ORDER BY trackCount DESC
+        """
+    )
+    suspend fun getLibraryHealthBuckets(): List<LibraryHealthBucket>
+
+    /**
+     * Returns id + filePath for every downloaded track that's still
+     * sitting at the historical defaults (`file_format = "opus"` AND
+     * `quality_kbps = 0`). Used by the Library Health backfill — after
+     * the v0.8.1 download path started writing real metadata, anything
+     * left at defaults is a row that pre-dates the fix and can be
+     * populated by reading the file once.
+     */
+    @Query(
+        """
+        SELECT id, file_path AS filePath
+        FROM tracks
+        WHERE is_downloaded = 1
+          AND file_path IS NOT NULL
+          AND file_format = 'opus'
+          AND quality_kbps = 0
+        """
+    )
+    suspend fun getRowsNeedingFormatBackfill(): List<TrackBackfillRow>
 
     // ── Play tracking ───────────────────────────────────────────────────
 
