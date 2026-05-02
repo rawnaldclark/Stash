@@ -257,6 +257,7 @@ The repository-level methods are one-line passthroughs and don't need separate t
 ## Risks & rollback
 
 - **Risk:** the DAO query column name `file_format` is wrong. **Mitigation:** verified by reading `TrackDao.kt:357` which uses the same column name in production code. The unit tests will catch any name typo.
+- **Risk:** SQLite default collation is case-sensitive, so `'flac'` would miss any row written as `'FLAC'` or `'Flac'`. **Mitigation:** the only writer is `TrackDao.setFormatAndQuality(...)` (line 297), and the lossless pipeline produces lowercase `"flac"` consistently (matches the `'opus'` legacy default also in lowercase). Low risk, but if it bites, a one-line `LOWER(file_format) = 'flac'` in the DAO query is the fix.
 - **Risk:** the new `SourceCounts` data class breaks existing consumers. **Mitigation:** `sourceCountsFlow` is `private` to `HomeViewModel`; no external consumers.
 - **Risk:** the sub-line's typography or color jars vs. the rest of the card. **Mitigation:** `labelSmall` + `colorScheme.primary` matches `EqualizerSection` and other existing primary-accent text. If the user feels it's too loud, we can switch to `onSurfaceVariant` in a follow-up.
 - **Risk:** 0-byte FLAC tracks (e.g. download-pending row that sneaks past `is_downloaded = 1`) inflate the count. **Mitigation:** the DAO filter `is_downloaded = 1` already excludes pending rows; the sum is `COALESCE(SUM, 0)` so no NPE on empty result.
