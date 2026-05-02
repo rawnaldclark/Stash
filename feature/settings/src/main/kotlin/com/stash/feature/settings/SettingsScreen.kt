@@ -2,6 +2,10 @@ package com.stash.feature.settings
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -402,7 +406,7 @@ private fun SettingsContent(
                     ) {
                         RadioButton(
                             selected = uiState.audioQuality == tier,
-                            onClick = null,
+                            onClick = null, // handled by Row's selectable
                             colors = RadioButtonDefaults.colors(
                                 selectedColor = MaterialTheme.colorScheme.primary,
                                 unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -465,7 +469,11 @@ private fun SettingsContent(
                 }
 
                 // -- Captcha sub-block + Advanced expander (only when lossless on) -
-                AnimatedVisibility(visible = uiState.losslessEnabled) {
+                AnimatedVisibility(
+                    visible = uiState.losslessEnabled,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
+                ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Spacer(modifier = Modifier.height(12.dp))
 
@@ -488,9 +496,11 @@ private fun SettingsContent(
                                     text = "✓ Verified",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.semantics {
-                                        contentDescription = "captcha cookie verified"
-                                    },
+                                    modifier = Modifier
+                                        .weight(1f, fill = false)
+                                        .semantics {
+                                            contentDescription = "captcha cookie verified"
+                                        },
                                 )
                             }
                         }
@@ -512,7 +522,7 @@ private fun SettingsContent(
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = if (advancedExpanded) "Collapse advanced" else "Expand advanced",
+                                contentDescription = null, // parent Row carries role + stateDescription + label
                                 modifier = Modifier.graphicsLayer(rotationZ = chevronRotation),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -524,7 +534,11 @@ private fun SettingsContent(
                             )
                         }
 
-                        AnimatedVisibility(visible = advancedExpanded) {
+                        AnimatedVisibility(
+                            visible = advancedExpanded,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut(),
+                        ) {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
