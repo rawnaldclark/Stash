@@ -54,7 +54,9 @@ The wrapper extends Media3's `ForwardingPlayer(playerA)`, then overrides only th
 
 **Why a wrapper Player and not subclass `ExoPlayer`:** `ExoPlayer` is `final` in Media3. The Player interface is the documented integration point.
 
-**Both players share construction:** same `LoadControl`, same `AudioAttributes`, `setHandleAudioBecomingNoisy(true)`, `setWakeMode(C.WAKE_MODE_LOCAL)`, **same `StashRenderersFactory(ctx, eqController)` instance** (so the renderer-level EQ chain applies to both — see §4), and the same `audioSessionId`. **One difference:** only `playerA` is built with `handleAudioFocus = true`. `playerB` never makes a focus request — two players asking for focus would thrash. PlayerB inherits ducking/loss/regain implicitly from the same audio session.
+**Both players share construction:** same `LoadControl`, same `AudioAttributes`, `setHandleAudioBecomingNoisy(true)`, `setWakeMode(C.WAKE_MODE_LOCAL)`, **same `StashRenderersFactory(ctx, eqController)` instance** (so the renderer-level EQ chain applies to both — see §4), and the same `audioSessionId`. **One difference:** only `playerA` is built with `handleAudioFocus = true`. `playerB` is built with `handleAudioFocus = false` — two players independently requesting focus on the same session causes thrash and ambiguous loss/regain semantics. The wrapper instead **explicitly propagates** focus events from playerA to playerB; see §7 (Audio focus propagation).
+
+**Cached preference values are `@Volatile`.** `currentEnabled: Boolean`, `currentDurationMs: Long`, and `currentRepeatMode: Int` are written by Flow collectors on a background dispatcher and read on the playback Looper. Mark them `@Volatile` (or wrap in `AtomicReference` for the Boolean if simpler).
 
 **Each player holds exactly one MediaItem at a time.** The wrapper owns the canonical queue. When the wrapper accepts `setMediaItems(list, startIndex, startPositionMs)`:
 
@@ -102,7 +104,7 @@ CROSSFADING            ← both playing. activePlayer ramps 1→0, nextPlayer ra
 **Edge cases:**
 - **Crossfade disabled mid-fade.** Cancel ramp, snap `active.volume = 0`, `next.volume = 1.0`, complete role-swap, → `SINGLE_ACTIVE`.
 - **Track shorter than 2× `crossfadeMs`.** Auto-trigger guard: skip the fade — instant cut. Manual skip on a too-short track also hard-cuts.
-- **Manual skip during in-flight fade (rebound).** Cancel ramp. Snap previously-incoming to 1.0; it becomes the new active. Load the new target on the now-idle other player at vol 0. Start a fresh fade. (Equivalent to "the user committed to track B; now blend B → C.")
+- **Manual skip during in-flight fade (rebound).** Cancel ramp. Snap previously-incoming to 1.0; it becomes the new active. **Synchronously bump `currentIndex` to the previously-incoming's index** (so any subsequent §5 next-resolution sees the correct base). Load the new target (resolved via §5 from the bumped `currentIndex`) on the now-idle other player at vol 0. Start a fresh fade. (Equivalent to "the user committed to track B; now blend B → C.")
 - **End-of-queue during fade.** Active fades to silence; next is empty; after fade `isPlaying = false`. Repeat-all causes the wrap-around track to load on the next player as normal.
 - **`seekTo(positionMs)` during fade.** Treat as: "user wants to jump on the incoming track." Apply seek to `nextPlayer`, snap volumes 0/1, complete role-swap. (During CROSSFADING the wrapper already reports `currentMediaItem` as the incoming track per §3.)
 - **`repeat = ONE`.** Crossfade-to-self is weird. When `repeatMode == REPEAT_MODE_ONE`, suppress the crossfade — let the natural loop happen with a hard cut.
@@ -131,9 +133,26 @@ The MediaSession holds the wrapper. Controllers read state through it.
 | `seekTo(ms)` | Apply to `nextPlayer`; abort fade (snap 0/1) |
 | `seekToNext()` | Trigger rebound per §2 |
 | `seekToPrevious()` | Trigger rebound to previous per §2 |
-| `setVolume(v)` | Multiplier applied to BOTH underlying players' current ramp volumes |
+| `setVolume(v)` | See the queue-mutation sub-table below — multiplier stored as `userVolume` and applied on every ramp tick |
 | `setShuffleModeEnabled(b)` | Set on both players; rebuild `shuffleOrder` (§5); re-arm trigger |
 | `setRepeatMode(m)` | Set on both players; re-arm trigger |
+
+**Queue-mutation methods.** The wrapper owns the canonical queue, so every mutation must update `mediaItems` and the `shuffleOrder` list, plus reconcile what each underlying player currently holds. `PlayerRepositoryImpl` calls `addMediaItem(item)`, `addMediaItem(index, item)`, `removeMediaItem(i)`, `moveMediaItem(from, to)`, `setMediaItems(...)`, and `seekToDefaultPosition(index)`:
+
+| Method | Wrapper behaviour |
+|---|---|
+| `addMediaItems(index, items)` (and `addMediaItem` overloads) | Insert into `mediaItems` at `index`; rebuild `shuffleOrder` (preserving relative order of existing items in shuffle mode); if the inserted item is the new "next" per §5, preload it onto `nextPlayer` at vol 0 (replacing whatever was preloaded) |
+| `removeMediaItem(i)` / `removeMediaItems(from, to)` | Remove from `mediaItems`; rebuild `shuffleOrder`. If `i == currentIndex`: equivalent to a forced skip-to-next (uses the standard manual-skip path so the user gets a crossfade, or a hard cut if disabled). If `i == nextIndex`: re-resolve next per §5 and replace `nextPlayer`'s preloaded item |
+| `moveMediaItem(from, to)` | Reorder `mediaItems`; rebuild `shuffleOrder`; re-resolve next per §5; if next changed, replace `nextPlayer`'s preloaded item |
+| `replaceMediaItem(index, item)` | Update `mediaItems[index]`; if `index == currentIndex` it's a forced "play this now" (route through manual-skip semantics); if `index == nextIndex` swap `nextPlayer`'s preloaded item |
+| `clearMediaItems()` | Clear `mediaItems` + `shuffleOrder`; stop both players; `clearMediaItems()` on both; → SINGLE_ACTIVE with `isPlaying = false` |
+| `seekToDefaultPosition(mediaItemIndex)` | Treat as a manual jump to `mediaItemIndex` — uses the same path as `seekToNext`/`seekToPrevious` but to an arbitrary index |
+| `seekTo(mediaItemIndex, positionMs)` | Same as `seekToDefaultPosition(mediaItemIndex)` followed by `seekTo(positionMs)` on the resulting active player |
+| `getMediaItemCount()` / `getCurrentMediaItem()` / `getMediaItemAt(i)` | Already covered (§1, §3) — return from canonical queue |
+| `getCurrentTimeline()` | Synthesise a `Timeline` from the canonical queue (one window per item, with each item's metadata + duration where known). External controllers and the system notification query `currentTimeline` to render the queue UI; returning `playerA.currentTimeline` would show only one item. Implementation: extend `androidx.media3.common.Timeline` with a small `CanonicalQueueTimeline` whose windows mirror `mediaItems`. Window duration is unknown for not-yet-prepared items — that's fine; controllers handle `C.TIME_UNSET` |
+| `getBufferedPosition()` / `getContentPosition()` / `getContentDuration()` | Forward to the active player during SINGLE_ACTIVE; to `nextPlayer` during CROSSFADING |
+| `getPlayWhenReady()` / `getShuffleModeEnabled()` / `getRepeatMode()` | Forward to `playerA` (kept in sync via setters) |
+| `setVolume(v)` (extension of §3 row) | Store `userVolume: Float` in the wrapper. Every ramp tick computes `playerA.volume = userVolume * activeVol` and `playerB.volume = userVolume * incomingVol`. During SINGLE_ACTIVE the active player's volume is set to `userVolume` directly. This preserves the user's master-volume gesture even mid-fade |
 
 **Listener event forwarding.** The wrapper holds its own `Player.Listener` collection (subscribers: the MediaSession, the controller-side listener in `PlayerRepositoryImpl`). Internal listeners on both underlying players re-emit through the wrapper:
 
@@ -204,6 +223,20 @@ The clamp `coerceIn(1_000, 12_000)` is exposed as a pure-function companion (`cl
 
 **Slider granularity:** step = 1 second, range 1–12 s. Below 1 s: barely perceptible. Above 12 s: too much of each track lost to the fade.
 
+### 7. Audio focus propagation
+
+Two `ExoPlayer`s sharing an `audioSessionId` do **not** share an `AudioFocusRequest`. With `playerB` built `handleAudioFocus = false`, playerB neither requests focus nor reacts to focus changes — meaning during a phone call (focus loss) playerA pauses but playerB keeps playing if it's mid-fade. This is unacceptable.
+
+**Solution:** the wrapper attaches a `Player.Listener` to `playerA` and propagates focus-driven state changes to `playerB`:
+
+- **`onPlayWhenReadyChanged(playWhenReady, reason)`** — when `reason in { PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS, PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS_TRANSIENT, PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY }` and `playWhenReady == false`: call `playerB.playWhenReady = false`. When focus returns and playerA resumes (`reason == AUDIO_FOCUS_LOSS_TRANSIENT` ending → playWhenReady = true), and the wrapper is in CROSSFADING state, call `playerB.playWhenReady = true` to resume the overlap.
+
+**Ducking — a known V1 limitation.** Transient duck (e.g., a notification ping) attenuates playerA's output internally inside `DefaultAudioSink` without firing `Player.Listener.onVolumeChanged` (which only fires on user-initiated `setVolume` calls). The wrapper has no clean way to observe the duck and apply the same attenuation to playerB. **Mitigation:** ducks last ~3 s and are rare; the 2 s default crossfade window makes overlap during a duck statistically uncommon. **Workaround if user reports asymmetric loudness during a notification mid-fade:** add an `AudioManager.OnAudioFocusChangeListener` registered alongside playerA's focus, listening for `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK` and applying a one-shot 0.2× scale to playerB's ramp output for the duration of the duck. Defer to V2 unless reported.
+
+**Wrapper `setPlayWhenReady(b)`** (user-driven play / pause): apply to whichever players the current state needs (active during SINGLE_ACTIVE, both during CROSSFADING) — already covered by the §3 forwarding rules. The focus-driven path is distinct because it originates from playerA's listener, not the wrapper's API.
+
+**Why not just `handleAudioFocus = true` on both?** Two simultaneous `AudioManager.requestAudioFocus` calls in the same process are usually deduplicated by AudioManager, but Media3's internal focus state machine assumes single ownership. Empirically, granting focus to two ExoPlayers in the same process produces sporadic "transient loss" callbacks on whichever lost the race. Single-owner-with-explicit-propagation avoids this entirely.
+
 ## Touch points
 
 | File | Change |
@@ -225,6 +258,18 @@ Estimated total: 5 new files, 3 modified files. Largest single file: `Crossfadin
 ### Unit tests — `CrossfadingPlayerTest`
 
 JVM, JUnit 4, mockk (already in `:core:data`; add to `:core:media` test deps). Use `StandardTestDispatcher`.
+
+**Scheduler seam.** The auto-trigger uses `Handler.postDelayed` on the playback Looper, which is unmockable in plain JVM tests. Introduce a small `CrossfadeScheduler` interface with one production implementation (`HandlerCrossfadeScheduler`) and a test fake that stores pending tasks for assertions:
+
+```kotlin
+interface CrossfadeScheduler {
+    fun schedule(delayMs: Long, action: () -> Unit): Cancellable
+}
+```
+
+The wrapper takes `CrossfadeScheduler` via constructor. Tests inject a fake; production injection (Hilt) provides the Handler-backed one bound to `applicationLooper`. Every test that asserts trigger timing checks the fake's pending-task list.
+
+Same approach for the volume ramp: a `CrossfadeClock` interface (`fun nowMs(): Long`) lets tests advance virtual time without `delay()`.
 
 1. `setMediaItems preloads next on nextPlayer at vol 0`
 2. `setMediaItems with single item preloads nothing`
