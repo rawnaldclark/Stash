@@ -236,16 +236,30 @@ fun NowPlayingScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             // -- Track info --
-            Text(
-                text = track?.title ?: "Not Playing",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-            )
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = track?.title ?: "Not Playing",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (track != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    com.stash.core.ui.components.FlacBadge(
+                        fileFormat = track.fileFormat,
+                        size = 18.dp,
+                        tint = Color.White,
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(4.dp))
 

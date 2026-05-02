@@ -40,8 +40,14 @@ enum class LibraryTab { PLAYLISTS, TRACKS, ARTISTS, ALBUMS }
 /** Sort options applicable to every content tab. */
 enum class SortOrder { RECENT, ALPHABETICAL, MOST_PLAYED }
 
-/** Source filter for showing tracks from a specific service. */
-enum class SourceFilter { ALL, YOUTUBE, SPOTIFY }
+/**
+ * Top-level filter applied to the Tracks tab. Originally just service
+ * source (Spotify / YouTube); [FLAC] piggybacks on the same chip row
+ * because the user-facing question is the same — "show me some subset
+ * of my tracks". When selected, only lossless-codec files (flac, alac,
+ * wav, etc.) survive.
+ */
+enum class SourceFilter { ALL, YOUTUBE, SPOTIFY, FLAC }
 
 /**
  * @property name           Display name of the artist.

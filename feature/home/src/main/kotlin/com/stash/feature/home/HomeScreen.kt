@@ -158,9 +158,18 @@ fun HomeScreen(
                     contentDescription = "Stash",
                     modifier = Modifier.height(48.dp),
                 )
-                Spacer(modifier = Modifier.weight(1f))
-                SupporterPill(supporters = HOME_SUPPORTERS)
             }
+        }
+
+        // ── Supporter pill (full row so messages aren't truncated) ───
+        item {
+            SupporterPill(
+                supporters = HOME_SUPPORTERS,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 12.dp),
+            )
         }
 
         // ── Sync status card ─────────────────────────────────────────
@@ -1589,30 +1598,32 @@ private fun SupporterPill(
 
     Surface(
         modifier = modifier
-            .widthIn(max = 210.dp)
             .clickable { uriHandler.openUri("https://ko-fi.com/rawnald") },
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(14.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.FavoriteBorder,
                 contentDescription = "Supporters on Ko-fi",
                 tint = Color(0xFFFFC947),
-                modifier = Modifier.size(14.dp),
+                modifier = Modifier
+                    .size(16.dp)
+                    .padding(top = 2.dp),
             )
             Crossfade(
                 targetState = index,
                 animationSpec = tween(durationMillis = 600),
                 label = "supporter-cycle",
+                modifier = Modifier.weight(1f),
             ) { i ->
                 val s = supporters[i]
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = "${s.name} · ${s.amount}",
                         style = MaterialTheme.typography.labelMedium,
@@ -1622,11 +1633,16 @@ private fun SupporterPill(
                     )
                     Text(
                         text = "\u201C${s.message}\u201D",
-                        style = MaterialTheme.typography.labelSmall.copy(
+                        style = MaterialTheme.typography.bodySmall.copy(
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                         ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        // Allow up to 4 lines so the longest current
+                        // message ("Just downloaded Stash to replace
+                        // Spotify…") fits without truncation. Keep an
+                        // ellipsis cap in case a future supporter
+                        // writes a paragraph.
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

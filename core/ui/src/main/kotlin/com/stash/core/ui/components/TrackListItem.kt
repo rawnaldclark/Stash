@@ -113,13 +113,20 @@ fun TrackListItem(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (isPlaying) primaryColor else MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isPlaying) primaryColor else MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                FlacBadge(fileFormat = track.fileFormat)
+            }
             Text(
                 text = track.artist,
                 style = MaterialTheme.typography.bodySmall,
