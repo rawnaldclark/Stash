@@ -605,6 +605,7 @@ private fun SyncStatusCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
+                val showFlac = syncStatus.flacTracks > 0 && syncStatus.flacStorageBytes > 0
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -612,7 +613,7 @@ private fun SyncStatusCard(
                     StatItem(
                         label = "Tracks",
                         value = syncStatus.totalTracks.toString(),
-                        subValue = if (syncStatus.flacTracks > 0) "${syncStatus.flacTracks} FLAC" else null,
+                        subValue = if (showFlac) "${syncStatus.flacTracks} FLAC" else null,
                     )
                     StatItem(
                         label = "Spotify",
@@ -625,7 +626,7 @@ private fun SyncStatusCard(
                     StatItem(
                         label = "Storage",
                         value = formatBytes(syncStatus.storageUsedBytes),
-                        subValue = if (syncStatus.flacStorageBytes > 0) "${formatBytes(syncStatus.flacStorageBytes)} FLAC" else null,
+                        subValue = if (showFlac) "${formatBytes(syncStatus.flacStorageBytes)} FLAC" else null,
                     )
                 }
                 if (syncStatus.lastSyncTime != null) {
