@@ -6,7 +6,7 @@
 [![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-purple)](#requirements)
 [![Release](https://img.shields.io/github/v/release/rawnaldclark/Stash?color=purple&include_prereleases)](https://github.com/rawnaldclark/Stash/releases)
 
-Stash is an offline-first Android music player that syncs your liked songs, playlists, daily mixes, and discover mixes from both **Spotify** and **YouTube Music** into a single unified local library. Tracks are downloaded as high-quality Opus audio and played through a Material 3 interface with a full equalizer, queue management.
+Stash is an offline-first Android music player that syncs your liked songs, playlists, daily mixes, and discover mixes from both **Spotify** and **YouTube Music** into a single unified local library. Tracks are downloaded as high-quality FLAC audio with a full equalizer & queue management.
 
 **Stash is not an online streaming service.** It's a personal-library tool for people who already have Spotify or YouTube Music accounts and want their library available offline on their terms.
 
@@ -14,7 +14,7 @@ Stash is an offline-first Android music player that syncs your liked songs, play
 
 ## Features
 
-- **Offline everything** — tracks download as high-quality Opus audio, playable without internet
+- **Offline everything** — tracks download as high-quality FLAC audio, playable without internet
 - **Bulletproof matching** — finds the right version of tracks 99% of the time, not some random live recording or cover
 - **Custom playlists** — create your own playlists and save tracks to them from anywhere.
 - **Spotify sync preferences** — choose exactly which playlists, liked songs, daily mixes, and discovery mixes to sync. Individual toggles for each. Don't want Daily Mix 3? Turn it off.
