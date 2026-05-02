@@ -948,13 +948,20 @@ private fun TracksTab(
                     .padding(horizontal = 20.dp)
                     .padding(bottom = 8.dp),
             ) {
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    com.stash.core.ui.components.FlacBadge(fileFormat = track.fileFormat, size = 16.dp)
+                }
                 Text(
                     text = track.artist,
                     style = MaterialTheme.typography.bodyMedium,

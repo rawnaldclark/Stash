@@ -121,13 +121,20 @@ fun DetailTrackRow(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (isPlaying) primaryColor else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isPlaying) primaryColor else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                FlacBadge(fileFormat = track.fileFormat)
+            }
             // Determine subtitle text — default is artist, can be overridden or hidden
             val subtitle = subtitleOverride ?: track.artist
             if ((showArtist || subtitleOverride != null) && subtitle.isNotBlank()) {

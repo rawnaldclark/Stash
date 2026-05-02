@@ -198,12 +198,19 @@ fun QueueBottomSheet(
                                 modifier = Modifier.weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                Text(
-                                    text = track.title,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text(
+                                        text = track.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                    )
+                                    com.stash.core.ui.components.FlacBadge(fileFormat = track.fileFormat)
+                                }
                                 Text(
                                     text = track.artist,
                                     style = MaterialTheme.typography.bodySmall,
@@ -358,14 +365,18 @@ private fun CurrentTrackRow(track: Track, accentColor: Color) {
         QueueTrackArt(track)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                track.title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = accentColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                com.stash.core.ui.components.FlacBadge(fileFormat = track.fileFormat, tint = accentColor)
+            }
             Text(
                 track.artist,
                 style = MaterialTheme.typography.bodySmall,
