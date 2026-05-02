@@ -50,20 +50,38 @@ class QualityPreferencesManager @Inject constructor(
 /**
  * Maps a [QualityTier] to the corresponding yt-dlp command-line arguments.
  *
- * YouTube audio format IDs:
- *   - 140 = AAC LC 256 kbps in m4a container (highest quality available)
- *   - 251 = Opus ~160 kbps (VBR, actual range ~100-160 kbps)
+ * YouTube audio format IDs (verified empirically via ffprobe on real
+ * downloads — the previous comment block had 140 = "256 kbps" which is
+ * wrong; format 140 is actually AAC LC ~128 kbps):
+ *   - 141 = AAC LC ~256 kbps in m4a container — gated behind YouTube
+ *           Music Premium auth on the default `web` client; the music-
+ *           specific InnerTube clients (`web_music`, `android_music`,
+ *           `ios_music`) sometimes expose it to free authenticated
+ *           accounts. Cookies passed via `--cookies` (set in
+ *           DownloadExecutor) carry the user's YT auth context.
+ *   - 140 = AAC LC ~128 kbps in m4a container — universally available
+ *   - 251 = Opus VBR up to ~160 kbps in webm container — universally
+ *           available, perceptually equivalent to AAC ~256 kbps in
+ *           published listening tests
  *   - 250 = Opus ~70 kbps
  *   - 249 = Opus ~50 kbps
- *
- * BEST tier prefers AAC 256kbps (format 140) which is perceptually superior
- * to Opus 160kbps for music — better high-frequency detail, transient
- * response, and complex-passage fidelity. Falls back to Opus if unavailable.
  *
  * `--embed-metadata` tells yt-dlp to write title/artist/album tags into
  * the file during download, eliminating a separate ffmpeg metadata pass.
  */
 fun QualityTier.toYtDlpArgs(): List<String> = when (this) {
+    // Experimental: try true 256 first, fall to perceptually-equivalent
+    // Opus 160, then AAC 128 as last resort. The extractor-args switch
+    // tells yt-dlp to query the YouTube Music backends, where format
+    // 141 is more likely to appear on free authenticated accounts.
+    // Library Health surfaces the resulting format breakdown so we can
+    // measure yield empirically before promoting MAX to default.
+    QualityTier.MAX -> listOf(
+        "-f", "141/251/140/bestaudio",
+        "--extractor-args",
+        "youtube:player_client=web_music,android_music,ios_music,tv,web",
+        "--embed-metadata",
+    )
     QualityTier.BEST -> listOf(
         "-f", "140/bestaudio[ext=m4a]/251/bestaudio",
         "--embed-metadata",

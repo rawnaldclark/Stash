@@ -9,6 +9,11 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
+import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.LosslessSourceRegistry
+import com.stash.data.download.lossless.LosslessUrlDownloader
+import com.stash.data.download.lossless.SourceResult
+import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.matching.AlbumMatchExecutor
 import com.stash.data.download.matching.DuplicateDetectionService
 import com.stash.data.download.matching.MatchScorer
@@ -66,6 +71,9 @@ class DownloadManager @Inject constructor(
     private val trackDao: TrackDao,
     private val lastFmApiClient: LastFmApiClient,
     private val lastFmCredentials: LastFmCredentials,
+    private val losslessRegistry: LosslessSourceRegistry,
+    private val losslessUrlDownloader: LosslessUrlDownloader,
+    private val losslessPrefs: LosslessSourcePreferences,
 ) {
     /** Limits concurrent downloads. 8 parallel slots — with native opus (no FFmpeg
      *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
@@ -110,6 +118,18 @@ class DownloadManager @Inject constructor(
      */
     private suspend fun executeDownload(track: Track, preResolvedUrl: String?): TrackDownloadResult {
         emitProgress(track.id, 0f, DownloadStatus.MATCHING)
+
+        // Step 0: Lossless source attempt. Skipped entirely when the
+        // master toggle is off (default), or when a preResolvedUrl was
+        // passed in (caller has already chosen a specific YouTube id).
+        // On success we short-circuit the whole yt-dlp pipeline and
+        // return a finalised path. On any failure we silently fall
+        // through to the YouTube path — same behaviour as before this
+        // feature shipped, which is the safety property we want.
+        if (preResolvedUrl == null && losslessPrefs.enabledNow()) {
+            val losslessResult = tryLosslessDownload(track)
+            if (losslessResult != null) return losslessResult
+        }
 
         // Step 1: Resolve YouTube URL
         val resolveResult = if (preResolvedUrl != null) ResolveResult(url = preResolvedUrl) else resolveUrl(track)
@@ -205,6 +225,99 @@ class DownloadManager @Inject constructor(
         }
 
         Log.i(TAG, "Downloaded: ${effectiveTrack.artist} - ${effectiveTrack.title} → ${committed.filePath}")
+        emitProgress(track.id, 1f, DownloadStatus.COMPLETED)
+        return TrackDownloadResult.Success(committed.filePath)
+    }
+
+    /**
+     * Attempts to fetch [track] from a registered [LosslessSource]
+     * (squid.wtf-proxied Qobuz, etc.) ahead of the YouTube path.
+     *
+     * Returns a successful [TrackDownloadResult.Success] when a source
+     * matched + the file fetched + commit succeeded — or null in every
+     * other case so the caller can fall through to yt-dlp without
+     * try/catch noise. Failures here are NEVER returned as
+     * [TrackDownloadResult.Failed]: that would surface as a hard error
+     * on the user's sync screen even though yt-dlp can almost always
+     * succeed where lossless can't (region locks, deep cuts, niche
+     * uploads). The whole point of lossless-first is that it's
+     * advisory — if it works we win, if it doesn't we behave exactly
+     * as if it weren't enabled.
+     *
+     * Files land in the same on-disk location format as a yt-dlp
+     * download, just with a `.flac` extension instead of `.opus`. The
+     * existing [MetadataEmbedder] handles FLAC tagging because ffmpeg
+     * `-c copy` is container-agnostic.
+     */
+    private suspend fun tryLosslessDownload(track: Track): TrackDownloadResult? {
+        val query = TrackQuery(
+            artist = track.artist,
+            title = track.title,
+            album = track.album.takeIf { it.isNotBlank() },
+            isrc = track.isrc,
+            durationMs = track.durationMs.takeIf { it > 0 },
+        )
+
+        val match: SourceResult = runCatching { losslessRegistry.resolve(query) }
+            .onFailure { e ->
+                Log.w(TAG, "lossless registry threw for '${track.artist} - ${track.title}'", e)
+            }
+            .getOrNull() ?: return null
+
+        Log.d(
+            TAG,
+            "lossless match: ${match.sourceId} for '${track.artist} - ${track.title}' " +
+                "(${match.format.codec} ${match.format.bitsPerSample}bit/${match.format.sampleRateHz}Hz, " +
+                "confidence=${"%.2f".format(match.confidence)})",
+        )
+
+        emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)
+
+        // Choose extension from the source's stated codec rather than
+        // hardcoding "flac" — sources may legitimately return "alac",
+        // "mp3", etc. and the file organizer just plumbs through.
+        val ext = match.format.codec.lowercase().ifBlank { "flac" }
+        val tempFile = File(fileOrganizer.getTempDir(), "lossless_${track.id}.$ext")
+
+        val fetched = losslessUrlDownloader.download(
+            source = match,
+            destination = tempFile,
+            onProgress = { read, total ->
+                val frac = if (total > 0) read.toFloat() / total else 0f
+                emitProgress(track.id, 0.1f + frac * 0.7f, DownloadStatus.DOWNLOADING)
+            },
+        ).getOrElse { e ->
+            Log.w(TAG, "lossless fetch failed for '${track.artist} - ${track.title}': ${e.message}")
+            runCatching { tempFile.delete() }
+            return null
+        }
+
+        emitProgress(track.id, 0.85f, DownloadStatus.PROCESSING)
+
+        // Embed metadata (title/artist/album) so the FLAC has the same
+        // tagging discipline as a yt-dlp output. ffmpeg -c copy means
+        // no re-encode — fast and lossless.
+        runCatching { metadataEmbedder.embedMetadata(fetched, track) }
+            .onFailure { e -> Log.w(TAG, "lossless metadata embed failed for ${track.id}", e) }
+
+        val committed = runCatching {
+            fileOrganizer.commitDownload(
+                tempFile = fetched,
+                artist = track.artist,
+                album = track.album.ifEmpty { null },
+                title = track.title,
+                format = ext,
+            )
+        }.getOrElse { e ->
+            Log.w(TAG, "lossless commitDownload failed for ${track.id}", e)
+            runCatching { fetched.delete() }
+            return null
+        }
+
+        Log.i(
+            TAG,
+            "Lossless downloaded (${match.sourceId}): ${track.artist} - ${track.title} → ${committed.filePath}",
+        )
         emitProgress(track.id, 1f, DownloadStatus.COMPLETED)
         return TrackDownloadResult.Success(committed.filePath)
     }

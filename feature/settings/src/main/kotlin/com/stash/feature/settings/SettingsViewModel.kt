@@ -28,6 +28,7 @@ import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
+import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
@@ -73,6 +74,7 @@ class SettingsViewModel @Inject constructor(
     private val youTubeHistoryPreference: YouTubeHistoryPreference,
     private val youTubeHistoryScrobbler: YouTubeHistoryScrobbler,
     private val youTubeScrobblerState: YouTubeScrobblerState,
+    private val losslessPrefs: LosslessSourcePreferences,
 ) : ViewModel() {
 
     /** Internal mutable UI state that is combined with token-manager flows. */
@@ -102,6 +104,8 @@ class SettingsViewModel @Inject constructor(
         youTubeHistoryPreference.enabled,
         youTubeHistoryScrobbler.health,
         listeningEventDao.pendingYtScrobbleCount(),
+        losslessPrefs.enabled,
+        losslessPrefs.captchaCookieValue,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val spotifyAuth = values[0] as AuthState
@@ -119,6 +123,8 @@ class SettingsViewModel @Inject constructor(
         val ytHistoryEnabled = values[12] as Boolean
         val ytHistoryHealth = values[13] as YouTubeScrobblerHealth
         val ytPendingCount = values[14] as Int
+        val losslessEnabled = values[15] as Boolean
+        val squidWtfCaptchaCookie = (values[16] as String?).orEmpty()
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
@@ -154,6 +160,8 @@ class SettingsViewModel @Inject constructor(
             ytHistoryEnabled = ytHistoryEnabled,
             ytHistoryHealth = ytHistoryHealth,
             ytPendingCount = ytPendingCount,
+            losslessEnabled = losslessEnabled,
+            squidWtfCaptchaCookie = squidWtfCaptchaCookie,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -567,6 +575,31 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             youTubeScrobblerState.setDisabledReason(null)
             youTubeScrobblerState.resetConsecutiveFailures()
+        }
+    }
+
+    // -- Lossless mode toggle ------------------------------------------------
+
+    /**
+     * Master switch for the lossless-source pipeline. When true, the
+     * download path tries the squid.wtf-proxied Qobuz registry before
+     * falling back to yt-dlp; when false (default), yt-dlp runs as it
+     * always has and the lossless code is dead at runtime.
+     */
+    fun onLosslessEnabledChanged(enabled: Boolean) {
+        viewModelScope.launch {
+            losslessPrefs.setEnabled(enabled)
+        }
+    }
+
+    /**
+     * Persists the user-pasted `captcha_verified_at` cookie value
+     * for qobuz.squid.wtf. Empty / blank input clears the stored value.
+     * Whitespace is trimmed inside [LosslessSourcePreferences.setCaptchaCookieValue].
+     */
+    fun onSquidWtfCaptchaCookieChanged(value: String) {
+        viewModelScope.launch {
+            losslessPrefs.setCaptchaCookieValue(value)
         }
     }
 

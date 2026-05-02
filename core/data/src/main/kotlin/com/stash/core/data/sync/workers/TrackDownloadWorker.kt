@@ -243,20 +243,60 @@ class TrackDownloadWorker @AssistedInject constructor(
                                         filePath = outcome.filePath,
                                         fileSizeBytes = fileSize,
                                     )
-                                    // Duration from the container itself —
-                                    // authoritative, independent of whether
-                                    // the match pipeline populated a value.
-                                    // Fill-if-zero guards against overwriting
-                                    // a known-good Spotify duration.
-                                    if (trackEntity.durationMs == 0L) {
-                                        audioDurationExtractor.extractMs(outcome.filePath)
-                                            ?.let { ms ->
+
+                                    // Read codec / bitrate / duration from the
+                                    // file's own container. Single retriever
+                                    // pass — covers three writes that used to
+                                    // be either skipped (file_format,
+                                    // quality_kbps) or guarded on
+                                    // duration_ms=0.
+                                    val meta = audioDurationExtractor.extract(outcome.filePath)
+                                    if (meta != null) {
+                                        // Format + bitrate: the source-of-truth for
+                                        // Library Health. MMR can return zero bitrate
+                                        // for some containers — only write when we
+                                        // got something credible.
+                                        if (meta.format != "unknown" && meta.bitrateKbps > 0) {
+                                            runCatching {
+                                                trackDao.setFormatAndQuality(
+                                                    trackId = queueItem.trackId,
+                                                    fileFormat = meta.format,
+                                                    qualityKbps = meta.bitrateKbps,
+                                                )
+                                            }.onFailure { e ->
+                                                Log.w(TAG, "setFormatAndQuality failed for ${queueItem.trackId}", e)
+                                            }
+                                        }
+
+                                        // Duration reconciliation: the file is
+                                        // truth. Overwrite the DB when it's missing
+                                        // OR when the value diverges from the file
+                                        // by >10% — that gap is the signature of
+                                        // yt-dlp matching a different cut (live,
+                                        // extended) than Spotify's metadata
+                                        // implied.
+                                        if (meta.durationMs > 0) {
+                                            val dbMs = trackEntity.durationMs
+                                            val drift = if (dbMs > 0) {
+                                                kotlin.math.abs(meta.durationMs - dbMs).toDouble() /
+                                                    meta.durationMs.toDouble()
+                                            } else 1.0
+                                            if (dbMs == 0L || drift > 0.10) {
                                                 runCatching {
-                                                    trackDao.fillMissingDuration(queueItem.trackId, ms)
+                                                    trackDao.setDuration(queueItem.trackId, meta.durationMs)
+                                                }.onSuccess {
+                                                    if (dbMs > 0) {
+                                                        Log.i(
+                                                            TAG,
+                                                            "duration reconciled: ${track.artist} - ${track.title} " +
+                                                                "${dbMs}ms → ${meta.durationMs}ms (${(drift * 100).toInt()}% drift)",
+                                                        )
+                                                    }
                                                 }.onFailure { e ->
-                                                    Log.w(TAG, "fillMissingDuration failed for ${queueItem.trackId}", e)
+                                                    Log.w(TAG, "setDuration failed for ${queueItem.trackId}", e)
                                                 }
                                             }
+                                        }
                                     }
                                     downloadQueueDao.updateStatus(
                                         id = queueItem.id,
