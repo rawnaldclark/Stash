@@ -448,6 +448,14 @@ interface TrackDao {
     @Query("SELECT COALESCE(SUM(file_size_bytes), 0) FROM tracks WHERE is_downloaded = 1")
     fun getTotalStorageBytes(): Flow<Long>
 
+    /** Count of downloaded FLAC tracks (reactive). */
+    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND file_format = 'flac'")
+    fun getFlacCount(): Flow<Int>
+
+    /** Sum of file sizes (bytes) for downloaded FLAC tracks (reactive). */
+    @Query("SELECT COALESCE(SUM(file_size_bytes), 0) FROM tracks WHERE is_downloaded = 1 AND file_format = 'flac'")
+    fun getFlacStorageBytes(): Flow<Long>
+
     /** Count of downloaded tracks from Spotify. */
     @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND source = 'SPOTIFY'")
     fun getSpotifyDownloadedCount(): Flow<Int>

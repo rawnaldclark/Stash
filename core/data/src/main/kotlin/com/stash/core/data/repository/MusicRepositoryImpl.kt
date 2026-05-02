@@ -186,6 +186,12 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getTotalStorageBytes(): Flow<Long> =
         trackDao.getTotalStorageBytes()
 
+    override fun getFlacTrackCount(): Flow<Int> =
+        trackDao.getFlacCount()
+
+    override fun getFlacStorageBytes(): Flow<Long> =
+        trackDao.getFlacStorageBytes()
+
     override fun getSpotifyDownloadedCount(): Flow<Int> =
         trackDao.getSpotifyDownloadedCount()
 
