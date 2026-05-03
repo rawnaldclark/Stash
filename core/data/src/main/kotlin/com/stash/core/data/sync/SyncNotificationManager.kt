@@ -41,6 +41,17 @@ class SyncNotificationManager @Inject constructor(
         /** Notification ID for the app update notification. */
         const val NOTIFICATION_ID_UPDATE = 9003
 
+        /**
+         * Channel ID for lossless-source events that need user
+         * attention — currently only the "captcha expired" prompt
+         * for squid.wtf, but a likely home for future per-source
+         * configuration nudges (rate-limit hit, source down, etc).
+         */
+        const val CHANNEL_LOSSLESS = "lossless_channel"
+
+        /** Notification ID for the captcha-expired nudge. */
+        const val NOTIFICATION_ID_LOSSLESS_CAPTCHA = 9004
+
         /** Maximum value for the determinate progress bar. */
         private const val PROGRESS_MAX = 100
     }
@@ -80,9 +91,39 @@ class SyncNotificationManager @Inject constructor(
             description = "Notification when a new version of Stash is available"
         }
 
+        val losslessChannel = NotificationChannel(
+            CHANNEL_LOSSLESS,
+            "Lossless Source",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = "Alerts that affect lossless downloads — currently the squid.wtf captcha-expired prompt"
+        }
+
         notificationManager.createNotificationChannels(
-            listOf(progressChannel, summaryChannel, updateChannel)
+            listOf(progressChannel, summaryChannel, updateChannel, losslessChannel)
         )
+    }
+
+    /**
+     * Post a "Lossless captcha expired — tap to verify" notification.
+     * [contentIntent] is the deep-link to the captcha verify screen.
+     * Caller (typically [CaptchaExpiredNotifier]) is responsible for
+     * debouncing — this method always notifies, never throttles.
+     */
+    fun showLosslessCaptchaExpired(contentIntent: PendingIntent) {
+        val notification = NotificationCompat.Builder(context, CHANNEL_LOSSLESS)
+            .setContentTitle("Lossless captcha expired")
+            .setContentText("squid.wtf needs a fresh captcha solve. Tap to verify.")
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setAutoCancel(true)
+            .setContentIntent(contentIntent)
+            .build()
+        notificationManager.notify(NOTIFICATION_ID_LOSSLESS_CAPTCHA, notification)
+    }
+
+    /** Cancel the captcha-expired notification, e.g. when the user just refreshed the cookie. */
+    fun cancelLosslessCaptchaExpired() {
+        notificationManager.cancel(NOTIFICATION_ID_LOSSLESS_CAPTCHA)
     }
 
     /**
