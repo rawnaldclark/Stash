@@ -1,6 +1,7 @@
 package com.stash.data.download
 
 import android.util.Log
+import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
@@ -69,6 +70,7 @@ class DownloadManager @Inject constructor(
     private val qualityPrefs: QualityPreferencesManager,
     private val ytLibraryCanonicalizer: YtLibraryCanonicalizer,
     private val trackDao: TrackDao,
+    private val playlistDao: PlaylistDao,
     private val lastFmApiClient: LastFmApiClient,
     private val lastFmCredentials: LastFmCredentials,
     private val losslessRegistry: LosslessSourceRegistry,
@@ -119,16 +121,25 @@ class DownloadManager @Inject constructor(
     private suspend fun executeDownload(track: Track, preResolvedUrl: String?): TrackDownloadResult {
         emitProgress(track.id, 0f, DownloadStatus.MATCHING)
 
-        // Step 0: Lossless source attempt. Skipped entirely when the
-        // master toggle is off (default), or when a preResolvedUrl was
-        // passed in (caller has already chosen a specific YouTube id).
-        // On success we short-circuit the whole yt-dlp pipeline and
-        // return a finalised path. On any failure we silently fall
-        // through to the YouTube path — same behaviour as before this
-        // feature shipped, which is the safety property we want.
-        if (preResolvedUrl == null && losslessPrefs.enabledNow()) {
-            val losslessResult = tryLosslessDownload(track)
-            if (losslessResult != null) return losslessResult
+        // Step 0: Lossless source attempt. Skipped when a preResolvedUrl
+        // is supplied (caller already chose a specific YouTube id).
+        // Otherwise we attempt lossless when EITHER:
+        //   - the global lossless toggle is on, OR
+        //   - this track belongs to a Stash Mix (locally-curated
+        //     rotating playlist). Mix tracks are the small, curated
+        //     surface where bandwidth/storage cost is worth eating
+        //     even if the user hasn't opted into lossless globally —
+        //     they'll get FLAC for the ~30 mix tracks and yt-dlp for
+        //     the rest of their library.
+        // On success we short-circuit the YouTube pipeline and return
+        // a finalised path. On any failure we fall through to the
+        // YouTube path — same behaviour as before this feature shipped.
+        if (preResolvedUrl == null) {
+            val forceLossless = isStashMixTrack(track.id)
+            if (forceLossless || losslessPrefs.enabledNow()) {
+                val losslessResult = tryLosslessDownload(track, forced = forceLossless)
+                if (losslessResult != null) return losslessResult
+            }
         }
 
         // Step 1: Resolve YouTube URL
@@ -249,7 +260,18 @@ class DownloadManager @Inject constructor(
      * existing [MetadataEmbedder] handles FLAC tagging because ffmpeg
      * `-c copy` is container-agnostic.
      */
-    private suspend fun tryLosslessDownload(track: Track): TrackDownloadResult? {
+    /**
+     * True when [trackId] appears in any active Stash Mix playlist.
+     * Returns false on any DB error — failure here should never block
+     * a download (we'd just lose the lossless override and fall back
+     * to global-toggle behaviour).
+     */
+    private suspend fun isStashMixTrack(trackId: Long): Boolean =
+        runCatching { playlistDao.isTrackInStashMix(trackId) }
+            .onFailure { Log.w(TAG, "isTrackInStashMix lookup failed for $trackId", it) }
+            .getOrDefault(false)
+
+    private suspend fun tryLosslessDownload(track: Track, forced: Boolean = false): TrackDownloadResult? {
         val query = TrackQuery(
             artist = track.artist,
             title = track.title,
@@ -268,7 +290,8 @@ class DownloadManager @Inject constructor(
             TAG,
             "lossless match: ${match.sourceId} for '${track.artist} - ${track.title}' " +
                 "(${match.format.codec} ${match.format.bitsPerSample}bit/${match.format.sampleRateHz}Hz, " +
-                "confidence=${"%.2f".format(match.confidence)})",
+                "confidence=${"%.2f".format(match.confidence)}" +
+                if (forced) ", forced=stash-mix)" else ")",
         )
 
         emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)

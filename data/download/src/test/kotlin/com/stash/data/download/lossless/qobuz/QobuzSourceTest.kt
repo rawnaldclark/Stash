@@ -3,6 +3,7 @@ package com.stash.data.download.lossless.qobuz
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.TrackQuery
+import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -32,8 +33,9 @@ class QobuzSourceTest {
 
     private val apiClient: QobuzApiClient = mockk()
     private val rateLimiter: AggregatorRateLimiter = mockk(relaxUnitFun = true)
+    private val captchaExpiredNotifier: CaptchaExpiredNotifier = mockk(relaxUnitFun = true)
 
-    private fun source() = QobuzSource(apiClient, rateLimiter)
+    private fun source() = QobuzSource(apiClient, rateLimiter, captchaExpiredNotifier)
 
     private fun stubLimiterReady() {
         coEvery { rateLimiter.acquire(QobuzSource.SOURCE_ID) } returns true
