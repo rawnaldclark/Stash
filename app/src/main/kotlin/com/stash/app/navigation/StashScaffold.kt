@@ -13,6 +13,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -21,6 +22,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.stash.app.RequestNotificationPermissionOnce
 import com.stash.core.ui.theme.StashTheme
+import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import com.stash.feature.nowplaying.MiniPlayer
 
 /**
@@ -30,13 +32,32 @@ import com.stash.feature.nowplaying.MiniPlayer
  * which sits between the content area and the navigation bar.
  */
 @Composable
-fun StashScaffold() {
+fun StashScaffold(
+    pendingDeepLink: String? = null,
+    onDeepLinkConsumed: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
     // Android 13+ runtime permission for notifications. One-shot per install.
     RequestNotificationPermissionOnce()
+
+    // Process notification deep-link extras handed in from MainActivity.
+    // Only one target right now (the captcha verifier); easy to extend
+    // when more deep-link surfaces show up.
+    LaunchedEffect(pendingDeepLink) {
+        when (pendingDeepLink) {
+            CaptchaExpiredNotifier.DEEP_LINK_TARGET -> {
+                navController.navigate(SquidWtfCaptchaRoute) {
+                    launchSingleTop = true
+                }
+                onDeepLinkConsumed()
+            }
+            null -> Unit
+            else -> onDeepLinkConsumed()  // unknown target — clear so we don't loop
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,

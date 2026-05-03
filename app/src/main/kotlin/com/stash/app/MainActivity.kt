@@ -9,12 +9,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.IntentCompat
 import com.stash.app.navigation.StashScaffold
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.model.ThemeMode
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
+import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -28,17 +30,21 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var localImportCoordinator: LocalImportCoordinator
 
+    /**
+     * Pending deep-link target read from the launch / new-intent extras.
+     * Compose observes this via [StashScaffold]'s `pendingDeepLink`
+     * parameter, navigates once, then calls back to clear it via
+     * [clearPendingDeepLink].
+     */
+    private val pendingDeepLink = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // Capture the flow into a local so the lambda below doesn't touch `this`
-        // during composition setup.
         val themeModeFlow: Flow<ThemeMode> = themePreference.themeMode
 
         setContent {
-            // Collect the persisted preference. Default to SYSTEM until DataStore
-            // emits so the initial frame doesn't flash the wrong theme.
             val themeMode by themeModeFlow.collectAsState(initial = ThemeMode.SYSTEM)
             val systemDark = isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
@@ -48,24 +54,41 @@ class MainActivity : ComponentActivity() {
             }
 
             StashTheme(darkTheme = darkTheme) {
-                StashScaffold()
+                StashScaffold(
+                    pendingDeepLink = pendingDeepLink.value,
+                    onDeepLinkConsumed = { pendingDeepLink.value = null },
+                )
             }
         }
 
-        // Handle the initial intent (share target cold-start path).
+        // Handle the initial intent (share target cold-start path,
+        // notification deep-link cold-start path, etc).
         handleShareIntent(intent)
+        handleDeepLinkIntent(intent)
     }
 
-    /**
-     * Called when the activity is already running and a new share intent
-     * arrives (warm-start path). Fires on every new `ACTION_SEND` /
-     * `ACTION_SEND_MULTIPLE` the user sends while Stash is foregrounded or
-     * in the back stack.
-     */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleShareIntent(intent)
+        handleDeepLinkIntent(intent)
+    }
+
+    /**
+     * Reads [CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET] from the
+     * launch intent and stashes it for Compose to consume on the next
+     * frame. No-op when the extra is absent (the normal launcher case).
+     */
+    private fun handleDeepLinkIntent(intent: Intent?) {
+        if (intent == null) return
+        val target = intent.getStringExtra(CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET)
+            ?: return
+        pendingDeepLink.value = target
+        // Clear the extra so a config change doesn't re-trigger the
+        // navigate. setIntent() above already replaces the activity's
+        // intent reference; this just guards against the same Intent
+        // instance being processed twice.
+        intent.removeExtra(CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET)
     }
 
     /**
