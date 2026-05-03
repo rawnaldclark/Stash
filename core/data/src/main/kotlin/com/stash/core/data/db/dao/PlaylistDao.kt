@@ -163,6 +163,36 @@ interface PlaylistDao {
     )
     suspend fun getTracksForPlaylist(playlistId: Long): List<TrackEntity>
 
+    /**
+     * True when [trackId] appears in any active Stash Mix playlist —
+     * i.e. a playlist with `type = STASH_MIX`. Stash Mixes are the
+     * locally-curated rotating playlists; downloads from those should
+     * always go through the lossless source if one's available, even
+     * when the global lossless toggle is off.
+     *
+     * Returns false for tracks that exist in the library only via
+     * other playlist types (custom, daily mix, liked songs, etc.).
+     * The `removed_at IS NULL` clause excludes soft-deleted tracks
+     * so a track that was once in a mix but isn't any more no longer
+     * forces lossless mode.
+     *
+     * Stored as TEXT via [com.stash.core.data.db.converter.Converters.playlistTypeToString]
+     * — comparing against the literal "STASH_MIX" string is correct.
+     */
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM playlists p
+            INNER JOIN playlist_tracks pt ON p.id = pt.playlist_id
+            WHERE pt.track_id = :trackId
+              AND pt.removed_at IS NULL
+              AND p.type = 'STASH_MIX'
+              AND p.is_active = 1
+        )
+        """
+    )
+    suspend fun isTrackInStashMix(trackId: Long): Boolean
+
     // ── Metadata updates ────────────────────────────────────────────────
 
     /** Update the cached track count for a playlist. */

@@ -115,6 +115,10 @@ data class SyncStatusInfo(
     val youTubeTracks: Int = 0,
     val totalPlaylists: Int = 0,
     val storageUsedBytes: Long = 0,
+    /** Count of downloaded FLAC tracks. Subset of [totalTracks]. */
+    val flacTracks: Int = 0,
+    /** Sum of file sizes for downloaded FLAC tracks. Subset of [storageUsedBytes]. */
+    val flacStorageBytes: Long = 0,
     val state: SyncState = SyncState.IDLE,
     /** Richer display-oriented summary of the latest sync outcome. */
     val displayStatus: SyncDisplayStatus = SyncDisplayStatus.Idle,

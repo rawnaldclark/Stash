@@ -605,6 +605,7 @@ private fun SyncStatusCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
+                val showFlac = syncStatus.flacTracks > 0 && syncStatus.flacStorageBytes > 0
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -612,6 +613,7 @@ private fun SyncStatusCard(
                     StatItem(
                         label = "Tracks",
                         value = syncStatus.totalTracks.toString(),
+                        subValue = if (showFlac) "${syncStatus.flacTracks} FLAC" else null,
                     )
                     StatItem(
                         label = "Spotify",
@@ -624,6 +626,7 @@ private fun SyncStatusCard(
                     StatItem(
                         label = "Storage",
                         value = formatBytes(syncStatus.storageUsedBytes),
+                        subValue = if (showFlac) "${formatBytes(syncStatus.flacStorageBytes)} FLAC" else null,
                     )
                 }
                 if (syncStatus.lastSyncTime != null) {
@@ -690,7 +693,7 @@ private fun syncStatusDotColor(
 }
 
 @Composable
-private fun StatItem(label: String, value: String) {
+private fun StatItem(label: String, value: String, subValue: String? = null) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
@@ -702,6 +705,13 @@ private fun StatItem(label: String, value: String) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (subValue != null) {
+            Text(
+                text = subValue,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 

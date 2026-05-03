@@ -119,6 +119,26 @@ class AggregatorRateLimiter @Inject constructor() {
     }
 
     /**
+     * Manually clear circuit-breaker + failure state for [sourceId].
+     * Used by the Settings UI's "Reset lossless attempts" action when
+     * the breaker tripped on a transient outage and the user knows
+     * the source is healthy again — skips the 30-min organic timeout.
+     *
+     * Bucket tokens are also fully refilled so the next call doesn't
+     * have to wait on the steady-state refill rate.
+     */
+    suspend fun reset(sourceId: String) {
+        mutex.withLock {
+            val bucket = bucketFor(sourceId)
+            val cfg = configFor(sourceId)
+            bucket.blockedUntilMs = 0L
+            bucket.consecutiveFailures = 0
+            bucket.tokens = cfg.burstCapacity
+            bucket.lastRefillMs = clock.nowMs()
+        }
+    }
+
+    /**
      * Record a 429 / Too Many Requests response. Pauses the source for
      * the configured backoff period — caller-side logic should not retry
      * before then, and [acquire] will return false for that interval.

@@ -7,6 +7,7 @@ import com.stash.data.download.lossless.LosslessSource
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
+import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -33,6 +34,7 @@ import kotlin.math.abs
 class QobuzSource @Inject constructor(
     private val apiClient: QobuzApiClient,
     private val rateLimiter: AggregatorRateLimiter,
+    private val captchaExpiredNotifier: CaptchaExpiredNotifier,
 ) : LosslessSource {
 
     override val id: String = SOURCE_ID
@@ -135,8 +137,21 @@ class QobuzSource @Inject constructor(
             rateLimiter.reportSuccess(id)
             result
         } catch (e: QobuzApiException) {
-            if (e.status == 429) rateLimiter.reportRateLimited(id)
-            else rateLimiter.reportFailure(id)
+            when {
+                e.status == 429 -> rateLimiter.reportRateLimited(id)
+                // 403 "Captcha required" is the normal expired-cookie
+                // state. It's recoverable (user pastes / re-verifies
+                // a fresh cookie) and shouldn't trip the circuit
+                // breaker — otherwise three quick 403s during a sync
+                // disable the source for 30min even after the user
+                // refreshes the cookie. We skip the call but don't
+                // accumulate failures.
+                e.status == 403 && e.message?.contains("Captcha", ignoreCase = true) == true -> {
+                    Log.i(TAG, "captcha required — cookie likely expired; skipping without circuit-break")
+                    captchaExpiredNotifier.notifyExpired()
+                }
+                else -> rateLimiter.reportFailure(id)
+            }
             Log.w(TAG, "squid.wtf API call failed: $e")
             null
         } catch (e: Exception) {

@@ -81,7 +81,16 @@ class HomeViewModel @Inject constructor(
     private val sourceCountsFlow = combine(
         musicRepository.getSpotifyDownloadedCount(),
         musicRepository.getYouTubeDownloadedCount(),
-    ) { spotify, youtube -> Pair(spotify, youtube) }
+        musicRepository.getFlacTrackCount(),
+        musicRepository.getFlacStorageBytes(),
+    ) { spotify, youtube, flac, flacBytes ->
+        SourceCounts(
+            spotify = spotify,
+            youtube = youtube,
+            flac = flac,
+            flacBytes = flacBytes,
+        )
+    }
 
     /**
      * Active sort for the Home Playlists grid. Starts at RECENT to match
@@ -169,10 +178,12 @@ class HomeViewModel @Inject constructor(
         HomeUiState(
             syncStatus = syncStatus.copy(
                 totalTracks = musicData.trackCount,
-                spotifyTracks = sourceCounts.first,
-                youTubeTracks = sourceCounts.second,
+                spotifyTracks = sourceCounts.spotify,
+                youTubeTracks = sourceCounts.youtube,
                 totalPlaylists = musicData.playlists.size,
                 storageUsedBytes = musicData.storageBytes,
+                flacTracks = sourceCounts.flac,
+                flacStorageBytes = sourceCounts.flacBytes,
             ),
             stashMixes = stashMixes,
             spotifyMixes = spotifyMixes,
@@ -420,6 +431,19 @@ private data class MusicData(
     val recentlyAdded: List<Track>,
     val trackCount: Int,
     val storageBytes: Long,
+)
+
+/**
+ * Bundled counts/sizes that flow into [HomeUiState.syncStatus]. Pre-computed
+ * here so the top-level uiState combine stays at <=5 inputs (the typed
+ * [kotlinx.coroutines.flow.combine] arity ceiling — see comment on
+ * `musicDataFlow`).
+ */
+private data class SourceCounts(
+    val spotify: Int,
+    val youtube: Int,
+    val flac: Int,
+    val flacBytes: Long,
 )
 
 /**

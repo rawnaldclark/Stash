@@ -3,6 +3,7 @@ package com.stash.app.navigation
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -108,6 +109,26 @@ fun StashNavHost(
                 onNavigateToLibraryHealth = {
                     navController.navigate(LibraryHealthRoute)
                 },
+                onNavigateToSquidWtfCaptcha = {
+                    navController.navigate(SquidWtfCaptchaRoute)
+                },
+            )
+        }
+
+        composable<SquidWtfCaptchaRoute> { backStackEntry ->
+            // Reach the Settings ViewModel from the parent route so the
+            // captured cookie value writes to the same DataStore the
+            // interceptor reads from. We grab the *Settings* nav entry
+            // (not this one) so the ViewModel survives this route's
+            // dispose and the value lands in prefs immediately.
+            val settingsEntry = remember(backStackEntry) {
+                navController.getBackStackEntry(SettingsRoute)
+            }
+            val viewModel: com.stash.feature.settings.SettingsViewModel =
+                androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
+            com.stash.feature.settings.components.SquidWtfCaptchaScreen(
+                onCookieCaptured = viewModel::onSquidWtfCaptchaCookieChanged,
+                onClose = { navController.popBackStack() },
             )
         }
 

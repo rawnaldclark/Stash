@@ -73,6 +73,12 @@ interface MusicRepository {
     /** Total storage used by all tracks in bytes (reactive). */
     fun getTotalStorageBytes(): Flow<Long>
 
+    /** Count of downloaded FLAC tracks (reactive). */
+    fun getFlacTrackCount(): Flow<Int>
+
+    /** Sum of file sizes (bytes) for downloaded FLAC tracks (reactive). */
+    fun getFlacStorageBytes(): Flow<Long>
+
     /** Count of downloaded tracks from Spotify. */
     fun getSpotifyDownloadedCount(): Flow<Int>
 

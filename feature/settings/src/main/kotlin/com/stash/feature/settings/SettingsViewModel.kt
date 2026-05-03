@@ -28,7 +28,9 @@ import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
+import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.qobuz.QobuzSource
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
@@ -75,6 +77,7 @@ class SettingsViewModel @Inject constructor(
     private val youTubeHistoryScrobbler: YouTubeHistoryScrobbler,
     private val youTubeScrobblerState: YouTubeScrobblerState,
     private val losslessPrefs: LosslessSourcePreferences,
+    private val losslessRateLimiter: AggregatorRateLimiter,
 ) : ViewModel() {
 
     /** Internal mutable UI state that is combined with token-manager flows. */
@@ -600,6 +603,18 @@ class SettingsViewModel @Inject constructor(
     fun onSquidWtfCaptchaCookieChanged(value: String) {
         viewModelScope.launch {
             losslessPrefs.setCaptchaCookieValue(value)
+        }
+    }
+
+    /**
+     * Clear the rate-limiter's circuit breaker for the squid.wtf
+     * source. Useful when the breaker tripped on a transient outage
+     * and the user knows the source is back up — skips the 30-min
+     * organic timeout. No-op if the breaker isn't currently tripped.
+     */
+    fun onResetLosslessRateLimiter() {
+        viewModelScope.launch {
+            losslessRateLimiter.reset(QobuzSource.SOURCE_ID)
         }
     }
 

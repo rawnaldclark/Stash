@@ -1,5 +1,11 @@
 package com.stash.feature.settings
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,6 +32,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,6 +41,7 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,10 +50,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import com.stash.core.data.sync.workers.UpdateCheckWorker
@@ -57,7 +68,6 @@ import com.stash.core.model.ThemeMode
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SpotifyCookieDialog
 import com.stash.feature.settings.components.YouTubeCookieDialog
@@ -74,6 +84,7 @@ import com.stash.feature.settings.components.YouTubeHistorySyncSection
 fun SettingsScreen(
     onNavigateToEqualizer: () -> Unit = {},
     onNavigateToLibraryHealth: () -> Unit = {},
+    onNavigateToSquidWtfCaptcha: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -161,8 +172,10 @@ fun SettingsScreen(
         onRetryYouTubeHistory = viewModel::onRetryYouTubeHistory,
         onLosslessEnabledChanged = viewModel::onLosslessEnabledChanged,
         onSquidWtfCaptchaCookieChanged = viewModel::onSquidWtfCaptchaCookieChanged,
+        onResetLosslessRateLimiter = viewModel::onResetLosslessRateLimiter,
         onNavigateToEqualizer = onNavigateToEqualizer,
         onNavigateToLibraryHealth = onNavigateToLibraryHealth,
+        onNavigateToSquidWtfCaptcha = onNavigateToSquidWtfCaptcha,
         modifier = modifier,
     )
 }
@@ -196,8 +209,10 @@ private fun SettingsContent(
     onRetryYouTubeHistory: () -> Unit,
     onLosslessEnabledChanged: (Boolean) -> Unit,
     onSquidWtfCaptchaCookieChanged: (String) -> Unit,
+    onResetLosslessRateLimiter: () -> Unit,
     onNavigateToEqualizer: () -> Unit,
     onNavigateToLibraryHealth: () -> Unit,
+    onNavigateToSquidWtfCaptcha: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -358,11 +373,18 @@ private fun SettingsContent(
         SectionHeader(title = "Audio Quality")
 
         GlassCard {
+            var advancedExpanded by remember(uiState.losslessEnabled) { mutableStateOf(false) }
+            val chevronRotation by animateFloatAsState(
+                targetValue = if (advancedExpanded) 90f else 0f,
+                label = "advancedChevron",
+            )
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .selectableGroup(),
             ) {
+                // -- Download quality (radio group) -------------------------
                 Text(
                     text = "Download quality",
                     style = MaterialTheme.typography.titleSmall,
@@ -404,90 +426,148 @@ private fun SettingsContent(
                         }
                     }
                 }
-            }
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+                // -- Divider between always-on quality + experimental lossless ---
+                // glassBorder matches the existing in-card divider style used by
+                // other Settings cards (Storage, Move library, AccountConnectionCard).
+                // Do NOT use MaterialTheme.colorScheme.outlineVariant — it would
+                // visually announce the consolidation as foreign vs the surrounding
+                // GlassCard chrome.
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    thickness = 1.dp,
+                    color = extendedColors.glassBorder,
+                )
 
-        // -- Lossless mode toggle ---------------------------------------------
-        // Routes downloads through a public Qobuz proxy (qobuz.squid.wtf)
-        // before falling back to yt-dlp. FLAC files are 5-10× larger than
-        // Opus, so this is opt-in. When OFF, the download pipeline behaves
-        // exactly as it did pre-feature.
-        GlassCard {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Lossless downloads (experimental)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = if (uiState.losslessEnabled) {
-                            "Tries Qobuz (via squid.wtf) first; FLAC files are ~10× larger"
-                        } else {
-                            "Off — uses YouTube/yt-dlp like before"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // -- Lossless toggle row -------------------------------------
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Lossless downloads (experimental)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (uiState.losslessEnabled) {
+                                "Try Qobuz proxy first; FLAC ~10× larger"
+                            } else {
+                                "Off — uses YouTube/yt-dlp like before"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = uiState.losslessEnabled,
+                        onCheckedChange = onLosslessEnabledChanged,
+                        modifier = Modifier.semantics { role = Role.Switch },
                     )
                 }
-                Switch(
-                    checked = uiState.losslessEnabled,
-                    onCheckedChange = onLosslessEnabledChanged,
-                    modifier = Modifier.semantics { role = Role.Switch },
-                )
-            }
-        }
 
-        // -- squid.wtf captcha cookie ----------------------------------------
-        // Manual paste field while WebView automation is unbuilt.
-        // squid.wtf gates `/api/download-music` behind a `captcha_verified_at`
-        // cookie set after the user solves an ALTCHA in the browser.
-        // Workflow: open qobuz.squid.wtf in browser → solve captcha by
-        // clicking Download once → copy cookie value → paste here.
-        // Cookie expires every ~30 minutes; user repastes when downloads
-        // start failing again.
-        if (uiState.losslessEnabled) {
-            Spacer(modifier = Modifier.height(8.dp))
-            GlassCard {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "squid.wtf captcha cookie",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Open qobuz.squid.wtf in your browser, click Download on " +
-                            "any track to solve the captcha, then copy the value of the " +
-                            "`captcha_verified_at` cookie and paste it here. Re-paste " +
-                            "every ~30 min when downloads start failing.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = uiState.squidWtfCaptchaCookie,
-                        onValueChange = onSquidWtfCaptchaCookieChanged,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("captcha_verified_at value") },
-                        singleLine = true,
-                        placeholder = { Text("e.g. 1777687404951") },
-                    )
-                    if (uiState.squidWtfCaptchaCookie.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Cookie set — squid.wtf downloads should work for ~30min.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                // -- Captcha sub-block + Advanced expander (only when lossless on) -
+                AnimatedVisibility(
+                    visible = uiState.losslessEnabled,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Verify button + verified status, single row to save vertical
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedButton(
+                                onClick = onNavigateToSquidWtfCaptcha,
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary,
+                                ),
+                            ) {
+                                Text("Verify in browser")
+                            }
+                            if (uiState.squidWtfCaptchaCookie.isNotEmpty()) {
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "✓ Verified",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .weight(1f, fill = false)
+                                        .semantics {
+                                            contentDescription = "captcha cookie verified"
+                                        },
+                                )
+                            }
+                        }
+
+                        // -- Advanced expander row (chevron + label) -----------
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { advancedExpanded = !advancedExpanded }
+                                .semantics {
+                                    role = Role.Button
+                                    // Spec §Accessibility: announce collapsed/expanded
+                                    // state to screen readers.
+                                    stateDescription = if (advancedExpanded) "expanded" else "collapsed"
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null, // parent Row carries role + stateDescription + label
+                                modifier = Modifier.graphicsLayer(rotationZ = chevronRotation),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Advanced",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = advancedExpanded,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut(),
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Or paste the captcha_verified_at cookie value directly:",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedTextField(
+                                    value = uiState.squidWtfCaptchaCookie,
+                                    onValueChange = onSquidWtfCaptchaCookieChanged,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("captcha_verified_at value") },
+                                    singleLine = true,
+                                    placeholder = { Text("e.g. 1777687404951") },
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                TextButton(
+                                    onClick = onResetLosslessRateLimiter,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text(
+                                        text = "Reset lossless attempts",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
