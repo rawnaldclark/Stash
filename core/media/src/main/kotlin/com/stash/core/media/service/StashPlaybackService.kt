@@ -80,6 +80,7 @@ class StashPlaybackService : MediaLibraryService() {
         private const val PLAYLISTS_ID = "PLAYLISTS"
         private const val RECENTLY_ADDED_ID = "RECENTLY_ADDED"
         private const val PLAYLIST_PREFIX = "PLAYLIST_"
+        private const val SHUFFLE_PLAY_PREFIX = "SHUFFLE_PLAY_"
     }
 
     private var mediaSession: MediaLibrarySession? = null
@@ -313,6 +314,29 @@ class StashPlaybackService : MediaLibraryService() {
             startPositionMs: Long,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
             return serviceScope.future {
+                if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith(SHUFFLE_PLAY_PREFIX)) {
+                    val playlistId = mediaItems[0].mediaId.removePrefix(SHUFFLE_PLAY_PREFIX).toLongOrNull()
+                    if (playlistId != null) {
+                        val tracks = playlistDao.getTracksForPlaylist(playlistId)
+                        val items = tracks.map { track ->
+                            MediaItem.Builder()
+                                .setMediaId(track.id.toString())
+                                .setUri(track.filePath ?: "")
+                                .setMediaMetadata(track.toMediaMetadata())
+                                .build()
+                        }.shuffled()
+
+                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            mediaSession.player.shuffleModeEnabled = true
+                        }
+
+                        return@future MediaSession.MediaItemsWithStartPosition(
+                            items,
+                            0,
+                            C.TIME_UNSET
+                        )
+                    }
+                }
                 val resolvedItems = mediaItems.map { resolveMediaItem(it) }
                 MediaSession.MediaItemsWithStartPosition(resolvedItems, startIndex, startPositionMs)
             }
@@ -325,6 +349,18 @@ class StashPlaybackService : MediaLibraryService() {
             mediaItems: List<MediaItem>,
         ): ListenableFuture<List<MediaItem>> {
             return serviceScope.future {
+                if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith(SHUFFLE_PLAY_PREFIX)) {
+                    val playlistId = mediaItems[0].mediaId.removePrefix(SHUFFLE_PLAY_PREFIX).toLongOrNull()
+                    if (playlistId != null) {
+                        return@future playlistDao.getTracksForPlaylist(playlistId).map { track ->
+                            MediaItem.Builder()
+                                .setMediaId(track.id.toString())
+                                .setUri(track.filePath ?: "")
+                                .setMediaMetadata(track.toMediaMetadata())
+                                .build()
+                        }.shuffled()
+                    }
+                }
                 mediaItems.map { resolveMediaItem(it) }
             }
         }
@@ -395,6 +431,28 @@ class StashPlaybackService : MediaLibraryService() {
                                                     .setTitle(playlist.name)
                                                     .setIsBrowsable(true)
                                                     .setIsPlayable(false)
+                                                    .build(),
+                                            )
+                                            .build(),
+                                        null,
+                                    )
+                                }
+                            }
+                        }
+                        if (mediaId.startsWith(SHUFFLE_PLAY_PREFIX)) {
+                            val playlistId = mediaId.removePrefix(SHUFFLE_PLAY_PREFIX).toLongOrNull()
+                            if (playlistId != null) {
+                                val playlist = playlistDao.getById(playlistId)
+                                if (playlist != null) {
+                                    return@future LibraryResult.ofItem(
+                                        MediaItem.Builder()
+                                            .setMediaId(mediaId)
+                                            .setMediaMetadata(
+                                                MediaMetadata.Builder()
+                                                    .setTitle(getString(R.string.shuffle_play))
+                                                    .setArtworkUri("android.resource://$packageName/drawable/ic_shuffle".toUri())
+                                                    .setIsBrowsable(false)
+                                                    .setIsPlayable(true)
                                                     .build(),
                                             )
                                             .build(),
@@ -493,7 +551,19 @@ class StashPlaybackService : MediaLibraryService() {
                         if (parentId.startsWith(PLAYLIST_PREFIX)) {
                             val playlistId = parentId.removePrefix(PLAYLIST_PREFIX).toLongOrNull()
                             if (playlistId != null) {
-                                playlistDao.getTracksForPlaylist(playlistId).map { track ->
+                                val shuffleItem = MediaItem.Builder()
+                                    .setMediaId("$SHUFFLE_PLAY_PREFIX$playlistId")
+                                    .setMediaMetadata(
+                                        MediaMetadata.Builder()
+                                            .setTitle(getString(R.string.shuffle_play))
+                                            .setArtworkUri("android.resource://$packageName/drawable/ic_shuffle".toUri())
+                                            .setIsBrowsable(false)
+                                            .setIsPlayable(true)
+                                            .build(),
+                                    )
+                                    .build()
+
+                                val tracks = playlistDao.getTracksForPlaylist(playlistId).map { track ->
                                     MediaItem.Builder()
                                         .setMediaId(track.id.toString())
                                         .setUri(track.filePath ?: "")
@@ -502,6 +572,7 @@ class StashPlaybackService : MediaLibraryService() {
                                         )
                                         .build()
                                 }
+                                listOf(shuffleItem) + tracks
                             } else emptyList()
                         } else emptyList()
                     }

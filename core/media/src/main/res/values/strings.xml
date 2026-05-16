@@ -2,4 +2,5 @@
 <resources>
     <string name="notification_action_like">Add to Liked Songs</string>
     <string name="notification_action_unlike">Remove from Liked Songs</string>
+    <string name="shuffle_play">Shuffle Play</string>
 </resources>
