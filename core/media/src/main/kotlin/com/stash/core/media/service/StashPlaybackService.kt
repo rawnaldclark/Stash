@@ -35,7 +35,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.guava.future
 import javax.inject.Inject
@@ -162,11 +161,19 @@ class StashPlaybackService : MediaLibraryService() {
         //      state and ramps to the new target via LoudnessGainProcessor.
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                refreshLikeButton()
+                updateCustomLayout()
                 onTrackTransitionForLoudness(mediaItem)
             }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                updateCustomLayout()
+            }
+
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                updateCustomLayout()
+            }
         })
-        refreshLikeButton()
+        updateCustomLayout()
     }
 
     /**
@@ -189,28 +196,82 @@ class StashPlaybackService : MediaLibraryService() {
         }
     }
 
+    private var lastTrackId: Long? = null
+    private var lastIsLiked: Boolean = false
+
     /**
-     * Cancels any existing like-state observer and starts a new one for
-     * the player's current media item. Each emission rebuilds the
-     * MediaSession's custom layout with the appropriate heart icon.
-     * When there's no current track the custom layout is cleared so the
-     * notification doesn't render a stale heart.
+     * Updates the MediaSession custom layout with the heart, shuffle, and repeat icons.
+     * Starts a database observer for the current track's like state. For player-state
+     * changes (repeat/shuffle) on the same track, it refreshes the layout using the
+     * last known like state to avoid redundant DB observer restarts.
      */
     @OptIn(UnstableApi::class)
-    private fun refreshLikeButton() {
-        likeObserverJob?.cancel()
+    private fun updateCustomLayout() {
         val session = mediaSession ?: return
-        val trackId = session.player.currentMediaItem?.mediaId?.toLongOrNull()
+        val player = session.player
+        val trackId = player.currentMediaItem?.mediaId?.toLongOrNull()
+
         if (trackId == null) {
+            likeObserverJob?.cancel()
+            lastTrackId = null
+            lastIsLiked = false
             session.setCustomLayout(ImmutableList.of())
             return
         }
-        likeObserverJob = serviceScope.launch {
-            trackDao.observeLikeState(trackId).collect { state ->
-                val isLiked = state?.stashLikedAt != null
-                session.setCustomLayout(ImmutableList.of(buildLikeButton(isLiked)))
+
+        if (trackId != lastTrackId) {
+            likeObserverJob?.cancel()
+            lastTrackId = trackId
+            // Reset liked state and push an initial layout immediately for the new track.
+            // This prevents the previous track's heart state from lingering until the
+            // DB observer emits for the first time.
+            lastIsLiked = false
+            pushLayout(session, player, false)
+
+            likeObserverJob = serviceScope.launch {
+                trackDao.observeLikeState(trackId).collect { state ->
+                    val isLiked = state?.stashLikedAt != null
+                    // Update if the state actually changed, or if we haven't pushed for this track yet.
+                    if (isLiked != lastIsLiked) {
+                        lastIsLiked = isLiked
+                        pushLayout(session, player, lastIsLiked)
+                    }
+                }
             }
+        } else {
+            pushLayout(session, player, lastIsLiked)
         }
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun pushLayout(session: MediaSession, player: Player, isLiked: Boolean) {
+        val layout = ImmutableList.of(
+            buildLikeButton(isLiked),
+            buildRepeatButton(player.repeatMode)
+        )
+        session.setCustomLayout(layout)
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun buildRepeatButton(repeatMode: Int): CommandButton {
+        val iconRes = when (repeatMode) {
+            Player.REPEAT_MODE_OFF -> R.drawable.ic_repeat_off
+            Player.REPEAT_MODE_ONE -> R.drawable.ic_repeat_one
+            else -> R.drawable.ic_repeat
+        }
+        val displayNameRes = when (repeatMode) {
+            Player.REPEAT_MODE_OFF -> R.string.notification_action_repeat_off
+            Player.REPEAT_MODE_ALL -> R.string.notification_action_repeat_all
+            Player.REPEAT_MODE_ONE -> R.string.notification_action_repeat_one
+            else -> R.string.notification_action_repeat_off
+        }
+        return CommandButton.Builder()
+            .setDisplayName(getString(displayNameRes))
+            .setIconResId(iconRes)
+            .setSessionCommand(
+                SessionCommand(COMMAND_CYCLE_REPEAT, android.os.Bundle.EMPTY),
+            )
+            .build()
     }
 
     @OptIn(UnstableApi::class)
@@ -678,17 +739,19 @@ class StashPlaybackService : MediaLibraryService() {
                     }
                 }
                 COMMAND_TOGGLE_LIKE -> {
-                    // Read the mediaId on the caller thread (Player APIs are
-                    // main-thread-only) but do the DAO/repo work in the
-                    // service scope so the callback returns immediately.
                     val trackId = session.player.currentMediaItem?.mediaId?.toLongOrNull()
                     if (trackId != null) {
+                        // Optimistic update: toggle the local state and push the layout
+                        // immediately so the UI feels snappy and avoids race conditions
+                        // where multiple clicks see the same stale DB state.
+                        lastIsLiked = !lastIsLiked
+                        pushLayout(session, session.player, lastIsLiked)
+
                         serviceScope.launch {
-                            val current = trackDao.observeLikeState(trackId).firstOrNull()
-                            if (current?.stashLikedAt != null) {
-                                stashLikedRepository.remove(trackId)
-                            } else {
+                            if (lastIsLiked) {
                                 stashLikedRepository.add(trackId)
+                            } else {
+                                stashLikedRepository.remove(trackId)
                             }
                         }
                     }

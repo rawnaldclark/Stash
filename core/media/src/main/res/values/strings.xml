@@ -2,5 +2,10 @@
 <resources>
     <string name="notification_action_like">Add to Liked Songs</string>
     <string name="notification_action_unlike">Remove from Liked Songs</string>
+    <string name="notification_action_repeat_off">Repeat Off</string>
+    <string name="notification_action_repeat_all">Repeat All</string>
+    <string name="notification_action_repeat_one">Repeat One</string>
+    <string name="notification_action_shuffle_on">Shuffle On</string>
+    <string name="notification_action_shuffle_off">Shuffle Off</string>
     <string name="shuffle_play">Shuffle Play</string>
 </resources>

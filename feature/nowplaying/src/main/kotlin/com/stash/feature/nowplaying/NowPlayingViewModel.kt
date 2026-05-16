@@ -66,6 +66,11 @@ class NowPlayingViewModel @Inject constructor(
     /** One-shot snackbar messages (e.g. "Track flagged as wrong match"). */
     val userMessages: SharedFlow<String> = _userMessages.asSharedFlow()
 
+    /**
+     * v0.9.27: holds optimistic heart-toggle states to prevent flickering.
+     */
+    private val optimisticLikeState = MutableStateFlow<Map<Long, Boolean>>(emptyMap())
+
     init {
         observePlayerStateLive()
         observeUserPlaylists()
@@ -92,6 +97,9 @@ class NowPlayingViewModel @Inject constructor(
      * `flatMapLatest` into Room for the full row. Fall back to the
      * player's snapshot only when Room has no row (e.g., streamed/preview
      * content with synthetic id) so search-tab playback still works.
+     *
+     * v0.9.27 (fix): merges [optimisticLikeState] so the heart icon doesn't
+     * flicker when the 250ms position ticks race with the DB write.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun observePlayerStateLive() {
@@ -107,12 +115,22 @@ class NowPlayingViewModel @Inject constructor(
             playerRepository.playerState,
             playerRepository.currentPosition,
             liveTrackFlow,
-        ) { state, positionMs, liveTrack ->
+            optimisticLikeState,
+        ) { state, positionMs, liveTrack, optimistic ->
             _uiState.update { current ->
+                val track = liveTrack ?: state.currentTrack
+                val trackKey = if (track?.id == 0L) track.youtubeId.hashCode().toLong() else track?.id
+                val finalTrack = if (track != null && trackKey != null && optimistic.containsKey(trackKey)) {
+                    val optLiked = optimistic[trackKey]!!
+                    track.copy(stashLikedAt = if (optLiked) System.currentTimeMillis() else null)
+                } else {
+                    track
+                }
+
                 current.copy(
                     // Prefer Room's live row; fall back to player's MediaItem
                     // snapshot for non-library content (streams, search previews).
-                    currentTrack = liveTrack ?: state.currentTrack,
+                    currentTrack = finalTrack,
                     isPlaying = state.isPlaying,
                     currentPositionMs = positionMs,
                     durationMs = state.durationMs,
@@ -333,36 +351,40 @@ class NowPlayingViewModel @Inject constructor(
     fun onLikeTap() {
         val track = _uiState.value.currentTrack ?: return
         val wasLiked = track.stashLikedAt != null
-        // Optimistic UI: flip the timestamp BEFORE the DB write so the
-        // icon updates within one frame. The smart-merge in
-        // observePlayerState keeps this from being stomped by position
-        // ticks; observeLikeStateForCurrentTrack converges to the
-        // canonical value when Room emits.
-        val now = System.currentTimeMillis()
-        _uiState.update { current ->
-            val t = current.currentTrack ?: return@update current
-            if (t.id != track.id) return@update current
-            current.copy(currentTrack = t.copy(stashLikedAt = if (wasLiked) null else now))
-        }
+
+        // Optimistic UI: flip the state in our local map immediately.
+        // The combine() block in observePlayerStateLive merges this so
+        // the heart icon updates within one frame and stays updated.
+        // We use a temporary key for non-library tracks (id=0) using their videoId.
+        val trackKey = if (track.id == 0L) track.youtubeId.hashCode().toLong() else track.id
+        optimisticLikeState.update { it + (trackKey to !wasLiked) }
+
         viewModelScope.launch {
             runCatching {
-                if (wasLiked) {
-                    stashLikedRepository.remove(track.id)
-                } else {
-                    stashLikedRepository.add(track.id)
+                var finalTrackId = track.id
+                if (finalTrackId == 0L) {
+                    // Not in library yet (search preview). Insert it first.
+                    // This creates a stub TrackEntity in the DB so the
+                    // Liked Songs cross-ref has a parent to point to.
+                    finalTrackId = musicRepository.insertTrack(track)
                 }
+
+                if (wasLiked) {
+                    stashLikedRepository.remove(finalTrackId)
+                } else {
+                    stashLikedRepository.add(finalTrackId)
+                }
+                // Once the DB write is confirmed, we can clear the optimistic
+                // override; Room's own emission will carry the truth.
+                optimisticLikeState.update { it - trackKey }
             }.onFailure { e ->
                 android.util.Log.w("NowPlayingViewModel", "stash like toggle failed", e)
                 _userMessages.tryEmit(
                     if (wasLiked) "Couldn't remove from Liked Songs"
                     else "Couldn't add to Liked Songs"
                 )
-                // Roll back the optimistic flip so UI reflects truth.
-                _uiState.update { current ->
-                    val t = current.currentTrack ?: return@update current
-                    if (t.id != track.id) return@update current
-                    current.copy(currentTrack = t.copy(stashLikedAt = track.stashLikedAt))
-                }
+                // Roll back: clear the optimistic flip so UI reflects truth.
+                optimisticLikeState.update { it - trackKey }
             }
         }
     }

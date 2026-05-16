@@ -39,7 +39,8 @@ class StashLikedPlaylistRepository @Inject constructor(
      */
     suspend fun add(trackId: Long) {
         val playlistId = ensureSeeded()
-        if (playlistDao.getCrossRef(playlistId, trackId) != null) return
+        val existing = playlistDao.getCrossRef(playlistId, trackId)
+        if (existing != null && existing.removedAt == null) return
         // Reuse existing helper for trackCount + position handling.
         // Mirrors linkTrackToDownloadsMix at MusicRepositoryImpl.kt:294.
         musicRepository.addTrackToPlaylist(trackId = trackId, playlistId = playlistId)

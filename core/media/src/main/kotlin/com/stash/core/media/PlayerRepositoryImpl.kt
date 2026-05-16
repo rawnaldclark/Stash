@@ -429,7 +429,7 @@ class PlayerRepositoryImpl @Inject constructor(
         val track = currentItem?.toTrack()
         val queue = buildList {
             for (i in 0 until controller.mediaItemCount) {
-                controller.getMediaItemAt(i).toTrack()?.let { add(it) }
+                add(controller.getMediaItemAt(i).toTrack())
             }
         }
 
@@ -507,15 +507,21 @@ class PlayerRepositoryImpl @Inject constructor(
      * Best-effort reconstruction of a [Track] from a [MediaItem]'s metadata.
      * Only the fields carried through Media3 metadata are populated.
      */
-    private fun MediaItem.toTrack(): Track? {
+    private fun MediaItem.toTrack(): Track {
         val meta = mediaMetadata
-        val trackId = meta.extras?.getLong(EXTRA_TRACK_ID) ?: mediaId.toLongOrNull() ?: return null
+        // v0.9.27: allow id=0 fallback for non-library tracks (e.g. search
+        // previews with videoId strings). This makes the Like button and
+        // other actions visible in Now Playing for non-library content.
+        val trackId = meta.extras?.getLong(EXTRA_TRACK_ID) ?: mediaId.toLongOrNull() ?: 0L
         return Track(
             id = trackId,
             title = meta.title?.toString() ?: "",
             artist = meta.artist?.toString() ?: "",
             album = meta.albumTitle?.toString() ?: "",
             albumArtUrl = meta.artworkUri?.toString(),
+            // For non-library tracks, the mediaId is the YouTube videoId.
+            youtubeId = if (trackId == 0L) mediaId else null,
+            source = if (trackId == 0L) com.stash.core.model.MusicSource.YOUTUBE else com.stash.core.model.MusicSource.SPOTIFY
         )
     }
 }
