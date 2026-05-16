@@ -318,7 +318,7 @@ class StashPlaybackService : MediaLibraryService() {
                     val playlistId = mediaItems[0].mediaId.removePrefix(SHUFFLE_PLAY_PREFIX).toLongOrNull()
                     if (playlistId != null) {
                         val tracks = playlistDao.getTracksForPlaylist(playlistId)
-                        val items = tracks.map { track ->
+                        val items = tracks.filter{track -> track.isDownloaded}.map { track ->
                             MediaItem.Builder()
                                 .setMediaId(track.id.toString())
                                 .setUri(track.filePath ?: "")
@@ -563,7 +563,7 @@ class StashPlaybackService : MediaLibraryService() {
                                     )
                                     .build()
 
-                                val tracks = playlistDao.getTracksForPlaylist(playlistId).map { track ->
+                                val tracks = playlistDao.getTracksForPlaylist(playlistId).filter{track -> track.isDownloaded}.map { track ->
                                     MediaItem.Builder()
                                         .setMediaId(track.id.toString())
                                         .setUri(track.filePath ?: "")
