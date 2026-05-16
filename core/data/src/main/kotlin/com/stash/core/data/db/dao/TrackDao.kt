@@ -646,6 +646,14 @@ interface TrackDao {
     suspend fun updateLastPlayed(trackId: Long, timestamp: Long)
 
     /**
+     * v0.9.27: Returns the most recently played track that is actually
+     * downloaded. Used by the playback service to fulfill the Android Auto
+     * Media Resumption contract (onPlaybackResumption).
+     */
+    @Query("SELECT * FROM tracks WHERE is_downloaded = 1 AND last_played IS NOT NULL ORDER BY last_played DESC LIMIT 1")
+    suspend fun getLastPlayedTrack(): TrackEntity?
+
+    /**
      * v0.9.13: Mark a track as saved to Spotify Liked Songs.
      * Called by [LikeDestinationDispatcher] after a successful
      * `PUT /v1/me/tracks` call. Forward-only; once set, never cleared
@@ -797,6 +805,24 @@ interface TrackDao {
         """
     )
     fun search(query: String): Flow<List<TrackEntity>>
+
+    /**
+     * Search only downloaded tracks by title, artist, or album using FTS4.
+     */
+    @Query(
+        """
+        SELECT tracks.* FROM tracks
+        JOIN tracks_fts ON tracks.rowid = tracks_fts.rowid
+        LEFT JOIN track_blocklist bl
+            ON bl.canonical_key = (tracks.canonical_artist || '|' || tracks.canonical_title)
+            OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = tracks.spotify_uri)
+            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = tracks.youtube_id)
+        WHERE tracks_fts MATCH :query
+          AND bl.canonical_key IS NULL
+          AND tracks.is_downloaded = 1
+        """
+    )
+    fun searchDownloaded(query: String): Flow<List<TrackEntity>>
 
     // ── Count / storage queries ─────────────────────────────────────────
 

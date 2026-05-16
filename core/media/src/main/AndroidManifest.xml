@@ -6,13 +6,28 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application>
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
         <service
             android:name="com.stash.core.media.service.StashPlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
