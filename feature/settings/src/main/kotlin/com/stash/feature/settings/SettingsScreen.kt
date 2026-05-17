@@ -1196,13 +1196,13 @@ private fun SettingsContent(
             Column(modifier = Modifier.fillMaxWidth()) {
                 // Database Backup -----------------------------------------
                 Text(
-                    text = "Internal Database",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = "Backup",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Export or import everything: metadata, playlists, settings, and service cookies.",
+                    text = "Export settings and database or import from a previous backup.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
