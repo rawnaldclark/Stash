@@ -143,7 +143,22 @@ data class SettingsUiState(
      * taps share, in case the file was deleted between init and tap.
      */
     val hasCrashReport: Boolean = false,
+    /** Current status of the database export/import operation. */
+    val databaseBackupState: DatabaseBackupState = DatabaseBackupState.Idle,
+    /** Whether the import confirmation dialog is showing. */
+    val showImportConfirmation: Boolean = false,
 )
+
+/**
+ * State of a database export or import operation in Settings.
+ */
+sealed interface DatabaseBackupState {
+    data object Idle : DatabaseBackupState
+    data object Exporting : DatabaseBackupState
+    data object Importing : DatabaseBackupState
+    data class Success(val message: String) : DatabaseBackupState
+    data class Error(val message: String) : DatabaseBackupState
+}
 
 /**
  * Connection state for the Last.fm scrobbler integration.

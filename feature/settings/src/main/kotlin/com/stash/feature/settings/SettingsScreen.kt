@@ -43,6 +43,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -68,6 +69,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import android.net.Uri
 import android.widget.Toast
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -175,6 +177,40 @@ fun SettingsScreen(
     // immediately so revisiting the screen doesn't re-scroll.
     val deepLinkFocus = remember { viewModel.consumeDeepLinkFocus() }
 
+    val storageContext = LocalContext.current
+    val contentResolver = storageContext.contentResolver
+    // Tracks what action the user intended when they tapped the folder
+    // picker. "SetOnly" = redirect new downloads; "SetAndMove" = also start the
+    // library migration to the picked folder as soon as it's granted.
+    var pendingPickerIntent by remember { mutableStateOf(PickerIntent.SetOnly) }
+    val treePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) {
+            // Take a persistable permission BEFORE handing the URI to the
+            // VM — without this, the permission is revoked when the app
+            // is backgrounded and the persisted URI becomes useless.
+            runCatching {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            viewModel.setExternalStorageUri(uri)
+            when (pendingPickerIntent) {
+                PickerIntent.SetAndMove -> viewModel.startMoveLibrary(uri)
+                PickerIntent.SetAndRestart -> {
+                    // Success: permission re-granted for the restored folder.
+                    // We can now safely restart the app.
+                    android.os.Process.killProcess(android.os.Process.myPid())
+                }
+                else -> Unit
+            }
+        }
+        pendingPickerIntent = PickerIntent.SetOnly
+    }
+
     SettingsContent(
         uiState = uiState,
         focusOnEntry = deepLinkFocus,
@@ -209,11 +245,23 @@ fun SettingsScreen(
         onHeartDefaultStashChanged = viewModel::onHeartDefaultStashChanged,
         onHeartDefaultSpotifyChanged = viewModel::onHeartDefaultSpotifyChanged,
         onHeartDefaultYtMusicChanged = viewModel::onHeartDefaultYtMusicChanged,
+        onExportDatabase = viewModel::onExportDatabase,
+        onImportDatabase = viewModel::onImportDatabase,
+        onConfirmImportDatabase = {
+            viewModel.onConfirmImportDatabase { restoredUri ->
+                pendingPickerIntent = PickerIntent.SetAndRestart
+                treePicker.launch(restoredUri)
+            }
+        },
+        onCancelImportDatabase = viewModel::onCancelImportDatabase,
+        onDismissDatabaseBackupStatus = viewModel::onDismissDatabaseBackupStatus,
         onNavigateToEqualizer = onNavigateToEqualizer,
         onNavigateToLibraryHealth = onNavigateToLibraryHealth,
         onNavigateToSquidWtfCaptcha = onNavigateToSquidWtfCaptcha,
         onShareLatestCrashReport = viewModel::latestCrashShareTarget,
         onDiagnosticsRefresh = viewModel::refreshDiagnostics,
+        treePicker = treePicker,
+        onSetPickerIntent = { pendingPickerIntent = it },
         modifier = modifier,
     )
 }
@@ -258,6 +306,11 @@ private fun SettingsContent(
     onHeartDefaultStashChanged: (Boolean) -> Unit,
     onHeartDefaultSpotifyChanged: (Boolean) -> Unit,
     onHeartDefaultYtMusicChanged: (Boolean) -> Unit,
+    onExportDatabase: (Uri) -> Unit,
+    onImportDatabase: (Uri) -> Unit,
+    onConfirmImportDatabase: () -> Unit,
+    onCancelImportDatabase: () -> Unit,
+    onDismissDatabaseBackupStatus: () -> Unit,
     onNavigateToEqualizer: () -> Unit,
     onNavigateToLibraryHealth: () -> Unit,
     onNavigateToSquidWtfCaptcha: () -> Unit,
@@ -273,6 +326,8 @@ private fun SettingsContent(
      * when the user navigates away and comes back.
      */
     onDiagnosticsRefresh: () -> Unit,
+    treePicker: androidx.activity.result.ActivityResultLauncher<android.net.Uri?>?,
+    onSetPickerIntent: (PickerIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -1007,6 +1062,155 @@ private fun SettingsContent(
             java.io.File(storageContext.filesDir, "music").absolutePath
         }
 
+        // Database backup -----------------------------------------------------
+        val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip"),
+        ) { uri ->
+            if (uri != null) onExportDatabase(uri)
+        }
+        val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            if (uri != null) onImportDatabase(uri)
+        }
+
+        if (uiState.databaseBackupState !is DatabaseBackupState.Idle) {
+            AlertDialog(
+                onDismissRequest = {
+                    if (uiState.databaseBackupState !is DatabaseBackupState.Exporting &&
+                        uiState.databaseBackupState !is DatabaseBackupState.Importing) {
+                        onDismissDatabaseBackupStatus()
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = MaterialTheme.shapes.large,
+                title = {
+                    Text(
+                        text = when (uiState.databaseBackupState) {
+                            DatabaseBackupState.Exporting -> "Exporting Database"
+                            DatabaseBackupState.Importing -> "Importing Database"
+                            is DatabaseBackupState.Success -> "Success"
+                            is DatabaseBackupState.Error -> "Error"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        when (val state = uiState.databaseBackupState) {
+                            DatabaseBackupState.Exporting, DatabaseBackupState.Importing -> {
+                                androidx.compose.material3.LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Text(
+                                    text = "Processing...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            is DatabaseBackupState.Success -> {
+                                Text(
+                                    text = state.message,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            is DatabaseBackupState.Error -> {
+                                Text(
+                                    text = state.message,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    if (uiState.databaseBackupState is DatabaseBackupState.Success ||
+                        uiState.databaseBackupState is DatabaseBackupState.Error) {
+                        TextButton(onClick = onDismissDatabaseBackupStatus) {
+                            Text("OK")
+                        }
+                    }
+                },
+            )
+        }
+
+        if (uiState.showImportConfirmation) {
+            AlertDialog(
+                onDismissRequest = onCancelImportDatabase,
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = MaterialTheme.shapes.large,
+                title = {
+                    Text(
+                        text = "Overwrite Library & Settings?",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                },
+                text = {
+                    Text(
+                        text = "This will completely replace your existing library metadata, playlists, settings, and account connections. This action cannot be undone.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = onConfirmImportDatabase,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) {
+                        Text("Overwrite")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onCancelImportDatabase) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
+
+        GlassCard {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Database Backup -----------------------------------------
+                Text(
+                    text = "Internal Database",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Export or import everything: metadata, playlists, settings, and service cookies.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { exportLauncher.launch("stash-backup.zip") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    ) {
+                        Text("Export Backup")
+                    }
+                    OutlinedButton(
+                        onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    ) {
+                        Text("Import Backup")
+                    }
+                }
+            }
+        }
+
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 StorageRow(label = "Total tracks", value = "${uiState.totalTracks}")
@@ -1051,8 +1255,11 @@ private fun SettingsContent(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = { treePicker.launch(null) },
+                    OutlinedButton(
+                        onClick = {
+                            onSetPickerIntent(PickerIntent.SetOnly)
+                            treePicker.launch(null)
+                        },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.primary,
@@ -1063,7 +1270,7 @@ private fun SettingsContent(
                         )
                     }
                     if (externalTree != null) {
-                        androidx.compose.material3.OutlinedButton(
+                        OutlinedButton(
                             onClick = { onSetExternalStorage(null) },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.outlinedButtonColors(
@@ -1113,7 +1320,7 @@ private fun SettingsContent(
                             if (externalTree != null) {
                                 onStartMoveLibrary(externalTree)
                             } else {
-                                pendingPickerIntent = PickerIntent.SetAndMove
+                                onSetPickerIntent(PickerIntent.SetAndMove)
                                 treePicker.launch(null)
                             }
                         },
@@ -1399,7 +1606,7 @@ private fun LastFmSection(
  * [SetOnly] = redirect new downloads; [SetAndMove] = also start the
  * library migration to the picked folder as soon as it's granted.
  */
-private enum class PickerIntent { SetOnly, SetAndMove }
+private enum class PickerIntent { SetOnly, SetAndMove, SetAndRestart }
 
 /**
  * Renders the "Move existing library" action inside the Storage card.
