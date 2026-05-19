@@ -15,6 +15,12 @@ import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import androidx.core.net.toUri
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * Handles exporting and importing the internal Room database, DataStore settings,
@@ -30,6 +36,15 @@ class DatabaseBackupManager @Inject constructor(
     private val database: StashDatabase,
 ) {
 
+    private val json = Json { ignoreUnknownKeys = true }
+
+    @Serializable
+    private data class BackupManifest(
+        val dbSchemaVersion: Int,
+        val exportTimestamp: Long,
+        val appVersionName: String? = null
+    )
+
     /**
      * Exports the database and settings to the provided [targetUri] as a ZIP.
      */
@@ -42,15 +57,28 @@ class DatabaseBackupManager @Inject constructor(
 
             val dbFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
             val datastoreDir = File(context.filesDir, "datastore")
+            val appVersionName = runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrNull()
 
             context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
                 ZipOutputStream(outputStream).use { zipOut ->
-                    // Add DB
+                    // 2. Add Manifest first so import can validate it early
+                    val manifest = BackupManifest(
+                        dbSchemaVersion = database.openHelper.readableDatabase.version,
+                        exportTimestamp = System.currentTimeMillis(),
+                        appVersionName = appVersionName
+                    )
+                    zipOut.putNextEntry(ZipEntry("manifest.json"))
+                    zipOut.write(json.encodeToString(manifest).toByteArray())
+                    zipOut.closeEntry()
+
+                    // 3. Add DB
                     if (dbFile.exists()) {
                         addToZip(zipOut, dbFile, "stash.db")
                     }
 
-                    // Add all DataStore files (settings, tokens, etc.)
+                    // 4. Add all DataStore files (settings, tokens, etc.)
                     if (datastoreDir.exists()) {
                         datastoreDir.listFiles()?.forEach { file ->
                             if (file.isFile) {
@@ -78,15 +106,41 @@ class DatabaseBackupManager @Inject constructor(
     suspend fun importDatabase(sourceUri: Uri): Result<Uri?> = withContext(Dispatchers.IO) {
         runCatching {
             android.util.Log.i("BackupManager", "Starting import from $sourceUri")
-            // 1. Close the database to release file locks
-            database.close()
 
+            val currentDbVersion = database.openHelper.readableDatabase.version
             val dbFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
-            val walFile = File(dbFile.path + "-wal")
-            val shmFile = File(dbFile.path + "-shm")
             val datastoreDir = File(context.filesDir, "datastore")
 
-            var restoredTreeUri: Uri? = null
+            // 1. Validate manifest before touching any files
+            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+                ZipInputStream(inputStream).use { zipIn ->
+                    var manifestFound = false
+                    var entry = zipIn.nextEntry
+                    while (entry != null) {
+                        if (entry.name == "manifest.json") {
+                            val manifest = json.decodeFromString<BackupManifest>(zipIn.readBytes().decodeToString())
+                            if (manifest.dbSchemaVersion > currentDbVersion) {
+                                throw IllegalStateException(
+                                    "Backup is from a newer version of Stash (Schema ${manifest.dbSchemaVersion}). " +
+                                        "Please update the app before importing."
+                                )
+                            }
+                            manifestFound = true
+                            break
+                        }
+                        entry = zipIn.nextEntry
+                    }
+                    if (!manifestFound) {
+                        throw IllegalStateException("The selected file is not a valid Stash backup.")
+                    }
+                }
+            } ?: throw IllegalStateException("Could not open input stream for validation")
+
+            // 2. Close the database to release file locks
+            database.close()
+
+            val walFile = File(dbFile.path + "-wal")
+            val shmFile = File(dbFile.path + "-shm")
 
             context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
                 ZipInputStream(inputStream).use { zipIn ->
@@ -111,23 +165,17 @@ class DatabaseBackupManager @Inject constructor(
                         }
 
                         if (outFile != null) {
+                            // Zip Slip Guard: ensure entry doesn't escape target directory
+                            val canonicalTargetDir = datastoreDir.canonicalPath + File.separator
+                            if (!outFile.canonicalPath.startsWith(canonicalTargetDir) && 
+                                outFile.canonicalPath != dbFile.canonicalPath) {
+                                throw SecurityException("Entry escapes target directory: ${entry.name}")
+                            }
+
                             android.util.Log.d("BackupManager", "Restoring ${entry.name} to ${outFile.absolutePath}")
 
-                            // If it's the storage preferences, try to peek at the tree URI
-                            if (entry.name.contains("storage_preferences")) {
-                                val bytes = zipIn.readBytes()
-                                val content = String(bytes, Charsets.UTF_8)
-                                // Look for SAF tree URI pattern
-                                val regex = Regex("content://[a-zA-Z0-9./%:]+/tree/[a-zA-Z0-9./%:]+")
-                                regex.find(content)?.value?.let { restoredTreeUri = it.toUri() }
-
-                                FileOutputStream(outFile).use { output ->
-                                    output.write(bytes)
-                                }
-                            } else {
-                                FileOutputStream(outFile).use { output ->
-                                    zipIn.copyTo(output)
-                                }
+                            FileOutputStream(outFile).use { output ->
+                                zipIn.copyTo(output)
                             }
                         }
                         zipIn.closeEntry()
@@ -145,6 +193,29 @@ class DatabaseBackupManager @Inject constructor(
                 android.util.Log.d("BackupManager", "Deleting old SHM file")
                 shmFile.delete()
             }
+
+            // 4. Read the restored Tree URI from DataStore.
+            // We use a fresh DataStore instance to bypass the singleton's cache
+            // and read the actual protobuf-serialized state we just restored.
+            val externalTreeUriKey = stringPreferencesKey("external_tree_uri")
+            val restoredTreeUri = try {
+                val restoredFile = File(datastoreDir, "storage_preferences.preferences_pb")
+                if (restoredFile.exists()) {
+                    // Create a temporary copy to avoid "multiple datastores" error on the main file
+                    val tmpFile = File(context.cacheDir, "restored_prefs_peek.preferences_pb")
+                    restoredFile.copyTo(tmpFile, overwrite = true)
+                    
+                    val uri = PreferenceDataStoreFactory.create { tmpFile }
+                        .data.firstOrNull()?.get(externalTreeUriKey)?.toUri()
+                    
+                    tmpFile.delete()
+                    uri
+                } else null
+            } catch (e: Exception) {
+                android.util.Log.e("BackupManager", "Failed to peek restored URI", e)
+                null
+            }
+
             android.util.Log.i("BackupManager", "Import completed successfully. Restored URI: $restoredTreeUri")
             restoredTreeUri
         }
