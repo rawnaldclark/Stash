@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
 import javax.inject.Inject
+import androidx.core.net.toUri
 
 /**
  * Default [MusicRepository] implementation backed by Room DAOs.
@@ -65,19 +66,21 @@ class MusicRepositoryImpl @Inject constructor(
      * Deletes the audio file at [path]. Handles both app-internal paths
      * (plain `java.io.File`) and SAF-backed external storage URIs (the
      * `content://...` strings returned by [com.stash.data.download.files.FileOrganizer]
-     * when the user has picked an SD card / USB-OTG folder). Without the
-     * `content://` branch, external-storage users would leak every deleted
-     * track's file, because `File(contentUri).delete()` silently returns
-     * false for a URI that isn't a real filesystem path.
+     * when the user has picked an SD card / USB-OTG folder).
      *
      * Returns true on successful unlink. Best-effort: false just means the
      * file was already gone, the SAF grant was revoked, or I/O failed.
      */
     private fun deleteTrackFile(path: String): Boolean = runCatching {
         if (path.startsWith("content://")) {
-            DocumentFile.fromSingleUri(context, Uri.parse(path))?.delete() == true
+            DocumentFile.fromSingleUri(context, path.toUri())?.delete() == true
         } else {
-            java.io.File(path).delete()
+            val plainPath = if (path.startsWith("file://")) {
+                path.toUri().path ?: path.removePrefix("file://")
+            } else {
+                path
+            }
+            java.io.File(plainPath).delete()
         }
     }.getOrDefault(false)
 
@@ -183,9 +186,14 @@ class MusicRepositoryImpl @Inject constructor(
             }
             val exists = runCatching {
                 if (path.startsWith("content://")) {
-                    DocumentFile.fromSingleUri(context, Uri.parse(path))?.exists() == true
+                    DocumentFile.fromSingleUri(context, path.toUri())?.exists() == true
                 } else {
-                    java.io.File(path).exists()
+                    val plainPath = if (path.startsWith("file://")) {
+                        path.toUri().path ?: path.removePrefix("file://")
+                    } else {
+                        path
+                    }
+                    java.io.File(plainPath).exists()
                 }
             }.getOrDefault(false)
             if (!exists) missing += ref.id

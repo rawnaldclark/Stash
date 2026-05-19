@@ -55,6 +55,7 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import androidx.core.net.toUri
+import androidx.documentfile.provider.DocumentFile
 
 /**
  * [PlayerRepository] implementation backed by a [MediaController] that connects
@@ -78,11 +79,26 @@ class PlayerRepositoryImpl @Inject constructor(
     /**
      * Visible-for-testing indirection so unit tests can stub out the
      * on-disk existence check without touching the real filesystem.
-     * Production reads through to [File.exists]. Tests override via
-     * the constructor that wraps this instance (see
-     * `PlayerRepositoryStreamingTest`).
+     * Handles both plain filesystem paths (via [File.exists]) and
+     * SAF-backed external storage URIs (via [DocumentFile.exists]).
      */
-    internal var filePathExistsOnDisk: (String) -> Boolean = { File(it).exists() }
+    internal var filePathExistsOnDisk: (String) -> Boolean = { path ->
+        if (path.startsWith("content://")) {
+            try {
+                DocumentFile.fromSingleUri(context, path.toUri())?.exists() == true
+            } catch (e: Exception) {
+                false
+            }
+        } else {
+            // Handle both plain paths and file:// URIs
+            val plainPath = if (path.startsWith("file://")) {
+                path.toUri().path ?: path.removePrefix("file://")
+            } else {
+                path
+            }
+            File(plainPath).exists()
+        }
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
