@@ -28,6 +28,7 @@ import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.lastfm.LastFmSession
 import com.stash.core.data.lastfm.LastFmSessionPreference
+import com.stash.core.data.db.DatabaseBackupManager
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.data.download.files.LibrarySizeBreakdown
 import com.stash.data.download.files.LibrarySizeHolder
@@ -95,6 +96,7 @@ class SettingsViewModel @Inject constructor(
     private val settingsDeepLinkController: com.stash.core.data.navigation.SettingsDeepLinkController,
     private val crashFileStore: CrashFileStore,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
+    private val databaseBackupManager: DatabaseBackupManager,
 ) : ViewModel() {
 
     /**
@@ -274,6 +276,8 @@ class SettingsViewModel @Inject constructor(
             autoSavedCountLast7Days = autoSavedCount7d,
             youtubeFallbackEnabled = youtubeFallbackEnabled,
             hasCrashReport = local.hasCrashReport,
+            databaseBackupState = local.databaseBackupState,
+            showImportConfirmation = local.showImportConfirmation,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -316,6 +320,106 @@ class SettingsViewModel @Inject constructor(
     /** Dismisses a terminal Done/Error state, returning to Idle. */
     fun dismissMoveLibrary() {
         moveLibraryCoordinator.dismiss()
+    }
+
+    /**
+     * Triggers a database export to the chosen URI.
+     */
+    fun onExportDatabase(uri: Uri) {
+        viewModelScope.launch {
+            _localState.update { it.copy(databaseBackupState = DatabaseBackupState.Exporting) }
+            val result = databaseBackupManager.exportDatabase(uri)
+            _localState.update {
+                it.copy(
+                    databaseBackupState = result.fold(
+                        onSuccess = { DatabaseBackupState.Success("Database exported successfully") },
+                        onFailure = { t -> DatabaseBackupState.Error(t.message ?: "Export failed") }
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Triggers a database import from the chosen URI. Closes the current
+     * database and overwrites it. Success triggers an app process kill
+     * to force a clean re-init.
+     */
+    fun onImportDatabase(uri: Uri) {
+        _localState.update { it.copy(showImportConfirmation = true, pendingImportUri = uri) }
+    }
+
+    /**
+     * Confirms the pending database import.
+     */
+    fun onConfirmImportDatabase(onExternalPermissionNeeded: (Uri) -> Unit) {
+        val uri = _localState.value.pendingImportUri ?: return
+        _localState.update { it.copy(showImportConfirmation = false, pendingImportUri = null) }
+
+        viewModelScope.launch {
+            _localState.update { it.copy(databaseBackupState = DatabaseBackupState.Importing) }
+            val result = databaseBackupManager.importDatabase(uri)
+
+            if (result.isSuccess) {
+                // v0.9.15: The import manager peeks at the restored preferences
+                // to detect if an external storage folder was configured.
+                val restoredTreeUri = result.getOrNull()
+
+                if (restoredTreeUri != null) {
+                    // Check if we ALREADY have the permission (maybe it's a restore over same install)
+                    val hasPermission = appContext.contentResolver.persistedUriPermissions.any {
+                        it.uri == restoredTreeUri && it.isReadPermission
+                    }
+
+                    if (hasPermission) {
+                        finishImportAndRestart()
+                    } else {
+                        // We need the user to re-grant permission for the restored folder
+                        // BEFORE we restart, so that the startup migrations can see the files.
+                        _localState.update { it.copy(databaseBackupState = DatabaseBackupState.Idle) }
+                        onExternalPermissionNeeded(restoredTreeUri)
+                    }
+                } else {
+                    finishImportAndRestart()
+                }
+            } else {
+                _localState.update {
+                    it.copy(
+                        databaseBackupState = DatabaseBackupState.Error(
+                            result.exceptionOrNull()?.message ?: "Import failed"
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun finishImportAndRestart() {
+        _localState.update {
+            it.copy(databaseBackupState = DatabaseBackupState.Success("Database imported. Restarting..."))
+        }
+        kotlinx.coroutines.delay(1500)
+
+        // Re-launch the activity and kill the current process to ensure all
+        // components (Room, DataStore, Tink) re-initialize with the restored data.
+        val intent = appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)
+        if (intent != null) {
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            appContext.startActivity(intent)
+        }
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    /**
+     * Cancels the pending database import.
+     */
+    fun onCancelImportDatabase() {
+        _localState.update { it.copy(showImportConfirmation = false, pendingImportUri = null) }
+    }
+
+    /** Dismisses the backup Success/Error overlay. */
+    fun onDismissDatabaseBackupStatus() {
+        _localState.update { it.copy(databaseBackupState = DatabaseBackupState.Idle) }
     }
 
     // -- Last.fm actions ------------------------------------------------------
@@ -866,6 +970,12 @@ class SettingsViewModel @Inject constructor(
          * (snackbar) and then cleared via [onClearScrobbleDrainResult].
          */
         val lastScrobbleDrainResult: LastFmScrobbler.DrainResult? = null,
+        /** Current status of the database backup operation. */
+        val databaseBackupState: DatabaseBackupState = DatabaseBackupState.Idle,
+        /** Whether the import confirmation dialog is showing. */
+        val showImportConfirmation: Boolean = false,
+        /** The URI of the database file chosen for import, while waiting for confirmation. */
+        val pendingImportUri: Uri? = null,
         /**
          * Last-known liveness of `cacheDir/crashes/`. Refreshed by
          * [refreshDiagnostics] on Settings entry and again after the user
