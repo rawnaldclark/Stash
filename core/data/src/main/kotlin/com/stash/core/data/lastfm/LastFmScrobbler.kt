@@ -77,6 +77,27 @@ class LastFmScrobbler @Inject constructor(
         return DrainResult(submitted = (before - after).coerceAtLeast(0), sessionPresent = true)
     }
 
+    /**
+     * Fire-and-forget now-playing notification. Call this when the user
+     * starts playing a track (including repeats — each play start is a
+     * fresh now-playing ping). No retry on failure; Last.fm treats
+     * now-playing as best-effort.
+     */
+    suspend fun notifyNowPlaying(artist: String, track: String, album: String? = null) {
+        val session = runCatching { sessionPreference.session.firstOrNull() }.getOrNull()
+            ?: return
+        runCatching {
+            apiClient.updateNowPlaying(
+                sessionKey = session.sessionKey,
+                artist = artist,
+                track = track,
+                album = album,
+            )
+        }.onFailure {
+            Log.w(TAG, "now-playing update failed", it)
+        }
+    }
+
     /** Result of a [drainNow] invocation, surfaced to the Settings UI. */
     data class DrainResult(val submitted: Int, val sessionPresent: Boolean)
 

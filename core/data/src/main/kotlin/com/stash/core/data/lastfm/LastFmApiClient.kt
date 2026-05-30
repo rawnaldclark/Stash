@@ -101,6 +101,30 @@ class LastFmApiClient @Inject constructor(
         Unit
     }
 
+/**
+ * Notify Last.fm that the user is currently listening to a track.
+ * Should be called when playback starts (or resumes after a track change).
+ * Not stored or retried — fire-and-forget by design; Last.fm clears the
+ * now-playing status automatically after ~4 minutes of inactivity.
+ */
+suspend fun updateNowPlaying(
+    sessionKey: String,
+    artist: String,
+    track: String,
+    album: String? = null,
+): Result<Unit> = runCatching {
+    val params = sortedMapOf(
+        "method" to "track.updateNowPlaying",
+        "api_key" to credentials.apiKey,
+        "sk" to sessionKey,
+        "artist" to artist,
+        "track" to track,
+    )
+    if (!album.isNullOrBlank()) params["album"] = album
+    signedPost(params)
+    Unit
+}
+
     // ── Public (API-key-only) read endpoints ──────────────────────────
 
     /**
