@@ -8,6 +8,7 @@ import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.RepeatMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,6 +39,9 @@ import javax.inject.Singleton
  *     play" convention. v0.9.16: a [TrackSkipEventEntity] IS recorded
  *     instead, feeding the skip-rate penalty in
  *     [com.stash.core.data.mix.MixGenerator].
+ *   - When repeat-one is active, a position reset back to near zero
+ *     on the same track is treated as a new play session so each loop
+ *     counts as a separate scrobble.
  */
 @Singleton
 class ListeningRecorder @VisibleForTesting internal constructor(
@@ -80,33 +84,24 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
     private var pending: PendingFire? = null
 
+    // Tracks the last known position for repeat-one detection.
+    private var lastPositionMs = 0L
+
     /** Must be called exactly once from Application.onCreate. */
     fun start() {
+        // ── Collector 1: track-change transitions ─────────────────────
         scope.launch {
-            // Drop repeats on the SAME track id so we only react to track
-            // transitions. Pause/resume mid-track re-emits the same state
-            // but with different positionMs — those shouldn't restart the
-            // countdown. Different track id always wins.
             playerRepository.playerState
                 .distinctUntilChangedBy { it.currentTrack?.id }
                 .collect { state ->
                     // 1. Snapshot previous pending and record a skip if
-                    //    its delayed-fire never completed (cancellation
-                    //    completes the Job either way, so isCompleted is
-                    //    unreliable — we use an AtomicBoolean flag set
-                    //    inside the delay block right before the insert).
+                    //    its delayed-fire never completed.
                     val previousPending = pending
                     if (previousPending != null) {
                         previousPending.job.cancel()
                         if (!previousPending.firedFlag.get()) {
                             val skipAt = System.currentTimeMillis()
                             val position = previousPending.positionAtScheduleMs
-                            // Inline (rather than `scope.launch { ... }`) so
-                            // the suspend insert completes within the collect
-                            // tick — keeps the skip ordered with respect to
-                            // the next track's scheduling and lets the test
-                            // harness observe the insert without an extra
-                            // dispatcher round-trip.
                             runCatching {
                                 trackSkipEventDao.insert(
                                     TrackSkipEventEntity(
@@ -122,46 +117,83 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
                     // 2. Schedule the new track's threshold-fire.
                     val track = state.currentTrack ?: return@collect
-                    val sessionStart = System.currentTimeMillis()
-                    val threshold = thresholdFor(track.durationMs)
-                    val firedFlag = AtomicBoolean(false)
-                    val job = scope.launch {
-                        delay(threshold)
-                        val nowPlaying = playerRepository.playerState.value.currentTrack?.id
-                        if (nowPlaying == track.id) {
-                            // Mark fired BEFORE the insert so a race with
-                            // the next track-change collector observes
-                            // the correct state when it reads .get().
-                            firedFlag.set(true)
-                            runCatching {
-                                listeningEventDao.insert(
-                                    ListeningEventEntity(
-                                        trackId = track.id,
-                                        startedAt = sessionStart,
-                                        scrobbled = false,
-                                        // v0.9.13: insert IS the completion event — recorder only fires
-                                        // after threshold delay. AutoSaveScrobbler reads completed_at.
-                                        completedAt = sessionStart,
-                                    ),
-                                )
-                            }.onFailure { Log.w(TAG, "Failed to insert listening event", it) }
-                        }
-                    }
-                    pending = PendingFire(
-                        trackId = track.id,
-                        sessionStart = sessionStart,
-                        job = job,
-                        firedFlag = firedFlag,
-                        positionAtScheduleMs = playerRepository.playerState.value.positionMs,
-                    )
-                    scope.launch {
-                        scrobbler.notifyNowPlaying(
-                            artist = track.artist,
-                            track = track.title,
-                            album = track.album.takeIf { it.isNotBlank() },
-                        )
-                    }
+                    schedulePendingFire(track.id, track.artist, track.title, track.album, track.durationMs)
                 }
+        }
+
+        // ── Collector 2: repeat-one loop detection ────────────────────
+        scope.launch {
+            playerRepository.playerState
+                .collect { state ->
+                    val track = state.currentTrack ?: run {
+                        lastPositionMs = 0L
+                        return@collect
+                    }
+
+                    val wasWellIntoTrack = lastPositionMs > 5_000L
+                    val positionReset = state.positionMs < 1_000L
+                    val isRepeatOne = state.repeatMode == RepeatMode.ONE
+
+                    if (isRepeatOne && wasWellIntoTrack && positionReset) {
+                        // The track looped — cancel any existing pending fire
+                        // (the previous loop's threshold may not have fired yet
+                        // if the track is shorter than the threshold) and
+                        // start a fresh countdown for this new loop.
+                        pending?.job?.cancel()
+                        pending = null
+                        schedulePendingFire(track.id, track.artist, track.title, track.album, track.durationMs)
+                    }
+
+                    lastPositionMs = state.positionMs
+                }
+        }
+    }
+
+    /**
+     * Schedules a threshold-fire for the given track. Shared by both the
+     * track-change collector and the repeat-one loop detector so the
+     * insert + now-playing logic stays in one place.
+     */
+    private fun schedulePendingFire(
+        trackId: Long,
+        artist: String,
+        title: String,
+        album: String,
+        durationMs: Long,
+    ) {
+        val sessionStart = System.currentTimeMillis()
+        val threshold = thresholdFor(durationMs)
+        val firedFlag = AtomicBoolean(false)
+        val job = scope.launch {
+            delay(threshold)
+            val nowPlaying = playerRepository.playerState.value.currentTrack?.id
+            if (nowPlaying == trackId) {
+                firedFlag.set(true)
+                runCatching {
+                    listeningEventDao.insert(
+                        ListeningEventEntity(
+                            trackId = trackId,
+                            startedAt = sessionStart,
+                            scrobbled = false,
+                            completedAt = sessionStart,
+                        ),
+                    )
+                }.onFailure { Log.w(TAG, "Failed to insert listening event", it) }
+            }
+        }
+        pending = PendingFire(
+            trackId = trackId,
+            sessionStart = sessionStart,
+            job = job,
+            firedFlag = firedFlag,
+            positionAtScheduleMs = playerRepository.playerState.value.positionMs,
+        )
+        scope.launch {
+            scrobbler.notifyNowPlaying(
+                artist = artist,
+                track = title,
+                album = album.takeIf { it.isNotBlank() },
+            )
         }
     }
 
