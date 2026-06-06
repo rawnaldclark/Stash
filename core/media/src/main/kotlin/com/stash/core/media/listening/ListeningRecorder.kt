@@ -123,18 +123,22 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
         // ── Collector 2: repeat-one loop detection ────────────────────
         scope.launch {
-            playerRepository.playerState
-                .collect { state ->
-                    val track = state.currentTrack ?: run {
-                        lastPositionMs = 0L
-                        return@collect
-                    }
+            scope.launch {
+                playerRepository.playerState
+                    .collect { state ->
+                        val track = state.currentTrack ?: run {
+                            lastPositionMs = 0L
+                            return@collect
+                        }
 
-                    val wasWellIntoTrack = lastPositionMs > 5_000L
-                    val positionReset = state.positionMs < 1_000L
-                    val isRepeatOne = state.repeatMode == RepeatMode.ONE
+                        val wasWellIntoTrack = lastPositionMs > 5_000L
+                        val positionReset = state.positionMs < 1_000L
+                        val isRepeatOne = state.repeatMode == RepeatMode.ONE
 
-                    if (isRepeatOne && wasWellIntoTrack && positionReset) {
+                        Log.d(TAG, "repeat-check: repeatMode=$isRepeatOne lastPos=$lastPositionMs currentPos=${state.positionMs} wasWellIn=$wasWellIntoTrack posReset=$positionReset")
+
+                        if (isRepeatOne && wasWellIntoTrack && positionReset) {
+                        Log.d(TAG, "repeat detected for track $trackId — scheduling new fire")
                         // The track looped — cancel any existing pending fire
                         // (the previous loop's threshold may not have fired yet
                         // if the track is shorter than the threshold) and
