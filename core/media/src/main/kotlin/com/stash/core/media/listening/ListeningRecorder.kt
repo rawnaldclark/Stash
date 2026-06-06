@@ -84,9 +84,6 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
     private var pending: PendingFire? = null
 
-    // Tracks the last known position for repeat-one detection.
-    private var lastPositionMs = 0L
-
     /** Must be called exactly once from Application.onCreate. */
     fun start() {
         // ── Collector 1: track-change transitions ─────────────────────
@@ -120,30 +117,28 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
         // ── Collector 2: repeat-one loop detection ────────────────────
         scope.launch {
-            playerRepository.playerState
-                .collect { state ->
+            var lastPositionMs = 0L
+            playerRepository.currentPosition
+                .collect { positionMs ->
+                    val state = playerRepository.playerState.value
                     val track = state.currentTrack ?: run {
                         lastPositionMs = 0L
                         return@collect
                     }
 
-                    val positionJumpedBack = lastPositionMs > 10_000L && state.positionMs < lastPositionMs - 5_000L
                     val isRepeatOne = state.repeatMode == RepeatMode.ONE
+                    val positionJumpedBack = lastPositionMs > 10_000L && positionMs < lastPositionMs - 5_000L
 
-                    Log.d(TAG, "repeat-check: repeatMode=$isRepeatOne lastPos=$lastPositionMs currentPos=${state.positionMs} jumpedBack=$positionJumpedBack")
+                    Log.d(TAG, "repeat-check: repeatMode=$isRepeatOne lastPos=$lastPositionMs currentPos=$positionMs jumpedBack=$positionJumpedBack")
 
                     if (isRepeatOne && positionJumpedBack) {
                         Log.d(TAG, "repeat detected for track ${track.id} — scheduling new fire")
-                        // The track looped — cancel any existing pending fire
-                        // (the previous loop's threshold may not have fired yet
-                        // if the track is shorter than the threshold) and
-                        // start a fresh countdown for this new loop.
                         pending?.job?.cancel()
                         pending = null
                         schedulePendingFire(track.id, track.artist, track.title, track.album, track.durationMs)
                     }
 
-                    lastPositionMs = state.positionMs
+                    lastPositionMs = positionMs
                 }
         }
     }
