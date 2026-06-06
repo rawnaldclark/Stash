@@ -94,8 +94,6 @@ class ListeningRecorder @VisibleForTesting internal constructor(
             playerRepository.playerState
                 .distinctUntilChangedBy { it.currentTrack?.id }
                 .collect { state ->
-                    // 1. Snapshot previous pending and record a skip if
-                    //    its delayed-fire never completed.
                     val previousPending = pending
                     if (previousPending != null) {
                         previousPending.job.cancel()
@@ -115,7 +113,6 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     }
                     pending = null
 
-                    // 2. Schedule the new track's threshold-fire.
                     val track = state.currentTrack ?: return@collect
                     schedulePendingFire(track.id, track.artist, track.title, track.album, track.durationMs)
                 }
@@ -123,26 +120,21 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
         // ── Collector 2: repeat-one loop detection ────────────────────
         scope.launch {
-            scope.launch {
-                playerRepository.playerState
-                    .collect { state ->
-                        val track = state.currentTrack ?: run {
-                            lastPositionMs = 0L
-                            return@collect
-                        }
+            playerRepository.playerState
+                .collect { state ->
+                    val track = state.currentTrack ?: run {
+                        lastPositionMs = 0L
+                        return@collect
+                    }
 
-                        val wasWellIntoTrack = lastPositionMs > 5_000L
-                        val positionReset = state.positionMs < 1_000L
-                        val isRepeatOne = state.repeatMode == RepeatMode.ONE
+                    val wasWellIntoTrack = lastPositionMs > 5_000L
+                    val positionReset = state.positionMs < 1_000L
+                    val isRepeatOne = state.repeatMode == RepeatMode.ONE
 
-                        Log.d(TAG, "repeat-check: repeatMode=$isRepeatOne lastPos=$lastPositionMs currentPos=${state.positionMs} wasWellIn=$wasWellIntoTrack posReset=$positionReset")
+                    Log.d(TAG, "repeat-check: repeatMode=$isRepeatOne lastPos=$lastPositionMs currentPos=${state.positionMs} wasWellIn=$wasWellIntoTrack posReset=$positionReset")
 
-                        if (isRepeatOne && wasWellIntoTrack && positionReset) {
-                        Log.d(TAG, "repeat detected for track $trackId — scheduling new fire")
-                        // The track looped — cancel any existing pending fire
-                        // (the previous loop's threshold may not have fired yet
-                        // if the track is shorter than the threshold) and
-                        // start a fresh countdown for this new loop.
+                    if (isRepeatOne && wasWellIntoTrack && positionReset) {
+                        Log.d(TAG, "repeat detected for track ${track.id} — scheduling new fire")
                         pending?.job?.cancel()
                         pending = null
                         schedulePendingFire(track.id, track.artist, track.title, track.album, track.durationMs)
