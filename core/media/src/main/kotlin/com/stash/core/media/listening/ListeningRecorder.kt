@@ -116,7 +116,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         }
 
         // ── Collector 2: repeat-one loop detection ────────────────────
-        scope.launch {
+        scope.launch(Dispatchers.Main) {
             var lastPositionMs = 0L
             playerRepository.currentPosition
                 .collect { positionMs ->
