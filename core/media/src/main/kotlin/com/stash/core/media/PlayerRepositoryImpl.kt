@@ -198,7 +198,7 @@ class PlayerRepositoryImpl @Inject constructor(
             emit(controller?.currentPosition ?: 0L)
             delay(POSITION_UPDATE_INTERVAL_MS)
         }
-    }
+    }.flowOn(Dispatchers.Main)
 
     /** Cached [MediaController] instance; null until [ensureController] succeeds.
      * Internal as a test seam: gate/queue tests inject a mock controller here. */
