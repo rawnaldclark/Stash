@@ -191,12 +191,6 @@ class ListeningRecorderRepeatTest {
         // Exactly one insert for track B's threshold — no double-schedule
         // from the spurious loop misfire.
         coVerify(exactly = 1) { listeningDao.insert(any()) }
-        assertEquals(trackB.id, (listeningDao.insert as? ListeningEventEntity)?.trackId
-            ?: run {
-                val insertSlot = slot<ListeningEventEntity>()
-                coVerify { listeningDao.insert(capture(insertSlot)) }
-                insertSlot.captured.trackId
-            }
-        )
+        assertEquals(trackB.id, capture.captured.trackId)
     }
 }
