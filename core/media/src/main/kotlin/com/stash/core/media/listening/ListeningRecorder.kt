@@ -88,15 +88,30 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     fun start() {
         // ── Collector 1: track-change transitions ─────────────────────
         scope.launch {
+            // Drop repeats on the SAME track id so we only react to track
+            // transitions. Pause/resume mid-track re-emits the same state
+            // but with different positionMs — those shouldn't restart the
+            // countdown. Different track id always wins.
             playerRepository.playerState
                 .distinctUntilChangedBy { it.currentTrack?.id }
                 .collect { state ->
+                    // 1. Snapshot previous pending and record a skip if
+                    //    its delayed-fire never completed (cancellation
+                    //    completes the Job either way, so isCompleted is
+                    //    unreliable — we use an AtomicBoolean flag set
+                    //    inside the delay block right before the insert).
                     val previousPending = pending
                     if (previousPending != null) {
                         previousPending.job.cancel()
                         if (!previousPending.firedFlag.get()) {
                             val skipAt = System.currentTimeMillis()
                             val position = previousPending.positionAtScheduleMs
+                            // Inline (rather than `scope.launch { ... }`) so
+                            // the suspend insert completes within the collect
+                            // tick — keeps the skip ordered with respect to
+                            // the next track's scheduling and lets the test
+                            // harness observe the insert without an extra
+                            // dispatcher round-trip.
                             runCatching {
                                 trackSkipEventDao.insert(
                                     TrackSkipEventEntity(
@@ -110,6 +125,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     }
                     pending = null
 
+                    // 2. Schedule the new track's threshold-fire.
                     val track = state.currentTrack ?: return@collect
                     schedulePendingFire(track.id, track.artist, track.title, track.album, track.durationMs)
                 }
@@ -118,24 +134,39 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         // ── Collector 2: repeat-one loop detection ────────────────────
         scope.launch(Dispatchers.Main) {
             var lastPositionMs = 0L
+            var lastTrackId = -1L
             playerRepository.currentPosition
                 .collect { positionMs ->
                     val state = playerRepository.playerState.value
                     val track = state.currentTrack ?: run {
                         lastPositionMs = 0L
+                        lastTrackId = -1L
+                        return@collect
+                    }
+
+                    // Reset position tracking on track change so a manual
+                    // switch from a far-into track A to track B doesn't
+                    // misfire as a repeat-one loop.
+                    if (track.id != lastTrackId) {
+                        lastPositionMs = 0L
+                        lastTrackId = track.id
                         return@collect
                     }
 
                     val isRepeatOne = state.repeatMode == RepeatMode.ONE
-                    val positionJumpedBack = lastPositionMs > 10_000L && positionMs < lastPositionMs - 5_000L
-
-                    Log.d(TAG, "repeat-check: repeatMode=$isRepeatOne lastPos=$lastPositionMs currentPos=$positionMs jumpedBack=$positionJumpedBack")
+                    // Require near-zero landing position (< 5s) to distinguish
+                    // a genuine loop restart from a user scrubbing backwards.
+                    val positionJumpedBack = lastPositionMs > 10_000L
+                        && positionMs < 5_000L
 
                     if (isRepeatOne && positionJumpedBack) {
                         Log.d(TAG, "repeat detected for track ${track.id} — scheduling new fire")
                         pending?.job?.cancel()
                         pending = null
-                        schedulePendingFire(track.id, track.artist, track.title, track.album, track.durationMs)
+                        schedulePendingFire(
+                            track.id, track.artist, track.title,
+                            track.album, track.durationMs,
+                        )
                     }
 
                     lastPositionMs = positionMs
@@ -161,6 +192,9 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         val job = scope.launch {
             delay(threshold)
             val nowPlaying = playerRepository.playerState.value.currentTrack?.id
+            // Mark fired BEFORE the insert so a race with
+            // the next track-change collector observes
+            // the correct state when it reads .get().
             if (nowPlaying == trackId) {
                 firedFlag.set(true)
                 runCatching {
@@ -169,6 +203,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                             trackId = trackId,
                             startedAt = sessionStart,
                             scrobbled = false,
+                            // v0.9.13: insert IS the completion event — recorder only fires
+                            // after threshold delay. AutoSaveScrobbler reads completed_at.
                             completedAt = sessionStart,
                         ),
                     )
