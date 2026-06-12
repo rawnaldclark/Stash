@@ -157,6 +157,8 @@ class ListeningRecorderRepeatTest {
         )
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
         val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
+        val capture = slot<ListeningEventEntity>()
+        coEvery { listeningDao.insert(capture(capture)) } returns 1L
 
         val recorder = ListeningRecorder(
             playerRepository = playerRepo,
@@ -175,7 +177,9 @@ class ListeningRecorderRepeatTest {
         playerRepo.setPosition(15_000L)
         runCurrent()
 
-        // Switch to track B — position resets to near zero.
+        // Switch to track B — Collector 2 must reset lastPositionMs and
+        // lastTrackId so the first near-zero position tick for B is NOT
+        // mistaken for a repeat-one loop restart.
         playerRepo.setState(
             PlayerState(currentTrack = trackB, repeatMode = RepeatMode.ONE, positionMs = 0),
         )
