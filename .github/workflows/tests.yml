@@ -32,6 +32,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run core:media unit tests
+        timeout-minutes: 10
         run: ./gradlew :core:media:testDebugUnitTest --no-daemon
 
       - name: Upload test report
