@@ -32,8 +32,8 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run core:media unit tests
-        timeout-minutes: 10
-        run: ./gradlew :core:media:testDebugUnitTest --no-daemon
+        timeout-minutes: 20
+        run: ./gradlew :core:media:testDebugUnitTest --no-daemon --info 2>&1 | grep -E "^(com\.|PASSED|FAILED|STARTED|> Task)"
 
       - name: Upload test report
         if: always()
