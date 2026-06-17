@@ -23,10 +23,6 @@ android {
             isReturnDefaultValues = true
             // Required for Robolectric to resolve preferencesDataStoreFile (ApplicationProvider).
             isIncludeAndroidResources = true
-            // Add more memory for the Media3 session tests, which involve multiple concurrent test coroutines and a lot of mocked repository state.
-            all {
-                it.maxHeapSize = "2g"
-            }
         }
     }
 }

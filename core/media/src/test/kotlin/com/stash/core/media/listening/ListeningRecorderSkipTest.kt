@@ -4,6 +4,7 @@ import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.db.entity.ListeningEventEntity
+import com.stash.core.data.db.entity.TrackSkipEventEntity
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.StreamRoutingResult
 import com.stash.core.media.StreamingHaltedEvent
@@ -11,10 +12,10 @@ import com.stash.core.model.PlayerState
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.Track
 import com.stash.core.model.TrackItem
+import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.slot
-import io.mockk.coEvery
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -29,13 +30,24 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+/**
+ * Covers the two behaviours the [ListeningRecorder] arbitrates:
+ *
+ *   - Skip detection (track-change collector): switching tracks before
+ *     the threshold fire records a [TrackSkipEventEntity] — this feeds
+ *     the skip-rate penalty in MixGenerator, so the coverage stays here.
+ *   - Repeat-one loop detection (position collector): a same-track
+ *     position reset back to near zero under [RepeatMode.ONE] schedules a
+ *     fresh scrobble session so each loop counts as its own play.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
-class ListeningRecorderRepeatTest {
+class ListeningRecorderSkipTest {
 
     /**
      * Real fake — bypasses mockk for the [PlayerRepository] so the
-     * collector's subscription to [playerState] is honoured by the
-     * underlying StateFlow without any proxy in between.
+     * collectors' subscriptions to [playerState] and [currentPosition]
+     * are honoured by the underlying StateFlows without any proxy in
+     * between.
      */
     private class FakePlayerRepository(
         initial: PlayerState,
@@ -74,11 +86,85 @@ class ListeningRecorderRepeatTest {
     }
 
     private val trackA = Track(
-        id = 1L, title = "A", artist = "X", album = "", durationMs = 180_000,
+        id = 1L,
+        title = "A",
+        artist = "X",
+        album = "",
+        durationMs = 180_000,
     )
+
     private val trackB = Track(
-        id = 2L, title = "B", artist = "Y", album = "", durationMs = 180_000,
+        id = 2L,
+        title = "B",
+        artist = "Y",
+        album = "",
+        durationMs = 180_000,
     )
+
+    @Test
+    fun `track id transition before threshold fire records a skip`() = runTest {
+        val playerRepo = FakePlayerRepository(
+            PlayerState(currentTrack = trackA, positionMs = 5_000),
+        )
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
+        val skipCapture = slot<TrackSkipEventEntity>()
+        coEvery { skipDao.insert(capture(skipCapture)) } returns 1L
+
+        val recorder = ListeningRecorder(
+            playerRepository = playerRepo,
+            listeningEventDao = listeningDao,
+            trackSkipEventDao = skipDao,
+            scrobbler = mockk(relaxed = true),
+            scope = backgroundScope,
+        )
+        recorder.start()
+        // Let the collector consume the initial trackA emission and arm
+        // the pending fire BEFORE we transition.
+        advanceTimeBy(5_000)
+        runCurrent()
+        // Less than the 90s threshold for a 180s track — the delay body
+        // never runs, so this MUST count as a skip.
+        playerRepo.setState(PlayerState(currentTrack = trackB, positionMs = 0))
+        runCurrent()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { skipDao.insert(any()) }
+        assertEquals(trackA.id, skipCapture.captured.trackId)
+        coVerify(exactly = 0) { listeningDao.insert(any()) }
+    }
+
+    @Test
+    fun `track id transition after threshold fire records listen but no skip`() = runTest {
+        val playerRepo = FakePlayerRepository(
+            PlayerState(currentTrack = trackA, positionMs = 0),
+        )
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
+        val listenCapture = slot<ListeningEventEntity>()
+        coEvery { listeningDao.insert(capture(listenCapture)) } returns 1L
+
+        val recorder = ListeningRecorder(
+            playerRepository = playerRepo,
+            listeningEventDao = listeningDao,
+            trackSkipEventDao = skipDao,
+            scrobbler = mockk(relaxed = true),
+            scope = backgroundScope,
+        )
+        recorder.start()
+        // Threshold for a 180s track = min(90_000, 240_000) coerced into
+        // [30s, 4min] = 90_000ms. Advance past it so the delay body runs
+        // and sets firedFlag = true BEFORE we transition to track B.
+        advanceTimeBy(95_000)
+        runCurrent()
+        playerRepo.setState(PlayerState(currentTrack = trackB, positionMs = 0))
+        runCurrent()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { listeningDao.insert(any()) }
+        assertEquals(trackA.id, listenCapture.captured.trackId)
+        coVerify(exactly = 0) { skipDao.insert(any()) }
+    }
 
     @Test
     fun `repeat-one loop restart schedules a new scrobble session`() = runTest {
@@ -97,11 +183,9 @@ class ListeningRecorderRepeatTest {
             scope = backgroundScope,
         )
         recorder.start()
-        // Let the collector consume the initial trackA emission and arm
-        // the pending fire BEFORE we transition.
+        // Let the collectors consume the initial trackA emission and arm
+        // the pending fire BEFORE we loop.
         runCurrent()
-        // Less than the 90s threshold for a 180s track — the delay body
-        // never runs, so this MUST count as a skip.
 
         // Simulate playing past 10s then looping back to near zero.
         playerRepo.setPosition(15_000L)
@@ -168,9 +252,6 @@ class ListeningRecorderRepeatTest {
             scope = backgroundScope,
         )
         recorder.start()
-        // Threshold for a 180s track = min(90_000, 240_000) coerced into
-        // [30s, 4min] = 90_000ms. Advance past it so the delay body runs
-        // and sets firedFlag = true BEFORE we transition to track B.
         runCurrent()
 
         // Play track A past 10s.
