@@ -73,3 +73,5 @@ node_modules/
 # Claude Code per-machine local state (the shared .claude/ config stays tracked)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+build-logic/
