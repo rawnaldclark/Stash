@@ -51,6 +51,9 @@ fun StashScaffold(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val isNowPlayingActive = currentRoute == NowPlayingRoute::class.qualifiedName
 
     // Whether a detail screen is currently in multi-select mode. Detail screens
     // signal this via `onSelectionModeChanged`; while it is true we hide the
@@ -105,12 +108,14 @@ fun StashScaffold(
         // the system status bar — Pixel 6 Pro and similar devices on Android
         // 15+ where edge-to-edge is enforced. Reported via Twitter
         // (https://x.com/tekno_deha1/status/...).
+        contentWindowInsets = if (isNowPlayingActive) WindowInsets(0.dp) else WindowInsets.statusBars,
         bottomBar = {
             // While a screen is selecting, render no bottom chrome at all — the
             // screen's own selection action bar (which handles its own nav insets)
             // takes the bottom edge. This drops innerPadding.bottom to 0 so the
             // content extends full-height behind that action bar.
-            if (!selectionActive) {
+            val hideBottomBar = isNowPlayingActive
+            if (!selectionActive && !hideBottomBar) {
                 Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
                     // On Now Playing the LiveLyricsBar (rendered inside the
                     // screen itself) takes the MiniPlayer's spot — the full
