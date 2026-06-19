@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.stash.core.model.ThemeMode
 
 // ── Color schemes ────────────────────────────────────────────────────────
 
@@ -83,7 +84,7 @@ val LocalIsDarkTheme = staticCompositionLocalOf { true }
  */
 @Composable
 fun StashTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
     content: @Composable () -> Unit,
 ) {
     val darkTheme = when (themeMode) {
