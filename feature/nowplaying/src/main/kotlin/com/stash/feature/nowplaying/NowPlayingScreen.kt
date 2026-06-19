@@ -122,6 +122,8 @@ fun NowPlayingScreen(
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isAmoled = MaterialTheme.colorScheme.background == Color.Black
+    val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle(initialValue = true)
     val track = uiState.currentTrack
     val resolvingArtist by viewModel.resolvingArtist.collectAsStateWithLifecycle()
     val isDownloadingCurrent by viewModel.isDownloadingCurrent.collectAsStateWithLifecycle()
@@ -299,6 +301,8 @@ fun NowPlayingScreen(
             vibrantColor = uiState.vibrantColor,
             mutedColor = uiState.mutedColor,
             lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
+            isAmoled = isAmoled,
+            showBlurLayer = showBlurLayer,
             modifier = Modifier.fillMaxSize(),
         )
 

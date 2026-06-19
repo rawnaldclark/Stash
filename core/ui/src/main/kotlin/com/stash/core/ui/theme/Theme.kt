@@ -86,7 +86,19 @@ fun StashTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (darkTheme) StashDarkColorScheme else StashLightColorScheme
+    val darkTheme = when (themeMode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.AMOLED -> true
+    }
+    val colorScheme = when (themeMode) {
+        ThemeMode.AMOLED -> StashDarkColorScheme.copy(
+            background = Color.Black,
+            surface = Color.Black,
+        )
+        else -> if (darkTheme) StashDarkColorScheme else StashLightColorScheme
+    }
     val extendedColors = if (darkTheme) StashExtendedColorsDark else StashExtendedColorsLight
 
     val view = LocalView.current

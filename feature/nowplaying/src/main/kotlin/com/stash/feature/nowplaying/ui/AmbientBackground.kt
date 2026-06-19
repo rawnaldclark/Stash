@@ -48,6 +48,8 @@ fun AmbientBackground(
     mutedColor: Color,
     lightMode: Boolean = false,
     modifier: Modifier = Modifier,
+    isAmoled: Boolean = false,
+    showBlurLayer: Boolean = true,
 ) {
     // Animate colors so track changes produce a smooth 800 ms crossfade.
     val animDominant by animateColorAsState(
@@ -98,6 +100,10 @@ fun AmbientBackground(
     )
 
     Canvas(modifier = modifier) {
+        if (isAmoled && !showBlurLayer) {
+            drawRect(color = Color.Black)
+            return@Canvas
+        }
         val w = size.width
         val h = size.height
         val cx = w / 2f

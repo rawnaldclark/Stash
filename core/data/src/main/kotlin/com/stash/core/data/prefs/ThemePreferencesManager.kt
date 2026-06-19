@@ -3,6 +3,7 @@ package com.stash.core.data.prefs
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
@@ -33,17 +34,23 @@ class ThemePreferencesManager @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : ThemePreference {
     private val themeKey = stringPreferencesKey("theme_mode")
+    private val showBlurLayerKey = booleanPreferencesKey("show_blur_layer_amoled")
 
     /** Emits the current [ThemeMode], defaulting to [ThemeMode.SYSTEM]. */
     override val themeMode: Flow<ThemeMode> = context.themeDataStore.data.map { prefs ->
         val name = prefs[themeKey]
         name?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM
     }
-
+    override val showBlurLayerInAmoled: Flow<Boolean> = context.themeDataStore.data.map { prefs ->
+        prefs[showBlurLayerKey] ?: true
+    }
     /** Persists the selected [mode]. */
     override suspend fun setThemeMode(mode: ThemeMode) {
         context.themeDataStore.edit { prefs ->
             prefs[themeKey] = mode.name
         }
+    }
+    override suspend fun setShowBlurLayerInAmoled(show: Boolean) {
+        context.themeDataStore.edit { prefs -> prefs[showBlurLayerKey] = show }
     }
 }

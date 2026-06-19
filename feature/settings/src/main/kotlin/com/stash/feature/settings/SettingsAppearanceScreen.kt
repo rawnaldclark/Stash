@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,38 +57,46 @@ fun SettingsAppearanceScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = "Appearance", onBack = onBack, modifier = modifier) {
         SettingsSectionLabel("Theme")
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            ThemeThumbnail(
-                label = "Dark",
-                selected = uiState.themeMode == ThemeMode.DARK,
-                darkPalette = true,
-                followSystem = false,
-                onClick = { viewModel.onThemeChanged(ThemeMode.DARK) },
-                modifier = Modifier.weight(1f),
-            )
-            ThemeThumbnail(
-                label = "Light",
-                selected = uiState.themeMode == ThemeMode.LIGHT,
-                darkPalette = false,
-                followSystem = false,
-                onClick = { viewModel.onThemeChanged(ThemeMode.LIGHT) },
-                modifier = Modifier.weight(1f),
-            )
-            ThemeThumbnail(
-                label = "Follow system",
-                selected = uiState.themeMode == ThemeMode.SYSTEM,
-                darkPalette = false,
-                followSystem = true,
-                onClick = { viewModel.onThemeChanged(ThemeMode.SYSTEM) },
-                modifier = Modifier.weight(1f),
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ThemeThumbnail(
+                    label = "Dark", selected = uiState.themeMode == ThemeMode.DARK,
+                    darkPalette = true, followSystem = false,
+                    onClick = { viewModel.onThemeChanged(ThemeMode.DARK) },
+                    modifier = Modifier.weight(1f),
+                )
+                ThemeThumbnail(
+                    label = "Light", selected = uiState.themeMode == ThemeMode.LIGHT,
+                    darkPalette = false, followSystem = false,
+                    onClick = { viewModel.onThemeChanged(ThemeMode.LIGHT) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ThemeThumbnail(
+                    label = "AMOLED", selected = uiState.themeMode == ThemeMode.AMOLED,
+                    darkPalette = true, followSystem = false,
+                    onClick = { viewModel.onThemeChanged(ThemeMode.AMOLED) },
+                    modifier = Modifier.weight(1f),
+                )
+                ThemeThumbnail(
+                    label = "Follow system", selected = uiState.themeMode == ThemeMode.SYSTEM,
+                    darkPalette = false, followSystem = true,
+                    onClick = { viewModel.onThemeChanged(ThemeMode.SYSTEM) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
 
         Text(
@@ -96,6 +105,19 @@ fun SettingsAppearanceScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
         )
+
+        if (uiState.themeMode == ThemeMode.AMOLED) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Show blur effects", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Disable for strict pure-black AMOLED savings", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = showBlurLayer, onCheckedChange = viewModel::onShowBlurLayerInAmoledChanged)
+            }
+        }
     }
 }
 

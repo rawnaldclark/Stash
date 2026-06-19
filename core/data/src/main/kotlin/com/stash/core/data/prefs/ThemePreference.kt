@@ -14,7 +14,13 @@ interface ThemePreference {
 
     /** Emits the current [ThemeMode], defaulting to [ThemeMode.SYSTEM]. */
     val themeMode: Flow<ThemeMode>
+    
+    /** Emits whether blur layer should be shown in AMOLED mode, defaulting to true. */
+    val showBlurLayerInAmoled: Flow<Boolean>
 
     /** Persists the selected [mode] for the next app session and beyond. */
     suspend fun setThemeMode(mode: ThemeMode)
+
+    /** Persists the blur layer visibility preference for AMOLED mode. */
+    suspend fun setShowBlurLayerInAmoled(show: Boolean)
 }

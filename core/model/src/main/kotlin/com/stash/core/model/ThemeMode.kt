@@ -14,4 +14,5 @@ enum class ThemeMode {
     LIGHT,
     DARK,
     SYSTEM,
+    AMOLED,
 }

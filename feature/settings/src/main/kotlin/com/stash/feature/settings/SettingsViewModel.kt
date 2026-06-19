@@ -245,6 +245,21 @@ class SettingsViewModel @Inject constructor(
         streamingPreference.setForceAmzOnly(v)
     }
 
+    /** Exposes the blur layer visibility preference for AMOLED mode. */
+    val showBlurLayerInAmoled: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        themePreference.showBlurLayerInAmoled.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            initialValue = true,
+        )
+
+    /** Persists the blur layer visibility preference for AMOLED mode. */
+    fun onShowBlurLayerInAmoledChanged(show: Boolean) {
+        viewModelScope.launch {
+            themePreference.setShowBlurLayerInAmoled(show)
+        }
+    }
+
     /** Internal mutable UI state that is combined with token-manager flows. */
     private val _localState = MutableStateFlow(LocalState())
 
