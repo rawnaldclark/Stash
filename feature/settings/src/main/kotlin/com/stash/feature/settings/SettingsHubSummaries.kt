@@ -60,6 +60,7 @@ fun settingsHubSummaries(
         ThemeMode.LIGHT -> "Light"
         ThemeMode.DARK -> "Dark"
         ThemeMode.SYSTEM -> "Follow system"
+        ThemeMode.AMOLED -> "AMOLED"
     }
 
     val about = "v$versionName"
