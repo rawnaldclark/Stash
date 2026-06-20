@@ -79,6 +79,7 @@ import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackOptionsSheet
+import com.stash.core.ui.components.VerticalScrollbar
 import com.stash.core.ui.selection.SelectionAction
 import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.rememberSelectionState
@@ -155,143 +156,148 @@ fun PlaylistDetailScreen(
                 color = MaterialTheme.colorScheme.primary,
             )
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                // Task 7 hides the mini-player while selecting, but the bottom
-                // selection bar (~100dp + nav insets) then takes its place. Pad
-                // enough that the last row clears it in either state.
-                contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 120.dp),
-            ) {
-                // ── Header section ──────────────────────────────────────
-                item(key = "header") {
-                    PlaylistHeader(
-                        state = state,
-                        bulkPlayInFlight = bulkPlayInFlight,
-                        onBack = onBack,
-                        onPlayAll = { viewModel.playAll() },
-                        onShuffle = { viewModel.shuffleAll() },
-                        onToggleSearch = { viewModel.toggleSearch() },
-                        onSetImage = {
-                            imagePickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                    )
-                }
-
-                // ── Search filter bar ───────────────────────────────────
-                if (state.showSearch) {
-                    item(key = "search") {
-                        SearchFilterBar(
-                            query = state.searchQuery,
-                            onQueryChanged = viewModel::onSearchQueryChanged,
-                            onClear = viewModel::clearSearch,
+            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    // Task 7 hides the mini-player while selecting, but the bottom
+                    // selection bar (~100dp + nav insets) then takes its place. Pad
+                    // enough that the last row clears it in either state.
+                    contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 120.dp),
+                ) {
+                    // ── Header section ──────────────────────────────────────
+                    item(key = "header") {
+                        PlaylistHeader(
+                            state = state,
+                            bulkPlayInFlight = bulkPlayInFlight,
+                            onBack = onBack,
+                            onPlayAll = { viewModel.playAll() },
+                            onShuffle = { viewModel.shuffleAll() },
+                            onToggleSearch = { viewModel.toggleSearch() },
+                            onSetImage = {
+                                imagePickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
                         )
                     }
-                }
 
-                // ── Empty search results ───────────────────────────────
-                if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
-                    item(key = "no-results") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 48.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = "No matching songs",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // ── Search filter bar ───────────────────────────────────
+                    if (state.showSearch) {
+                        item(key = "search") {
+                            SearchFilterBar(
+                                query = state.searchQuery,
+                                onQueryChanged = viewModel::onSearchQueryChanged,
+                                onClear = viewModel::clearSearch,
                             )
                         }
                     }
-                }
 
-                // ── Custom-mix building / empty state ───────────────────
-                // A freshly created mix populates asynchronously; show a
-                // "Building…" state instead of a blank body, and a clear
-                // "found nothing" state if discovery comes up empty.
-                if (state.tracks.isEmpty() && state.searchQuery.isEmpty()) {
-                    when (buildState) {
-                        MixBuildState.BUILDING -> item(key = "mix-building") {
-                            Column(
+                    // ── Empty search results ───────────────────────────────
+                    if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
+                        item(key = "no-results") {
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 56.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    .padding(vertical = 48.dp),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                                 Text(
-                                    text = "Building your mix…",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Text(
-                                    text = "Finding fresh tracks from your genres — this can take a moment.",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    text = "No matching songs",
+                                    style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 32.dp),
                                 )
                             }
                         }
-                        MixBuildState.EMPTY -> item(key = "mix-empty") {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 56.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(
-                                    text = "Couldn't find tracks",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Text(
-                                    text = "Try editing this mix with different genres or moods.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 32.dp),
-                                )
-                            }
-                        }
-                        MixBuildState.READY -> Unit
                     }
-                }
 
-                // ── Track list ──────────────────────────────────────────
-                itemsIndexed(
-                    items = state.tracks,
-                    key = { _, track -> track.id },
-                ) { index, track ->
-                    DetailTrackRow(
-                        track = track,
-                        trackNumber = index + 1,
-                        isPlaying = track.id == state.currentlyPlayingTrackId,
-                        onClick = {
-                            if (selection.isActive) selection.toggle(track.id)
-                            else viewModel.playTrack(track.id)
-                        },
-                        onLongPress = { if (!selection.isActive) selection.enter(track.id) },
-                        isResolving = track.id == tappedTrackId,
-                        selectionActive = selection.isActive,
-                        selected = selection.isSelected(track.id),
-                        onMoreClick = { selectedTrack = track },
-                    )
+                    // ── Custom-mix building / empty state ───────────────────
+                    // A freshly created mix populates asynchronously; show a
+                    // "Building…" state instead of a blank body, and a clear
+                    // "found nothing" state if discovery comes up empty.
+                    if (state.tracks.isEmpty() && state.searchQuery.isEmpty()) {
+                        when (buildState) {
+                            MixBuildState.BUILDING -> item(key = "mix-building") {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 56.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        text = "Building your mix…",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = "Finding fresh tracks from your genres — this can take a moment.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 32.dp),
+                                    )
+                                }
+                            }
+                            MixBuildState.EMPTY -> item(key = "mix-empty") {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 56.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        text = "Couldn't find tracks",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = "Try editing this mix with different genres or moods.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 32.dp),
+                                    )
+                                }
+                            }
+                            MixBuildState.READY -> Unit
+                        }
+                    }
 
-                    // Subtle divider between rows (skip after last item).
-                    if (index < state.tracks.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 80.dp, end = 20.dp),
-                            thickness = 0.5.dp,
-                            color = extendedColors.glassBorder,
+                    // ── Track list ──────────────────────────────────────────
+                    itemsIndexed(
+                        items = state.tracks,
+                        key = { _, track -> track.id },
+                    ) { index, track ->
+                        DetailTrackRow(
+                            track = track,
+                            trackNumber = index + 1,
+                            isPlaying = track.id == state.currentlyPlayingTrackId,
+                            onClick = {
+                                if (selection.isActive) selection.toggle(track.id)
+                                else viewModel.playTrack(track.id)
+                            },
+                            onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                            isResolving = track.id == tappedTrackId,
+                            selectionActive = selection.isActive,
+                            selected = selection.isSelected(track.id),
+                            onMoreClick = { selectedTrack = track },
                         )
+
+                        // Subtle divider between rows (skip after last item).
+                        if (index < state.tracks.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 80.dp, end = 20.dp),
+                                thickness = 0.5.dp,
+                                color = extendedColors.glassBorder,
+                            )
+                        }
                     }
                 }
+                VerticalScrollbar(state = listState, thumbHeightOffset = 20f)
             }
         }
 
