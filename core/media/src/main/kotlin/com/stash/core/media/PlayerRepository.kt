@@ -91,10 +91,8 @@ interface PlayerRepository {
      *  - "End of offline Mix" — auto-advance silent-skip exhausted the
      *    queue trying to find a playable item while offline (v0.9.37).
      *
-     * Collected by NowPlayingViewModel and forwarded into its own
-     * `userMessages` SharedFlow so the Snackbar/Toast surfaces while the
-     * user is on Now Playing or anywhere else the global player UI is
-     * visible.
+     * Collected by the app scaffold for global playback snackbars and by
+     * NowPlayingViewModel for the full-player surface.
      */
     val userMessages: kotlinx.coroutines.flow.SharedFlow<String>
 

@@ -37,6 +37,7 @@ import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.LosslessQualityTier
+import com.stash.data.download.lossless.LosslessSource
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.arcod.ArcodCredentialStore
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
@@ -97,6 +98,7 @@ class SettingsViewModel @Inject constructor(
     private val losslessPrefs: LosslessSourcePreferences,
     private val streamingQualityPrefs: StreamingQualityPreferences,
     private val losslessRateLimiter: AggregatorRateLimiter,
+    private val losslessSources: Set<@JvmSuppressWildcards LosslessSource>,
     private val qobuzSource: QobuzSource,
     private val arcodCredentialStore: ArcodCredentialStore,
     private val qbdlxCredentialStore: QbdlxCredentialStore,
@@ -1160,14 +1162,16 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { streamingQualityPrefs.setSaveData(value) }
 
     /**
-     * Clear the rate-limiter's circuit breaker for the squid.wtf
-     * source. Useful when the breaker tripped on a transient outage
-     * and the user knows the source is back up — skips the 30-min
-     * organic timeout. No-op if the breaker isn't currently tripped.
+     * Clear the rate-limiter's circuit breaker for the lossless sources.
+     * Useful when a breaker tripped on a transient outage and the user
+     * knows the source is back up — skips the organic timeout. No-op if
+     * a breaker isn't currently tripped.
      */
     fun onResetLosslessRateLimiter() {
         viewModelScope.launch {
-            losslessRateLimiter.reset(QobuzSource.SOURCE_ID)
+            losslessSources.forEach { source ->
+                losslessRateLimiter.reset(source.id)
+            }
         }
     }
 
