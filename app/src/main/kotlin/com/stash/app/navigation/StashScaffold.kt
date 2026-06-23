@@ -59,6 +59,7 @@ fun StashScaffold(
     val playbackViewModel: NowPlayingViewModel = hiltViewModel()
     val playbackSnackbarHostState = remember { SnackbarHostState() }
     val showPlaybackMessages = currentRoute != NowPlayingRoute::class.qualifiedName
+    val isNowPlayingActive = currentRoute == NowPlayingRoute::class.qualifiedName
 
     // Whether a detail screen is currently in multi-select mode. Detail screens
     // signal this via `onSelectionModeChanged`; while it is true we hide the
