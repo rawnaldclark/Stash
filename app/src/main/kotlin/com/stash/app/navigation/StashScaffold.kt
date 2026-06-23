@@ -66,6 +66,7 @@ fun StashScaffold(
     // selection action bar owns the bottom edge instead of stacking on / being
     // crowded by it (premium multi-select pattern, avoids mis-taps).
     var selectionActive by remember { mutableStateOf(false) }
+    var isWebLoginOpen by remember { mutableStateOf(false) }
 
     // Safeguard: a selection-capable screen normally clears its selection on
     // every exit path (✕ / Back / last-deselect), which fires
@@ -156,7 +157,7 @@ fun StashScaffold(
                                     }
                                 }
                             },
-                            viewModel = playbackViewModel,
+                                viewModel = playbackViewModel,
                     )
                     }
 

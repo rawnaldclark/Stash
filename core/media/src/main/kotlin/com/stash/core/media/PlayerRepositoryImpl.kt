@@ -464,9 +464,13 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
         val localPath = tappedTrack.filePath
+        val tappedTrackHasPlayableLocal =
+            !castStateHolder.connected.value &&
+                tappedTrack.isDownloaded &&
+                !localPath.isNullOrBlank() &&
+                filePathExistsOnDisk(localPath)
         val tappedTrackNeedsStream =
-            streamingOn &&
-                !(tappedTrack.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath))
+            streamingOn && !tappedTrackHasPlayableLocal
         val resolvePending = AtomicBoolean(tappedTrackNeedsStream)
         if (tappedTrackNeedsStream) {
             scope.launch {
@@ -781,6 +785,7 @@ class PlayerRepositoryImpl @Inject constructor(
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
     ): StreamRoutingResult {
+        val isCasting = castStateHolder.connected.value
         val localPath = track.filePath
         if (track.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
             return StreamRoutingResult.Item(track.toMediaItem())

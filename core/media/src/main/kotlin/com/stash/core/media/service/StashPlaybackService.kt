@@ -88,13 +88,6 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var streamUrlCache: com.stash.core.media.streaming.StreamUrlCache
 
 
-    /**
-     * Shared, interceptor-bearing OkHttp client (carries `AmzCaptchaInterceptor`).
-     * Used by [StashMediaSourceFactory] to stream amz-origin items through an
-     * authed [androidx.media3.datasource.okhttp.OkHttpDataSource].
-     */
-    @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
-
     companion object {
         /** Custom command action for toggling shuffle mode. */
         const val COMMAND_TOGGLE_SHUFFLE = "com.stash.TOGGLE_SHUFFLE"
