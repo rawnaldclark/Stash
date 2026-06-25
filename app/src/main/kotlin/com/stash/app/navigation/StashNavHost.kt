@@ -44,11 +44,8 @@ private const val SLIDE_DURATION_MS = 350
 @Composable
 fun StashNavHost(
     navController: NavHostController,
+    onWebLoginChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
-    // Forwarded to detail screens that support multi-select so the host can hide
-    // the mini-player while a screen is in selection mode. General by design:
-    // the same lambda will be wired to Liked/Album/Artist/Library detail screens
-    // in later tasks — only the Playlist destination consumes it today.
     onSelectionModeChanged: (Boolean) -> Unit = {},
 ) {
     NavHost(
