@@ -809,7 +809,7 @@ class PlayerRepositoryImpl @Inject constructor(
         when (result) {
             is StreamRoutingResult.Item -> null
             StreamRoutingResult.Deduped -> null
-            StreamRoutingResult.NotAvailable -> "Couldn't find this track."
+            StreamRoutingResult.NotAvailable -> "Couldn't stream this track."
             StreamRoutingResult.OfflineMode -> "Turn on Online mode to stream this track."
             StreamRoutingResult.CellularRefused -> "Streaming on cellular is off in Settings."
             StreamRoutingResult.NoConnectivity -> "You're offline — can't stream this track."

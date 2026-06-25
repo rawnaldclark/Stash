@@ -87,6 +87,7 @@ class YouTubeStreamResolver @Inject constructor(
             ?: searchYouTubeForVideoId(track)
             ?: return null
 
+        val resolveStartedAt = System.currentTimeMillis()
         val url = withTimeoutOrNull(YT_RESOLVE_TIMEOUT_MS) {
             // Playback resolution (allowYtDlp=true: tap / prefetch / 403-refresh)
             // goes straight to yt-dlp. The InnerTube fast lane returns
@@ -106,13 +107,21 @@ class YouTubeStreamResolver @Inject constructor(
                 .onFailure { t ->
                     // CancellationException MUST propagate — swallowing it would
                     // surface as StreamRoutingResult.NotAvailable upstream, firing
-                    // a "Couldn't find this track" snackbar for a track that was
+                    // a "Couldn't stream this track" snackbar for a track that was
                     // simply preempted by a newer tap or queue change.
                     if (t is CancellationException) throw t
                     Log.d(TAG, "extraction failed for $videoId: ${t.message}")
                 }
                 .getOrNull()
-        } ?: return null
+        } ?: run {
+            Log.w(
+                TAG,
+                "youtube resolve returned no URL videoId=$videoId " +
+                    "allowYtDlp=$allowYtDlp dt=${System.currentTimeMillis() - resolveStartedAt}ms " +
+                    "track=${track.id} '${track.artist} - ${track.title}'",
+            )
+            return null
+        }
 
         val expiresAtMs = parseExpireMs(url) ?: (System.currentTimeMillis() + DEFAULT_TTL_MS)
 

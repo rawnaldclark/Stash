@@ -1,6 +1,11 @@
 package com.stash.data.download.preview
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.auth.TokenManager
+import com.stash.data.download.ytdlp.YtDlpManager
+import com.stash.data.ytmusic.InnerTubeClient
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -40,6 +45,22 @@ class PreviewUrlExtractorTest {
     ) : PreviewUrlExtractor.TestHooks {
         override suspend fun innerTubeExtract(id: String) = innertube(id)
         override suspend fun ytDlpExtract(id: String) = ytdlp(id)
+    }
+
+    @Test
+    fun `full ytdlp extraction preparation uses freshened manager gate`() = runTest {
+        val manager: YtDlpManager = mockk()
+        coEvery { manager.ensureFreshened() } returns Unit
+        val extractor = PreviewUrlExtractor(
+            mockk(relaxed = true),
+            manager,
+            mockk<TokenManager>(relaxed = true),
+            mockk<InnerTubeClient>(relaxed = true),
+        )
+
+        extractor.prepareYtDlpForExtraction()
+
+        coVerify(exactly = 1) { manager.ensureFreshened() }
     }
 
     @Test

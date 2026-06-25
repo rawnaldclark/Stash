@@ -416,6 +416,19 @@ class PreviewUrlExtractor @Inject constructor(
         extractStreamUrlViaYtDlp(videoId)
 
     /**
+     * Prepares yt-dlp for any path that needs a full YouTube stream URL.
+     *
+     * Downloads already use [YtDlpManager.ensureFreshened] so their first
+     * real extraction runs on the latest nightly extractor and a warmed EJS
+     * solver. Streaming must use the same gate; otherwise a valid YT Music
+     * search result can fail because the bundled yt-dlp snapshot is stale
+     * after a YouTube player/signature change.
+     */
+    internal suspend fun prepareYtDlpForExtraction() {
+        ytDlpManager.ensureFreshened()
+    }
+
+    /**
      * Fast path: extract stream URL via InnerTube player API.
      *
      * Calls `/youtubei/v1/player` with the user's YouTube session cookies.
@@ -477,7 +490,7 @@ class PreviewUrlExtractor @Inject constructor(
     private suspend fun extractViaYtDlp(videoId: String): String {
         return withTimeout(YTDLP_TIMEOUT_MS) {
             withContext(Dispatchers.IO) {
-                ytDlpManager.initialize()
+                prepareYtDlpForExtraction()
 
                 // Fast path: query ONLY the android_vr client. It returns a
                 // working itag-251 URL directly — no PO token, no m3u8 manifest,

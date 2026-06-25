@@ -312,7 +312,7 @@ class SearchViewModel @Inject constructor(
                         is StreamRoutingResult.Item -> Unit // playback started by the repo
                         StreamRoutingResult.Deduped -> Unit // earlier tap is handling it
                         StreamRoutingResult.NotAvailable ->
-                            _userMessages.emit("Couldn't find this track.")
+                            _userMessages.emit("Couldn't stream this track.")
                         StreamRoutingResult.OfflineMode ->
                             _userMessages.emit("Turn on Online mode to stream this track.")
                         StreamRoutingResult.CellularRefused ->

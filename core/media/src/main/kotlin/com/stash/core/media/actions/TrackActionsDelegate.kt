@@ -173,7 +173,7 @@ class TrackActionsDelegate @Inject constructor(
                         is com.stash.core.media.StreamRoutingResult.Item -> Unit
                         com.stash.core.media.StreamRoutingResult.Deduped -> Unit
                         com.stash.core.media.StreamRoutingResult.NotAvailable ->
-                            _userMessages.emit("Couldn't find this track.")
+                            _userMessages.emit("Couldn't stream this track.")
                         com.stash.core.media.StreamRoutingResult.OfflineMode ->
                             _userMessages.emit("Turn on Online mode to stream this track.")
                         com.stash.core.media.StreamRoutingResult.CellularRefused ->

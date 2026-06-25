@@ -228,7 +228,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `onResultTap streaming on but not available emits snackbar`() = runTest {
+    fun `onResultTap streaming on but not available emits stream snackbar`() = runTest {
         val playerRepository = mock<PlayerRepository> {
             onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.NotAvailable
         }
@@ -243,7 +243,7 @@ class SearchViewModelTest {
         vm.userMessages.test {
             vm.onResultTap(sampleTrack())
             val msg = awaitItem()
-            assertTrue(msg.contains("couldn't find", ignoreCase = true))
+            assertTrue(msg.contains("couldn't stream", ignoreCase = true))
             cancelAndIgnoreRemainingEvents()
         }
     }

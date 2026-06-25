@@ -54,7 +54,7 @@ sealed class StreamRoutingResult {
      * still in flight. Caller should NOT emit any user-visible feedback:
      * the original tap is being handled and will produce its own outcome
      * (Item/NotAvailable/etc.) — duplicating the snackbar would just
-     * confuse the user with a "Couldn't find this track" message while
+     * confuse the user with a "Couldn't stream this track" message while
      * the track is actually about to start playing.
      */
     data object Deduped : StreamRoutingResult()

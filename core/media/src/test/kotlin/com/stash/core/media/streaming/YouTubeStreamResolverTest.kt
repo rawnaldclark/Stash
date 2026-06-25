@@ -21,7 +21,7 @@ class YouTubeStreamResolverTest {
      * Regression: structural-concurrency bug — `runCatching` inside
      * `resolve()` used to catch `CancellationException` (a Throwable)
      * and convert it to a null result, which then surfaces upstream as
-     * `StreamRoutingResult.NotAvailable` → "Couldn't find this track"
+     * `StreamRoutingResult.NotAvailable` -> "Couldn't stream this track"
      * snackbar — even when the resolve was simply preempted by a newer
      * tap. The fix rethrows CE inside the `runCatching.onFailure`.
      */
