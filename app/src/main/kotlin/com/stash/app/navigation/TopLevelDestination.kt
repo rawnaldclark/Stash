@@ -24,6 +24,7 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data object HomeRoute
 @Serializable data object LibraryRoute
 @Serializable data object SearchRoute
+@Serializable data object AccountRoute
 @Serializable data object SyncRoute
 @Serializable data object SettingsRoute
 @Serializable data object NowPlayingRoute
