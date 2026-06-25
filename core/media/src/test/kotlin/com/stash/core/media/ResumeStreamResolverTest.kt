@@ -94,6 +94,25 @@ class ResumeStreamResolverTest {
         verify { streamUrlCache.put(6L, match { it.url == "https://cdn/fresh" }) }
     }
 
+
+    @Test
+    fun cellularCacheMiss_resolvesWithFastStartupPolicy() = runTest {
+        val track = streamable(8L)
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns true
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        every { streamUrlCache.get(8L) } returns null
+        coEvery {
+            streamResolver.resolve(track, allowYouTube = true, preferFastStartup = true)
+        } returns StreamUrl("https://cdn/mobile", 1234L)
+
+        assertThat(resolver.resolveStreamUrl(track)).isEqualTo("https://cdn/mobile")
+        coVerify(exactly = 1) {
+            streamResolver.resolve(track, allowYouTube = true, preferFastStartup = true)
+        }
+    }
+
     @Test
     fun resolverReturnsNull_returnsNull() = runTest {
         val track = streamable(7L)

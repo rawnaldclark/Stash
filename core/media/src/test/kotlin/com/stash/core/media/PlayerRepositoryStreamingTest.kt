@@ -347,6 +347,41 @@ class PlayerRepositoryStreamingTest {
         verify { streamUrlCache.put(eq(42L), match { it.origin == "kennyy" }) }
     }
 
+
+    @Test
+    fun buildMediaItem_cellularCacheMiss_prefersFastStartup() = runTest {
+        val track = streamable(id = 43L)
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns true
+        every { streamUrlCache.get(43L) } returns null
+        coEvery {
+            streamResolver.resolve(
+                track,
+                allowYouTube = true,
+                allowYtDlp = true,
+                preferFastStartup = true,
+            )
+        } returns StreamUrl(
+            url = "https://yt.example/mobile-fast",
+            expiresAtMs = 9_999_000L,
+            origin = "youtube",
+        )
+
+        val result = repo.buildMediaItemForTrack(track)
+
+        assertThat(result).isInstanceOf(StreamRoutingResult.Item::class.java)
+        coVerify(exactly = 1) {
+            streamResolver.resolve(
+                track,
+                allowYouTube = true,
+                allowYtDlp = true,
+                preferFastStartup = true,
+            )
+        }
+    }
+
     @Test
     fun buildMediaItem_unavailableTrack_returnsOfflineMode() = runTest {
         // Not downloaded AND not streamable, with streaming off — routing

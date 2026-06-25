@@ -4,12 +4,14 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.PrefetchOrchestrator
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +44,7 @@ import org.junit.Test
 class StreamingPrefetchTest {
 
     private val streamingPreference: StreamingPreference = mockk()
+    private val connectivity: ConnectivityMonitor = mockk()
     private val streamResolver: StreamSourceRegistry = mockk()
     private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val trackDao: TrackDao = mockk()
@@ -57,8 +60,10 @@ class StreamingPrefetchTest {
         // We set Main so any nested Dispatchers.Main hops in production
         // code (none today) wouldn't deadlock the test.
         Dispatchers.setMain(dispatcher)
+        every { connectivity.isCellular() } returns false
         orchestrator = PrefetchOrchestrator(
             streamingPreference = streamingPreference,
+            connectivity = connectivity,
             streamResolver = streamResolver,
             streamUrlCache = streamUrlCache,
             trackDao = trackDao,

@@ -26,12 +26,16 @@ import org.junit.Test
 class PrefetchOrchestratorTest {
 
     private val streamingPreference: StreamingPreference = mockk()
+    private val connectivity: ConnectivityMonitor = mockk {
+        every { isCellular() } returns false
+    }
     private val streamResolver: StreamSourceRegistry = mockk()
     private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val trackDao: TrackDao = mockk()
 
     private fun orchestrator() = PrefetchOrchestrator(
         streamingPreference = streamingPreference,
+        connectivity = connectivity,
         streamResolver = streamResolver,
         streamUrlCache = streamUrlCache,
         trackDao = trackDao,
@@ -102,6 +106,35 @@ class PrefetchOrchestratorTest {
         advanceUntilIdle()
 
         coVerify(exactly = 1) { streamResolver.resolve(track) }
+    }
+
+
+    @Test
+    fun prefetch_on_cellular_prefers_fast_startup() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isCellular() } returns true
+        every { streamUrlCache.get(8L) } returns null
+        val track = TrackEntity(
+            id = 8L,
+            title = "Cellular Next Up",
+            artist = "Artist",
+            album = "Album",
+            durationMs = 200_000L,
+            isDownloaded = false,
+            isStreamable = true,
+        )
+        coEvery { trackDao.getById(8L) } returns track
+        coEvery { streamResolver.resolve(track, preferFastStartup = true) } returns null
+
+        orchestrator().onPlaybackProgress(
+            scope = this,
+            nextTrackId = 8L,
+            positionMs = 70_000L,
+            durationMs = 100_000L,
+        )
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { streamResolver.resolve(track, preferFastStartup = true) }
     }
 
     @Test

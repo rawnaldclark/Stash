@@ -180,6 +180,79 @@ class StreamSourceRegistryTest {
         coVerify { youtube.resolve(track, allowYtDlp = false) }
     }
 
+
+    /**
+     * Cellular fast-start keeps the quick Qobuz proxies but skips slow
+     * job/full-file lossless fallbacks, then reaches YouTube directly.
+     */
+    @Test
+    fun resolve_fastStart_skips_arcod_and_amz_before_youtube() = runTest {
+        coEvery { streamingPreference.isForceAmzOnly() } returns false
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { kennyy.resolve(any()) } returns null
+        coEvery { qobuz.resolve(any()) } returns null
+        // arcod + amz intentionally unstubbed; fast-start must skip both.
+        coEvery { youtube.resolve(any(), any()) } returns stubStreamUrl("youtube")
+        val track = stubTrack()
+
+        val result = registry().resolve(
+            track,
+            allowYouTube = true,
+            allowYtDlp = true,
+            preferFastStartup = true,
+        )
+
+        assertThat(result?.origin).isEqualTo("youtube")
+        coVerify { kennyy.resolve(track) }
+        coVerify { qobuz.resolve(track) }
+        coVerify(exactly = 0) { arcod.resolve(any()) }
+        coVerify(exactly = 0) { amz.resolve(any()) }
+        coVerify { youtube.resolve(track, allowYtDlp = true) }
+    }
+
+    /** Force toggles are diagnostic overrides and must ignore fast-start. */
+    @Test
+    fun resolve_fastStart_still_honours_forceArcodOnly() = runTest {
+        coEvery { streamingPreference.isForceArcodOnly() } returns true
+        coEvery { arcod.resolve(any()) } returns stubStreamUrl("arcod")
+        val track = stubTrack()
+
+        val result = registry().resolve(
+            track,
+            allowYouTube = true,
+            allowYtDlp = true,
+            preferFastStartup = true,
+        )
+
+        assertThat(result?.origin).isEqualTo("arcod")
+        coVerify { arcod.resolve(track) }
+        coVerify(exactly = 0) { kennyy.resolve(any()) }
+        coVerify(exactly = 0) { qobuz.resolve(any()) }
+        coVerify(exactly = 0) { youtube.resolve(any(), any()) }
+    }
+
+    /** Force-amz remains exact even when cellular fast-start is requested. */
+    @Test
+    fun resolve_fastStart_still_honours_forceAmzOnly() = runTest {
+        coEvery { streamingPreference.isForceArcodOnly() } returns false
+        coEvery { streamingPreference.isForceAmzOnly() } returns true
+        coEvery { amz.resolve(any()) } returns stubStreamUrl("amz")
+        val track = stubTrack()
+
+        val result = registry().resolve(
+            track,
+            allowYouTube = true,
+            allowYtDlp = true,
+            preferFastStartup = true,
+        )
+
+        assertThat(result?.origin).isEqualTo("amz")
+        coVerify { amz.resolve(track) }
+        coVerify(exactly = 0) { kennyy.resolve(any()) }
+        coVerify(exactly = 0) { qobuz.resolve(any()) }
+        coVerify(exactly = 0) { youtube.resolve(any(), any()) }
+    }
+
     /**
      * arcod is a lossless source, so the forceYouTubeFallback test toggle must
      * skip it entirely — that branch routes through YouTube only.

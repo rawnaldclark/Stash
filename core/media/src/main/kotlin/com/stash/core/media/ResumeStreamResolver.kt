@@ -50,7 +50,11 @@ class ResumeStreamResolver @Inject constructor(
         if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) return null
 
         val cached = streamUrlCache.get(track.id)
-        val stream = cached ?: streamResolver.resolve(track, allowYouTube = true)?.also {
+        val stream = cached ?: if (connectivity.isCellular()) {
+            streamResolver.resolve(track, allowYouTube = true, preferFastStartup = true)
+        } else {
+            streamResolver.resolve(track, allowYouTube = true)
+        }?.also {
             streamUrlCache.put(track.id, it)
         }
         return stream?.url

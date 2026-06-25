@@ -81,11 +81,16 @@ class StreamSourceRegistry @Inject constructor(
      *   via the fast InnerTube engine only (no slow yt-dlp). Used by the
      *   background-fill path so a 15-35s yt-dlp invocation never sits on
      *   the queue's critical path. Foreground calls leave this true.
+     * @param preferFastStartup when true, skip slow job/full-file lossless
+     *   fallbacks on the normal branch and reach YouTube sooner. Used for
+     *   cellular foreground/next-up resolves. Force toggles still override
+     *   this policy so diagnostics can exercise one source.
      */
     suspend fun resolve(
         track: TrackEntity,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
+        preferFastStartup: Boolean = false,
     ): StreamUrl? {
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
             if (streamingPreference.isForceQbdlxOnly()) {
@@ -117,33 +122,30 @@ class StreamSourceRegistry @Inject constructor(
                 // both-sources-down outage).
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             } else {
-                // PARKED 2026-07-01: kennyy/squid/arcod hosts are down for us,
-                // so they're commented out of the normal chain (re-enabling is
-                // uncommenting). Kept in sync with
-                // LosslessSourceRegistry.PARKED_SOURCE_IDS (download side).
-                // add("kennyy" to kennyy::resolve)
-                // add("squid" to qobuz::resolve)
-                // if (allowYtDlp) add("arcod" to arcod::resolve)
-
-                // qbdlx (direct Qobuz API, per-account token pool) is now the
-                // primary lossless source: plain Range-seekable FLAC, no proxy,
-                // no client-side decrypt — the fastest path, so it's tried FIRST
-                // (ahead of amz). Like the parked per-account/slow sources it runs
-                // ONLY on foreground/next-up resolves (allowYtDlp = true), NEVER
-                // on the speculative queue-wide background fill — otherwise one
-                // playlist tap spends a search + the pool account's quota on every
-                // queue track speculatively, not just the ones actually played.
-                if (allowYtDlp) add("qbdlx" to qbdlx::resolve)
-                // amz (Amazon Music) is the SLOWEST lossless source: its stream
-                // resolver decrypts the whole FLAC to a local cache file before
-                // returning a URL (tens of seconds), serialized behind a single
-                // captcha / per-asin lock. So it sits LAST among lossless and,
-                // like qbdlx, runs ONLY on foreground/next-up resolves
-                // (allowYtDlp = true), NEVER on the speculative background fill —
-                // routing background tracks through the slow decrypt starves the
-                // fast YouTube fallback and leaves the timeline too sparse to skip
-                // (observed on-device 2026-06-21: 52s to resolve one next-up).
-                if (allowYtDlp) add("amz" to amz::resolve)
+                add("kennyy" to kennyy::resolve)
+                add("squid" to qobuz::resolve)
+                // ARCOD is a slow, job-based, quota-capped source. Like the
+                // slow yt-dlp path, it must run ONLY on foreground/next-up
+                // resolves (allowYtDlp = true), NEVER on speculative queue
+                // fill. Cellular fast-start also skips it so a tap can fall
+                // to YouTube quickly instead of waiting behind a render job.
+                if (allowYtDlp && !preferFastStartup) {
+                    add("arcod" to arcod::resolve)
+                } else if (allowYtDlp && preferFastStartup) {
+                    Log.d(TAG, "cellular fast-start: skipping arcod for ${track.id} '${track.title}'")
+                }
+                // amz (Amazon Music) is the SLOWEST lossless source: its
+                // stream resolver decrypts the whole FLAC to a local cache file
+                // before returning a URL (tens of seconds), and it serializes
+                // behind a single captcha / per-asin lock. So, exactly like
+                // arcod, it must run ONLY on foreground/next-up resolves,
+                // never on speculative queue fill, and not on cellular
+                // fast-start resolves.
+                if (allowYtDlp && !preferFastStartup) {
+                    add("amz" to amz::resolve)
+                } else if (allowYtDlp && preferFastStartup) {
+                    Log.d(TAG, "cellular fast-start: skipping amz for ${track.id} '${track.title}'")
+                }
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             }
         }

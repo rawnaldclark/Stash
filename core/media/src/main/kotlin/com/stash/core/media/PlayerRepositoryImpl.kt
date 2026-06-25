@@ -325,7 +325,7 @@ class PlayerRepositoryImpl @Inject constructor(
     )
     /**
      * Snackbar-targeted messages from playback flow:
-     *   - "Loading stream..." — a cellular stream resolve has taken long
+     *   - "Loading stream on mobile data..." — a cellular stream resolve has taken long
      *     enough that the tap needs explicit feedback.
      *   - "Couldn't play this track right now." — [setQueue]'s tapped
      *     track failed every resolver, surfaced so the user knows the
@@ -476,7 +476,7 @@ class PlayerRepositoryImpl @Inject constructor(
             scope.launch {
                 delay(STREAM_LOADING_MESSAGE_DELAY_MS)
                 if (resolvePending.get() && myEpoch == setQueueEpoch && connectivity.isCellular()) {
-                    _userMessages.tryEmit("Loading stream...")
+                    _userMessages.tryEmit("Loading stream on mobile data...")
                 }
             }
         }
@@ -647,7 +647,11 @@ class PlayerRepositoryImpl @Inject constructor(
             // Full-fat resolve (allowYtDlp = true) for the single next-up track
             // during active playback, so auto-advance stays seamless during a
             // Qobuz-proxy outage even if it falls through to the YouTube path.
-            streamResolver.resolve(entity, allowYouTube = true, allowYtDlp = true)
+            if (connectivity.isCellular()) {
+                streamResolver.resolve(entity, allowYouTube = true, allowYtDlp = true, preferFastStartup = true)
+            } else {
+                streamResolver.resolve(entity, allowYouTube = true, allowYtDlp = true)
+            }
         } catch (ce: CancellationException) {
             prefetchInFlight.remove(next.id)
             throw ce
@@ -1331,11 +1335,20 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
         val cached = streamUrlCache.get(track.id)
-        val stream = cached ?: streamResolver.resolve(
-            track,
-            allowYouTube = allowYouTube,
-            allowYtDlp = allowYtDlp,
-        )?.also { resolved ->
+        val stream = cached ?: if (connectivity.isCellular()) {
+            streamResolver.resolve(
+                track,
+                allowYouTube = allowYouTube,
+                allowYtDlp = allowYtDlp,
+                preferFastStartup = true,
+            )
+        } else {
+            streamResolver.resolve(
+                track,
+                allowYouTube = allowYouTube,
+                allowYtDlp = allowYtDlp,
+            )
+        }?.also { resolved ->
             // Don't poison the shared cache with a PROVISIONAL lossy fallback.
             // The queue-wide background fill resolves with allowYtDlp = false
             // (InnerTube-only, no slow yt-dlp on the critical path). During a
