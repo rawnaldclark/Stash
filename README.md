@@ -17,21 +17,6 @@ There's no Stash account. No subscription. No ads. No analytics. Your credential
 </p>
 
 ---
-
-## Online vs Offline
-
-Stash has two modes. They decide what a sync actually does.
-
-**Offline mode** is the default and the one most people want. Sync downloads each track as a FLAC file (or the closest lossless source available) and stores it on your phone. Once a track is on disk you can play it forever with no connection. It costs storage but no recurring data.
-
-**Online mode** is for people who don't want the storage hit. Sync builds a local index of your library — every track from every synced playlist is visible and playable — but nothing lands on disk. Playback streams from YouTube on demand. Almost no storage, but you need a connection to play.
-
-The Sync tab has a toggle right above the sync button so you can flip modes without leaving the screen. Most people pick one and forget about it.
-
----
-
-## Features
-
 ### Library
 
 - **Spotify + YouTube Music in one unified library** — liked songs, playlists, daily mixes, every Spotify mix worth syncing
