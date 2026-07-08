@@ -164,7 +164,7 @@ private fun CrossfadeDurationRow(
         }
         Slider(
             value = seconds.toFloat(),
-            onValueChange = { onSecondsChange(it.toInt()) },
+            onValueChange = { onSecondsChange(it.roundToInt()) },
             valueRange = 1f..12f,
             steps = 10,
             colors = SliderDefaults.colors(
