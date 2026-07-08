@@ -126,9 +126,8 @@ fun StashScaffold(
         // (https://x.com/tekno_deha1/status/...).
         contentWindowInsets = if (isNowPlayingActive) WindowInsets(0.dp) else WindowInsets.statusBars,
         bottomBar = {
-            val hideBottomBar = currentRoute == NowPlayingRoute::class.qualifiedName ||
-                                currentRoute == SquidWtfCaptchaRoute::class.qualifiedName ||
-                                isWebLoginOpen
+            val hideBottomBar = currentRoute == SquidWtfCaptchaRoute::class.qualifiedName ||
+                    isWebLoginOpen
             // Hide mini player only on Settings/Account sub-pages and utility-only
             // inner pages. Content pages (playlists, artists, albums, liked songs)
             // keep the mini player visible since music is actively playing there.
@@ -142,7 +141,8 @@ fun StashScaffold(
                 FailedDownloadsRoute::class.qualifiedName,
             )
             val hideMiniPlayer = hideBottomBar ||
-                                innerPageRoutes.any { currentRoute?.startsWith(it ?: "") == true }
+                    currentRoute == NowPlayingRoute::class.qualifiedName ||
+                    innerPageRoutes.any { currentRoute?.startsWith(it ?: "") == true }
             // While a screen is selecting, render no bottom chrome at all — the
             // screen's own selection action bar (which handles its own nav insets)
             // takes the bottom edge. This drops innerPadding.bottom to 0 so the
