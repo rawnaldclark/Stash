@@ -63,6 +63,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -434,99 +436,6 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (items.isEmpty()) {
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
-        val semaphore = Semaphore(STREAM_RESOLVE_PARALLELISM)
-        // Record this call's epoch so the resolve below can refuse to
-        // apply its result if a newer setQueue has come in meanwhile.
-        val myEpoch = ++setQueueEpoch
-        val tappedTrack = tracks[safeStart]
-
-        // Optimistic loading state. With an idle player the mini player is
-        // hidden, so showing the tapped track + spinner is the only feedback
-        // that the tap registered (a yt-dlp resolve takes ~11 s; arcod/amz can
-        // be 30-50 s on a slow link). When a track IS loaded, an arbitrary tap
-        // does NOT swap the display (that would turn the play/pause button into
-        // a disabled spinner mid-song, hijacking still-playing audio).
-        //
-        // [optimisticDisplay] = true overrides that for an explicit forward/back
-        // NAVIGATION (skip): the user asked to leave the current track, so we
-        // immediately pause it, swap Now Playing to the target, and show the
-        // spinner while it resolves — the skip feels instant even when the
-        // resolve is slow. See [navigateToLogical].
-        if (controller.currentMediaItem == null || optimisticDisplay) {
-            if (optimisticDisplay) controller.pause()
-            _playerState.value = _playerState.value.copy(
-                currentTrack = tappedTrack,
-                isPlaying = false,
-                isBuffering = true,
-            )
-            // Keep the spinner alive across updateState() calls for the whole
-            // resolve — see [tapResolveEpoch].
-            tapResolveEpoch = myEpoch
-        }
-
-        val localPath = tappedTrack.filePath
-        val tappedTrackHasPlayableLocal =
-                tappedTrack.isDownloaded &&
-                !localPath.isNullOrBlank() &&
-                filePathExistsOnDisk(localPath)
-        val tappedTrackNeedsStream =
-            streamingOn && !tappedTrackHasPlayableLocal
-        val resolvePending = AtomicBoolean(tappedTrackNeedsStream)
-        if (tappedTrackNeedsStream) {
-            scope.launch {
-                delay(STREAM_LOADING_MESSAGE_DELAY_MS)
-                if (resolvePending.get() && myEpoch == setQueueEpoch && connectivity.isCellular()) {
-                    _userMessages.tryEmit("Loading stream on mobile data...")
-                }
-            }
-        }
-
-        // Resolve ONLY the tapped track. Earlier revisions probed forward
-        // through the next few entries looking for *anything* playable,
-        // but that has two real-user pathologies: (1) it silently
-        // substitutes the track the user actually picked, and worse,
-        // (2) when the user is already playing a track from this queue
-        // and taps a different one that fails to resolve, the probe
-        // falls forward into the currently-playing track and calls
-        // setMediaItems on it — restarting it from 0. Better to fail
-        // visibly (snackbar + log) than to surprise-restart the user's
-        // music. See #75 follow-up.
-        val startResult = try {
-            resolveTrackToRoutingResult(
-                tappedTrack,
-                semaphore,
-                streamingOn,
-                allowYouTube = true,
-                allowYtDlp = true,
-            )
-        } finally {
-            resolvePending.set(false)
-        }
-        val startItem = (startResult as? StreamRoutingResult.Item)?.mediaItem
-
-        // Race guard: if another setQueue came in while we were
-        // resolving (e.g. user tapped a different track during a slow
-        // yt-dlp fallback), don't clobber the newer playback intent.
-        if (myEpoch != setQueueEpoch) {
-            Log.d(
-                TAG,
-                "setQueue[epoch=$myEpoch]: superseded by newer call (now=$setQueueEpoch); " +
-                    "discarding result for track[$safeStart] '${tappedTrack.title}'",
-            )
-            return
-        }
-
-        if (startItem == null) {
-            Log.w(
-                TAG,
-                "setQueue[epoch=$myEpoch]: track[$safeStart] '${tappedTrack.title}' failed to " +
-                    "resolve — preserving current playback",
-            )
-            userMessageFor(startResult)?.let { _userMessages.tryEmit(it) }
-                ?: _userMessages.tryEmit("Couldn't play this track right now.")
-            // Clear the optimistic spinner — nothing is going to play.
-            tapResolveEpoch = -1L
-            _playerState.value = _playerState.value.copy(isBuffering = false)
             return
         }
         // startIndex maps through the playable filter by track id.
@@ -1920,6 +1829,8 @@ class PlayerRepositoryImpl @Inject constructor(
 
         /** Delay before surfacing foreground stream resolution as user-visible loading. */
         private const val STREAM_LOADING_MESSAGE_DELAY_MS = 1_200L
+
+        private const val STREAM_RESOLVE_PARALLELISM = 16
     }
 
     /**

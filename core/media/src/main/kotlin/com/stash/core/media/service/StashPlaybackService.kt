@@ -87,6 +87,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var streamResolver: com.stash.core.media.streaming.StreamSourceRegistry
     @Inject lateinit var streamUrlCache: com.stash.core.media.streaming.StreamUrlCache
 
+    @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
 
     companion object {
         /** Custom command action for toggling shuffle mode. */
