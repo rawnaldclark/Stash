@@ -23,6 +23,7 @@ import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsSegmented
 import com.stash.feature.settings.components.SettingsToggleRow
+import kotlin.math.roundToInt
 
 /**
  * The Playback spoke of the hub-and-spoke Settings redesign.
