@@ -220,18 +220,4 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.okhttp)
-
-    // androidTest instrumentation infra (shared by the on-device probe below).
-    androidTestImplementation(libs.androidx.test.core)
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation(libs.truth)
-
-    // ── GATE: amz client-side decrypt (-decryption_key support probe) ────────
-    // One-shot on-device check that the bundled youtubedl-android ffmpeg accepts
-    // `-decryption_key` (the amz CMAF decrypt recipe). The .so already ships in
-    // the app APK via :data:download; these only put YoutubeDL/FFmpeg.init() on
-    // the androidTest compile classpath so the probe can extract the binary.
-    androidTestImplementation(libs.youtubedl.android)
-    androidTestImplementation(libs.youtubedl.ffmpeg)
 }
