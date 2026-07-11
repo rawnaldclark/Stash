@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -24,6 +25,7 @@ import com.stash.core.ui.components.AlbumsRowSkeleton
 import com.stash.core.ui.components.DiscoveryErrorCard
 import com.stash.core.ui.components.PopularListSkeleton
 import com.stash.core.ui.components.SectionHeader
+import com.stash.core.ui.R
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.model.AlbumSummary
 import kotlinx.coroutines.flow.merge
@@ -132,7 +134,7 @@ fun ArtistProfileScreen(
             when (val status = state.status) {
                 is ArtistProfileStatus.Error -> item {
                     DiscoveryErrorCard(
-                        title = "Couldn't load artist",
+                        title = stringResource(R.string.error_load_artist),
                         message = status.message,
                         onRetry = vm::retry,
                     )
@@ -235,7 +237,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     focus: AlbumFocusTarget?,
 ) {
     if (state.popular.isNotEmpty()) {
-        item { SectionHeader(title = "Popular") }
+        item { SectionHeader(title = stringResource(R.string.section_popular)) }
         item {
             PopularTracksSection(
                 tracks = state.popular,
@@ -256,7 +258,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.albums.isNotEmpty()) {
-        item { SectionHeader(title = "Albums") }
+        item { SectionHeader(title = stringResource(R.string.section_albums)) }
         item {
             AlbumsRow(
                 albums = state.albums,
@@ -266,7 +268,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.singles.isNotEmpty()) {
-        item { SectionHeader(title = "Singles & EPs") }
+        item { SectionHeader(title = stringResource(R.string.section_singles_eps)) }
         item {
             SinglesRow(
                 singles = state.singles,
@@ -276,7 +278,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.related.isNotEmpty()) {
-        item { SectionHeader(title = "Fans also like") }
+        item { SectionHeader(title = stringResource(R.string.section_fans_also_like)) }
         item {
             RelatedArtistsRow(
                 artists = state.related,

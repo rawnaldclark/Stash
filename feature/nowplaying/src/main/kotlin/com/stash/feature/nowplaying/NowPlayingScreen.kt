@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,6 +76,7 @@ import com.stash.feature.nowplaying.ui.GlowingProgressBar
 import com.stash.feature.nowplaying.ui.LiveLyricsBar
 import com.stash.feature.nowplaying.ui.LyricsBottomSheet
 import com.stash.feature.nowplaying.ui.QueueBottomSheet
+import com.stash.core.ui.R
 
 /**
  * Full-screen Now Playing screen with premium visual design.
@@ -189,7 +191,7 @@ fun NowPlayingScreen(
             onDismissRequest = { showWrongMatchDialog = false },
             title = {
                 androidx.compose.material3.Text(
-                    text = "What's wrong with this song?",
+                    text = stringResource(R.string.dialog_title_wrong_match),
                     style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 )
@@ -199,7 +201,7 @@ fun NowPlayingScreen(
                     verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
                 ) {
                     androidx.compose.material3.Text(
-                        text = "Pick what should happen to '${track.title}'.",
+                        text = stringResource(R.string.dialog_body_wrong_match, track.title),
                         style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
                         color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -214,7 +216,7 @@ fun NowPlayingScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            androidx.compose.material3.Text("Find in FLAC")
+                            androidx.compose.material3.Text(stringResource(R.string.action_find_in_flac))
                         }
                     }
                     androidx.compose.material3.OutlinedButton(
@@ -224,7 +226,7 @@ fun NowPlayingScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        androidx.compose.material3.Text("Find a better match")
+                        androidx.compose.material3.Text(stringResource(R.string.action_find_better_match))
                     }
                     androidx.compose.material3.OutlinedButton(
                         onClick = {
@@ -233,7 +235,7 @@ fun NowPlayingScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        androidx.compose.material3.Text("Delete from library")
+                        androidx.compose.material3.Text(stringResource(R.string.action_delete_from_library))
                     }
                     androidx.compose.material3.Button(
                         onClick = {
@@ -245,7 +247,7 @@ fun NowPlayingScreen(
                             containerColor = androidx.compose.material3.MaterialTheme.colorScheme.error,
                         ),
                     ) {
-                        androidx.compose.material3.Text("Delete and block forever")
+                        androidx.compose.material3.Text(stringResource(R.string.action_delete_and_block_forever))
                     }
                 }
             },
@@ -253,7 +255,7 @@ fun NowPlayingScreen(
                 androidx.compose.material3.TextButton(
                     onClick = { showWrongMatchDialog = false },
                 ) {
-                    androidx.compose.material3.Text("Cancel")
+                    androidx.compose.material3.Text(stringResource(R.string.action_cancel))
                 }
             },
         )
@@ -338,7 +340,7 @@ fun NowPlayingScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = track?.title ?: "Not Playing",
+                            text = track?.title ?: stringResource(R.string.label_not_playing),
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -366,7 +368,7 @@ fun NowPlayingScreen(
                             } else {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    contentDescription = "Open artist",
+                                    contentDescription = stringResource(R.string.cd_open_artist),
                                     tint = Color.White.copy(alpha = 0.6f),
                                     modifier = Modifier.size(18.dp),
                                 )
@@ -509,7 +511,7 @@ private fun TopBar(
         IconButton(onClick = onDismiss) {
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = "Dismiss",
+                contentDescription = stringResource(R.string.cd_dismiss),
                 tint = Color.White,
                 modifier = Modifier.size(28.dp),
             )
@@ -538,7 +540,7 @@ private fun TopBar(
             IconButton(onClick = onFlagWrongMatch) {
                 Icon(
                     imageVector = Icons.Default.Flag,
-                    contentDescription = "Flag as wrong match",
+                    contentDescription = stringResource(R.string.cd_flag_wrong_match),
                     tint = Color.White,
                     modifier = Modifier.size(24.dp),
                 )
@@ -566,7 +568,7 @@ private fun TopBar(
                 IconButton(onClick = onDownloadTap) {
                     Icon(
                         imageVector = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                        contentDescription = if (isDownloaded) "Remove download" else "Download",
+                        contentDescription = if (isDownloaded) stringResource(R.string.selection_remove_download) else stringResource(R.string.action_download),
                         tint = Color.White,
                         modifier = Modifier.size(24.dp),
                     )
@@ -579,7 +581,7 @@ private fun TopBar(
             IconButton(onClick = onSaveClick) {
                 Icon(
                     imageVector = Icons.Default.BookmarkBorder,
-                    contentDescription = "Save to Playlist",
+                    contentDescription = stringResource(R.string.cd_save_to_playlist),
                     tint = Color.White,
                     modifier = Modifier.size(24.dp),
                 )
@@ -589,7 +591,7 @@ private fun TopBar(
         IconButton(onClick = onQueueClick) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                contentDescription = "Queue ($queueSize tracks)",
+                contentDescription = "${stringResource(R.string.cd_queue)} ($queueSize tracks)",
                 tint = Color.White,
                 modifier = Modifier.size(24.dp),
             )
@@ -638,7 +640,7 @@ private fun AlbumArtSection(
 
         AsyncImage(
             model = artRequest,
-            contentDescription = "Album art",
+            contentDescription = stringResource(R.string.cd_album_art),
             contentScale = ContentScale.Crop,
             onState = { state ->
                 if (state is AsyncImagePainter.State.Success) {
@@ -683,7 +685,7 @@ private fun PlaybackControls(
         IconButton(onClick = onToggleShuffle) {
             Icon(
                 imageVector = Icons.Default.Shuffle,
-                contentDescription = "Shuffle",
+                contentDescription = stringResource(R.string.cd_shuffle),
                 tint = if (shuffleEnabled) accentColor else Color.White.copy(alpha = 0.6f),
                 modifier = Modifier.size(24.dp),
             )
@@ -693,7 +695,7 @@ private fun PlaybackControls(
         IconButton(onClick = onSkipPrevious) {
             Icon(
                 imageVector = Icons.Default.SkipPrevious,
-                contentDescription = "Previous",
+                contentDescription = stringResource(R.string.cd_previous),
                 tint = Color.White,
                 modifier = Modifier.size(36.dp),
             )
@@ -724,7 +726,7 @@ private fun PlaybackControls(
             } else {
                 Icon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    contentDescription = if (isPlaying) stringResource(R.string.cd_pause) else stringResource(R.string.cd_play),
                     tint = Color.White,
                     modifier = Modifier.size(32.dp),
                 )
@@ -735,7 +737,7 @@ private fun PlaybackControls(
         IconButton(onClick = onSkipNext) {
             Icon(
                 imageVector = Icons.Default.SkipNext,
-                contentDescription = "Next",
+                contentDescription = stringResource(R.string.cd_next),
                 tint = Color.White,
                 modifier = Modifier.size(36.dp),
             )
@@ -748,7 +750,7 @@ private fun PlaybackControls(
                     RepeatMode.ONE -> Icons.Default.RepeatOne
                     else -> Icons.Default.Repeat
                 },
-                contentDescription = "Repeat",
+                contentDescription = stringResource(R.string.cd_repeat),
                 tint = when (repeatMode) {
                     RepeatMode.OFF -> Color.White.copy(alpha = 0.6f)
                     else -> accentColor
@@ -770,6 +772,7 @@ private fun PlaybackControls(
  * Returns null only when the codec is blank — in that case the caller
  * should render no line at all.
  */
+@Composable
 private fun trackQualityText(track: com.stash.core.model.Track): String? {
     // v0.9.13 fix: tracks downloaded before format-tracking was wired (pre-v0.9.11)
     // default to file_format = "opus" regardless of the actual codec — so a FLAC
@@ -802,7 +805,7 @@ private fun trackQualityText(track: com.stash.core.model.Track): String? {
         // two. We don't badge "via Kennyy" / "via squid" because those
         // are the expected primary sources; only the lossy fallback
         // deserves a callout.
-        if (track.streamOrigin == "youtube") add("via YT")
+        if (track.streamOrigin == "youtube") add(stringResource(R.string.label_via_yt))
     }.joinToString(" · ")
 }
 
@@ -832,7 +835,7 @@ private fun QualityLine(
         ) {
             Icon(
                 imageVector = Icons.Default.Wifi,
-                contentDescription = "Streaming",
+                contentDescription = stringResource(R.string.cd_streaming),
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(12.dp),
             )

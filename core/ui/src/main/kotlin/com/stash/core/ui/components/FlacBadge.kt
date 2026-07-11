@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 
 /**
  * "FLAC" pill that surfaces wherever a track row is rendered. Renders a
@@ -70,10 +72,11 @@ fun FlacBadge(
  * Playing quality line can reuse the same "Hi-Res qualifier or not"
  * rule without duplicating the threshold logic.
  */
+@Composable
 internal fun flacBadgeText(bitsPerSample: Int?, sampleRateHz: Int?): String = when {
-    bitsPerSample == null || sampleRateHz == null -> "FLAC"
-    bitsPerSample <= 16 && sampleRateHz <= 44_100 -> "FLAC"
-    else -> "FLAC ${bitsPerSample}/${sampleRateHz / 1000}"
+    bitsPerSample == null || sampleRateHz == null -> stringResource(R.string.badge_flac)
+    bitsPerSample <= 16 && sampleRateHz <= 44_100 -> stringResource(R.string.badge_flac)
+    else -> stringResource(R.string.badge_flac_format, bitsPerSample, sampleRateHz / 1000)
 }
 
 private val LOSSLESS_CODECS = setOf("flac", "alac", "wav", "ape", "tta", "wv", "aiff")

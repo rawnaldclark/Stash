@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -57,7 +59,7 @@ fun SearchFilterBar(
             .focusRequester(focusRequester),
         placeholder = {
             Text(
-                text = "Filter tracks...",
+                text = stringResource(R.string.hint_filter_tracks),
                 style = MaterialTheme.typography.bodyMedium,
             )
         },
@@ -73,7 +75,7 @@ fun SearchFilterBar(
                 IconButton(onClick = onClear) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Clear search",
+                        contentDescription = stringResource(R.string.cd_clear_search),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

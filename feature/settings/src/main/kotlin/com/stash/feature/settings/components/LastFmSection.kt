@@ -14,7 +14,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 import com.stash.feature.settings.LastFmAuthState
 
 /**
@@ -41,14 +43,13 @@ fun LastFmSection(
         when (state) {
             LastFmAuthState.NotConfigured -> {
                 Text(
-                    text = "Not configured",
+                    text = stringResource(R.string.status_lastfm_not_configured),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "This build of Stash doesn't include a Last.fm API key. " +
-                        "A developer rebuilding with a key in local.properties unlocks this feature.",
+                    text = stringResource(R.string.desc_lastfm_no_api_key),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -59,7 +60,7 @@ fun LastFmSection(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Scrobble your plays",
+                        text = stringResource(R.string.label_scrobble_plays),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -70,19 +71,19 @@ fun LastFmSection(
                             contentColor = MaterialTheme.colorScheme.primary,
                         ),
                     ) {
-                        Text("Connect Last.fm")
+                        Text(stringResource(R.string.action_connect_lastfm))
                     }
                 }
             }
             is LastFmAuthState.AwaitingAuth -> {
                 Text(
-                    text = "Waiting for approval",
+                    text = stringResource(R.string.status_lastfm_waiting),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Your browser should be open on Last.fm. Tap \"Yes, allow access\" on their page, then come back and tap Finish below.",
+                    text = stringResource(R.string.desc_lastfm_awaiting_auth),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -91,28 +92,28 @@ fun LastFmSection(
                     onClick = onFinish,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Finish connecting")
+                    Text(stringResource(R.string.action_finish_connecting))
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 TextButton(
                     onClick = onDismissError,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
             is LastFmAuthState.Connected -> {
                 Text(
-                    text = "Connected as ${state.username}",
+                    text = stringResource(R.string.status_lastfm_connected, state.username),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = if (state.pendingScrobbles > 0) {
-                        "Scrobbling your plays. ${state.pendingScrobbles} queued to submit."
+                        stringResource(R.string.status_lastfm_pending, state.pendingScrobbles)
                     } else {
-                        "Scrobbling your plays. Everything up to date."
+                        stringResource(R.string.status_lastfm_up_to_date)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -147,7 +148,7 @@ fun LastFmSection(
             }
             is LastFmAuthState.Error -> {
                 Text(
-                    text = "Couldn't connect",
+                    text = stringResource(R.string.error_lastfm_connect),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )

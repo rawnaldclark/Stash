@@ -57,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,6 +65,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.model.Track
+import com.stash.core.ui.R
 import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.SourceIndicator
@@ -183,7 +185,7 @@ fun LikedSongsDetailScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "No matching songs",
+                                    text = stringResource(R.string.label_no_matching_songs),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -235,25 +237,25 @@ fun LikedSongsDetailScreen(
         // Action order mirrors the reference: Delete stays within the first four
         // (visible) and Play next collapses into the ⋮ overflow.
         val selectionActions = listOf(
-            SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
+            SelectionAction("add_queue", stringResource(R.string.action_add_to_queue), Icons.Default.PlaylistAdd) {
                 viewModel.addSelectedToQueue(selectedTracks); selection.clear()
             },
-            SelectionAction("add_playlist", "Add to playlist", Icons.Default.PlaylistAddCheck) {
+            SelectionAction("add_playlist", stringResource(R.string.selection_add_to_playlist), Icons.Default.PlaylistAddCheck) {
                 showBatchSave = true
             },
             if (allDownloaded) {
-                SelectionAction("remove_download", "Remove download", Icons.Default.DownloadDone) {
+                SelectionAction("remove_download", stringResource(R.string.selection_remove_download), Icons.Default.DownloadDone) {
                     viewModel.removeDownloadsForSelected(selectedIds); selection.clear()
                 }
             } else {
-                SelectionAction("download", "Download", Icons.Default.Download) {
+                SelectionAction("download", stringResource(R.string.selection_download), Icons.Default.Download) {
                     viewModel.downloadSelected(selectedIds); selection.clear()
                 }
             },
-            SelectionAction("delete", "Delete", Icons.Default.Delete) {
+            SelectionAction("delete", stringResource(R.string.selection_delete), Icons.Default.Delete) {
                 showBatchDelete = true
             },
-            SelectionAction("play_next", "Play next", Icons.Default.PlaylistPlay) {
+            SelectionAction("play_next", stringResource(R.string.action_play_next), Icons.Default.PlaylistPlay) {
                 viewModel.playSelectedNext(selectedTracks); selection.clear()
             },
         )
@@ -352,11 +354,11 @@ fun LikedSongsDetailScreen(
         AlertDialog(
             onDismissRequest = { showBatchDelete = false },
             title = {
-                Text("Remove $n song${if (n != 1) "s" else ""} from Liked Songs?")
+                Text(stringResource(R.string.dialog_title_remove_liked, n))
             },
             text = {
                 Text(
-                    text = "Removes the song${if (n != 1) "s" else ""} from Liked Songs.",
+                    text = stringResource(R.string.dialog_body_remove_liked),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -368,11 +370,11 @@ fun LikedSongsDetailScreen(
                         selection.clear()
                     },
                 ) {
-                    Text(text = "Remove", color = MaterialTheme.colorScheme.error)
+                    Text(text = stringResource(R.string.action_remove), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBatchDelete = false }) { Text("Cancel") }
+                TextButton(onClick = { showBatchDelete = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -414,7 +416,7 @@ private fun LikedSongsEmptyState(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.cd_back),
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -434,7 +436,7 @@ private fun LikedSongsEmptyState(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "No liked songs yet",
+                text = stringResource(R.string.label_no_liked_songs),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -443,7 +445,7 @@ private fun LikedSongsEmptyState(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Sync your library to get started",
+                text = stringResource(R.string.desc_sync_to_start),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -508,7 +510,7 @@ private fun LikedSongsHeader(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.cd_back),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -592,7 +594,7 @@ private fun LikedSongsHeader(
                             modifier = Modifier.size(20.dp),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Play All", style = MaterialTheme.typography.labelLarge)
+                        Text(text = stringResource(R.string.action_play_all), style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
@@ -612,7 +614,7 @@ private fun LikedSongsHeader(
                             modifier = Modifier.size(20.dp),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Shuffle", style = MaterialTheme.typography.labelLarge)
+                        Text(text = stringResource(R.string.action_shuffle), style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
@@ -628,7 +630,7 @@ private fun LikedSongsHeader(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
-                        contentDescription = "Filter tracks",
+                        contentDescription = stringResource(R.string.cd_filter_tracks),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }

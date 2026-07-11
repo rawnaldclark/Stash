@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,6 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.model.Track
+import com.stash.core.ui.R
 import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.TrackOptionsSheet
@@ -171,7 +173,7 @@ fun AlbumDetailScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                text = "No matching songs",
+                                text = stringResource(R.string.label_no_matching_songs),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -222,22 +224,22 @@ fun AlbumDetailScreen(
         // Album detail has exactly four actions (no Delete) — all fit inline,
         // so none collapse into the ⋮ overflow.
         val selectionActions = listOf(
-            SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
+            SelectionAction("add_queue", stringResource(R.string.action_add_to_queue), Icons.Default.PlaylistAdd) {
                 viewModel.addSelectedToQueue(selectedTracks); selection.clear()
             },
-            SelectionAction("add_playlist", "Add to playlist", Icons.Default.PlaylistAddCheck) {
+            SelectionAction("add_playlist", stringResource(R.string.selection_add_to_playlist), Icons.Default.PlaylistAddCheck) {
                 showBatchSave = true
             },
             if (allDownloaded) {
-                SelectionAction("remove_download", "Remove download", Icons.Default.DownloadDone) {
+                SelectionAction("remove_download", stringResource(R.string.selection_remove_download), Icons.Default.DownloadDone) {
                     viewModel.removeDownloadsForSelected(selectedIds); selection.clear()
                 }
             } else {
-                SelectionAction("download", "Download", Icons.Default.Download) {
+                SelectionAction("download", stringResource(R.string.selection_download), Icons.Default.Download) {
                     viewModel.downloadSelected(selectedIds); selection.clear()
                 }
             },
-            SelectionAction("play_next", "Play next", Icons.Default.PlaylistPlay) {
+            SelectionAction("play_next", stringResource(R.string.action_play_next), Icons.Default.PlaylistPlay) {
                 viewModel.playSelectedNext(selectedTracks); selection.clear()
             },
         )
@@ -416,7 +418,7 @@ private fun AlbumDetailHeader(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.cd_back),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -497,7 +499,7 @@ private fun AlbumDetailHeader(
                         modifier = Modifier.size(20.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Play All", style = MaterialTheme.typography.labelLarge)
+                    Text(text = stringResource(R.string.action_play_all), style = MaterialTheme.typography.labelLarge)
                 }
 
                 BulkPlayButtonBox(
@@ -516,7 +518,7 @@ private fun AlbumDetailHeader(
                             modifier = Modifier.size(20.dp),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Shuffle", style = MaterialTheme.typography.labelLarge)
+                        Text(text = stringResource(R.string.action_shuffle), style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
@@ -532,7 +534,7 @@ private fun AlbumDetailHeader(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
-                        contentDescription = "Filter tracks",
+                        contentDescription = stringResource(R.string.cd_filter_tracks),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }

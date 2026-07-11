@@ -37,7 +37,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
+import com.stash.core.ui.R
 import coil3.request.ImageRequest
 
 /**
@@ -101,7 +103,7 @@ fun MiniPlayer(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(artModel)
                                 .build(),
-                            contentDescription = "Album art",
+                            contentDescription = stringResource(R.string.cd_album_art),
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .size(48.dp)
@@ -146,7 +148,7 @@ fun MiniPlayer(
                         } else {
                             Icon(
                                 imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (uiState.isPlaying) "Pause" else "Play",
+                                contentDescription = if (uiState.isPlaying) stringResource(R.string.cd_pause) else stringResource(R.string.cd_play),
                                 tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(28.dp),
                             )
@@ -157,7 +159,7 @@ fun MiniPlayer(
                     IconButton(onClick = viewModel::onSkipNext) {
                         Icon(
                             imageVector = Icons.Default.SkipNext,
-                            contentDescription = "Next",
+                            contentDescription = stringResource(R.string.cd_next),
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(24.dp),
                         )

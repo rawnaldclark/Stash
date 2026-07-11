@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +63,7 @@ import com.stash.feature.sync.components.SyncActionProgress
 import com.stash.feature.sync.components.SyncStatusCard
 import com.stash.feature.sync.components.StatusPill
 import com.stash.feature.sync.components.formatRelativeTime
+import com.stash.core.ui.R
 
 /**
  * Main Sync screen.
@@ -120,7 +122,7 @@ fun SyncScreen(
         item {
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Sync",
+                text = stringResource(R.string.title_sync),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Bold,
@@ -180,7 +182,7 @@ fun SyncScreen(
         }
 
         // -- Sources section -------------------------------------------------
-        item { SyncSectionLabel("Sources") }
+        item { SyncSectionLabel(stringResource(R.string.section_sources)) }
 
         // -- Spotify Sync Preferences (above schedule) ------------------------
         // Rendered whenever Spotify is connected, even before the first sync
@@ -256,7 +258,7 @@ fun SyncScreen(
         }
 
         // -- Schedule section -------------------------------------------------
-        item { SyncSectionLabel("Schedule") }
+        item { SyncSectionLabel(stringResource(R.string.section_schedule)) }
         item {
             com.stash.feature.sync.components.ScheduleCard(
                 autoSyncEnabled = uiState.syncPreferences.autoSyncEnabled,
@@ -274,7 +276,7 @@ fun SyncScreen(
         // -- Library section --------------------------------------------------
         // Sync-adjacent maintenance: Blocked Songs gate what sync will
         // re-download, so the entry point lives here above Recent Syncs.
-        item { SyncSectionLabel("Library") }
+        item { SyncSectionLabel(stringResource(R.string.section_library)) }
         item {
             LibraryMaintenanceCard(
                 blockedCount = blockedCount,
@@ -284,7 +286,7 @@ fun SyncScreen(
 
         // -- Recent Syncs section ---------------------------------------------
         if (uiState.recentSyncs.isNotEmpty()) {
-            item { SyncSectionLabel("Recent syncs") }
+            item { SyncSectionLabel(stringResource(R.string.section_recent_syncs)) }
             item {
                 val rows = uiState.recentSyncs.map { sync ->
                     RecentSyncRow(
@@ -321,22 +323,15 @@ fun SyncScreen(
     if (uiState.pendingRefreshSource != null) {
         AlertDialog(
             onDismissRequest = viewModel::cancelRefreshMode,
-            title = { Text("Switch to Refresh?") },
+            title = { Text(stringResource(R.string.dialog_title_switch_refresh)) },
             text = {
-                Text(
-                    "Refresh pulls fresh tracks each sync — your auto-generated " +
-                        "daily mixes, weekly discovery, and other rotating playlists. " +
-                        "Tracks that rotate out are removed from the mix and their " +
-                        "downloads deleted to keep your library lean. Cleanup runs once " +
-                        "all sources are set to Refresh — while any source still " +
-                        "accumulates, nothing is deleted. Tracks you added manually are kept."
-                )
+                Text(stringResource(R.string.dialog_body_switch_refresh))
             },
             confirmButton = {
-                TextButton(onClick = viewModel::confirmRefreshMode) { Text("Switch to Refresh") }
+                TextButton(onClick = viewModel::confirmRefreshMode) { Text(stringResource(R.string.action_switch_to_refresh)) }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::cancelRefreshMode) { Text("Cancel") }
+                TextButton(onClick = viewModel::cancelRefreshMode) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -392,15 +387,15 @@ private fun LibraryMaintenanceCard(
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Blocked Songs",
+                    text = stringResource(R.string.label_blocked_songs),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = if (blockedCount > 0)
-                        "$blockedCount song${if (blockedCount != 1) "s" else ""} will never re-download"
+                        stringResource(R.string.label_blocked_count, blockedCount, if (blockedCount != 1) "s" else "")
                     else
-                        "No blocked songs",
+                        stringResource(R.string.label_no_blocked_songs),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -558,7 +553,7 @@ private fun FailedDownloadsCard(
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Failed Downloads",
+                    text = stringResource(R.string.label_failed_downloads),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -594,7 +589,7 @@ private fun SyncModeChipRow(
     accent: Color,
 ) {
     Text(
-        text = "Mix sync mode",
+        text = stringResource(R.string.label_mix_sync_mode),
         style = MaterialTheme.typography.labelMedium,
         color = accent,
         fontWeight = FontWeight.SemiBold,
@@ -606,19 +601,19 @@ private fun SyncModeChipRow(
         FilterChip(
             selected = mode == SyncMode.REFRESH,
             onClick = { onRequestRefresh() },
-            label = { Text("Refresh") },
+            label = { Text(stringResource(R.string.label_refresh)) },
         )
         FilterChip(
             selected = mode == SyncMode.ACCUMULATE,
             onClick = { onChange(SyncMode.ACCUMULATE) },
-            label = { Text("Accumulate") },
+            label = { Text(stringResource(R.string.label_accumulate)) },
         )
     }
     Text(
         text = if (mode == SyncMode.REFRESH)
-            "Mixes update with fresh tracks each sync"
+            stringResource(R.string.desc_mix_refresh)
         else
-            "New tracks stack on top of old ones",
+            stringResource(R.string.desc_mix_accumulate),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -680,12 +675,12 @@ private fun StudioOnlyToggleRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Studio recordings only",
+                text = stringResource(R.string.label_studio_recordings_only),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = "Excludes covers, live recordings, and UGC uploads from your Liked Songs. Other YouTube playlists are unaffected.",
+                text = stringResource(R.string.desc_studio_recordings_only),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -743,7 +738,7 @@ private fun SpotifyExpandedContent(
     if (uiState.spotifyPlaylists.isEmpty()) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "Your Spotify playlists and daily mixes will appear here after the first sync. Tap Sync Now to load them — nothing downloads until you toggle it on.",
+            text = stringResource(R.string.desc_empty_spotify),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -790,7 +785,7 @@ private fun SpotifyExpandedContent(
         if (otherMixes.isNotEmpty()) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Spotify Mixes",
+                text = stringResource(R.string.section_spotify_mixes),
                 style = MaterialTheme.typography.labelMedium,
                 color = purple,
                 fontWeight = FontWeight.SemiBold,
@@ -824,7 +819,7 @@ private fun SpotifyExpandedContent(
         if (custom.isNotEmpty()) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Your Playlists",
+                text = stringResource(R.string.section_your_playlists),
                 style = MaterialTheme.typography.labelMedium,
                 color = purple,
                 fontWeight = FontWeight.SemiBold,
@@ -868,7 +863,7 @@ private fun <T> SearchablePlaylistList(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 4.dp, bottom = 4.dp),
-        placeholder = { Text("Filter playlists\u2026") },
+        placeholder = { Text(stringResource(R.string.hint_filter_playlists)) },
         singleLine = true,
         leadingIcon = {
             Icon(
@@ -882,7 +877,7 @@ private fun <T> SearchablePlaylistList(
                 IconButton(onClick = { query = "" }) {
                     Icon(
                         imageVector = Icons.Filled.Clear,
-                        contentDescription = "Clear filter",
+                        contentDescription = stringResource(R.string.cd_clear_filter),
                     )
                 }
             }
@@ -895,7 +890,7 @@ private fun <T> SearchablePlaylistList(
     }
     if (filtered.isEmpty()) {
         Text(
-            text = "No playlists matching \u201C${query.trim()}\u201D",
+            text = stringResource(R.string.label_no_playlists_match, query.trim()),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(vertical = 8.dp),
@@ -964,7 +959,7 @@ private fun YouTubeExpandedContent(
     if (!hasPlaylists) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "Your Home Mixes, Liked Songs, and playlists from your YouTube Music library will appear here after the first sync. Nothing downloads until you pick what you want — no surprise downloads.",
+            text = stringResource(R.string.desc_empty_youtube),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1008,7 +1003,7 @@ private fun YouTubeExpandedContent(
         if (ytMixes.isNotEmpty()) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Home Mixes",
+                text = stringResource(R.string.section_home_mixes),
                 style = MaterialTheme.typography.labelMedium,
                 color = accent,
                 fontWeight = FontWeight.SemiBold,
@@ -1026,7 +1021,7 @@ private fun YouTubeExpandedContent(
         if (ytOther.isNotEmpty()) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Other Playlists",
+                text = stringResource(R.string.section_other_playlists),
                 style = MaterialTheme.typography.labelMedium,
                 color = accent,
                 fontWeight = FontWeight.SemiBold,

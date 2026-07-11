@@ -38,6 +38,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /** One batch action surfaced in the [SelectionBottomBar]. */
@@ -84,7 +86,7 @@ fun SelectionTopBar(
             IconButton(onClick = onClose) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Exit selection",
+                    contentDescription = stringResource(R.string.selection_exit),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -106,7 +108,7 @@ fun SelectionTopBar(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Select all",
+                    text = stringResource(R.string.selection_select_all),
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
@@ -161,7 +163,7 @@ fun SelectionBottomBar(
                 Box {
                     LabeledAction(
                         icon = Icons.Default.MoreVert,
-                        label = "More",
+                        label = stringResource(R.string.selection_more),
                         onClick = { overflowExpanded = true },
                     )
                     DropdownMenu(

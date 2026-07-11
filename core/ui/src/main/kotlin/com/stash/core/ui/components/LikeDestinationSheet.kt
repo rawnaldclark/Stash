@@ -22,7 +22,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 
 /**
  * v0.9.13: Per-track override sheet. Pre-checked according to the
@@ -56,13 +58,13 @@ fun LikeDestinationSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "Save to…",
+                text = stringResource(R.string.action_save_to),
                 style = MaterialTheme.typography.titleMedium,
             )
             Spacer(modifier = Modifier.height(8.dp))
 
             DestinationRow(
-                label = "Stash Liked Songs",
+                label = stringResource(R.string.like_dest_stash),
                 subtitle = if (state.stashAlreadySaved) "✓ Already saved" else null,
                 checked = stashChecked,
                 onCheckedChange = { stashChecked = it },
@@ -70,7 +72,7 @@ fun LikeDestinationSheet(
 
             if (state.spotifyVisible) {
                 DestinationRow(
-                    label = "Spotify Liked Songs",
+                    label = stringResource(R.string.like_dest_spotify),
                     subtitle = if (state.spotifyAlreadySaved) "✓ Already saved" else null,
                     checked = spotifyChecked,
                     onCheckedChange = { spotifyChecked = it },
@@ -79,7 +81,7 @@ fun LikeDestinationSheet(
 
             if (state.ytVisible) {
                 DestinationRow(
-                    label = "YouTube Music Liked Music",
+                    label = stringResource(R.string.like_dest_youtube),
                     subtitle = if (state.ytAlreadySaved) "✓ Already saved" else null,
                     checked = ytChecked,
                     onCheckedChange = { ytChecked = it },
@@ -98,7 +100,7 @@ fun LikeDestinationSheet(
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Save")
+                Text(stringResource(R.string.action_save_btn))
             }
         }
     }

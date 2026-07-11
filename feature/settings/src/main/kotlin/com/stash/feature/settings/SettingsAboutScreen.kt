@@ -15,10 +15,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.sync.workers.UpdateCheckWorker
+import com.stash.core.ui.R
 import com.stash.core.ui.components.GlassCard
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
@@ -43,7 +45,7 @@ fun SettingsAboutScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    SettingsScaffold(title = "About & Help", onBack = onBack, modifier = modifier) {
+    SettingsScaffold(title = stringResource(R.string.title_about_help), onBack = onBack, modifier = modifier) {
         // -- Diagnostics section ----------------------------------------------
         // Crash-to-file: writes uncaught exceptions to cacheDir/crashes/ so
         // the user can attach the latest one to an email / Discord / GitHub
@@ -54,12 +56,18 @@ fun SettingsAboutScreen(
         val context = LocalContext.current
         LaunchedEffect(Unit) { viewModel.refreshDiagnostics() }
 
-        SettingsSectionLabel("Diagnostics")
+        // Pre-resolve strings used in non-Composable callbacks (Intent builders, Toast calls).
+        val crashReportSubject = stringResource(R.string.label_crash_report_subject)
+        val shareCrashReportTitle = stringResource(R.string.label_share_crash_report_title)
+        val noAppAvailableMsg = stringResource(R.string.status_no_app_available)
+        val checkingUpdatesMsg = stringResource(R.string.status_checking_updates)
+
+        SettingsSectionLabel(stringResource(R.string.section_diagnostics))
 
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "Share latest crash report",
+                    text = stringResource(R.string.label_share_crash_report),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -68,7 +76,7 @@ fun SettingsAboutScreen(
                     text = if (uiState.hasCrashReport) {
                         "Attach the most recent crash log to email or chat. Stays on device until you share."
                     } else {
-                        "No recent crashes."
+                        stringResource(R.string.label_no_recent_crashes)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -85,14 +93,14 @@ fun SettingsAboutScreen(
                         val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(android.content.Intent.EXTRA_STREAM, target.contentUri)
-                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Stash crash report")
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, crashReportSubject)
                             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
-                        val chooser = android.content.Intent.createChooser(send, "Share crash report")
+                        val chooser = android.content.Intent.createChooser(send, shareCrashReportTitle)
                             .apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
                         runCatching { context.startActivity(chooser) }
                             .onFailure {
-                                Toast.makeText(context, "No app available to share the report.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, noAppAvailableMsg, Toast.LENGTH_SHORT).show()
                             }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -100,18 +108,18 @@ fun SettingsAboutScreen(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
                 ) {
-                    Text("Share latest crash report")
+                    Text(stringResource(R.string.label_share_crash_report))
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Share diagnostics",
+                    text = stringResource(R.string.label_share_diagnostics),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "Bundle recent logs, sync history, and connection status (no passwords) so a dev can debug your issue.",
+                    text = stringResource(R.string.desc_share_diagnostics),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -121,13 +129,13 @@ fun SettingsAboutScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                 ) {
-                    Text("Share diagnostics")
+                    Text(stringResource(R.string.label_share_diagnostics))
                 }
             }
         }
 
         // -- About section ----------------------------------------------------
-        SettingsSectionLabel("About")
+        SettingsSectionLabel(stringResource(R.string.section_about))
 
         val installedVersion = remember(context) {
             runCatching {
@@ -137,21 +145,21 @@ fun SettingsAboutScreen(
 
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
-                SettingsValueRow(label = "Version", value = installedVersion)
+                SettingsValueRow(label = stringResource(R.string.label_version), value = installedVersion)
                 Spacer(modifier = Modifier.height(8.dp))
-                SettingsValueRow(label = "License", value = "GPL-3.0")
+                SettingsValueRow(label = stringResource(R.string.label_license), value = "GPL-3.0")
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = {
                         UpdateCheckWorker.enqueueOneTimeCheck(context)
-                        Toast.makeText(context, "Checking for updates…", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, checkingUpdatesMsg, Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
                 ) {
-                    Text("Check for updates")
+                    Text(stringResource(R.string.action_check_updates))
                 }
             }
         }

@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +90,7 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
+import com.stash.core.ui.R
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackListItem
@@ -177,25 +179,25 @@ fun LibraryScreen(
         val allDownloaded = selectedTracks.isNotEmpty() && selectedTracks.all { it.isDownloaded }
 
         val selectionActions = listOf(
-            SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
+            SelectionAction("add_queue", stringResource(R.string.action_add_to_queue), Icons.Default.PlaylistAdd) {
                 viewModel.addSelectedToQueue(selectedTracks); selection.clear()
             },
-            SelectionAction("add_playlist", "Add to playlist", Icons.Default.PlaylistAddCheck) {
+            SelectionAction("add_playlist", stringResource(R.string.selection_add_to_playlist), Icons.Default.PlaylistAddCheck) {
                 showBatchSave = true
             },
             if (allDownloaded) {
-                SelectionAction("remove_download", "Remove download", Icons.Default.DownloadDone) {
+                SelectionAction("remove_download", stringResource(R.string.selection_remove_download), Icons.Default.DownloadDone) {
                     viewModel.removeDownloadsForSelected(selectedIds); selection.clear()
                 }
             } else {
-                SelectionAction("download", "Download", Icons.Default.Download) {
+                SelectionAction("download", stringResource(R.string.selection_download), Icons.Default.Download) {
                     viewModel.downloadSelected(selectedIds); selection.clear()
                 }
             },
-            SelectionAction("delete", "Delete", Icons.Default.Delete) {
+            SelectionAction("delete", stringResource(R.string.action_delete), Icons.Default.Delete) {
                 showBatchDelete = true
             },
-            SelectionAction("play_next", "Play next", Icons.Default.PlaylistPlay) {
+            SelectionAction("play_next", stringResource(R.string.action_play_next), Icons.Default.PlaylistPlay) {
                 viewModel.playSelectedNext(selectedTracks); selection.clear()
             },
         )
@@ -247,12 +249,11 @@ fun LibraryScreen(
         var alsoBlacklist by remember(showBatchDelete) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showBatchDelete = false },
-            title = { Text("Delete $n song${if (n != 1) "s" else ""}?") },
+            title = { Text(stringResource(R.string.dialog_title_delete_songs, n)) },
             text = {
                 Column {
                     Text(
-                        "${n} song${if (n != 1) "s" else ""} will be removed from your " +
-                            "library and deleted from disk.",
+                        stringResource(R.string.dialog_body_delete_songs, n),
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
@@ -266,11 +267,11 @@ fun LibraryScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Also block these songs from future syncs",
+                                text = stringResource(R.string.label_also_block_songs),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                text = stringResource(R.string.desc_blocked_songs_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -287,13 +288,13 @@ fun LibraryScreen(
                     },
                 ) {
                     Text(
-                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (alsoBlacklist) stringResource(R.string.action_delete_and_block) else stringResource(R.string.action_delete),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBatchDelete = false }) { Text("Cancel") }
+                TextButton(onClick = { showBatchDelete = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -354,7 +355,7 @@ private fun LibraryContent(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Library",
+                text = stringResource(R.string.title_library),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f),
@@ -377,7 +378,7 @@ private fun LibraryContent(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Import",
+                    text = stringResource(R.string.action_import),
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
@@ -530,7 +531,7 @@ private fun ShuffleLibraryCard(
                 modifier = Modifier.size(20.dp),
             )
             Text(
-                text = "Shuffle Library",
+                text = stringResource(R.string.action_shuffle_library),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -569,7 +570,7 @@ private fun GlassSearchBar(
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
+                    contentDescription = stringResource(R.string.cd_search),
                     tint = extendedColors.textTertiary,
                 )
             },
@@ -631,11 +632,12 @@ private fun TabChipRow(
 }
 
 /** Human-readable label for each tab. */
+@Composable
 private fun LibraryTab.displayName(): String = when (this) {
-    LibraryTab.PLAYLISTS -> "Playlists"
-    LibraryTab.TRACKS -> "Tracks"
-    LibraryTab.ARTISTS -> "Artists"
-    LibraryTab.ALBUMS -> "Albums"
+    LibraryTab.PLAYLISTS -> stringResource(R.string.tab_playlists)
+    LibraryTab.TRACKS -> stringResource(R.string.tab_tracks)
+    LibraryTab.ARTISTS -> stringResource(R.string.tab_artists)
+    LibraryTab.ALBUMS -> stringResource(R.string.tab_albums)
 }
 
 // ── Sort chips ───────────────────────────────────────────────────────────────
@@ -680,10 +682,11 @@ private fun SortChipRow(
     }
 }
 
+@Composable
 private fun SortOrder.displayName(): String = when (this) {
-    SortOrder.RECENT -> "Recently Added"
-    SortOrder.ALPHABETICAL -> "A-Z"
-    SortOrder.MOST_PLAYED -> "Most Played"
+    SortOrder.RECENT -> stringResource(R.string.sort_recently_added)
+    SortOrder.ALPHABETICAL -> stringResource(R.string.sort_alphabetical)
+    SortOrder.MOST_PLAYED -> stringResource(R.string.sort_most_played)
 }
 
 // ── Source filter chips ─────────────────────────────────────────────────────
@@ -728,11 +731,12 @@ private fun SourceFilterChipRow(
     }
 }
 
+@Composable
 private fun SourceFilter.displayName(): String = when (this) {
-    SourceFilter.ALL -> "All"
-    SourceFilter.YOUTUBE -> "YouTube"
-    SourceFilter.SPOTIFY -> "Spotify"
-    SourceFilter.FLAC -> "FLAC"
+    SourceFilter.ALL -> stringResource(R.string.filter_all)
+    SourceFilter.YOUTUBE -> stringResource(R.string.filter_youtube)
+    SourceFilter.SPOTIFY -> stringResource(R.string.filter_spotify)
+    SourceFilter.FLAC -> stringResource(R.string.filter_flac)
 }
 
 // ── Local import progress strip ─────────────────────────────────────────────
@@ -764,12 +768,12 @@ private fun LocalImportStrip(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = "Importing ${state.current} of ${state.total}\u2026",
+                        text = stringResource(R.string.status_importing_progress, state.current.toString(), state.total.toString()),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     androidx.compose.material3.TextButton(onClick = onCancel) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.action_cancel))
                     }
                 }
                 androidx.compose.material3.LinearProgressIndicator(
@@ -801,7 +805,7 @@ private fun LocalImportStrip(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 androidx.compose.material3.TextButton(onClick = onDismiss) {
-                    Text("Dismiss")
+                    Text(stringResource(R.string.cd_dismiss))
                 }
             }
         }
@@ -816,7 +820,7 @@ private fun LocalImportStrip(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Import failed",
+                        text = stringResource(R.string.error_import_failed),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -827,7 +831,7 @@ private fun LocalImportStrip(
                     )
                 }
                 androidx.compose.material3.TextButton(onClick = onDismiss) {
-                    Text("Dismiss")
+                    Text(stringResource(R.string.cd_dismiss))
                 }
             }
         }
@@ -850,8 +854,8 @@ private fun PlaylistsGrid(
 ) {
     if (playlists.isEmpty()) {
         EmptyTabMessage(
-            if (anyServiceConnected) "Sync your playlists to see them here"
-            else "Connect a service in Settings to see your playlists",
+            if (anyServiceConnected) stringResource(R.string.label_empty_playlists_synced)
+            else stringResource(R.string.label_empty_playlists_no_service),
         )
         return
     }
@@ -1006,7 +1010,7 @@ private fun PlaylistsGrid(
 
             BottomSheetActionRow(
                 icon = Icons.Default.PlayArrow,
-                label = "Play All",
+                label = stringResource(R.string.action_play_all),
                 onClick = {
                     onPlayPlaylist(playlist)
                     selectedPlaylist = null
@@ -1014,7 +1018,7 @@ private fun PlaylistsGrid(
             )
             BottomSheetActionRow(
                 icon = Icons.Default.PlaylistAdd,
-                label = "Add to Queue",
+                label = stringResource(R.string.action_add_to_queue),
                 onClick = {
                     onAddPlaylistToQueue(playlist)
                     selectedPlaylist = null
@@ -1024,7 +1028,7 @@ private fun PlaylistsGrid(
             if (playlist.type == PlaylistType.CUSTOM) {
                 BottomSheetActionRow(
                     icon = Icons.Default.Image,
-                    label = if (playlist.artUrl != null) "Change Image" else "Add Image",
+                    label = if (playlist.artUrl != null) stringResource(R.string.action_change_image) else stringResource(R.string.action_add_image),
                     onClick = {
                         playlistForImagePick = playlist
                         selectedPlaylist = null
@@ -1038,7 +1042,7 @@ private fun PlaylistsGrid(
                 if (playlist.artUrl != null) {
                     BottomSheetActionRow(
                         icon = Icons.Default.ImageNotSupported,
-                        label = "Remove Image",
+                        label = stringResource(R.string.action_remove_image),
                         onClick = {
                             onRemovePlaylistImage(playlist.id)
                             selectedPlaylist = null
@@ -1049,7 +1053,7 @@ private fun PlaylistsGrid(
 
             BottomSheetActionRow(
                 icon = Icons.Default.RemoveCircleOutline,
-                label = "Remove Playlist",
+                label = stringResource(R.string.action_remove_playlist),
                 onClick = {
                     onRemovePlaylist(playlist)
                     selectedPlaylist = null
@@ -1057,7 +1061,7 @@ private fun PlaylistsGrid(
             )
             BottomSheetActionRow(
                 icon = Icons.Default.Delete,
-                label = "Delete Playlist & Songs",
+                label = stringResource(R.string.action_delete_playlist_and_songs),
                 tint = MaterialTheme.colorScheme.error,
                 onClick = {
                     playlistToDelete = playlist
@@ -1074,12 +1078,11 @@ private fun PlaylistsGrid(
         var alsoBlacklist by remember(playlist.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { playlistToDelete = null },
-            title = { Text("Delete \"${playlist.name}\"?") },
+            title = { Text(stringResource(R.string.dialog_title_delete_playlist, playlist.name)) },
             text = {
                 Column {
                     Text(
-                        "\"${playlist.name}\" and all its tracks will be removed from " +
-                            "your library and deleted from disk. This cannot be undone.",
+                        stringResource(R.string.dialog_body_delete_playlist_permanent, playlist.name),
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
@@ -1093,11 +1096,11 @@ private fun PlaylistsGrid(
                         Spacer(modifier = Modifier.width(4.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Also block these songs from future syncs",
+                                text = stringResource(R.string.label_also_block_songs),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                text = stringResource(R.string.desc_blocked_songs_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1113,14 +1116,14 @@ private fun PlaylistsGrid(
                     },
                 ) {
                     Text(
-                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (alsoBlacklist) stringResource(R.string.action_delete_and_block) else stringResource(R.string.action_delete),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { playlistToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
         )
@@ -1143,8 +1146,8 @@ private fun TracksTab(
 ) {
     if (tracks.isEmpty()) {
         EmptyTabMessage(
-            if (anyServiceConnected) "Sync your library to see tracks here"
-            else "Connect a service in Settings to see your tracks",
+            if (anyServiceConnected) stringResource(R.string.label_empty_tracks_synced)
+            else stringResource(R.string.label_empty_tracks_no_service),
         )
         return
     }
@@ -1225,7 +1228,7 @@ private fun TracksTab(
             // Action rows
             BottomSheetActionRow(
                 icon = Icons.Default.PlaylistPlay,
-                label = "Play Next",
+                label = stringResource(R.string.action_play_next),
                 onClick = {
                     onPlayNext(track)
                     selectedTrack = null
@@ -1233,7 +1236,7 @@ private fun TracksTab(
             )
             BottomSheetActionRow(
                 icon = Icons.Default.PlaylistAdd,
-                label = "Add to Queue",
+                label = stringResource(R.string.action_add_to_queue),
                 onClick = {
                     onAddToQueue(track)
                     selectedTrack = null
@@ -1241,7 +1244,7 @@ private fun TracksTab(
             )
             BottomSheetActionRow(
                 icon = Icons.Default.Delete,
-                label = "Delete",
+                label = stringResource(R.string.action_delete),
                 tint = MaterialTheme.colorScheme.error,
                 onClick = {
                     trackToDelete = track
@@ -1259,12 +1262,11 @@ private fun TracksTab(
         var alsoBlacklist by remember(track.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { trackToDelete = null },
-            title = { Text("Delete \"${track.title}\"?") },
+            title = { Text(stringResource(R.string.dialog_title_delete_track, track.title)) },
             text = {
                 Column {
                     Text(
-                        "\"${track.title}\" by ${track.artist} will be removed from " +
-                            "your library and deleted from disk.",
+                        stringResource(R.string.dialog_body_delete_track_library),
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
@@ -1278,11 +1280,11 @@ private fun TracksTab(
                         Spacer(modifier = Modifier.width(4.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Also block this song from future syncs",
+                                text = stringResource(R.string.label_also_block_song),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                text = stringResource(R.string.desc_blocked_songs_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1298,14 +1300,14 @@ private fun TracksTab(
                     },
                 ) {
                     Text(
-                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (alsoBlacklist) stringResource(R.string.action_delete_and_block) else stringResource(R.string.action_delete),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { trackToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
         )
@@ -1363,8 +1365,8 @@ private fun ArtistsGrid(
 ) {
     if (artists.isEmpty() && singleTrackArtists.isEmpty()) {
         EmptyTabMessage(
-            if (anyServiceConnected) "Sync your library to see artists here"
-            else "Connect a service in Settings to see your artists",
+            if (anyServiceConnected) stringResource(R.string.label_empty_artists_synced)
+            else stringResource(R.string.label_empty_artists_no_service),
         )
         return
     }
@@ -1459,7 +1461,7 @@ private fun ArtistsGrid(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = if (showSingleTrack) "Hide single-track artists"
+                            text = if (showSingleTrack) stringResource(R.string.label_hide_single_track)
                             else "${singleTrackArtists.size} artists with 1 track",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1510,7 +1512,7 @@ private fun ArtistsGrid(
 
             BottomSheetActionRow(
                 icon = Icons.Default.PlayArrow,
-                label = "Play All by Artist",
+                label = stringResource(R.string.action_play_all_by_artist),
                 onClick = {
                     onPlayArtist(artist.name)
                     selectedArtist = null
@@ -1518,7 +1520,7 @@ private fun ArtistsGrid(
             )
             BottomSheetActionRow(
                 icon = Icons.Default.PlaylistAdd,
-                label = "Add to Queue",
+                label = stringResource(R.string.action_add_to_queue),
                 onClick = {
                     onAddArtistToQueue(artist.name)
                     selectedArtist = null
@@ -1526,7 +1528,7 @@ private fun ArtistsGrid(
             )
             BottomSheetActionRow(
                 icon = Icons.Default.Delete,
-                label = "Delete All by Artist",
+                label = stringResource(R.string.action_delete_all_by_artist),
                 tint = MaterialTheme.colorScheme.error,
                 onClick = {
                     artistToDelete = artist
@@ -1542,8 +1544,8 @@ private fun ArtistsGrid(
     artistToDelete?.let { artist ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { artistToDelete = null },
-            title = { Text("Delete all by ${artist.name}?") },
-            text = { Text("This will delete all ${artist.trackCount} downloaded songs by this artist from your device.") },
+            title = { Text(stringResource(R.string.dialog_title_delete_artist, artist.name)) },
+            text = { Text(stringResource(R.string.dialog_body_delete_artist, artist.trackCount)) },
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = {
@@ -1551,12 +1553,12 @@ private fun ArtistsGrid(
                         artistToDelete = null
                     },
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { artistToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
         )
@@ -1576,8 +1578,8 @@ private fun AlbumsGrid(
 ) {
     if (albums.isEmpty() && singleTrackAlbums.isEmpty()) {
         EmptyTabMessage(
-            if (anyServiceConnected) "Sync your library to see albums here"
-            else "Connect a service in Settings to see your albums",
+            if (anyServiceConnected) stringResource(R.string.label_empty_albums_synced)
+            else stringResource(R.string.label_empty_albums_no_service),
         )
         return
     }
@@ -1678,7 +1680,7 @@ private fun AlbumsGrid(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = if (showSingleTrack) "Hide single-track albums"
+                            text = if (showSingleTrack) stringResource(R.string.label_hide_single_track)
                             else "${singleTrackAlbums.size} albums with 1 track",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1731,7 +1733,7 @@ private fun AlbumsGrid(
 
             BottomSheetActionRow(
                 icon = Icons.Default.PlayArrow,
-                label = "Play Album",
+                label = stringResource(R.string.action_play_album),
                 onClick = {
                     onPlayAlbum(album.name, album.artist)
                     selectedAlbum = null
@@ -1739,7 +1741,7 @@ private fun AlbumsGrid(
             )
             BottomSheetActionRow(
                 icon = Icons.Default.PlaylistAdd,
-                label = "Add to Queue",
+                label = stringResource(R.string.action_add_to_queue),
                 onClick = {
                     onAddAlbumToQueue(album.name, album.artist)
                     selectedAlbum = null

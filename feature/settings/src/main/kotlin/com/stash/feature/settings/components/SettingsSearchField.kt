@@ -20,7 +20,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -53,7 +55,7 @@ fun SettingsSearchField(
         )
         Spacer(modifier = Modifier.width(10.dp))
         Text(
-            text = "Search settings",
+            text = stringResource(R.string.hint_search_settings),
             style = MaterialTheme.typography.bodyMedium,
             color = extendedColors.textTertiary,
         )

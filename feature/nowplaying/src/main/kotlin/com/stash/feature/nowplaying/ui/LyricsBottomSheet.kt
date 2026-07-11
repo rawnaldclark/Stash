@@ -21,6 +21,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -79,15 +81,15 @@ fun LyricsBottomSheet(
                         onLineTap = onSeek,
                     )
                     is LyricsViewState.Plain -> LyricsPlainRenderer(state.text)
-                    LyricsViewState.Instrumental -> CenteredPlacard("\u266A Instrumental")
+                    LyricsViewState.Instrumental -> CenteredPlacard(stringResource(R.string.label_instrumental))
                     LyricsViewState.None -> CenteredPlacard(
-                        label = "No lyrics found",
-                        action = "Retry",
+                        label = stringResource(R.string.label_no_lyrics_found),
+                        action = stringResource(R.string.cd_retry),
                         onAction = onRetry,
                     )
                     is LyricsViewState.Error -> CenteredPlacard(
-                        label = "Couldn't load lyrics",
-                        action = if (state.retryable) "Retry" else null,
+                        label = stringResource(R.string.label_lyrics_load_error),
+                        action = if (state.retryable) stringResource(R.string.cd_retry) else null,
                         onAction = onRetry,
                     )
                 }
@@ -111,12 +113,12 @@ private fun LyricsHeader(onClose: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            text = "Lyrics",
+            text = stringResource(R.string.title_lyrics),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
         IconButton(onClick = onClose) {
-            Icon(Icons.Default.Close, contentDescription = "Close")
+            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cd_close))
         }
     }
 }

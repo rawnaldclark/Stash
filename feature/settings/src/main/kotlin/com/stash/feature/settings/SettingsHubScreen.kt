@@ -20,9 +20,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.ui.R
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsSearchField
@@ -90,7 +92,7 @@ fun SettingsHubScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "Settings",
+            text = stringResource(R.string.title_settings),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -100,7 +102,7 @@ fun SettingsHubScreen(
             rows = listOf(
                 {
                     SettingsNavRow(
-                        title = "Playback",
+                        title = stringResource(R.string.label_playback),
                         subtitle = summaries.playback,
                         leadingIcon = Icons.Rounded.PlayArrow,
                         onClick = onOpenPlayback,
@@ -108,7 +110,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Audio & Quality",
+                        title = stringResource(R.string.label_audio_quality),
                         subtitle = summaries.audioQuality,
                         leadingIcon = Icons.Rounded.GraphicEq,
                         onClick = onOpenAudioQuality,
@@ -116,7 +118,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Accounts & Sync",
+                        title = stringResource(R.string.label_accounts_sync),
                         subtitle = summaries.accounts,
                         leadingIcon = Icons.Rounded.Person,
                         onClick = onOpenAccounts,
@@ -124,7 +126,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Library & Storage",
+                        title = stringResource(R.string.label_library_storage),
                         subtitle = summaries.libraryStorage,
                         leadingIcon = Icons.Rounded.FolderOpen,
                         onClick = onOpenLibraryStorage,
@@ -132,7 +134,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Appearance",
+                        title = stringResource(R.string.label_appearance),
                         subtitle = summaries.appearance,
                         leadingIcon = Icons.Rounded.Palette,
                         onClick = onOpenAppearance,
@@ -140,7 +142,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "About & Help",
+                        title = stringResource(R.string.label_about_help),
                         subtitle = summaries.about,
                         leadingIcon = Icons.Rounded.Info,
                         onClick = onOpenAbout,

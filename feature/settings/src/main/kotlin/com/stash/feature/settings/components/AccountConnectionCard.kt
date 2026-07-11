@@ -28,8 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.stash.core.auth.model.AuthState
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -141,7 +143,7 @@ fun AccountConnectionCard(
                                 contentColor = MaterialTheme.colorScheme.error,
                             ),
                         ) {
-                            Text("Disconnect")
+                            Text(stringResource(R.string.action_disconnect))
                         }
                     }
                     else -> {
@@ -152,7 +154,7 @@ fun AccountConnectionCard(
                                 contentColor = Color.White,
                             ),
                         ) {
-                            Text("Connect")
+                            Text(stringResource(R.string.action_connect))
                         }
                     }
                 }

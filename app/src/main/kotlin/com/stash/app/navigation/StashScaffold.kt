@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -200,11 +201,11 @@ private fun StashBottomBar(
                 icon = {
                     Icon(
                         imageVector = if (isSelected) dest.selectedIcon else dest.unselectedIcon,
-                        contentDescription = dest.label,
+                        contentDescription = stringResource(dest.labelResId),
                     )
                 },
                 label = {
-                    Text(text = dest.label, style = MaterialTheme.typography.labelSmall)
+                    Text(text = stringResource(dest.labelResId), style = MaterialTheme.typography.labelSmall)
                 },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,

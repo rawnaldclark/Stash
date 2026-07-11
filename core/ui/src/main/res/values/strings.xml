@@ -1,0 +1,695 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ===== App ===== -->
+    <string name="app_name">Stash</string>
+
+    <!-- ===== Common Actions ===== -->
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_ok">OK</string>
+    <string name="action_save">Save</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_enable">Enable</string>
+    <string name="action_download">Download</string>
+    <string name="action_download_all">Download All</string>
+    <string name="action_play_all">Play All</string>
+    <string name="action_play">Play</string>
+    <string name="action_radio">Radio</string>
+    <string name="action_shuffle">Shuffle</string>
+    <string name="action_queue">Queue</string>
+    <string name="action_add_to_queue">Add to Queue</string>
+    <string name="action_play_next">Play Next</string>
+    <string name="action_remove_downloads">Remove Downloads</string>
+    <string name="action_remove_playlist">Remove Playlist</string>
+    <string name="action_delete_playlist_and_songs">Delete Playlist &amp; Songs</string>
+    <string name="action_delete_and_block">Delete &amp; Block</string>
+    <string name="action_unblock">Unblock</string>
+    <string name="action_create_playlist">Create Playlist</string>
+    <string name="action_create_mix">Create\nmix</string>
+    <string name="action_refresh_mix">Refresh this mix</string>
+    <string name="action_edit_mix">Edit mix</string>
+    <string name="action_donate">Donate</string>
+    <string name="action_star">Star</string>
+    <string name="action_import">Import</string>
+    <string name="action_import_backup">Import Backup</string>
+    <string name="action_change_folder">Change folder</string>
+    <string name="action_pick_folder">Pick SD / folder</string>
+    <string name="action_use_internal">Use internal</string>
+    <string name="action_delete_from_library">Delete from library</string>
+    <string name="action_delete_and_block_forever">Delete and block forever</string>
+    <string name="action_find_in_flac">Find in FLAC</string>
+    <string name="action_find_better_match">Find a better match</string>
+    <string name="action_view_lyrics">View lyrics ♪</string>
+    <string name="action_shuffle_library">Shuffle Library</string>
+    <string name="action_play_all_by_artist">Play All by Artist</string>
+    <string name="action_delete_all_by_artist">Delete All by Artist</string>
+    <string name="action_play_album">Play Album</string>
+    <string name="action_stop_sync">Stop sync</string>
+    <string name="action_reauthenticate">Re-authenticate</string>
+    <string name="action_reauthenticate_spotify">Re-authenticate Spotify</string>
+    <string name="action_reauthenticate_youtube">Re-authenticate YouTube</string>
+    <string name="action_switch_to_refresh">Switch to Refresh</string>
+    <string name="action_connect_lastfm">Connect Last.fm</string>
+    <string name="action_finish_connecting">Finish connecting</string>
+    <string name="action_setup_lossless">Set up →</string>
+    <string name="action_retry_yt_sync">Retry YouTube sync</string>
+    <string name="action_reset_lossless_attempts">Reset lossless attempts</string>
+    <string name="action_refresh_quality_info">Refresh quality info</string>
+    <string name="action_remove_image">Remove Image</string>
+    <string name="action_play_both">Play Both</string>
+    <string name="action_got_it">Got it</string>
+    <string name="action_i_understand">I understand</string>
+
+    <!-- ===== Navigation / CD ===== -->
+    <string name="cd_back">Back</string>
+    <string name="cd_close">Close</string>
+    <string name="cd_search">Search</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="cd_dismiss">Dismiss</string>
+    <string name="cd_more_actions">More actions</string>
+    <string name="cd_download">Download</string>
+    <string name="cd_downloaded">Downloaded</string>
+    <string name="cd_preview">Preview</string>
+    <string name="cd_stop_preview">Stop preview</string>
+    <string name="cd_preview_match">Preview match</string>
+    <string name="cd_preview_replacement">Preview replacement</string>
+    <string name="cd_approve_match">Approve match</string>
+    <string name="cd_swap_match">Swap to this match</string>
+    <string name="cd_unflag_match">Unflag (keep current match)</string>
+    <string name="cd_save_preset">Save preset</string>
+    <string name="cd_save_to_playlist">Save to Playlist</string>
+    <string name="cd_queue">Queue</string>
+    <string name="cd_flag_wrong_match">Flag as wrong match</string>
+    <string name="cd_open_artist">Open artist</string>
+    <string name="cd_open_lyrics">Open lyrics</string>
+    <string name="cd_open_browser">Open browser</string>
+    <string name="cd_copy_code">Copy code</string>
+    <string name="cd_filter_tracks">Filter tracks</string>
+    <string name="cd_set_cover_image">Set cover image</string>
+    <string name="cd_shuffle">Shuffle</string>
+    <string name="cd_previous">Previous</string>
+    <string name="cd_next">Next</string>
+    <string name="cd_repeat">Repeat</string>
+    <string name="cd_streaming">Streaming</string>
+    <string name="cd_album_art">Album art</string>
+    <string name="cd_drag_to_reorder">Drag to reorder</string>
+    <string name="cd_clear_filter">Clear filter</string>
+    <string name="cd_waiting_lossless">Waiting for lossless source</string>
+    <string name="cd_dismiss_lossless_banner">Dismiss lossless banner</string>
+    <string name="cd_join_discord">Join the Stash Discord</string>
+    <string name="cd_report_issue">Report an issue on GitHub</string>
+    <string name="cd_supporters_kofi">Supporters on Ko-fi</string>
+    <string name="cd_app_logo">Stash</string>
+    <string name="cd_play_all_mixes">Play all %1$s mixes</string>
+    <string name="cd_play_both_mixes">Play mixes from both services</string>
+
+    <!-- ===== Titles ===== -->
+    <string name="title_settings">Settings</string>
+    <string name="title_playback">Playback</string>
+    <string name="title_playback_mode">Playback Mode</string>
+    <string name="title_audio_quality">Audio &amp; Quality</string>
+    <string name="title_accounts_sync">Accounts &amp; Sync</string>
+    <string name="title_library_storage">Library &amp; Storage</string>
+    <string name="title_appearance">Appearance</string>
+    <string name="title_about_help">About &amp; Help</string>
+    <string name="title_library">Library</string>
+    <string name="title_sync">Sync</string>
+    <string name="title_sync_time">Sync time</string>
+    <string name="title_equalizer">Equalizer</string>
+    <string name="title_library_health">Library Health</string>
+    <string name="title_blocked_songs">Blocked Songs</string>
+    <string name="title_failed_downloads">Failed Downloads</string>
+    <string name="title_lyrics">Lyrics</string>
+    <string name="title_up_next">Up Next</string>
+    <string name="title_support_stash">Support Stash</string>
+    <string name="title_diagnostics">Diagnostics</string>
+    <string name="title_connect_arcod">Connect ARCOD</string>
+    <string name="title_verify_captcha">Verify squid.wtf captcha</string>
+    <string name="title_search_prompt">Search YouTube Music</string>
+
+    <!-- ===== Dialog Titles ===== -->
+    <string name="dialog_title_delete_playlist">Delete %1$s?</string>
+    <string name="dialog_title_delete_songs">Delete %1$d song(s)?</string>
+    <string name="dialog_title_delete_track">Delete %1$s?</string>
+    <string name="dialog_title_delete_artist">Delete all by %1$s?</string>
+    <string name="dialog_title_remove_liked">Remove %1$d song(s) from Liked Songs?</string>
+    <string name="dialog_title_batch_delete">Delete %1$d song(s) from library?</string>
+    <string name="dialog_title_batch_remove">Remove %1$d song(s)</string>
+    <string name="dialog_title_overwrite_library">Overwrite Library &amp; Settings?</string>
+    <string name="dialog_title_wrong_match">What\'s wrong with this song?</string>
+    <string name="dialog_title_stop_retrying">Stop retrying this song?</string>
+    <string name="dialog_title_switch_refresh">Switch to Refresh?</string>
+    <string name="dialog_title_download_all">Download all?</string>
+    <string name="dialog_title_connect_spotify">Connect Spotify</string>
+    <string name="dialog_title_connect_youtube">Connect YouTube Music</string>
+    <string name="dialog_title_yt_credentials">YouTube Music Credentials</string>
+    <string name="dialog_title_yt_history">Send your Stash plays to YouTube Music?</string>
+    <string name="dialog_title_mirror_likes">Mirror likes to %1$s?</string>
+    <string name="dialog_title_save_preset">Save Preset</string>
+    <string name="dialog_title_streaming_disclosure">Online streaming</string>
+
+    <!-- ===== Dialog Bodies ===== -->
+    <string name="dialog_body_delete_playlist">This will delete downloaded songs in this playlist from your device.</string>
+    <string name="dialog_body_delete_playlist_cascade">%1$s song(s) will be deleted. %2$s protected song(s) will stay.</string>
+    <string name="dialog_body_delete_songs">%1$d song(s) will be removed from your library. This cannot be undone.</string>
+    <string name="dialog_body_delete_track_library">This track will be deleted from your library. This cannot be undone.</string>
+    <string name="dialog_body_delete_track_playlist">Removes the song from this playlist. Downloaded files stay on disk.</string>
+    <string name="dialog_body_delete_artist">This will delete all %1$d downloaded songs by this artist.</string>
+    <string name="dialog_body_delete_playlist_permanent">%1$s and all its tracks will be removed from your library.</string>
+    <string name="dialog_body_remove_liked">Removes the song(s) from Liked Songs.</string>
+    <string name="dialog_body_batch_delete_library">These tracks will be deleted from your library. This cannot be undone.</string>
+    <string name="dialog_body_batch_delete_playlist">Removes the songs from this playlist. Downloaded files stay on disk.</string>
+    <string name="dialog_body_overwrite_library">This will completely replace your existing library and settings with the backup data.</string>
+    <string name="dialog_body_wrong_match">Pick what should happen to \'%1$s\'.</string>
+    <string name="dialog_body_stop_retrying">\'%1$s\' won\'t be downloaded and will be removed from failed downloads.</string>
+    <string name="dialog_body_switch_refresh">Refresh pulls fresh tracks each sync. Your existing offline tracks stay untouched. Switch now?</string>
+    <string name="dialog_body_all_downloaded">All tracks already downloaded.</string>
+    <string name="dialog_body_download_count">Download %1$d track(s) to your library?</string>
+    <string name="dialog_body_spotify_cookie">Log into Spotify in a real browser, grab your sp_dc cookie, and paste it below.</string>
+    <string name="dialog_body_yt_cookie">Paste your YouTube Music cookies to connect.</string>
+    <string name="dialog_body_yt_credentials">Enter your Google Cloud OAuth credentials to connect YouTube Music.</string>
+    <string name="dialog_body_yt_history">Every track you finish listening to in Stash will be sent to your YouTube Music history.</string>
+    <string name="dialog_body_mirror_likes">Hearting a track in Stash will also Like it in %1$s. This cannot be undone for past hearts.</string>
+    <string name="dialog_body_streaming_disclosure">Stash streams via a community Qobuz proxy. Streaming quality depends on the proxy. Downloads are not affected.</string>
+
+    <!-- ===== Labels ===== -->
+    <string name="label_spotify">Spotify</string>
+    <string name="label_youtube_music">YouTube Music</string>
+    <string name="label_youtube">YouTube</string>
+    <string name="label_liked_songs">Liked Songs</string>
+    <string name="label_no_matching_songs">No matching songs</string>
+    <string name="label_no_tracks_found">No tracks found</string>
+    <string name="label_no_tracks_available">No tracks available</string>
+    <string name="label_no_liked_songs">No liked songs yet</string>
+    <string name="label_no_blocked_songs">No blocked songs</string>
+    <string name="label_no_failed_downloads">No failed downloads.</string>
+    <string name="label_no_unmatched_songs">No unmatched songs.</string>
+    <string name="label_no_match_found">No match found</string>
+    <string name="label_no_replacement">No replacement found</string>
+    <string name="label_no_upcoming_tracks">No upcoming tracks</string>
+    <string name="label_no_lyrics_found">No lyrics found</string>
+    <string name="label_lyrics_load_error">Couldn\'t load lyrics</string>
+    <string name="label_no_results">No results found</string>
+    <string name="label_no_playlists_match">No playlists matching \"%1$s\"</string>
+    <string name="label_no_downloaded_tracks">No downloaded tracks yet. Run a sync first.</string>
+    <string name="label_no_details">No additional details available</string>
+    <string name="label_all_caught_up">All caught up!</string>
+    <string name="label_flagged_wrong">You flagged these as wrong</string>
+    <string name="label_empty_tracks_synced">Sync your library to see tracks here</string>
+    <string name="label_empty_tracks_no_service">Connect a service in Settings to see your tracks</string>
+    <string name="label_also_block_songs">Also block these songs from future syncs</string>
+    <string name="label_also_block_song">Also block this song from future syncs</string>
+    <string name="label_powered_by">Powered by </string>
+    <string name="label_mix_name_optional">Mix name (optional)</string>
+    <string name="label_familiar">Familiar</string>
+    <string name="label_brand_new">Brand new</string>
+    <string name="label_beta">Beta</string>
+    <string name="label_routing">ROUTING</string>
+    <string name="label_dark">Dark</string>
+    <string name="label_light">Light</string>
+    <string name="label_follow_system">Follow system</string>
+    <string name="label_download_quality">Download quality</string>
+    <string name="label_lossless_downloads">Lossless downloads</string>
+    <string name="label_direct_qobuz">Direct Qobuz</string>
+    <string name="label_account">Account</string>
+    <string name="label_auto">Auto</string>
+    <string name="label_paste_token">Paste token</string>
+    <string name="label_on_wifi">On Wi-Fi</string>
+    <string name="label_on_cellular">On cellular</string>
+    <string name="label_save_data">Save Data</string>
+    <string name="label_youtube_fallback">YouTube fallback</string>
+    <string name="label_use_youtube_fallback">Use YouTube when lossless fails</string>
+    <string name="label_advanced">Advanced</string>
+    <string name="label_captcha_verified_at">captcha_verified_at value</string>
+    <string name="label_playback">Playback</string>
+    <string name="label_audio_quality">Audio &amp; Quality</string>
+    <string name="label_accounts_sync">Accounts &amp; Sync</string>
+    <string name="label_library_storage">Library &amp; Storage</string>
+    <string name="label_appearance">Appearance</string>
+    <string name="label_about_help">About &amp; Help</string>
+    <string name="label_library_health">Library Health</string>
+    <string name="label_total_tracks">Total tracks</string>
+    <string name="label_storage_used">Storage used</string>
+    <string name="label_download_location">Download location</string>
+    <string name="label_existing_library">Existing library</string>
+    <string name="label_backup">Backup</string>
+    <string name="label_total_downloaded">Total downloaded</string>
+    <string name="label_version">Version</string>
+    <string name="label_license">License</string>
+    <string name="label_share_crash_report">Share latest crash report</string>
+    <string name="label_share_diagnostics">Share diagnostics</string>
+    <string name="label_scrobble_plays">Scrobble your plays</string>
+    <string name="label_sync_likes">Sync your likes</string>
+    <string name="label_send_plays_yt">Send plays to YouTube Music</string>
+    <string name="label_connect_yt_first">Connect YouTube Music first</string>
+    <string name="label_how_it_works">How it works</string>
+    <string name="label_risk">Risk</string>
+    <string name="label_auto_save_liked">Auto-save liked tracks</string>
+    <string name="label_auto_save_threshold">Threshold: %1$d day(s) in 30</string>
+    <string name="label_auto_save_last_7_days">Last 7 days: %1$d tracks auto-saved</string>
+    <string name="label_how_to_get_cookie">How to get your sp_dc cookie:</string>
+    <string name="label_how_to_get_cookies">How to get your cookies:</string>
+    <string name="label_sp_dc_cookie">sp_dc cookie</string>
+    <string name="label_spotify_username_optional">Spotify username (optional)</string>
+    <string name="label_signin_blocked">Sign-in blocked or not working?</string>
+    <string name="label_client_id">Client ID</string>
+    <string name="label_client_secret">Client Secret</string>
+    <string name="label_cookie">Cookie</string>
+    <string name="label_stream_cellular">Stream on cellular</string>
+    <string name="label_stream_youtube">Stream via YouTube</string>
+    <string name="label_stream_amz">Stream via amz (test)</string>
+    <string name="label_force_qobuz">Force Direct Qobuz only (test)</string>
+    <string name="label_crossfade">Crossfade</string>
+    <string name="label_duration">Duration</string>
+    <string name="label_repeat_on">REPEAT ON</string>
+    <string name="label_not_scheduled">Not scheduled — pick at least one day</string>
+    <string name="label_last_sync">LAST SYNC</string>
+    <string name="label_last_sync_time">Last sync %1$s</string>
+    <string name="label_tracks">Tracks</string>
+    <string name="label_storage">Storage</string>
+    <string name="label_error_prefix">Error: %1$s</string>
+    <string name="label_diagnostics">Diagnostics:</string>
+    <string name="label_blocked_songs">Blocked Songs</string>
+    <string name="label_failed_downloads">Failed Downloads</string>
+    <string name="label_mix_sync_mode">Mix sync mode</string>
+    <string name="label_studio_recordings_only">Studio recordings only</string>
+    <string name="label_stash_mixes_beta">Stash Mixes (beta)</string>
+    <string name="label_run_recommendations">Run recommendations when</string>
+    <string name="label_streaming_unavailable">Streaming is unavailable in this build.</string>
+
+    <!-- ===== Descriptions ===== -->
+    <string name="desc_blocked_songs_hint">Blocked songs never re-download. Unblock them in Settings later.</string>
+    <string name="desc_sync_to_start">Sync your library to get started</string>
+    <string name="desc_try_different_search">Try a different search term</string>
+    <string name="desc_search_prompt">Find any song or artist and download it to your library</string>
+    <string name="desc_support_stash">If Stash replaced a subscription for you, consider supporting its development.</string>
+    <string name="desc_follow_system">Follow system matches your device\'s day/night setting.</string>
+    <string name="desc_lossless_active">FLAC routing active. Files ~10× larger than MP3.</string>
+    <string name="desc_lossless_inactive">Studio-quality FLAC via Qobuz. Files ~10× larger than MP3.</string>
+    <string name="desc_direct_qobuz">Hi-Res FLAC, straight from Qobuz.</string>
+    <string name="desc_auto_token">Recommended — uses a working account and fails over</string>
+    <string name="desc_save_data">Request the lowest streaming quality on every network when enabled.</string>
+    <string name="desc_stream_cellular">Allow streaming over mobile data (5G / LTE). Disable to stream on Wi-Fi only.</string>
+    <string name="desc_stream_youtube">Skip the lossless sources (Qobuz) and stream directly from YouTube.</string>
+    <string name="desc_stream_amz">Route streaming AND downloads through amz.squid.wtf instead of Qobuz proxies.</string>
+    <string name="desc_force_qobuz">Route streaming AND downloads through Direct Qobuz only. No fallback.</string>
+    <string name="desc_crossfade">Fade the ending track into the next on auto-advance. Adjust duration below.</string>
+    <string name="desc_loudness_normalization">Plays every track at a consistent volume.</string>
+    <string name="desc_loudness_backfill">Continues automatically while charging.</string>
+    <string name="desc_blocked_songs_empty">Songs you block with \"Delete &amp; Block\" show up here. They skip during every sync.</string>
+    <string name="desc_blocked_songs_header">These songs are skipped during every sync. Unblock any to allow them again.</string>
+    <string name="desc_lastfm_no_api_key">This build of Stash doesn\'t include a Last.fm API key. Last.fm scrobbling isn\'t available.</string>
+    <string name="desc_lastfm_awaiting_auth">Your browser should be open on Last.fm. Approve Stash to finish connecting.</string>
+    <string name="desc_like_mirror">Mirror hearts to your accounts. Heart a track in Stash, it hearts in your service too.</string>
+    <string name="desc_yt_history_how">Stash uses an unofficial YouTube endpoint to send your listening history.</string>
+    <string name="desc_yt_history_risk">Rare but not zero chance of YouTube rate-limiting or flagging the activity.</string>
+    <string name="desc_spotify_cookie_steps">Easiest on a computer:\n1. Open open.spotify.com and log in\n2. Press F12 → Application → Cookies\n3. Copy the value of sp_dc</string>
+    <string name="desc_yt_cookie_steps">1. Open a Private/Incognito window\n2. Go to music.youtube.com and log in\n3. Press F12 → Application → Cookies\n4. Copy all cookies as JSON</string>
+    <string name="desc_spotify_username_hint">Find at spotify.com/account under \'Username\'</string>
+    <string name="desc_device_code_prompt">Go to the URL below and enter this code:</string>
+    <string name="desc_paste_captcha_cookie">Or paste the captcha_verified_at cookie value directly:</string>
+    <string name="desc_backup">Export settings and database or import from a previous backup.</string>
+    <string name="desc_external_storage">Tracks are stored in this folder. Changing location does not move existing files.</string>
+    <string name="desc_new_downloads_location">New downloads go to the selected location. Existing files stay where they are.</string>
+    <string name="desc_move_failed">Failed tracks stay in internal storage. Try again later.</string>
+    <string name="desc_re_extract_quality">Re-extract bit-depth + sample-rate for FLAC tracks. Takes a few minutes.</string>
+    <string name="desc_library_health">Format and bitrate breakdown of your downloaded library.</string>
+    <string name="desc_share_diagnostics">Bundle recent logs, sync history, and connection status for troubleshooting.</string>
+    <string name="desc_diagnostics_review">Review what will be shared. No passwords or tokens are included.</string>
+    <string name="desc_lossless_routing">Lossless streams from Direct Qobuz — the fastest path to FLAC.</string>
+    <string name="desc_streaming_mode">Switch between streaming and downloaded-only playback.</string>
+    <string name="desc_retagging_progress">Adding album art and metadata to existing files</string>
+    <string name="desc_retagging_saf_skipped">%1$d tracks on external storage couldn\'t be tagged. Move them to internal storage and try again.</string>
+    <string name="desc_tap_chip_to_change">Tap any chip to change</string>
+    <string name="desc_connect_service">Connect Spotify or YouTube Music in Settings to begin syncing your library.</string>
+    <string name="desc_tap_sync_now">Tap Sync Now to download your playlists and tracks.</string>
+    <string name="desc_tap_resync">Tap resync above to find replacements for flagged tracks.</string>
+    <string name="desc_tap_resync_replacements">Tap Resync to find replacements</string>
+    <string name="desc_empty_spotify">Your Spotify playlists and daily mixes will appear here once connected.</string>
+    <string name="desc_empty_youtube">Your Home Mixes, Liked Songs, and playlists from YouTube Music will appear here.</string>
+    <string name="desc_studio_recordings_only">Excludes covers, live recordings, and UGC uploads from sync results.</string>
+    <string name="desc_mix_edit_hint">Try editing this mix with different genres or moods.</string>
+    <string name="desc_building_mix">Finding fresh tracks from your genres and moods…</string>
+    <string name="desc_lossless_prompt">Studio-quality FLAC downloads via Qobuz. Tap to set up.</string>
+
+    <!-- ===== Status Messages ===== -->
+    <string name="status_building">Building…</string>
+    <string name="status_building_mix">Building your mix…</string>
+    <string name="status_mix_no_tracks">Couldn\'t find tracks</string>
+    <string name="status_library_retagged">Library re-tagged</string>
+    <string name="status_retagging_library">Re-tagging library</string>
+    <string name="status_login_successful">Login successful, connecting…</string>
+    <string name="status_waiting_auth">Waiting for authorization…</string>
+    <string name="status_scanning">Scanning… %1$d / %2$d</string>
+    <string name="status_scan_complete">Scan complete: %1$d of %2$d tracks processed</string>
+    <string name="status_exporting_db">Exporting Database</string>
+    <string name="status_importing_db">Importing Database</string>
+    <string name="status_importing_progress">Importing %1$s of %2$s…</string>
+    <string name="status_success">Success</string>
+    <string name="status_error">Error</string>
+    <string name="status_processing">Processing…</string>
+    <string name="status_moving_library">Moving %1$d of %2$d…</string>
+    <string name="status_active">active</string>
+    <string name="status_fallback">fallback</string>
+    <string name="status_arcod_connected">Connected — saving and closing.</string>
+    <string name="status_captcha_saved">Got it — saving and closing.</string>
+    <string name="status_lastfm_not_configured">Not configured</string>
+    <string name="status_lastfm_waiting">Waiting for approval</string>
+    <string name="status_lastfm_connected">Connected as %1$s</string>
+    <string name="status_lastfm_pending">Scrobbling your plays. %1$d queued. Waiting for network.</string>
+    <string name="status_lastfm_up_to_date">Scrobbling your plays. Everything up to date.</string>
+
+    <!-- ===== Errors ===== -->
+    <string name="error_load_album">Couldn\'t load album</string>
+    <string name="error_load_artist">Couldn\'t load artist</string>
+    <string name="error_search_failed">Search failed</string>
+    <string name="error_move_library">Couldn\'t move library</string>
+    <string name="error_import_failed">Import failed</string>
+    <string name="error_lastfm_connect">Couldn\'t connect</string>
+    <string name="error_no_working_token">No working token — paste a fresh one</string>
+    <string name="error_signin_expired_group">Sign-in expired</string>
+    <string name="error_signin_expired_short">Sign-in expired</string>
+    <string name="error_storage_unreachable_group">Storage unreachable</string>
+    <string name="error_storage_unreachable_short">Storage error</string>
+    <string name="error_network_errors_group">Network errors</string>
+    <string name="error_network_errors_short">Network error</string>
+    <string name="error_source_unavailable_group">Source unavailable</string>
+    <string name="error_source_unavailable_short">Source unavailable</string>
+    <string name="error_encoding_errors_group">Encoding errors</string>
+    <string name="error_encoding_errors_short">Encoding error</string>
+    <string name="error_other_errors_group">Other errors</string>
+    <string name="error_unknown_short">Unknown error</string>
+
+    <!-- ===== Sections ===== -->
+    <string name="section_your_mixes">Your Mixes</string>
+    <string name="section_your_collection">YOUR COLLECTION</string>
+    <string name="section_recently_added">Recently Added</string>
+    <string name="section_playlists">Playlists</string>
+    <string name="section_spotify_mixes">Spotify Mixes</string>
+    <string name="section_your_playlists">Your Playlists</string>
+    <string name="section_home_mixes">Home Mixes</string>
+    <string name="section_other_playlists">Other Playlists</string>
+    <string name="section_stash_mixes">Stash Mixes  (Beta)</string>
+    <string name="section_recent_searches">Recent searches</string>
+    <string name="section_more_by_artist">More by this artist</string>
+    <string name="section_popular">Popular</string>
+    <string name="section_albums">Albums</string>
+    <string name="section_singles_eps">Singles &amp; EPs</string>
+    <string name="section_fans_also_like">Fans also like</string>
+    <string name="section_library_breakdown">Library breakdown</string>
+    <string name="section_backfill_metadata">Backfill metadata</string>
+    <string name="section_quality_info">Quality info</string>
+
+    <!-- ===== Hints / Placeholders ===== -->
+    <string name="hint_search">Search songs, artists…</string>
+    <string name="hint_search_settings">Search settings</string>
+    <string name="hint_paste_sp_dc_cookie">Paste your sp_dc cookie here</string>
+    <string name="hint_spotify_username">Your Spotify username</string>
+    <string name="hint_paste_cookie">Paste your cookie here</string>
+    <string name="hint_user_auth_token">user_auth_token</string>
+    <string name="hint_captcha_value">e.g. 1777687404951</string>
+
+    <!-- ===== Notifications (existing from core/media) ===== -->
+    <string name="notification_action_like">Add to Liked Songs</string>
+    <string name="notification_action_unlike">Remove from Liked Songs</string>
+    <string name="notification_action_repeat_off">Repeat Off</string>
+    <string name="notification_action_repeat_all">Repeat All</string>
+    <string name="notification_action_repeat_one">Repeat One</string>
+    <string name="notification_action_shuffle_on">Shuffle On</string>
+    <string name="notification_action_shuffle_off">Shuffle Off</string>
+    <string name="shuffle_play">Shuffle Play</string>
+    <string name="resuming_channel_name">Playback</string>
+    <string name="resuming_notification_title">Resuming…</string>
+    <string name="resume_playback_short">Resume</string>
+    <string name="resume_playback_long">Resume playback</string>
+
+    <!-- ===== Prompts ===== -->
+    <string name="prompt_try_lossless">Try lossless audio</string>
+
+    <!-- ===== Bottom Navigation ===== -->
+    <string name="nav_home">Home</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_sync">Sync</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- ===== Playback Modes ===== -->
+    <string name="mode_online">Online</string>
+    <string name="mode_offline">Offline</string>
+
+    <!-- ===== Sort / Filter Labels ===== -->
+    <string name="sort_recently_added">Recently Added</string>
+    <string name="sort_alphabetical">A–Z</string>
+    <string name="sort_most_played">Most Played</string>
+    <string name="filter_all">All</string>
+    <string name="filter_youtube">YouTube</string>
+    <string name="filter_spotify">Spotify</string>
+    <string name="filter_flac">FLAC</string>
+    <string name="filter_local">Local</string>
+
+    <!-- ===== Library Tabs ===== -->
+    <string name="tab_playlists">Playlists</string>
+    <string name="tab_tracks">Tracks</string>
+    <string name="tab_artists">Artists</string>
+    <string name="tab_albums">Albums</string>
+
+    <!-- ===== Connection / Sync States ===== -->
+    <string name="status_never_synced">Never synced</string>
+    <string name="status_no_services_connected">No services connected</string>
+    <string name="status_ready_to_sync">Ready to sync</string>
+    <string name="status_syncing">Syncing…</string>
+    <string name="status_synced">Synced</string>
+    <string name="status_sync_failed">Sync failed</string>
+    <string name="status_sync_interrupted">Interrupted</string>
+    <string name="status_sync_interrupted_count">Interrupted — %1$d saved</string>
+    <string name="status_partial_sync">Partially synced — %1$d saved, %2$d failed</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_not_connected">Not connected</string>
+    <string name="status_nothing_to_sync">Nothing to sync</string>
+    <string name="status_checking_updates">Checking for updates…</string>
+    <string name="status_no_crash_report">No crash report to share.</string>
+    <string name="status_no_app_available">No app available to share the report.</string>
+
+    <!-- ===== Section Headers ===== -->
+    <string name="section_sources">Sources</string>
+    <string name="section_schedule">Schedule</string>
+    <string name="section_library">Library</string>
+    <string name="section_recent_syncs">Recent syncs</string>
+    <string name="section_diagnostics">Diagnostics</string>
+    <string name="section_about">About</string>
+    <string name="section_connections">Connections</string>
+    <string name="section_theme">Theme</string>
+    <string name="section_audio_quality">Audio Quality</string>
+    <string name="section_lossless">Lossless</string>
+    <string name="section_streaming">Streaming</string>
+    <string name="section_effects">Effects</string>
+    <string name="section_mode">Mode</string>
+    <string name="section_downloads">Downloads</string>
+    <string name="section_storage">Storage</string>
+    <string name="section_5band_eq">5-Band EQ</string>
+    <string name="section_bass_boost">Bass Boost</string>
+    <string name="section_loudness_normalization">Loudness Normalization</string>
+    <string name="section_preamp">Pre-amp</string>
+    <string name="section_songs">Songs</string>
+    <string name="section_artists">Artists</string>
+
+    <!-- ===== Mix Builder ===== -->
+    <string name="label_moods">Moods</string>
+    <string name="label_genres">Genres</string>
+    <string name="label_era_optional">Era · optional</string>
+    <string name="label_discovery_level">Discovery level</string>
+    <string name="label_untitled_mix">Untitled mix</string>
+    <string name="label_no_ingredients">No ingredients yet</string>
+    <string name="label_any_era">Any era</string>
+    <string name="title_edit_mix">Edit Mix</string>
+    <string name="title_create_mix">Create a Mix</string>
+    <string name="action_create_mix_btn">Create mix</string>
+
+    <!-- ===== Save / Like ===== -->
+    <string name="action_save_to">Save to…</string>
+    <string name="action_save_btn">Save</string>
+    <string name="action_create_btn">Create</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="action_share">Share</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_set">Set</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_scan_files">Scan files</string>
+    <string name="action_retry_scan">Retry scan</string>
+    <string name="action_retry_all">Retry all</string>
+    <string name="action_check_updates">Check for updates</string>
+    <string name="action_export_backup">Export Backup</string>
+    <string name="action_overwrite">Overwrite</string>
+    <string name="action_change_image">Change Image</string>
+    <string name="action_add_image">Add Image</string>
+    <string name="action_clear_all">Clear all</string>
+    <string name="action_paste_cookie_instead">Paste cookie instead</string>
+    <string name="action_sync_scrobbles_now">Sync scrobbles now</string>
+    <string name="action_download_tracks">Download Tracks to Device</string>
+    <string name="action_surface_streaming">Surface Library for Streaming</string>
+
+    <!-- ===== Selection Actions ===== -->
+    <string name="selection_queue">Queue</string>
+    <string name="selection_playlist">Playlist</string>
+    <string name="selection_download">Download</string>
+    <string name="selection_delete">Delete</string>
+    <string name="selection_share">Share</string>
+    <string name="selection_more">More</string>
+    <string name="selection_select_all">Select all</string>
+    <string name="selection_add_to_playlist">Add to playlist</string>
+    <string name="selection_remove_download">Remove download</string>
+    <string name="selection_play_next">Play next</string>
+    <string name="selection_exit">Exit selection</string>
+
+    <!-- ===== Player Controls ===== -->
+    <string name="cd_play">Play</string>
+    <string name="cd_pause">Pause</string>
+    <string name="cd_skip">Skip</string>
+    <string name="cd_now_playing">Now playing</string>
+    <string name="cd_more_options">More options</string>
+    <string name="cd_like">Like</string>
+    <string name="cd_unlike">Unlike</string>
+    <string name="cd_retry">Retry</string>
+    <string name="cd_collapse">Collapse</string>
+    <string name="cd_expand">Expand</string>
+    <string name="cd_block">Block</string>
+    <string name="cd_stash_logo">Stash logo</string>
+
+    <!-- ===== Like Destinations ===== -->
+    <string name="like_dest_stash">Stash Liked Songs</string>
+    <string name="like_dest_spotify">Spotify Liked Songs</string>
+    <string name="like_dest_youtube">YouTube Music Liked Music</string>
+
+    <!-- ===== Playlist ===== -->
+    <string name="title_save_to_playlist">Save to Playlist</string>
+    <string name="action_create_new_playlist">Create New Playlist</string>
+    <string name="title_create_playlist_dialog">Create Playlist</string>
+    <string name="hint_playlist_name">Playlist name</string>
+    <string name="hint_preset_name">Preset name</string>
+    <string name="hint_filter_playlists">Filter playlists…</string>
+    <string name="hint_filter_tracks">Filter tracks…</string>
+
+    <!-- ===== Flac Badge ===== -->
+    <string name="badge_flac">FLAC</string>
+    <string name="badge_flac_format">FLAC %1$d/%2$d</string>
+
+    <!-- ===== Search ===== -->
+    <string name="label_artist_type">Artist</string>
+    <string name="label_song_type">Song</string>
+    <string name="label_album_type">Album</string>
+
+    <!-- ===== Quality Tiers ===== -->
+    <string name="quality_max">Max</string>
+    <string name="quality_best">Best</string>
+    <string name="quality_high">High</string>
+    <string name="quality_normal">Normal</string>
+    <string name="quality_low">Low</string>
+    <string name="quality_cd">CD (16-bit/44.1 kHz)</string>
+    <string name="quality_hires">Hi-Res (24-bit/96 kHz)</string>
+    <string name="quality_max_bit">Max (24-bit/192 kHz)</string>
+
+    <!-- ===== EQ Presets ===== -->
+    <string name="eq_flat">Flat</string>
+    <string name="eq_bass_boost">Bass Boost</string>
+    <string name="eq_treble_boost">Treble Boost</string>
+    <string name="eq_vocal">Vocal</string>
+    <string name="eq_rock">Rock</string>
+    <string name="eq_pop">Pop</string>
+    <string name="eq_jazz">Jazz</string>
+    <string name="eq_classical">Classical</string>
+
+    <!-- ===== Download Network ===== -->
+    <string name="network_wifi_charging">Wi-Fi + charging</string>
+    <string name="network_wifi_anytime">Wi-Fi any time</string>
+    <string name="network_any">Any network</string>
+    <string name="network_wifi_charging_desc">Most conservative. Downloads only when on Wi-Fi and plugged in.</string>
+    <string name="network_wifi_anytime_desc">Downloads over Wi-Fi even without a charger.</string>
+    <string name="network_any_desc">Downloads over cellular too. Uses mobile data.</string>
+
+    <!-- ===== Sync Phases ===== -->
+    <string name="sync_phase_authenticating">Authenticating…</string>
+    <string name="sync_phase_fetching">Fetching playlists…</string>
+    <string name="sync_phase_diffing">Comparing changes…</string>
+    <string name="sync_phase_downloading">Downloading %1$s/%2$s…</string>
+    <string name="sync_phase_finalizing">Finalizing…</string>
+    <string name="sync_phase_complete">Complete</string>
+    <string name="sync_phase_error">Error</string>
+
+    <!-- ===== Sync Misc ===== -->
+    <string name="label_auto_sync">Auto-sync</string>
+    <string name="label_daily">Daily</string>
+    <string name="label_weekdays">Weekdays</string>
+    <string name="label_weekends">Weekends</string>
+    <string name="label_wifi_only">Wi-Fi only</string>
+    <string name="label_any_network">any network</string>
+    <string name="label_am">AM</string>
+    <string name="label_pm">PM</string>
+    <string name="label_refresh">Refresh</string>
+    <string name="label_accumulate">Accumulate</string>
+    <string name="desc_mix_refresh">Mixes update with fresh tracks each sync</string>
+    <string name="desc_mix_accumulate">New tracks stack on top of old ones</string>
+    <string name="label_failed_downloads_header">%1$d track%2$s couldn\'t download.</string>
+    <string name="label_blocked_count">%1$d song%2$s will never re-download</string>
+    <string name="label_searching_resync">Searching %1$s…</string>
+    <string name="action_approve_all">Approve All (%1$d)</string>
+    <string name="action_dismiss_all">Dismiss All</string>
+    <string name="label_resync">Resync</string>
+
+    <!-- ===== Failed Matches Tabs ===== -->
+    <string name="tab_songs_to_review">Songs to Review</string>
+    <string name="tab_flagged_songs">Flagged Songs</string>
+    <string name="tab_unmatched_songs">Unmatched Songs</string>
+
+    <!-- ===== Auth Expired ===== -->
+    <string name="auth_signins_expired">Sign-ins expired</string>
+    <string name="auth_signins_expired_desc">Both Spotify and YouTube need fresh sign-ins to resume sync.</string>
+    <string name="auth_spotify_expired">Spotify session expired</string>
+    <string name="auth_spotify_expired_desc">Re-authenticate to include your Spotify library in sync.</string>
+    <string name="auth_youtube_expired">YouTube session expired</string>
+    <string name="auth_youtube_expired_desc">Re-authenticate to include your YouTube library in sync.</string>
+
+    <!-- ===== Sign In ===== -->
+    <string name="title_sign_in_spotify">Sign in to Spotify</string>
+    <string name="title_sign_in_youtube">Sign in to YouTube Music</string>
+
+    <!-- ===== Discover Error ===== -->
+    <string name="error_something_wrong">Something went wrong</string>
+    <string name="error_diagnostics_failed">Failed to build diagnostics</string>
+
+    <!-- ===== Loudness ===== -->
+    <string name="loudness_toast_on">Loudness normalization is on. Tracks will sound more consistent in volume.</string>
+
+    <!-- ===== Library Empty States ===== -->
+    <string name="label_empty_playlists_synced">Sync your playlists to see them here</string>
+    <string name="label_empty_playlists_no_service">Connect a service in Settings to see your playlists</string>
+    <string name="label_empty_artists_synced">Sync your library to see artists here</string>
+    <string name="label_empty_artists_no_service">Connect a service in Settings to see your artists</string>
+    <string name="label_empty_albums_synced">Sync your library to see albums here</string>
+    <string name="label_empty_albums_no_service">Connect a service in Settings to see your albums</string>
+    <string name="label_hide_single_track">Hide single-track albums</string>
+    <string name="label_single_track_count">%1$d albums with 1 track</string>
+
+    <!-- ===== Misc ===== -->
+    <string name="label_not_playing">Not Playing</string>
+    <string name="label_instrumental">♪ Instrumental</string>
+    <string name="label_via_yt">via YT</string>
+    <string name="label_external_folder">External folder</string>
+    <string name="label_internal_storage">Internal (app-private)</string>
+    <string name="label_no_recent_crashes">No recent crashes.</string>
+    <string name="label_crash_report_subject">Stash crash report</string>
+    <string name="label_share_crash_report_title">Share crash report</string>
+    <string name="label_diagnostics_subject">Stash diagnostics</string>
+    <string name="label_share_diagnostics_title">Share diagnostics</string>
+    <string name="label_clipboard_yt_code">YouTube Code</string>
+    <string name="partner_support_kofi">Support on Ko-fi</string>
+    <string name="partner_discord">Discord</string>
+    <string name="label_cellular_on">Cellular on</string>
+    <string name="label_cellular_off">Cellular off</string>
+    <string name="label_unit_tracks">tracks</string>
+    <string name="label_unit_track">track</string>
+    <string name="label_version_format">v%1$s</string>
+</resources>

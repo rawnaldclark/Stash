@@ -37,7 +37,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import com.stash.core.auth.model.DeviceCodeState
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -65,7 +67,7 @@ fun YouTubeDeviceCodeDialog(
         shape = MaterialTheme.shapes.large,
         title = {
             Text(
-                text = "Connect YouTube Music",
+                text = stringResource(R.string.dialog_title_connect_youtube),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -76,7 +78,7 @@ fun YouTubeDeviceCodeDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "Go to the URL below and enter this code:",
+                    text = stringResource(R.string.desc_device_code_prompt),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -125,10 +127,10 @@ fun YouTubeDeviceCodeDialog(
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.ContentCopy,
-                            contentDescription = "Copy code",
+                            contentDescription = stringResource(R.string.cd_copy_code),
                             modifier = Modifier.padding(end = 4.dp),
                         )
-                        Text("Copy Code")
+                        Text(stringResource(R.string.cd_copy_code))
                     }
 
                     Button(
@@ -140,10 +142,10 @@ fun YouTubeDeviceCodeDialog(
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.OpenInBrowser,
-                            contentDescription = "Open browser",
+                            contentDescription = stringResource(R.string.cd_open_browser),
                             modifier = Modifier.padding(end = 4.dp),
                         )
-                        Text("Open Browser")
+                        Text(stringResource(R.string.cd_open_browser))
                     }
                 }
 
@@ -163,7 +165,7 @@ fun YouTubeDeviceCodeDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Waiting for authorization...",
+                        text = stringResource(R.string.status_waiting_auth),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -173,7 +175,7 @@ fun YouTubeDeviceCodeDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )

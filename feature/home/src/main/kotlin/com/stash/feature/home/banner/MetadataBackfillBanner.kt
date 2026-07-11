@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -77,7 +78,7 @@ fun MetadataBackfillBanner(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = "Re-tagging library",
+                            text = stringResource(com.stash.core.ui.R.string.status_retagging_library),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -88,7 +89,7 @@ fun MetadataBackfillBanner(
                         )
                     }
                     Text(
-                        text = "Adding album art and metadata to existing files",
+                        text = stringResource(com.stash.core.ui.R.string.desc_retagging_progress),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -106,13 +107,13 @@ fun MetadataBackfillBanner(
                 }
                 is MetadataBackfillBannerState.Finished -> {
                     Text(
-                        text = "Library re-tagged",
+                        text = stringResource(com.stash.core.ui.R.string.status_library_retagged),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (state.safSkipped > 0) {
                         Text(
-                            text = "${state.safSkipped} tracks on external storage will be tagged on next download",
+                            text = stringResource(com.stash.core.ui.R.string.desc_retagging_saf_skipped, state.safSkipped),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

@@ -30,8 +30,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.stash.core.ui.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -65,6 +67,7 @@ fun ArcodConnectScreen(
         mutableStateOf("Sign in with Google to connect ARCOD. We'll detect it automatically.")
     }
     var captured by remember { mutableStateOf(false) }
+    val connectedText = stringResource(R.string.status_arcod_connected)
 
     // ── Session polling ─────────────────────────────────────────────────
     // Supabase writes the session to localStorage after the OAuth round-
@@ -91,7 +94,7 @@ fun ArcodConnectScreen(
             }
             val session = parseSupabaseSession(inner) ?: continue
             captured = true
-            statusText = "Connected — saving and closing."
+            statusText = connectedText
             onConnected(session.accessToken, session.refreshToken, session.expiresAtMs)
             // Brief beat so the success text is visible before the pop.
             delay(400)
@@ -139,13 +142,13 @@ fun ArcodConnectScreen(
             IconButton(onClick = onClose) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = "Close",
+                    contentDescription = stringResource(R.string.cd_close),
                     tint = MaterialTheme.colorScheme.onBackground,
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Connect ARCOD",
+                    text = stringResource(R.string.title_connect_arcod),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                 )

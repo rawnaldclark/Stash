@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.equalizer.NamedPreset
+import com.stash.core.ui.R
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 
@@ -102,12 +104,16 @@ fun EqualizerScreen(
     // false forever and the Snackbar never reappears.
     val snackbarHostState = remember { SnackbarHostState() }
     val showFirstRunNotice by viewModel.showFirstRunNotice.collectAsStateWithLifecycle()
+
+    // Pre-resolve strings used in non-Composable LaunchedEffect block.
+    val loudnessToastMsg = stringResource(R.string.loudness_toast_on)
+    val dismissLabel = stringResource(R.string.cd_dismiss)
+
     LaunchedEffect(showFirstRunNotice) {
         if (showFirstRunNotice) {
             val result = snackbarHostState.showSnackbar(
-                message = "Loudness normalization is on. Tracks will sound more " +
-                    "consistent as your library is measured in the background.",
-                actionLabel = "Dismiss",
+                message = loudnessToastMsg,
+                actionLabel = dismissLabel,
                 duration = SnackbarDuration.Indefinite,
             )
             if (
@@ -150,7 +156,7 @@ fun EqualizerScreen(
                     .fillMaxWidth()
                     .alpha(if (state.enabled) 1f else 0.5f),
             ) {
-                SectionLabel("5-Band EQ")
+                SectionLabel(stringResource(R.string.section_5band_eq))
                 Spacer(Modifier.height(10.dp))
 
                 EqCurvePreview(
@@ -186,7 +192,7 @@ fun EqualizerScreen(
                     .fillMaxWidth()
                     .alpha(if (state.enabled) 1f else 0.5f),
             ) {
-                SectionLabel("Bass Boost")
+                SectionLabel(stringResource(R.string.section_bass_boost))
                 Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -221,7 +227,7 @@ fun EqualizerScreen(
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionLabel("Loudness Normalization")
+                    SectionLabel(stringResource(R.string.section_loudness_normalization))
                     Spacer(Modifier.weight(1f))
                     Switch(
                         checked = loudnessState.enabled,
@@ -243,7 +249,7 @@ fun EqualizerScreen(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Plays every track at a consistent volume.",
+                    text = stringResource(R.string.desc_loudness_normalization),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -268,7 +274,7 @@ fun EqualizerScreen(
                     .fillMaxWidth()
                     .alpha(if (state.enabled) 1f else 0.5f),
             ) {
-                SectionLabel("Pre-amp")
+                SectionLabel(stringResource(R.string.section_preamp))
                 Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -319,12 +325,12 @@ private fun EqHeader(
         IconButton(onClick = onBack) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.cd_back),
                 tint = MaterialTheme.colorScheme.onBackground,
             )
         }
         Text(
-            text = "Equalizer",
+            text = stringResource(R.string.title_equalizer),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.weight(1f),
@@ -548,14 +554,14 @@ private fun PresetChipRow(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Filled.Add,
-                            contentDescription = "Save preset",
+                            contentDescription = stringResource(R.string.cd_save_preset),
                             modifier = Modifier
                                 .height(16.dp)
                                 .width(16.dp),
                         )
                         Spacer(Modifier.width(2.dp))
                         Text(
-                            text = "Save",
+                            text = stringResource(R.string.action_save),
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }
@@ -607,7 +613,7 @@ private fun LoudnessBackfillBlock(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Continues automatically while charging.",
+            text = stringResource(R.string.desc_loudness_backfill),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -630,7 +636,7 @@ fun CreatePresetDialog(
         shape = MaterialTheme.shapes.large,
         title = {
             Text(
-                text = "Save Preset",
+                text = stringResource(R.string.dialog_title_save_preset),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -639,7 +645,7 @@ fun CreatePresetDialog(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Preset name") },
+                label = { Text(stringResource(R.string.hint_preset_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -649,12 +655,12 @@ fun CreatePresetDialog(
                 onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
                 enabled = name.isNotBlank(),
             ) {
-                Text("Save")
+                Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )

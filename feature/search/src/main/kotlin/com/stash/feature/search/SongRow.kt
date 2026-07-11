@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.PlaylistPlay
@@ -39,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -46,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.R
 
 /**
  * A row is the now-playing row iff it has a non-blank videoId equal to the player's
@@ -225,6 +228,30 @@ fun SongRow(
 
         Spacer(modifier = Modifier.width(8.dp))
 
+        // Preview button
+        IconButton(
+            onClick = if (isPreviewPlaying) onStopPreview else onPreview,
+            modifier = Modifier.size(40.dp),
+        ) {
+            when {
+                isPreviewLoading || isResolving -> CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                isPreviewPlaying -> Icon(
+                    imageVector = Icons.Default.Stop,
+                    contentDescription = stringResource(R.string.cd_stop_preview),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                else -> Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = stringResource(R.string.cd_preview),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         // Download action button (hidden where download-by-id isn't supported).
         if (downloadSupported) {
         Box(
@@ -235,7 +262,7 @@ fun SongRow(
                 isDownloaded -> {
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Downloaded",
+                        contentDescription = stringResource(R.string.cd_downloaded),
                         modifier = Modifier.size(24.dp),
                         tint = extendedColors.success,
                     )
@@ -254,7 +281,7 @@ fun SongRow(
                     // it reads as informational rather than alerting.
                     Icon(
                         imageVector = Icons.Outlined.Schedule,
-                        contentDescription = "Waiting for lossless source",
+                        contentDescription = stringResource(R.string.cd_waiting_lossless),
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -263,7 +290,7 @@ fun SongRow(
                     IconButton(onClick = onDownload) {
                         Icon(
                             imageVector = Icons.Default.Download,
-                            contentDescription = "Download",
+                            contentDescription = stringResource(R.string.cd_download),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
@@ -279,23 +306,23 @@ fun SongRow(
             IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
-                    contentDescription = "More actions",
+                    contentDescription = stringResource(R.string.cd_more_actions),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
-                    text = { Text("Play next") },
+                    text = { Text(stringResource(R.string.selection_play_next)) },
                     leadingIcon = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
                     onClick = { menuOpen = false; onPlayNext() },
                 )
                 DropdownMenuItem(
-                    text = { Text("Add to queue") },
+                    text = { Text(stringResource(R.string.action_add_to_queue)) },
                     leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
                     onClick = { menuOpen = false; onAddToQueue() },
                 )
                 DropdownMenuItem(
-                    text = { Text("Add to playlist") },
+                    text = { Text(stringResource(R.string.selection_add_to_playlist)) },
                     leadingIcon = { Icon(Icons.Default.PlaylistAddCheck, contentDescription = null) },
                     onClick = { menuOpen = false; onAddToPlaylist() },
                 )

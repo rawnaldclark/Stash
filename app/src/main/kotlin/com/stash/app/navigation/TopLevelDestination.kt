@@ -13,12 +13,12 @@ import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
 
-enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon: ImageVector, val label: String, val route: Any) {
-    HOME(Icons.Filled.Home, Icons.Outlined.Home, "Home", HomeRoute),
-    LIBRARY(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic, "Library", LibraryRoute),
-    SEARCH(Icons.Filled.Search, Icons.Outlined.Search, "Search", SearchRoute),
-    SYNC(Icons.Filled.Sync, Icons.Outlined.Sync, "Sync", SyncRoute),
-    SETTINGS(Icons.Filled.Settings, Icons.Outlined.Settings, "Settings", SettingsRoute),
+enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon: ImageVector, val labelResId: Int, val route: Any) {
+    HOME(Icons.Filled.Home, Icons.Outlined.Home, com.stash.core.ui.R.string.nav_home, HomeRoute),
+    LIBRARY(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic, com.stash.core.ui.R.string.nav_library, LibraryRoute),
+    SEARCH(Icons.Filled.Search, Icons.Outlined.Search, com.stash.core.ui.R.string.nav_search, SearchRoute),
+    SYNC(Icons.Filled.Sync, Icons.Outlined.Sync, com.stash.core.ui.R.string.nav_sync, SyncRoute),
+    SETTINGS(Icons.Filled.Settings, Icons.Outlined.Settings, com.stash.core.ui.R.string.nav_settings, SettingsRoute),
 }
 
 @Serializable data object HomeRoute

@@ -9,9 +9,9 @@ fun Long.formatDuration(): String {
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
     return if (hours > 0) {
-        String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+        String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
     } else {
-        String.format(Locale.US, "%d:%02d", minutes, seconds)
+        String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
     }
 }
 
@@ -24,7 +24,7 @@ fun Long.formatFileSize(): String {
         value /= 1024.0
         unitIndex++
     } while (value >= 1024 && unitIndex < units.lastIndex)
-    return String.format(Locale.US, "%.1f %s", value, units[unitIndex])
+    return String.format(Locale.getDefault(), "%.1f %s", value, units[unitIndex])
 }
 
 fun Long.toRelativeTimeString(): String {

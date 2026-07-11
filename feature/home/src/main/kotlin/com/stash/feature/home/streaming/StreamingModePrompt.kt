@@ -4,6 +4,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import com.stash.core.ui.theme.StashTheme
 
@@ -22,17 +23,13 @@ fun StreamingDisclosureDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Online streaming") },
+        title = { Text(stringResource(com.stash.core.ui.R.string.dialog_title_streaming_disclosure)) },
         text = {
-            Text(
-                "Stash streams via a community Qobuz proxy. Quality is FLAC " +
-                    "where available, and tracks not in the catalog can't be " +
-                    "streamed.",
-            )
+            Text(stringResource(com.stash.core.ui.R.string.dialog_body_streaming_disclosure))
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Got it")
+                Text(stringResource(com.stash.core.ui.R.string.action_got_it))
             }
         },
     )

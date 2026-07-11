@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_action_like">添加到喜欢的歌曲</string>
+    <string name="notification_action_unlike">从喜欢的歌曲中移除</string>
+    <string name="notification_action_repeat_off">关闭重复</string>
+    <string name="notification_action_repeat_all">全部重复</string>
+    <string name="notification_action_repeat_one">单曲重复</string>
+    <string name="notification_action_shuffle_on">开启随机播放</string>
+    <string name="notification_action_shuffle_off">关闭随机播放</string>
+    <string name="shuffle_play">随机播放</string>
+    <string name="resuming_channel_name">播放</string>
+    <string name="resuming_notification_title">正在恢复…</string>
+</resources>

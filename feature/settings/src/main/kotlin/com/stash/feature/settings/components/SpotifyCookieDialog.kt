@@ -19,8 +19,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 
 /**
  * Dialog for entering a Spotify sp_dc cookie to authenticate.
@@ -49,16 +51,14 @@ fun SpotifyCookieDialog(
         onDismissRequest = { if (!isValidating) onDismiss() },
         title = {
             Text(
-                text = "Connect Spotify",
+                text = stringResource(R.string.dialog_title_connect_spotify),
                 style = MaterialTheme.typography.headlineSmall,
             )
         },
         text = {
             Column {
                 Text(
-                    text = "Log into Spotify in a real browser and paste your " +
-                        "sp_dc cookie. This works even when in-app sign-in is " +
-                        "blocked by Spotify's bot check.",
+                    text = stringResource(R.string.dialog_body_spotify_cookie),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -66,7 +66,7 @@ fun SpotifyCookieDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "How to get your sp_dc cookie:",
+                    text = stringResource(R.string.label_how_to_get_cookie),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -74,12 +74,7 @@ fun SpotifyCookieDialog(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "Easiest on a computer:\n" +
-                        "1. Open open.spotify.com and log in\n" +
-                        "2. Press F12 → Application → Cookies\n" +
-                        "3. Copy the value of 'sp_dc'\n\n" +
-                        "On a phone: use a browser that can show cookies " +
-                        "(e.g. Firefox add-ons, or a cookie-viewer app).",
+                    text = stringResource(R.string.desc_spotify_cookie_steps),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -89,8 +84,8 @@ fun SpotifyCookieDialog(
                 OutlinedTextField(
                     value = cookieValue,
                     onValueChange = { cookieValue = it },
-                    label = { Text("sp_dc cookie") },
-                    placeholder = { Text("Paste your sp_dc cookie here") },
+                    label = { Text(stringResource(R.string.label_sp_dc_cookie)) },
+                    placeholder = { Text(stringResource(R.string.hint_paste_sp_dc_cookie)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !isValidating,
@@ -120,8 +115,8 @@ fun SpotifyCookieDialog(
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
-                    label = { Text("Spotify username (optional)") },
-                    placeholder = { Text("Your Spotify username") },
+                    label = { Text(stringResource(R.string.label_spotify_username_optional)) },
+                    placeholder = { Text(stringResource(R.string.hint_spotify_username)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !isValidating,
@@ -130,7 +125,7 @@ fun SpotifyCookieDialog(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "Find at spotify.com/account under 'Username'",
+                    text = stringResource(R.string.desc_spotify_username_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 4.dp),
@@ -152,14 +147,14 @@ fun SpotifyCookieDialog(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),
                 ) {
-                    Text("Connect")
+                    Text(stringResource(R.string.action_connect))
                 }
             }
         },
         dismissButton = {
             if (!isValidating) {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         },

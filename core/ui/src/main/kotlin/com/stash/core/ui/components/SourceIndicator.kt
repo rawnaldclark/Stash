@@ -15,6 +15,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.stash.core.model.MusicSource
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -43,7 +45,7 @@ fun SourceIndicator(
             Box(Modifier.size(size).clip(CircleShape).background(extendedColors.spotifyGreen))
             if (showLabel) {
                 Text(
-                    text = "Spotify",
+                    text = stringResource(R.string.filter_spotify),
                     style = MaterialTheme.typography.labelSmall,
                     color = extendedColors.textTertiary,
                 )
@@ -53,7 +55,7 @@ fun SourceIndicator(
             Box(Modifier.size(size).clip(CircleShape).background(extendedColors.youtubeRed))
             if (showLabel) {
                 Text(
-                    text = "YouTube",
+                    text = stringResource(R.string.filter_youtube),
                     style = MaterialTheme.typography.labelSmall,
                     color = extendedColors.textTertiary,
                 )
@@ -63,7 +65,7 @@ fun SourceIndicator(
             Box(Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
             if (showLabel) {
                 Text(
-                    text = "Local",
+                    text = stringResource(R.string.filter_local),
                     style = MaterialTheme.typography.labelSmall,
                     color = extendedColors.textTertiary,
                 )

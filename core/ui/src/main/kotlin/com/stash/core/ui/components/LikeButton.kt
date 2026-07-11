@@ -15,7 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 
 /**
  * v0.9.13: Heart icon — standard like-button toggle. Tap on an unliked
@@ -59,7 +61,7 @@ fun LikeButton(
     ) {
         Icon(
             imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-            contentDescription = if (isLiked) "Unlike" else "Like",
+            contentDescription = if (isLiked) stringResource(R.string.cd_unlike) else stringResource(R.string.cd_like),
             tint = if (isLiked) {
                 MaterialTheme.colorScheme.error
             } else {

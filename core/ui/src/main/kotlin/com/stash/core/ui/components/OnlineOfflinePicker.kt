@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -55,14 +57,14 @@ fun OnlineOfflinePicker(
     ) {
         ModeTile(
             icon = Icons.Default.CloudQueue,
-            label = "Online",
+            label = stringResource(R.string.mode_online),
             selected = streamingEnabled,
             onClick = { onSelect(true) },
             modifier = Modifier.weight(1f),
         )
         ModeTile(
             icon = Icons.Default.OfflinePin,
-            label = "Offline",
+            label = stringResource(R.string.mode_offline),
             selected = !streamingEnabled,
             onClick = { onSelect(false) },
             modifier = Modifier.weight(1f),

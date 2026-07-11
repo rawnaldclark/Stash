@@ -31,8 +31,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.stash.core.ui.R
 
 /**
  * Full-screen Spotify login via WebView.
@@ -101,10 +103,10 @@ fun SpotifyLoginWebView(
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("Sign in to Spotify") },
+            title = { Text(stringResource(R.string.title_sign_in_spotify)) },
             navigationIcon = {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
             actions = {
@@ -129,7 +131,7 @@ fun SpotifyLoginWebView(
 
         if (cookieFound) {
             Text(
-                text = "Login successful, connecting...",
+                text = stringResource(R.string.status_login_successful),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -236,13 +238,13 @@ fun SpotifyLoginWebView(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Sign-in blocked or not working?",
+                    text = stringResource(R.string.label_signin_blocked),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onManualFallback) {
-                    Text("Paste cookie instead")
+                    Text(stringResource(R.string.action_paste_cookie_instead))
                 }
             }
         }

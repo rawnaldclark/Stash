@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.stash.feature.home.R
@@ -45,7 +46,7 @@ fun StashVinylLogo(modifier: Modifier = Modifier, size: Dp = 64.dp) {
 
     Image(
         painter = painterResource(R.drawable.vinyl_record),
-        contentDescription = "Stash logo",
+        contentDescription = stringResource(com.stash.core.ui.R.string.cd_stash_logo),
         modifier = modifier
             .size(size)
             .graphicsLayer {

@@ -31,7 +31,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 
 /**
  * Lightweight model for the playlist picker. Keeps the UI component
@@ -66,7 +68,7 @@ fun SaveToPlaylistSheet(
         // Title + divider stay above the scroll region so the user always
         // knows what sheet they're on.
         Text(
-            text = "Save to Playlist",
+            text = stringResource(R.string.title_save_to_playlist),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -99,7 +101,7 @@ fun SaveToPlaylistSheet(
                     )
                     Spacer(modifier = Modifier.width(16.dp))
                     Text(
-                        text = "Create New Playlist",
+                        text = stringResource(R.string.action_create_new_playlist),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -165,12 +167,12 @@ fun CreatePlaylistDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Playlist") },
+        title = { Text(stringResource(R.string.title_create_playlist_dialog)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Playlist name") },
+                label = { Text(stringResource(R.string.hint_playlist_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -180,12 +182,12 @@ fun CreatePlaylistDialog(
                 onClick = { onConfirm(name.trim()) },
                 enabled = name.isNotBlank(),
             ) {
-                Text("Create")
+                Text(stringResource(R.string.action_create_btn))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )

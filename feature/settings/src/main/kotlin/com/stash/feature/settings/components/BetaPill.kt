@@ -9,7 +9,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 
 /**
  * Small "Beta" pill shared by Settings sections that surface brand-new,
@@ -25,7 +27,7 @@ internal fun BetaPill() {
             .padding(horizontal = 6.dp, vertical = 1.dp),
     ) {
         Text(
-            text = "Beta",
+            text = stringResource(R.string.label_beta),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onTertiaryContainer,
         )

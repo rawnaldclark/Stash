@@ -24,8 +24,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import com.stash.core.data.sync.DayOfWeekSet
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.R
 import java.time.DayOfWeek
 
 @Composable
@@ -44,7 +46,7 @@ fun DayOfWeekPanel(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                text = "REPEAT ON",
+                text = stringResource(R.string.label_repeat_on),
                 style = MaterialTheme.typography.labelSmall,
                 color = StashTheme.extendedColors.purpleLight,
                 fontWeight = FontWeight.SemiBold,
@@ -64,9 +66,9 @@ fun DayOfWeekPanel(
             }
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                PresetChip("Daily", selection.isDaily) { onSelectionChanged(DayOfWeekSet.EVERY_DAY) }
-                PresetChip("Weekdays", selection.isWeekdays) { onSelectionChanged(DayOfWeekSet.WEEKDAYS) }
-                PresetChip("Weekends", selection.isWeekends) { onSelectionChanged(DayOfWeekSet.WEEKENDS) }
+                PresetChip(stringResource(R.string.label_daily), selection.isDaily) { onSelectionChanged(DayOfWeekSet.EVERY_DAY) }
+                PresetChip(stringResource(R.string.label_weekdays), selection.isWeekdays) { onSelectionChanged(DayOfWeekSet.WEEKDAYS) }
+                PresetChip(stringResource(R.string.label_weekends), selection.isWeekends) { onSelectionChanged(DayOfWeekSet.WEEKENDS) }
             }
         }
     }

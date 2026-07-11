@@ -18,7 +18,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import com.stash.core.data.sync.AuthExpiryState
+import com.stash.core.ui.R
 
 /**
  * Amber banner mounted at the top of the Sync tab when either Spotify or
@@ -43,21 +45,21 @@ fun AuthExpiredBanner(
     val buttonText: String
     when {
         state.spotifyExpired && state.youtubeExpired -> {
-            headline = "Sign-ins expired"
-            body = "Both Spotify and YouTube need fresh sign-ins to resume sync."
-            buttonText = "Re-authenticate"
+            headline = stringResource(R.string.auth_signins_expired)
+            body = stringResource(R.string.auth_signins_expired_desc)
+            buttonText = stringResource(R.string.action_reauthenticate)
         }
         state.spotifyExpired -> {
-            // Only Spotify is expired \u2014 any other connected source still syncs,
+            // Only Spotify is expired — any other connected source still syncs,
             // so this is NOT a full pause. Copy reflects partial sync.
-            headline = "Spotify session expired"
-            body = "Re-authenticate to include your Spotify library in sync."
-            buttonText = "Re-authenticate Spotify"
+            headline = stringResource(R.string.auth_spotify_expired)
+            body = stringResource(R.string.auth_spotify_expired_desc)
+            buttonText = stringResource(R.string.action_reauthenticate_spotify)
         }
         else -> {
-            headline = "YouTube session expired"
-            body = "Re-authenticate to include your YouTube library in sync."
-            buttonText = "Re-authenticate YouTube"
+            headline = stringResource(R.string.auth_youtube_expired)
+            body = stringResource(R.string.auth_youtube_expired_desc)
+            buttonText = stringResource(R.string.action_reauthenticate_youtube)
         }
     }
 

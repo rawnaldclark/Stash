@@ -25,10 +25,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import com.stash.core.model.SyncDisplayStatus
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.sync.SyncStatusInfo
+import com.stash.core.ui.R
 
 /**
  * Sync status card displayed at the top of the Sync tab.
@@ -74,13 +76,13 @@ fun SyncStatusCard(
             // -- Prompt or stats depending on sync state --
             if (!anyServiceConnected) {
                 Text(
-                    text = "Connect Spotify or YouTube Music in Settings to start syncing your library.",
+                    text = stringResource(R.string.desc_connect_service),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else if (!hasEverSynced) {
                 Text(
-                    text = "Tap Sync Now to download your playlists and tracks.",
+                    text = stringResource(R.string.desc_tap_sync_now),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -99,27 +101,27 @@ fun SyncStatusCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     StatItem(
-                        label = "Tracks",
+                        label = stringResource(R.string.label_tracks),
                         value = syncStatus.totalTracks.toString(),
                         subValue = if (syncStatus.flacTracks > 0) "${syncStatus.flacTracks} FLAC" else null,
                     )
                     StatItem(
-                        label = "Spotify",
+                        label = stringResource(R.string.label_spotify),
                         value = syncStatus.spotifyTracks.toString(),
                     )
                     StatItem(
-                        label = "YouTube",
+                        label = stringResource(R.string.label_youtube),
                         value = syncStatus.youTubeTracks.toString(),
                     )
                     StatItem(
-                        label = "Storage",
+                        label = stringResource(R.string.label_storage),
                         value = formatBytes(syncStatus.storageUsedBytes),
                         subValue = if (syncStatus.flacStorageBytes > 0) "${formatBytes(syncStatus.flacStorageBytes)} FLAC" else null,
                     )
                 }
                 if (syncStatus.lastSyncTime != null) {
                     Text(
-                        text = "Last sync ${formatRelativeTimeForCard(syncStatus.lastSyncTime)}",
+                        text = stringResource(R.string.label_last_sync_time, formatRelativeTimeForCard(syncStatus.lastSyncTime)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -140,18 +142,18 @@ private fun syncStatusLabel(
     anyServiceConnected: Boolean,
     hasEverSynced: Boolean,
 ): String = when {
-    !anyServiceConnected -> "No services connected"
-    !hasEverSynced -> "Ready to sync"
+    !anyServiceConnected -> stringResource(R.string.status_no_services_connected)
+    !hasEverSynced -> stringResource(R.string.status_ready_to_sync)
     else -> when (val s = syncStatus.displayStatus) {
-        SyncDisplayStatus.Idle -> "Ready to sync"
-        SyncDisplayStatus.Running -> "Syncing..."
-        SyncDisplayStatus.Success -> "Synced"
+        SyncDisplayStatus.Idle -> stringResource(R.string.status_ready_to_sync)
+        SyncDisplayStatus.Running -> stringResource(R.string.status_syncing)
+        SyncDisplayStatus.Success -> stringResource(R.string.status_synced)
         is SyncDisplayStatus.PartialSuccess ->
-            "Partially synced — ${s.downloaded} saved, ${s.failed} failed"
+            stringResource(R.string.status_partial_sync, s.downloaded, s.failed)
         is SyncDisplayStatus.Interrupted ->
-            if (s.downloaded > 0) "Interrupted — ${s.downloaded} saved"
-            else "Interrupted"
-        is SyncDisplayStatus.Failed -> "Sync failed"
+            if (s.downloaded > 0) stringResource(R.string.status_sync_interrupted_count, s.downloaded)
+            else stringResource(R.string.status_sync_interrupted)
+        is SyncDisplayStatus.Failed -> stringResource(R.string.status_sync_failed)
     }
 }
 

@@ -18,6 +18,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.model.PlayerState
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 @Composable
@@ -60,8 +62,8 @@ fun MiniPlayerBar(playerState: PlayerState, onPlayPauseClick: () -> Unit, onSkip
                     }
                     Text(track.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                IconButton(onClick = onPlayPauseClick) { Icon(if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = if (playerState.isPlaying) "Pause" else "Play", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(28.dp)) }
-                IconButton(onClick = onSkipNextClick) { Icon(Icons.Default.SkipNext, contentDescription = "Skip", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp)) }
+                IconButton(onClick = onPlayPauseClick) { Icon(if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = if (playerState.isPlaying) stringResource(R.string.cd_pause) else stringResource(R.string.cd_play), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(28.dp)) }
+                IconButton(onClick = onSkipNextClick) { Icon(Icons.Default.SkipNext, contentDescription = stringResource(R.string.cd_skip), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp)) }
             }
         }
     }

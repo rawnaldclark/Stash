@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -91,7 +92,7 @@ fun PartnerStrip(modifier: Modifier = Modifier) {
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Powered by ",
+                    text = stringResource(com.stash.core.ui.R.string.label_powered_by),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -179,7 +180,7 @@ private fun PartnerChip(
             }
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = if (isKofi) "Support on Ko-fi" else "Discord",
+                text = if (isKofi) stringResource(com.stash.core.ui.R.string.partner_support_kofi) else stringResource(com.stash.core.ui.R.string.partner_discord),
                 style = MaterialTheme.typography.labelMedium,
                 color = accent,
             )

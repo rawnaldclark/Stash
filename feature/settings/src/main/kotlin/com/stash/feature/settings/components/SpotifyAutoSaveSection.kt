@@ -14,10 +14,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 
 /**
  * v0.9.13: Spotify-side counterpart to [YouTubeHistorySyncSection] — auto-save
@@ -62,7 +64,7 @@ fun SpotifyAutoSaveSection(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "Auto-save liked tracks",
+                        text = stringResource(R.string.label_auto_save_liked),
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (spotifyConnected) {
                             MaterialTheme.colorScheme.onSurface
@@ -96,7 +98,7 @@ fun SpotifyAutoSaveSection(
         if (enabled && spotifyConnected) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Threshold: $threshold day${if (threshold == 1) "" else "s"} in 30",
+                text = stringResource(R.string.label_auto_save_threshold, threshold),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -107,7 +109,7 @@ fun SpotifyAutoSaveSection(
                 steps = 8,
             )
             Text(
-                text = "Last 7 days: $autoSavedCountLast7Days tracks auto-saved",
+                text = stringResource(R.string.label_auto_save_last_7_days, autoSavedCountLast7Days),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

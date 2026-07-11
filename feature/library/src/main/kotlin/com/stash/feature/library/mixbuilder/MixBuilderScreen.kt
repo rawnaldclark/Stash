@@ -40,12 +40,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.ui.R
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import kotlin.math.roundToInt
@@ -84,7 +86,7 @@ fun MixBuilderScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (state.isEditing) "Edit Mix" else "Create a Mix",
+                        text = if (state.isEditing) stringResource(R.string.title_edit_mix) else stringResource(R.string.title_create_mix),
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onBackground,
                     )
@@ -93,7 +95,7 @@ fun MixBuilderScreen(
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.cd_back),
                             tint = MaterialTheme.colorScheme.onBackground,
                         )
                     }
@@ -117,7 +119,7 @@ fun MixBuilderScreen(
                 onValueChange = viewModel::setName,
                 placeholder = {
                     Text(
-                        text = "Mix name (optional)",
+                        text = stringResource(R.string.label_mix_name_optional),
                         style = MaterialTheme.typography.titleMedium,
                         color = StashTheme.extendedColors.textTertiary,
                     )
@@ -138,7 +140,7 @@ fun MixBuilderScreen(
             )
 
             // ── 2) Moods ───────────────────────────────────────────────────
-            EyebrowLabel("Moods")
+            EyebrowLabel(stringResource(R.string.label_moods))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 state.moods.forEach { key ->
                     MixChip(
@@ -151,7 +153,7 @@ fun MixBuilderScreen(
             }
 
             // ── 3) Genres ──────────────────────────────────────────────────
-            EyebrowLabel("Genres")
+            EyebrowLabel(stringResource(R.string.label_genres))
             state.families.forEachIndexed { index, family ->
                 if (index > 0) Spacer(Modifier.height(14.dp))
                 Text(
@@ -172,14 +174,14 @@ fun MixBuilderScreen(
             }
 
             // ── 4) Era ─────────────────────────────────────────────────────
-            EyebrowLabel("Era · optional")
+            EyebrowLabel(stringResource(R.string.label_era_optional))
             EraSelector(
                 startYear = state.form.eraStartYear,
                 onEraSelected = viewModel::setEra,
             )
 
             // ── 5) Discovery level ─────────────────────────────────────────
-            EyebrowLabel("Discovery level")
+            EyebrowLabel(stringResource(R.string.label_discovery_level))
             Slider(
                 value = state.form.discoveryRatio,
                 onValueChange = viewModel::setDiscoveryRatio,
@@ -192,13 +194,13 @@ fun MixBuilderScreen(
             )
             Row(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "Familiar",
+                    text = stringResource(R.string.label_familiar),
                     style = MaterialTheme.typography.labelSmall,
                     color = StashTheme.extendedColors.textTertiary,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    text = "Brand new",
+                    text = stringResource(R.string.label_brand_new),
                     style = MaterialTheme.typography.labelSmall,
                     color = StashTheme.extendedColors.textTertiary,
                 )
@@ -215,7 +217,7 @@ fun MixBuilderScreen(
             GlassCard {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = if (state.form.isValid) state.form.displayName else "Untitled mix",
+                        text = if (state.form.isValid) state.form.displayName else stringResource(R.string.label_untitled_mix),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
@@ -243,7 +245,7 @@ fun MixBuilderScreen(
                 ),
             ) {
                 Text(
-                    text = if (state.isEditing) "Save" else "Create mix",
+                    text = if (state.isEditing) stringResource(R.string.action_save) else stringResource(R.string.action_create_mix_btn),
                     style = MaterialTheme.typography.titleSmall,
                 )
             }
@@ -344,14 +346,15 @@ private fun MixChip(
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /** Meta line for the summary card: ingredients · era · discovery. */
+@Composable
 private fun buildSummary(state: MixBuilderUiState): String {
     val form = state.form
     val tags = (form.genreTags + form.moodKeys)
         .map { it.replaceFirstChar { c -> c.uppercase() } }
-    val ingredients = if (tags.isEmpty()) "No ingredients yet" else tags.joinToString(", ")
+    val ingredients = if (tags.isEmpty()) stringResource(R.string.label_no_ingredients) else tags.joinToString(", ")
 
     val era = when {
-        form.eraStartYear == null -> "Any era"
+        form.eraStartYear == null -> stringResource(R.string.label_any_era)
         form.eraEndYear != null -> "${form.eraStartYear}–${form.eraEndYear}"
         else -> "${form.eraStartYear}+"
     }

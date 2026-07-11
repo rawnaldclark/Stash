@@ -62,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,7 @@ import com.stash.core.data.mix.MixBuildState
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
+import com.stash.core.ui.R
 import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.SourceIndicator
@@ -200,7 +202,7 @@ fun PlaylistDetailScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                text = "No matching songs",
+                                text = stringResource(R.string.label_no_matching_songs),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -224,12 +226,12 @@ fun PlaylistDetailScreen(
                             ) {
                                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                                 Text(
-                                    text = "Building your mix…",
+                                    text = stringResource(R.string.status_building_mix),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    text = "Finding fresh tracks from your genres — this can take a moment.",
+                                    text = stringResource(R.string.desc_building_mix),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -246,12 +248,12 @@ fun PlaylistDetailScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 Text(
-                                    text = "Couldn't find tracks",
+                                    text = stringResource(R.string.status_mix_no_tracks),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    text = "Try editing this mix with different genres or moods.",
+                                    text = stringResource(R.string.desc_mix_edit_hint),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -306,25 +308,25 @@ fun PlaylistDetailScreen(
         // Action order: Delete must stay within the first four (visible) and
         // Play next collapses into the ⋮ overflow as the least-used action.
         val selectionActions = listOf(
-            SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
+            SelectionAction("add_queue", stringResource(R.string.action_add_to_queue), Icons.Default.PlaylistAdd) {
                 viewModel.addSelectedToQueue(selectedTracks); selection.clear()
             },
-            SelectionAction("add_playlist", "Add to playlist", Icons.Default.PlaylistAddCheck) {
+            SelectionAction("add_playlist", stringResource(R.string.selection_add_to_playlist), Icons.Default.PlaylistAddCheck) {
                 showBatchSave = true
             },
             if (allDownloaded) {
-                SelectionAction("remove_download", "Remove download", Icons.Default.DownloadDone) {
+                SelectionAction("remove_download", stringResource(R.string.selection_remove_download), Icons.Default.DownloadDone) {
                     viewModel.removeDownloadsForSelected(selectedIds); selection.clear()
                 }
             } else {
-                SelectionAction("download", "Download", Icons.Default.Download) {
+                SelectionAction("download", stringResource(R.string.selection_download), Icons.Default.Download) {
                     viewModel.downloadSelected(selectedIds); selection.clear()
                 }
             },
-            SelectionAction("delete", "Delete", Icons.Default.Delete) {
+            SelectionAction("delete", stringResource(R.string.action_delete), Icons.Default.Delete) {
                 showBatchDelete = true
             },
-            SelectionAction("play_next", "Play next", Icons.Default.PlaylistPlay) {
+            SelectionAction("play_next", stringResource(R.string.action_play_next), Icons.Default.PlaylistPlay) {
                 viewModel.playSelectedNext(selectedTracks); selection.clear()
             },
         )
@@ -426,16 +428,17 @@ fun PlaylistDetailScreen(
             onDismissRequest = { trackToDelete = null },
             title = {
                 Text(
-                    if (isDownloadsMix) "Delete from library?" else "Delete ${track.title}?"
+                    if (isDownloadsMix) stringResource(R.string.dialog_title_delete_track, track.title)
+                    else stringResource(R.string.dialog_title_delete_track, track.title)
                 )
             },
             text = {
                 Column {
                     Text(
                         text = if (isDownloadsMix) {
-                            "This track will be deleted from your library and the audio file removed from disk."
+                            stringResource(R.string.dialog_body_delete_track_library)
                         } else {
-                            "Removes the song from this playlist. If it's also in Liked Songs or an in-app playlist, the file stays so those lists keep playing."
+                            stringResource(R.string.dialog_body_delete_track_playlist)
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -452,11 +455,11 @@ fun PlaylistDetailScreen(
                             Spacer(modifier = Modifier.width(4.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Also block this song from future syncs",
+                                    text = stringResource(R.string.label_also_block_song),
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                                 Text(
-                                    text = "Blocked songs never re-download. Unblock in Settings later.",
+                                    text = stringResource(R.string.desc_blocked_songs_hint),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -473,13 +476,15 @@ fun PlaylistDetailScreen(
                     },
                 ) {
                     Text(
-                        text = if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (isDownloadsMix) stringResource(R.string.action_delete)
+                        else if (alsoBlacklist) stringResource(R.string.action_delete_and_block)
+                        else stringResource(R.string.action_delete),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { trackToDelete = null }) { Text("Cancel") }
+                TextButton(onClick = { trackToDelete = null }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -496,17 +501,17 @@ fun PlaylistDetailScreen(
             onDismissRequest = { showBatchDelete = false },
             title = {
                 Text(
-                    if (isDownloadsMix) "Delete $n song${if (n != 1) "s" else ""} from library?"
-                    else "Remove $n song${if (n != 1) "s" else ""} from this playlist?"
+                    if (isDownloadsMix) stringResource(R.string.dialog_title_batch_delete, n)
+                    else stringResource(R.string.dialog_title_batch_remove, n)
                 )
             },
             text = {
                 Column {
                     Text(
                         text = if (isDownloadsMix) {
-                            "These tracks will be deleted from your library and their audio files removed from disk."
+                            stringResource(R.string.dialog_body_batch_delete_library)
                         } else {
-                            "Removes the songs from this playlist. If any are also in Liked Songs or an in-app playlist, the file stays so those lists keep playing."
+                            stringResource(R.string.dialog_body_batch_delete_playlist)
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -523,11 +528,11 @@ fun PlaylistDetailScreen(
                             Spacer(modifier = Modifier.width(4.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Also block these songs from future syncs",
+                                    text = stringResource(R.string.label_also_block_songs),
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                                 Text(
-                                    text = "Blocked songs never re-download. Unblock in Settings later.",
+                                    text = stringResource(R.string.desc_blocked_songs_hint),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -545,13 +550,15 @@ fun PlaylistDetailScreen(
                     },
                 ) {
                     Text(
-                        text = if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (isDownloadsMix) stringResource(R.string.action_delete)
+                        else if (alsoBlacklist) stringResource(R.string.action_delete_and_block)
+                        else stringResource(R.string.action_delete),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBatchDelete = false }) { Text("Cancel") }
+                TextButton(onClick = { showBatchDelete = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -653,7 +660,7 @@ private fun PlaylistHeader(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.cd_back),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -735,7 +742,7 @@ private fun PlaylistHeader(
                             modifier = Modifier.size(20.dp),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Play All", style = MaterialTheme.typography.labelLarge)
+                        Text(text = stringResource(R.string.action_play_all), style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
@@ -755,7 +762,7 @@ private fun PlaylistHeader(
                             modifier = Modifier.size(20.dp),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Shuffle", style = MaterialTheme.typography.labelLarge)
+                        Text(text = stringResource(R.string.action_shuffle), style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
@@ -771,7 +778,7 @@ private fun PlaylistHeader(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
-                        contentDescription = "Filter tracks",
+                        contentDescription = stringResource(R.string.cd_filter_tracks),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
@@ -788,7 +795,7 @@ private fun PlaylistHeader(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Image,
-                            contentDescription = "Set cover image",
+                            contentDescription = stringResource(R.string.cd_set_cover_image),
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }

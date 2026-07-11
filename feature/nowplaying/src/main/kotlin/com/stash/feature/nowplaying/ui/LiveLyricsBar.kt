@@ -28,6 +28,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.stash.data.lyrics.parser.LrcLine
@@ -97,7 +99,7 @@ fun LiveLyricsBar(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClickLabel = "Open lyrics", onClick = onTap)
+                .clickable(onClickLabel = stringResource(R.string.cd_open_lyrics), onClick = onTap)
                 .background(
                     Brush.verticalGradient(
                         0f to BarBase.copy(alpha = 0.30f),
@@ -144,7 +146,7 @@ fun LiveLyricsBar(
                     }
                 }
                 LiveBarMode.Static -> Text(
-                    text = "View lyrics ♪",
+                    text = stringResource(R.string.action_view_lyrics),
                     style = MaterialTheme.typography.titleSmall,
                     color = Color.White.copy(alpha = 0.45f),
                     maxLines = 1,

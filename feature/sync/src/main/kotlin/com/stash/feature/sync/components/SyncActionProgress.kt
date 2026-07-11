@@ -21,8 +21,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.stash.core.data.sync.SyncPhase
+import com.stash.core.ui.R
 
 /**
  * Multi-phase sync progress widget shown inside [SyncHeroCard] while a sync
@@ -85,7 +87,7 @@ fun SyncActionProgress(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "Stop sync",
+                text = stringResource(R.string.action_stop_sync),
                 style = MaterialTheme.typography.labelLarge,
             )
         }
@@ -103,13 +105,14 @@ fun SyncActionProgress(
 }
 
 /** Human-readable label for the current sync phase. */
+@Composable
 internal fun phaseLabel(phase: SyncPhase): String = when (phase) {
-    is SyncPhase.Authenticating -> "Authenticating..."
-    is SyncPhase.FetchingPlaylists -> "Fetching playlists..."
-    is SyncPhase.Diffing -> "Comparing changes..."
-    is SyncPhase.Downloading -> "Downloading ${phase.downloaded}/${phase.total}..."
-    is SyncPhase.Finalizing -> "Finalizing..."
-    is SyncPhase.Completed -> "Complete"
-    is SyncPhase.Error -> "Error"
-    else -> "Syncing..."
+    is SyncPhase.Authenticating -> stringResource(R.string.sync_phase_authenticating)
+    is SyncPhase.FetchingPlaylists -> stringResource(R.string.sync_phase_fetching)
+    is SyncPhase.Diffing -> stringResource(R.string.sync_phase_diffing)
+    is SyncPhase.Downloading -> stringResource(R.string.sync_phase_downloading, phase.downloaded, phase.total)
+    is SyncPhase.Finalizing -> stringResource(R.string.sync_phase_finalizing)
+    is SyncPhase.Completed -> stringResource(R.string.sync_phase_complete)
+    is SyncPhase.Error -> stringResource(R.string.sync_phase_error)
+    else -> stringResource(R.string.status_syncing)
 }

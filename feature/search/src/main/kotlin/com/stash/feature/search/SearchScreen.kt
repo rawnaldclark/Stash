@@ -60,6 +60,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -81,6 +82,7 @@ import com.stash.core.ui.components.ArtistAvatarCard
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.ShimmerPlaceholder
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.R
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistSummary
 import com.stash.data.ytmusic.model.SearchResultSection
@@ -222,14 +224,14 @@ private fun SearchBar(
             .focusRequester(focusRequester),
         placeholder = {
             Text(
-                text = "Search songs, artists...",
+                text = stringResource(R.string.hint_search),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
         leadingIcon = {
             Icon(
                 imageVector = Icons.Default.Search,
-                contentDescription = "Search",
+                contentDescription = stringResource(R.string.cd_search),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
@@ -242,7 +244,7 @@ private fun SearchBar(
                 IconButton(onClick = onClear) {
                     Icon(
                         imageVector = Icons.Default.Clear,
-                        contentDescription = "Clear search",
+                        contentDescription = stringResource(R.string.cd_clear_search),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -300,12 +302,12 @@ private fun RecentSearches(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Recent searches",
+                    text = stringResource(R.string.section_recent_searches),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onClearAll) { Text("Clear all") }
+                TextButton(onClick = onClearAll) { Text(stringResource(R.string.action_clear_all)) }
             }
         }
         items(entries, key = { "${it.type}:${it.text.lowercase()}" }) { entry ->
@@ -327,7 +329,7 @@ private fun RecentSearches(
                         overflow = TextOverflow.Ellipsis,
                     )
                     val sub = when (entry.type) {
-                        RecentSearch.Type.ARTIST -> "Artist"
+                        RecentSearch.Type.ARTIST -> stringResource(R.string.label_artist_type)
                         RecentSearch.Type.TRACK -> entry.subtitle
                         RecentSearch.Type.QUERY -> null
                     }
@@ -344,7 +346,7 @@ private fun RecentSearches(
                 IconButton(onClick = { onRemove(entry) }) {
                     Icon(
                         imageVector = Icons.Default.Clear,
-                        contentDescription = "Remove",
+                        contentDescription = stringResource(R.string.action_remove),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -482,7 +484,7 @@ private fun SectionedResultsList(
                     }
                 }
                 is SearchResultSection.Songs -> {
-                    item(key = "songs_header") { SectionHeader("Songs") }
+                    item(key = "songs_header") { SectionHeader(stringResource(R.string.section_songs)) }
                     items(section.tracks, key = { "song_" + it.videoId }) { t ->
                         val item = t.toSearchResultItem()
                         // Warm the lossless URL cache for each song row as it
@@ -513,7 +515,7 @@ private fun SectionedResultsList(
                     }
                 }
                 is SearchResultSection.Artists -> {
-                    item(key = "artists_header") { SectionHeader("Artists") }
+                    item(key = "artists_header") { SectionHeader(stringResource(R.string.section_artists)) }
                     item(key = "artists_row") {
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -530,7 +532,7 @@ private fun SectionedResultsList(
                     }
                 }
                 is SearchResultSection.Albums -> {
-                    item(key = "albums_header") { SectionHeader("Albums") }
+                    item(key = "albums_header") { SectionHeader(stringResource(R.string.section_albums)) }
                     item(key = "albums_row") {
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -635,9 +637,9 @@ private fun TopResultCard(
         Column(modifier = Modifier.weight(1f)) {
             val (primary, secondary, kind) = when (item) {
                 is TopResultItem.ArtistTop ->
-                    Triple(item.artist.name, null, "Artist")
+                    Triple(item.artist.name, null, stringResource(R.string.label_artist_type))
                 is TopResultItem.TrackTop ->
-                    Triple(item.track.title, item.track.artist, "Song")
+                    Triple(item.track.title, item.track.artist, stringResource(R.string.label_song_type))
             }
             Text(
                 text = kind,
@@ -681,12 +683,12 @@ private fun TopResultCard(
                     )
                     isPreviewPlaying -> Icon(
                         imageVector = Icons.Default.Stop,
-                        contentDescription = "Stop preview",
+                        contentDescription = stringResource(R.string.cd_stop_preview),
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     else -> Icon(
                         imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Preview",
+                        contentDescription = stringResource(R.string.cd_preview),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -701,7 +703,7 @@ private fun TopResultCard(
                     isDownloaded -> {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Downloaded",
+                            contentDescription = stringResource(R.string.cd_downloaded),
                             modifier = Modifier.size(24.dp),
                             tint = extendedColors.success,
                         )
@@ -717,7 +719,7 @@ private fun TopResultCard(
                         IconButton(onClick = onDownload) {
                             Icon(
                                 imageVector = Icons.Default.Download,
-                                contentDescription = "Download",
+                                contentDescription = stringResource(R.string.cd_download),
                                 modifier = Modifier.size(24.dp),
                                 tint = MaterialTheme.colorScheme.onSurface,
                             )
@@ -773,7 +775,7 @@ private fun ErrorMessage(message: String) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Search failed",
+                text = stringResource(R.string.error_search_failed),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
             )
@@ -804,13 +806,13 @@ private fun NoResultsMessage() {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "No results found",
+                text = stringResource(R.string.label_no_results),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Try a different search term",
+                text = stringResource(R.string.desc_try_different_search),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -835,13 +837,13 @@ private fun EmptySearchPrompt() {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Search YouTube Music",
+                text = stringResource(R.string.title_search_prompt),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Find any song or artist and download it to your library",
+                text = stringResource(R.string.desc_search_prompt),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

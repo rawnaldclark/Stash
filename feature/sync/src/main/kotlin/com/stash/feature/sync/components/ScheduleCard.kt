@@ -27,8 +27,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import com.stash.core.data.sync.DayOfWeekSet
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.R
 
 @Composable
 fun ScheduleCard(
@@ -57,7 +59,7 @@ fun ScheduleCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Auto-sync", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.label_auto_sync), style = MaterialTheme.typography.bodyLarge)
                 Switch(
                     checked = autoSyncEnabled,
                     onCheckedChange = { onToggleAutoSync() },
@@ -72,7 +74,7 @@ fun ScheduleCard(
             Column(modifier = Modifier.alpha(if (autoSyncEnabled) 1f else 0.5f)) {
                 if (emptyDays) {
                     Text(
-                        text = "Not scheduled — pick at least one day",
+                        text = stringResource(R.string.label_not_scheduled),
                         style = MaterialTheme.typography.bodyMedium,
                         color = errorColor,
                         modifier = Modifier.clickable { daysExpanded = true },
@@ -93,7 +95,7 @@ fun ScheduleCard(
                         )
                         Text(" on ", style = MaterialTheme.typography.bodyMedium)
                         ScheduleChip(
-                            text = if (wifiOnly) "Wi-Fi only" else "any network",
+                            text = if (wifiOnly) stringResource(R.string.label_wifi_only) else stringResource(R.string.label_any_network),
                             active = false,
                             onClick = { onToggleWifiOnly() },
                             muted = true,
@@ -111,7 +113,7 @@ fun ScheduleCard(
 
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Tap any chip to change",
+                    text = stringResource(R.string.desc_tap_chip_to_change),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -158,8 +160,9 @@ private fun ScheduleChip(
     )
 }
 
+@Composable
 private fun formatTime(hour: Int, minute: Int): String {
-    val period = if (hour < 12) "AM" else "PM"
+    val period = if (hour < 12) stringResource(R.string.label_am) else stringResource(R.string.label_pm)
     val display = when (hour) {
         0 -> 12
         in 13..23 -> hour - 12

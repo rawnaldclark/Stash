@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -36,6 +37,7 @@ import com.stash.core.model.TrackItem
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.ui.components.DiscoveryErrorCard
 import com.stash.core.ui.components.SectionHeader
+import com.stash.core.ui.R
 import com.stash.data.ytmusic.model.AlbumSummary
 import kotlinx.coroutines.flow.merge
 
@@ -137,7 +139,7 @@ fun AlbumDiscoveryScreen(
                 }
                 is AlbumDiscoveryStatus.Error -> item {
                     DiscoveryErrorCard(
-                        title = "Couldn't load album",
+                        title = stringResource(R.string.error_load_album),
                         message = status.message,
                         onRetry = vm::retry,
                     )
@@ -152,7 +154,7 @@ fun AlbumDiscoveryScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "No tracks available",
+                                    text = stringResource(R.string.label_no_tracks_available),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -207,7 +209,7 @@ fun AlbumDiscoveryScreen(
                             )
                         }
                         if (state.moreByArtist.isNotEmpty()) {
-                            item { SectionHeader(title = "More by this artist") }
+                            item { SectionHeader(title = stringResource(R.string.section_more_by_artist)) }
                             item {
                                 AlbumsRow(
                                     albums = state.moreByArtist,
@@ -224,26 +226,26 @@ fun AlbumDiscoveryScreen(
             val count = state.downloadConfirmQueue.size
             AlertDialog(
                 onDismissRequest = vm::onDownloadAllDismissed,
-                title = { Text("Download all?") },
+                title = { Text(stringResource(R.string.dialog_title_download_all)) },
                 text = {
                     Text(
                         text = if (count == 0) {
-                            "All tracks already downloaded."
+                            stringResource(R.string.dialog_body_all_downloaded)
                         } else {
-                            "Download $count track${if (count == 1) "" else "s"} to your library?"
+                            stringResource(R.string.dialog_body_download_count, count)
                         },
                     )
                 },
                 confirmButton = {
                     if (count == 0) {
-                        TextButton(onClick = vm::onDownloadAllDismissed) { Text("OK") }
+                        TextButton(onClick = vm::onDownloadAllDismissed) { Text(stringResource(R.string.action_ok)) }
                     } else {
-                        Button(onClick = vm::onDownloadAllConfirmed) { Text("Download") }
+                        Button(onClick = vm::onDownloadAllConfirmed) { Text(stringResource(R.string.action_download)) }
                     }
                 },
                 dismissButton = {
                     if (count != 0) {
-                        TextButton(onClick = vm::onDownloadAllDismissed) { Text("Cancel") }
+                        TextButton(onClick = vm::onDownloadAllDismissed) { Text(stringResource(R.string.action_cancel)) }
                     }
                 },
             )

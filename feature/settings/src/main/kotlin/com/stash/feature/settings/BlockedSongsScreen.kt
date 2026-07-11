@@ -33,11 +33,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -78,7 +80,7 @@ fun BlockedSongsScreen(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.cd_back),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -97,14 +99,14 @@ fun BlockedSongsScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "No blocked songs",
+                    text = stringResource(R.string.label_no_blocked_songs),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Songs you block with \u201CDelete & Block\u201D show up here. Tap Unblock to re-allow them on the next sync.",
+                    text = stringResource(R.string.desc_blocked_songs_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -161,7 +163,7 @@ private fun BlockedSongsHeader(count: Int, onBack: () -> Unit) {
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.cd_back),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -174,14 +176,14 @@ private fun BlockedSongsHeader(count: Int, onBack: () -> Unit) {
                 .padding(horizontal = 20.dp),
         ) {
             Text(
-                text = "Blocked Songs",
+                text = stringResource(R.string.title_blocked_songs),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "These songs are skipped during every sync. Tap Unblock to re-allow one.",
+                text = stringResource(R.string.desc_blocked_songs_header),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -252,7 +254,7 @@ private fun BlockedTrackListItem(
 
         TextButton(onClick = onUnblock) {
             Text(
-                text = "Unblock",
+                text = stringResource(R.string.action_unblock),
                 color = MaterialTheme.colorScheme.primary,
             )
         }

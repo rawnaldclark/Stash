@@ -13,9 +13,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.ui.R
 import com.stash.core.ui.components.GlassCard
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SettingsScaffold
@@ -90,7 +92,7 @@ fun SettingsAccountsScreen(
             shape = MaterialTheme.shapes.large,
             title = {
                 Text(
-                    text = "YouTube Music",
+                    text = stringResource(R.string.label_youtube_music),
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -110,19 +112,19 @@ fun SettingsAccountsScreen(
         )
     }
 
-    SettingsScaffold(title = "Accounts & Sync", onBack = onBack, modifier = modifier) {
+    SettingsScaffold(title = stringResource(R.string.title_accounts_sync), onBack = onBack, modifier = modifier) {
         // Like-mirroring opt-in ack. Rendered at the top of the scaffold so it
         // overlays the content. Confirming writes the pref; dismissing leaves
         // mirroring off (no writes without this ack).
         uiState.pendingMirrorWarning?.let { dest ->
             com.stash.feature.settings.components.LikeMirrorWarningDialog(
-                serviceName = if (dest == com.stash.core.data.social.Destination.SPOTIFY) "Spotify" else "YouTube Music",
+                serviceName = if (dest == com.stash.core.data.social.Destination.SPOTIFY) stringResource(R.string.label_spotify) else stringResource(R.string.label_youtube_music),
                 onConfirm = viewModel::onMirrorWarningConfirmed,
                 onDismiss = viewModel::onMirrorWarningDismissed,
             )
         }
 
-        SettingsSectionLabel("Connections")
+        SettingsSectionLabel(stringResource(R.string.section_connections))
 
         AccountConnectionCard(
             serviceName = "Spotify",

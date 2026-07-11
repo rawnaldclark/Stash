@@ -17,7 +17,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 
 /**
  * Reusable full-width error card for Discovery screens.
@@ -31,8 +33,9 @@ fun DiscoveryErrorCard(
     message: String,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
-    title: String = "Something went wrong",
+    title: String? = null,
 ) {
+    val resolvedTitle = title ?: stringResource(R.string.error_something_wrong)
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -48,7 +51,7 @@ fun DiscoveryErrorCard(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = title,
+            text = resolvedTitle,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
@@ -63,7 +66,7 @@ fun DiscoveryErrorCard(
             onClick = onRetry,
             shape = RoundedCornerShape(12.dp),
         ) {
-            Text("Retry")
+            Text(stringResource(R.string.action_retry))
         }
     }
 }

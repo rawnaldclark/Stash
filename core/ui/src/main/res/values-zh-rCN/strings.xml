@@ -1,0 +1,695 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ===== App ===== -->
+    <string name="app_name">Stash</string>
+
+    <!-- ===== Common Actions ===== -->
+    <string name="action_cancel">取消</string>
+    <string name="action_delete">删除</string>
+    <string name="action_remove">移除</string>
+    <string name="action_ok">确定</string>
+    <string name="action_save">保存</string>
+    <string name="action_connect">连接</string>
+    <string name="action_enable">启用</string>
+    <string name="action_download">下载</string>
+    <string name="action_download_all">全部下载</string>
+    <string name="action_play_all">播放全部</string>
+    <string name="action_play">播放</string>
+    <string name="action_radio">电台</string>
+    <string name="action_shuffle">随机播放</string>
+    <string name="action_queue">队列</string>
+    <string name="action_add_to_queue">添加到队列</string>
+    <string name="action_play_next">下一首播放</string>
+    <string name="action_remove_downloads">移除下载</string>
+    <string name="action_remove_playlist">移除播放列表</string>
+    <string name="action_delete_playlist_and_songs">删除播放列表及歌曲</string>
+    <string name="action_delete_and_block">删除并屏蔽</string>
+    <string name="action_unblock">取消屏蔽</string>
+    <string name="action_create_playlist">创建播放列表</string>
+    <string name="action_create_mix">创建\n混音</string>
+    <string name="action_refresh_mix">刷新此混音</string>
+    <string name="action_edit_mix">编辑混音</string>
+    <string name="action_donate">捐赠</string>
+    <string name="action_star">星标</string>
+    <string name="action_import">导入</string>
+    <string name="action_import_backup">导入备份</string>
+    <string name="action_change_folder">更改文件夹</string>
+    <string name="action_pick_folder">选择 SD 卡/文件夹</string>
+    <string name="action_use_internal">使用内部存储</string>
+    <string name="action_delete_from_library">从库中删除</string>
+    <string name="action_delete_and_block_forever">删除并永久屏蔽</string>
+    <string name="action_find_in_flac">查找 FLAC 版本</string>
+    <string name="action_find_better_match">查找更佳匹配</string>
+    <string name="action_view_lyrics">查看歌词 ♪</string>
+    <string name="action_shuffle_library">随机播放曲库</string>
+    <string name="action_play_all_by_artist">播放此艺人全部</string>
+    <string name="action_delete_all_by_artist">删除此艺人全部</string>
+    <string name="action_play_album">播放专辑</string>
+    <string name="action_stop_sync">停止同步</string>
+    <string name="action_reauthenticate">重新认证</string>
+    <string name="action_reauthenticate_spotify">重新认证 Spotify</string>
+    <string name="action_reauthenticate_youtube">重新认证 YouTube</string>
+    <string name="action_switch_to_refresh">切换到刷新模式</string>
+    <string name="action_connect_lastfm">连接 Last.fm</string>
+    <string name="action_finish_connecting">完成连接</string>
+    <string name="action_setup_lossless">立即设置 →</string>
+    <string name="action_retry_yt_sync">重试 YouTube 同步</string>
+    <string name="action_reset_lossless_attempts">重置无损尝试</string>
+    <string name="action_refresh_quality_info">刷新质量信息</string>
+    <string name="action_remove_image">移除图片</string>
+    <string name="action_play_both">双源播放</string>
+    <string name="action_got_it">知道了</string>
+    <string name="action_i_understand">我明白了</string>
+
+    <!-- ===== Navigation / CD ===== -->
+    <string name="cd_back">返回</string>
+    <string name="cd_close">关闭</string>
+    <string name="cd_search">搜索</string>
+    <string name="cd_clear_search">清除搜索</string>
+    <string name="cd_dismiss">关闭</string>
+    <string name="cd_more_actions">更多操作</string>
+    <string name="cd_download">下载</string>
+    <string name="cd_downloaded">已下载</string>
+    <string name="cd_preview">预览</string>
+    <string name="cd_stop_preview">停止预览</string>
+    <string name="cd_preview_match">预览匹配</string>
+    <string name="cd_preview_replacement">预览替换</string>
+    <string name="cd_approve_match">确认匹配</string>
+    <string name="cd_swap_match">切换到此匹配</string>
+    <string name="cd_unflag_match">取消标记（保留当前匹配）</string>
+    <string name="cd_save_preset">保存预设</string>
+    <string name="cd_save_to_playlist">保存到播放列表</string>
+    <string name="cd_queue">队列</string>
+    <string name="cd_flag_wrong_match">标记为错误匹配</string>
+    <string name="cd_open_artist">打开艺人</string>
+    <string name="cd_open_lyrics">打开歌词</string>
+    <string name="cd_open_browser">打开浏览器</string>
+    <string name="cd_copy_code">复制代码</string>
+    <string name="cd_filter_tracks">筛选曲目</string>
+    <string name="cd_set_cover_image">设置封面图片</string>
+    <string name="cd_shuffle">随机播放</string>
+    <string name="cd_previous">上一首</string>
+    <string name="cd_next">下一首</string>
+    <string name="cd_repeat">重复</string>
+    <string name="cd_streaming">在线播放</string>
+    <string name="cd_album_art">专辑封面</string>
+    <string name="cd_drag_to_reorder">拖拽排序</string>
+    <string name="cd_clear_filter">清除筛选</string>
+    <string name="cd_waiting_lossless">等待无损音源</string>
+    <string name="cd_dismiss_lossless_banner">关闭无损横幅</string>
+    <string name="cd_join_discord">加入 Stash Discord</string>
+    <string name="cd_report_issue">在 GitHub 上报告问题</string>
+    <string name="cd_supporters_kofi">Ko-fi 支持者</string>
+    <string name="cd_app_logo">Stash</string>
+    <string name="cd_play_all_mixes">播放全部 %1$s 混音</string>
+    <string name="cd_play_both_mixes">播放两个平台的混音</string>
+
+    <!-- ===== Titles ===== -->
+    <string name="title_settings">设置</string>
+    <string name="title_playback">播放</string>
+    <string name="title_playback_mode">播放模式</string>
+    <string name="title_audio_quality">音频与质量</string>
+    <string name="title_accounts_sync">账户与同步</string>
+    <string name="title_library_storage">曲库与存储</string>
+    <string name="title_appearance">外观</string>
+    <string name="title_about_help">关于与帮助</string>
+    <string name="title_library">曲库</string>
+    <string name="title_sync">同步</string>
+    <string name="title_sync_time">同步时间</string>
+    <string name="title_equalizer">均衡器</string>
+    <string name="title_library_health">曲库健康</string>
+    <string name="title_blocked_songs">已屏蔽歌曲</string>
+    <string name="title_failed_downloads">下载失败</string>
+    <string name="title_lyrics">歌词</string>
+    <string name="title_up_next">即将播放</string>
+    <string name="title_support_stash">支持 Stash</string>
+    <string name="title_diagnostics">诊断信息</string>
+    <string name="title_connect_arcod">连接 ARCOD</string>
+    <string name="title_verify_captcha">验证 squid.wtf 验证码</string>
+    <string name="title_search_prompt">搜索 YouTube Music</string>
+
+    <!-- ===== Dialog Titles ===== -->
+    <string name="dialog_title_delete_playlist">删除 %1$s？</string>
+    <string name="dialog_title_delete_songs">删除 %1$d 首歌曲？</string>
+    <string name="dialog_title_delete_track">删除 %1$s？</string>
+    <string name="dialog_title_delete_artist">删除 %1$s 的全部歌曲？</string>
+    <string name="dialog_title_remove_liked">从喜欢中移除 %1$d 首歌曲？</string>
+    <string name="dialog_title_batch_delete">从曲库中删除 %1$d 首歌曲？</string>
+    <string name="dialog_title_batch_remove">移除 %1$d 首歌曲</string>
+    <string name="dialog_title_overwrite_library">覆盖曲库与设置？</string>
+    <string name="dialog_title_wrong_match">这首歌有什么问题？</string>
+    <string name="dialog_title_stop_retrying">停止重试此歌曲？</string>
+    <string name="dialog_title_switch_refresh">切换到刷新模式？</string>
+    <string name="dialog_title_download_all">全部下载？</string>
+    <string name="dialog_title_connect_spotify">连接 Spotify</string>
+    <string name="dialog_title_connect_youtube">连接 YouTube Music</string>
+    <string name="dialog_title_yt_credentials">YouTube Music 凭据</string>
+    <string name="dialog_title_yt_history">将播放记录发送到 YouTube Music？</string>
+    <string name="dialog_title_mirror_likes">将喜欢同步到 %1$s？</string>
+    <string name="dialog_title_save_preset">保存预设</string>
+    <string name="dialog_title_streaming_disclosure">在线播放</string>
+
+    <!-- ===== Dialog Bodies ===== -->
+    <string name="dialog_body_delete_playlist">这将删除此播放列表中已下载到设备的歌曲。</string>
+    <string name="dialog_body_delete_playlist_cascade">%1$s 首歌曲将被删除。%2$s 首受保护的歌曲将保留。</string>
+    <string name="dialog_body_delete_songs">%1$d 首歌曲将从曲库中移除。此操作不可撤销。</string>
+    <string name="dialog_body_delete_track_library">此曲目将从曲库中删除。此操作不可撤销。</string>
+    <string name="dialog_body_delete_track_playlist">将此歌曲从播放列表中移除。已下载的文件保留在磁盘上。</string>
+    <string name="dialog_body_delete_artist">这将删除此艺人的全部 %1$d 首已下载歌曲。</string>
+    <string name="dialog_body_delete_playlist_permanent">%1$s 及其所有曲目将从曲库中移除。</string>
+    <string name="dialog_body_remove_liked">从喜欢中移除歌曲。</string>
+    <string name="dialog_body_batch_delete_library">这些曲目将从曲库中删除。此操作不可撤销。</string>
+    <string name="dialog_body_batch_delete_playlist">将这些歌曲从播放列表中移除。已下载的文件保留在磁盘上。</string>
+    <string name="dialog_body_overwrite_library">这将用备份数据完全替换您现有的曲库和设置。</string>
+    <string name="dialog_body_wrong_match">选择要对 \'%1$s\' 执行的操作。</string>
+    <string name="dialog_body_stop_retrying">\'%1$s\' 将不会被下载，并从下载失败列表中移除。</string>
+    <string name="dialog_body_switch_refresh">刷新模式每次同步拉取新曲目。现有离线曲目保持不变。立即切换？</string>
+    <string name="dialog_body_all_downloaded">所有曲目已下载。</string>
+    <string name="dialog_body_download_count">下载 %1$d 首曲目到曲库？</string>
+    <string name="dialog_body_spotify_cookie">在浏览器中登录 Spotify，获取 sp_dc cookie，然后粘贴到下方。</string>
+    <string name="dialog_body_yt_cookie">粘贴您的 YouTube Music cookie 以连接。</string>
+    <string name="dialog_body_yt_credentials">输入您的 Google Cloud OAuth 凭据以连接 YouTube Music。</string>
+    <string name="dialog_body_yt_history">您在 Stash 中听完的每首曲目都将发送到您的 YouTube Music 历史记录。</string>
+    <string name="dialog_body_mirror_likes">在 Stash 中点亮红心的曲目也会在 %1$s 中点亮。此操作对过去的红心不可撤销。</string>
+    <string name="dialog_body_streaming_disclosure">Stash 通过社区 Qobuz 代理进行串流。串流质量取决于代理。下载不受影响。</string>
+
+    <!-- ===== Labels ===== -->
+    <string name="label_spotify">Spotify</string>
+    <string name="label_youtube_music">YouTube Music</string>
+    <string name="label_youtube">YouTube</string>
+    <string name="label_liked_songs">喜欢的歌曲</string>
+    <string name="label_no_matching_songs">无匹配歌曲</string>
+    <string name="label_no_tracks_found">未找到曲目</string>
+    <string name="label_no_tracks_available">无可用曲目</string>
+    <string name="label_no_liked_songs">还没有喜欢的歌曲</string>
+    <string name="label_no_blocked_songs">无已屏蔽歌曲</string>
+    <string name="label_no_failed_downloads">无下载失败。</string>
+    <string name="label_no_unmatched_songs">无未匹配歌曲。</string>
+    <string name="label_no_match_found">未找到匹配</string>
+    <string name="label_no_replacement">未找到替换</string>
+    <string name="label_no_upcoming_tracks">无即将播放的曲目</string>
+    <string name="label_no_lyrics_found">未找到歌词</string>
+    <string name="label_lyrics_load_error">无法加载歌词</string>
+    <string name="label_no_results">未找到结果</string>
+    <string name="label_no_playlists_match">没有匹配 \"%1$s\" 的播放列表</string>
+    <string name="label_no_downloaded_tracks">还没有下载的曲目。请先运行同步。</string>
+    <string name="label_no_details">无其他详细信息</string>
+    <string name="label_all_caught_up">全部完成！</string>
+    <string name="label_flagged_wrong">您标记为错误的曲目</string>
+    <string name="label_empty_tracks_synced">同步曲库后即可在此看到曲目</string>
+    <string name="label_empty_tracks_no_service">在设置中连接服务以查看曲目</string>
+    <string name="label_also_block_songs">同时屏蔽这些歌曲，不再同步</string>
+    <string name="label_also_block_song">同时屏蔽此歌曲，不再同步</string>
+    <string name="label_powered_by">由 </string>
+    <string name="label_mix_name_optional">混音名称（可选）</string>
+    <string name="label_familiar">熟悉的</string>
+    <string name="label_brand_new">全新的</string>
+    <string name="label_beta">Beta</string>
+    <string name="label_routing">路由</string>
+    <string name="label_dark">深色</string>
+    <string name="label_light">浅色</string>
+    <string name="label_follow_system">跟随系统</string>
+    <string name="label_download_quality">下载质量</string>
+    <string name="label_lossless_downloads">无损下载</string>
+    <string name="label_direct_qobuz">直连 Qobuz</string>
+    <string name="label_account">账户</string>
+    <string name="label_auto">自动</string>
+    <string name="label_paste_token">粘贴令牌</string>
+    <string name="label_on_wifi">Wi-Fi 下</string>
+    <string name="label_on_cellular">蜂窝数据下</string>
+    <string name="label_save_data">省流模式</string>
+    <string name="label_youtube_fallback">YouTube 回退</string>
+    <string name="label_use_youtube_fallback">无损失败时使用 YouTube</string>
+    <string name="label_advanced">高级</string>
+    <string name="label_captcha_verified_at">captcha_verified_at 值</string>
+    <string name="label_playback">播放</string>
+    <string name="label_audio_quality">音频与质量</string>
+    <string name="label_accounts_sync">账户与同步</string>
+    <string name="label_library_storage">曲库与存储</string>
+    <string name="label_appearance">外观</string>
+    <string name="label_about_help">关于与帮助</string>
+    <string name="label_library_health">曲库健康</string>
+    <string name="label_total_tracks">总曲目数</string>
+    <string name="label_storage_used">已用存储</string>
+    <string name="label_download_location">下载位置</string>
+    <string name="label_existing_library">现有曲库</string>
+    <string name="label_backup">备份</string>
+    <string name="label_total_downloaded">总下载量</string>
+    <string name="label_version">版本</string>
+    <string name="label_license">许可证</string>
+    <string name="label_share_crash_report">分享最新崩溃报告</string>
+    <string name="label_share_diagnostics">分享诊断信息</string>
+    <string name="label_scrobble_plays">记录播放历史</string>
+    <string name="label_sync_likes">同步喜欢</string>
+    <string name="label_send_plays_yt">发送播放记录到 YouTube Music</string>
+    <string name="label_connect_yt_first">请先连接 YouTube Music</string>
+    <string name="label_how_it_works">工作原理</string>
+    <string name="label_risk">风险</string>
+    <string name="label_auto_save_liked">自动保存喜欢的曲目</string>
+    <string name="label_auto_save_threshold">阈值：30 天内 %1$d 天</string>
+    <string name="label_auto_save_last_7_days">最近 7 天：%1$d 首曲目已自动保存</string>
+    <string name="label_how_to_get_cookie">如何获取 sp_dc cookie：</string>
+    <string name="label_how_to_get_cookies">如何获取 cookie：</string>
+    <string name="label_sp_dc_cookie">sp_dc cookie</string>
+    <string name="label_spotify_username_optional">Spotify 用户名（可选）</string>
+    <string name="label_signin_blocked">登录被阻止或无法使用？</string>
+    <string name="label_client_id">Client ID</string>
+    <string name="label_client_secret">Client Secret</string>
+    <string name="label_cookie">Cookie</string>
+    <string name="label_stream_cellular">使用蜂窝数据串流</string>
+    <string name="label_stream_youtube">通过 YouTube 串流</string>
+    <string name="label_stream_amz">通过 amz 串流（测试）</string>
+    <string name="label_force_qobuz">强制仅直连 Qobuz（测试）</string>
+    <string name="label_crossfade">交叉淡入淡出</string>
+    <string name="label_duration">时长</string>
+    <string name="label_repeat_on">重复于</string>
+    <string name="label_not_scheduled">未设置计划 — 请至少选择一天</string>
+    <string name="label_last_sync">上次同步</string>
+    <string name="label_last_sync_time">上次同步 %1$s</string>
+    <string name="label_tracks">曲目</string>
+    <string name="label_storage">存储</string>
+    <string name="label_error_prefix">错误：%1$s</string>
+    <string name="label_diagnostics">诊断信息：</string>
+    <string name="label_blocked_songs">已屏蔽歌曲</string>
+    <string name="label_failed_downloads">下载失败</string>
+    <string name="label_mix_sync_mode">混合同步模式</string>
+    <string name="label_studio_recordings_only">仅录音室版本</string>
+    <string name="label_stash_mixes_beta">Stash 混音（beta）</string>
+    <string name="label_run_recommendations">运行推荐条件</string>
+    <string name="label_streaming_unavailable">此版本不支持在线播放。</string>
+
+    <!-- ===== Descriptions ===== -->
+    <string name="desc_blocked_songs_hint">被屏蔽的歌曲不会重新下载。稍后可在设置中取消屏蔽。</string>
+    <string name="desc_sync_to_start">同步曲库即可开始</string>
+    <string name="desc_try_different_search">尝试其他搜索词</string>
+    <string name="desc_search_prompt">查找任意歌曲或艺人并下载到曲库</string>
+    <string name="desc_support_stash">如果 Stash 为您省下了一笔订阅费，请考虑支持它的开发。</string>
+    <string name="desc_follow_system">跟随系统以匹配您设备的日间/夜间设置。</string>
+    <string name="desc_lossless_active">FLAC 路由已激活。文件大小约为 MP3 的 10 倍。</string>
+    <string name="desc_lossless_inactive">通过 Qobuz 获取录音室品质 FLAC。文件大小约为 MP3 的 10 倍。</string>
+    <string name="desc_direct_qobuz">高分辨率 FLAC，直接来自 Qobuz。</string>
+    <string name="desc_auto_token">推荐 — 使用可用账户并在失败时回退</string>
+    <string name="desc_save_data">启用后在所有网络上请求最低串流质量。</string>
+    <string name="desc_stream_cellular">允许通过移动数据（5G/LTE）串流。禁用以仅在 Wi-Fi 下串流。</string>
+    <string name="desc_stream_youtube">跳过无损音源（Qobuz），直接从 YouTube 串流。</string>
+    <string name="desc_stream_amz">将串流和下载路由到 amz.squid.wtf 而非 Qobuz 代理。</string>
+    <string name="desc_force_qobuz">仅通过直连 Qobuz 路由串流和下载。无回退。</string>
+    <string name="desc_crossfade">自动切换时将结尾曲目淡入下一首。在下方调整时长。</string>
+    <string name="desc_loudness_normalization">以一致音量播放所有曲目。</string>
+    <string name="desc_loudness_backfill">充电时自动继续。</string>
+    <string name="desc_blocked_songs_empty">通过"删除并屏蔽"屏蔽的歌曲会显示在此。每次同步时会跳过它们。</string>
+    <string name="desc_blocked_songs_header">每次同步时会跳过这些歌曲。取消屏蔽可重新允许同步。</string>
+    <string name="desc_lastfm_no_api_key">此版本的 Stash 不包含 Last.fm API 密钥。Last.fm 记录功能不可用。</string>
+    <string name="desc_lastfm_awaiting_auth">浏览器应已打开 Last.fm 页面。批准 Stash 以完成连接。</string>
+    <string name="desc_like_mirror">将红心同步到您的账户。在 Stash 中点亮的红心也会同步到相应服务。</string>
+    <string name="desc_yt_history_how">Stash 使用非官方 YouTube 端点发送您的收听历史。</string>
+    <string name="desc_yt_history_risk">YouTube 进行速率限制或标记此活动虽有罕见但并非零风险。</string>
+    <string name="desc_spotify_cookie_steps">在电脑上最方便：\n1. 打开 open.spotify.com 并登录\n2. 按 F12 → Application → Cookies\n3. 复制 sp_dc 的值</string>
+    <string name="desc_yt_cookie_steps">1. 打开隐私/无痕窗口\n2. 前往 music.youtube.com 并登录\n3. 按 F12 → Application → Cookies\n4. 以 JSON 格式复制所有 cookie</string>
+    <string name="desc_spotify_username_hint">在 spotify.com/account 的"用户名"下查找</string>
+    <string name="desc_device_code_prompt">前往下方网址并输入此代码：</string>
+    <string name="desc_paste_captcha_cookie">或直接粘贴 captcha_verified_at cookie 值：</string>
+    <string name="desc_backup">导出设置和数据库，或从之前的备份导入。</string>
+    <string name="desc_external_storage">曲目存储在此文件夹中。更改位置不会移动现有文件。</string>
+    <string name="desc_new_downloads_location">新下载将保存到所选位置。现有文件保持不变。</string>
+    <string name="desc_move_failed">失败的曲目保留在内部存储中。请稍后重试。</string>
+    <string name="desc_re_extract_quality">重新提取 FLAC 曲目的位深和采样率。需要几分钟。</string>
+    <string name="desc_library_health">已下载曲库的格式和比特率分布。</string>
+    <string name="desc_share_diagnostics">打包最近的日志、同步历史和连接状态以供排查。</string>
+    <string name="desc_diagnostics_review">检查将要分享的内容。不包含密码或令牌。</string>
+    <string name="desc_lossless_routing">来自直连 Qobuz 的无损串流 — 通往 FLAC 的最快路径。</string>
+    <string name="desc_streaming_mode">在在线播放和仅下载播放之间切换。</string>
+    <string name="desc_retagging_progress">正在为现有文件添加专辑封面和元数据</string>
+    <string name="desc_retagging_saf_skipped">%1$d 首外部存储上的曲目标记失败。请将其移至内部存储后重试。</string>
+    <string name="desc_tap_chip_to_change">点击任意标签即可更改</string>
+    <string name="desc_connect_service">在设置中连接 Spotify 或 YouTube Music 以开始同步曲库。</string>
+    <string name="desc_tap_sync_now">点击"立即同步"下载您的播放列表和曲目。</string>
+    <string name="desc_tap_resync">点击上方重新同步以查找已标记曲目的替换版本。</string>
+    <string name="desc_tap_resync_replacements">点击重新同步以查找替换</string>
+    <string name="desc_empty_spotify">连接后您的 Spotify 播放列表和每日混音将显示在此。</string>
+    <string name="desc_empty_youtube">您的 YouTube Music 家庭混音、喜欢的歌曲和播放列表将显示在此。</string>
+    <string name="desc_studio_recordings_only">从同步结果中排除翻唱、现场录音和 UGC 上传。</string>
+    <string name="desc_mix_edit_hint">尝试用不同的流派或情绪编辑此混音。</string>
+    <string name="desc_building_mix">正在从您的流派和情绪中寻找新曲目…</string>
+    <string name="desc_lossless_prompt">通过 Qobuz 获取录音室品质 FLAC 下载。点击设置。</string>
+
+    <!-- ===== Status Messages ===== -->
+    <string name="status_building">构建中…</string>
+    <string name="status_building_mix">正在构建混音…</string>
+    <string name="status_mix_no_tracks">未找到曲目</string>
+    <string name="status_library_retagged">曲库已重新标记</string>
+    <string name="status_retagging_library">正在重新标记曲库</string>
+    <string name="status_login_successful">登录成功，正在连接…</string>
+    <string name="status_waiting_auth">等待授权…</string>
+    <string name="status_scanning">扫描中… %1$d / %2$d</string>
+    <string name="status_scan_complete">扫描完成：已处理 %1$d / %2$d 首曲目</string>
+    <string name="status_exporting_db">正在导出数据库</string>
+    <string name="status_importing_db">正在导入数据库</string>
+    <string name="status_importing_progress">正在导入 %1$s / %2$s…</string>
+    <string name="status_success">成功</string>
+    <string name="status_error">错误</string>
+    <string name="status_processing">处理中…</string>
+    <string name="status_moving_library">正在移动 %1$d / %2$d…</string>
+    <string name="status_active">活跃</string>
+    <string name="status_fallback">回退</string>
+    <string name="status_arcod_connected">已连接 — 正在保存并关闭。</string>
+    <string name="status_captcha_saved">已获取 — 正在保存并关闭。</string>
+    <string name="status_lastfm_not_configured">未配置</string>
+    <string name="status_lastfm_waiting">等待批准</string>
+    <string name="status_lastfm_connected">已连接为 %1$s</string>
+    <string name="status_lastfm_pending">正在记录播放历史。%1$d 条排队中。等待网络连接。</string>
+    <string name="status_lastfm_up_to_date">正在记录播放历史。全部已是最新。</string>
+
+    <!-- ===== Errors ===== -->
+    <string name="error_load_album">无法加载专辑</string>
+    <string name="error_load_artist">无法加载艺人</string>
+    <string name="error_search_failed">搜索失败</string>
+    <string name="error_move_library">无法移动曲库</string>
+    <string name="error_import_failed">导入失败</string>
+    <string name="error_lastfm_connect">无法连接</string>
+    <string name="error_no_working_token">无可用令牌 — 请粘贴新令牌</string>
+    <string name="error_signin_expired_group">登录已过期</string>
+    <string name="error_signin_expired_short">登录过期</string>
+    <string name="error_storage_unreachable_group">存储不可达</string>
+    <string name="error_storage_unreachable_short">存储错误</string>
+    <string name="error_network_errors_group">网络错误</string>
+    <string name="error_network_errors_short">网络错误</string>
+    <string name="error_source_unavailable_group">音源不可用</string>
+    <string name="error_source_unavailable_short">音源不可用</string>
+    <string name="error_encoding_errors_group">编码错误</string>
+    <string name="error_encoding_errors_short">编码错误</string>
+    <string name="error_other_errors_group">其他错误</string>
+    <string name="error_unknown_short">未知错误</string>
+
+    <!-- ===== Sections ===== -->
+    <string name="section_your_mixes">我的混音</string>
+    <string name="section_your_collection">我的收藏</string>
+    <string name="section_recently_added">最近添加</string>
+    <string name="section_playlists">播放列表</string>
+    <string name="section_spotify_mixes">Spotify 混音</string>
+    <string name="section_your_playlists">我的播放列表</string>
+    <string name="section_home_mixes">首页混音</string>
+    <string name="section_other_playlists">其他播放列表</string>
+    <string name="section_stash_mixes">Stash 混音（Beta）</string>
+    <string name="section_recent_searches">最近搜索</string>
+    <string name="section_more_by_artist">此艺人更多作品</string>
+    <string name="section_popular">热门</string>
+    <string name="section_albums">专辑</string>
+    <string name="section_singles_eps">单曲与 EP</string>
+    <string name="section_fans_also_like">乐迷也喜欢</string>
+    <string name="section_library_breakdown">曲库分布</string>
+    <string name="section_backfill_metadata">回填元数据</string>
+    <string name="section_quality_info">质量信息</string>
+
+    <!-- ===== Hints / Placeholders ===== -->
+    <string name="hint_search">搜索歌曲、艺人…</string>
+    <string name="hint_search_settings">搜索设置</string>
+    <string name="hint_paste_sp_dc_cookie">在此粘贴 sp_dc cookie</string>
+    <string name="hint_spotify_username">您的 Spotify 用户名</string>
+    <string name="hint_paste_cookie">在此粘贴 cookie</string>
+    <string name="hint_user_auth_token">user_auth_token</string>
+    <string name="hint_captcha_value">例如 1777687404951</string>
+
+    <!-- ===== Notifications (existing from core/media) ===== -->
+    <string name="notification_action_like">添加到喜欢的歌曲</string>
+    <string name="notification_action_unlike">从喜欢的歌曲中移除</string>
+    <string name="notification_action_repeat_off">关闭重复</string>
+    <string name="notification_action_repeat_all">全部重复</string>
+    <string name="notification_action_repeat_one">单曲重复</string>
+    <string name="notification_action_shuffle_on">开启随机播放</string>
+    <string name="notification_action_shuffle_off">关闭随机播放</string>
+    <string name="shuffle_play">随机播放</string>
+    <string name="resuming_channel_name">播放</string>
+    <string name="resuming_notification_title">正在恢复…</string>
+    <string name="resume_playback_short">恢复</string>
+    <string name="resume_playback_long">恢复播放</string>
+
+    <!-- ===== Prompts ===== -->
+    <string name="prompt_try_lossless">试试无损音频</string>
+
+    <!-- ===== Bottom Navigation ===== -->
+    <string name="nav_home">首页</string>
+    <string name="nav_library">曲库</string>
+    <string name="nav_search">搜索</string>
+    <string name="nav_sync">同步</string>
+    <string name="nav_settings">设置</string>
+
+    <!-- ===== Playback Modes ===== -->
+    <string name="mode_online">在线</string>
+    <string name="mode_offline">离线</string>
+
+    <!-- ===== Sort / Filter Labels ===== -->
+    <string name="sort_recently_added">最近添加</string>
+    <string name="sort_alphabetical">A–Z</string>
+    <string name="sort_most_played">最多播放</string>
+    <string name="filter_all">全部</string>
+    <string name="filter_youtube">YouTube</string>
+    <string name="filter_spotify">Spotify</string>
+    <string name="filter_flac">FLAC</string>
+    <string name="filter_local">本地</string>
+
+    <!-- ===== Library Tabs ===== -->
+    <string name="tab_playlists">播放列表</string>
+    <string name="tab_tracks">曲目</string>
+    <string name="tab_artists">艺人</string>
+    <string name="tab_albums">专辑</string>
+
+    <!-- ===== Connection / Sync States ===== -->
+    <string name="status_never_synced">从未同步</string>
+    <string name="status_no_services_connected">未连接服务</string>
+    <string name="status_ready_to_sync">准备同步</string>
+    <string name="status_syncing">同步中…</string>
+    <string name="status_synced">已同步</string>
+    <string name="status_sync_failed">同步失败</string>
+    <string name="status_sync_interrupted">已中断</string>
+    <string name="status_sync_interrupted_count">已中断 — 已保存 %1$d 首</string>
+    <string name="status_partial_sync">部分同步 — 已保存 %1$d 首，%2$d 首失败</string>
+    <string name="status_connected">已连接</string>
+    <string name="status_disconnected">已断开</string>
+    <string name="status_not_connected">未连接</string>
+    <string name="status_nothing_to_sync">无内容可同步</string>
+    <string name="status_checking_updates">正在检查更新…</string>
+    <string name="status_no_crash_report">没有可分享的崩溃报告。</string>
+    <string name="status_no_app_available">没有可用的应用来分享报告。</string>
+
+    <!-- ===== Section Headers ===== -->
+    <string name="section_sources">来源</string>
+    <string name="section_schedule">计划</string>
+    <string name="section_library">曲库</string>
+    <string name="section_recent_syncs">最近同步</string>
+    <string name="section_diagnostics">诊断</string>
+    <string name="section_about">关于</string>
+    <string name="section_connections">连接</string>
+    <string name="section_theme">主题</string>
+    <string name="section_audio_quality">音频质量</string>
+    <string name="section_lossless">无损</string>
+    <string name="section_streaming">在线播放</string>
+    <string name="section_effects">音效</string>
+    <string name="section_mode">模式</string>
+    <string name="section_downloads">下载</string>
+    <string name="section_storage">存储</string>
+    <string name="section_5band_eq">5 段均衡器</string>
+    <string name="section_bass_boost">低音增强</string>
+    <string name="section_loudness_normalization">响度归一化</string>
+    <string name="section_preamp">前置放大</string>
+    <string name="section_songs">歌曲</string>
+    <string name="section_artists">艺人</string>
+
+    <!-- ===== Mix Builder ===== -->
+    <string name="label_moods">情绪</string>
+    <string name="label_genres">流派</string>
+    <string name="label_era_optional">年代 · 可选</string>
+    <string name="label_discovery_level">发现程度</string>
+    <string name="label_untitled_mix">未命名混音</string>
+    <string name="label_no_ingredients">尚无内容</string>
+    <string name="label_any_era">任意年代</string>
+    <string name="title_edit_mix">编辑混音</string>
+    <string name="title_create_mix">创建混音</string>
+    <string name="action_create_mix_btn">创建混音</string>
+
+    <!-- ===== Save / Like ===== -->
+    <string name="action_save_to">保存到…</string>
+    <string name="action_save_btn">保存</string>
+    <string name="action_create_btn">创建</string>
+    <string name="action_retry">重试</string>
+    <string name="action_confirm">确认</string>
+    <string name="action_share">分享</string>
+    <string name="action_copy">复制</string>
+    <string name="action_set">设置</string>
+    <string name="action_disconnect">断开连接</string>
+    <string name="action_refresh">刷新</string>
+    <string name="action_scan_files">扫描文件</string>
+    <string name="action_retry_scan">重新扫描</string>
+    <string name="action_retry_all">全部重试</string>
+    <string name="action_check_updates">检查更新</string>
+    <string name="action_export_backup">导出备份</string>
+    <string name="action_overwrite">覆盖</string>
+    <string name="action_change_image">更换图片</string>
+    <string name="action_add_image">添加图片</string>
+    <string name="action_clear_all">清除全部</string>
+    <string name="action_paste_cookie_instead">改为粘贴 Cookie</string>
+    <string name="action_sync_scrobbles_now">立即同步播放记录</string>
+    <string name="action_download_tracks">下载曲目到设备</string>
+    <string name="action_surface_streaming">准备曲库以在线播放</string>
+
+    <!-- ===== Selection Actions ===== -->
+    <string name="selection_queue">队列</string>
+    <string name="selection_playlist">播放列表</string>
+    <string name="selection_download">下载</string>
+    <string name="selection_delete">删除</string>
+    <string name="selection_share">分享</string>
+    <string name="selection_more">更多</string>
+    <string name="selection_select_all">全选</string>
+    <string name="selection_add_to_playlist">添加到播放列表</string>
+    <string name="selection_remove_download">移除下载</string>
+    <string name="selection_play_next">下一首播放</string>
+    <string name="selection_exit">退出选择</string>
+
+    <!-- ===== Player Controls ===== -->
+    <string name="cd_play">播放</string>
+    <string name="cd_pause">暂停</string>
+    <string name="cd_skip">跳过</string>
+    <string name="cd_now_playing">正在播放</string>
+    <string name="cd_more_options">更多选项</string>
+    <string name="cd_like">喜欢</string>
+    <string name="cd_unlike">取消喜欢</string>
+    <string name="cd_retry">重试</string>
+    <string name="cd_collapse">收起</string>
+    <string name="cd_expand">展开</string>
+    <string name="cd_block">屏蔽</string>
+    <string name="cd_stash_logo">Stash 标志</string>
+
+    <!-- ===== Like Destinations ===== -->
+    <string name="like_dest_stash">Stash 喜欢的歌曲</string>
+    <string name="like_dest_spotify">Spotify 喜欢的歌曲</string>
+    <string name="like_dest_youtube">YouTube Music 喜欢的音乐</string>
+
+    <!-- ===== Playlist ===== -->
+    <string name="title_save_to_playlist">保存到播放列表</string>
+    <string name="action_create_new_playlist">新建播放列表</string>
+    <string name="title_create_playlist_dialog">创建播放列表</string>
+    <string name="hint_playlist_name">播放列表名称</string>
+    <string name="hint_preset_name">预设名称</string>
+    <string name="hint_filter_playlists">筛选播放列表…</string>
+    <string name="hint_filter_tracks">筛选曲目…</string>
+
+    <!-- ===== Flac Badge ===== -->
+    <string name="badge_flac">FLAC</string>
+    <string name="badge_flac_format">FLAC %1$d/%2$d</string>
+
+    <!-- ===== Search ===== -->
+    <string name="label_artist_type">艺人</string>
+    <string name="label_song_type">歌曲</string>
+    <string name="label_album_type">专辑</string>
+
+    <!-- ===== Quality Tiers ===== -->
+    <string name="quality_max">最高</string>
+    <string name="quality_best">最佳</string>
+    <string name="quality_high">高</string>
+    <string name="quality_normal">标准</string>
+    <string name="quality_low">低</string>
+    <string name="quality_cd">CD (16-bit/44.1 kHz)</string>
+    <string name="quality_hires">Hi-Res (24-bit/96 kHz)</string>
+    <string name="quality_max_bit">Max (24-bit/192 kHz)</string>
+
+    <!-- ===== EQ Presets ===== -->
+    <string name="eq_flat">平坦</string>
+    <string name="eq_bass_boost">低音增强</string>
+    <string name="eq_treble_boost">高音增强</string>
+    <string name="eq_vocal">人声</string>
+    <string name="eq_rock">摇滚</string>
+    <string name="eq_pop">流行</string>
+    <string name="eq_jazz">爵士</string>
+    <string name="eq_classical">古典</string>
+
+    <!-- ===== Download Network ===== -->
+    <string name="network_wifi_charging">Wi-Fi + 充电</string>
+    <string name="network_wifi_anytime">仅 Wi-Fi</string>
+    <string name="network_any">任意网络</string>
+    <string name="network_wifi_charging_desc">最保守。仅在 Wi-Fi 且充电时下载。</string>
+    <string name="network_wifi_anytime_desc">通过 Wi-Fi 下载，无需充电。</string>
+    <string name="network_any_desc">也通过移动数据下载。会消耗流量。</string>
+
+    <!-- ===== Sync Phases ===== -->
+    <string name="sync_phase_authenticating">认证中…</string>
+    <string name="sync_phase_fetching">获取播放列表…</string>
+    <string name="sync_phase_diffing">比较变更…</string>
+    <string name="sync_phase_downloading">下载中 %1$s/%2$s…</string>
+    <string name="sync_phase_finalizing">完成中…</string>
+    <string name="sync_phase_complete">完成</string>
+    <string name="sync_phase_error">错误</string>
+
+    <!-- ===== Sync Misc ===== -->
+    <string name="label_auto_sync">自动同步</string>
+    <string name="label_daily">每天</string>
+    <string name="label_weekdays">工作日</string>
+    <string name="label_weekends">周末</string>
+    <string name="label_wifi_only">仅 Wi-Fi</string>
+    <string name="label_any_network">任意网络</string>
+    <string name="label_am">上午</string>
+    <string name="label_pm">下午</string>
+    <string name="label_refresh">刷新</string>
+    <string name="label_accumulate">累积</string>
+    <string name="desc_mix_refresh">每次同步更新为新曲目</string>
+    <string name="desc_mix_accumulate">新曲目叠加在旧曲目之上</string>
+    <string name="label_failed_downloads_header">%1$d 首曲目下载失败。</string>
+    <string name="label_blocked_count">%1$d 首歌曲将永远不会重新下载</string>
+    <string name="label_searching_resync">搜索中 %1$s…</string>
+    <string name="action_approve_all">全部批准 (%1$d)</string>
+    <string name="action_dismiss_all">全部关闭</string>
+    <string name="label_resync">重新同步</string>
+
+    <!-- ===== Failed Matches Tabs ===== -->
+    <string name="tab_songs_to_review">待审核歌曲</string>
+    <string name="tab_flagged_songs">已标记歌曲</string>
+    <string name="tab_unmatched_songs">未匹配歌曲</string>
+
+    <!-- ===== Auth Expired ===== -->
+    <string name="auth_signins_expired">登录已过期</string>
+    <string name="auth_signins_expired_desc">Spotify 和 YouTube 都需要重新登录才能恢复同步。</string>
+    <string name="auth_spotify_expired">Spotify 会话已过期</string>
+    <string name="auth_spotify_expired_desc">重新认证以在同步中包含您的 Spotify 曲库。</string>
+    <string name="auth_youtube_expired">YouTube 会话已过期</string>
+    <string name="auth_youtube_expired_desc">重新认证以在同步中包含您的 YouTube 曲库。</string>
+
+    <!-- ===== Sign In ===== -->
+    <string name="title_sign_in_spotify">登录 Spotify</string>
+    <string name="title_sign_in_youtube">登录 YouTube Music</string>
+
+    <!-- ===== Discover Error ===== -->
+    <string name="error_something_wrong">出了点问题</string>
+    <string name="error_diagnostics_failed">无法生成诊断信息</string>
+
+    <!-- ===== Loudness ===== -->
+    <string name="loudness_toast_on">响度归一化已开启。曲目音量将更加一致。</string>
+
+    <!-- ===== Library Empty States ===== -->
+    <string name="label_empty_playlists_synced">同步播放列表后即可在此查看</string>
+    <string name="label_empty_playlists_no_service">在设置中连接服务以查看播放列表</string>
+    <string name="label_empty_artists_synced">同步曲库后即可在此查看艺人</string>
+    <string name="label_empty_artists_no_service">在设置中连接服务以查看艺人</string>
+    <string name="label_empty_albums_synced">同步曲库后即可在此查看专辑</string>
+    <string name="label_empty_albums_no_service">在设置中连接服务以查看专辑</string>
+    <string name="label_hide_single_track">隐藏单曲专辑</string>
+    <string name="label_single_track_count">%1$d 张仅含 1 首曲目的专辑</string>
+
+    <!-- ===== Misc ===== -->
+    <string name="label_not_playing">未播放</string>
+    <string name="label_instrumental">♪ 纯音乐</string>
+    <string name="label_via_yt">来自 YT</string>
+    <string name="label_external_folder">外部文件夹</string>
+    <string name="label_internal_storage">内部存储 (应用私有)</string>
+    <string name="label_no_recent_crashes">最近无崩溃。</string>
+    <string name="label_crash_report_subject">Stash 崩溃报告</string>
+    <string name="label_share_crash_report_title">分享崩溃报告</string>
+    <string name="label_diagnostics_subject">Stash 诊断信息</string>
+    <string name="label_share_diagnostics_title">分享诊断信息</string>
+    <string name="label_clipboard_yt_code">YouTube 验证码</string>
+    <string name="partner_support_kofi">在 Ko-fi 上支持</string>
+    <string name="partner_discord">Discord</string>
+    <string name="label_cellular_on">移动数据已开启</string>
+    <string name="label_cellular_off">移动数据已关闭</string>
+    <string name="label_unit_tracks">首曲目</string>
+    <string name="label_unit_track">首曲目</string>
+    <string name="label_version_format">v%1$s</string>
+</resources>

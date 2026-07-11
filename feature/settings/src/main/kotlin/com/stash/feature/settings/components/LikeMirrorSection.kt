@@ -13,10 +13,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 
 /**
  * v0.9.52 "Sync your likes" (Beta): per-service opt-in for mirroring
@@ -44,7 +46,7 @@ fun LikeMirrorSection(
     Column(modifier = modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Sync your likes",
+                text = stringResource(R.string.label_sync_likes),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -53,21 +55,21 @@ fun LikeMirrorSection(
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-            text = "Mirror hearts to your accounts. Applies to new likes only.",
+            text = stringResource(R.string.desc_like_mirror),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(8.dp))
 
         MirrorToggleRow(
-            label = "Spotify",
+            label = stringResource(R.string.label_spotify),
             connected = spotifyConnected,
             enabled = spotifyEnabled,
             connectHint = "Connect Spotify first",
             onToggle = onSpotifyToggle,
         )
         MirrorToggleRow(
-            label = "YouTube Music",
+            label = stringResource(R.string.label_youtube_music),
             connected = ytConnected,
             enabled = ytMusicEnabled,
             connectHint = "Connect YouTube Music first",

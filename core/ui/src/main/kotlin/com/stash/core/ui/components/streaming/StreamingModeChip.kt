@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stash.core.common.constants.StashConstants
@@ -73,7 +74,7 @@ fun StreamingModeChip(
             modifier = Modifier.size(14.dp),
         )
         Text(
-            text = if (streamingEnabled) "Online" else "Offline",
+            text = if (streamingEnabled) stringResource(com.stash.core.ui.R.string.mode_online) else stringResource(com.stash.core.ui.R.string.mode_offline),
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface,
         )

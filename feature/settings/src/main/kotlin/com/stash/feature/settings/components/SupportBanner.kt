@@ -25,7 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashCyan
 import com.stash.core.ui.theme.StashPurple
 import com.stash.core.ui.theme.StashPurpleLight
@@ -61,12 +63,12 @@ fun SupportBanner(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = "Support Stash",
+            text = stringResource(R.string.title_support_stash),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            text = "If Stash replaced a subscription for you, consider supporting the project.",
+            text = stringResource(R.string.desc_support_stash),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -87,7 +89,7 @@ fun SupportBanner(
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "Donate", style = MaterialTheme.typography.labelMedium)
+                Text(text = stringResource(R.string.action_donate), style = MaterialTheme.typography.labelMedium)
             }
             OutlinedButton(
                 onClick = onStar,
@@ -102,7 +104,7 @@ fun SupportBanner(
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "Star", style = MaterialTheme.typography.labelMedium)
+                Text(text = stringResource(R.string.action_star), style = MaterialTheme.typography.labelMedium)
             }
         }
     }

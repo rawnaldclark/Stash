@@ -53,6 +53,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
+import com.stash.core.ui.R
 import java.util.Collections
 import kotlin.math.roundToInt
 
@@ -117,7 +119,7 @@ fun QueueBottomSheet(
 
             if (localQueue.isNotEmpty()) {
                 Text(
-                    text = "Up Next",
+                    text = stringResource(R.string.title_up_next),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 8.dp),
@@ -311,7 +313,7 @@ fun QueueBottomSheet(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.DragHandle,
-                                    contentDescription = "Drag to reorder",
+                                    contentDescription = stringResource(R.string.cd_drag_to_reorder),
                                     tint = if (isDragging) MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                                     modifier = Modifier.size(24.dp),
@@ -332,7 +334,7 @@ fun QueueBottomSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "No upcoming tracks",
+                        text = stringResource(R.string.label_no_upcoming_tracks),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -355,7 +357,7 @@ private fun QueueHeader(trackCount: Int, currentIndex: Int, onClose: () -> Unit)
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.cd_queue), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             if (trackCount > 0) {
                 Text(
                     "${currentIndex + 1} of $trackCount tracks",
@@ -370,7 +372,7 @@ private fun QueueHeader(trackCount: Int, currentIndex: Int, onClose: () -> Unit)
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
         )
         IconButton(onClick = onClose) {
-            Icon(Icons.Default.Close, "Close", Modifier.size(24.dp))
+            Icon(Icons.Default.Close, stringResource(R.string.cd_close), Modifier.size(24.dp))
         }
     }
 }
@@ -413,7 +415,7 @@ private fun CurrentTrackRow(track: Track, accentColor: Color) {
             )
         }
         Spacer(Modifier.width(8.dp))
-        Icon(Icons.Default.GraphicEq, "Now playing", tint = accentColor, modifier = Modifier.size(20.dp))
+        Icon(Icons.Default.GraphicEq, stringResource(R.string.cd_now_playing), tint = accentColor, modifier = Modifier.size(20.dp))
     }
 }
 

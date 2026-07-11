@@ -56,10 +56,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
 import com.stash.core.data.db.dao.UnmatchedTrackView
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.R
 
 /**
  * Screen displaying tracks that could not be matched on YouTube during sync.
@@ -120,7 +122,7 @@ fun FailedMatchesScreen(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.cd_back),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
@@ -142,7 +144,7 @@ fun FailedMatchesScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "All caught up!",
+                        text = stringResource(R.string.label_all_caught_up),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onBackground,
@@ -151,7 +153,7 @@ fun FailedMatchesScreen(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
-                        text = "No unmatched songs.",
+                        text = stringResource(R.string.label_no_unmatched_songs),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -225,14 +227,14 @@ fun FailedMatchesScreen(
                             Spacer(modifier = Modifier.height(16.dp))
                             Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                                 Text(
-                                    text = "You flagged these as wrong",
+                                    text = stringResource(R.string.label_flagged_wrong),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onBackground,
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Tap resync above to find replacements, then approve to swap.",
+                                    text = stringResource(R.string.desc_tap_resync),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -289,14 +291,14 @@ fun FailedMatchesScreen(
             onDismissRequest = { trackToDismiss = null },
             title = {
                 Text(
-                    text = "Stop retrying this song?",
+                    text = stringResource(R.string.dialog_title_stop_retrying),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
             },
             text = {
                 Text(
-                    text = "'${track.artist} \u2014 ${track.title}' won't be downloaded during future syncs. You can find it manually using Search.",
+                    text = stringResource(R.string.dialog_body_stop_retrying, "${track.artist} \u2014 ${track.title}"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -308,12 +310,12 @@ fun FailedMatchesScreen(
                         trackToDismiss = null
                     },
                 ) {
-                    Text("Confirm")
+                    Text(stringResource(R.string.action_confirm))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { trackToDismiss = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
             containerColor = extendedColors.elevatedSurface,
@@ -360,7 +362,7 @@ private fun FailedMatchesHeader(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.cd_back),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -584,7 +586,7 @@ private fun UnmatchedTrackRow(
                 )
             } else if (resyncAttempted) {
                 Text(
-                    text = "No match found",
+                    text = stringResource(R.string.label_no_match_found),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     maxLines = 1,
@@ -607,12 +609,12 @@ private fun UnmatchedTrackRow(
                     )
                     isPreviewPlaying -> Icon(
                         imageVector = Icons.Default.Stop,
-                        contentDescription = "Stop preview",
+                        contentDescription = stringResource(R.string.cd_stop_preview),
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     else -> Icon(
                         imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Preview match",
+                        contentDescription = stringResource(R.string.cd_preview_match),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -627,7 +629,7 @@ private fun UnmatchedTrackRow(
             ) {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = "Approve match",
+                    contentDescription = stringResource(R.string.cd_approve_match),
                     tint = Color(0xFF4CAF50),
                 )
             }
@@ -640,7 +642,7 @@ private fun UnmatchedTrackRow(
         ) {
             Icon(
                 imageVector = Icons.Default.Close,
-                contentDescription = "Dismiss",
+                contentDescription = stringResource(R.string.cd_dismiss),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -727,14 +729,14 @@ private fun FlaggedTrackListItem(
                 )
             } else if (resyncAttempted) {
                 Text(
-                    text = "No replacement found",
+                    text = stringResource(R.string.label_no_replacement),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     maxLines = 1,
                 )
             } else {
                 Text(
-                    text = "Tap Resync to find replacements",
+                    text = stringResource(R.string.desc_tap_resync_replacements),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     maxLines = 1,
@@ -756,12 +758,12 @@ private fun FlaggedTrackListItem(
                     )
                     isPreviewPlaying -> Icon(
                         imageVector = Icons.Default.Stop,
-                        contentDescription = "Stop preview",
+                        contentDescription = stringResource(R.string.cd_stop_preview),
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     else -> Icon(
                         imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Preview replacement",
+                        contentDescription = stringResource(R.string.cd_preview_replacement),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -775,7 +777,7 @@ private fun FlaggedTrackListItem(
             ) {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = "Swap to this match",
+                    contentDescription = stringResource(R.string.cd_swap_match),
                     tint = Color(0xFF4CAF50),
                 )
             }
@@ -787,7 +789,7 @@ private fun FlaggedTrackListItem(
         ) {
             Icon(
                 imageVector = Icons.Default.Close,
-                contentDescription = "Unflag (keep current match)",
+                contentDescription = stringResource(R.string.cd_unflag_match),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

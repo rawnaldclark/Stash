@@ -34,7 +34,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.R
 
 /**
  * Gradient-tinted hero card carrying last-sync metadata + the Sync Now button.
@@ -97,14 +99,14 @@ fun SyncHeroCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "LAST SYNC",
+                        text = stringResource(R.string.label_last_sync),
                         style = MaterialTheme.typography.labelSmall,
                         color = StashTheme.extendedColors.purpleLight,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Spacer(Modifier.height(2.dp))
                     val body = when {
-                        lastSyncTrackCount == null -> "Never synced"
+                        lastSyncTrackCount == null -> stringResource(R.string.status_never_synced)
                         else -> "$lastSyncRelativeTime · $lastSyncTrackCount tracks"
                     }
                     Text(
@@ -141,7 +143,7 @@ fun SyncHeroCard(
                             modifier = Modifier.size(16.dp),
                         )
                     },
-                    label = { Text("Online") },
+                    label = { Text(stringResource(R.string.mode_online)) },
                 )
                 SegmentedButton(
                     selected = !streamingMode,
@@ -155,7 +157,7 @@ fun SyncHeroCard(
                             modifier = Modifier.size(16.dp),
                         )
                     },
-                    label = { Text("Offline") },
+                    label = { Text(stringResource(R.string.mode_offline)) },
                 )
             }
 
@@ -176,7 +178,7 @@ fun SyncHeroCard(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = if (streamingMode) "Surface Library for Streaming" else "Download Tracks to Device",
+                        text = if (streamingMode) stringResource(R.string.action_surface_streaming) else stringResource(R.string.action_download_tracks),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,

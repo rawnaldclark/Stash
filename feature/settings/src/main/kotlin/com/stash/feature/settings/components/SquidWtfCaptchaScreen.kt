@@ -30,8 +30,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.stash.core.ui.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -69,6 +71,7 @@ fun SquidWtfCaptchaScreen(
         )
     }
     var captured by remember { mutableStateOf(false) }
+    val captchaSavedText = stringResource(R.string.status_captcha_saved)
 
     // ── Cookie polling ──────────────────────────────────────────────────
     // Cheap in-process read, no network. Stops as soon as the cookie
@@ -80,7 +83,7 @@ fun SquidWtfCaptchaScreen(
             val match = COOKIE_REGEX.find(cookies.orEmpty())
             if (match != null) {
                 captured = true
-                statusText = "Got it — saving and closing."
+                statusText = captchaSavedText
                 onCookieCaptured(match.groupValues[1])
                 // Slight delay so the user sees the success text flash
                 // by before the route pops.
@@ -135,13 +138,13 @@ fun SquidWtfCaptchaScreen(
             IconButton(onClick = onClose) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = "Close",
+                    contentDescription = stringResource(R.string.cd_close),
                     tint = MaterialTheme.colorScheme.onBackground,
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Verify squid.wtf captcha",
+                    text = stringResource(R.string.title_verify_captcha),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                 )

@@ -13,9 +13,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.common.constants.StashConstants
+import com.stash.core.ui.R
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsRowPadH
 import com.stash.feature.settings.components.SettingsRowPadV
@@ -47,30 +49,30 @@ fun SettingsPlaybackScreen(
     val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsStateWithLifecycle()
     val crossfadeDurationMs by viewModel.crossfadeDurationMs.collectAsStateWithLifecycle()
 
-    SettingsScaffold(title = "Playback", onBack = onBack, modifier = modifier) {
+    SettingsScaffold(title = stringResource(R.string.title_playback), onBack = onBack, modifier = modifier) {
         if (StashConstants.STREAMING_ENGINE_ENABLED) {
-            SettingsSectionLabel("Mode")
+            SettingsSectionLabel(stringResource(R.string.section_mode))
             SettingsSegmented(
-                options = listOf("Online", "Offline"),
+                options = listOf(stringResource(R.string.mode_online), stringResource(R.string.mode_offline)),
                 selectedIndex = if (streamingEnabled) 0 else 1,
                 onSelect = { viewModel.onStreamingToggle(it == 0) },
             )
 
-            SettingsSectionLabel("Streaming")
+            SettingsSectionLabel(stringResource(R.string.section_streaming))
             SettingsGroupCard(
                 rows = listOf(
                     {
                         SettingsToggleRow(
-                            title = "Stream on cellular",
-                            subtitle = "Allow streaming over mobile data (5G / LTE). Off by default to avoid surprise data use.",
+                            title = stringResource(R.string.label_stream_cellular),
+                            subtitle = stringResource(R.string.desc_stream_cellular),
                             checked = streamOnCellular,
                             onCheckedChange = viewModel::onStreamOnCellularToggle,
                         )
                     },
                     {
                         SettingsToggleRow(
-                            title = "Stream via YouTube",
-                            subtitle = "Skip the lossless sources (Qobuz) and stream everything via YouTube. Turn this on if lossless playback is down or only playing short clips.",
+                            title = stringResource(R.string.label_stream_youtube),
+                            subtitle = stringResource(R.string.desc_stream_youtube),
                             checked = forceYouTubeFallback,
                             onCheckedChange = viewModel::setForceYouTubeFallback,
                         )
@@ -81,16 +83,16 @@ fun SettingsPlaybackScreen(
                     // onCheckedChange = viewModel::setForceArcodOnly) to re-enable.
                     {
                         SettingsToggleRow(
-                            title = "Stream via amz (test)",
-                            subtitle = "Route streaming AND downloads through amz (Amazon Music) only — no Qobuz, no YouTube. For testing the amz source. Turn off after testing.",
+                            title = stringResource(R.string.label_stream_amz),
+                            subtitle = stringResource(R.string.desc_stream_amz),
                             checked = forceAmzOnly,
                             onCheckedChange = viewModel::setForceAmzOnly,
                         )
                     },
                     {
                         SettingsToggleRow(
-                            title = "Force Direct Qobuz only (test)",
-                            subtitle = "Route streaming AND downloads through Direct Qobuz only — no other sources, no YouTube. For testing the Direct Qobuz source. Turn off after testing.",
+                            title = stringResource(R.string.label_force_qobuz),
+                            subtitle = stringResource(R.string.desc_force_qobuz),
                             checked = forceQbdlxOnly,
                             onCheckedChange = viewModel::setForceQbdlxOnly,
                         )
@@ -99,7 +101,7 @@ fun SettingsPlaybackScreen(
             )
         } else {
             Text(
-                text = "Streaming is unavailable in this build.",
+                text = stringResource(R.string.label_streaming_unavailable),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -107,13 +109,13 @@ fun SettingsPlaybackScreen(
 
         // Crossfade applies to both streamed and downloaded tracks, so it sits
         // outside the streaming-engine gate.
-        SettingsSectionLabel("Crossfade")
+        SettingsSectionLabel(stringResource(R.string.label_crossfade))
         SettingsGroupCard(
             rows = buildList {
                 add {
                     SettingsToggleRow(
-                        title = "Crossfade",
-                        subtitle = "Fade the ending track into the next on auto-advance. Manual skips still cut instantly.",
+                        title = stringResource(R.string.label_crossfade),
+                        subtitle = stringResource(R.string.desc_crossfade),
                         checked = crossfadeEnabled,
                         onCheckedChange = viewModel::onCrossfadeToggle,
                     )
@@ -152,7 +154,7 @@ private fun CrossfadeDurationRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Duration",
+                text = stringResource(R.string.label_duration),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )

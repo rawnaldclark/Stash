@@ -26,8 +26,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.R
 
 /**
  * View-layer row model used by [RecentSyncsCard]. Decouples the card from
@@ -114,7 +116,7 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
             Spacer(Modifier.height(4.dp))
             if (!row.errorMessage.isNullOrBlank()) {
                 Text(
-                    text = "Error: ${row.errorMessage}",
+                    text = stringResource(R.string.label_error_prefix, row.errorMessage),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -122,7 +124,7 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
             }
             if (!row.diagnostics.isNullOrBlank()) {
                 Text(
-                    text = "Diagnostics:",
+                    text = stringResource(R.string.label_diagnostics),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.SemiBold,
@@ -137,7 +139,7 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
             }
             if (row.errorMessage.isNullOrBlank() && row.diagnostics.isNullOrBlank()) {
                 Text(
-                    text = "No additional details available",
+                    text = stringResource(R.string.label_no_details),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 
 /**
  * v0.9.52: explicit opt-in ack before enabling like-mirroring for a
@@ -22,24 +24,18 @@ fun LikeMirrorWarningDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Mirror likes to $serviceName?") },
+        title = { Text(stringResource(R.string.dialog_title_mirror_likes, serviceName)) },
         text = {
             Text(
-                "Hearting a track in Stash will also Like it on $serviceName, " +
-                    "and removing a heart will remove the Like there too. " +
-                    "Only likes you add from now on are mirrored.\n\n" +
-                    "This uses the same private endpoint the $serviceName web player " +
-                    "uses — not an official API. It can stop working at any time and, " +
-                    "rarely, unofficial access can get an account flagged. Consider " +
-                    "enabling this only on a secondary or backup account.",
+                stringResource(R.string.dialog_body_mirror_likes, serviceName),
                 style = MaterialTheme.typography.bodyMedium,
             )
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text("I understand") }
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.action_i_understand)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
     )
 }

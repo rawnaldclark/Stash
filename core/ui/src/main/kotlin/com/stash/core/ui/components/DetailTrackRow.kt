@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.ui.util.formatDuration
 
@@ -200,7 +202,7 @@ fun DetailTrackRow(
             IconButton(onClick = onMoreClick, modifier = Modifier.size(32.dp)) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
-                    contentDescription = "More options",
+                    contentDescription = stringResource(R.string.cd_more_options),
                     tint = extendedColors.textTertiary,
                     modifier = Modifier.size(18.dp),
                 )

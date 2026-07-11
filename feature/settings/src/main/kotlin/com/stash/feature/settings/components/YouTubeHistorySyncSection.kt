@@ -20,11 +20,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.stash.core.data.youtube.YouTubeScrobblerHealth
+import com.stash.core.ui.R
 
 /**
  * Settings row that exposes the YouTube Music history sync toggle.
@@ -87,7 +89,7 @@ fun YouTubeHistorySyncSection(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Send plays to YouTube Music",
+                    text = stringResource(R.string.label_send_plays_yt),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (ytConnected) {
                         MaterialTheme.colorScheme.onSurface
@@ -98,7 +100,7 @@ fun YouTubeHistorySyncSection(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = if (!ytConnected) {
-                        "Connect YouTube Music first"
+                        stringResource(R.string.label_connect_yt_first)
                     } else {
                         statusLine(health, pendingCount)
                     },
@@ -131,7 +133,7 @@ fun YouTubeHistorySyncSection(
                 modifier = Modifier.padding(top = 2.dp),
             ) {
                 Text(
-                    text = "Retry YouTube sync",
+                    text = stringResource(R.string.action_retry_yt_sync),
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
@@ -168,7 +170,7 @@ private fun FirstEnableConfirmDialog(
         shape = MaterialTheme.shapes.large,
         title = {
             Text(
-                text = "Send your Stash plays to YouTube Music?",
+                text = stringResource(R.string.dialog_title_yt_history),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -176,31 +178,31 @@ private fun FirstEnableConfirmDialog(
         text = {
             Column {
                 Text(
-                    text = "Every track you finish listening to in Stash will be added to your YouTube Music Watch History. Your Daily Mix and other YouTube Music recommendations will learn from your Stash listening.",
+                    text = stringResource(R.string.dialog_body_yt_history),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "How it works",
+                    text = stringResource(R.string.label_how_it_works),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Stash uses an unofficial YouTube endpoint (the same one the YouTube Music app uses). Google tolerates this pattern for personal-use apps but could change the rules without notice. If that happens, Stash will automatically stop sending plays until a new update fixes the integration.",
+                    text = stringResource(R.string.desc_yt_history_how),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Risk",
+                    text = stringResource(R.string.label_risk),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Rare but not zero chance of YouTube rate-limiting your account. Stash monitors for errors and pauses itself if it sees problems.",
+                    text = stringResource(R.string.desc_yt_history_risk),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -208,12 +210,12 @@ private fun FirstEnableConfirmDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Enable")
+                Text(stringResource(R.string.action_enable))
             }
         },
     )

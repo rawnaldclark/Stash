@@ -31,11 +31,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.DownloadNetworkMode
+import com.stash.core.ui.R
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.components.SettingsGroupCard
@@ -76,7 +78,7 @@ fun SettingsLibraryStorageScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
-    SettingsScaffold(title = "Library & Storage", onBack = onBack, modifier = modifier) {
+    SettingsScaffold(title = stringResource(R.string.title_library_storage), onBack = onBack, modifier = modifier) {
         val context = LocalContext.current
         val contentResolver = context.contentResolver
         // Tracks what action the user intended when they tapped the folder
@@ -119,7 +121,7 @@ fun SettingsLibraryStorageScreen(
         ) { uri -> if (uri != null) viewModel.onImportDatabase(uri) }
 
         // -- Downloads --------------------------------------------------------
-        SettingsSectionLabel("Downloads")
+        SettingsSectionLabel(stringResource(R.string.section_downloads))
 
         GlassCard {
             Column(
@@ -128,7 +130,7 @@ fun SettingsLibraryStorageScreen(
                     .selectableGroup(),
             ) {
                 Text(
-                    text = "Run recommendations when",
+                    text = stringResource(R.string.label_run_recommendations),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -176,7 +178,7 @@ fun SettingsLibraryStorageScreen(
             rows = listOf(
                 {
                     SettingsToggleRow(
-                        title = "Stash Mixes (beta)",
+                        title = stringResource(R.string.label_stash_mixes_beta),
                         subtitle = if (uiState.stashMixesEnabled) {
                             "Daily Discover, Deep Cuts, and First Listen mixes auto-refresh in the background."
                         } else {
@@ -190,12 +192,12 @@ fun SettingsLibraryStorageScreen(
         )
 
         // -- Library Health ---------------------------------------------------
-        SettingsSectionLabel("Library")
+        SettingsSectionLabel(stringResource(R.string.section_library))
         SettingsGroupCard(
             rows = listOf(
                 {
                     SettingsNavRow(
-                        title = "Library Health",
+                        title = stringResource(R.string.label_library_health),
                         onClick = onNavigateToLibraryHealth,
                     )
                 },
@@ -203,7 +205,7 @@ fun SettingsLibraryStorageScreen(
         )
 
         // -- Storage ----------------------------------------------------------
-        SettingsSectionLabel("Storage")
+        SettingsSectionLabel(stringResource(R.string.section_storage))
 
         val externalTree = uiState.externalTreeUri
         // Derive a human-readable folder name from the tree URI without
@@ -211,13 +213,14 @@ fun SettingsLibraryStorageScreen(
         // `content://com.android.externalstorage.documents/tree/primary%3AMusic%2FStash`
         // — after decoding, the last path segment after the colon is the
         // visible folder.
-        val externalFolderName = remember(externalTree) {
+        val externalFolderLabel = stringResource(R.string.label_external_folder)
+        val externalFolderName = remember(externalTree, externalFolderLabel) {
             externalTree?.lastPathSegment
                 ?.substringAfterLast(':', "")
                 ?.substringAfterLast('/', "")
                 ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
                 ?.takeIf { it.isNotBlank() }
-                ?: externalTree?.let { "External folder" }
+                ?: externalTree?.let { externalFolderLabel }
                 ?: ""
         }
         val internalPath = remember(context) {
@@ -238,10 +241,10 @@ fun SettingsLibraryStorageScreen(
                 title = {
                     Text(
                         text = when (databaseBackupState) {
-                            DatabaseBackupState.Exporting -> "Exporting Database"
-                            DatabaseBackupState.Importing -> "Importing Database"
-                            is DatabaseBackupState.Success -> "Success"
-                            is DatabaseBackupState.Error -> "Error"
+                            DatabaseBackupState.Exporting -> stringResource(R.string.status_exporting_db)
+                            DatabaseBackupState.Importing -> stringResource(R.string.status_importing_db)
+                            is DatabaseBackupState.Success -> stringResource(R.string.status_success)
+                            is DatabaseBackupState.Error -> stringResource(R.string.status_error)
                         },
                         style = MaterialTheme.typography.titleLarge,
                     )
@@ -254,7 +257,7 @@ fun SettingsLibraryStorageScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                 )
                                 Text(
-                                    text = "Processing...",
+                                    text = stringResource(R.string.status_processing),
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
@@ -278,7 +281,7 @@ fun SettingsLibraryStorageScreen(
                     if (databaseBackupState is DatabaseBackupState.Success ||
                         databaseBackupState is DatabaseBackupState.Error) {
                         TextButton(onClick = viewModel::onDismissDatabaseBackupStatus) {
-                            Text("OK")
+                            Text(stringResource(R.string.action_ok))
                         }
                     }
                 },
@@ -292,14 +295,14 @@ fun SettingsLibraryStorageScreen(
                 shape = MaterialTheme.shapes.large,
                 title = {
                     Text(
-                        text = "Overwrite Library & Settings?",
+                        text = stringResource(R.string.dialog_title_overwrite_library),
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.error,
                     )
                 },
                 text = {
                     Text(
-                        text = "This will completely replace your existing library metadata, playlists, settings, and account connections. This action cannot be undone.",
+                        text = stringResource(R.string.dialog_body_overwrite_library),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -314,12 +317,12 @@ fun SettingsLibraryStorageScreen(
                         },
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                     ) {
-                        Text("Overwrite")
+                        Text(stringResource(R.string.action_overwrite))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = viewModel::onCancelImportDatabase) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.action_cancel))
                     }
                 },
             )
@@ -329,13 +332,13 @@ fun SettingsLibraryStorageScreen(
             Column(modifier = Modifier.fillMaxWidth()) {
                 // Database Backup -----------------------------------------
                 Text(
-                    text = "Backup",
+                    text = stringResource(R.string.label_backup),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Export settings and database or import from a previous backup.",
+                    text = stringResource(R.string.desc_backup),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -352,7 +355,7 @@ fun SettingsLibraryStorageScreen(
                             contentColor = MaterialTheme.colorScheme.primary,
                         ),
                     ) {
-                        Text("Export Backup")
+                        Text(stringResource(R.string.action_export_backup))
                     }
                     OutlinedButton(
                         onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
@@ -361,7 +364,7 @@ fun SettingsLibraryStorageScreen(
                             contentColor = MaterialTheme.colorScheme.primary,
                         ),
                     ) {
-                        Text("Import Backup")
+                        Text(stringResource(R.string.action_import_backup))
                     }
                 }
             }
@@ -369,9 +372,9 @@ fun SettingsLibraryStorageScreen(
 
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
-                SettingsValueRow(label = "Total tracks", value = "${uiState.totalTracks}")
+                SettingsValueRow(label = stringResource(R.string.label_total_tracks), value = "${uiState.totalTracks}")
                 Spacer(modifier = Modifier.height(8.dp))
-                SettingsValueRow(label = "Storage used", value = libStorageFormatBytes(uiState.totalStorageBytes))
+                SettingsValueRow(label = stringResource(R.string.label_storage_used), value = libStorageFormatBytes(uiState.totalStorageBytes))
                 Spacer(modifier = Modifier.height(12.dp))
                 HorizontalDivider(
                     color = extendedColors.glassBorder,
@@ -380,14 +383,14 @@ fun SettingsLibraryStorageScreen(
 
                 // Current location ----------------------------------------
                 Text(
-                    text = "Download location",
+                    text = stringResource(R.string.label_download_location),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = when {
-                        externalTree == null -> "Internal (app-private)"
+                        externalTree == null -> stringResource(R.string.label_internal_storage)
                         externalFolderName.isBlank() -> "External folder (SD card / USB)"
                         else -> externalFolderName
                     },
@@ -397,7 +400,7 @@ fun SettingsLibraryStorageScreen(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = if (externalTree != null) {
-                        "Tracks are stored in this folder and survive uninstall. Visible to other apps and over USB."
+                        stringResource(R.string.desc_external_storage)
                     } else {
                         internalPath
                     },
@@ -422,7 +425,7 @@ fun SettingsLibraryStorageScreen(
                         ),
                     ) {
                         Text(
-                            text = if (externalTree != null) "Change folder" else "Pick SD / folder",
+                            text = if (externalTree != null) stringResource(R.string.action_change_folder) else stringResource(R.string.action_pick_folder),
                         )
                     }
                     if (externalTree != null) {
@@ -433,13 +436,13 @@ fun SettingsLibraryStorageScreen(
                                 contentColor = MaterialTheme.colorScheme.primary,
                             ),
                         ) {
-                            Text("Use internal")
+                            Text(stringResource(R.string.action_use_internal))
                         }
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "New downloads go to the selected location.",
+                    text = stringResource(R.string.desc_new_downloads_location),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -524,7 +527,7 @@ private fun LibStorageMoveLibrarySection(
     when (state) {
         com.stash.data.download.files.MoveLibraryState.Idle -> {
             Text(
-                text = "Existing library",
+                text = stringResource(R.string.label_existing_library),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -608,7 +611,7 @@ private fun LibStorageMoveLibrarySection(
         }
         is com.stash.data.download.files.MoveLibraryState.Error -> {
             Text(
-                text = "Couldn't move library",
+                text = stringResource(R.string.error_move_library),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
             )

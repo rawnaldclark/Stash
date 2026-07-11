@@ -38,9 +38,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.ui.R
 import com.stash.core.ui.components.GlassCard
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.feature.settings.components.AudioQualityPicker
@@ -80,11 +82,11 @@ fun SettingsAudioQualityScreen(
     val qbdlxTokenChoices by viewModel.qbdlxTokenChoices.collectAsStateWithLifecycle()
     val qbdlxPinnedToken by viewModel.qbdlxPinnedToken.collectAsStateWithLifecycle()
 
-    SettingsScaffold(title = "Audio & Quality", onBack = onBack, modifier = modifier) {
+    SettingsScaffold(title = stringResource(R.string.title_audio_quality), onBack = onBack, modifier = modifier) {
         // (a) Download tier — only when lossless OFF. The standalone yt-dlp
         // tier picker governs downloads when lossless routing is disabled.
         if (!uiState.losslessEnabled) {
-            SettingsSectionLabel("Audio Quality")
+            SettingsSectionLabel(stringResource(R.string.section_audio_quality))
             GlassCard {
                 Column(
                     modifier = Modifier
@@ -92,7 +94,7 @@ fun SettingsAudioQualityScreen(
                         .selectableGroup(),
                 ) {
                     Text(
-                        text = "Download quality",
+                        text = stringResource(R.string.label_download_quality),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -106,15 +108,15 @@ fun SettingsAudioQualityScreen(
         }
 
         // (b) Lossless card.
-        SettingsSectionLabel("Lossless")
+        SettingsSectionLabel(stringResource(R.string.section_lossless))
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 SettingsToggleRow(
-                    title = "Lossless downloads",
+                    title = stringResource(R.string.label_lossless_downloads),
                     subtitle = if (uiState.losslessEnabled) {
-                        "FLAC routing active. Files ~10× larger than MP3."
+                        stringResource(R.string.desc_lossless_active)
                     } else {
-                        "Studio-quality FLAC via Qobuz. Files ~10× larger than MP3."
+                        stringResource(R.string.desc_lossless_inactive)
                     },
                     checked = uiState.losslessEnabled,
                     onCheckedChange = viewModel::onLosslessEnabledChanged,
@@ -142,8 +144,8 @@ fun SettingsAudioQualityScreen(
                         // refresh path when the bundled pool ages out, and the
                         // badge surfaces all-dead.
                         SettingsToggleRow(
-                            title = "Direct Qobuz",
-                            subtitle = "Hi-Res FLAC, straight from Qobuz.",
+                            title = stringResource(R.string.label_direct_qobuz),
+                            subtitle = stringResource(R.string.desc_direct_qobuz),
                             checked = qbdlxEnabled,
                             onCheckedChange = viewModel::onQbdlxEnabledChange,
                         )
@@ -156,7 +158,7 @@ fun SettingsAudioQualityScreen(
                                 if (qbdlxExpired) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "No working token — paste a fresh one",
+                                        text = stringResource(R.string.error_no_working_token),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.error,
                                     )
@@ -164,15 +166,15 @@ fun SettingsAudioQualityScreen(
                                 if (qbdlxTokenChoices.size > 1) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "Account",
+                                        text = stringResource(R.string.label_account),
                                         style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Column(modifier = Modifier.selectableGroup()) {
                                         SettingsPickerRow(
                                             selected = qbdlxPinnedToken == null,
-                                            title = "Auto",
-                                            subtitle = "Recommended — uses a working account and fails over",
+                                            title = stringResource(R.string.label_auto),
+                                            subtitle = stringResource(R.string.desc_auto_token),
                                             onClick = { viewModel.onQbdlxTokenPinned(null) },
                                         )
                                         qbdlxTokenChoices.forEach { choice ->
@@ -195,9 +197,9 @@ fun SettingsAudioQualityScreen(
                                         viewModel.onQbdlxTokenPaste(it)
                                     },
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("Paste token") },
+                                    label = { Text(stringResource(R.string.label_paste_token)) },
                                     singleLine = true,
-                                    placeholder = { Text("user_auth_token") },
+                                    placeholder = { Text(stringResource(R.string.hint_user_auth_token)) },
                                 )
                             }
                         }
@@ -205,7 +207,7 @@ fun SettingsAudioQualityScreen(
                         // -- Download quality picker --------------------------
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Download quality",
+                            text = stringResource(R.string.label_download_quality),
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -231,14 +233,14 @@ fun SettingsAudioQualityScreen(
                         // override: when on, both pickers are dimmed + inert and
                         // policy forces CD on every network.
                         Spacer(modifier = Modifier.height(14.dp))
-                        SettingsSectionLabel("Streaming")
+                        SettingsSectionLabel(stringResource(R.string.section_streaming))
                         GlassCard {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 val saveData = uiState.streamingSaveData
                                 val pickerAlpha = if (saveData) 0.4f else 1f
 
                                 Text(
-                                    text = "On Wi-Fi",
+                                    text = stringResource(R.string.label_on_wifi),
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
@@ -265,7 +267,7 @@ fun SettingsAudioQualityScreen(
 
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    text = "On cellular",
+                                    text = stringResource(R.string.label_on_cellular),
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
@@ -292,9 +294,8 @@ fun SettingsAudioQualityScreen(
 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 SettingsToggleRow(
-                                    title = "Save Data",
-                                    subtitle = "Request the lowest streaming quality on every network " +
-                                        "to minimize data. Not every source honors this yet.",
+                                    title = stringResource(R.string.label_save_data),
+                                    subtitle = stringResource(R.string.desc_save_data),
                                     checked = uiState.streamingSaveData,
                                     onCheckedChange = viewModel::onStreamingSaveDataChanged,
                                     titleTrailing = { BetaPill() },
@@ -331,7 +332,7 @@ fun SettingsAudioQualityScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "YouTube fallback",
+                                text = stringResource(R.string.label_youtube_fallback),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f),
@@ -357,7 +358,7 @@ fun SettingsAudioQualityScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Use YouTube when lossless fails",
+                                        text = stringResource(R.string.label_use_youtube_fallback),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
@@ -400,7 +401,7 @@ fun SettingsAudioQualityScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Advanced",
+                                text = stringResource(R.string.label_advanced),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -414,7 +415,7 @@ fun SettingsAudioQualityScreen(
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Or paste the captcha_verified_at cookie value directly:",
+                                    text = stringResource(R.string.desc_paste_captcha_cookie),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -423,9 +424,9 @@ fun SettingsAudioQualityScreen(
                                     value = uiState.squidWtfCaptchaCookie,
                                     onValueChange = viewModel::onSquidWtfCaptchaCookieChanged,
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("captcha_verified_at value") },
+                                    label = { Text(stringResource(R.string.label_captcha_verified_at)) },
                                     singleLine = true,
-                                    placeholder = { Text("e.g. 1777687404951") },
+                                    placeholder = { Text(stringResource(R.string.hint_captcha_value)) },
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 TextButton(
@@ -433,7 +434,7 @@ fun SettingsAudioQualityScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Text(
-                                        text = "Reset lossless attempts",
+                                        text = stringResource(R.string.action_reset_lossless_attempts),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -446,9 +447,9 @@ fun SettingsAudioQualityScreen(
         }
 
         // (c) Effects.
-        SettingsSectionLabel("Effects")
+        SettingsSectionLabel(stringResource(R.string.section_effects))
         SettingsNavRow(
-            title = "Equalizer",
+            title = stringResource(R.string.title_equalizer),
             onClick = onNavigateToEqualizer,
         )
     }

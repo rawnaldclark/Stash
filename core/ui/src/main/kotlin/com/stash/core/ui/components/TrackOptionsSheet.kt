@@ -37,6 +37,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -132,21 +134,21 @@ fun TrackOptionsSheet(
         // -- Play Next option --
         SheetOptionRow(
             icon = Icons.Default.PlaylistPlay,
-            label = "Play Next",
+            label = stringResource(R.string.selection_play_next),
             onClick = { onPlayNext(track) },
         )
 
         // -- Add to Queue option --
         SheetOptionRow(
             icon = Icons.Default.PlaylistAdd,
-            label = "Add to Queue",
+            label = stringResource(R.string.action_add_to_queue),
             onClick = { onAddToQueue(track) },
         )
 
         // -- Save to Playlist option --
         SheetOptionRow(
             icon = Icons.Default.FavoriteBorder,
-            label = "Save to Playlist",
+            label = stringResource(R.string.title_save_to_playlist),
             onClick = { onSaveToPlaylist(track) },
         )
 
@@ -158,13 +160,13 @@ fun TrackOptionsSheet(
         if (track.isDownloaded && onRemoveDownload != null) {
             SheetOptionRow(
                 icon = Icons.Default.DownloadDone,
-                label = "Remove download",
+                label = stringResource(R.string.selection_remove_download),
                 onClick = { onRemoveDownload(track) },
             )
         } else if (!track.isDownloaded && onDownload != null) {
             SheetOptionRow(
                 icon = Icons.Default.Download,
-                label = "Download",
+                label = stringResource(R.string.selection_download),
                 onClick = { onDownload(track) },
             )
         }
@@ -174,7 +176,7 @@ fun TrackOptionsSheet(
         // -- Delete option --
         SheetOptionRow(
             icon = Icons.Default.Delete,
-            label = "Delete",
+            label = stringResource(R.string.selection_delete),
             tint = MaterialTheme.colorScheme.error,
             onClick = { onDelete(track) },
         )

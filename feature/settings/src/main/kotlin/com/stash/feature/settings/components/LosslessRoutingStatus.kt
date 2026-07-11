@@ -20,10 +20,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.stash.core.ui.R
 
 /**
  * ROUTING status block for the lossless source chain.
@@ -45,7 +47,7 @@ internal fun LosslessRoutingStatus(
     val mono = FontFamily.Monospace
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = "ROUTING",
+            text = stringResource(R.string.label_routing),
             fontFamily = mono,
             style = MaterialTheme.typography.labelSmall.copy(
                 letterSpacing = 1.2.sp,
@@ -59,17 +61,16 @@ internal fun LosslessRoutingStatus(
         RoutingRow(
             host = "Direct Qobuz",
             configured = true,
-            statusLabel = "active",
+            statusLabel = stringResource(R.string.status_active),
         )
         RoutingRow(
             host = "amz.squid.wtf",
             configured = true,
-            statusLabel = "fallback",
+            statusLabel = stringResource(R.string.status_fallback),
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Lossless streams from Direct Qobuz; amz.squid.wtf (Amazon Music) " +
-                "fills in when a track isn't on Qobuz.",
+            text = stringResource(R.string.desc_lossless_routing),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

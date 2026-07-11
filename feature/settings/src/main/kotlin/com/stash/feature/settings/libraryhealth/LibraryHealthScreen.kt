@@ -29,11 +29,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.db.dao.LibraryHealthBucket
+import com.stash.core.ui.R
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.theme.StashTheme
@@ -70,8 +72,7 @@ fun LibraryHealthScreen(
         Spacer(Modifier.height(8.dp))
 
         Text(
-            text = "Format and bitrate breakdown of every downloaded track. Use this to " +
-                "verify what your sync is actually pulling down.",
+            text = stringResource(R.string.desc_library_health),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp),
@@ -79,7 +80,7 @@ fun LibraryHealthScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        SectionHeader(title = "Library breakdown")
+        SectionHeader(title = stringResource(R.string.section_library_breakdown))
 
         if (state.buckets.isEmpty()) {
             EmptyHint()
@@ -111,13 +112,13 @@ private fun Header(onBack: () -> Unit) {
         IconButton(onClick = onBack) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.cd_back),
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }
         Spacer(Modifier.size(4.dp))
         Text(
-            text = "Library Health",
+            text = stringResource(R.string.title_library_health),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -129,7 +130,7 @@ private fun Header(onBack: () -> Unit) {
 private fun EmptyHint() {
     GlassCard {
         Text(
-            text = "No downloaded tracks yet. Run a sync first.",
+            text = stringResource(R.string.label_no_downloaded_tracks),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
@@ -155,7 +156,7 @@ private fun HistogramCard(buckets: List<LibraryHealthBucket>) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Total downloaded",
+                    text = stringResource(R.string.label_total_downloaded),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -247,7 +248,7 @@ private fun BackfillSection(
 
     if (unknownCount == 0 && status is BackfillStatus.Idle) return
 
-    SectionHeader(title = "Backfill metadata")
+    SectionHeader(title = stringResource(R.string.section_backfill_metadata))
 
     GlassCard {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -307,18 +308,17 @@ private fun BackfillSection(
 @Composable
 private fun QualityInfoRefreshSection(onClick: () -> Unit) {
     val context = LocalContext.current
-    SectionHeader(title = "Quality info")
+    SectionHeader(title = stringResource(R.string.section_quality_info))
     GlassCard {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Text(
-                text = "Refresh quality info",
+                text = stringResource(R.string.action_refresh_quality_info),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Re-extract bit-depth + sample-rate for FLAC tracks where it's missing. " +
-                    "Runs in the background.",
+                text = stringResource(R.string.desc_re_extract_quality),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -26,8 +26,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.stash.core.ui.R
 
 /**
  * Full-screen YouTube Music login via WebView.
@@ -90,10 +92,10 @@ fun YouTubeLoginWebView(
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("Sign in to YouTube Music") },
+            title = { Text(stringResource(R.string.title_sign_in_youtube)) },
             navigationIcon = {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
             actions = {
@@ -118,7 +120,7 @@ fun YouTubeLoginWebView(
 
         if (cookieFound) {
             Text(
-                text = "Login successful, connecting...",
+                text = stringResource(R.string.status_login_successful),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

@@ -28,10 +28,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.ThemeMode
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashBackground
 import com.stash.core.ui.theme.StashBackgroundLight
 import com.stash.core.ui.theme.StashPurple
@@ -57,15 +59,15 @@ fun SettingsAppearanceScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    SettingsScaffold(title = "Appearance", onBack = onBack, modifier = modifier) {
-        SettingsSectionLabel("Theme")
+    SettingsScaffold(title = stringResource(R.string.title_appearance), onBack = onBack, modifier = modifier) {
+        SettingsSectionLabel(stringResource(R.string.section_theme))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ThemeThumbnail(
-                label = "Dark",
+                label = stringResource(R.string.label_dark),
                 selected = uiState.themeMode == ThemeMode.DARK,
                 darkPalette = true,
                 followSystem = false,
@@ -73,7 +75,7 @@ fun SettingsAppearanceScreen(
                 modifier = Modifier.weight(1f),
             )
             ThemeThumbnail(
-                label = "Light",
+                label = stringResource(R.string.label_light),
                 selected = uiState.themeMode == ThemeMode.LIGHT,
                 darkPalette = false,
                 followSystem = false,
@@ -81,7 +83,7 @@ fun SettingsAppearanceScreen(
                 modifier = Modifier.weight(1f),
             )
             ThemeThumbnail(
-                label = "Follow system",
+                label = stringResource(R.string.label_follow_system),
                 selected = uiState.themeMode == ThemeMode.SYSTEM,
                 darkPalette = false,
                 followSystem = true,
@@ -91,7 +93,7 @@ fun SettingsAppearanceScreen(
         }
 
         Text(
-            text = "Follow system matches your device's day/night setting.",
+            text = stringResource(R.string.desc_follow_system),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),

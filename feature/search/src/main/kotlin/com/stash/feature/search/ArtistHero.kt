@@ -32,10 +32,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
+import com.stash.core.ui.R
 
 /**
  * Artist Profile hero card.
@@ -132,7 +134,7 @@ fun ArtistHero(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "Play",
+                        text = stringResource(R.string.action_play),
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -149,7 +151,7 @@ fun ArtistHero(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "Radio",
+                        text = stringResource(R.string.action_radio),
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -167,7 +169,7 @@ fun ArtistHero(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.cd_back),
                 tint = MaterialTheme.colorScheme.onBackground,
             )
         }

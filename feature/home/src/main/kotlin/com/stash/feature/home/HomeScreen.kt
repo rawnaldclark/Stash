@@ -93,6 +93,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -205,7 +206,7 @@ fun HomeScreen(
                         id = if (isDark) R.drawable.wordmark_stash_dark
                         else R.drawable.wordmark_stash_light,
                     ),
-                    contentDescription = "Stash",
+                    contentDescription = stringResource(com.stash.core.ui.R.string.cd_app_logo),
                     modifier = Modifier.height(48.dp),
                 )
                 Spacer(modifier = Modifier.weight(1f))
@@ -230,7 +231,7 @@ fun HomeScreen(
                         painter = androidx.compose.ui.res.painterResource(
                             id = R.drawable.ic_discord,
                         ),
-                        contentDescription = "Join the Stash Discord",
+                        contentDescription = stringResource(com.stash.core.ui.R.string.cd_join_discord),
                         tint = androidx.compose.ui.graphics.Color(0xFF5865F2),
                         modifier = Modifier.size(20.dp),
                     )
@@ -242,7 +243,7 @@ fun HomeScreen(
                 ) {
                     androidx.compose.material3.Icon(
                         imageVector = Icons.Filled.Build,
-                        contentDescription = "Report an issue on GitHub",
+                        contentDescription = stringResource(com.stash.core.ui.R.string.cd_report_issue),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
                     )
@@ -319,7 +320,7 @@ fun HomeScreen(
             if (uiState.spotifyMixes.isNotEmpty()) {
                 item {
                     SourceSubHeader(
-                        label = "Spotify",
+                        label = stringResource(com.stash.core.ui.R.string.label_spotify),
                         source = MusicSource.SPOTIFY,
                         onPlayAll = { viewModel.playAllMixes(MusicSource.SPOTIFY) },
                     )
@@ -344,7 +345,7 @@ fun HomeScreen(
             if (uiState.youtubeMixes.isNotEmpty()) {
                 item {
                     SourceSubHeader(
-                        label = "YouTube Music",
+                        label = stringResource(com.stash.core.ui.R.string.label_youtube_music),
                         source = MusicSource.YOUTUBE,
                         onPlayAll = { viewModel.playAllMixes(MusicSource.YOUTUBE) },
                     )
@@ -376,7 +377,7 @@ fun HomeScreen(
         // for a user with zero mixes. When mixes exist the layout is
         // identical to before — they render first, Create tile last.
         item {
-            SectionHeader(title = "Stash Mixes  (Beta)")
+            SectionHeader(title = stringResource(com.stash.core.ui.R.string.section_stash_mixes))
         }
         item {
             LazyRow(
@@ -412,7 +413,7 @@ fun HomeScreen(
         // ── Recently Added ───────────────────────────────────────────
         if (uiState.recentlyAdded.isNotEmpty()) {
             item {
-                SectionHeader(title = "Recently Added")
+                SectionHeader(title = stringResource(com.stash.core.ui.R.string.section_recently_added))
             }
             item {
                 LazyRow(
@@ -465,7 +466,7 @@ fun HomeScreen(
         // Always rendered so the Create Playlist card is available even when
         // the user has no custom playlists yet.
         item {
-            SectionHeader(title = "Playlists")
+            SectionHeader(title = stringResource(com.stash.core.ui.R.string.section_playlists))
         }
         item {
             PlaylistSortChipRow(
@@ -602,7 +603,7 @@ fun HomeScreen(
             if (playlist.type == PlaylistType.STASH_MIX) {
                 HomeBottomSheetActionRow(
                     icon = Icons.Default.Refresh,
-                    label = "Refresh this mix",
+                    label = stringResource(com.stash.core.ui.R.string.action_refresh_mix),
                     onClick = {
                         viewModel.refreshMix(playlist.id)
                         selectedPlaylist = null
@@ -616,7 +617,7 @@ fun HomeScreen(
             if (uiState.customMixPlaylistIds.contains(playlist.id)) {
                 HomeBottomSheetActionRow(
                     icon = Icons.Default.Edit,
-                    label = "Edit mix",
+                    label = stringResource(com.stash.core.ui.R.string.action_edit_mix),
                     onClick = {
                         // Resolve the recipe id async, then route to the
                         // builder. Dismiss the sheet immediately.
@@ -628,7 +629,7 @@ fun HomeScreen(
                 )
                 HomeBottomSheetActionRow(
                     icon = Icons.Default.Delete,
-                    label = "Delete mix",
+                    label = stringResource(com.stash.core.ui.R.string.action_delete),
                     tint = MaterialTheme.colorScheme.error,
                     onClick = {
                         viewModel.deleteCustomMix(playlist)
@@ -638,7 +639,7 @@ fun HomeScreen(
             }
             HomeBottomSheetActionRow(
                 icon = Icons.Default.PlayArrow,
-                label = "Play All",
+                label = stringResource(com.stash.core.ui.R.string.action_play_all),
                 onClick = {
                     viewModel.playPlaylist(playlist)
                     selectedPlaylist = null
@@ -646,7 +647,7 @@ fun HomeScreen(
             )
             HomeBottomSheetActionRow(
                 icon = Icons.Default.PlaylistAdd,
-                label = "Add to Queue",
+                label = stringResource(com.stash.core.ui.R.string.action_add_to_queue),
                 onClick = {
                     viewModel.addPlaylistToQueue(playlist)
                     selectedPlaylist = null
@@ -654,7 +655,7 @@ fun HomeScreen(
             )
             HomeBottomSheetActionRow(
                 icon = Icons.Default.Download,
-                label = "Download All",
+                label = stringResource(com.stash.core.ui.R.string.action_download_all),
                 onClick = {
                     viewModel.queueDownloadsForPlaylist(playlist)
                     selectedPlaylist = null
@@ -662,7 +663,7 @@ fun HomeScreen(
             )
             HomeBottomSheetActionRow(
                 icon = Icons.Default.DownloadDone,
-                label = "Remove Downloads",
+                label = stringResource(com.stash.core.ui.R.string.action_remove_downloads),
                 onClick = {
                     viewModel.removeDownloadsForPlaylist(playlist)
                     selectedPlaylist = null
@@ -670,7 +671,7 @@ fun HomeScreen(
             )
             HomeBottomSheetActionRow(
                 icon = Icons.Default.RemoveCircleOutline,
-                label = "Remove Playlist",
+                label = stringResource(com.stash.core.ui.R.string.action_remove_playlist),
                 onClick = {
                     viewModel.removePlaylist(playlist)
                     selectedPlaylist = null
@@ -678,7 +679,7 @@ fun HomeScreen(
             )
             HomeBottomSheetActionRow(
                 icon = Icons.Default.Delete,
-                label = "Delete Playlist & Songs",
+                label = stringResource(com.stash.core.ui.R.string.action_delete_playlist_and_songs),
                 tint = MaterialTheme.colorScheme.error,
                 onClick = {
                     playlistToDelete = playlist
@@ -704,15 +705,15 @@ fun HomeScreen(
 
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { playlistToDelete = null },
-            title = { Text("Delete ${playlist.name}?") },
+            title = { Text(stringResource(com.stash.core.ui.R.string.dialog_title_delete_playlist, playlist.name)) },
             text = {
                 Column {
                     val p = preview
                     Text(
                         text = when {
-                            p == null -> "This will delete downloaded songs in this playlist from your device."
-                            p.protectedCount == 0 -> "This will delete ${p.willDelete} downloaded song${if (p.willDelete != 1) "s" else ""} from your device."
-                            else -> "${p.willDelete} song${if (p.willDelete != 1) "s" else ""} will be deleted. ${p.protectedCount} ${if (p.protectedCount != 1) "are also in" else "is also in"} Liked Songs or a custom playlist and will stay."
+                            p == null -> stringResource(com.stash.core.ui.R.string.dialog_body_delete_playlist)
+                            p.protectedCount == 0 -> stringResource(com.stash.core.ui.R.string.dialog_body_delete_playlist_cascade, p.willDelete, 0)
+                            else -> stringResource(com.stash.core.ui.R.string.dialog_body_delete_playlist_cascade, p.willDelete, p.protectedCount)
                         },
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -727,11 +728,11 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Also block these songs from future syncs",
+                                text = stringResource(com.stash.core.ui.R.string.label_also_block_songs),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                text = stringResource(com.stash.core.ui.R.string.desc_blocked_songs_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -747,14 +748,14 @@ fun HomeScreen(
                     },
                 ) {
                     Text(
-                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (alsoBlacklist) stringResource(com.stash.core.ui.R.string.action_delete_and_block) else stringResource(com.stash.core.ui.R.string.action_delete),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { playlistToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(com.stash.core.ui.R.string.action_cancel))
                 }
             },
         )
@@ -849,13 +850,13 @@ private fun DailyMixCard(
                                 strokeWidth = 1.5.dp,
                             )
                             Text(
-                                text = "Building…",
+                                text = stringResource(com.stash.core.ui.R.string.status_building),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.75f),
                             )
                         }
                         MixBuildState.EMPTY -> Text(
-                            text = "No tracks found",
+                            text = stringResource(com.stash.core.ui.R.string.label_no_tracks_found),
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.75f),
                         )
@@ -970,7 +971,7 @@ private fun MixesSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "Your Mixes",
+            text = stringResource(com.stash.core.ui.R.string.section_your_mixes),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
@@ -993,12 +994,12 @@ private fun MixesSectionHeader(
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play mixes from both services",
+                        contentDescription = stringResource(com.stash.core.ui.R.string.cd_play_both_mixes),
                         tint = accent,
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
-                        text = "Play Both",
+                        text = stringResource(com.stash.core.ui.R.string.action_play_both),
                         style = MaterialTheme.typography.labelSmall,
                         color = accent,
                     )
@@ -1067,12 +1068,12 @@ private fun SourceSubHeader(
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play all $label mixes",
+                        contentDescription = stringResource(com.stash.core.ui.R.string.cd_play_all_mixes, label),
                         tint = accent,
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
-                        text = "Play All",
+                        text = stringResource(com.stash.core.ui.R.string.action_play_all),
                         style = MaterialTheme.typography.labelSmall,
                         color = accent,
                     )
@@ -1193,7 +1194,7 @@ private fun LikedSongsCard(
                 // Text content on the left
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "YOUR COLLECTION",
+                        text = stringResource(com.stash.core.ui.R.string.section_your_collection),
                         style = MaterialTheme.typography.labelSmall.copy(
                             letterSpacing = 1.5.sp,
                         ),
@@ -1205,7 +1206,7 @@ private fun LikedSongsCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = "Liked Songs",
+                            text = stringResource(com.stash.core.ui.R.string.label_liked_songs),
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -1289,9 +1290,9 @@ private fun SourceLikedChip(
         MusicSource.LOCAL, MusicSource.BOTH -> MaterialTheme.colorScheme.primary
     }
     val sourceName = when (source) {
-        MusicSource.SPOTIFY -> "Spotify"
-        MusicSource.YOUTUBE -> "YouTube"
-        MusicSource.LOCAL -> "Local"
+        MusicSource.SPOTIFY -> stringResource(com.stash.core.ui.R.string.filter_spotify)
+        MusicSource.YOUTUBE -> stringResource(com.stash.core.ui.R.string.filter_youtube)
+        MusicSource.LOCAL -> stringResource(com.stash.core.ui.R.string.filter_local)
         MusicSource.BOTH -> ""
     }
 
@@ -1494,7 +1495,7 @@ private fun CreatePlaylistCard(
                 modifier = Modifier.size(24.dp),
             )
             Text(
-                text = "Create Playlist",
+                text = stringResource(com.stash.core.ui.R.string.action_create_playlist),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
@@ -1554,7 +1555,7 @@ private fun CreateMixCard(
                 modifier = Modifier.size(24.dp),
             )
             Text(
-                text = "Create\nmix",
+                text = stringResource(com.stash.core.ui.R.string.action_create_mix),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -1634,18 +1635,18 @@ private fun LosslessConnectBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Try lossless audio",
+                    text = stringResource(com.stash.core.ui.R.string.prompt_try_lossless),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Studio-quality FLAC downloads via Qobuz. Tap to set up.",
+                    text = stringResource(com.stash.core.ui.R.string.desc_lossless_prompt),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
-                text = "Set up →",
+                text = stringResource(com.stash.core.ui.R.string.action_setup_lossless),
                 style = MaterialTheme.typography.labelSmall,
                 color = accent,
             )
@@ -1658,7 +1659,7 @@ private fun LosslessConnectBanner(
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Dismiss lossless banner",
+                    contentDescription = stringResource(com.stash.core.ui.R.string.cd_dismiss_lossless_banner),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )
@@ -1751,7 +1752,7 @@ private fun SupporterPill(
         ) {
             androidx.compose.material3.Icon(
                 imageVector = androidx.compose.material.icons.Icons.Default.FavoriteBorder,
-                contentDescription = "Supporters on Ko-fi",
+                contentDescription = stringResource(com.stash.core.ui.R.string.cd_supporters_kofi),
                 tint = Color(0xFFFFC947),
                 modifier = Modifier
                     .size(16.dp)
@@ -1835,9 +1836,10 @@ private fun PlaylistSortChipRow(
     }
 }
 
+@Composable
 private fun PlaylistSortOrder.displayName(): String = when (this) {
-    PlaylistSortOrder.RECENT -> "Recently Added"
-    PlaylistSortOrder.ALPHABETICAL -> "A-Z"
-    PlaylistSortOrder.MOST_PLAYED -> "Most Played"
+    PlaylistSortOrder.RECENT -> stringResource(com.stash.core.ui.R.string.sort_recently_added)
+    PlaylistSortOrder.ALPHABETICAL -> stringResource(com.stash.core.ui.R.string.sort_alphabetical)
+    PlaylistSortOrder.MOST_PLAYED -> stringResource(com.stash.core.ui.R.string.sort_most_played)
 }
 
