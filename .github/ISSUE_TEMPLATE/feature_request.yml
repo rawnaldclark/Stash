@@ -1,0 +1,43 @@
+name: ✨ Feature request
+description: Suggest a concrete improvement to Stash. (Open-ended "would it be cool if" ideas are better on Discord first.)
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea? Great. The best feature requests describe a **real problem**, not just a solution.
+
+        For open-ended brainstorming, [Discord](https://discord.gg/vcbjEby5PC) is faster and more fun — use this form when you have a specific, well-formed request.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I [searched existing issues](https://github.com/rawnaldclark/Stash/issues?q=is%3Aissue) and nobody's already requested this
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that Stash makes hard or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like Stash to do?
+      description: Describe the feature or change you'd like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything else? (optional)
+      description: Alternatives you've considered, mockups, or examples from other apps.
+    validations:
+      required: false

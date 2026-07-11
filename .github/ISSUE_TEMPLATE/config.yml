@@ -1,0 +1,12 @@
+# Removes the "blank issue" escape hatch — every issue must go through a form.
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions, ideas & setup help (Discord)
+    url: https://discord.gg/vcbjEby5PC
+    about: Not a confirmed bug? Ask on Discord — feature brainstorming, "how do I…", login/setup help, and general chat all belong here, and you'll get a faster answer.
+  - name: 📦 Latest release & changelog
+    url: https://github.com/rawnaldclark/Stash/releases/latest
+    about: Please update to the newest version and confirm the problem still happens before filing a bug — a lot of reports are already fixed.
+  - name: 🔒 Security vulnerability
+    url: https://github.com/rawnaldclark/Stash/blob/master/SECURITY.md
+    about: Found a security issue? Do NOT open a public issue — follow the private disclosure process described here.

@@ -1,0 +1,89 @@
+name: 🐛 Bug report
+description: Something in Stash is broken or behaving wrong. (Questions and ideas go to Discord — see the links above.)
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a real bug report — it genuinely helps.
+
+        Please fill in **every required field**. Reports that skip the version, the device, or the steps to reproduce can't be acted on and will be closed. A good report gets fixed; a one-line report gets lost.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I'm on the **latest version** from the [Releases page](https://github.com/rawnaldclark/Stash/releases/latest)
+          required: true
+        - label: I [searched existing issues](https://github.com/rawnaldclark/Stash/issues?q=is%3Aissue) and this isn't a duplicate
+          required: true
+        - label: This is a **bug**, not a question or feature request (those go to [Discord](https://discord.gg/vcbjEby5PC))
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Stash version
+      description: Find it in **Settings → About** (e.g. v0.9.75).
+      placeholder: "v0.9.75"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Phone & Android version
+      description: Your device model and Android version.
+      placeholder: "Pixel 8, Android 14"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen?
+      description: The part of the app the bug shows up in.
+      options:
+        - Playback (Now Playing, audio, EQ, crossfade)
+        - Sync (Spotify / YouTube Music)
+        - Downloads (Offline mode)
+        - Streaming (Online mode)
+        - Search
+        - Library
+        - Login / connecting an account
+        - Lyrics
+        - Android Auto
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect instead?
+      description: Describe the bug clearly — what went wrong, and what should have happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exactly what you tapped, in order, right before it broke. If it only happens sometimes, say so.
+      placeholder: |
+        1. Open the Search tab
+        2. Play any song
+        3. Lock the screen
+        4. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Logs, screenshots, or a screen recording (optional, but very helpful)
+      description: A screenshot or recording often makes a bug obvious at a glance. A logcat is gold if you can grab one — but this field is optional.
+    validations:
+      required: false

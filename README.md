@@ -183,7 +183,7 @@ Bug reports and feature requests through [GitHub Issues](https://github.com/rawn
 
 ## Contributing
 
-Pull requests welcome. For anything substantial, please open an issue first so we can talk through the change before you sink time into a PR.
+Pull requests welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for how to build the app, a map of the module layout, and the PR workflow. For anything substantial, please open an issue first so we can talk through the change before you sink time into a PR.
 
 Stash is GPL-3.0. You can use, copy, modify, and redistribute it freely. If you distribute a modified version, you have to release your changes under GPL-3.0 too.
 

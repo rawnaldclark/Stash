@@ -1,8 +1,0 @@
-torch==2.4.1
-torchvision==0.19.1
-laion-clap==1.1.6
-onnx==1.16.2
-onnxruntime==1.20.0
-librosa==0.10.2
-soundfile==0.12.1
-numpy==1.23.5
