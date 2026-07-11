@@ -221,11 +221,7 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.okhttp)
 
-    // ── SPIKE: spike/clap-on-device (throwaway, do NOT merge to master) ──────
-    // androidTest-only ONNX Runtime + instrumentation deps for the on-device
-    // CLAP embedding measurement harness (com.stash.app.clapspike). Wired as
-    // androidTestImplementation on purpose so the shipping APK stays unbloated.
-    androidTestImplementation(libs.onnxruntime.android)
+    // androidTest instrumentation infra (shared by the on-device probe below).
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

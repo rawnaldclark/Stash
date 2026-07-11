@@ -26,9 +26,6 @@ truth = "1.4.4"
 robolectric = "4.13"
 androidxTestCore = "1.6.1"
 mockk = "1.13.13"
-# Spike-only (spike/clap-on-device): ONNX Runtime for the on-device CLAP
-# embedding measurement harness. Test-only — never shipped in the APK.
-onnxruntime = "1.20.0"
 
 [libraries]
 # Compose
@@ -109,8 +106,6 @@ truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
-# Spike-only (spike/clap-on-device): ONNX Runtime Android AAR.
-onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
