@@ -1,0 +1,125 @@
+name: Auto-Label Issues
+on:
+  issues:
+    types: [opened, edited]
+  workflow_dispatch: {}   # lets you run this manually to backfill existing issues
+
+jobs:
+  auto-label:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Auto-assign labels
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const AREA_LABELS = {
+              "Playback (Now Playing, audio, EQ, crossfade)": "playback",
+              "Sync (Spotify / YouTube Music)": "sync",
+              "Downloads (Offline mode)": "downloads",
+              "Streaming (Online mode)": "streaming",
+              "Search": "search",
+              "Library": "library",
+              "Login / connecting an account": "login",
+              "Lyrics": "lyrics",
+              "Android Auto": "android-auto",
+              // "Other / not sure" intentionally has no label mapping
+            };
+
+            const LABEL_META = {
+              playback: { color: "E36209", description: "Now Playing, audio, EQ, or crossfade issue" },
+              sync: { color: "006B75", description: "Spotify / YouTube Music sync issue" },
+              downloads: { color: "8B5A2B", description: "Offline mode / downloads issue" },
+              streaming: { color: "D4318C", description: "Online mode / streaming issue" },
+              search: { color: "4A6D7C", description: "Search issue" },
+              library: { color: "A67C00", description: "Library issue" },
+              login: { color: "3F3D9E", description: "Login or account-connection issue" },
+              lyrics: { color: "FF6F61", description: "Lyrics issue" },
+              "android-auto": { color: "37474F", description: "Android Auto issue" },
+            };
+
+            // Fetch existing labels once, create any missing area labels.
+            async function ensureLabelsExist() {
+              const existingLabels = await github.paginate(github.rest.issues.listLabelsForRepo, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              });
+              const existingNames = new Set(existingLabels.map(l => l.name.toLowerCase()));
+
+              for (const [name, meta] of Object.entries(LABEL_META)) {
+                if (existingNames.has(name.toLowerCase())) continue;
+                try {
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name,
+                    color: meta.color,
+                    description: meta.description,
+                  });
+                  core.info(`Created label "${name}"`);
+                } catch (err) {
+                  // 422 = label already exists (race condition) - safe to ignore.
+                  if (err.status !== 422) throw err;
+                }
+              }
+            }
+
+            function extractValue(body, title) {
+              const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              const regex = new RegExp(`### ${escaped}[\\s\\S]*?\\n\\n([^\\n#]+)`, "i");
+              const match = body.match(regex);
+              return match ? match[1].trim() : null;
+            }
+
+            function computeLabels(body) {
+              const toAdd = new Set(["bug"]); // this template is bug-reports only
+
+              const area = extractValue(body, "Where does it happen\\?");
+              if (area && AREA_LABELS[area]) {
+                toAdd.add(AREA_LABELS[area]);
+              }
+
+              return [...toAdd];
+            }
+
+            async function applyLabels(issue) {
+              const body = issue.body || "";
+              const existing = issue.labels.map(l =>
+                (typeof l === "string" ? l : l.name).toLowerCase()
+              );
+              const wanted = computeLabels(body);
+              const finalLabels = wanted.filter(l => !existing.includes(l.toLowerCase()));
+
+              if (finalLabels.length > 0) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: finalLabels,
+                });
+                core.info(`Issue #${issue.number}: added [${finalLabels.join(", ")}]`);
+              }
+            }
+
+            await ensureLabelsExist();
+
+            if (context.eventName === "issues") {
+              // Normal path: label the issue that triggered the event.
+              await applyLabels(context.payload.issue);
+            } else {
+              // Manual/backfill path: sweep open issues that have no labels yet.
+              const issues = await github.paginate(github.rest.issues.listForRepo, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: "open",
+                per_page: 100,
+              });
+
+              for (const issue of issues) {
+                if (issue.pull_request) continue; // skip PRs
+                if (issue.labels.length > 0) continue; // only touch untagged issues
+                await applyLabels(issue);
+              }
+            }
