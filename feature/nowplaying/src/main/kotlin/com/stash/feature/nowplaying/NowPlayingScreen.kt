@@ -504,6 +504,8 @@ fun NowPlayingScreen(
                 accentColor = npAccent(uiState.vibrantColor),
                 liveEnabled = liveLyricsEnabled,
                 onTap = viewModel::onShowLyrics,
+                isAmoled = isAmoled,
+                showBlurLayer = showBlurLayer,
             )
         }
     }

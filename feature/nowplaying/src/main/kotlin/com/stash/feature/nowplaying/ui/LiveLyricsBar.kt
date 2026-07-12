@@ -89,18 +89,22 @@ fun LiveLyricsBar(
     liveEnabled: Boolean,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
+    isAmoled: Boolean = false,
+    showBlurLayer: Boolean = true,
 ) {
-    // remember(state): the 250ms position ticks recompose this composable
-    // every tick; without the cache each tick would re-allocate a Live() wrapper.
     val mode = remember(state, liveEnabled) { liveBarModeFor(state, liveEnabled) }
+    // Matches AmbientBackground's own base-color branch: true black when
+    // AMOLED is on and the blur layer is off, otherwise the near-black
+    // BarBase used everywhere else. Without this the bar's gray-tinted
+    // scrim shows up as a visible seam against AmbientBackground's pure
+    // black canvas.
+    val barBase = if (isAmoled && !showBlurLayer) Color.Black else BarBase
     AnimatedVisibility(
         visible = mode != LiveBarMode.Hidden,
         enter = fadeIn(tween(400)) + expandVertically(tween(400)),
         exit = fadeOut(tween(250)) + shrinkVertically(tween(250)),
         modifier = modifier,
     ) {
-        // 800ms accent crossfade on track change — matches AmbientBackground's
-        // CROSSFADE_MS so the whole surface recolors as one.
         val animAccent by animateColorAsState(
             targetValue = accentColor,
             animationSpec = tween(800),
