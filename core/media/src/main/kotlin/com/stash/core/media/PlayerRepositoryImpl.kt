@@ -93,7 +93,6 @@ class PlayerRepositoryImpl @Inject constructor(
     private val connectivity: ConnectivityMonitor,
     private val trackDao: TrackDao,
     private val playbackResumer: PlaybackResumer,
-    private val castStateHolder: CastStateHolder,
     private val radioGenerator: com.stash.core.data.radio.RadioStationGenerator,
 ) : PlayerRepository {
 
