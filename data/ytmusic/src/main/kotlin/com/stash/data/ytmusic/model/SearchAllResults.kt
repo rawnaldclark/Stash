@@ -100,4 +100,5 @@ data class ArtistProfile(
     val albums: List<AlbumSummary>,
     val singles: List<AlbumSummary>,
     val related: List<ArtistSummary>,
+    val about: ArtistAbout? = null,
 )
