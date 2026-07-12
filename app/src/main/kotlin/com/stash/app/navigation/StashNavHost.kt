@@ -133,8 +133,11 @@ fun StashNavHost(
                 onOpenLibraryStorage = { navController.navigate(SettingsLibraryStorageRoute) },
                 onOpenAppearance = { navController.navigate(SettingsAppearanceRoute) },
                 onOpenAbout = { navController.navigate(SettingsAboutRoute) },
-                onDonate = { runCatching { uriHandler.openUri("https://ko-fi.com/rawnald") } },
+                // GitHub Sponsors is the preferred path — 0% platform fee, so
+                // 100% reaches the maintainer (Ko-fi skims a few percent).
+                onSponsor = { runCatching { uriHandler.openUri("https://github.com/sponsors/rawnaldclark") } },
                 onStar = { runCatching { uriHandler.openUri("https://github.com/rawnaldclark/Stash") } },
+                onKofi = { runCatching { uriHandler.openUri("https://ko-fi.com/rawnald") } },
             )
         }
 

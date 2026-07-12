@@ -3,6 +3,7 @@ package com.stash.feature.settings.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,14 +32,20 @@ import com.stash.core.ui.theme.StashPurple
 import com.stash.core.ui.theme.StashPurpleLight
 
 /**
- * A premium gradient Support card for the Settings hub. Renders a one-line pitch
- * and two actions (Donate / Star). Pure presentation — the hub screen wires the
- * actual donate/star URL handlers via [onDonate] and [onStar].
+ * A premium gradient Support card for the Settings hub. Renders a one-line pitch,
+ * two primary actions (Sponsor / Star), and a secondary Ko-fi link. Pure
+ * presentation — the hub screen wires the URL handlers via [onSponsor], [onStar],
+ * and [onKofi].
+ *
+ * GitHub Sponsors is the preferred path (0% platform fee, so 100% reaches the
+ * maintainer); Ko-fi stays available as a lower-friction option for donors
+ * without a GitHub account.
  */
 @Composable
 fun SupportBanner(
-    onDonate: () -> Unit,
+    onSponsor: () -> Unit,
     onStar: () -> Unit,
+    onKofi: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -75,7 +82,7 @@ fun SupportBanner(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Button(
-                onClick = onDonate,
+                onClick = onSponsor,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -87,7 +94,7 @@ fun SupportBanner(
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "Donate", style = MaterialTheme.typography.labelMedium)
+                Text(text = "Sponsor", style = MaterialTheme.typography.labelMedium)
             }
             OutlinedButton(
                 onClick = onStar,
@@ -105,5 +112,13 @@ fun SupportBanner(
                 Text(text = "Star", style = MaterialTheme.typography.labelMedium)
             }
         }
+        Text(
+            text = "also on Ko-fi ↗",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .clickable(onClick = onKofi)
+                .padding(vertical = 2.dp),
+        )
     }
 }
