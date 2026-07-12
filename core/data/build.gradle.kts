@@ -54,6 +54,7 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.truth)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("app.cash.turbine:turbine:1.1.0")
     testImplementation("androidx.room:room-testing:2.7.1")

@@ -160,6 +160,18 @@ suspend fun updateNowPlaying(
         parseTopTags(response["toptags"]?.jsonObject)
     }
 
+    /** Artist bio + MBID via artist.getInfo. Cacheable (routes through the proxy
+     *  once the Worker allowlists artist.getinfo). */
+    suspend fun getArtistInfo(artist: String): Result<LastFmArtistInfo?> = runCatching {
+        val params = sortedMapOf(
+            "method" to "artist.getInfo",
+            "api_key" to credentials.apiKey,
+            "artist" to artist,
+            "autocorrect" to "1",
+        )
+        parseArtistInfo(unsignedGet(params, cacheable = true))
+    }
+
     /**
      * Artists similar to [artist]. [limit] is the Last.fm page size — the
      * API caps around 100 regardless of what you send. Used by the
