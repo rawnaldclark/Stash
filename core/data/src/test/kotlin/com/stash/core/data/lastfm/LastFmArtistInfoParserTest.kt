@@ -25,4 +25,16 @@ class LastFmArtistInfoParserTest {
     @Test fun `missing artist returns null`() {
         assertThat(parseArtistInfo(obj("""{"error":6,"message":"not found"}"""))).isNull()
     }
+
+    @Test fun `short terse placeholder is nulled`() {
+        val r = parseArtistInfo(obj("""{"artist":{"mbid":"m1","bio":{"content":"Metallica is an artist."}}}"""))
+        assertThat(r!!.bio).isNull()
+    }
+
+    @Test fun `real bio opening with is-a-genre-artist is preserved`() {
+        // Regression: the old greedy placeholder regex nulled real bios like this.
+        val bio = "Bad Bunny is a Puerto Rican recording artist."
+        val r = parseArtistInfo(obj("""{"artist":{"mbid":"m1","bio":{"content":"$bio"}}}"""))
+        assertThat(r!!.bio).isEqualTo(bio)
+    }
 }

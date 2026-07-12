@@ -56,6 +56,9 @@ fun AboutSection(
 ) {
     val uriHandler = LocalUriHandler.current
     var expanded by remember { mutableStateOf(false) }
+    // Whether the collapsed bio actually overflows 4 lines — drives whether the
+    // "See more" toggle is worth showing (a 1-2 line bio shouldn't get one).
+    var bioOverflows by remember { mutableStateOf(false) }
     val photo = about.photoUrl ?: avatarUrl
 
     Column(
@@ -84,18 +87,21 @@ fun AboutSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = if (expanded) Int.MAX_VALUE else 4,
                 overflow = TextOverflow.Ellipsis,
+                onTextLayout = { if (!expanded) bioOverflows = it.hasVisualOverflow },
                 modifier = Modifier
                     .fillMaxWidth()
                     .animateContentSize()
                     .clickable { expanded = !expanded },
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = if (expanded) "See less" else "See more",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable { expanded = !expanded },
-            )
+            if (bioOverflows || expanded) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (expanded) "See less" else "See more",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { expanded = !expanded },
+                )
+            }
         }
 
         if (about.socials.isNotEmpty()) {

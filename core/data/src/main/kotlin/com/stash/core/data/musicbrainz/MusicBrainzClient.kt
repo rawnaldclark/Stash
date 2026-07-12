@@ -28,7 +28,7 @@ fun escapeLucene(name: String): String = name.replace(LUCENE) { "\\" + it.value 
 /** Map an artist `relations` payload to ordered, de-duped social links.
  *  Host-based for platforms; `official homepage` type -> website. Skips ended. */
 fun mapSocials(rels: JsonObject): List<SocialLink> {
-    val out = LinkedHashMap<String, SocialLink>() // key = url -> preserves order + dedupes
+    val out = LinkedHashMap<String, SocialLink>() // key = kind -> one link per platform, first wins
     val relations = rels["relations"]?.jsonArray ?: return emptyList()
     for (el in relations) {
         val rel = el.jsonObject
@@ -39,7 +39,9 @@ fun mapSocials(rels: JsonObject): List<SocialLink> {
             type == "official homepage" -> "website"
             else -> HOST_KIND.entries.firstOrNull { host(url).endsWith(it.key) }?.value
         } ?: continue
-        out.putIfAbsent(url, SocialLink(kind, url))
+        // Dedupe by kind: an artist listing both twitter.com and x.com must not
+        // yield two identical "x" icons. First relation for a kind wins.
+        out.putIfAbsent(kind, SocialLink(kind, url))
     }
     return out.values.toList()
 }
