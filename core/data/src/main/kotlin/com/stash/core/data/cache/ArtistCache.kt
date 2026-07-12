@@ -9,6 +9,8 @@ import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.ArtistProfile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeout
@@ -73,6 +75,7 @@ class ArtistCache(
     // only dao/api/now) keep compiling; production injects the real Qobuz
     // supplement via the @Inject secondary constructor below.
     private val supplement: DiscographySupplement = NoopDiscographySupplement(),
+    private val aboutEnricher: ArtistAboutEnricher = NoopArtistAboutEnricher(),
 ) {
 
     /**
@@ -88,7 +91,8 @@ class ArtistCache(
         dao: ArtistProfileCacheDao,
         api: YTMusicApiClient,
         supplement: DiscographySupplement,
-    ) : this(dao, api, System::currentTimeMillis, supplement)
+        aboutEnricher: ArtistAboutEnricher,
+    ) : this(dao, api, System::currentTimeMillis, supplement, aboutEnricher)
 
     /**
      * Lenient JSON codec — matches the one in [ArtistCacheEntityFixtures]
@@ -174,20 +178,25 @@ class ArtistCache(
      * lists, never escaping. Bounded by [SUPPLEMENT_TIMEOUT_MS] because the qbdlx
      * token pool can hang and must not stall the artist page.
      */
-    private suspend fun fetchAndMerge(artistId: String): ArtistProfile {
-        val yt = api.getArtist(artistId)
-        val merged = try {
-            withTimeout(SUPPLEMENT_TIMEOUT_MS) {
-                supplement.mergeInto(yt.name, yt.albums, yt.singles)
-            }
-        } catch (e: TimeoutCancellationException) {
-            MergedDiscography(yt.albums, yt.singles)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            MergedDiscography(yt.albums, yt.singles)
+    private suspend fun fetchAndMerge(artistId: String): ArtistProfile = coroutineScope {
+        val yt = api.getArtist(artistId)   // REQUIRED — failure propagates
+        val discographyDeferred = async {
+            try {
+                withTimeout(SUPPLEMENT_TIMEOUT_MS) { supplement.mergeInto(yt.name, yt.albums, yt.singles) }
+            } catch (e: TimeoutCancellationException) { MergedDiscography(yt.albums, yt.singles) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { MergedDiscography(yt.albums, yt.singles) }
         }
-        return yt.copy(albums = merged.albums, singles = merged.singles)
+        val aboutDeferred = async {
+            try {
+                withTimeout(ABOUT_TIMEOUT_MS) { aboutEnricher.enrich(yt.name) }
+            } catch (e: TimeoutCancellationException) { null }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { null }
+        }
+        val merged = discographyDeferred.await()
+        val about = aboutDeferred.await()
+        yt.copy(albums = merged.albums, singles = merged.singles, about = about)
     }
 
     /**
@@ -215,5 +224,8 @@ class ArtistCache(
 
         /** Ceiling on the Qobuz supplement merge; past this we serve YT-only. */
         private const val SUPPLEMENT_TIMEOUT_MS = 4_000L
+
+        /** About enricher bound — kept <= SUPPLEMENT_TIMEOUT_MS so it never extends cold-miss first paint. */
+        private const val ABOUT_TIMEOUT_MS: Long = 4_000L
     }
 }
