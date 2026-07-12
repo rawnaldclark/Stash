@@ -39,6 +39,7 @@ const CACHE_TTL_SECONDS = 14 * 24 * 60 * 60; // 14 days
 export const ALLOWED_METHODS = new Set([
     "tag.gettoptracks",
     "tag.gettopartists",
+    "artist.getinfo",
     "artist.getsimilar",
     "artist.gettoptracks",
     "artist.gettoptags",

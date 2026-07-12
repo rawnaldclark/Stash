@@ -46,3 +46,7 @@ test("forbidden params block signed/per-user requests", () => {
         assert.ok(FORBIDDEN_PARAMS.has(p), `${p} must be rejected`);
     }
 });
+
+test("artist.getinfo is allowlisted", () => {
+    assert.ok(ALLOWED_METHODS.has("artist.getinfo"));
+});
