@@ -6,7 +6,9 @@
 
 **Architecture:** A new `ArtistAboutEnricher` runs as a **second best-effort supplement** inside `ArtistCache.fetchAndMerge()`, concurrently with the existing Qobuz supplement and independently timeout-bounded so it never gates cold-miss first paint or fails the page. Bio comes from Last.fm `artist.getInfo` (via the existing proxy Worker); social links + the photo bridge come from **client-direct** MusicBrainz `url-rels`. The result rides in the existing `ArtistProfile` JSON cache blob as one nullable field — no DB migration.
 
-**Tech Stack:** Kotlin, Jetpack Compose, Hilt, Coroutines/Flow, kotlinx.serialization, OkHttp, JUnit + Truth + mockito-inline. Cloudflare Worker (JS, vitest) for the one-line Last.fm allowlist change.
+**Tech Stack:** Kotlin, Jetpack Compose, Hilt, Coroutines/Flow, kotlinx.serialization, OkHttp, JUnit + Truth + mockito 5.x (inline maker is the 5.x default) / mockk + kotlinx-coroutines-test. Cloudflare Worker (JS, `node --test`) for the one-line Last.fm allowlist change.
+
+**Test-dependency prep (do first, part of Tasks 1 & 3):** `core:data` and `data:ytmusic` do **not** currently have Truth on their test classpath (their existing tests use `org.junit.Assert`). Each of those tasks adds `testImplementation(libs.truth)` (catalog entry `libs.truth` already exists) to the module's `build.gradle.kts` as its first step, before the test that needs it. `feature:search` already has Truth.
 
 **Spec:** `docs/superpowers/specs/2026-07-12-artist-about-section-design.md`
 
@@ -25,7 +27,7 @@
 | `core/data/.../lastfm/LastFmApiClient.kt` (modify) | `getArtistInfo` read method | 3 |
 | `core/data/.../musicbrainz/MusicBrainzClient.kt` (new) | interface + `SocialLink` mapper (pure) + name escaping | 4 |
 | `core/data/.../musicbrainz/MusicBrainzClientImpl.kt` (new) | OkHttp impl, client-direct, UA + rate gate | 4 |
-| `core/data/.../musicbrainz/di/MusicBrainzModule.kt` (new) | `@Binds` interface→impl | 4 |
+| `core/data/.../di/ArtistEnrichmentModule.kt` (new) | `@Binds` for `MusicBrainzClient` (Task 4) **and** `ArtistAboutEnricher` (Task 5) | 4, 5 |
 | `core/data/.../cache/ArtistAboutEnricher.kt` (new) | orchestrates bio + socials → `ArtistAbout?`; `Noop` impl | 5 |
 | `core/data/.../cache/ArtistCache.kt` (modify) | new ctor param + concurrent enrich in `fetchAndMerge` | 6 |
 | `feature/search/.../AboutSection.kt` (new) | Compose section (bio clamp, social icons, photo) | 7 |
@@ -41,6 +43,13 @@
 - Test: `data/ytmusic/src/test/kotlin/com/stash/data/ytmusic/model/ArtistAboutSerializationTest.kt`
 
 Colocated in `data:ytmusic` (not `core:data`) because `ArtistProfile` lives here and `core:data → data:ytmusic` is one-way — the reverse would cycle. `kind` is a **String** (not enum): the cache-hit decode at `ArtistCache.kt:137` is outside any try/catch and kotlinx throws on unknown enum constants, which would crash an older sideloaded APK reading a newer blob.
+
+- [ ] **Step 0: Add Truth to the module's test classpath**
+
+In `data/ytmusic/build.gradle.kts`, add to the `dependencies` block (alongside the other `testImplementation` lines):
+```kotlin
+    testImplementation(libs.truth)
+```
 
 - [ ] **Step 1: Write the failing test**
 
@@ -128,7 +137,8 @@ Expected: PASS (3 tests).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add data/ytmusic/src/main/kotlin/com/stash/data/ytmusic/model/ArtistAbout.kt \
+git add data/ytmusic/build.gradle.kts \
+        data/ytmusic/src/main/kotlin/com/stash/data/ytmusic/model/ArtistAbout.kt \
         data/ytmusic/src/main/kotlin/com/stash/data/ytmusic/model/SearchAllResults.kt \
         data/ytmusic/src/test/kotlin/com/stash/data/ytmusic/model/ArtistAboutSerializationTest.kt
 git commit -m "feat(artist): ArtistAbout/SocialLink model + ArtistProfile.about field"
@@ -142,16 +152,16 @@ git commit -m "feat(artist): ArtistAbout/SocialLink model + ArtistProfile.about 
 - Modify: `infra/lastfm-proxy/src/index.js` (`ALLOWED_METHODS`, ~line 39)
 - Test: `infra/lastfm-proxy/test/logic.test.js`
 
-Without this, `getArtistInfo` gets a 400 from the proxy and the client silently falls back to a direct read-key call — no shared cache. The method is generic/unsigned and its params (method/artist/autocorrect/mbid) hit none of `FORBIDDEN_PARAMS`.
+Without this, `getArtistInfo` gets a 400 from the proxy and the client silently falls back to a direct read-key call — no shared cache. The method is generic/unsigned. (It *does* send `api_key`, which is in `FORBIDDEN_PARAMS`, but `unsignedGet` strips `api_key` before the proxy call at `LastFmApiClient.kt:496` — so it clears the gate. Do not remove that strip.)
 
-- [ ] **Step 1: Write the failing test** (append to `logic.test.js`)
+- [ ] **Step 1: Write the failing test** (append to `logic.test.js` — the suite runs on `node --test`, so use `node:assert`, NOT Vitest `expect`; `ALLOWED_METHODS` is already imported at the top of that file)
 
 ```js
-import { ALLOWED_METHODS } from "../src/index.js";
 test("artist.getinfo is allowlisted", () => {
-    expect(ALLOWED_METHODS.has("artist.getinfo")).toBe(true);
+    assert.ok(ALLOWED_METHODS.has("artist.getinfo"));
 });
 ```
+(`assert` is already imported as `node:assert/strict` at the top of `logic.test.js`; if not, add `import assert from "node:assert/strict";`.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -186,6 +196,13 @@ git commit -m "feat(worker): allow artist.getinfo so bios use the shared cache"
 - Test: `core/data/src/test/kotlin/com/stash/core/data/lastfm/LastFmArtistInfoParserTest.kt`
 
 Mirror the existing `getArtistTopTags` read shape (sortedMap params, `autocorrect=1`, `unsignedGet(params, cacheable = true)`). Parser strips HTML + the "Read more" anchor, maps empty/placeholder → `null`, and extracts `mbid`.
+
+- [ ] **Step 0: Add Truth to `core:data` test classpath** (once — reused by Tasks 3, 4, 5, 6)
+
+In `core/data/build.gradle.kts`, add to the `dependencies` block:
+```kotlin
+    testImplementation(libs.truth)
+```
 
 - [ ] **Step 1: Write the failing test**
 
@@ -281,7 +298,8 @@ Expected: PASS (3 tests).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add core/data/src/main/kotlin/com/stash/core/data/lastfm/LastFmArtistInfo.kt \
+git add core/data/build.gradle.kts \
+        core/data/src/main/kotlin/com/stash/core/data/lastfm/LastFmArtistInfo.kt \
         core/data/src/main/kotlin/com/stash/core/data/lastfm/LastFmApiClient.kt \
         core/data/src/test/kotlin/com/stash/core/data/lastfm/LastFmArtistInfoParserTest.kt
 git commit -m "feat(lastfm): getArtistInfo + bio parser (HTML strip, placeholder->null, mbid)"
@@ -294,8 +312,10 @@ git commit -m "feat(lastfm): getArtistInfo + bio parser (HTML strip, placeholder
 **Files:**
 - Create: `core/data/src/main/kotlin/com/stash/core/data/musicbrainz/MusicBrainzClient.kt` (interface + pure `mapSocials` + `escapeLucene`)
 - Create: `core/data/src/main/kotlin/com/stash/core/data/musicbrainz/MusicBrainzClientImpl.kt`
-- Create: `core/data/src/main/kotlin/com/stash/core/data/musicbrainz/di/MusicBrainzModule.kt`
+- Create: `core/data/src/main/kotlin/com/stash/core/data/di/ArtistEnrichmentModule.kt`
 - Test: `core/data/src/test/kotlin/com/stash/core/data/musicbrainz/MusicBrainzMapperTest.kt`
+
+> **Note on DI:** `DiscographySupplement` is bound in `data/download/.../qbdlx/di/QbdlxModule.kt` (NOT core:data), so there is no existing core:data cache module to reuse. This task creates `ArtistEnrichmentModule` in `core:data`; Task 5 adds the enricher `@Binds` to the *same* module. This module is where both the `MusicBrainzClient` and `ArtistAboutEnricher` bindings live.
 
 Mapping is by **URL host** across all `url-rels` (catches every platform regardless of MB's rel typing), `official homepage` type → website, `ended:true` relations skipped, Lucene-special chars escaped in name search. The interface is what the enricher depends on (mock target); the impl does client-direct OkHttp with the project-URL User-Agent and an on-device ~1 req/sec gate.
 
@@ -410,11 +430,21 @@ Expected: PASS (3 tests).
 
 `MusicBrainzClientImpl.kt` — inject the app `OkHttpClient`; base `https://musicbrainz.org/ws/2/`; `User-Agent: Stash/<BuildConfig.VERSION or "dev"> ( https://github.com/rawnaldclark/Stash )`; a `Mutex` + last-call timestamp enforcing ≥1000ms between requests; `searchByName` uses `?query=artist:"${escapeLucene(name)}"&fmt=json`, accepts the top result only if `score >= 95` and `type in {Person, Group}`, then calls `lookupUrlRels(mbid)`; both return the parsed `JsonObject` (the whole artist object, so the enricher can also read the `wikidata` rel later) or null on non-2xx/exception. Wrap network in `runCatching`.
 
-`di/MusicBrainzModule.kt`:
+`di/ArtistEnrichmentModule.kt` (the enricher `@Binds` is added in Task 5):
 ```kotlin
+package com.stash.core.data.di
+
+import com.stash.core.data.musicbrainz.MusicBrainzClient
+import com.stash.core.data.musicbrainz.MusicBrainzClientImpl
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+
 @Module @InstallIn(SingletonComponent::class)
-abstract class MusicBrainzModule {
+abstract class ArtistEnrichmentModule {
     @Binds abstract fun bindMusicBrainzClient(impl: MusicBrainzClientImpl): MusicBrainzClient
+    // Task 5 adds: @Binds abstract fun bindArtistAboutEnricher(impl: RealArtistAboutEnricher): ArtistAboutEnricher
 }
 ```
 
@@ -427,6 +457,7 @@ Expected: BUILD SUCCESSFUL.
 
 ```bash
 git add core/data/src/main/kotlin/com/stash/core/data/musicbrainz/ \
+        core/data/src/main/kotlin/com/stash/core/data/di/ArtistEnrichmentModule.kt \
         core/data/src/test/kotlin/com/stash/core/data/musicbrainz/MusicBrainzMapperTest.kt
 git commit -m "feat(musicbrainz): client-direct client + url-rels social mapper"
 ```
@@ -441,16 +472,81 @@ git commit -m "feat(musicbrainz): client-direct client + url-rels social mapper"
 
 Orchestrates: Last.fm `getArtistInfo` (bio + optional mbid) → MusicBrainz (mbid lookup, fall back to name search on 404/absent) → `mapSocials`. Returns `ArtistAbout?` — **null when nothing found** (no bio, no socials, no photo). `@Inject`-constructed. A `NoopArtistAboutEnricher` (returns null) is the `ArtistCache` default so existing tests keep compiling.
 
-- [ ] **Step 1: Write the failing test** (mock `LastFmApiClient` via mockito-inline, fake `MusicBrainzClient`)
+- [ ] **Step 1: Write the failing test** (mock `LastFmApiClient` via mockito 5.x; hand-fake `MusicBrainzClient`)
 
 ```kotlin
-// key cases:
-//  - bio present + socials present  -> ArtistAbout(bio, socials)
-//  - bio fails, socials present     -> ArtistAbout(bio=null, socials)   (partial)
-//  - both empty                     -> null
-//  - lastfm mbid present but lookup 404 -> falls back to searchByName
-// (Use kotlinx.coroutines.test.runTest; assert with Truth.)
+package com.stash.core.data.cache
+
+import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.lastfm.LastFmApiClient
+import com.stash.core.data.lastfm.LastFmArtistInfo
+import com.stash.core.data.musicbrainz.MusicBrainzClient
+import com.stash.data.ytmusic.model.SocialLink
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import org.junit.Test
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+
+class ArtistAboutEnricherTest {
+    private fun relsPayload(vararg urls: Pair<String, String>): JsonObject {
+        val rels = urls.joinToString(",") { (type, url) ->
+            """{"type":"$type","url":{"resource":"$url"}}"""
+        }
+        return Json.parseToJsonElement("""{"relations":[$rels]}""").jsonObject
+    }
+
+    private fun enricher(
+        info: LastFmArtistInfo?,
+        mbLookup: JsonObject? = null,
+        mbSearch: JsonObject? = null,
+    ): RealArtistAboutEnricher {
+        val lastFm = mock<LastFmApiClient> {
+            onBlocking { getArtistInfo(org.mockito.kotlin.any()) } doReturn Result.success(info)
+        }
+        val mb = object : MusicBrainzClient {
+            override suspend fun lookupUrlRels(mbid: String) = mbLookup
+            override suspend fun searchByName(name: String) = mbSearch
+        }
+        return RealArtistAboutEnricher(lastFm, mb)
+    }
+
+    @Test fun `bio and socials both present`() = runTest {
+        val about = enricher(
+            info = LastFmArtistInfo(bio = "b", mbid = "m1"),
+            mbLookup = relsPayload("social network" to "https://instagram.com/a"),
+        ).enrich("A")
+        assertThat(about!!.bio).isEqualTo("b")
+        assertThat(about.socials).containsExactly(SocialLink("instagram", "https://instagram.com/a"))
+    }
+
+    @Test fun `bio null but socials present is partial`() = runTest {
+        val about = enricher(
+            info = LastFmArtistInfo(bio = null, mbid = "m1"),
+            mbLookup = relsPayload("official homepage" to "https://a.com"),
+        ).enrich("A")
+        assertThat(about!!.bio).isNull()
+        assertThat(about.socials).isNotEmpty()
+    }
+
+    @Test fun `nothing found returns null`() = runTest {
+        val about = enricher(info = LastFmArtistInfo(bio = null, mbid = null)).enrich("A")
+        assertThat(about).isNull()
+    }
+
+    @Test fun `stale mbid lookup null falls back to name search`() = runTest {
+        val about = enricher(
+            info = LastFmArtistInfo(bio = "b", mbid = "stale"),
+            mbLookup = null, // 404
+            mbSearch = relsPayload("youtube" to "https://youtube.com/@a"),
+        ).enrich("A")
+        assertThat(about!!.socials).containsExactly(SocialLink("youtube", "https://youtube.com/@a"))
+    }
+}
 ```
+(Verified: `core:data` has `mockito-kotlin:5.4.0` **and** `mockk:1.13.8` on its test classpath — `org.mockito.kotlin` is used in ~29 existing core:data tests, so these imports resolve.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -496,19 +592,29 @@ class RealArtistAboutEnricher @Inject constructor(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew :core:data:testDebugUnitTest --tests "*ArtistAboutEnricherTest*"`
-Expected: PASS.
+Expected: PASS (4 tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Add the enricher Hilt binding** (concrete — required, or Task 8 fails with `MissingBinding`)
+
+In `core/data/src/main/kotlin/com/stash/core/data/di/ArtistEnrichmentModule.kt` (created in Task 4), add:
+```kotlin
+    @Binds abstract fun bindArtistAboutEnricher(impl: RealArtistAboutEnricher): ArtistAboutEnricher
+```
+plus the import `import com.stash.core.data.cache.ArtistAboutEnricher` and `import com.stash.core.data.cache.RealArtistAboutEnricher`.
+
+- [ ] **Step 6: Compile core:data to confirm the binding resolves**
+
+Run: `./gradlew :core:data:compileDebugKotlin`
+Expected: BUILD SUCCESSFUL.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add core/data/src/main/kotlin/com/stash/core/data/cache/ArtistAboutEnricher.kt \
+        core/data/src/main/kotlin/com/stash/core/data/di/ArtistEnrichmentModule.kt \
         core/data/src/test/kotlin/com/stash/core/data/cache/ArtistAboutEnricherTest.kt
-git commit -m "feat(artist): ArtistAboutEnricher (bio + socials -> ArtistAbout?) + Noop"
+git commit -m "feat(artist): ArtistAboutEnricher (bio + socials -> ArtistAbout?) + Noop + Hilt binding"
 ```
-
-> DI note: bind `RealArtistAboutEnricher` to `ArtistAboutEnricher` in the existing
-> `core:data` cache Hilt module (same module that provides `DiscographySupplement`),
-> so the `@Inject` `ArtistCache` constructor (Task 6) resolves it.
 
 ---
 
@@ -523,14 +629,43 @@ Add `aboutEnricher: ArtistAboutEnricher = NoopArtistAboutEnricher()` to the **pr
 
 - [ ] **Step 1: Write the failing test**
 
+Follow the construction style of the existing `ArtistCacheTest`/`ArtistCacheMergeTest` (fake `dao`/`api`, fixed `now`, primary ctor). Add a fake enricher param. Key cases:
+
 ```kotlin
-// Assert:
-//  - enricher throwing a plain Exception -> get() still emits Fresh, about == null
-//  - enricher that never returns (times out) -> Fresh still emitted, about == null,
-//    and the profile's albums/singles (Qobuz path) are unaffected
-//  - enricher returning ArtistAbout -> Fresh profile carries it
-// Use a fake ArtistAboutEnricher; fixed clock; fake dao/api/supplement as existing ArtistCache tests do.
+// In ArtistCacheAboutTest.kt — reuse the module's existing fakes for dao/api/supplement.
+private fun cache(enricher: ArtistAboutEnricher) =
+    ArtistCache(fakeDao, fakeApi, now = { 1_000L }, supplement = NoopDiscographySupplement(), aboutEnricher = enricher)
+
+@Test fun `enricher failure still emits Fresh with null about`() = runTest {
+    val c = cache(object : ArtistAboutEnricher {
+        override suspend fun enrich(artistName: String): ArtistAbout? = throw RuntimeException("boom")
+    })
+    val result = c.get("a1").first()
+    assertThat(result).isInstanceOf(CachedProfile.Fresh::class.java)
+    assertThat((result as CachedProfile.Fresh).profile.about).isNull()
+}
+
+@Test fun `enricher timeout still emits Fresh and leaves discography intact`() = runTest {
+    val c = cache(object : ArtistAboutEnricher {
+        override suspend fun enrich(artistName: String): ArtistAbout? {
+            kotlinx.coroutines.delay(Long.MAX_VALUE); return null // never returns -> times out
+        }
+    })
+    val result = c.get("a1").first() as CachedProfile.Fresh
+    assertThat(result.profile.about).isNull()
+    assertThat(result.profile.albums).isEqualTo(fakeApi.artistAlbumsFor("a1")) // Qobuz/YT path unaffected
+}
+
+@Test fun `enricher success is carried on the Fresh profile`() = runTest {
+    val about = ArtistAbout(bio = "b", socials = emptyList(), photoUrl = null)
+    val c = cache(object : ArtistAboutEnricher {
+        override suspend fun enrich(artistName: String) = about
+    })
+    val result = c.get("a1").first() as CachedProfile.Fresh
+    assertThat(result.profile.about).isEqualTo(about)
+}
 ```
+(Adapt `fakeDao`/`fakeApi`/`artistAlbumsFor` to whatever the existing `ArtistCache` tests already provide — do NOT invent a new fake harness if one exists. The `runTest` virtual clock advances past the `withTimeout` so the timeout test doesn't actually block.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -558,7 +693,12 @@ Primary ctor (after `supplement`):
 
 - [ ] **Step 4: Make `fetchAndMerge` concurrent + additive**
 
-Replace the body of `fetchAndMerge` so the required `api.getArtist` stays outside, and the two supplements run concurrently with internal catches:
+Add two imports to `ArtistCache.kt` (the file already imports `withTimeout`, `CancellationException`, `TimeoutCancellationException`, `MergedDiscography`):
+```kotlin
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+```
+Then replace the body of `fetchAndMerge` so the required `api.getArtist` stays outside, and the two supplements run concurrently with internal catches:
 ```kotlin
 private suspend fun fetchAndMerge(artistId: String): ArtistProfile = coroutineScope {
     val yt = api.getArtist(artistId)   // REQUIRED — failure propagates
@@ -607,8 +747,8 @@ git commit -m "feat(artist): run About enricher concurrently in ArtistCache.fetc
 
 **Files:**
 - Create: `feature/search/src/main/kotlin/com/stash/feature/search/AboutSection.kt`
-- Modify: `feature/search/src/main/kotlin/com/stash/feature/search/ArtistProfileScreen.kt` (`contentSections`, after the "Fans also like" item, ~line 279-290)
-- Modify (if needed): `feature/search/.../ArtistProfileUiState.kt` and `ArtistProfileViewModel.kt` — surface `about` (and the fallback `avatarUrl`) into the state the screen reads.
+- Modify: `feature/search/src/main/kotlin/com/stash/feature/search/ArtistProfileScreen.kt` (`contentSections`, after the "Fans also like" item, ~line 279-290; `contentSections` has only `state: ArtistProfileUiState` in scope — read `state.about` + `state.hero.avatarUrl`)
+- Modify (**required**, not optional): `feature/search/.../ArtistProfileUiState.kt` — add `about: ArtistAbout? = null`; and `ArtistProfileViewModel.kt` `apply()` (~line 375-386) — set `about = profile.about` when folding the cached profile into the UI state.
 - Test: `feature/search/src/test/kotlin/com/stash/feature/search/AboutSocialIconTest.kt` (pure `kind`→icon mapping)
 
 Render only when `about != null`. Bio clamps to ~4 lines with "see more"/"see less". Photo = `about.photoUrl ?: avatarUrl` (omit if both null). Social icons map `kind`→icon with a globe fallback; tap opens via `LocalUriHandler` in `runCatching`. Small "via Last.fm" label when a bio shows.
@@ -629,16 +769,21 @@ Expected: FAIL — `socialIconFor` unresolved.
 
 Composable `AboutSection(about: ArtistAbout, avatarUrl: String?, modifier)` + a pure `socialIconFor(kind: String): ImageVector` (map known kinds to `Icons.*`/material-icons-extended, else a globe). Bio uses `maxLines` + `remember { mutableStateOf(expanded) }` toggle. Social row = `about.socials.map { IconButton(onClick = { runCatching { uriHandler.openUri(it.url) } }) { Icon(socialIconFor(it.kind), it.kind) } }`. Follow the existing `SectionHeader` + section spacing used by `PopularTracksSection`/`RelatedArtistsRow`.
 
-- [ ] **Step 4: Wire into `contentSections`** (after the "Fans also like" block)
+- [ ] **Step 4: Surface `about` into the UI state, then render it**
 
+First thread the data (both edits are required — `contentSections` sees only `state`):
+- In `ArtistProfileUiState.kt`, add `val about: ArtistAbout? = null` to the state class.
+- In `ArtistProfileViewModel.kt` `apply()` (~line 375-386), where it builds the UI state from the cached `ArtistProfile`, add `about = profile.about`.
+
+Then in `contentSections` (after the "Fans also like" `item` block, ~line 279-290):
 ```kotlin
-val about = /* profile */.about
+val about = state.about
 if (about != null) {
     item { SectionHeader(title = "About") }
-    item { AboutSection(about = about, avatarUrl = /* profile */.avatarUrl) }
+    item { AboutSection(about = about, avatarUrl = state.hero.avatarUrl) }
 }
 ```
-Thread `about` + `avatarUrl` through `ArtistProfileUiState`/`contentSections` params if they aren't already available at that call site (follow how `related`/`popular` reach it).
+(Confirm the hero avatar field name against `ArtistProfileUiState` — the plan assumes `state.hero.avatarUrl`; adjust to the real accessor.)
 
 - [ ] **Step 5: Run test + compile the module**
 
