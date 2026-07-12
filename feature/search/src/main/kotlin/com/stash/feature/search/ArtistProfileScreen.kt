@@ -284,4 +284,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             )
         }
     }
+    val about = state.about
+    if (about != null) {
+        item { SectionHeader(title = "About") }
+        item { AboutSection(about = about, avatarUrl = state.hero.avatarUrl) }
+    }
 }

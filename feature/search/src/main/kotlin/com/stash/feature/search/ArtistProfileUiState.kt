@@ -1,6 +1,7 @@
 package com.stash.feature.search
 
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.ArtistAbout
 import com.stash.data.ytmusic.model.ArtistSummary
 import com.stash.data.ytmusic.model.TrackSummary
 
@@ -52,4 +53,5 @@ data class ArtistProfileUiState(
     val related: List<ArtistSummary> = emptyList(),
     val status: ArtistProfileStatus = ArtistProfileStatus.Loading,
     val focusAlbum: String? = null,
+    val about: ArtistAbout? = null,
 )

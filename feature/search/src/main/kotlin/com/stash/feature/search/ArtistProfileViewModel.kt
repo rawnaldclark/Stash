@@ -383,6 +383,7 @@ class ArtistProfileViewModel @Inject constructor(
             singles = profile.singles,
             related = profile.related,
             status = status,
+            about = profile.about,
         )
         if (!prefetchKicked && profile.popular.isNotEmpty()) {
             prefetchKicked = true
