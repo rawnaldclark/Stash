@@ -1,0 +1,13 @@
+<!--
+  Bandcamp logo (Simple Icons / CC0). Source: https://simpleicons.org/icons/bandcamp.svg
+  fillColor=#FFFFFF for a tint-friendly silhouette.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0 18.75l7.437-13.5H24l-7.438 13.5H0z" />
+</vector>

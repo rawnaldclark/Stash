@@ -9,9 +9,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,9 +24,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -34,14 +34,21 @@ import com.stash.core.common.ArtUrlUpgrader
 import com.stash.data.ytmusic.model.ArtistAbout
 
 /**
- * Maps a [com.stash.data.ytmusic.model.SocialLink] `kind` to a display icon.
- * Known platforms share a generic link glyph (material-icons has no brand
- * icons for Instagram/TikTok/etc.); "website" and any unknown kind fall back
- * to the globe. Pure so it can be unit-tested without a Compose harness.
+ * Maps a [com.stash.data.ytmusic.model.SocialLink] `kind` to its brand-logo
+ * drawable (vendored Simple Icons, CC0). Returns `null` for "website" and any
+ * unknown kind — the caller renders the Material globe for those. Pure (returns
+ * a resource id) so it can be unit-tested without a Compose harness.
  */
-fun socialIconFor(kind: String): ImageVector = when (kind.lowercase()) {
-    "instagram", "x", "tiktok", "youtube", "facebook", "soundcloud", "bandcamp" -> Icons.Default.Link
-    else -> Icons.Default.Public
+@DrawableRes
+fun socialIconFor(kind: String): Int? = when (kind.lowercase()) {
+    "instagram" -> R.drawable.ic_social_instagram
+    "x" -> R.drawable.ic_social_x
+    "tiktok" -> R.drawable.ic_social_tiktok
+    "youtube" -> R.drawable.ic_social_youtube
+    "facebook" -> R.drawable.ic_social_facebook
+    "soundcloud" -> R.drawable.ic_social_soundcloud
+    "bandcamp" -> R.drawable.ic_social_bandcamp
+    else -> null // website + unknown -> Material globe fallback
 }
 
 /**
@@ -109,11 +116,20 @@ fun AboutSection(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 about.socials.forEach { social ->
                     IconButton(onClick = { runCatching { uriHandler.openUri(social.url) } }) {
-                        Icon(
-                            imageVector = socialIconFor(social.kind),
-                            contentDescription = social.kind,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        val brand = socialIconFor(social.kind)
+                        if (brand != null) {
+                            Icon(
+                                painter = painterResource(brand),
+                                contentDescription = social.kind,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Public,
+                                contentDescription = social.kind,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
