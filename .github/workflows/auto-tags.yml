@@ -74,7 +74,6 @@ jobs:
             }
 
             function computeLabels(body) {
-              const toAdd = new Set(["bug"]); // this template is bug-reports only
 
               const area = extractValue(body, "Where does it happen\\?");
               if (area && AREA_LABELS[area]) {
