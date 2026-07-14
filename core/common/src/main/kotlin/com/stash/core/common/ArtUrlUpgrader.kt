@@ -45,6 +45,11 @@ object ArtUrlUpgrader {
     private const val SPOTIFY_300 = "ab67616d00001e02"
     private const val SPOTIFY_640 = "ab67616d0000b273"
 
+    // Last.fm `/i/u/<size>/<hash>` — capture the `/i/u/` prefix so we can
+    // swap just the <size> segment (e.g. 300x300, 174s) for a larger one.
+    private val LASTFM_SIZE_REGEX = Regex("""(/i/u/)[^/]+/""")
+    private const val LASTFM_TARGET_SIZE = "770x0"
+
     // i.ytimg.com filenames in increasing order of quality.
     //   `default`      → 120x90
     //   `mqdefault`    → 320x180
@@ -123,6 +128,17 @@ object ArtUrlUpgrader {
             "i.scdn.co/image/" in url -> {
                 url.replace(SPOTIFY_64, SPOTIFY_640)
                     .replace(SPOTIFY_300, SPOTIFY_640)
+            }
+
+            // Last.fm art (lastfm.freetls.fastly.net) is served under
+            // `/i/u/<size>/<hash>.<ext>` — e.g. `/i/u/300x300/…`. The API
+            // hands back 300x300 (or smaller `NNNs` avatars), which is
+            // badly upscaled on large surfaces like the Home hero. Bump the
+            // size segment to `770x0` (770px wide, proportional) for a crisp
+            // image. Coil downsamples to view size, so the only cost is
+            // bandwidth on a CDN-cached file.
+            "lastfm." in url && LASTFM_SIZE_REGEX.containsMatchIn(url) -> {
+                LASTFM_SIZE_REGEX.replace(url, "$1$LASTFM_TARGET_SIZE/")
             }
 
             // YouTube video thumbnails (i.ytimg.com). Two upgrades:

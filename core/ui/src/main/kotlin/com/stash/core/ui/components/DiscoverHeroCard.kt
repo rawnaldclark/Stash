@@ -2,8 +2,10 @@ package com.stash.core.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -78,82 +81,83 @@ fun DiscoverHeroCard(
             return@Box
         }
 
+        // Ambient backdrop: the cover, blurred + darkened (blur is a no-op below
+        // API 31 — the scrim still carries it). Brand gradient when there's no art.
         if (artUrl != null) {
-            // Cover art fills the card; a scrim keeps the bottom-left text legible.
             AsyncImage(
                 model = ArtUrlUpgrader.upgrade(artUrl),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.15f), Color.Black.copy(alpha = 0.7f)),
-                        ),
-                    ),
+                modifier = Modifier.fillMaxSize().blur(24.dp),
             )
         } else {
-            // No art yet — brand gradient fallback.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Brush.linearGradient(listOf(StashPurpleDark, StashBackground))),
             )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
-                        ),
+        }
+        // Scrim — darker on the left where the text sits, so it stays legible.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color.Black.copy(alpha = 0.6f), Color.Black.copy(alpha = 0.25f)),
                     ),
-            )
-        }
+                ),
+        )
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 15.dp, end = 15.dp, bottom = 13.dp),
+        Row(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+            // Crisp square cover — shown 1:1 so it never stretches or wide-crops.
+            if (artUrl != null) {
+                AsyncImage(
+                    model = ArtUrlUpgrader.upgrade(artUrl),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(118.dp)
+                        .clip(RoundedCornerShape(12.dp)),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.72f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Surface(
+                onClick = onPlay,
+                shape = CircleShape,
                 color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.72f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        Surface(
-            onClick = onPlay,
-            shape = CircleShape,
-            color = Color.White,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(14.dp)
-                .size(38.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = "Play $title",
-                tint = Color.Black,
-                modifier = Modifier.padding(8.dp),
-            )
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play $title",
+                    tint = Color.Black,
+                    modifier = Modifier.padding(10.dp),
+                )
+            }
         }
     }
 }
