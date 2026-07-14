@@ -1,7 +1,12 @@
 package com.stash.feature.library
 
+import android.content.Context
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
+import com.stash.core.data.db.dao.DiscoveryQueueDao
+import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.prefs.DownloadNetworkPreference
+import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
@@ -228,11 +233,25 @@ class LibraryViewModelTest {
         localImportCoordinator: LocalImportCoordinator = mock {
             on { state } doReturn MutableStateFlow<LocalImportState>(LocalImportState.Idle)
         },
+        recipeDao: StashMixRecipeDao = mock {
+            on { observeAll() } doReturn flowOf(emptyList())
+        },
+        discoveryQueueDao: DiscoveryQueueDao = mock {
+            on { observeNonFailedCountsByRecipe() } doReturn flowOf(emptyList())
+        },
+        downloadNetworkPreference: DownloadNetworkPreference = mock(),
+        streamingPreference: StreamingPreference = mock(),
+        context: Context = mock(),
     ): LibraryViewModel = LibraryViewModel(
         musicRepository = musicRepository,
         playerRepository = playerRepository,
         tokenManager = tokenManager,
         playlistImageHelper = playlistImageHelper,
         localImportCoordinator = localImportCoordinator,
+        recipeDao = recipeDao,
+        discoveryQueueDao = discoveryQueueDao,
+        downloadNetworkPreference = downloadNetworkPreference,
+        streamingPreference = streamingPreference,
+        context = context,
     )
 }

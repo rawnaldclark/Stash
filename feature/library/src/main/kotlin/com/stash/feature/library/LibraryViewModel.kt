@@ -4,14 +4,22 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
+import com.stash.core.data.db.dao.DiscoveryQueueDao
+import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.mix.MixBuildState
+import com.stash.core.data.mix.mixBuildState
+import com.stash.core.data.prefs.DownloadNetworkPreference
+import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaylistType
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.files.LocalImportState
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -22,9 +30,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import android.content.Context
 import android.net.Uri
 import javax.inject.Inject
 
@@ -53,6 +63,13 @@ class LibraryViewModel @Inject constructor(
     private val tokenManager: TokenManager,
     private val playlistImageHelper: PlaylistImageHelper,
     private val localImportCoordinator: LocalImportCoordinator,
+    private val recipeDao: StashMixRecipeDao,
+    private val discoveryQueueDao: DiscoveryQueueDao,
+    // Injected now for use by a later task (per-mix refresh from Library cards);
+    // unused in the current combine but wired to keep the ctor stable.
+    private val downloadNetworkPreference: DownloadNetworkPreference,
+    private val streamingPreference: StreamingPreference,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     /** Live progress for "Import from device". Observed by LibraryScreen. */
@@ -103,20 +120,84 @@ class LibraryViewModel @Inject constructor(
     }
 
     /**
+     * Recipe + discovery flows folded in alongside the playlists so the mix
+     * slices (Stash Mixes, Daily-mix source split, Liked) and per-custom-mix
+     * build state ride ONE holder — mirrors [HomeViewModel]'s `musicDataFlow`.
+     * `getAllPlaylists()` is observed exactly once here (the base `uiState`
+     * combine reads playlists back out of this holder), not twice.
+     */
+    private val libraryMixDataFlow = combine(
+        musicRepository.getAllPlaylists(),
+        musicRepository.getRecentlyAdded(20),
+        // Folded in here (not as a positional arg to the base combine, which is
+        // at the 5-arg typed max) so the recipe-derived sets ride alongside the
+        // playlists. Builtin ids are a one-shot suspend read wrapped as a flow.
+        recipeDao.observeAll(),
+        discoveryQueueDao.observeNonFailedCountsByRecipe(),
+        flow { emit(recipeDao.getBuiltinPlaylistIds().toSet()) },
+    ) { playlists, recentlyAdded, recipes, discoveryCounts, builtinIds ->
+        val customRecipes = recipes.filter { !it.isBuiltin && it.playlistId != null }
+        val customMixPlaylistIds = customRecipes.mapNotNull { it.playlistId }.toSet()
+
+        // Per-custom-mix build state (Building… / No tracks), shared with Home.
+        val trackCounts = playlists.associate { it.id to it.trackCount }
+        val discoveryByRecipe = discoveryCounts.associate { it.recipeId to it.count }
+        val buildingMixIds = mutableSetOf<Long>()
+        val emptyMixIds = mutableSetOf<Long>()
+        for (recipe in customRecipes) {
+            val playlistId = recipe.playlistId ?: continue
+            when (
+                mixBuildState(
+                    recipe = recipe,
+                    trackCount = trackCounts[playlistId] ?: 0,
+                    nonFailedDiscoveryCount = discoveryByRecipe[recipe.id] ?: 0,
+                )
+            ) {
+                MixBuildState.BUILDING -> buildingMixIds.add(playlistId)
+                MixBuildState.EMPTY -> emptyMixIds.add(playlistId)
+                MixBuildState.READY -> Unit
+            }
+        }
+
+        // STASH_MIX minus the builtin Daily Discover playlist(s).
+        val stashMixes = playlists.filter {
+            it.type == PlaylistType.STASH_MIX && it.id !in builtinIds
+        }
+        // DAILY_MIX split by source — ported verbatim from Home.
+        val dailyMixes = playlists.filter { it.type == PlaylistType.DAILY_MIX }
+        val spotifyMixes = dailyMixes.filter { it.source == MusicSource.SPOTIFY }
+        val youtubeMixes = dailyMixes.filter { it.source == MusicSource.YOUTUBE }
+        val likedPlaylists = playlists.filter { it.type == PlaylistType.LIKED_SONGS }
+
+        LibraryMixData(
+            playlists = playlists,
+            recentlyAdded = recentlyAdded,
+            stashMixes = stashMixes,
+            spotifyMixes = spotifyMixes,
+            youtubeMixes = youtubeMixes,
+            likedPlaylists = likedPlaylists,
+            customMixPlaylistIds = customMixPlaylistIds,
+            buildingMixIds = buildingMixIds,
+            emptyMixIds = emptyMixIds,
+        )
+    }
+
+    /**
      * Combined UI state that reacts to both data changes and user interactions.
      */
     val uiState: StateFlow<LibraryUiState> = combine(
         _controls,
         musicRepository.getAllTracks(),
-        musicRepository.getAllPlaylists(),
+        libraryMixDataFlow,
         musicRepository.getAllArtists(),
         musicRepository.getAllAlbums(),
-    ) { controls, allTracks, allPlaylists, allArtists, allAlbums ->
-        DataSnapshot(controls, allTracks, allPlaylists, allArtists, allAlbums)
+    ) { controls, allTracks, mixData, allArtists, allAlbums ->
+        DataSnapshot(controls, allTracks, mixData, allArtists, allAlbums)
     }.combine(authStateFlow) { snapshot, authPair ->
         val controls = snapshot.controls
         val allTracks = snapshot.allTracks
-        val allPlaylists = snapshot.allPlaylists
+        val mixData = snapshot.mixData
+        val allPlaylists = mixData.playlists
         val allArtists = snapshot.allArtists
         val allAlbums = snapshot.allAlbums
 
@@ -197,6 +278,14 @@ class LibraryViewModel @Inject constructor(
             sourceFilter = controls.sourceFilter,
             tracks = sortedTracks,
             playlists = sortedPlaylists,
+            stashMixes = mixData.stashMixes,
+            spotifyMixes = mixData.spotifyMixes,
+            youtubeMixes = mixData.youtubeMixes,
+            likedPlaylists = mixData.likedPlaylists,
+            recentlyAdded = mixData.recentlyAdded,
+            customMixPlaylistIds = mixData.customMixPlaylistIds,
+            buildingMixIds = mixData.buildingMixIds,
+            emptyMixIds = mixData.emptyMixIds,
             artists = multiTrackArtists,
             singleTrackArtists = singleTrackArtists,
             albums = multiTrackAlbums,
@@ -595,7 +684,25 @@ private data class ControlState(
 private data class DataSnapshot(
     val controls: ControlState,
     val allTracks: List<Track>,
-    val allPlaylists: List<com.stash.core.model.Playlist>,
+    val mixData: LibraryMixData,
     val allArtists: List<com.stash.core.data.db.dao.ArtistSummary>,
     val allAlbums: List<com.stash.core.data.db.dao.AlbumSummary>,
+)
+
+/**
+ * Internal holder bundling the playlists with the recipe/discovery-derived
+ * mix slices so the base [combine] treats them as one positional arg (and
+ * observes `getAllPlaylists()` exactly once). Mirrors [HomeViewModel]'s
+ * `MusicData`.
+ */
+private data class LibraryMixData(
+    val playlists: List<Playlist>,
+    val recentlyAdded: List<Track>,
+    val stashMixes: List<Playlist>,
+    val spotifyMixes: List<Playlist>,
+    val youtubeMixes: List<Playlist>,
+    val likedPlaylists: List<Playlist>,
+    val customMixPlaylistIds: Set<Long>,
+    val buildingMixIds: Set<Long>,
+    val emptyMixIds: Set<Long>,
 )
