@@ -2,6 +2,13 @@ package com.stash.feature.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.db.dao.DiscoveryQueueDao
@@ -11,6 +18,8 @@ import com.stash.core.data.mix.mixBuildState
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.sync.workers.StashDiscoveryWorker
+import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
@@ -30,12 +39,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import javax.inject.Inject
 
 /**
@@ -595,6 +606,219 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    // ── Mix actions (ported from Home) ───────────────────────────────────
+
+    /**
+     * Preview counts the UI uses in the delete-confirmation dialog:
+     * how many tracks would actually be removed vs. kept due to
+     * protected-playlist membership.
+     */
+    suspend fun previewPlaylistDelete(playlist: Playlist): DeletePreview {
+        val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
+        var protected = 0
+        for (track in tracks) {
+            // isTrackInProtectedPlaylist returns true if the track is in
+            // Liked Songs / custom playlists OTHER than [playlist]. We
+            // have to do the "other than" filtering here because the DAO
+            // query doesn't exclude the source playlist.
+            val inProtectedElsewhere = musicRepository.isTrackProtectedExcluding(
+                trackId = track.id,
+                excludePlaylistId = playlist.id,
+            )
+            if (inProtectedElsewhere) protected++
+        }
+        return DeletePreview(
+            totalTracks = tracks.size,
+            protectedCount = protected,
+        )
+    }
+
+    private val _lastCascadeSummary =
+        kotlinx.coroutines.flow.MutableSharedFlow<com.stash.core.data.repository.MusicRepository.CascadeRemovalSummary>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+        )
+    /** One-shot cascade summaries for the delete Snackbar. */
+    val lastCascadeSummary: kotlinx.coroutines.flow.SharedFlow<com.stash.core.data.repository.MusicRepository.CascadeRemovalSummary> =
+        _lastCascadeSummary.asSharedFlow()
+
+    /** Preview counts shown in the playlist-delete confirmation dialog. */
+    data class DeletePreview(
+        val totalTracks: Int,
+        val protectedCount: Int,
+    ) {
+        val willDelete: Int get() = totalTracks - protectedCount
+    }
+
+    /**
+     * Creates a new empty custom playlist with the given [name]. Trims input
+     * and no-ops if the trimmed name is blank. The new playlist will appear
+     * in the Library Playlists section automatically (Room Flow).
+     */
+    fun createPlaylist(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            musicRepository.createPlaylist(trimmed)
+        }
+    }
+
+    /**
+     * Manually re-run the Stash Mix refresh worker for a single recipe (the
+     * one whose materialized playlist is [playlistId]). Used by the long-
+     * press "Refresh this mix" action on Stash Mix cards.
+     *
+     * Emits snackbar lifecycle messages via [userMessages]: "Refreshing X…"
+     * on enqueue, then "Refreshed X" or "Refresh failed" on the worker's
+     * terminal WorkInfo state. If the playlist is tagged `STASH_MIX` but no
+     * recipe back-links it (data-integrity bug — menu shouldn't have
+     * appeared), logs a warning and surfaces a "not linked to a recipe"
+     * message instead of silently no-opping.
+     */
+    fun refreshMix(playlistId: Long) {
+        viewModelScope.launch {
+            val recipe = recipeDao.findByPlaylistId(playlistId)
+            if (recipe == null) {
+                // Data-integrity bug: playlist.type == STASH_MIX but no recipe
+                // back-links it. Menu shouldn't have appeared. Log + soft-fail.
+                Log.w(TAG, "refreshMix: no recipe back-links playlistId=$playlistId")
+                _userMessages.tryEmit("Couldn't refresh — this mix isn't linked to a recipe")
+                return@launch
+            }
+
+            _userMessages.tryEmit("Refreshing ${recipe.name}…")
+
+            // Build the request ourselves so we can capture its id for exact-
+            // match WorkInfo filtering below. enqueueUniqueWork uses the same
+            // unique name + REPLACE policy as StashMixRefreshWorker.enqueueOneTime,
+            // mirroring lines 154-168 of that worker.
+            val request = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build(),
+                )
+                .setInputData(workDataOf(StashMixRefreshWorker.KEY_RECIPE_ID to recipe.id))
+                .build()
+            val uniqueName = "${StashMixRefreshWorker.ONE_SHOT_WORK_NAME}_${recipe.id}"
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork(uniqueName, ExistingWorkPolicy.REPLACE, request)
+
+            // v0.9.20: fire the full discovery pipeline. queueDiscoveryForRecipe
+            // inside the mix refresh worker enqueues new Last.fm candidates into
+            // discovery_queue PENDING; this trigger processes them right now (subject
+            // to user's DownloadNetworkMode pref) instead of waiting up to 24h for
+            // the periodic schedule. The chain in StashDiscoveryWorker's tail will
+            // fire DiscoveryDownloadWorker, which fires StashMixRefreshWorker again
+            // at the end — the mix re-materializes with newly-downloaded survivors
+            // without the user lifting another finger.
+            val mode = downloadNetworkPreference.current()
+            StashDiscoveryWorker.enqueueOneTime(context, mode)
+
+            // Observe the unique-work Flow; filter to OUR enqueued request's id
+            // so historical entries from earlier taps (or earlier sessions)
+            // don't fire stale "Refreshed" Toasts.
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWorkFlow(uniqueName)
+                .firstOrNull { infos ->
+                    val ours = infos.firstOrNull { it.id == request.id } ?: return@firstOrNull false
+                    when (ours.state) {
+                        WorkInfo.State.SUCCEEDED -> {
+                            _userMessages.tryEmit("Refreshed ${recipe.name}")
+                            true
+                        }
+                        WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
+                            _userMessages.tryEmit("Refresh failed — try again later")
+                            true
+                        }
+                        else -> false
+                    }
+                }
+        }
+    }
+
+    /**
+     * Delete a user-built Stash Mix: removes the materialized playlist (via
+     * the protected-playlist cascade, NOT blacklisting), then deletes the
+     * backing recipe row.
+     *
+     * Order matters: capture the recipe BEFORE the cascade runs, because
+     * `deletePlaylistWithCascade` nulls the recipe's `playlist_id` FK
+     * (SET_NULL), after which `findByPlaylistId` would no longer resolve it.
+     */
+    fun deleteCustomMix(playlist: Playlist) {
+        viewModelScope.launch {
+            val recipe = recipeDao.findByPlaylistId(playlist.id) // capture BEFORE cascade nulls the FK
+            musicRepository.deletePlaylistWithCascade(playlist.id, alsoBlacklist = false)
+            recipe?.let { recipeDao.deleteCustom(it.id) }
+            _userMessages.tryEmit("Deleted “${playlist.name}”")
+        }
+    }
+
+    /**
+     * If [playlistId] backs a user (non-builtin) recipe whose last refresh
+     * is older than [STALE_MIX_MS], kick a refresh. Fire-and-forget from the
+     * mix-card tap so opening a stale custom mix transparently freshens it.
+     * No-ops for builtin recipes (those refresh on the periodic schedule)
+     * and for playlists with no backing recipe.
+     */
+    fun refreshMixIfStale(playlistId: Long) {
+        viewModelScope.launch {
+            val r = recipeDao.findByPlaylistId(playlistId) ?: return@launch
+            val stale = (r.lastRefreshedAt ?: 0L) < System.currentTimeMillis() - STALE_MIX_MS
+            if (!r.isBuiltin && stale) refreshMix(playlistId)
+        }
+    }
+
+    /**
+     * Resolve the recipe id backing [playlistId] asynchronously, invoking
+     * [onResult] with the id (or null if no recipe back-links it). Used by
+     * the context-sheet Edit action to build the MixBuilder nav arg, since
+     * the playlist→recipe mapping isn't carried synchronously in uiState.
+     */
+    fun editRecipeId(playlistId: Long, onResult: (Long?) -> Unit) {
+        viewModelScope.launch {
+            onResult(recipeDao.findByPlaylistId(playlistId)?.id)
+        }
+    }
+
+    /**
+     * Plays every downloaded track across every daily mix from the given [source],
+     * effectively merging all of that source's mixes into one continuous queue.
+     * Passing null plays the combined pool from BOTH sources (Spotify first,
+     * then YouTube) with per-track deduplication.
+     *
+     * Duplicates are removed via [distinctBy] so tracks appearing in multiple
+     * mixes are only queued once. Tracks appear in the order their parent
+     * playlists are returned by the repository.
+     *
+     * @param source The source whose mixes to play, or null to combine both.
+     */
+    fun playAllMixes(source: MusicSource?) {
+        viewModelScope.launch {
+            val state = uiState.value
+            val mixes = when (source) {
+                MusicSource.SPOTIFY -> state.spotifyMixes
+                MusicSource.YOUTUBE -> state.youtubeMixes
+                null -> state.spotifyMixes + state.youtubeMixes
+                else -> return@launch
+            }
+            if (mixes.isEmpty()) return@launch
+
+            val streamingOn = streamingPreference.current()
+            val allTracks = mixes
+                .flatMap { mix ->
+                    musicRepository.getTracksByPlaylist(mix.id).first()
+                }
+                .let { tracks -> if (streamingOn) tracks else tracks.filter { it.filePath != null } }
+                .distinctBy { it.id }
+
+            if (allTracks.isNotEmpty()) {
+                playerRepository.setQueue(allTracks, startIndex = 0)
+            }
+        }
+    }
+
     // ── Artist actions ──────────────────────────────────────────────────
 
     /**
@@ -662,6 +886,12 @@ class LibraryViewModel @Inject constructor(
             }
             downloaded.forEach { playerRepository.addToQueue(it) }
         }
+    }
+
+    companion object {
+        private const val TAG = "LibraryViewModel"
+        /** A custom mix older than this (24h) is refreshed on open. */
+        private const val STALE_MIX_MS = 24L * 60 * 60 * 1000
     }
 }
 

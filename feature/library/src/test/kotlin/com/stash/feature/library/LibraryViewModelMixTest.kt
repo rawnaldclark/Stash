@@ -6,6 +6,7 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
@@ -14,6 +15,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
+import com.stash.core.model.Track
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.files.LocalImportState
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -77,6 +80,55 @@ class LibraryViewModelMixTest {
         assertThat(state.youtubeMixes.map { it.id }).containsExactly(21L)
         // LIKED_SONGS.
         assertThat(state.likedPlaylists.map { it.id }).containsExactly(30L)
+    }
+
+    @Test
+    fun previewPlaylistDelete_returns_correct_willDelete() = runTest {
+        // N=3 tracks in the playlist; K=1 (track id 2) is protected elsewhere.
+        val tracks = listOf(
+            Track(id = 1L, title = "A", artist = "X"),
+            Track(id = 2L, title = "B", artist = "X"),
+            Track(id = 3L, title = "C", artist = "X"),
+        )
+        val musicRepo: MusicRepository = mock {
+            on { getAllTracks() } doReturn flowOf(emptyList())
+            on { getAllPlaylists() } doReturn flowOf(emptyList())
+            on { getAllArtists() } doReturn flowOf(emptyList())
+            on { getAllAlbums() } doReturn flowOf(emptyList())
+            on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
+            on { getRecentlyAdded(any()) } doReturn flowOf(emptyList())
+            on { getTracksByPlaylist(77L) } doReturn flowOf(tracks)
+            // Stub every invocation: an unstubbed suspend Boolean returns null
+            // (mockito default) → NPE on Kotlin's primitive unbox. Only id 2 is
+            // protected elsewhere.
+            onBlocking { isTrackProtectedExcluding(1L, 77L) } doReturn false
+            onBlocking { isTrackProtectedExcluding(2L, 77L) } doReturn true
+            onBlocking { isTrackProtectedExcluding(3L, 77L) } doReturn false
+        }
+
+        val vm = buildVm(musicRepository = musicRepo)
+
+        val preview = vm.previewPlaylistDelete(
+            playlist(77L, PlaylistType.CUSTOM, MusicSource.SPOTIFY),
+        )
+
+        assertThat(preview.willDelete).isEqualTo(2) // N=3 − K=1
+    }
+
+    @Test
+    fun editRecipeId_invokes_callback_with_recipe_id() = runTest {
+        val recipeDao: StashMixRecipeDao = mock {
+            on { observeAll() } doReturn flowOf(emptyList())
+            onBlocking { getBuiltinPlaylistIds() } doReturn emptyList()
+            onBlocking { findByPlaylistId(55L) } doReturn StashMixRecipeEntity(id = 42L, name = "R")
+        }
+        val vm = buildVm(musicRepository = musicRepoMock(emptyList()), recipeDao = recipeDao)
+
+        var captured: Long? = null
+        vm.editRecipeId(55L) { captured = it }
+        advanceUntilIdle()
+
+        assertThat(captured).isEqualTo(42L)
     }
 
     // ------------------------------------------------------------------
