@@ -62,6 +62,20 @@ fun StashNavHost(
                 onNavigateToPlaylist = { playlistId ->
                     navController.navigate(PlaylistDetailRoute(playlistId))
                 },
+                // Qobuz discovery album/playlist taps → the shared album-detail
+                // screen (playlists ride the same route via QOBUZ_PLAYLIST source).
+                onNavigateToAlbum = { album ->
+                    navController.navigate(
+                        SearchAlbumRoute(
+                            browseId = album.id,
+                            title = album.title,
+                            artist = album.artist,
+                            thumbnailUrl = album.thumbnailUrl,
+                            year = album.year,
+                            source = album.source,
+                        ),
+                    )
+                },
             )
         }
         composable<MixBuilderRoute> {

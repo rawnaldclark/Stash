@@ -105,10 +105,17 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
+import com.stash.core.ui.components.AlbumSquareCard
+import com.stash.core.ui.components.CrispChipRow
 import com.stash.core.ui.components.DiscoverHeroCard
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.components.RankedAlbumList
+import com.stash.core.ui.components.RankedAlbumUi
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
+import com.stash.data.ytmusic.model.AlbumSource
+import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.PlaylistSummary
 import com.stash.core.ui.theme.LocalIsDarkTheme
 import com.stash.core.ui.components.streaming.StreamingModeChip
 import com.stash.core.ui.components.streaming.StreamingModeSheet
@@ -126,6 +133,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     onNavigateToSettings: () -> Unit = {},
     onNavigateToPlaylist: (Long) -> Unit = {},
+    onNavigateToAlbum: (AlbumSummary) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -286,6 +294,18 @@ fun HomeScreen(
             }
         }
 
+        // ── Genre filter chips ───────────────────────────────────────
+        // Global genre filter for the Qobuz discovery rows below the hero
+        // (spec §3). "All" = no filter; a tap re-fetches all three rows.
+        item {
+            Spacer(Modifier.height(6.dp))
+            CrispChipRow(
+                chips = uiState.genres.map { it.label },
+                selected = uiState.selectedGenre,
+                onSelect = viewModel::onSelectGenre,
+            )
+        }
+
         // ── Discover hero (or cold-start personalize card) ───────────
         // Premium Crisp discovery surface. The materialized Daily Discover
         // mix is the hero; a brand-new / thin-library user gets the
@@ -317,6 +337,48 @@ fun HomeScreen(
                     onConnect = onNavigateToSettings,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
+            }
+        }
+
+        // ── Qobuz discovery rows (genre-filtered) ─────────────────────
+        // Each row renders only when it has content — a failed/empty row
+        // (fail-soft repository) is simply omitted; Home never blocks on it.
+        if (uiState.newReleases.isNotEmpty()) {
+            item {
+                DiscoveryAlbumRow(
+                    title = "New Releases",
+                    albums = uiState.newReleases,
+                    onOpen = onNavigateToAlbum,
+                )
+            }
+        }
+        if (uiState.playlists.isNotEmpty()) {
+            item {
+                DiscoveryPlaylistRow(
+                    title = "Qobuz Playlists",
+                    playlists = uiState.playlists,
+                    onOpen = onNavigateToAlbum,
+                )
+            }
+        }
+        if (uiState.topAlbums.isNotEmpty()) {
+            item {
+                Column {
+                    Spacer(Modifier.height(16.dp))
+                    SectionHeader(title = "Top Albums")
+                    RankedAlbumList(
+                        items = uiState.topAlbums.mapIndexed { i, a ->
+                            RankedAlbumUi(
+                                rank = i + 1,
+                                title = a.title,
+                                artist = a.artist,
+                                artUrl = a.thumbnailUrl,
+                                movement = null,   // Qobuz best-sellers carries no chart delta
+                            )
+                        },
+                        onClick = { ranked -> onNavigateToAlbum(uiState.topAlbums[ranked.rank - 1]) },
+                    )
+                }
             }
         }
     }
@@ -528,6 +590,79 @@ private fun SupporterPill(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+        }
+    }
+}
+
+// \u2500\u2500 Qobuz discovery rows \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+/** Horizontal carousel of Qobuz albums (New Releases). Tap \u2192 album detail. */
+@Composable
+private fun DiscoveryAlbumRow(
+    title: String,
+    albums: List<AlbumSummary>,
+    onOpen: (AlbumSummary) -> Unit,
+) {
+    Column {
+        Spacer(Modifier.height(16.dp))
+        SectionHeader(title = title)
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(albums) { album ->
+                AlbumSquareCard(
+                    title = album.title,
+                    artist = album.artist,
+                    thumbnailUrl = album.thumbnailUrl,
+                    year = album.year,
+                    isLossless = true,
+                    onClick = { onOpen(album) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Horizontal carousel of Qobuz community playlists. Each card carries the
+ * curator as its subtitle and opens via a QOBUZ_PLAYLIST [AlbumSummary] so the
+ * existing album-detail screen renders + plays it.
+ */
+@Composable
+private fun DiscoveryPlaylistRow(
+    title: String,
+    playlists: List<PlaylistSummary>,
+    onOpen: (AlbumSummary) -> Unit,
+) {
+    Column {
+        Spacer(Modifier.height(16.dp))
+        SectionHeader(title = title)
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(playlists) { playlist ->
+                AlbumSquareCard(
+                    title = playlist.title,
+                    artist = playlist.curator,
+                    thumbnailUrl = playlist.thumbnailUrl,
+                    year = null,
+                    isLossless = true,
+                    onClick = {
+                        onOpen(
+                            AlbumSummary(
+                                id = playlist.id,
+                                title = playlist.title,
+                                artist = playlist.curator,
+                                thumbnailUrl = playlist.thumbnailUrl,
+                                year = null,
+                                source = AlbumSource.QOBUZ_PLAYLIST,
+                            ),
+                        )
+                    },
+                )
             }
         }
     }
