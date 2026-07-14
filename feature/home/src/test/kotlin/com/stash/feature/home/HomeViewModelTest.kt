@@ -1,6 +1,7 @@
 package com.stash.feature.home
 
 import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.discovery.HomeDiscoveryRepository
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.tipjar.TipJarRepository
@@ -12,6 +13,8 @@ import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.data.download.backfill.MetadataBackfillState
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.ytmusic.model.AlbumSource
+import com.stash.data.ytmusic.model.AlbumSummary
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,8 +30,10 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verifyBlocking
 
@@ -158,12 +163,19 @@ class HomeViewModelTest {
         artUrl = artUrl,
     )
 
+    private fun albumSummary(id: String) = AlbumSummary(
+        id = id, title = "T", artist = "A", thumbnailUrl = null, year = null,
+        source = AlbumSource.QOBUZ,
+    )
+
     private fun buildVm(
         playlists: List<Playlist> = emptyList(),
         builtinIds: List<Long> = emptyList(),
         heroTracks: List<Track> = emptyList(),
         streamingEnabled: Boolean = true,
         playerRepository: PlayerRepository = mock(),
+        discoveryAlbums: List<AlbumSummary> = emptyList(),
+        homeDiscovery: HomeDiscoveryRepository? = null,
     ): HomeViewModel {
         val musicRepo = mock<MusicRepository> {
             on { getAllPlaylists() } doReturn flowOf(playlists)
@@ -194,6 +206,11 @@ class HomeViewModelTest {
                 ),
             )
         }
+        val discovery = homeDiscovery ?: mock<HomeDiscoveryRepository> {
+            onBlocking { newReleases(anyOrNull()) } doReturn discoveryAlbums
+            onBlocking { topAlbums(anyOrNull()) } doReturn emptyList()
+            onBlocking { communityPlaylists(anyOrNull()) } doReturn emptyList()
+        }
         return HomeViewModel(
             musicRepository = musicRepo,
             playerRepository = playerRepository,
@@ -203,7 +220,39 @@ class HomeViewModelTest {
             recipeDao = recipeDao,
             streamingPreference = streamingPreference,
             metadataBackfillState = metadataBackfill,
+            homeDiscoveryRepository = discovery,
             context = mock(),
         )
+    }
+
+    // ------------------------------------------------------------------
+    // Qobuz discovery rows + genre filter
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `discovery rows load for All genre on init`() = runTest {
+        val vm = buildVm(discoveryAlbums = listOf(albumSummary("a1")))
+
+        val state = vm.uiState.first { it.newReleases.isNotEmpty() }
+
+        assertThat(state.selectedGenre).isEqualTo("All")
+        assertThat(state.newReleases.single().id).isEqualTo("a1")
+    }
+
+    @Test
+    fun `onSelectGenre re-fetches rows with that genre id`() = runTest {
+        val repo = mock<HomeDiscoveryRepository> {
+            onBlocking { newReleases(anyOrNull()) } doReturn emptyList()
+            onBlocking { topAlbums(anyOrNull()) } doReturn emptyList()
+            onBlocking { communityPlaylists(anyOrNull()) } doReturn emptyList()
+        }
+        val vm = buildVm(homeDiscovery = repo)
+        vm.uiState.first { !it.isLoading }
+
+        vm.onSelectGenre("Pop/Rock")
+        runCurrent()
+
+        assertThat(vm.uiState.value.selectedGenre).isEqualTo("Pop/Rock")
+        verifyBlocking(repo) { newReleases(eq(112)) }   // Pop/Rock genre_id
     }
 }

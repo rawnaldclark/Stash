@@ -4,24 +4,33 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.discovery.GenreCatalog
+import com.stash.core.data.discovery.HomeDiscoveryRepository
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.backfill.MetadataBackfillState
+import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.PlaylistSummary
 import com.stash.feature.home.banner.MetadataBackfillBannerState
 import com.stash.feature.home.banner.metadataBackfillBannerStateFor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -50,6 +59,7 @@ class HomeViewModel @Inject constructor(
     private val recipeDao: StashMixRecipeDao,
     private val streamingPreference: StreamingPreference,
     private val metadataBackfillState: MetadataBackfillState,
+    private val homeDiscoveryRepository: HomeDiscoveryRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -186,18 +196,57 @@ class HomeViewModel @Inject constructor(
     private val metadataBackfillBannerFlow: Flow<MetadataBackfillBannerState> =
         metadataBackfillState.snapshot.map { metadataBackfillBannerStateFor(it) }
 
+    /** Selected genre chip label ("All" = no filter). Drives the discovery rows. */
+    private val genreFilter = MutableStateFlow("All")
+
+    private data class DiscoveryUi(
+        val selectedGenre: String,
+        val newReleases: List<AlbumSummary>,
+        val topAlbums: List<AlbumSummary>,
+        val playlists: List<PlaylistSummary>,
+    )
+
+    /**
+     * The three Qobuz discovery rows, re-fetched whenever the genre chip
+     * changes ([flatMapLatest] cancels the previous fetch). Clears the rows
+     * immediately on switch (empty emit) so stale content doesn't linger, then
+     * fetches all three in parallel. The repository is fail-soft — a failed row
+     * comes back empty and the screen hides it; discovery never blocks Home.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val discoveryFlow: Flow<DiscoveryUi> = genreFilter.flatMapLatest { label ->
+        flow {
+            val genreId = GenreCatalog.idFor(label)
+            emit(DiscoveryUi(label, emptyList(), emptyList(), emptyList()))
+            coroutineScope {
+                val newReleases = async { homeDiscoveryRepository.newReleases(genreId) }
+                val playlists = async { homeDiscoveryRepository.communityPlaylists(genreId) }
+                val topAlbums = async { homeDiscoveryRepository.topAlbums(genreId) }
+                emit(DiscoveryUi(label, newReleases.await(), topAlbums.await(), playlists.await()))
+            }
+        }
+    }
+
+    /** Select a genre chip; re-derives all three discovery rows. */
+    fun onSelectGenre(label: String) { genreFilter.value = label }
+
     val uiState: StateFlow<HomeUiState> = combine(
         heroFlow,
         losslessPromptFlow,
         tipJarRepository.state,
         metadataBackfillBannerFlow,
-    ) { hero, losslessPrompt, tipJar, metadataBackfillBanner ->
+        discoveryFlow,
+    ) { hero, losslessPrompt, tipJar, metadataBackfillBanner, discovery ->
         HomeUiState(
             hero = hero,
             isLoading = false,
             losslessPrompt = losslessPrompt,
             tipJar = tipJar,
             metadataBackfillBanner = metadataBackfillBanner,
+            selectedGenre = discovery.selectedGenre,
+            newReleases = discovery.newReleases,
+            topAlbums = discovery.topAlbums,
+            playlists = discovery.playlists,
         )
     }.stateIn(
         scope = viewModelScope,

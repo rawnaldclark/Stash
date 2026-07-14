@@ -1,5 +1,9 @@
 package com.stash.feature.home
 
+import com.stash.core.data.discovery.Genre
+import com.stash.core.data.discovery.GenreCatalog
+import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.PlaylistSummary
 import com.stash.feature.home.banner.MetadataBackfillBannerState
 
 /**
@@ -46,6 +50,15 @@ data class HomeUiState(
      */
     val metadataBackfillBanner: MetadataBackfillBannerState =
         MetadataBackfillBannerState.Hidden,
+
+    // ── Qobuz discovery rows (genre-filterable) ────────────────────────
+    /** Genre chips; the first ("All") is the no-filter default. */
+    val genres: List<Genre> = GenreCatalog.GENRES,
+    /** Currently-selected chip label; drives the three rows below. */
+    val selectedGenre: String = "All",
+    val newReleases: List<AlbumSummary> = emptyList(),
+    val topAlbums: List<AlbumSummary> = emptyList(),
+    val playlists: List<PlaylistSummary> = emptyList(),
 ) {
     /** True before the Discover hero has materialized — drives the cold-start placeholder. */
     val isColdStart: Boolean get() = hero == null
