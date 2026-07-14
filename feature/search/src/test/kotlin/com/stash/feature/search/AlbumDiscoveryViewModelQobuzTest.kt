@@ -130,6 +130,27 @@ class AlbumDiscoveryViewModelQobuzTest {
         assertTrue(cap.firstValue.all { it.youtubeId == null })
     }
 
+    @Test fun `qobuz PLAYLIST play persists tracks with distinct real ids (regression)`() = runTest {
+        // Regression: a QOBUZ_PLAYLIST source used to fall through to the YouTube
+        // path, giving every track id = "".hashCode() = 0 and youtubeId = "" —
+        // so the queue collapsed to one row and playback refused to advance past
+        // the first track. It must take the native path (persist → distinct ids).
+        val cache = mock<AlbumCache>()
+        whenever(cache.get(any(), any())).thenReturn(qobuzDetail())
+        val musicRepo = mock<MusicRepository>()
+        whenever(musicRepo.ensureTrackPersisted(any())).thenReturn(2001L, 2002L)
+        val player = mock<PlayerRepository>()
+        val vm = vm(AlbumSource.QOBUZ_PLAYLIST, cache, musicRepo = musicRepo, player = player)
+        advanceUntilIdle()
+
+        vm.playAlbum(0); advanceUntilIdle()
+
+        val cap = argumentCaptor<List<Track>>()
+        verify(player).setQueue(cap.capture(), eq(0))
+        assertEquals(listOf(2001L, 2002L), cap.firstValue.map { it.id })
+        assertTrue(cap.firstValue.all { it.youtubeId == null })
+    }
+
     @Test fun `qobuz album does NOT run videoId-keyed side effects`() = runTest {
         val cache = mock<AlbumCache>()
         whenever(cache.get(any(), any())).thenReturn(qobuzDetail())

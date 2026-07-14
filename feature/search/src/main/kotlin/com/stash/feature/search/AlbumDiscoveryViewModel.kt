@@ -193,9 +193,9 @@ class AlbumDiscoveryViewModel @Inject constructor(
      */
     fun onDownloadAllClicked() {
         // Download keys on videoId, which Qobuz tracks lack — download-by-id is
-        // out of scope for Phase 1, so the action is a no-op for QOBUZ albums
-        // (the screen also hides the button; this is the defensive guard).
-        if (albumSource == AlbumSource.QOBUZ) return
+        // out of scope for Phase 1, so the action is a no-op for Qobuz albums
+        // AND playlists (the screen also hides the button; this is the guard).
+        if (isNativeAlbum) return
         val snapshot = _uiState.value.tracks.filter {
             it.videoId !in delegate.downloadedIds.value
         }
@@ -206,12 +206,14 @@ class AlbumDiscoveryViewModel @Inject constructor(
     val downloadSupported: Boolean get() = albumSource == AlbumSource.YOUTUBE
 
     /**
-     * True for a native Qobuz album. Its tracks carry no videoId, so the screen
-     * must NOT render the videoId-keyed preview/download row (all rows would
-     * share the blank-videoId identity — one preview would light up every row
-     * and play the same track). A simpler play-on-tap row is used instead.
+     * True for a native Qobuz album OR a Qobuz playlist. Their tracks carry no
+     * videoId, so the screen must NOT render the videoId-keyed preview/download
+     * row (all rows would share the blank-videoId identity — one preview would
+     * light up every row and play the same track). A simpler play-on-tap row is
+     * used instead, and playback synthesises real persisted ids per track.
      */
-    val isNativeAlbum: Boolean get() = albumSource == AlbumSource.QOBUZ
+    val isNativeAlbum: Boolean get() =
+        albumSource == AlbumSource.QOBUZ || albumSource == AlbumSource.QOBUZ_PLAYLIST
 
     /** User cancelled the download-all confirm dialog — reset both flags. */
     fun onDownloadAllDismissed() {
@@ -316,7 +318,11 @@ class AlbumDiscoveryViewModel @Inject constructor(
      */
     private suspend fun buildQueueTracks(): List<Track> {
         val base = synthesizeDomainTracks()
-        if (albumSource != AlbumSource.QOBUZ) return base
+        // Qobuz albums AND playlists lack videoIds — persist each by canonical
+        // identity to get a REAL, DISTINCT tracks.id. Without this every track
+        // shares id=0 (from the blank videoId) and the queue can't advance past
+        // the first row.
+        if (!isNativeAlbum) return base
         return base.map { it.copy(id = musicRepository.ensureTrackPersisted(it)) }
     }
 
@@ -335,7 +341,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
         val albumTitle = state.hero.title
         val albumArtist = state.hero.artist
         val albumArt = state.hero.thumbnailUrl
-        val qobuz = albumSource == AlbumSource.QOBUZ
+        val qobuz = isNativeAlbum
         return tracks.map { t ->
             Track(
                 id = if (qobuz) 0L else t.videoId.hashCode().toLong(),
