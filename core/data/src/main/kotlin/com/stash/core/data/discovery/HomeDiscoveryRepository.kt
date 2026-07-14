@@ -19,4 +19,11 @@ interface HomeDiscoveryRepository {
     suspend fun newReleases(genreId: Int?): List<AlbumSummary>
     suspend fun topAlbums(genreId: Int?): List<AlbumSummary>
     suspend fun communityPlaylists(genreId: Int?): List<PlaylistSummary>
+
+    /**
+     * One page of the editorial playlist catalog for the "See all" browse
+     * screen — [offset] into the ~6.3k playlists, filtered by [genreId]
+     * (null = all). Fail-soft (empty on error). A short page signals the end.
+     */
+    suspend fun browsePlaylists(genreId: Int?, offset: Int, limit: Int = 30): List<PlaylistSummary>
 }

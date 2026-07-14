@@ -103,13 +103,22 @@ class QbdlxApiClient @Inject constructor(
             runCatching { json.decodeFromString<QbdlxArtistAlbumsResponse>(body).albums.items }.getOrDefault(emptyList())
         }
 
-    /** Featured playlists (editor-picks). Unsigned GET; [genreId] null = all. Read-only. */
-    suspend fun getFeaturedPlaylists(genreId: Int?, token: String, limit: Int = 15): List<QbdlxPlaylistItem> =
+    /**
+     * Featured playlists (editor-picks). Unsigned GET; [genreId] null = all,
+     * [offset] paginates the ~6.3k editorial catalog. Read-only.
+     *
+     * NB: playlists filter on `genre_ids` (PLURAL). The singular `genre_id`
+     * that `album/getFeatured` uses is silently ignored here (returns all
+     * genres) — so this must send the plural form or the genre chips don't
+     * actually filter the playlist row.
+     */
+    suspend fun getFeaturedPlaylists(genreId: Int?, token: String, limit: Int = 15, offset: Int = 0): List<QbdlxPlaylistItem> =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api.json/0.2/playlist/getFeatured".toHttpUrl().newBuilder()
                 .addQueryParameter("type", "editor-picks")
-                .apply { if (genreId != null) addQueryParameter("genre_id", genreId.toString()) }
+                .apply { if (genreId != null) addQueryParameter("genre_ids", genreId.toString()) }
                 .addQueryParameter("limit", limit.toString())
+                .addQueryParameter("offset", offset.toString())
                 .addQueryParameter("app_id", appId)
                 .build()
             val body = get(url.toString(), token)

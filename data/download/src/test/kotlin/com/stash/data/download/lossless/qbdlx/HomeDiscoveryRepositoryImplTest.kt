@@ -64,4 +64,13 @@ class HomeDiscoveryRepositoryImplTest {
         coEvery { store.activeToken() } returns null
         assertThat(repo.communityPlaylists(null)).isEmpty()
     }
+
+    @Test fun `browsePlaylists passes offset+limit through and maps`() = runTest {
+        coEvery { client.getFeaturedPlaylists(133, "tok", 30, 60) } returns listOf(
+            QbdlxPlaylistItem(id = 9, name = "P", owner = QbdlxOwner("Qobuz"), tracks_count = 12, images300 = listOf("i")),
+        )
+        val out = repo.browsePlaylists(genreId = 133, offset = 60, limit = 30)
+        assertThat(out.single().id).isEqualTo("9")
+        assertThat(out.single().trackCount).isEqualTo(12)
+    }
 }

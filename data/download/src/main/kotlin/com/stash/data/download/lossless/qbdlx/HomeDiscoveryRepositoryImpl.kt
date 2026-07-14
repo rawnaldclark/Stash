@@ -43,6 +43,12 @@ class HomeDiscoveryRepositoryImpl @Inject constructor(
             withToken { tok -> client.getFeaturedPlaylists(genreId, tok) }.map { it.toPlaylistSummary() }
         }
 
+    override suspend fun browsePlaylists(genreId: Int?, offset: Int, limit: Int): List<PlaylistSummary> =
+        cached("browse:$genreId:$offset:$limit") {
+            withToken { tok -> client.getFeaturedPlaylists(genreId, tok, limit, offset) }
+                .map { it.toPlaylistSummary() }
+        }
+
     private suspend fun albums(type: String, genreId: Int?): List<AlbumSummary> =
         cached("$type:$genreId") {
             withToken { tok -> client.getFeaturedAlbums(type, genreId, tok) }.map { it.toAlbumSummary() }

@@ -96,6 +96,16 @@ class QbdlxApiClientTest {
         assertThat(items.single().name).isEqualTo("P")
     }
 
+    @Test fun `getFeaturedPlaylists uses genre_ids plural + offset`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"playlists":{"items":[]}}"""))
+        client.getFeaturedPlaylists(genreId = 133, token = "tok", limit = 30, offset = 60)
+        val path = server.takeRequest().path!!
+        assertThat(path).contains("genre_ids=133")   // plural — singular is ignored by Qobuz
+        assertThat(path).doesNotContain("genre_id=133&")
+        assertThat(path).contains("offset=60")
+        assertThat(path).contains("limit=30")
+    }
+
     @Test fun `getPlaylist sends extra=tracks and parses detail`() = runTest {
         server.enqueue(MockResponse().setBody("""{"id":5,"name":"P","owner":{"name":"O"},
             "images300":["i"],"tracks":{"items":[
