@@ -566,10 +566,11 @@ private fun LikedSongsCard(
                         }
                     }
                     Text(
-                        text = when (singleSource) {
-                            MusicSource.SPOTIFY -> "$totalCount tracks on Spotify"
-                            MusicSource.YOUTUBE -> "$totalCount tracks on YouTube Music"
-                            else -> "$totalCount tracks \u00B7 2 sources"
+                        text = when {
+                            singleSource == MusicSource.SPOTIFY -> "$totalCount tracks on Spotify"
+                            singleSource == MusicSource.YOUTUBE -> "$totalCount tracks on YouTube Music"
+                            showSourceChips -> "$totalCount tracks \u00B7 2 sources"
+                            else -> "$totalCount tracks"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
