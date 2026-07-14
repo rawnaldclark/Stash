@@ -6,7 +6,7 @@
 
 **Architecture:** Port the mix-management flows from `HomeViewModel` into `LibraryViewModel` (which already owns most playlist logic), reworking Library's `combine` into an intermediate-holder pattern (like Home's `musicDataFlow`) to fit `recipeDao` + `discoveryQueueDao` within Kotlin's 5-arg `combine` limit. Add a **Mixes** grouping to Library and filter its existing Playlists tab to user (`CUSTOM`) playlists so nothing shows twice. Mix *generation* (recipes/workers in `core:data`) is untouched — this is a UI+ViewModel port only.
 
-**Tech Stack:** Kotlin, Jetpack Compose, Hilt, Coroutines/Flow, WorkManager, Room DAOs. Tests: JUnit + Truth + coroutines-test + mockito/mockk (all on `feature:library`'s classpath already — it has ViewModel tests today).
+**Tech Stack:** Kotlin, Jetpack Compose, Hilt, Coroutines/Flow, WorkManager, Room DAOs. Tests: JUnit + Truth + `kotlinx-coroutines-test` + **mockito-kotlin** — all on `:feature:library`'s test classpath. NOTE: `:feature:library` has **no turbine and no mockk** — collect flows with `.first()`/`runTest`, mock with `org.mockito.kotlin` (do not reference turbine/mockk).
 
 **Spec:** `docs/superpowers/specs/2026-07-13-design-language-and-home-redesign.md` §7 (Library port), plus the code-level port map established during planning.
 
@@ -21,8 +21,10 @@
 - **`LibraryViewModel` already owns** `deletePlaylist` (the `deletePlaylistWithCascade` path — Home uses the same), `removePlaylist`, `setPlaylistImage`/`removePlaylistImage`, `playPlaylist`, `addPlaylistToQueue`. These do **not** port.
 - **`HomeViewModel` methods that DO port** (mix/recipe-specific, Library lacks them): `refreshMix` (513), `refreshMixIfStale` (600), `editRecipeId` (614), `deleteCustomMix` (584), `playAllMixes` (632), `previewPlaylistDelete` (444) + its `DeletePreview`/`lastCascadeSummary`, and `createPlaylist` (493 — Library has a batch create but no bare `createPlaylist(name)`; add it).
 - **Constructor deps to add** to `LibraryViewModel`: `recipeDao: StashMixRecipeDao`, `discoveryQueueDao: DiscoveryQueueDao`, `downloadNetworkPreference: DownloadNetworkPreference`, `streamingPreference: StreamingPreference`, `@ApplicationContext context: Context` (WorkManager). (Home keeps tipJar/lossless/deep-link/metadata — those aren't mixes.)
-- **The `buildingMixIds`/`emptyMixIds` computation** (Home `musicDataFlow`, lines 189–215, using `mixBuildState`) ports with the combine rework. The `mixBuildState` helper + `MixBuildState` enum move too.
-- **Dedup:** Library's `uiState.playlists = getAllPlaylists()` includes ALL types today, and `LibraryTab.PLAYLISTS → PlaylistsGrid` renders them. After the port: **Mixes group** = `STASH_MIX`(minus the builtin Daily Discover `playlistId` from `recipeDao.getBuiltinPlaylistIds()`) + `DOWNLOADS_MIX` + `DAILY_MIX` + Liked Songs; **Playlists tab** = `CUSTOM` only.
+- **`MixBuildState` + `mixBuildState()` ALREADY live in `core:data`** (`com.stash.core.data.mix.MixBuildState.kt`) — a shared file `:feature:library` already sees via its `core:data` dep. **Do NOT move or re-implement them** — just `import com.stash.core.data.mix.MixBuildState` + `import com.stash.core.data.mix.mixBuildState`. (This corrects an earlier draft that had a "move MixBuildState" task — deleted.)
+- **The `buildingMixIds`/`emptyMixIds` computation** (Home `musicDataFlow`, lines 189–215, calling the shared `mixBuildState()`) ports with the combine rework.
+- **Spotify/YouTube mix split:** Home exposes `spotifyMixes`/`youtubeMixes` as **separate** `HomeUiState` fields (that's what `playAllMixes` reads). To port `playAllMixes` verbatim, `LibraryUiState` must keep the **same split field names** and replicate Home's exact derivation of those two lists (grep how `HomeViewModel`'s top-level `uiState` combine populates `spotifyMixes`/`youtubeMixes` — port it faithfully). Do NOT merge them into one `dailyMixes` field (that would break the ported method).
+- **Dedup:** Library's `uiState.playlists = getAllPlaylists()` includes ALL types today, and `LibraryTab.PLAYLISTS → PlaylistsGrid` renders them. After the port: **Mixes group** = `STASH_MIX`(minus the builtin Daily Discover `playlistId` from `recipeDao.getBuiltinPlaylistIds()`) + `DOWNLOADS_MIX` + `spotifyMixes`/`youtubeMixes` (`DAILY_MIX`) + Liked Songs; **Playlists tab** = `CUSTOM` only.
 - **Combine limit:** Library's `uiState` already chains two `.combine`s off a 5-arg base. Adding recipe+discovery flows requires the **intermediate-holder** pattern (mirror Home's `musicDataFlow` `combine(getAllPlaylists, getRecentlyAdded, recipeDao.observeAll, discoveryQueueDao.observeNonFailedCountsByRecipe)`).
 
 ---
@@ -32,11 +34,12 @@
 | File | Responsibility | Task |
 | --- | --- | --- |
 | `feature/library/.../LibraryUiState.kt` (modify) | add mix/liked/recently-added slices + build-state sets | 1 |
-| `feature/library/.../MixBuildState.kt` (new, moved from home) | `MixBuildState` enum + `mixBuildState()` helper | 2 |
-| `feature/library/.../LibraryViewModel.kt` (modify) | DAO injections, combine→holder rework, ported mix methods | 3,4,5 |
-| `feature/library/.../LibraryMixesSection.kt` (new, from home cards) | Mixes-group UI (Daily/Stash/custom + Liked) | 6 |
-| `feature/library/.../LibraryScreen.kt` (modify) | render Mixes section; filter Playlists tab to CUSTOM | 7 |
-| `feature/library/src/test/.../LibraryViewModelMixTest.kt` (new) | state-assembly + dedup + build-state tests | 3,4,5 |
+| `feature/library/.../LibraryViewModel.kt` (modify) | DAO injections, combine→holder rework, ported mix methods | 2,3,4 |
+| `feature/library/.../LibraryMixesSection.kt` (new, from home cards) | Mixes-group UI (Daily/Stash/custom + Liked) | 5 |
+| `feature/library/.../LibraryScreen.kt` (modify) | render Mixes section; filter Playlists tab to CUSTOM | 6 |
+| `feature/library/src/test/.../LibraryViewModelMixTest.kt` (new) | state-assembly + dedup + build-state tests | 2,3,4 |
+
+(No `MixBuildState.kt` in this module — it's a shared `core:data` import.)
 
 ---
 
@@ -59,7 +62,8 @@ class LibraryUiStateTest {
     @Test fun `mix slices default empty`() {
         val s = LibraryUiState()
         assertThat(s.stashMixes).isEmpty()
-        assertThat(s.dailyMixes).isEmpty()
+        assertThat(s.spotifyMixes).isEmpty()
+        assertThat(s.youtubeMixes).isEmpty()
         assertThat(s.likedPlaylists).isEmpty()
         assertThat(s.recentlyAdded).isEmpty()
         assertThat(s.buildingMixIds).isEmpty()
@@ -74,8 +78,10 @@ class LibraryUiStateTest {
 ```kotlin
     /** Recipe-generated Stash Mixes (STASH_MIX minus the builtin Daily Discover). */
     val stashMixes: List<Playlist> = emptyList(),
-    /** Spotify + YouTube daily/imported mixes (DAILY_MIX). */
-    val dailyMixes: List<Playlist> = emptyList(),
+    /** Spotify daily/imported mixes (DAILY_MIX) — split kept so playAllMixes ports verbatim. */
+    val spotifyMixes: List<Playlist> = emptyList(),
+    /** YouTube daily/imported mixes (DAILY_MIX). */
+    val youtubeMixes: List<Playlist> = emptyList(),
     /** Liked-songs playlists (LIKED_SONGS). */
     val likedPlaylists: List<Playlist> = emptyList(),
     /** Recently downloaded tracks. */
@@ -92,47 +98,35 @@ class LibraryUiStateTest {
 
 ---
 
-## Task 2: Move `MixBuildState` + `mixBuildState()` to `:feature:library`
-
-**Files:**
-- Create: `feature/library/src/main/kotlin/com/stash/feature/library/MixBuildState.kt`
-- Test: `feature/library/src/test/kotlin/com/stash/feature/library/MixBuildStateTest.kt`
-
-Copy the `MixBuildState` enum + `mixBuildState(recipe, trackCount, nonFailedDiscoveryCount)` helper from Home (grep `mixBuildState` in `feature/home/.../HomeViewModel.kt` for the exact body). It's a pure function → real unit test.
-
-- [ ] **Step 1: Write failing test** covering the three outcomes (BUILDING when discovery pending + 0 tracks; EMPTY when finished + 0 tracks; READY when tracks present). Mirror Home's semantics exactly — read the source helper first.
-- [ ] **Step 2–4:** fail → implement (verbatim from Home) → pass.
-- [ ] **Step 5: Commit** (`feat(library): port MixBuildState helper`).
-
----
-
-## Task 3: `LibraryViewModel` — DAO injections + combine→holder rework
+## Task 2: `LibraryViewModel` — DAO injections + combine→holder rework
 
 **Files:**
 - Modify: `feature/library/src/main/kotlin/com/stash/feature/library/LibraryViewModel.kt`
 - Test: `feature/library/src/test/kotlin/com/stash/feature/library/LibraryViewModelMixTest.kt`
 
-Add the constructor deps and fold `recipeDao.observeAll()` + `discoveryQueueDao.observeNonFailedCountsByRecipe()` into a `libraryMixDataFlow` holder (mirror Home's `musicDataFlow`, lines 182–216), then combine that holder into `uiState`. Compute `stashMixes`/`dailyMixes`/`likedPlaylists` by `PlaylistType`, excluding the builtin Daily Discover `playlistId` from `stashMixes`.
+Add the constructor deps and fold `recipeDao.observeAll()` + `discoveryQueueDao.observeNonFailedCountsByRecipe()` into a `libraryMixDataFlow` holder (mirror Home's `musicDataFlow`, lines 182–216), then combine that holder into `uiState`. Compute `stashMixes`/`spotifyMixes`/`youtubeMixes`/`likedPlaylists` by `PlaylistType` (replicating Home's exact spotify/youtube split — grep `spotifyMixes`/`youtubeMixes` derivation in `HomeViewModel`), excluding the builtin Daily Discover `playlistId` from `stashMixes`. Import `MixBuildState`/`mixBuildState` from `com.stash.core.data.mix` (shared — no local copy).
 
-- [ ] **Step 1: Write failing test** — construct `LibraryViewModel` with fakes (InMemory/mock DAOs + fake recipe list), assert `uiState`:
+> **Avoid double-observing `getAllPlaylists()`:** Library's base `uiState` combine already observes it. Rather than observe it again in the mix holder, derive the mix slices from the **same** `allPlaylists` the base combine already has (fold recipe/discovery into the existing snapshot via the holder pattern), so playlists are observed once.
+
+- [ ] **Step 1: Write failing test** — construct `LibraryViewModel` with fakes (mock `MusicRepository`/`TokenManager`/`recipeDao`/`discoveryQueueDao` via `org.mockito.kotlin`; `runTest`; collect `uiState` with `.first()` — **no turbine, no mockk in this module**). Assert:
   - `stashMixes` contains STASH_MIX playlists **except** the builtin Daily Discover id (from `recipeDao.getBuiltinPlaylistIds()`),
-  - `dailyMixes` = DAILY_MIX, `likedPlaylists` = LIKED_SONGS,
+  - `spotifyMixes`/`youtubeMixes` = the DAILY_MIX split (per Home's derivation), `likedPlaylists` = LIKED_SONGS,
   - `customMixPlaylistIds`/`buildingMixIds`/`emptyMixIds` computed as Home did.
-  (Follow the existing `LibraryViewModel` test setup if one exists; else mock `MusicRepository`/`TokenManager`/`recipeDao`/`discoveryQueueDao` with mockk + `runTest` + turbine, as Home's cache/VM tests do.)
+  (Follow the existing `LibraryViewModel` test setup if one exists.)
 - [ ] **Step 2: Run — fail** (ctor has no `recipeDao`).
-- [ ] **Step 3: Implement** — add ctor params (`recipeDao`, `discoveryQueueDao`, `downloadNetworkPreference`, `streamingPreference`, `@ApplicationContext context`); add a `libraryMixDataFlow` combine holder computing the mix sets + build-state (port `mixBuildState` loop from Home 200–215, using the Task-2 helper); combine it into `uiState`; map its outputs into the new `LibraryUiState` fields. Exclude builtin id: `val builtinIds = recipeDao.getBuiltinPlaylistIds().toSet()` (read once, or observe) → `stashMixes = playlists.filter { it.type == STASH_MIX && it.id !in builtinIds }`.
+- [ ] **Step 3: Implement** — add ctor params (`recipeDao`, `discoveryQueueDao`, `downloadNetworkPreference`, `streamingPreference`, `@ApplicationContext context`); add the `libraryMixDataFlow` combine holder computing the mix sets + build-state (port the `mixBuildState` loop from Home 200–215, calling the shared `mixBuildState()`); combine it into `uiState`; map its outputs into the new `LibraryUiState` fields. Exclude builtin id: `val builtinIds = recipeDao.getBuiltinPlaylistIds().toSet()` → `stashMixes = playlists.filter { it.type == STASH_MIX && it.id !in builtinIds }`.
 - [ ] **Step 4: Run — pass** (new test **and** all pre-existing `LibraryViewModel`/Library tests).
 - [ ] **Step 5: Commit** (`feat(library): recipe/discovery flows + mix slices in LibraryViewModel`).
 
 ---
 
-## Task 4: Port the mix-management methods
+## Task 3: Port the mix-management methods
 
 **Files:**
 - Modify: `feature/library/.../LibraryViewModel.kt`
 - Test: extend `LibraryViewModelMixTest.kt`
 
-Port verbatim (adjusting only the `_userMessages`/`viewModelScope` references to Library's): `refreshMix`, `refreshMixIfStale`, `deleteCustomMix`, `editRecipeId`, `playAllMixes` (reads `stashMixes`/`dailyMixes` from Library's uiState now), `previewPlaylistDelete` + `DeletePreview` + `lastCascadeSummary`, and a bare `createPlaylist(name)`. Copy the exact bodies from `HomeViewModel` (lines cited in Key facts) — they're self-contained. `refreshMix` brings the WorkManager unique-work observation (needs `context` + the `StashMixRefreshWorker`/`StashDiscoveryWorker` imports Home uses).
+Port verbatim (adjusting only the `_userMessages`/`viewModelScope` references to Library's): `refreshMix`, `refreshMixIfStale`, `deleteCustomMix`, `editRecipeId`, `playAllMixes` (reads `spotifyMixes`/`youtubeMixes` from Library's uiState — the split fields kept in Task 1 so this ports unchanged), `previewPlaylistDelete` + `DeletePreview` + `lastCascadeSummary`, and a bare `createPlaylist(name)`. Copy the exact bodies from `HomeViewModel` (lines cited in Key facts) — they're self-contained. `refreshMix` brings the WorkManager unique-work observation (needs `context` + the `StashMixRefreshWorker`/`StashDiscoveryWorker` imports Home uses).
 
 - [ ] **Step 1: Write failing tests** for the pure-ish ones: `previewPlaylistDelete` returns correct `willDelete` given a fake repo; `editRecipeId` invokes the callback with the recipe id from a fake `recipeDao`. (The WorkManager-driven `refreshMix` is integration-heavy — cover it by asserting it enqueues without throwing, or leave to device smoke; don't build a WorkManager test harness.)
 - [ ] **Step 2–4:** fail → port the method bodies → pass.
@@ -140,7 +134,7 @@ Port verbatim (adjusting only the `_userMessages`/`viewModelScope` references to
 
 ---
 
-## Task 5: Dedup — filter the Playlists tab to CUSTOM
+## Task 4: Dedup — filter the Playlists tab to CUSTOM
 
 **Files:**
 - Modify: `feature/library/.../LibraryViewModel.kt` (the `sortedPlaylists`/`playlists` mapping, ~line 146/163/199)
@@ -155,7 +149,7 @@ Today `uiState.playlists` = all playlist types. Change it to **`CUSTOM` only** s
 
 ---
 
-## Task 6: `LibraryMixesSection` composable (from Home cards)
+## Task 5: `LibraryMixesSection` composable (from Home cards)
 
 **Files:**
 - Create: `feature/library/src/main/kotlin/com/stash/feature/library/LibraryMixesSection.kt`
@@ -168,12 +162,12 @@ Bring the mix/liked card UI over from Home so Library can render the Mixes group
 
 ---
 
-## Task 7: Wire the Mixes section into `LibraryScreen`
+## Task 6: Wire the Mixes section into `LibraryScreen`
 
 **Files:**
 - Modify: `feature/library/src/main/kotlin/com/stash/feature/library/LibraryScreen.kt`
 
-Render `LibraryMixesSection` at the top of the Library content (above the tabs, or as the PLAYLISTS-tab header — pick per the existing layout; read the screen first). Wire the ViewModel callbacks (`refreshMix`, `deleteCustomMix`, `editRecipeId` → MixBuilder nav, `playAllMixes`, `createPlaylist`, delete-preview dialog). The Playlists tab now shows only user playlists (Task 5).
+Render `LibraryMixesSection` at the top of the Library content (above the tabs, or as the PLAYLISTS-tab header — pick per the existing layout; read the screen first). Wire the ViewModel callbacks (`refreshMix`, `deleteCustomMix`, `editRecipeId` → MixBuilder nav, `playAllMixes`, `createPlaylist`, delete-preview dialog). The Playlists tab now shows only user playlists (Task 4).
 
 - [ ] **Step 1: Implement** the wiring.
 - [ ] **Step 2: Compile** — `./gradlew :feature:library:compileDebugKotlin` → SUCCESS.
@@ -182,7 +176,7 @@ Render `LibraryMixesSection` at the top of the Library content (above the tabs, 
 
 ---
 
-## Task 8: Full build + regression smoke
+## Task 7: Full build + regression smoke
 
 - [ ] **Step 1:** `./gradlew :app:assembleDebug` → BUILD SUCCESSFUL (Home still compiles — it still has its own copies until Plan 3 removes them; the port ADDS to Library, doesn't yet subtract from Home).
 - [ ] **Step 2:** `./gradlew :feature:library:testDebugUnitTest --tests "*Library*"` → PASS (new + pre-existing).
