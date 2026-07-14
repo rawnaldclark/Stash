@@ -2,11 +2,14 @@
 package com.stash.core.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -14,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
+import com.stash.core.ui.components.motion.pressScale
 
 /**
  * 140dp square album card with rounded thumbnail, title, and "year • artist" subtitle.
@@ -28,6 +32,8 @@ import com.stash.core.common.ArtUrlUpgrader
  * @param year Optional release year. When present the subtitle is `"$year • $artist"`,
  *   otherwise just the artist name.
  * @param modifier Optional layout modifier applied to the root column.
+ * @param isLossless When true, overlays a small FLAC badge on the cover art
+ *   (Premium Crisp quality signal). Defaults to false so existing callers are unaffected.
  * @param onClick Invoked on tap — typically opens the album detail screen.
  */
 @Composable
@@ -37,15 +43,30 @@ fun AlbumSquareCard(
     thumbnailUrl: String?,
     year: String?,
     modifier: Modifier = Modifier,
+    isLossless: Boolean = false,
     onClick: () -> Unit,
 ) {
-    Column(modifier = modifier.width(140.dp).clickable(onClick = onClick)) {
-        AsyncImage(
-            model = ArtUrlUpgrader.upgrade(thumbnailUrl),
-            contentDescription = title,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),
-        )
+    val interactionSource = remember { MutableInteractionSource() }
+    Column(
+        modifier = modifier
+            .width(140.dp)
+            .pressScale(interactionSource)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
+    ) {
+        Box {
+            AsyncImage(
+                model = ArtUrlUpgrader.upgrade(thumbnailUrl),
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),
+            )
+            if (isLossless) {
+                FlacBadge(
+                    fileFormat = "flac",
+                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                )
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Text(
             text = title,
