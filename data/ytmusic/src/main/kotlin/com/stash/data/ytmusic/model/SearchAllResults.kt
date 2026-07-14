@@ -54,7 +54,7 @@ data class ArtistSummary(
 
 /** Which catalog an album entry came from. Drives AlbumCache routing + play path. */
 @Serializable
-enum class AlbumSource { YOUTUBE, QOBUZ }
+enum class AlbumSource { YOUTUBE, QOBUZ, QOBUZ_PLAYLIST }
 
 /** Minimal album identity for horizontal album rows and discography grids. */
 @Serializable
@@ -65,6 +65,16 @@ data class AlbumSummary(
     val thumbnailUrl: String?,
     val year: String?,
     val source: AlbumSource = AlbumSource.YOUTUBE,
+)
+
+/** Minimal playlist identity for the Home discovery playlist row. */
+@Serializable
+data class PlaylistSummary(
+    val id: String,
+    val title: String,
+    val curator: String,
+    val thumbnailUrl: String?,
+    val trackCount: Int,
 )
 
 /**

@@ -87,6 +87,47 @@ class QbdlxApiClient @Inject constructor(
             json.decodeFromString<QbdlxAlbumDetailResponse>(body)
         }
 
+    /**
+     * Featured albums (`type` = `new-releases-full` / `best-sellers`). Unsigned
+     * GET; [genreId] null = all genres. Reuses the album-list envelope. Read-only.
+     */
+    suspend fun getFeaturedAlbums(type: String, genreId: Int?, token: String, limit: Int = 20): List<QbdlxAlbumItem> =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api.json/0.2/album/getFeatured".toHttpUrl().newBuilder()
+                .addQueryParameter("type", type)
+                .apply { if (genreId != null) addQueryParameter("genre_id", genreId.toString()) }
+                .addQueryParameter("limit", limit.toString())
+                .addQueryParameter("app_id", appId)
+                .build()
+            val body = get(url.toString(), token)
+            runCatching { json.decodeFromString<QbdlxArtistAlbumsResponse>(body).albums.items }.getOrDefault(emptyList())
+        }
+
+    /** Featured playlists (editor-picks). Unsigned GET; [genreId] null = all. Read-only. */
+    suspend fun getFeaturedPlaylists(genreId: Int?, token: String, limit: Int = 15): List<QbdlxPlaylistItem> =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api.json/0.2/playlist/getFeatured".toHttpUrl().newBuilder()
+                .addQueryParameter("type", "editor-picks")
+                .apply { if (genreId != null) addQueryParameter("genre_id", genreId.toString()) }
+                .addQueryParameter("limit", limit.toString())
+                .addQueryParameter("app_id", appId)
+                .build()
+            val body = get(url.toString(), token)
+            runCatching { json.decodeFromString<QbdlxFeaturedPlaylistsResponse>(body).playlists.items }.getOrDefault(emptyList())
+        }
+
+    /** Playlist detail incl. its tracks. Unsigned GET (read-only metadata). */
+    suspend fun getPlaylist(playlistId: String, token: String, limit: Int = 500): QbdlxPlaylistDetailResponse =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api.json/0.2/playlist/get".toHttpUrl().newBuilder()
+                .addQueryParameter("playlist_id", playlistId)
+                .addQueryParameter("extra", "tracks")
+                .addQueryParameter("limit", limit.toString())
+                .addQueryParameter("app_id", appId)
+                .build()
+            json.decodeFromString<QbdlxPlaylistDetailResponse>(get(url.toString(), token))
+        }
+
     /** Resolve a track id to a signed FLAC URL, classified. */
     suspend fun getFileUrl(trackId: Long, formatId: Int, token: String): QbdlxResolveResult =
         withContext(Dispatchers.IO) {

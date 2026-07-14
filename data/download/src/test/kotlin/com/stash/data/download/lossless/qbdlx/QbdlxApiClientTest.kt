@@ -68,4 +68,43 @@ class QbdlxApiClientTest {
         try { client.search("x", token = "tok"); assertThat(false).isTrue() }
         catch (e: QbdlxAuthException) { assertThat(e.status).isEqualTo(401) }
     }
+
+    @Test fun `getFeaturedAlbums sends type + genre_id + app_id and parses`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"albums":{"items":[
+            {"id":"a1","title":"T","image":{"large":"L"},"artist":{"name":"AR"},
+             "release_date_original":"2026-01-02","tracks_count":9}]}}"""))
+        val items = client.getFeaturedAlbums("best-sellers", genreId = 112, token = "tok")
+        val req = server.takeRequest()
+        assertThat(req.path).contains("album/getFeatured")
+        assertThat(req.path).contains("type=best-sellers")
+        assertThat(req.path).contains("genre_id=112")
+        assertThat(req.path).contains("app_id=")
+        assertThat(items.single().title).isEqualTo("T")
+    }
+
+    @Test fun `getFeaturedAlbums omits genre_id when null`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"albums":{"items":[]}}"""))
+        client.getFeaturedAlbums("new-releases-full", genreId = null, token = "tok")
+        assertThat(server.takeRequest().path).doesNotContain("genre_id")
+    }
+
+    @Test fun `getFeaturedPlaylists parses playlist items`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"playlists":{"items":[
+            {"id":5,"name":"P","owner":{"name":"O"},"tracks_count":3,"images300":["i"]}]}}"""))
+        val items = client.getFeaturedPlaylists(genreId = null, token = "tok")
+        assertThat(server.takeRequest().path).contains("playlist/getFeatured")
+        assertThat(items.single().name).isEqualTo("P")
+    }
+
+    @Test fun `getPlaylist sends extra=tracks and parses detail`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"id":5,"name":"P","owner":{"name":"O"},
+            "images300":["i"],"tracks":{"items":[
+              {"id":9,"title":"S","performer":{"name":"AR"},"duration":100,
+               "album":{"title":"AL","image":{"large":"L"}}}]}}"""))
+        val d = client.getPlaylist("5", token = "tok")
+        val req = server.takeRequest()
+        assertThat(req.path).contains("playlist/get")
+        assertThat(req.path).contains("extra=tracks")
+        assertThat(d.tracks.items.single().title).isEqualTo("S")
+    }
 }

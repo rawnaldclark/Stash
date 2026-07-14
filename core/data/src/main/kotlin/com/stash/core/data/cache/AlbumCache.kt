@@ -46,6 +46,7 @@ open class AlbumCache @Inject constructor(
 
             val fresh = when (source) {
                 AlbumSource.QOBUZ -> qobuzFetcher.getAlbum(id)
+                AlbumSource.QOBUZ_PLAYLIST -> qobuzFetcher.getPlaylist(id)
                 AlbumSource.YOUTUBE -> api.getAlbum(id)
             }
             entries[key] = Entry(fresh, now())

@@ -54,3 +54,48 @@ data class QbdlxAlbumTrackItem(
     val performer: QbdlxPerformer? = null,
     val duration: Int = 0,                        // seconds
 )
+
+// ── playlist/getFeatured?type=editor-picks ─────────────────────────────
+@Serializable
+data class QbdlxFeaturedPlaylistsResponse(val playlists: QbdlxPlaylistList = QbdlxPlaylistList())
+
+@Serializable
+data class QbdlxPlaylistList(val items: List<QbdlxPlaylistItem> = emptyList())
+
+@Serializable
+data class QbdlxPlaylistItem(
+    val id: Long = 0,
+    val name: String = "",
+    val owner: QbdlxOwner? = null,
+    val tracks_count: Int = 0,
+    val images300: List<String> = emptyList(),    // square covers, 300px
+)
+
+@Serializable
+data class QbdlxOwner(val name: String = "")
+
+// ── playlist/get?extra=tracks ──────────────────────────────────────────
+@Serializable
+data class QbdlxPlaylistDetailResponse(
+    val id: Long = 0,
+    val name: String = "",
+    val owner: QbdlxOwner? = null,
+    val tracks_count: Int = 0,
+    val images300: List<String> = emptyList(),
+    val tracks: QbdlxPlaylistTrackList = QbdlxPlaylistTrackList(),
+)
+
+@Serializable
+data class QbdlxPlaylistTrackList(val items: List<QbdlxPlaylistTrackItem> = emptyList())
+
+@Serializable
+data class QbdlxPlaylistTrackItem(
+    val id: Long = 0,
+    val title: String = "",
+    val performer: QbdlxPerformer? = null,
+    val duration: Int = 0,                        // seconds
+    val album: QbdlxTrackAlbumRef? = null,
+)
+
+@Serializable
+data class QbdlxTrackAlbumRef(val title: String = "", val image: QbdlxImage? = null)

@@ -45,4 +45,29 @@ class QobuzAlbumFetcherImpl @Inject constructor(
             moreByArtist = emptyList(),
         )
     }
+
+    override suspend fun getPlaylist(playlistId: String): AlbumDetail {
+        val token = credentialStore.activeToken() ?: error("qbdlx: no live token")
+        val p = apiClient.getPlaylist(playlistId, token)
+        val cover = p.images300.firstOrNull()
+        return AlbumDetail(
+            id = playlistId,
+            title = p.name,
+            artist = p.owner?.name.orEmpty(),     // curator
+            artistId = null,
+            thumbnailUrl = cover,
+            year = null,
+            tracks = p.tracks.items.map { t ->
+                TrackSummary(
+                    videoId = "",
+                    title = t.title,
+                    artist = t.performer?.name.orEmpty(),
+                    album = t.album?.title,
+                    durationSeconds = t.duration.toDouble(),
+                    thumbnailUrl = t.album?.image?.large ?: cover,
+                )
+            },
+            moreByArtist = emptyList(),
+        )
+    }
 }

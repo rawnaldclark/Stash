@@ -47,4 +47,26 @@ class QobuzAlbumFetcherImplTest {
             runBlocking { fetcher().getAlbum("123") }
         }
     }
+
+    @Test
+    fun `maps qobuz playlist to AlbumDetail with curator as artist`() = runTest {
+        val playlist = json.decodeFromString<QbdlxPlaylistDetailResponse>(
+            """{"id":67048110,"name":"Brazilcore II","owner":{"name":"Qobuz France"},
+               "images300":["https://img/300.jpg"],
+               "tracks":{"items":[
+                 {"id":1,"title":"Funky Tamborim","performer":{"name":"Tania Maria"},
+                  "duration":195,"album":{"title":"Love Explosion","image":{"large":"AL"}}}]}}""",
+        )
+        coEvery { credentialStore.activeToken() } returns "tok"
+        coEvery { apiClient.getPlaylist("67048110", "tok") } returns playlist
+
+        val detail = fetcher().getPlaylist("67048110")
+
+        assertEquals("Brazilcore II", detail.title)
+        assertEquals("Qobuz France", detail.artist)                 // curator
+        assertEquals("https://img/300.jpg", detail.thumbnailUrl)
+        assertEquals("Tania Maria", detail.tracks.single().artist)
+        assertEquals("AL", detail.tracks.single().thumbnailUrl)     // per-track album art
+        assertTrue(detail.tracks.all { it.videoId == "" })
+    }
 }
