@@ -55,14 +55,17 @@ class LibraryViewModelMixTest {
     fun uiState_derives_mix_slices_by_type_and_source_excluding_builtin() = runTest {
         val builtinStashMix = playlist(10L, PlaylistType.STASH_MIX, MusicSource.SPOTIFY)
         val customStashMix = playlist(11L, PlaylistType.STASH_MIX, MusicSource.SPOTIFY)
+        val downloadsMix = playlist(12L, PlaylistType.DOWNLOADS_MIX, MusicSource.SPOTIFY)
         val spotifyDaily = playlist(20L, PlaylistType.DAILY_MIX, MusicSource.SPOTIFY)
         val youtubeDaily = playlist(21L, PlaylistType.DAILY_MIX, MusicSource.YOUTUBE)
-        val liked = playlist(30L, PlaylistType.LIKED_SONGS, MusicSource.SPOTIFY)
+        val externalLiked = playlist(30L, PlaylistType.LIKED_SONGS, MusicSource.SPOTIFY)
+        val localLiked = playlist(31L, PlaylistType.STASH_LIKED, MusicSource.SPOTIFY)
         val custom = playlist(40L, PlaylistType.CUSTOM, MusicSource.SPOTIFY)
 
         val musicRepo = musicRepoMock(
             playlists = listOf(
-                builtinStashMix, customStashMix, spotifyDaily, youtubeDaily, liked, custom,
+                builtinStashMix, customStashMix, downloadsMix, spotifyDaily, youtubeDaily,
+                externalLiked, localLiked, custom,
             ),
         )
         // Playlist id 10 is the builtin Daily Discover — must be excluded from stashMixes.
@@ -72,14 +75,14 @@ class LibraryViewModelMixTest {
 
         val state = vm.uiState.first { !it.isLoading }
 
-        // stashMixes: the custom STASH_MIX, NOT the builtin Daily Discover.
-        assertThat(state.stashMixes.map { it.id }).containsExactly(11L)
+        // stashMixes: custom STASH_MIX + DOWNLOADS_MIX ("Your Downloads"), NOT the builtin.
+        assertThat(state.stashMixes.map { it.id }).containsExactly(11L, 12L)
         assertThat(state.stashMixes.map { it.id }).doesNotContain(10L)
         // DAILY_MIX split by source (matches Home's derivation).
         assertThat(state.spotifyMixes.map { it.id }).containsExactly(20L)
         assertThat(state.youtubeMixes.map { it.id }).containsExactly(21L)
-        // LIKED_SONGS.
-        assertThat(state.likedPlaylists.map { it.id }).containsExactly(30L)
+        // Liked: both the external LIKED_SONGS mirror AND the local STASH_LIKED.
+        assertThat(state.likedPlaylists.map { it.id }).containsExactly(30L, 31L)
     }
 
     @Test
