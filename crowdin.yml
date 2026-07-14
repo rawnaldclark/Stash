@@ -1,9 +1,7 @@
-"files":
-  - "source": "/app/src/main/res/values/strings.xml"
-    "translation": "/app/src/main/res/values-%android_code%/strings.xml"
-
-  - "source": "/core/media/src/main/res/values/strings.xml"
-    "translation": "/core/media/src/main/res/values-%android_code%/strings.xml"
-
-  - "source": "/app/src/debug/res/values/strings.xml"
-    "translation": "/app/src/debug/res/values-%android_code%/strings.xml"
+files:
+  - source: /app/src/main/res/values/strings.xml
+    translation: /app/src/main/res/values-%android_code%/strings.xml
+  - source: /core/media/src/main/res/values/strings.xml
+    translation: /core/media/src/main/res/values-%android_code%/strings.xml
+  - source: /app/src/debug/res/values/strings.xml
+    translation: /app/src/debug/res/values-%android_code%/strings.xml
