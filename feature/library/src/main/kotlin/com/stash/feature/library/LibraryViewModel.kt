@@ -208,7 +208,10 @@ class LibraryViewModel @Inject constructor(
         val controls = snapshot.controls
         val allTracks = snapshot.allTracks
         val mixData = snapshot.mixData
-        val allPlaylists = mixData.playlists
+        // Playlists tab shows user (CUSTOM) playlists only — mixes and Liked
+        // Songs render in the dedicated Mixes group (mixData.stashMixes/…),
+        // so surfacing them here too would double them up.
+        val allPlaylists = mixData.playlists.filter { it.type == PlaylistType.CUSTOM }
         val allArtists = snapshot.allArtists
         val allAlbums = snapshot.allAlbums
 

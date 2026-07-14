@@ -83,6 +83,28 @@ class LibraryViewModelMixTest {
     }
 
     @Test
+    fun uiState_playlists_tab_shows_only_custom_playlists() = runTest {
+        // One of every PlaylistType — mixes + liked now live in the dedicated
+        // Mixes group, so the Playlists tab must surface ONLY the CUSTOM one.
+        val stashMix = playlist(11L, PlaylistType.STASH_MIX, MusicSource.SPOTIFY)
+        val dailyMix = playlist(20L, PlaylistType.DAILY_MIX, MusicSource.SPOTIFY)
+        val liked = playlist(30L, PlaylistType.LIKED_SONGS, MusicSource.SPOTIFY)
+        val downloadsMix = playlist(35L, PlaylistType.DOWNLOADS_MIX, MusicSource.SPOTIFY)
+        val custom = playlist(40L, PlaylistType.CUSTOM, MusicSource.SPOTIFY)
+
+        val musicRepo = musicRepoMock(
+            playlists = listOf(stashMix, dailyMix, liked, downloadsMix, custom),
+        )
+
+        val vm = buildVm(musicRepository = musicRepo)
+
+        val state = vm.uiState.first { !it.isLoading }
+
+        // Playlists tab = user (CUSTOM) playlists only; mixes/liked are excluded.
+        assertThat(state.playlists.map { it.id }).containsExactly(40L)
+    }
+
+    @Test
     fun previewPlaylistDelete_returns_correct_willDelete() = runTest {
         // N=3 tracks in the playlist; K=1 (track id 2) is protected elsewhere.
         val tracks = listOf(
