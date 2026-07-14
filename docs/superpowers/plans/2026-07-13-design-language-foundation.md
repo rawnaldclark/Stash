@@ -23,7 +23,7 @@
 | `core/ui/build.gradle.kts` (modify) | ensure Truth on test classpath | 1 |
 | `core/ui/.../theme/Motion.kt` (new) | `StashMotion` durations/easings/press-scale/stagger constants | 1 |
 | `core/ui/.../theme/Elevation.kt` (new) | named shadow/elevation dp constants (§3.3) | 1 |
-| `core/ui/.../components/motion/PressScale.kt` (new) | `Modifier.pressScale()` + `Modifier.stashPressable()` | 2 |
+| `core/ui/.../components/motion/PressScale.kt` (new) | `Modifier.pressScale()` | 2 |
 | `core/ui/.../components/CrispChipRow.kt` (new) | data-agnostic filter-chip row | 3 |
 | `core/ui/.../components/RankedAlbumRow.kt` (new) | ranked/numbered album list item + list | 4 |
 | `core/ui/.../components/DiscoverHeroCard.kt` (new) | hero card (art-gradient, title, play) | 5 |
@@ -42,10 +42,10 @@
 
 Spec §3.5 pins: `durShort=180ms`, `durMed=260ms`, `easeEnter=FastOutSlowIn`, `easeExit=FastOutLinearIn`, `pressScale=0.97f`, `sectionStagger=40ms`. §3.3 pins shadows: `heroShadow=8dp`, `chromeShadow=6dp`, `pressElevation=2dp`.
 
-- [ ] **Step 0: Ensure Truth on `core:ui` test classpath**
-Check `core/ui/build.gradle.kts` `dependencies`; if no `truth`, add `testImplementation(libs.truth)` (catalog has `libs.truth`).
+- [ ] **Step 0: Confirm Truth on `core:ui` test classpath (already present — verify, don't duplicate)**
+`core/ui/build.gradle.kts` already has `testImplementation(libs.truth)` (~line 22). This is a verify-only step; do NOT add a second line.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing test** (Truth-native assertions only — no Guava `Range`; nothing in this repo imports `com.google.common.collect.*` and we won't start)
 ```kotlin
 package com.stash.core.ui.theme
 
@@ -62,7 +62,8 @@ class MotionTokensTest {
         assertThat(StashMotion.PRESS_SCALE).isLessThan(1f)
     }
     @Test fun `stagger is small`() {
-        assertThat(StashMotion.SECTION_STAGGER_MS).isIn(com.google.common.collect.Range.closed(10, 80))
+        assertThat(StashMotion.SECTION_STAGGER_MS).isAtLeast(10)
+        assertThat(StashMotion.SECTION_STAGGER_MS).isAtMost(80)
     }
 }
 ```
@@ -115,7 +116,7 @@ git commit -m "feat(ui): Premium Crisp motion + elevation tokens"
 
 ---
 
-## Task 2: Press-scale + pressable modifier
+## Task 2: Press-scale modifier
 
 **Files:**
 - Create: `core/ui/src/main/kotlin/com/stash/core/ui/components/motion/PressScale.kt`
@@ -130,9 +131,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.composed
@@ -166,7 +165,7 @@ git commit -m "feat(ui): pressScale interaction modifier"
 **Files:**
 - Create: `core/ui/src/main/kotlin/com/stash/core/ui/components/CrispChipRow.kt`
 
-Renders a horizontal, scrollable row of filter chips. **Data-agnostic:** takes `chips: List<String>`, `selected: String`, `onSelect: (String) -> Unit`. Active chip = `colorScheme.primary` fill / white text; inactive = `extendedColors.elevatedSurface` / `textSecondary`. 11sp Inter SemiBold, 16dp radius, 6px gaps (spec §3, mock C). No selection *logic* here (Plan 2 supplies the chip list + handles filtering).
+Renders a horizontal, scrollable row of filter chips. **Data-agnostic:** takes `chips: List<String>`, `selected: String`, `onSelect: (String) -> Unit`. Active chip = `MaterialTheme.colorScheme.primary` fill / `onPrimary` text; inactive = `StashTheme.extendedColors.elevatedSurface` fill / `MaterialTheme.colorScheme.onSurfaceVariant` text (note: `onSurfaceVariant` *is* the secondary-text color in both schemes — `extendedColors` has no `textSecondary` field). 11sp Inter SemiBold, 16dp radius, 6px gaps (spec §3, mock C). No selection *logic* here (Plan 2 supplies the chip list + handles filtering).
 
 - [ ] **Step 1: Implement** — a `Row` inside `horizontalScroll`, each chip a rounded `Surface`/`Box` with `clickable`, styled per above, using `MaterialTheme.colorScheme` + `StashTheme.extendedColors`. Follow the styling of existing `SearchFilterBar.kt` for consistency (read it first).
 - [ ] **Step 2: Compile** — `./gradlew :core:ui:compileDebugKotlin` → SUCCESS.
@@ -193,7 +192,7 @@ data class RankedAlbumUi(
     val movement: Int?, // >0 up, 0 or null flat/none
 )
 ```
-Row layout: rank numeral (Space Grotesk Bold, `titleMedium`, `textTertiary`, 16dp wide) · 42dp art (Coil `AsyncImage`, 6dp radius) · title (`bodyMedium`) + artist (`bodySmall` `textSecondary`) · trailing movement (`▲ n` in `extendedColors.cyan` when `movement>0`, `—` in `textTertiary` otherwise). A `RankedAlbumList(items, onClick)` maps rows in a `Column`.
+Row layout: rank numeral (Space Grotesk Bold, `titleMedium`, `extendedColors.textTertiary`, 16dp wide) · 42dp art (Coil `AsyncImage`, 6dp radius) · title (`bodyMedium`, `onSurface`) + artist (`bodySmall`, `MaterialTheme.colorScheme.onSurfaceVariant`) · trailing movement (`▲ n` in `extendedColors.cyan` when `movement>0`, `—` in `extendedColors.textTertiary` otherwise). A `RankedAlbumList(items, onClick)` maps rows in a `Column`.
 
 - [ ] **Step 1: Implement** (Coil `AsyncImage` via `coil3.compose` per existing usage in `AboutSection.kt`/`AlbumSquareCard.kt`; use `ArtUrlUpgrader` on the art URL as those do).
 - [ ] **Step 2: Compile** → SUCCESS.
@@ -227,7 +226,7 @@ git commit -m "feat(ui): DiscoverHeroCard component"
 **Files:**
 - Modify: `core/ui/src/main/kotlin/com/stash/core/ui/components/AlbumSquareCard.kt`
 
-Read the current file first (reuse — do not rewrite). Add two optional params, defaulted so existing callers are unaffected: `isLossless: Boolean = false` (overlays a small `FLAC` badge top-left on the art, reuse `FlacBadge.kt`'s styling), and wire an `interactionSource` + `Modifier.pressScale(...)` on the card root. Confirm no existing caller breaks (defaults).
+Read the current file first (reuse — do not rewrite). Add two optional params, defaulted so existing callers are unaffected: `isLossless: Boolean = false` and wire an `interactionSource` + `Modifier.pressScale(...)` on the card root. **FlacBadge bridge:** `FlacBadge` gates on `fileFormat: String?` (via `isLossless(fileFormat)`), NOT a Boolean — so overlay it as `if (isLossless) FlacBadge(fileFormat = "flac")` (or `FlacBadge(fileFormat = if (isLossless) "flac" else null)`, which self-hides on null). Do not pass a Boolean into its String param. Confirm no existing caller breaks (defaults).
 
 - [ ] **Step 1: Implement (additive).**
 - [ ] **Step 2: Compile the module that uses it** — `./gradlew :core:ui:compileDebugKotlin` → SUCCESS.
@@ -239,22 +238,22 @@ git commit -m "feat(ui): AlbumSquareCard FLAC badge + press-scale (additive)"
 
 ---
 
-## Task 7: Frosted bottom nav + edge-to-edge
+## Task 7: Frosted bottom nav (translucent only — additive, non-breaking)
 
 **Files:**
-- Modify: `app/src/main/kotlin/com/stash/app/navigation/StashScaffold.kt` (`StashBottomBar` ~line 182; the `bottomBar`/content-padding wiring ~line 96–178)
+- Modify: `app/src/main/kotlin/com/stash/app/navigation/StashScaffold.kt` (`StashBottomBar` ~line 182; `NavigationBar` `containerColor = surface` at ~line 189)
 
-Spec §3.3 + finding N3: the nav is the one depth cue, but for a blur to read, content must scroll *behind* it. Today `StashNavHost` gets `.padding(innerPadding)`, insetting content above the bar.
-- **Frost the nav:** in `StashBottomBar`, change `NavigationBar` `containerColor` from opaque `surface` to a translucent surface (`MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)`) and add a subtle top hairline border + `StashElevation.Chrome` shadow. (True backdrop blur in Compose needs `Modifier.blur`/`RenderEffect` behind the bar — if that proves heavy, translucent-surface-only is the acceptable Phase-1 fallback per spec N3.)
-- **Edge-to-edge:** move the bottom inset off the content root so content scrolls under the nav. Concretely: keep top/horizontal `innerPadding` on the NavHost but drop the *bottom* inset there, and hand the bottom height to Home's `LazyColumn` `contentPadding` (Plan 2 consumes it). Because this touches shared scaffold behavior, verify **every** tab still lays out correctly (no content hidden under the nav on Library/Search/Sync/Settings), not just Home.
+Spec §3.3: the nav is the one depth cue. **Scope note (from Plan-1 review):** the *edge-to-edge* change (dropping the Scaffold bottom inset so content scrolls behind the nav) is **deliberately NOT in this plan** — today `StashNavHost` gets `.padding(innerPadding)` (line 174) which is the ONLY thing keeping content above the nav on **all five** tabs. Dropping it globally here would clip the last item on Library/Search/Sync/Settings (and the not-yet-rewritten Home), with no compensating `contentPadding` until Plan 2. So Plan 1 does the **purely additive translucent frosting** only, keeping Task-1–7 genuinely non-breaking (consistent with Task 8's "nothing changes on existing screens yet"). The edge-to-edge + true blur move to **Plan 2, scoped to Home** (Home consumes the bottom inset via its own `LazyColumn` `contentPadding`; the other four tabs keep the Scaffold `innerPadding` untouched). Spec §3.3 N3 sanctions exactly this: "downgrade the claim to translucent-surface-only" here.
 
-- [ ] **Step 1: Implement the frost + inset change.**
+**This task (additive):** in `StashBottomBar`, change the `NavigationBar` `containerColor` from opaque `MaterialTheme.colorScheme.surface` to a translucent surface (`MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)`) and add a subtle top hairline border + `StashElevation.Chrome` shadow on the bar. Because content is still inset above the (now translucent) nav, nothing scrolls behind it yet — so this reads as a subtle surface refinement, not a broken overlap. No inset changes.
+
+- [ ] **Step 1: Implement the translucent frosting (no inset changes).**
 - [ ] **Step 2: Compile app** — `./gradlew :app:compileDebugKotlin` → SUCCESS.
-- [ ] **Step 3: Device smoke (human/agent via adb):** install, open each tab — nav reads as frosted/translucent, no content clipped under it, no double-inset gaps. This is a shared-chrome change; regressions here hit every screen.
+- [ ] **Step 3: Device smoke (human/agent via adb):** install, open each tab — nav reads as a subtly translucent frosted surface, and **every tab still lays out exactly as before** (no clipped content, no gaps — this task changes only the nav's fill/border/shadow).
 - [ ] **Step 4: Commit**
 ```bash
 git add app/src/main/kotlin/com/stash/app/navigation/StashScaffold.kt
-git commit -m "feat(ui): frosted translucent bottom nav + edge-to-edge content"
+git commit -m "feat(ui): translucent frosted bottom nav (additive)"
 ```
 
 ---
@@ -270,5 +269,5 @@ git commit -m "feat(ui): frosted translucent bottom nav + edge-to-edge content"
 ## Out of scope (Plan 2 / later)
 
 - Chip *derivation* (populated-section logic), cold-start, the 3 data sections, `HomeUiState`/`HomeViewModel` reshape, `HomeScreen` rewrite, nav callbacks + `SeeAllRoute`, the Library port — **Plan 2**.
+- **Edge-to-edge under the nav + true backdrop blur — Plan 2, scoped to Home** (per Plan-1 review): Home's `LazyColumn` consumes the bottom inset via `contentPadding` so content scrolls behind the translucent nav; the other four tabs keep the Scaffold `innerPadding` untouched. Only then does `Modifier.blur`/`RenderEffect` behind the bar earn its cost. This is intentionally NOT in Plan 1 because a global inset drop would clip the four unrewritten tabs.
 - True `SharedTransitionLayout` mini-player ⇄ Now Playing + mini-player frosted chrome — **sub-project 2**.
-- Backdrop-blur perf tuning if `Modifier.blur` behind the nav is too costly — fall back to translucent-surface-only (spec N3).
