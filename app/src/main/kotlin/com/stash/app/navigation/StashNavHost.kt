@@ -59,6 +59,9 @@ fun StashNavHost(
                         launchSingleTop = true
                     }
                 },
+                onNavigateToPlaylist = { playlistId ->
+                    navController.navigate(PlaylistDetailRoute(playlistId))
+                },
             )
         }
         composable<MixBuilderRoute> {

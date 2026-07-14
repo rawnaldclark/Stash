@@ -125,6 +125,7 @@ import com.stash.core.ui.theme.StashTheme
 fun HomeScreen(
     modifier: Modifier = Modifier,
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToPlaylist: (Long) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -299,6 +300,7 @@ fun HomeScreen(
                     subtitle = "",
                     artUrl = null,
                     onPlay = {},
+                    onOpen = {},
                     loading = true,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
@@ -308,6 +310,7 @@ fun HomeScreen(
                     subtitle = hero.subtitle,
                     artUrl = hero.artUrl,
                     onPlay = viewModel::playHero,
+                    onOpen = { onNavigateToPlaylist(hero.playlistId) },
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
                 else -> PersonalizeCard(
