@@ -55,8 +55,8 @@ or returns empty is simply omitted (discovery is non-critical — never blocks H
 ## 4. Data sources (Qobuz API, via `QbdlxApiClient`)
 
 All GET, unsigned, `app_id` + `X-User-Auth-Token`. `genre_id` omitted = all genres.
-**Exact param/field names to be confirmed by an on-device probe (Task 1) before
-the models are frozen** — the shapes below are the expected Qobuz `0.2` schema.
+Param/field names and response shapes are **verified against the live API** —
+see §14 for the confirmed contract.
 
 | Row | Endpoint | Key params |
 |-----|----------|-----------|
@@ -78,10 +78,22 @@ Response mapping (expected):
 ## 5. Genre chips
 
 Curated **static** list (lazier + stabler than a dynamic `genre/list` fetch at
-runtime): `All`, `Pop`, `Rock`, `Jazz`, `Classical`, `Electronic`, `Hip-Hop`,
-`R&B/Soul`. Each carries a pinned Qobuz `genre_id`. **The IDs must be verified by
-the Task 1 device probe** (`genre/list`) — wrong IDs = chips that filter to
-nothing. `All` = no `genre_id` param.
+runtime), with **real Qobuz `genre_id`s confirmed against live `genre/list`**
+(§14). English labels, ours; the IDs are what matter (Qobuz returns localized
+names):
+
+| Chip | genre_id |
+|------|----------|
+| All | (none) |
+| Pop/Rock | 112 |
+| Hip-Hop | 133 |
+| Electronic | 64 |
+| Jazz | 80 |
+| Classical | 10 |
+| Soul/R&B | 127 |
+| Metal | 116 |
+
+`All` = no `genre_id` param.
 
 Selecting a chip updates a single `genreFilter: StateFlow<GenreFilter>` in
 `HomeViewModel`; the three row flows are derived from it (a `flatMapLatest` per
@@ -158,15 +170,46 @@ the same callback with `source = QOBUZ_PLAYLIST` and `id = playlistId`.
 - Reuse `infra_preexisting_matcher_test_failures` `--tests` filters; don't gate
   on the flaky `:core:media` network test.
 
-## 12. Open items to verify on-device (Task 1 probe)
+## 12. Open items — RESOLVED (live probe 2026-07-14, see §14)
 
-1. Exact endpoint param names: `genre_id` vs `genre_ids` (albums vs playlists).
-2. `type` values that actually return data (`new-releases-full` vs
-   `new-releases`; `best-sellers` vs `most-streamed`).
-3. Response field names (`image` object keys; playlist image field;
-   `release_date_original`).
-4. `genre/list` → pin the curated chip IDs.
-5. Whether a pooled token is authorized for featured/browse (vs only file URLs).
+All open items were confirmed by probing the real Qobuz API with a pooled token
+(the plaintext pool lives in `local.properties`; app_id + one token, no device
+needed). No device probe task is required in the plan.
+
+1. ✅ Param name: `genre_id` (singular) works for `album/getFeatured`
+   (`genre_id=112` and `genre_ids=112` both return 312). Use `genre_id`.
+2. ✅ Types return data: `new-releases-full` (total 482), `best-sellers`
+   (total 500), `editor-picks` (total 6360).
+3. ✅ Field names confirmed (§14).
+4. ✅ `genre/list` → 13 genres, real IDs pinned in §5.
+5. ✅ A pooled token authorizes featured + `playlist/get` (all 200-OK).
+   Without a token they 401 ("User authentication is required").
+
+## 14. Verified API contract (probed 2026-07-14)
+
+Base `https://www.qobuz.com/api.json/0.2/`, headers `X-App-Id` +
+`X-User-Auth-Token`, `app_id` query param. All unsigned.
+
+**`album/getFeatured?type=<t>&genre_id=<id>&limit=<n>`** → `{albums:{total,items:[]}}`.
+Each item: `id` (Long), `title` (String), `image.{small(230),thumbnail(50),large(600),back}`,
+`artist.{name,id}`, `genre.name`, `release_date_original` (`"2026-07-10"` → year =
+first 4 chars), `hires`, `tracks_count`, `duration`. Art: use `image.large` (600px).
+
+**`playlist/getFeatured?type=editor-picks&genre_id=<id>&limit=<n>`** →
+`{playlists:{total,items:[]}}`. Each item: `id` (Long), `name`, `owner.name`,
+`tracks_count`, `duration`, `images300:[String]` (square covers, 300px),
+`image_rectangle`, `images150`, `genres`. Card art: `images300[0]`.
+
+**`playlist/get?playlist_id=<id>&extra=tracks&limit=500`** → top-level `name`,
+`owner.name`, `tracks_count`, `duration`, `images300:[String]`, `image_rectangle`,
+`tracks:{total,items:[]}`. Each track: `id`, `title`, `performer.name`,
+`duration` (sec), `album.{title, image.large}`, `isrc`, `hires`. Maps into
+`AlbumDetail`: `title`=playlist name, `artist`=owner.name, `thumbnailUrl`=
+`images300[0]`, each track → `(title, artist=performer.name, durationSeconds=
+duration, thumbnailUrl=album.image.large)`.
+
+**`genre/list?limit=30`** → `{genres:{total,items:[{id,name}]}}`; 13 top-level
+genres. IDs pinned in §5. (Probe-only; not called at runtime.)
 
 ## 13. Out of scope (Phase 3+)
 
