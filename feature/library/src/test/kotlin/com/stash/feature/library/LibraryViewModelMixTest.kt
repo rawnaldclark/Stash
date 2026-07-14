@@ -75,9 +75,10 @@ class LibraryViewModelMixTest {
 
         val state = vm.uiState.first { !it.isLoading }
 
-        // stashMixes: custom STASH_MIX + DOWNLOADS_MIX ("Your Downloads"), NOT the builtin.
-        assertThat(state.stashMixes.map { it.id }).containsExactly(11L, 12L)
-        assertThat(state.stashMixes.map { it.id }).doesNotContain(10L)
+        // stashMixes: the custom STASH_MIX only — NOT the builtin, NOT DOWNLOADS_MIX
+        // ("Your Downloads" is a hidden system playlist, never carded).
+        assertThat(state.stashMixes.map { it.id }).containsExactly(11L)
+        assertThat(state.stashMixes.map { it.id }).containsNoneOf(10L, 12L)
         // DAILY_MIX split by source (matches Home's derivation).
         assertThat(state.spotifyMixes.map { it.id }).containsExactly(20L)
         assertThat(state.youtubeMixes.map { it.id }).containsExactly(21L)

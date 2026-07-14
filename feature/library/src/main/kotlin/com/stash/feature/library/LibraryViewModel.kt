@@ -170,12 +170,11 @@ class LibraryViewModel @Inject constructor(
             }
         }
 
-        // System-generated collections shown as mix cards: recipe Stash Mixes
-        // (minus the builtin Daily Discover, which is the Home hero) + the
-        // "Your Downloads" system playlist.
+        // Recipe Stash Mixes, minus the builtin Daily Discover (the Home hero).
+        // DOWNLOADS_MIX ("Your Downloads") is a hidden protected system playlist
+        // (search/artist one-off downloads), not a user-facing mix — never carded.
         val stashMixes = playlists.filter {
-            (it.type == PlaylistType.STASH_MIX || it.type == PlaylistType.DOWNLOADS_MIX) &&
-                it.id !in builtinIds
+            it.type == PlaylistType.STASH_MIX && it.id !in builtinIds
         }
         // DAILY_MIX split by source — ported verbatim from Home.
         val dailyMixes = playlists.filter { it.type == PlaylistType.DAILY_MIX }

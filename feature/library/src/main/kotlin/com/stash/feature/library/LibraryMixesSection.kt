@@ -150,6 +150,11 @@ fun LibraryMixesSection(
             val youtubeLiked = likedPlaylists.filter { it.source == MusicSource.YOUTUBE }
             val spotifyCount = spotifyLiked.sumOf { it.trackCount }
             val youtubeCount = youtubeLiked.sumOf { it.trackCount }
+            // Sum ALL liked playlists' real track counts — a local STASH_LIKED has
+            // no Spotify/YouTube source, so the split-based sum would read 0.
+            val totalLiked = likedPlaylists.sumOf { it.trackCount }
+            // Source chips only make sense when both EXTERNAL sources contribute;
+            // a single local collection shows a plain count, no chips.
             val bothSources = spotifyLiked.isNotEmpty() && youtubeLiked.isNotEmpty()
             val single = when {
                 spotifyLiked.isNotEmpty() && youtubeLiked.isEmpty() -> MusicSource.SPOTIFY
@@ -158,7 +163,7 @@ fun LibraryMixesSection(
             }
             Spacer(Modifier.height(4.dp))
             LikedSongsCard(
-                totalCount = spotifyCount + youtubeCount,
+                totalCount = totalLiked,
                 spotifyCount = spotifyCount,
                 youtubeCount = youtubeCount,
                 showSourceChips = bothSources,
