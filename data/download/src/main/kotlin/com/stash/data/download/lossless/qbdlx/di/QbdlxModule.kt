@@ -2,6 +2,8 @@ package com.stash.data.download.lossless.qbdlx.di
 
 import com.stash.core.data.discography.DiscographySupplement
 import com.stash.core.data.discography.QobuzAlbumFetcher
+import com.stash.core.data.discovery.HomeDiscoveryRepository
+import com.stash.data.download.lossless.qbdlx.HomeDiscoveryRepositoryImpl
 import com.stash.data.download.BuildConfig
 import com.stash.data.download.lossless.LosslessSource
 import com.stash.data.download.lossless.qbdlx.QbdlxPoolCipher
@@ -46,6 +48,10 @@ abstract class QbdlxModule {
 
     @Binds
     abstract fun bindQobuzAlbumFetcher(impl: QobuzAlbumFetcherImpl): QobuzAlbumFetcher
+
+    @Binds
+    @Singleton
+    abstract fun bindHomeDiscoveryRepository(impl: HomeDiscoveryRepositoryImpl): HomeDiscoveryRepository
 
     companion object {
         @Provides
