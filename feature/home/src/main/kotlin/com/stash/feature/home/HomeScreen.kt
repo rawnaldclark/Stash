@@ -124,10 +124,7 @@ import com.stash.core.ui.theme.StashTheme
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
-    onNavigateToPlaylist: (Long) -> Unit = {},
-    onNavigateToLikedSongs: (String?) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
-    onNavigateToMixBuilder: (Long?) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()

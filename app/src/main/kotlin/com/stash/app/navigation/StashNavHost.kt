@@ -53,20 +53,11 @@ fun StashNavHost(
     ) {
         composable<HomeRoute> {
             HomeScreen(
-                onNavigateToPlaylist = { playlistId ->
-                    navController.navigate(PlaylistDetailRoute(playlistId))
-                },
-                onNavigateToLikedSongs = { source ->
-                    navController.navigate(LikedSongsDetailRoute(source))
-                },
                 onNavigateToSettings = {
                     navController.navigate(SettingsRoute) {
                         // Clear top so repeated taps don't stack Settings entries.
                         launchSingleTop = true
                     }
-                },
-                onNavigateToMixBuilder = { recipeId ->
-                    navController.navigate(MixBuilderRoute(recipeId))
                 },
             )
         }
