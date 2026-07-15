@@ -491,23 +491,27 @@ private fun LibraryContent(
                     onSetPlaylistImage = onSetPlaylistImage,
                     onRemovePlaylistImage = onRemovePlaylistImage,
                     mixesHeader = {
-                        libraryHeader()
-                        LibraryMixesSection(
-                            stashMixes = state.stashMixes,
-                            spotifyMixes = state.spotifyMixes,
-                            youtubeMixes = state.youtubeMixes,
-                            likedPlaylists = state.likedPlaylists,
-                            customMixPlaylistIds = state.customMixPlaylistIds,
-                            buildingMixIds = state.buildingMixIds,
-                            emptyMixIds = state.emptyMixIds,
-                            onOpenPlaylist = onOpenPlaylistId,
-                            onOpenLikedSongs = onOpenLikedSongs,
-                            onPlayAllMixes = onPlayAllMixes,
-                            onRefreshMix = onRefreshMix,
-                            onEditMix = onEditMix,
-                            onDeleteMix = onDeleteMix,
-                            onCreateMix = onCreateMix,
-                        )
+                        // Single Column so the two blocks stack vertically — a
+                        // grid item lambda overlaps multiple direct children.
+                        Column {
+                            libraryHeader()
+                            LibraryMixesSection(
+                                stashMixes = state.stashMixes,
+                                spotifyMixes = state.spotifyMixes,
+                                youtubeMixes = state.youtubeMixes,
+                                likedPlaylists = state.likedPlaylists,
+                                customMixPlaylistIds = state.customMixPlaylistIds,
+                                buildingMixIds = state.buildingMixIds,
+                                emptyMixIds = state.emptyMixIds,
+                                onOpenPlaylist = onOpenPlaylistId,
+                                onOpenLikedSongs = onOpenLikedSongs,
+                                onPlayAllMixes = onPlayAllMixes,
+                                onRefreshMix = onRefreshMix,
+                                onEditMix = onEditMix,
+                                onDeleteMix = onDeleteMix,
+                                onCreateMix = onCreateMix,
+                            )
+                        }
                     },
                 )
                 LibraryTab.TRACKS -> TracksTab(
