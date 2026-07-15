@@ -377,22 +377,24 @@ private fun LibraryContent(
         // of whichever chip's list/grid is active, so it scrolls away while the
         // compact header + category chips stay pinned (spec §2/§3).
         val libraryHeader: @Composable () -> Unit = {
-            Column {
-                Spacer(Modifier.height(4.dp))
-                ShuffleHeroCard(
-                    songCount = state.librarySongCount,
-                    onShuffle = onShuffleLibrary,
-                    modifier = Modifier.padding(horizontal = 20.dp),
-                )
-                // Recently-downloaded rail is a Songs-only surface — it would
-                // be noise above the Playlists/Artists/Albums grids.
-                if (state.activeTab == LibraryTab.TRACKS && state.recentlyAdded.isNotEmpty()) {
-                    RecentlyDownloadedRail(
-                        tracks = state.recentlyAdded.take(12),
-                        onTrackClick = onTrackClick,
+            // Shuffle hero + recent-downloads rail belong to the Songs landing
+            // only — they're noise above the Playlists/Artists/Albums/Liked grids.
+            if (state.activeTab == LibraryTab.TRACKS) {
+                Column {
+                    Spacer(Modifier.height(4.dp))
+                    ShuffleHeroCard(
+                        songCount = state.librarySongCount,
+                        onShuffle = onShuffleLibrary,
+                        modifier = Modifier.padding(horizontal = 20.dp),
                     )
+                    if (state.recentlyAdded.isNotEmpty()) {
+                        RecentlyDownloadedRail(
+                            tracks = state.recentlyAdded.take(12),
+                            onTrackClick = onTrackClick,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
                 }
-                Spacer(Modifier.height(4.dp))
             }
         }
 
