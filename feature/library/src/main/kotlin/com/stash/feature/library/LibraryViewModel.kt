@@ -32,7 +32,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -333,6 +337,58 @@ class LibraryViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = LibraryUiState(),
     )
+
+    // ── Liked subcategory (browse + sift likes by origin) ────────────────
+
+    private val _likedFilter = MutableStateFlow(LikedFilter.ALL)
+    val likedFilter: StateFlow<LikedFilter> = _likedFilter.asStateFlow()
+    fun setLikedFilter(filter: LikedFilter) { _likedFilter.update { filter } }
+
+    private val stashLikedFlow = musicRepository.getPlaylistsByType(PlaylistType.STASH_LIKED)
+    private val externalLikedFlow = musicRepository.getPlaylistsByType(PlaylistType.LIKED_SONGS)
+
+    /** Which like-origins actually have songs — drives the sift chips' visibility. */
+    val likedSources: StateFlow<Set<LikedFilter>> =
+        combine(stashLikedFlow, externalLikedFlow) { stash, external ->
+            buildSet {
+                if (stash.any { it.trackCount > 0 }) add(LikedFilter.STASH)
+                if (external.any { (it.source == MusicSource.SPOTIFY || it.source == MusicSource.BOTH) && it.trackCount > 0 }) {
+                    add(LikedFilter.SPOTIFY)
+                }
+                if (external.any { it.source == MusicSource.YOUTUBE && it.trackCount > 0 }) add(LikedFilter.YOUTUBE)
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** Liked tracks for the current [likedFilter], de-duped across the liked playlists. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val likedTracks: StateFlow<List<Track>> =
+        combine(stashLikedFlow, externalLikedFlow, _likedFilter) { stash, external, filter ->
+            when (filter) {
+                LikedFilter.ALL -> stash + external
+                LikedFilter.STASH -> stash
+                LikedFilter.SPOTIFY -> external.filter { it.source == MusicSource.SPOTIFY || it.source == MusicSource.BOTH }
+                LikedFilter.YOUTUBE -> external.filter { it.source == MusicSource.YOUTUBE }
+            }
+        }.flatMapLatest { playlists ->
+            if (playlists.isEmpty()) {
+                flowOf(emptyList())
+            } else {
+                combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
+                    arrays.flatMap { it.toList() }.distinctBy { it.id }
+                }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Play the liked list starting at [track] (offline-aware, like the detail screen). */
+    fun playLiked(track: Track) {
+        viewModelScope.launch {
+            val all = likedTracks.value
+            val playable = if (streamingPreference.current()) all else all.filter { it.filePath != null }
+            if (playable.isEmpty()) return@launch
+            val index = playable.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            playerRepository.setQueue(playable, index)
+        }
+    }
 
     // ── Public actions ───────────────────────────────────────────────────
 

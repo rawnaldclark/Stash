@@ -54,8 +54,11 @@ data class LibraryUiState(
     val librarySongCount: Int = 0,
 )
 
-/** Tabs available in the library browser. */
-enum class LibraryTab { PLAYLISTS, TRACKS, ARTISTS, ALBUMS }
+/** Tabs available in the library browser. LIKED sits between Songs and Playlists. */
+enum class LibraryTab { PLAYLISTS, TRACKS, LIKED, ARTISTS, ALBUMS }
+
+/** Source sift for the Liked subcategory: all likes, or one origin. */
+enum class LikedFilter { ALL, STASH, SPOTIFY, YOUTUBE }
 
 /** Sort options applicable to every content tab. DURATION is offered for Songs (and Artists). */
 enum class SortOrder { RECENT, ALPHABETICAL, MOST_PLAYED, DURATION }

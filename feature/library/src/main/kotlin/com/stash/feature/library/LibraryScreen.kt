@@ -126,6 +126,9 @@ fun LibraryScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val importState by viewModel.localImportState.collectAsStateWithLifecycle()
     val userPlaylists by viewModel.userPlaylists.collectAsStateWithLifecycle(initialValue = emptyList())
+    val likedTracks by viewModel.likedTracks.collectAsStateWithLifecycle()
+    val likedFilter by viewModel.likedFilter.collectAsStateWithLifecycle()
+    val likedSources by viewModel.likedSources.collectAsStateWithLifecycle()
 
     // Multi-select state — Tracks tab only. `isActive` signals out so the host
     // can hide the mini-player (Task 7), and the selection is force-cleared on
@@ -182,6 +185,11 @@ fun LibraryScreen(
             onDeleteMix = viewModel::deleteCustomMix,
             onCreateMix = { onNavigateToMixBuilder(null) },
             selection = selection,
+            likedTracks = likedTracks,
+            likedFilter = likedFilter,
+            likedSources = likedSources,
+            onSelectLikedSource = viewModel::setLikedFilter,
+            onPlayLikedTrack = viewModel::playLiked,
         )
 
         // ── Selection chrome — only meaningful on the Tracks tab. Selection
@@ -352,6 +360,11 @@ private fun LibraryContent(
     onDeleteMix: (Playlist) -> Unit,
     onCreateMix: () -> Unit,
     selection: SelectionState,
+    likedTracks: List<Track>,
+    likedFilter: LikedFilter,
+    likedSources: Set<LikedFilter>,
+    onSelectLikedSource: (LikedFilter) -> Unit,
+    onPlayLikedTrack: (Track) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -447,6 +460,7 @@ private fun LibraryContent(
         // -- Category chips (pinned): Songs / Playlists / Artists / Albums --
         val chipTabs = listOf(
             "Songs" to LibraryTab.TRACKS,
+            "Liked" to LibraryTab.LIKED,
             "Playlists" to LibraryTab.PLAYLISTS,
             "Artists" to LibraryTab.ARTISTS,
             "Albums" to LibraryTab.ALBUMS,
@@ -529,6 +543,14 @@ private fun LibraryContent(
                     selection = selection,
                     header = libraryHeader,
                 )
+                LibraryTab.LIKED -> LikedTab(
+                    tracks = likedTracks,
+                    filter = likedFilter,
+                    sources = likedSources,
+                    currentlyPlayingTrackId = state.currentlyPlayingTrackId,
+                    onSelectSource = onSelectLikedSource,
+                    onTrackClick = onPlayLikedTrack,
+                )
                 LibraryTab.ARTISTS -> ArtistsGrid(
                     artists = state.artists,
                     singleTrackArtists = state.singleTrackArtists,
@@ -579,6 +601,53 @@ private fun RecentlyDownloadedRail(
                     onClick = { onTrackClick(track) },
                 )
             }
+        }
+    }
+}
+
+// ── Liked subcategory (browse + sift likes by origin) ───────────────────────
+
+@Composable
+private fun LikedTab(
+    tracks: List<Track>,
+    filter: LikedFilter,
+    sources: Set<LikedFilter>,
+    currentlyPlayingTrackId: Long?,
+    onSelectSource: (LikedFilter) -> Unit,
+    onTrackClick: (Track) -> Unit,
+) {
+    // Sift chips: "All" plus only the origins that actually have likes.
+    val sift = buildList {
+        add("All" to LikedFilter.ALL)
+        if (LikedFilter.STASH in sources) add("Stash" to LikedFilter.STASH)
+        if (LikedFilter.SPOTIFY in sources) add("Spotify" to LikedFilter.SPOTIFY)
+        if (LikedFilter.YOUTUBE in sources) add("YouTube" to LikedFilter.YOUTUBE)
+    }
+    LazyColumn {
+        // Only offer the sift when there's more than one origin to pick between.
+        if (sift.size > 2) {
+            item {
+                com.stash.core.ui.components.CrispChipRow(
+                    chips = sift.map { it.first },
+                    selected = sift.firstOrNull { it.second == filter }?.first ?: "All",
+                    onSelect = { label -> onSelectSource(sift.first { it.first == label }.second) },
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            }
+        }
+        if (tracks.isEmpty()) {
+            item { EmptyTabMessage("No liked songs yet — tap the heart on a track to like it") }
+        }
+        items(tracks, key = { it.id }) { track ->
+            TrackListItem(
+                track = track,
+                onClick = { onTrackClick(track) },
+                isPlaying = track.id == currentlyPlayingTrackId,
+                onLongPress = {},
+                selectionActive = false,
+                selected = false,
+                onMoreClick = {},
+            )
         }
     }
 }
