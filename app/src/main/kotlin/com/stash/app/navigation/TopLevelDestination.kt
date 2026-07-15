@@ -67,3 +67,7 @@ data class SearchAlbumRoute(
     val source: com.stash.data.ytmusic.model.AlbumSource =
         com.stash.data.ytmusic.model.AlbumSource.YOUTUBE,
 )
+
+/** "See all" Qobuz-playlist browse, filtered by the [genre] chip label ("All" = none). */
+@Serializable
+data class PlaylistBrowseRoute(val genre: String = "All")

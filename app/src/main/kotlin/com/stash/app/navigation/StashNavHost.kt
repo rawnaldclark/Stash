@@ -9,6 +9,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.stash.feature.home.HomeScreen
+import com.stash.feature.home.PlaylistBrowseScreen
 import com.stash.feature.library.AlbumDetailScreen
 import com.stash.feature.library.ArtistDetailScreen
 import com.stash.feature.library.LibraryScreen
@@ -64,6 +65,26 @@ fun StashNavHost(
                 },
                 // Qobuz discovery album/playlist taps → the shared album-detail
                 // screen (playlists ride the same route via QOBUZ_PLAYLIST source).
+                onNavigateToAlbum = { album ->
+                    navController.navigate(
+                        SearchAlbumRoute(
+                            browseId = album.id,
+                            title = album.title,
+                            artist = album.artist,
+                            thumbnailUrl = album.thumbnailUrl,
+                            year = album.year,
+                            source = album.source,
+                        ),
+                    )
+                },
+                onSeeAllPlaylists = { genre ->
+                    navController.navigate(PlaylistBrowseRoute(genre))
+                },
+            )
+        }
+        composable<PlaylistBrowseRoute> {
+            PlaylistBrowseScreen(
+                onBack = { navController.popBackStack() },
                 onNavigateToAlbum = { album ->
                     navController.navigate(
                         SearchAlbumRoute(

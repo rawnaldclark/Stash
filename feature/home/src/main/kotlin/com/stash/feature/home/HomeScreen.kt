@@ -113,7 +113,6 @@ import com.stash.core.ui.components.RankedAlbumList
 import com.stash.core.ui.components.RankedAlbumUi
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
-import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
 import com.stash.core.ui.theme.LocalIsDarkTheme
@@ -134,6 +133,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
+    onSeeAllPlaylists: (String) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -358,6 +358,7 @@ fun HomeScreen(
                     title = "Qobuz Playlists",
                     playlists = uiState.playlists,
                     onOpen = onNavigateToAlbum,
+                    onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
                 )
             }
         }
@@ -635,10 +636,11 @@ private fun DiscoveryPlaylistRow(
     title: String,
     playlists: List<PlaylistSummary>,
     onOpen: (AlbumSummary) -> Unit,
+    onSeeAll: () -> Unit,
 ) {
     Column {
         Spacer(Modifier.height(16.dp))
-        SectionHeader(title = title)
+        SectionHeader(title = title, actionText = "See all", onActionClick = onSeeAll)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -646,22 +648,13 @@ private fun DiscoveryPlaylistRow(
             items(playlists) { playlist ->
                 AlbumSquareCard(
                     title = playlist.title,
-                    artist = playlist.curator,
+                    // Curator is always the regional Qobuz account ("Qobuz France")
+                    // — redundant on every card, so show the track count instead.
+                    artist = "${playlist.trackCount} tracks",
                     thumbnailUrl = playlist.thumbnailUrl,
                     year = null,
                     isLossless = true,
-                    onClick = {
-                        onOpen(
-                            AlbumSummary(
-                                id = playlist.id,
-                                title = playlist.title,
-                                artist = playlist.curator,
-                                thumbnailUrl = playlist.thumbnailUrl,
-                                year = null,
-                                source = AlbumSource.QOBUZ_PLAYLIST,
-                            ),
-                        )
-                    },
+                    onClick = { onOpen(playlist.toAlbumNav()) },
                 )
             }
         }
