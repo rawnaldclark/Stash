@@ -62,6 +62,8 @@ import com.stash.feature.sync.components.SyncActionProgress
 import com.stash.feature.sync.components.SyncStatusCard
 import com.stash.feature.sync.components.StatusPill
 import com.stash.feature.sync.components.formatRelativeTime
+import com.stash.feature.sync.components.formatSyncBytes
+import com.stash.feature.sync.components.formatSyncDuration
 
 /**
  * Main Sync screen.
@@ -289,12 +291,13 @@ fun SyncScreen(
                 val rows = uiState.recentSyncs.map { sync ->
                     RecentSyncRow(
                         id = sync.id,
-                        timestamp = formatRelativeTime(sync.startedAt),
-                        summary = buildString {
-                            append("Found ${sync.newTracksFound}")
-                            append(" / ${sync.tracksDownloaded} downloaded")
-                            if (sync.tracksFailed > 0) append(" / ${sync.tracksFailed} failed")
-                        },
+                        trigger = if (sync.trigger == com.stash.core.model.SyncTrigger.SCHEDULED) "Scheduled" else "Manual",
+                        relativeTime = formatRelativeTime(sync.startedAt),
+                        duration = formatSyncDuration(sync.startedAt, sync.completedAt),
+                        added = sync.tracksDownloaded,
+                        playlists = sync.playlistsChecked,
+                        sizeLabel = formatSyncBytes(sync.bytesDownloaded),
+                        failed = sync.tracksFailed,
                         status = when (sync.displayStatus) {
                             SyncDisplayStatus.Success -> SyncRowStatus.HEALTHY
                             is SyncDisplayStatus.PartialSuccess -> SyncRowStatus.PARTIAL

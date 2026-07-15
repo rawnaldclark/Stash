@@ -4,6 +4,7 @@ import android.text.format.DateUtils
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,7 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,10 +24,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -36,8 +43,13 @@ import com.stash.core.ui.theme.StashTheme
  */
 data class RecentSyncRow(
     val id: Long,
-    val timestamp: String,
-    val summary: String,
+    val trigger: String,        // "Manual" / "Scheduled"
+    val relativeTime: String,   // "35m ago"
+    val duration: String?,      // "45s" / "1m 12s"; null when unknown/interrupted
+    val added: Int,             // tracks downloaded this run
+    val playlists: Int,         // playlists checked
+    val sizeLabel: String?,     // "340 MB"; null when nothing downloaded
+    val failed: Int,            // tracks that failed
     val status: SyncRowStatus,
     val errorMessage: String? = null,
     val diagnostics: String? = null,
@@ -72,79 +84,117 @@ fun RecentSyncsCard(rows: List<RecentSyncRow>, modifier: Modifier = Modifier) {
 
 @Composable
 private fun RecentSyncRowItem(row: RecentSyncRow) {
-    val ec = StashTheme.extendedColors
     var expanded by remember { mutableStateOf(false) }
-
-    val (dotColor, marker) = when (row.status) {
-        SyncRowStatus.HEALTHY -> ec.success to "✓"
-        SyncRowStatus.PARTIAL -> ec.warning to "!"
-        SyncRowStatus.FAILED -> Color(0xFFEF4444) to "×"
-    }
+    val success = StashTheme.extendedColors.success
+    val dim = MaterialTheme.colorScheme.onSurfaceVariant
+    val fail = Color(0xFFF87171)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { expanded = !expanded }
-            .animateContentSize(),
+            .animateContentSize()
+            .padding(vertical = 11.dp),
     ) {
+        // Line 1 — trigger · when   ····   duration
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(dotColor, CircleShape),
+            Text(
+                text = buildAnnotatedString {
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)) {
+                        append(row.trigger)
+                    }
+                    withStyle(SpanStyle(color = dim)) { append("  ·  ${row.relativeTime}") }
+                },
+                style = MaterialTheme.typography.bodyMedium,
             )
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(row.timestamp, style = MaterialTheme.typography.bodyMedium)
+            if (row.duration != null) {
                 Text(
-                    text = row.summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = row.duration,
+                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = SpaceGrotesk),
+                    color = dim,
                 )
             }
-            Text(marker, style = MaterialTheme.typography.titleMedium, color = dotColor)
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Line 2 — the receipt: additions in green, neutral stats, failures stand out
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (row.status == SyncRowStatus.FAILED && row.added == 0) {
+                Pill("Sync failed", fail)
+                Spacer(Modifier.weight(1f))
+            } else {
+                Text(
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                    text = buildAnnotatedString {
+                        withStyle(SpanStyle(color = success, fontWeight = FontWeight.Medium)) { append("+${row.added} ") }
+                        withStyle(SpanStyle(color = dim)) { append("tracks") }
+                        if (row.playlists > 0) withStyle(SpanStyle(color = dim)) { append("  ·  ${row.playlists} playlists") }
+                        if (row.sizeLabel != null) withStyle(SpanStyle(color = dim)) { append("  ·  ${row.sizeLabel}") }
+                    },
+                )
+                if (row.failed > 0) {
+                    Pill("⚠ ${row.failed} failed", fail)
+                    Spacer(Modifier.width(8.dp))
+                }
+            }
+            Text("›", style = MaterialTheme.typography.titleMedium, color = dim.copy(alpha = 0.55f))
         }
 
         if (expanded) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(8.dp))
             if (!row.errorMessage.isNullOrBlank()) {
-                Text(
-                    text = "Error: ${row.errorMessage}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                Text("Error: ${row.errorMessage}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(4.dp))
             }
             if (!row.diagnostics.isNullOrBlank()) {
-                Text(
-                    text = "Diagnostics:",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Text("Diagnostics", style = MaterialTheme.typography.labelSmall, color = dim, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    text = row.diagnostics,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 20,
-                )
+                Text(row.diagnostics, style = MaterialTheme.typography.bodySmall, color = dim, maxLines = 20)
             }
             if (row.errorMessage.isNullOrBlank() && row.diagnostics.isNullOrBlank()) {
-                Text(
-                    text = "No additional details available",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text("No further details recorded", style = MaterialTheme.typography.bodySmall, color = dim)
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
         }
     }
+}
+
+/** Small tinted status pill (e.g. a red "⚠ 3 failed" that pulls the eye). */
+@Composable
+private fun Pill(text: String, color: Color) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = color,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(color.copy(alpha = 0.13f))
+            .padding(horizontal = 9.dp, vertical = 3.dp),
+    )
+}
+
+/** Compact duration label from a millisecond span, e.g. "45s" or "1m 12s". */
+fun formatSyncDuration(startedAt: Long, completedAt: Long?): String? {
+    if (completedAt == null || completedAt <= startedAt) return null
+    val secs = (completedAt - startedAt) / 1000
+    return if (secs < 60) "${secs}s" else "${secs / 60}m ${secs % 60}s"
+}
+
+/** Compact byte-size label, e.g. "340 MB" or "1.2 GB". Blank input → null. */
+fun formatSyncBytes(bytes: Long): String? = when {
+    bytes <= 0 -> null
+    bytes < 1024L * 1024 -> "${bytes / 1024} KB"
+    bytes < 1024L * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
+    else -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
 }
 
 /** Formats a Unix-millisecond timestamp into a relative time string (e.g. "3 minutes ago"). */
