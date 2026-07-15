@@ -528,6 +528,8 @@ private fun LibraryContent(
                                 onEditMix = onEditMix,
                                 onDeleteMix = onDeleteMix,
                                 onCreateMix = onCreateMix,
+                                // Grid contentPadding already insets 20dp; avoid double-indent.
+                                horizontalPadding = 0.dp,
                             )
                         }
                     },

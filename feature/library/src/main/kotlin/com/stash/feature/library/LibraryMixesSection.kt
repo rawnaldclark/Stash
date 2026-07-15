@@ -63,6 +63,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -99,6 +100,10 @@ fun LibraryMixesSection(
     onDeleteMix: (Playlist) -> Unit,
     onCreateMix: () -> Unit,
     modifier: Modifier = Modifier,
+    // Outer horizontal margin of the section's rows. Defaults to 20dp for
+    // standalone use; the Library grid passes 0 since its contentPadding
+    // already insets the full-span header (else the mixes double-indent).
+    horizontalPadding: Dp = 20.dp,
 ) {
     // The long-pressed custom mix whose action sheet is open (null = closed).
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
@@ -116,6 +121,7 @@ fun LibraryMixesSection(
         MixesSectionHeader(
             showPlayBoth = spotifyMixes.isNotEmpty() && youtubeMixes.isNotEmpty(),
             onPlayBoth = { onPlayAllMixes(null) },
+            horizontalPadding = horizontalPadding,
         )
 
         if (allMixes.isNotEmpty()) {
@@ -123,7 +129,7 @@ fun LibraryMixesSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = horizontalPadding),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 allMixes.forEach { mix ->
@@ -174,7 +180,7 @@ fun LibraryMixesSection(
                 onClick = { onOpenLikedSongs(null) },
                 onClickSpotify = { onOpenLikedSongs(MusicSource.SPOTIFY.name) },
                 onClickYouTube = { onOpenLikedSongs(MusicSource.YOUTUBE.name) },
-                modifier = Modifier.padding(horizontal = 20.dp),
+                modifier = Modifier.padding(horizontal = horizontalPadding),
             )
         }
     }
@@ -386,11 +392,12 @@ private fun MixesSectionHeader(
     showPlayBoth: Boolean,
     onPlayBoth: () -> Unit,
     modifier: Modifier = Modifier,
+    horizontalPadding: Dp = 20.dp,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = horizontalPadding, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
