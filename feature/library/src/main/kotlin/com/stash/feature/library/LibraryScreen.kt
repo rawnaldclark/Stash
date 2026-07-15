@@ -721,6 +721,7 @@ private fun SortOrder.displayName(): String = when (this) {
     SortOrder.RECENT -> "Recently Added"
     SortOrder.ALPHABETICAL -> "A-Z"
     SortOrder.MOST_PLAYED -> "Most Played"
+    SortOrder.DURATION -> "Duration"
 }
 
 // ── Source filter chips ─────────────────────────────────────────────────────

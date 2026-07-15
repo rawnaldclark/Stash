@@ -260,6 +260,7 @@ class LibraryViewModel @Inject constructor(
             SortOrder.RECENT -> filteredTracks.sortedByDescending { it.dateAdded }
             SortOrder.ALPHABETICAL -> filteredTracks.sortedBy { it.title.lowercase() }
             SortOrder.MOST_PLAYED -> filteredTracks.sortedByDescending { it.playCount }
+            SortOrder.DURATION -> filteredTracks.sortedByDescending { it.durationMs }
         }
         val sortedPlaylists = when (controls.sortOrder) {
             // RECENT uses date_added (stable across syncs) not last_synced
@@ -272,17 +273,22 @@ class LibraryViewModel @Inject constructor(
             // chip produces a visible ordering change instead of a
             // silent no-op.
             SortOrder.MOST_PLAYED -> filteredPlaylists.sortedByDescending { it.trackCount }
+            // Playlists have no duration — fall back to the RECENT ordering.
+            SortOrder.DURATION -> filteredPlaylists.sortedByDescending { it.dateAdded }
         }
         // Sort artists/albums — default by track count descending (most tracks first)
         val sortedArtists = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredArtists.sortedByDescending { it.trackCount }
             SortOrder.ALPHABETICAL -> filteredArtists.sortedBy { it.name.lowercase() }
             SortOrder.MOST_PLAYED -> filteredArtists.sortedByDescending { it.trackCount }
+            SortOrder.DURATION -> filteredArtists.sortedByDescending { it.totalDurationMs }
         }
         val sortedAlbums = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredAlbums.sortedByDescending { it.trackCount }
             SortOrder.ALPHABETICAL -> filteredAlbums.sortedBy { it.name.lowercase() }
             SortOrder.MOST_PLAYED -> filteredAlbums.sortedByDescending { it.trackCount }
+            // Albums carry no duration projection — fall back to track count.
+            SortOrder.DURATION -> filteredAlbums.sortedByDescending { it.trackCount }
         }
 
         // Split into multi-track (primary) and single-track (collapsed)
@@ -313,6 +319,9 @@ class LibraryViewModel @Inject constructor(
             isLoading = false,
             spotifyConnected = authPair.first,
             youTubeConnected = authPair.second,
+            // Unfiltered library size for the Shuffle hero (independent of the
+            // active source/search filter, which only narrows the visible list).
+            librarySongCount = allTracks.size,
         )
     }.combine(playerRepository.playerState) { libraryState, playerState ->
         // Overlay the currently-playing track ID so the UI can highlight it.
