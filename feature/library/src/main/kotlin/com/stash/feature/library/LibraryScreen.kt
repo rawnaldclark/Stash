@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -52,6 +53,7 @@ import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -91,6 +93,7 @@ import com.stash.core.model.PlaylistType
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.components.ShuffleHeroCard
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackListItem
 import com.stash.core.ui.selection.SelectionAction
@@ -313,6 +316,7 @@ fun LibraryScreen(
 
 // ── Stateless content composable ─────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LibraryContent(
     state: LibraryUiState,
@@ -366,10 +370,36 @@ private fun LibraryContent(
         ) { uris: List<Uri>? ->
             if (!uris.isNullOrEmpty()) onStartImport(uris)
         }
+        var searchOpen by remember { mutableStateOf(false) }
+        var sortFilterOpen by remember { mutableStateOf(false) }
+
+        // Hero + recent-downloads rail — reused as the scrolling leading content
+        // of whichever chip's list/grid is active, so it scrolls away while the
+        // compact header + category chips stay pinned (spec §2/§3).
+        val libraryHeader: @Composable () -> Unit = {
+            Column {
+                Spacer(Modifier.height(4.dp))
+                ShuffleHeroCard(
+                    songCount = state.librarySongCount,
+                    onShuffle = onShuffleLibrary,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
+                if (state.recentlyAdded.isNotEmpty()) {
+                    RecentlyDownloadedRail(
+                        tracks = state.recentlyAdded.take(12),
+                        onTrackClick = onTrackClick,
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+        }
+
+        // Compact header: title + Import (+), search, and sort/filter icons —
+        // replaces the old heading row + the six stacked control bars.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+                .padding(start = 20.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -378,27 +408,19 @@ private fun LibraryContent(
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f),
             )
-            // Filled-tonal button (icon + label) instead of a ghost
-            // IconButton — users were missing the plain '+' too easily. The
-            // tonal background + "Import" word makes the affordance obvious
-            // without dominating the heading row.
-            androidx.compose.material3.FilledTonalButton(
-                onClick = { importPicker.launch(arrayOf("audio/*")) },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = 14.dp,
-                    vertical = 8.dp,
-                ),
-            ) {
-                Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Filled.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Import",
-                    style = MaterialTheme.typography.labelLarge,
-                )
+            // Shuffle stays in the always-visible header so it's reachable even
+            // once the hero has scrolled away.
+            IconButton(onClick = onShuffleLibrary) {
+                Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle library", tint = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = { importPicker.launch(arrayOf("audio/*")) }) {
+                Icon(Icons.Filled.Add, contentDescription = "Import tracks")
+            }
+            IconButton(onClick = { searchOpen = !searchOpen }) {
+                Icon(Icons.Filled.Search, contentDescription = "Search library")
+            }
+            IconButton(onClick = { sortFilterOpen = true }) {
+                Icon(Icons.Filled.Tune, contentDescription = "Sort and filter")
             }
         }
 
@@ -409,54 +431,42 @@ private fun LibraryContent(
             onDismiss = onDismissImport,
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        // -- Inline search (toggled by the header 🔍) — no permanent bar --
+        if (searchOpen) {
+            GlassSearchBar(
+                query = state.searchQuery,
+                onQueryChange = onSearchQueryChanged,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            )
+        }
 
-        // -- Shuffle Library CTA (v0.9.14) --
-        // Pre-existing per-playlist queues only ever held ~30-50 tracks, so
-        // shuffle "felt like the same songs" once libraries grew past a few
-        // hundred. This entry point seeds the queue from EVERY downloaded
-        // track and arms an auto-grow watcher in PlayerRepository so the
-        // queue refills as the user nears the tail. Sized to read as the
-        // primary action on the tab without crowding the search bar below.
-        ShuffleLibraryCard(
-            onClick = onShuffleLibrary,
-            modifier = Modifier.padding(horizontal = 20.dp),
+        // -- Category chips (pinned): Songs / Playlists / Artists / Albums --
+        val chipTabs = listOf(
+            "Songs" to LibraryTab.TRACKS,
+            "Playlists" to LibraryTab.PLAYLISTS,
+            "Artists" to LibraryTab.ARTISTS,
+            "Albums" to LibraryTab.ALBUMS,
+        )
+        com.stash.core.ui.components.CrispChipRow(
+            chips = chipTabs.map { it.first },
+            selected = chipTabs.first { it.second == state.activeTab }.first,
+            onSelect = { label -> onTabSelected(chipTabs.first { it.first == label }.second) },
+            modifier = Modifier.padding(vertical = 4.dp),
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // -- Glassmorphic search bar --
-        GlassSearchBar(
-            query = state.searchQuery,
-            onQueryChange = onSearchQueryChanged,
-            modifier = Modifier.padding(horizontal = 20.dp),
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // -- Tab chips (horizontal scroll) --
-        TabChipRow(
-            activeTab = state.activeTab,
-            onTabSelected = onTabSelected,
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // -- Sort chips --
-        SortChipRow(
-            activeSort = state.sortOrder,
-            onSortSelected = onSortOrderChanged,
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // -- Source filter chips --
-        SourceFilterChipRow(
-            activeFilter = state.sourceFilter,
-            onFilterSelected = onSourceFilterChanged,
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
+        // -- Sort & filter sheet (toggled by the header ⇅) --
+        if (sortFilterOpen) {
+            LibrarySortFilterSheet(
+                sortOrder = state.sortOrder,
+                sourceFilter = state.sourceFilter,
+                showDuration = state.activeTab == LibraryTab.TRACKS,
+                onSortSelected = onSortOrderChanged,
+                onFilterSelected = onSourceFilterChanged,
+                onDismiss = { sortFilterOpen = false },
+            )
+        }
 
         // -- Content area --
         val anyServiceConnected = state.spotifyConnected || state.youTubeConnected
@@ -481,6 +491,7 @@ private fun LibraryContent(
                     onSetPlaylistImage = onSetPlaylistImage,
                     onRemovePlaylistImage = onRemovePlaylistImage,
                     mixesHeader = {
+                        libraryHeader()
                         LibraryMixesSection(
                             stashMixes = state.stashMixes,
                             spotifyMixes = state.spotifyMixes,
@@ -508,6 +519,7 @@ private fun LibraryContent(
                     onDeleteTrack = onDeleteTrack,
                     anyServiceConnected = anyServiceConnected,
                     selection = selection,
+                    header = libraryHeader,
                 )
                 LibraryTab.ARTISTS -> ArtistsGrid(
                     artists = state.artists,
@@ -516,6 +528,7 @@ private fun LibraryContent(
                     onPlayArtist = onPlayArtist,
                     onAddArtistToQueue = onAddArtistToQueue,
                     onDeleteArtist = onDeleteArtist,
+                    header = libraryHeader,
                 )
                 LibraryTab.ALBUMS -> AlbumsGrid(
                     albums = state.albums,
@@ -523,6 +536,39 @@ private fun LibraryContent(
                     anyServiceConnected = anyServiceConnected,
                     onPlayAlbum = onPlayAlbum,
                     onAddAlbumToQueue = onAddAlbumToQueue,
+                    header = libraryHeader,
+                )
+            }
+        }
+    }
+}
+
+// ── Recently downloaded rail ─────────────────────────────────────────────────
+
+@Composable
+private fun RecentlyDownloadedRail(
+    tracks: List<Track>,
+    onTrackClick: (Track) -> Unit,
+) {
+    Column {
+        Text(
+            text = "RECENTLY DOWNLOADED",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 8.dp),
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(tracks, key = { it.id }) { track ->
+                com.stash.core.ui.components.AlbumSquareCard(
+                    title = track.title,
+                    artist = track.artist,
+                    thumbnailUrl = track.albumArtUrl,
+                    year = null,
+                    isLossless = track.fileFormat.equals("flac", ignoreCase = true),
+                    onClick = { onTrackClick(track) },
                 )
             }
         }
@@ -1183,12 +1229,16 @@ private fun TracksTab(
     onDeleteTrack: (Track, Boolean) -> Unit,
     anyServiceConnected: Boolean,
     selection: SelectionState,
+    header: @Composable () -> Unit = {},
 ) {
     if (tracks.isEmpty()) {
-        EmptyTabMessage(
-            if (anyServiceConnected) "Sync your library to see tracks here"
-            else "Connect a service in Settings to see your tracks",
-        )
+        Column {
+            header()
+            EmptyTabMessage(
+                if (anyServiceConnected) "Sync your library to see tracks here"
+                else "Connect a service in Settings to see your tracks",
+            )
+        }
         return
     }
 
@@ -1204,6 +1254,7 @@ private fun TracksTab(
         // it in either state.
         contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 0.dp),
     ) {
+        item { header() }
         items(tracks, key = { it.id }) { track ->
             TrackListItem(
                 track = track,
@@ -1403,12 +1454,16 @@ private fun ArtistsGrid(
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
     onDeleteArtist: (String) -> Unit,
+    header: @Composable () -> Unit = {},
 ) {
     if (artists.isEmpty() && singleTrackArtists.isEmpty()) {
-        EmptyTabMessage(
-            if (anyServiceConnected) "Sync your library to see artists here"
-            else "Connect a service in Settings to see your artists",
-        )
+        Column {
+            header()
+            EmptyTabMessage(
+                if (anyServiceConnected) "Sync your library to see artists here"
+                else "Connect a service in Settings to see your artists",
+            )
+        }
         return
     }
 
@@ -1424,6 +1479,7 @@ private fun ArtistsGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item(span = { GridItemSpan(maxLineSpan) }) { header() }
         items(displayList, key = { it.name }) { artist ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -1616,12 +1672,16 @@ private fun AlbumsGrid(
     anyServiceConnected: Boolean,
     onPlayAlbum: (String, String) -> Unit,
     onAddAlbumToQueue: (String, String) -> Unit,
+    header: @Composable () -> Unit = {},
 ) {
     if (albums.isEmpty() && singleTrackAlbums.isEmpty()) {
-        EmptyTabMessage(
-            if (anyServiceConnected) "Sync your library to see albums here"
-            else "Connect a service in Settings to see your albums",
-        )
+        Column {
+            header()
+            EmptyTabMessage(
+                if (anyServiceConnected) "Sync your library to see albums here"
+                else "Connect a service in Settings to see your albums",
+            )
+        }
         return
     }
 
@@ -1636,6 +1696,7 @@ private fun AlbumsGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item(span = { GridItemSpan(maxLineSpan) }) { header() }
         items(displayList, key = { "${it.name}|${it.artist}" }) { album ->
             Column(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
