@@ -384,7 +384,9 @@ private fun LibraryContent(
                     onShuffle = onShuffleLibrary,
                     modifier = Modifier.padding(horizontal = 20.dp),
                 )
-                if (state.recentlyAdded.isNotEmpty()) {
+                // Recently-downloaded rail is a Songs-only surface — it would
+                // be noise above the Playlists/Artists/Albums grids.
+                if (state.activeTab == LibraryTab.TRACKS && state.recentlyAdded.isNotEmpty()) {
                     RecentlyDownloadedRail(
                         tracks = state.recentlyAdded.take(12),
                         onTrackClick = onTrackClick,
