@@ -72,6 +72,7 @@ data class SpotifySyncPlaylist(
     val type: com.stash.core.model.PlaylistType,
     val syncEnabled: Boolean,
     val artUrl: String? = null,
+    val hideFromHome: Boolean = false,
 )
 
 /**
@@ -87,6 +88,7 @@ data class YouTubeSyncPlaylist(
     val type: com.stash.core.model.PlaylistType,
     val syncEnabled: Boolean,
     val artUrl: String? = null,
+    val hideFromHome: Boolean = false,
 )
 
 data class SyncUiState(
@@ -321,6 +323,15 @@ class SyncViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Toggle hide_from_home for a specific playlist. Unlike [onTogglePlaylistSync]
+     * this does NOT sweep downloads — hiding a mix from Home has nothing to do
+     * with what's queued or synced.
+     */
+    fun onToggleHideFromHome(playlistId: Long, hidden: Boolean) {
+        viewModelScope.launch { playlistDao.setHideFromHome(playlistId, hidden) }
     }
 
     /**
@@ -573,6 +584,7 @@ class SyncViewModel @Inject constructor(
                                 type = e.type,
                                 syncEnabled = e.syncEnabled,
                                 artUrl = e.artUrl,
+                                hideFromHome = e.hideFromHome,
                             )
                         }
                     )
@@ -594,6 +606,7 @@ class SyncViewModel @Inject constructor(
                                 type = e.type,
                                 syncEnabled = e.syncEnabled,
                                 artUrl = e.artUrl,
+                                hideFromHome = e.hideFromHome,
                             )
                         }
                     )
