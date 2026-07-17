@@ -423,9 +423,10 @@ private fun SourceEmptyHint(text: String) {
     )
 }
 
-/** Compact count label: 1247 → "1.2k", 980 → "980". */
+/** Compact count label: 1247 → "1.2k", 1000 → "1k", 980 → "980". Locale.US so a
+ *  comma-decimal locale can't leak "1,2k". */
 private fun compactCount(n: Int): String =
-    if (n >= 1000) "%.1fk".format(n / 1000.0).replace(".0k", "k") else n.toString()
+    if (n >= 1000) "%.1fk".format(java.util.Locale.US, n / 1000.0).replace(".0k", "k") else n.toString()
 
 // -- Section Label ──────────────────────────────────────────────────────────
 
@@ -788,35 +789,6 @@ private fun StudioOnlyToggleRow(
 
 // ── SourcePreferencesCard helpers ────────────────────────────────────────────
 
-@Composable
-private fun SpotifySummaryPills(uiState: SyncUiState) {
-    val ec = StashTheme.extendedColors
-    val likedSyncing = uiState.spotifyPlaylists.any {
-        it.type == com.stash.core.model.PlaylistType.LIKED_SONGS && it.syncEnabled
-    }
-    val mixesEnabled = uiState.spotifyPlaylists.count {
-        it.type == com.stash.core.model.PlaylistType.DAILY_MIX && it.syncEnabled
-    }
-    val mixesTotal = uiState.spotifyPlaylists.count {
-        it.type == com.stash.core.model.PlaylistType.DAILY_MIX
-    }
-    val customEnabled = uiState.spotifyPlaylists.count {
-        it.type == com.stash.core.model.PlaylistType.CUSTOM && it.syncEnabled
-    }
-    val customTotal = uiState.spotifyPlaylists.count {
-        it.type == com.stash.core.model.PlaylistType.CUSTOM
-    }
-    if (likedSyncing) {
-        StatusPill("Liked \u2713", brandColor = ec.spotifyGreen)
-    }
-    if (mixesTotal > 0) {
-        StatusPill("Mixes $mixesEnabled/$mixesTotal")
-    }
-    if (customTotal > 0) {
-        StatusPill("Custom $customEnabled/$customTotal")
-    }
-}
-
 /**
  * Renders a [SpotifySyncPlaylist] list with a leading search field that
  * filters by name. Filter is client-side over already-fetched items —
@@ -884,44 +856,6 @@ private fun <T> SearchablePlaylistList(
                 onToggle = { onPlaylistToggled(id(playlist), it) },
             )
         }
-    }
-}
-
-@Composable
-private fun YouTubeSummaryPills(uiState: SyncUiState) {
-    val ec = StashTheme.extendedColors
-    val likedSyncing = uiState.youTubePlaylists.any {
-        it.type == com.stash.core.model.PlaylistType.LIKED_SONGS && it.syncEnabled
-    }
-    val mixesEnabled = uiState.youTubePlaylists.count {
-        it.type == com.stash.core.model.PlaylistType.DAILY_MIX && it.syncEnabled
-    }
-    val mixesTotal = uiState.youTubePlaylists.count {
-        it.type == com.stash.core.model.PlaylistType.DAILY_MIX
-    }
-    val otherEnabled = uiState.youTubePlaylists.count {
-        it.type !in setOf(
-            com.stash.core.model.PlaylistType.LIKED_SONGS,
-            com.stash.core.model.PlaylistType.DAILY_MIX,
-        ) && it.syncEnabled
-    }
-    val otherTotal = uiState.youTubePlaylists.count {
-        it.type !in setOf(
-            com.stash.core.model.PlaylistType.LIKED_SONGS,
-            com.stash.core.model.PlaylistType.DAILY_MIX,
-        )
-    }
-    if (likedSyncing) {
-        StatusPill(
-            text = if (uiState.youtubeLikedStudioOnly) "Liked \u00b7 Studio only" else "Liked \u2713",
-            brandColor = ec.youtubeRed,
-        )
-    }
-    if (mixesTotal > 0) {
-        StatusPill("$mixesEnabled/$mixesTotal mixes")
-    }
-    if (otherTotal > 0) {
-        StatusPill("$otherEnabled/$otherTotal playlists")
     }
 }
 
