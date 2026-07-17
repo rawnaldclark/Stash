@@ -89,6 +89,9 @@ class YTMusicApiClient @Inject constructor(
          * user-created:
          * - Accept `RD*` / `VLRD*` — personalized radios (Daily/Discover/Supermix,
          *   `RDMM` My Mix, `RDAT*` artist/track radios, `RDEM*` "em" mixes, …).
+         *   Known ceiling: `RDAM*` album radios also ride the `RD*` accept
+         *   (pinned by YTMixFilterTest.keepsAlbumRadio; add a deny-set only if
+         *   B4 device-verify shows junk album radios).
          * - Accept `LM` — Liked Music.
          *
          * Explicitly rejects (these never start with `RD`, and the reject runs
