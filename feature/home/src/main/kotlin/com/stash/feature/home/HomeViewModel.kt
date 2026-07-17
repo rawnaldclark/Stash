@@ -1,14 +1,29 @@
 package com.stash.feature.home
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.workDataOf
+import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.discovery.GenreCatalog
 import com.stash.core.data.discovery.HomeDiscoveryRepository
+import com.stash.core.data.mix.MixBuildState
+import com.stash.core.data.mix.mixBuildState
+import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.sync.workers.StashDiscoveryWorker
+import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.Playlist
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.backfill.MetadataBackfillState
 import com.stash.data.ytmusic.model.AlbumSummary
@@ -30,6 +45,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -57,6 +73,8 @@ class HomeViewModel @Inject constructor(
     private val settingsDeepLinkController: com.stash.core.data.navigation.SettingsDeepLinkController,
     private val tipJarRepository: com.stash.core.data.tipjar.TipJarRepository,
     private val recipeDao: StashMixRecipeDao,
+    private val discoveryQueueDao: DiscoveryQueueDao,
+    private val downloadNetworkPreference: DownloadNetworkPreference,
     private val streamingPreference: StreamingPreference,
     private val metadataBackfillState: MetadataBackfillState,
     private val homeDiscoveryRepository: HomeDiscoveryRepository,
@@ -158,12 +176,50 @@ class HomeViewModel @Inject constructor(
      * and combined with the live playlists stream; the hero re-resolves
      * whenever playlists change (e.g. the discovery run fills it in).
      */
-    private val heroFlow: Flow<DiscoverHeroState?> = combine(
+    /** Everything derived from the playlists + recipe streams in one holder. */
+    private data class HomePlaylistData(
+        val hero: DiscoverHeroState?,
+        val madeForYou: List<HomeMix>,
+        val radios: List<HomeMix>,
+        val moodDecades: List<HomeMix>,
+        val yourMixes: List<HomeMix>,
+        val customMixPlaylistIds: Set<Long>,
+    )
+
+    private val homePlaylistFlow: Flow<HomePlaylistData> = combine(
         musicRepository.getAllPlaylists(),
-        flow { emit(recipeDao.getBuiltinPlaylistIds().firstOrNull()) },
-    ) { playlists, builtinId ->
-        playlists
-            .firstOrNull { it.id == builtinId && it.trackCount > 0 }
+        recipeDao.observeAll(),
+        discoveryQueueDao.observeNonFailedCountsByRecipe(),
+        // Builtin ids are a one-shot suspend read wrapped as a flow.
+        flow { emit(recipeDao.getBuiltinPlaylistIds()) },
+    ) { playlists, recipes, discoveryCounts, builtinIdList ->
+        val builtinIds = builtinIdList.toSet()
+        val customRecipes = recipes.filter { !it.isBuiltin && it.playlistId != null }
+        val customMixPlaylistIds = customRecipes.mapNotNull { it.playlistId }.toSet()
+
+        // Per-custom-mix build state (Building… / No tracks) — mirrors LibraryViewModel.
+        val trackCounts = playlists.associate { it.id to it.trackCount }
+        val discoveryByRecipe = discoveryCounts.associate { it.recipeId to it.count }
+        val buildingMixIds = mutableSetOf<Long>()
+        val emptyMixIds = mutableSetOf<Long>()
+        for (recipe in customRecipes) {
+            val playlistId = recipe.playlistId ?: continue
+            when (
+                mixBuildState(
+                    recipe = recipe,
+                    trackCount = trackCounts[playlistId] ?: 0,
+                    nonFailedDiscoveryCount = discoveryByRecipe[recipe.id] ?: 0,
+                )
+            ) {
+                MixBuildState.BUILDING -> buildingMixIds.add(playlistId)
+                MixBuildState.EMPTY -> emptyMixIds.add(playlistId)
+                MixBuildState.READY -> Unit
+            }
+        }
+
+        // Hero: the builtin Daily Discover playlist, once it has materialized.
+        val hero = playlists
+            .firstOrNull { it.id == builtinIdList.firstOrNull() && it.trackCount > 0 }
             ?.let { playlist ->
                 DiscoverHeroState(
                     title = playlist.name,
@@ -172,7 +228,35 @@ class HomeViewModel @Inject constructor(
                     playlistId = playlist.id,
                 )
             }
+
+        // Classify each playlist into its Home rail. buildState only carries for
+        // STASH_MIX (YOUR_MIXES); builtin Daily Discover is excluded from YOUR_MIXES.
+        val madeForYou = mutableListOf<HomeMix>()
+        val radios = mutableListOf<HomeMix>()
+        val moodDecades = mutableListOf<HomeMix>()
+        val yourMixes = mutableListOf<HomeMix>()
+        for (p in playlists) {
+            when (mixRail(p)) {
+                MixRail.MADE_FOR_YOU -> madeForYou += p.toHomeMix()
+                MixRail.RADIOS -> radios += p.toHomeMix()
+                MixRail.MOOD_DECADES -> moodDecades += p.toHomeMix()
+                MixRail.YOUR_MIXES -> if (p.id !in builtinIds) {
+                    val state = when {
+                        p.id in buildingMixIds -> MixBuildState.BUILDING
+                        p.id in emptyMixIds -> MixBuildState.EMPTY
+                        else -> MixBuildState.READY
+                    }
+                    yourMixes += p.toHomeMix(state)
+                }
+                null -> Unit
+            }
+        }
+
+        HomePlaylistData(hero, madeForYou, radios, moodDecades, yourMixes, customMixPlaylistIds)
     }
+
+    private fun Playlist.toHomeMix(buildState: MixBuildState = MixBuildState.READY) =
+        HomeMix(id = id, title = name, artUrl = artUrl, source = source, buildState = buildState)
 
     /**
      * Lossless connect nudge: only visible when the user has not
@@ -231,14 +315,14 @@ class HomeViewModel @Inject constructor(
     fun onSelectGenre(label: String) { genreFilter.value = label }
 
     val uiState: StateFlow<HomeUiState> = combine(
-        heroFlow,
+        homePlaylistFlow,
         losslessPromptFlow,
         tipJarRepository.state,
         metadataBackfillBannerFlow,
         discoveryFlow,
-    ) { hero, losslessPrompt, tipJar, metadataBackfillBanner, discovery ->
+    ) { home, losslessPrompt, tipJar, metadataBackfillBanner, discovery ->
         HomeUiState(
-            hero = hero,
+            hero = home.hero,
             isLoading = false,
             losslessPrompt = losslessPrompt,
             tipJar = tipJar,
@@ -247,6 +331,11 @@ class HomeViewModel @Inject constructor(
             newReleases = discovery.newReleases,
             topAlbums = discovery.topAlbums,
             playlists = discovery.playlists,
+            madeForYou = home.madeForYou,
+            radios = home.radios,
+            moodDecades = home.moodDecades,
+            yourMixes = home.yourMixes,
+            customMixPlaylistIds = home.customMixPlaylistIds,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -303,7 +392,130 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Manually re-run the Stash Mix refresh worker for a single recipe (the
+     * one whose materialized playlist is [playlistId]). Used by the "Refresh
+     * this mix" action on Stash Mix cards.
+     *
+     * Emits snackbar lifecycle messages via [userMessages]: "Refreshing X…"
+     * on enqueue, then "Refreshed X" or "Refresh failed" on the worker's
+     * terminal WorkInfo state. If the playlist is tagged `STASH_MIX` but no
+     * recipe back-links it (data-integrity bug — menu shouldn't have
+     * appeared), logs a warning and surfaces a "not linked to a recipe"
+     * message instead of silently no-opping.
+     */
+    fun refreshMix(playlistId: Long) {
+        viewModelScope.launch {
+            val recipe = recipeDao.findByPlaylistId(playlistId)
+            if (recipe == null) {
+                // Data-integrity bug: playlist.type == STASH_MIX but no recipe
+                // back-links it. Menu shouldn't have appeared. Log + soft-fail.
+                Log.w(TAG, "refreshMix: no recipe back-links playlistId=$playlistId")
+                _userMessages.tryEmit("Couldn't refresh — this mix isn't linked to a recipe")
+                return@launch
+            }
+
+            _userMessages.tryEmit("Refreshing ${recipe.name}…")
+
+            // Build the request ourselves so we can capture its id for exact-
+            // match WorkInfo filtering below. enqueueUniqueWork uses the same
+            // unique name + REPLACE policy as StashMixRefreshWorker.enqueueOneTime,
+            // mirroring lines 154-168 of that worker.
+            val request = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build(),
+                )
+                .setInputData(workDataOf(StashMixRefreshWorker.KEY_RECIPE_ID to recipe.id))
+                .build()
+            val uniqueName = "${StashMixRefreshWorker.ONE_SHOT_WORK_NAME}_${recipe.id}"
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork(uniqueName, ExistingWorkPolicy.REPLACE, request)
+
+            // v0.9.20: fire the full discovery pipeline. queueDiscoveryForRecipe
+            // inside the mix refresh worker enqueues new Last.fm candidates into
+            // discovery_queue PENDING; this trigger processes them right now (subject
+            // to user's DownloadNetworkMode pref) instead of waiting up to 24h for
+            // the periodic schedule. The chain in StashDiscoveryWorker's tail will
+            // fire DiscoveryDownloadWorker, which fires StashMixRefreshWorker again
+            // at the end — the mix re-materializes with newly-downloaded survivors
+            // without the user lifting another finger.
+            val mode = downloadNetworkPreference.current()
+            StashDiscoveryWorker.enqueueOneTime(context, mode)
+
+            // Observe the unique-work Flow; filter to OUR enqueued request's id
+            // so historical entries from earlier taps (or earlier sessions)
+            // don't fire stale "Refreshed" Toasts.
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWorkFlow(uniqueName)
+                .firstOrNull { infos ->
+                    val ours = infos.firstOrNull { it.id == request.id } ?: return@firstOrNull false
+                    when (ours.state) {
+                        WorkInfo.State.SUCCEEDED -> {
+                            _userMessages.tryEmit("Refreshed ${recipe.name}")
+                            true
+                        }
+                        WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
+                            _userMessages.tryEmit("Refresh failed — try again later")
+                            true
+                        }
+                        else -> false
+                    }
+                }
+        }
+    }
+
+    /**
+     * Delete a user-built Stash Mix: removes the materialized playlist (via
+     * the protected-playlist cascade, NOT blacklisting), then deletes the
+     * backing recipe row.
+     *
+     * Order matters: capture the recipe BEFORE the cascade runs, because
+     * `deletePlaylistWithCascade` nulls the recipe's `playlist_id` FK
+     * (SET_NULL), after which `findByPlaylistId` would no longer resolve it.
+     */
+    fun deleteCustomMix(playlist: Playlist) {
+        viewModelScope.launch {
+            val recipe = recipeDao.findByPlaylistId(playlist.id) // capture BEFORE cascade nulls the FK
+            musicRepository.deletePlaylistWithCascade(playlist.id, alsoBlacklist = false)
+            recipe?.let { recipeDao.deleteCustom(it.id) }
+            _userMessages.tryEmit("Deleted “${playlist.name}”")
+        }
+    }
+
+    /**
+     * If [playlistId] backs a user (non-builtin) recipe whose last refresh
+     * is older than [STALE_MIX_MS], kick a refresh. Fire-and-forget from the
+     * mix-card tap so opening a stale custom mix transparently freshens it.
+     * No-ops for builtin recipes (those refresh on the periodic schedule)
+     * and for playlists with no backing recipe.
+     */
+    fun refreshMixIfStale(playlistId: Long) {
+        viewModelScope.launch {
+            val r = recipeDao.findByPlaylistId(playlistId) ?: return@launch
+            val stale = (r.lastRefreshedAt ?: 0L) < System.currentTimeMillis() - STALE_MIX_MS
+            if (!r.isBuiltin && stale) refreshMix(playlistId)
+        }
+    }
+
+    /**
+     * Resolve the recipe id backing [playlistId] asynchronously, invoking
+     * [onResult] with the id (or null if no recipe back-links it). Used by
+     * the context-sheet Edit action to build the MixBuilder nav arg, since
+     * the playlist→recipe mapping isn't carried synchronously in uiState.
+     */
+    fun editRecipeId(playlistId: Long, onResult: (Long?) -> Unit) {
+        viewModelScope.launch {
+            onResult(recipeDao.findByPlaylistId(playlistId)?.id)
+        }
+    }
+
     companion object {
+        private const val TAG = "HomeViewModel"
+        /** A custom mix older than this (24h) is refreshed on open. */
+        private const val STALE_MIX_MS = 24L * 60 * 60 * 1000
+
         /** SharedPreferences file backing the one-time streaming disclosure flag. */
         private const val STREAMING_DISCLOSURE_PREFS = "streaming_disclosure"
         /** Boolean flag — true once the user has dismissed the disclosure dialog. */

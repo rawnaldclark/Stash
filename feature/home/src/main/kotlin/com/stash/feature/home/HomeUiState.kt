@@ -59,10 +59,24 @@ data class HomeUiState(
     val newReleases: List<AlbumSummary> = emptyList(),
     val topAlbums: List<AlbumSummary> = emptyList(),
     val playlists: List<PlaylistSummary> = emptyList(),
+
+    // ── Home mix rails (derived from playlists + recipes) ──────────────
+    val madeForYou: List<HomeMix> = emptyList(),
+    val radios: List<HomeMix> = emptyList(),
+    val moodDecades: List<HomeMix> = emptyList(),
+    val yourMixes: List<HomeMix> = emptyList(),
+    val customMixPlaylistIds: Set<Long> = emptySet(),
 ) {
     /** True before the Discover hero has materialized — drives the cold-start placeholder. */
     val isColdStart: Boolean get() = hero == null
 }
+
+/** A mix as a Home rail card. buildState only meaningful for STASH_MIX. */
+data class HomeMix(
+    val id: Long, val title: String, val artUrl: String?,
+    val source: com.stash.core.model.MusicSource,
+    val buildState: com.stash.core.data.mix.MixBuildState = com.stash.core.data.mix.MixBuildState.READY,
+)
 
 /**
  * Sentinel for the "Try lossless audio" Home banner. Singleton
