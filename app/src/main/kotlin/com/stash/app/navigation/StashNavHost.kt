@@ -167,6 +167,8 @@ fun StashNavHost(
                         launchSingleTop = true
                     }
                 },
+                // TODO(Task 5): navigate to ManagePlaylistsRoute(source.name)
+                onManageSource = { },
             )
         }
         composable<SettingsRoute> {
