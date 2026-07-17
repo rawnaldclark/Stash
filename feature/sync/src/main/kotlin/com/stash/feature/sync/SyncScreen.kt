@@ -28,8 +28,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -725,13 +723,9 @@ internal fun SpotifySyncToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Switch(
+        com.stash.core.ui.components.StashSwitch(
             checked = enabled,
             onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.primary,
-                checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-            ),
         )
     }
 }
@@ -740,7 +734,6 @@ internal fun SpotifySyncToggleRow(
 internal fun StudioOnlyToggleRow(
     enabled: Boolean,
     onChange: (Boolean) -> Unit,
-    accent: Color,
 ) {
     Row(
         modifier = Modifier
@@ -761,13 +754,9 @@ internal fun StudioOnlyToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Switch(
+        com.stash.core.ui.components.StashSwitch(
             checked = enabled,
             onCheckedChange = onChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = accent,
-                checkedTrackColor = accent.copy(alpha = 0.5f),
-            ),
         )
     }
 }

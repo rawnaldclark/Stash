@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -351,7 +350,7 @@ fun SettingsAudioQualityScreen(
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Switch(
+                                    com.stash.core.ui.components.StashSwitch(
                                         checked = uiState.youtubeFallbackEnabled,
                                         onCheckedChange = viewModel::onYoutubeFallbackChanged,
                                     )

@@ -35,8 +35,6 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -223,7 +221,7 @@ fun EqualizerScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SectionLabel("Loudness Normalization")
                     Spacer(Modifier.weight(1f))
-                    Switch(
+                    com.stash.core.ui.components.StashSwitch(
                         checked = loudnessState.enabled,
                         // Toggling the loudness switch counts as the user
                         // having seen the feature — clear the first-run
@@ -233,12 +231,6 @@ fun EqualizerScreen(
                             viewModel.onLoudnessToggle(enabled)
                             viewModel.onFirstRunNoticeDismissed()
                         },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = MaterialTheme.colorScheme.primary,
-                            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
-                            uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                        ),
                     )
                 }
                 Spacer(Modifier.height(6.dp))
@@ -329,15 +321,9 @@ private fun EqHeader(
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.weight(1f),
         )
-        Switch(
+        com.stash.core.ui.components.StashSwitch(
             checked = enabled,
             onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.primary,
-                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
-                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-            ),
         )
     }
 }

@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,7 +44,6 @@ fun ScheduleCard(
     var daysExpanded by remember { mutableStateOf(false) }
     var showTimeSheet by remember { mutableStateOf(false) }
     val emptyDays = syncDays.isEmpty
-    val purple = MaterialTheme.colorScheme.primary
     val errorColor = Color(0xFFEF4444)
 
     GlassCard(modifier = modifier) {
@@ -58,13 +55,9 @@ fun ScheduleCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Auto-sync", style = MaterialTheme.typography.bodyLarge)
-                Switch(
+                com.stash.core.ui.components.StashSwitch(
                     checked = autoSyncEnabled,
                     onCheckedChange = { onToggleAutoSync() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                        checkedTrackColor = purple,
-                    ),
                 )
             }
             Spacer(Modifier.height(12.dp))

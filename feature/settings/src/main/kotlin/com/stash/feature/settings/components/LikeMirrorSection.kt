@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -118,7 +117,7 @@ private fun MirrorToggleRow(
                 )
             }
         }
-        Switch(
+        com.stash.core.ui.components.StashSwitch(
             checked = enabled,
             onCheckedChange = onToggle,
             enabled = connected,
