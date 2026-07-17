@@ -2,6 +2,7 @@ package com.stash.core.ui.components
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -27,6 +28,10 @@ import com.stash.core.ui.theme.StashTheme
  * @param chips    Ordered chip labels to render.
  * @param selected The currently-active label (matched by value).
  * @param onSelect Called with the tapped label.
+ * @param contentPadding Applied *inside* the scrollable content (like LazyRow's
+ *   contentPadding), so the first chip starts on the 20dp header gutter while
+ *   scrolled chips still bleed edge-to-edge. Sheets pass 0 — their container
+ *   already pads.
  */
 @Composable
 fun CrispChipRow(
@@ -34,12 +39,14 @@ fun CrispChipRow(
     selected: String,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 20.dp),
 ) {
     val extendedColors = StashTheme.extendedColors
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
+            .horizontalScroll(rememberScrollState())
+            .padding(contentPadding),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         chips.forEach { chip ->

@@ -96,6 +96,8 @@ fun LibrarySortFilterSheet(
                 selected = filters.first { it.second == sourceFilter }.first,
                 onSelect = { label -> onFilterSelected(filters.first { it.first == label }.second) },
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                // Sheet column already pads horizontally — don't add the gutter.
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
             )
         }
     }
