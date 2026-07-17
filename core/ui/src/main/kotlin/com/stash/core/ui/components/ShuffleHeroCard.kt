@@ -75,11 +75,6 @@ fun ShuffleHeroCard(
                     ),
                     color = Color.White,
                 )
-                Text(
-                    text = "all offline · lossless where available",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.72f),
-                )
             }
             Surface(
                 onClick = onShuffle,
