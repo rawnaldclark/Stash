@@ -475,7 +475,7 @@ class DiffWorker @AssistedInject constructor(
                         )
                     )
                 } else {
-                    Log.i(TAG, "QueueTrace: DiffWorker streaming-mode insert track_id=$trackId playlist=${localPlaylist.id} (download skipped)")
+                    Log.i(TAG, "QueueTrace: DiffWorker surface-only insert track_id=$trackId playlist=${localPlaylist.id} (download skipped)")
                 }
                 newTrackCount++
             }

@@ -18,6 +18,12 @@ class ShouldEnqueueForDownloadTest {
     @Test fun `offline daily mix is surface-only`() {
         assertThat(shouldEnqueueForDownload(PlaylistType.DAILY_MIX, streamingMode = false)).isFalse()
     }
+    // Only DAILY_MIX is surface-only. STASH_MIX (locally generated, no auto-enable
+    // gap) still downloads offline — pin it so a future "isMixLike()" refactor
+    // can't silently stop it. Parity with DefaultSyncEnabledTest's STASH_MIX guard.
+    @Test fun `offline stash mix still downloads`() {
+        assertThat(shouldEnqueueForDownload(PlaylistType.STASH_MIX, streamingMode = false)).isTrue()
+    }
     @Test fun `online never enqueues`() {
         assertThat(shouldEnqueueForDownload(PlaylistType.CUSTOM, streamingMode = true)).isFalse()
         assertThat(shouldEnqueueForDownload(PlaylistType.DAILY_MIX, streamingMode = true)).isFalse()
