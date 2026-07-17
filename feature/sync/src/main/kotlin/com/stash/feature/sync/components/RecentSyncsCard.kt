@@ -97,7 +97,7 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
             .animateContentSize()
             .padding(vertical = 11.dp),
     ) {
-        // Line 1 — trigger · when   ····   duration
+        // Line 1 — mode · when   ····   duration
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

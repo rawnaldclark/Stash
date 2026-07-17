@@ -38,10 +38,12 @@ class RecentSyncRowMappingTest {
     fun `pre-migration row suppresses mode label and falls back to downloaded`() {
         val row = SyncHistoryInfo(
             id = 3, startedAt = 0, completedAt = 1000, status = "COMPLETED",
-            tracksDownloaded = 5, tracksFailed = 0, newTracksFound = 5, streamingMode = null,
+            tracksDownloaded = 5, tracksFailed = 0, newTracksFound = 99, streamingMode = null,
             displayStatus = SyncDisplayStatus.Success,
         ).toRecentSyncRow(relativeTime = "yesterday")
         assertNull(row.modeLabel)
+        // newTracksFound (99) differs from tracksDownloaded (5) so this proves the
+        // null-mode fallback selects tracksDownloaded, not the surfaced count.
         assertEquals(5, row.added)
     }
 
