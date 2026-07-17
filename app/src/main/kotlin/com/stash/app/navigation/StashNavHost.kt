@@ -8,7 +8,10 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.toRoute
 import com.stash.feature.home.HomeScreen
+import com.stash.feature.home.MixBrowseScreen
+import com.stash.feature.home.MixRail
 import com.stash.feature.home.PlaylistBrowseScreen
 import com.stash.feature.library.AlbumDetailScreen
 import com.stash.feature.library.ArtistDetailScreen
@@ -83,8 +86,9 @@ fun StashNavHost(
                 onNavigateToMixBuilder = { recipeId ->
                     navController.navigate(MixBuilderRoute(recipeId))
                 },
-                // TODO(Task 7): route to the mix-browse ("See all") destination.
-                onSeeAllMixes = {},
+                onSeeAllMixes = { rail ->
+                    navController.navigate(MixBrowseRoute(rail.name))
+                },
             )
         }
         composable<PlaylistBrowseRoute> {
@@ -102,6 +106,13 @@ fun StashNavHost(
                         ),
                     )
                 },
+            )
+        }
+        composable<MixBrowseRoute> {
+            MixBrowseScreen(
+                rail = MixRail.valueOf(it.toRoute<MixBrowseRoute>().rail),
+                onBack = { navController.popBackStack() },
+                onOpenMix = { id -> navController.navigate(PlaylistDetailRoute(id)) },
             )
         }
         composable<MixBuilderRoute> {
