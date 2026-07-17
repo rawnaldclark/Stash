@@ -166,9 +166,13 @@ class MoveLibraryCoordinator @Inject constructor(
             error("Internal file missing: $path")
         }
 
-        val artistSlug = slugify(track.artist)
-        val albumSlug = if (track.album.isNotBlank()) slugify(track.album) else "singles"
-        val titleSlug = slugify(track.title)
+        val artistSlug = FileOrganizerSlugs.slugify(track.artist)
+        val albumSlug = if (track.album.isNotBlank()) {
+            FileOrganizerSlugs.slugify(track.album)
+        } else {
+            "singles"
+        }
+        val titleSlug = FileOrganizerSlugs.slugify(track.title)
         val format = localFile.extension.ifBlank { "m4a" }
         val filename = "$titleSlug.$format"
 
@@ -210,13 +214,6 @@ class MoveLibraryCoordinator @Inject constructor(
         "wav" -> "audio/wav"
         else -> "audio/*"
     }
-
-    private fun slugify(input: String): String =
-        input.lowercase()
-            .replace(Regex("[^a-z0-9\\s-]"), "")
-            .replace(Regex("\\s+"), "-")
-            .trim('-')
-            .take(60)
 
     companion object {
         private const val TAG = "MoveLibraryCoord"

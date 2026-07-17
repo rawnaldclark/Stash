@@ -18,21 +18,25 @@ package com.stash.data.download.files
  * `:data:*` modules wiring downloads + sidecars, and the object is
  * intentionally narrow — one pure helper, no state.
  *
- * The body is copied verbatim from the previous
- * `FileOrganizer.slugify` — behaviour is identical.
+ * Download, migration, and sidecar paths share this definition so filename
+ * behavior cannot drift between storage destinations.
  */
 object FileOrganizerSlugs {
 
     /**
      * Converts a human-readable string into a filesystem-safe slug.
      *
-     * Lowercases, strips non-alphanumeric characters (except spaces and hyphens),
-     * collapses whitespace into single hyphens, and truncates to 60 characters.
+     * Lowercases, preserves Unicode letters and numbers, strips other characters
+     * (except spaces and hyphens), collapses whitespace into single hyphens, and
+     * truncates to 60 Unicode code points.
      */
     fun slugify(input: String): String =
         input.lowercase()
-            .replace(Regex("[^a-z0-9\\s-]"), "")
+            .replace(Regex("[^\\p{L}\\p{N}\\s-]"), "")
             .replace(Regex("\\s+"), "-")
             .trim('-')
-            .take(60)
+            .takeCodePoints(60)
+
+    private fun String.takeCodePoints(count: Int): String =
+        substring(0, offsetByCodePoints(0, minOf(count, codePointCount(0, length))))
 }
