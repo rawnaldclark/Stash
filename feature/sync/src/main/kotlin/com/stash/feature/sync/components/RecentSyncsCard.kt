@@ -132,7 +132,11 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
             if (row.status == SyncRowStatus.CANCELLED) {
                 Pill("Cancelled", dim)          // neutral, not the red fail tint
                 Spacer(Modifier.weight(1f))
-            } else if (row.status == SyncRowStatus.FAILED && row.added == 0) {
+            } else if (row.status == SyncRowStatus.FAILED) {
+                // Any FAILED row shows the pill — never a green receipt line.
+                // (Online rows bind `added` to surfaced-count, which can be >0
+                // on a late failure, so a count guard here would let a failed
+                // sync masquerade as success.)
                 Pill("Sync failed", fail)
                 Spacer(Modifier.weight(1f))
             } else {
