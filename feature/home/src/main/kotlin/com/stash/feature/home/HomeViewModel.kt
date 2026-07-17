@@ -167,15 +167,6 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /**
-     * The Discover hero: the builtin Daily Discover playlist, once it has
-     * materialized (`trackCount > 0`). Emits `null` before then — that
-     * feeds the cold-start placeholder (see [HomeUiState.isColdStart]).
-     *
-     * `getBuiltinPlaylistIds()` is suspend, so it's read once into a flow
-     * and combined with the live playlists stream; the hero re-resolves
-     * whenever playlists change (e.g. the discovery run fills it in).
-     */
     /** Everything derived from the playlists + recipe streams in one holder. */
     private data class HomePlaylistData(
         val hero: DiscoverHeroState?,
@@ -391,6 +382,9 @@ class HomeViewModel @Inject constructor(
             if (tracks.isNotEmpty()) playerRepository.setQueue(tracks, startIndex = 0)
         }
     }
+
+    // ── Stash-mix actions (moved from LibraryViewModel; Library's copies are
+    //    removed in Task 8 when the Library mixes shelf goes away) ────────────
 
     /**
      * Manually re-run the Stash Mix refresh worker for a single recipe (the
