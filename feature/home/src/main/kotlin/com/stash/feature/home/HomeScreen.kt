@@ -490,11 +490,12 @@ fun HomeScreen(
     // custom mixes only, Open always. "Your mixes" == the STASH_MIX rail, so
     // membership there stands in for the type == STASH_MIX check.
     actionSheetMixId?.let { id ->
+        // Guard render only — a stale id (mix vanished from every rail after a
+        // delete/refresh re-emit) simply renders nothing; the next long-press
+        // overwrites it. No state write during composition.
         val mix = (uiState.madeForYou + uiState.radios + uiState.moodDecades + uiState.yourMixes)
             .firstOrNull { it.id == id }
-        if (mix == null) {
-            actionSheetMixId = null
-        } else {
+        if (mix != null) {
             val sheetState = rememberModalBottomSheetState()
             val isStashMix = uiState.yourMixes.any { it.id == id }
             val isCustom = id in uiState.customMixPlaylistIds
