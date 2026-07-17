@@ -33,6 +33,16 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 
 /**
+ * A newly-discovered playlist's initial [PlaylistEntity.syncEnabled].
+ * Algorithmic mixes (DAILY_MIX) auto-enable in Online mode so they surface
+ * immediately with no download. Everything else — and every playlist in
+ * Offline mode — stays opt-in: the first Sync Now is a discovery pass that
+ * downloads nothing unasked.
+ */
+internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean =
+    type == PlaylistType.DAILY_MIX && online
+
+/**
  * Second worker in the sync chain. Compares remote playlist/track snapshots
  * against the local database to find new tracks that need downloading.
  *
@@ -107,7 +117,7 @@ class DiffWorker @AssistedInject constructor(
                 // Find or create the local playlist (writes, but outside
                 // the per-playlist transaction — it owns its own atomicity
                 // and needs its id to drive the block below).
-                val localPlaylist = findOrCreatePlaylist(playlistSnapshot)
+                val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode)
 
                 // Skip playlists the user has disabled in Sync Preferences.
                 if (!localPlaylist.syncEnabled) {
@@ -214,6 +224,7 @@ class DiffWorker @AssistedInject constructor(
      */
     private suspend fun findOrCreatePlaylist(
         snapshot: RemotePlaylistSnapshotEntity,
+        streamingMode: Boolean,
     ): PlaylistEntity {
         val existing = playlistDao.findBySourceId(snapshot.sourcePlaylistId)
         if (existing != null) {
@@ -255,13 +266,16 @@ class DiffWorker @AssistedInject constructor(
             mixNumber = snapshot.mixNumber,
             artUrl = snapshot.artUrl,
             trackCount = snapshot.trackCount,
-            // Opt-in by default for every source. The first Sync Now is
-            // effectively a discovery pass — it populates playlist rows
-            // but queues nothing for download until the user picks what
-            // they actually want in the Sync Preferences card. Fixes
-            // issue #10 (unchecked playlists downloading anyway) and
-            // brings YouTube in line with Spotify's existing behavior.
-            syncEnabled = false,
+            // Opt-in by default — EXCEPT algorithmic mixes in Online mode.
+            // A DAILY_MIX discovered while streaming auto-enables so it
+            // surfaces immediately with no download (Online skips the
+            // download_queue enqueue anyway). Every other type, and every
+            // playlist in Offline mode, stays opt-in: the first Sync Now is
+            // a discovery pass that populates playlist rows but queues
+            // nothing until the user picks what they want in the Sync
+            // Preferences card. Fixes issue #10 (unchecked playlists
+            // downloading anyway) and keeps YouTube in line with Spotify.
+            syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode),
         )
         val id = playlistDao.insert(newPlaylist)
         return newPlaylist.copy(id = id)
