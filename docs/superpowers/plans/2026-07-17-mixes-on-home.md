@@ -182,7 +182,9 @@ fun CardRail(
 
 A ~140dp card: rounded cover (or brand/source gradient fallback), a source dot (`SourceIndicator`), title, and an optional build-state line (Building… / No tracks). Reuse `MixBuildState` (from `core.data.mix`) + `SourceIndicator`. Match `AlbumSquareCard` tokens (140dp, `RoundedCornerShape(8dp)` thumb, `labelLarge` title, `pressScale`).
 
-- [ ] **Step 1:** Create the composable. Params: `title: String, artUrl: String?, source: MusicSource, buildState: MixBuildState = MixBuildState.READY, onClick: () -> Unit`. Render cover with `AsyncImage`(ArtUrlUpgrader) or a source-tinted gradient fallback; overlay a small `SourceIndicator` dot top-left; title `labelLarge` maxLines 2; when `buildState != READY` show "Building…"/"No tracks" in `labelSmall`/`textTertiary` instead of a subtitle. Apply `Modifier.pressScale(...)`. (Mirror `AlbumSquareCard.kt:40` structure; substitute the source dot + build-state for the year/artist subtitle.)
+- [ ] **Step 1:** Create the composable. Params: `title: String, artUrl: String?, source: MusicSource, buildState: MixBuildState = MixBuildState.READY, onClick: () -> Unit, onLongPress: (() -> Unit)? = null`. Render cover with `AsyncImage`(ArtUrlUpgrader) or a source-tinted gradient fallback; overlay a small `SourceIndicator` dot top-left; title `labelLarge` maxLines 2; when `buildState != READY` show "Building…"/"No tracks" in `labelSmall`/`textTertiary` instead of a subtitle. Use `Modifier.combinedClickable(onClick = onClick, onLongClick = onLongPress)` and `pressScale` via a remembered `MutableInteractionSource` (mirror how `AlbumSquareCard.kt:40` applies `.pressScale(interactionSource)` — it is NOT a bare `Modifier.pressScale()`). Substitute the source dot + build-state for `AlbumSquareCard`'s year/artist subtitle.
+
+> `onLongPress` drives the Stash-mix action sheet (Task 6) — only "Your mixes" cards pass it; streaming mixes leave it null. It's also the seam plan 2 extends with "Hide from Home".
 
 - [ ] **Step 2: Compile** — `./gradlew :core:ui:compileDebugKotlin`.
 - [ ] **Step 3:** Add a `@Preview` with one Spotify, one YouTube, and one Building card so the card is inspectable.
@@ -261,11 +263,13 @@ data class HomeMix(
 )
 ```
 
-- [ ] **Step 2:** In `HomeViewModel`, replace the standalone `heroFlow` with a combined `homePlaylistFlow` that derives the hero AND the four rails from the same inputs (playlists + builtin ids + recipe build-state). Inject `recipeDao` (already present for `getBuiltinPlaylistIds`), and — for Stash-mix build state — `discoveryQueueDao` + `mixBuildState` (mirror `LibraryViewModel.kt:150-175`). Classify via `mixRail(playlist)`, excluding builtin ids from `YOUR_MIXES`. Emit a small holder `(hero, madeForYou, radios, moodDecades, yourMixes)`; map into `HomeUiState` in the top-level combine (swap `heroFlow` → `homePlaylistFlow`, unpack its fields). Keep the combine at 5 flows.
+- [ ] **Step 2:** In `HomeViewModel`, replace the standalone `heroFlow` with a combined `homePlaylistFlow` that derives the hero AND the four rails from the same inputs (playlists + builtin ids + recipe build-state). Inject **`discoveryQueueDao`** (new — `recipeDao` is already injected for `getBuiltinPlaylistIds`). `mixBuildState` is a **top-level function** (`com.stash.core.data.mix.mixBuildState`) — import it, don't inject it. Mirror `LibraryViewModel.kt:150-175` for the build-state derivation. Classify via `mixRail(playlist)`, excluding builtin ids from `YOUR_MIXES`. Emit a holder `(hero, madeForYou, radios, moodDecades, yourMixes, customMixPlaylistIds)`; map into `HomeUiState` in the top-level combine (swap `heroFlow` → `homePlaylistFlow`, unpack its fields). Keep the combine at 5 flows. Also expose `customMixPlaylistIds: Set<Long>` on `HomeUiState` so the action sheet (Task 6) knows which "Your mixes" are editable/deletable.
 
-- [ ] **Step 3: Compile** — `./gradlew :feature:home:compileDebugKotlin`. Expected SUCCESSFUL.
-- [ ] **Step 4:** (Optional, if a HomeViewModel test harness exists) assert the four lists partition a fixture playlist set correctly. If no harness exists, rely on the Task 1 classifier test + device Task 9 (don't stand up a 10-dep VM test — ponytail).
-- [ ] **Step 5: Commit** — `feat(home): derive the four mix rails in HomeViewModel`.
+- [ ] **Step 3: Move the Stash-mix actions into `HomeViewModel`.** These currently live only in `LibraryViewModel` and become unreachable once the Library section is removed (Task 8): `refreshMix(playlistId)` (`LibraryViewModel.kt:752`), `deleteCustomMix(playlistId)` (`:823`), `editRecipeId(playlistId)` / the edit-nav trigger (`:853`), and `refreshMixIfStale(playlistId)` (`:839`). Move them (and any repository/dao deps they need — `recipeDao`, `musicRepository`, the mix-refresh worker trigger) to `HomeViewModel`. This is what keeps mix management alive after the move.
+
+- [ ] **Step 4: Compile** — `./gradlew :feature:home:compileDebugKotlin`. Expected SUCCESSFUL.
+- [ ] **Step 5:** (Optional, if a HomeViewModel test harness exists) assert the four lists partition a fixture playlist set correctly. If no harness exists, rely on the Task 1 classifier test + device Task 9 (don't stand up a 10-dep VM test — ponytail).
+- [ ] **Step 6: Commit** — `feat(home): derive the four mix rails + move Stash-mix actions to Home`.
 
 ---
 
@@ -287,12 +291,26 @@ if (uiState.madeForYou.isNotEmpty()) item {
         }
     }
 }
-// …repeat for radios ("Radios"), moodDecades ("Mood & decades"), yourMixes ("Your mixes")
+// …repeat for radios ("Radios") and moodDecades ("Mood & decades") — onClick only, no long-press.
+// The "Your mixes" rail ALSO passes onLongPress to open the Stash-mix action sheet (Step 3):
+if (uiState.yourMixes.isNotEmpty()) item {
+    CardRail(title = "Your mixes", actionText = "See all",
+        onActionClick = { onSeeAllMixes(MixRail.YOUR_MIXES) }) {
+        items(uiState.yourMixes, key = { it.id }) { m ->
+            MixRailCard(title = m.title, artUrl = m.artUrl, source = m.source,
+                buildState = m.buildState,
+                onClick = { onOpenMix(m.id) },
+                onLongPress = { actionSheetMixId = m.id })   // opens the sheet
+        }
+    }
+}
 ```
-Add `onSeeAllMixes(MixRail)` and `onOpenMix(Long)` to `HomeScreen`'s callback params; wire `onOpenMix` to the existing playlist-open/play nav, `onSeeAllMixes` to `MixBrowseScreen` (Task 7).
+Add `onSeeAllMixes(MixRail)` and `onOpenMix(Long)` to `HomeScreen`'s callback params; wire `onOpenMix` to the existing playlist-open/play nav (also call `refreshMixIfStale(id)` on open, matching Library's behavior), `onSeeAllMixes` to `MixBrowseScreen` (Task 7).
 
-- [ ] **Step 3: Compile** — `./gradlew :feature:home:compileDebugKotlin`.
-- [ ] **Step 4: Commit** — `feat(home): render the four mix rails + hero create action`.
+- [ ] **Step 3: Move the Stash-mix action sheet to Home.** The action sheet (Refresh [STASH_MIX only] · Edit/Delete [custom mixes only] · Open) + its `HomeBottomSheetActionRow` currently live in `LibraryMixesSection.kt:191-258` and die with Task 8. Move that action-sheet composable into `HomeScreen.kt` (or a sibling `feature/home/.../MixActionSheet.kt`). Drive it from a `var actionSheetMixId by remember { mutableStateOf<Long?>(null) }`; when non-null, show the sheet for that mix, gating Refresh/Edit/Delete on `uiState.customMixPlaylistIds` (same rule as Library, `LibraryMixesSection.kt:139-146`). Wire its rows to the `HomeViewModel` actions moved in Task 5 (`refreshMix`/`editRecipeId`→edit-nav/`deleteCustomMix`/open). This preserves Stash-mix management after the move and gives plan 2 the action sheet to extend with "Hide from Home".
+
+- [ ] **Step 4: Compile** — `./gradlew :feature:home:compileDebugKotlin`.
+- [ ] **Step 5: Commit** — `feat(home): render the four mix rails + hero create + Stash-mix action sheet`.
 
 ---
 
@@ -317,8 +335,10 @@ A simple full-screen filterable grid of one rail's mixes (the escape valve so no
 
 - [ ] **Step 1:** In the `mixesHeader` lambda, remove the `LibraryMixesSection(...)` call, leaving `Column { libraryHeader() }` (the grid's items are already CUSTOM-only, `LibraryViewModel.kt:224` — the grid, empty-state, and library header are untouched).
 - [ ] **Step 2:** Remove the now-unused mix `UiState` slices (`stashMixes/spotifyMixes/youtubeMixes/likedPlaylists/buildingMixIds/emptyMixIds/customMixPlaylistIds`) and the `libraryMixDataFlow` computation **only if nothing else reads them**. Grep each field first — the dedicated Liked tab (`likedTracks/likedFilter/likedSources`, `LibraryViewModel.kt:341-380`) is independent and MUST stay. `getRecentlyAdded` feeds the Songs recently-downloaded rail — keep that. Delete `LibraryMixesSection.kt` only if it has no remaining callers.
-- [ ] **Step 3: Compile** — `./gradlew :feature:library:compileDebugKotlin`. Fix any dangling references.
-- [ ] **Step 4: Commit** — `refactor(library): remove the mixes shelf (moved to Home)`.
+- [ ] **Step 3: Co-remove `playAllMixes`.** `LibraryViewModel.playAllMixes(source)` (`:874-877`) reads `uiState.value.spotifyMixes`/`.youtubeMixes` — deleting those slices breaks its compile. It's orphaned (Home's rails have no "play all"), so delete `playAllMixes` and its wiring: the `onPlayAllMixes` param on `LibraryScreen`/`PlaylistsGrid` (`LibraryScreen.kt:357-361`, call site `:180,526`) and its `StashNavHost` pass-through. Likewise lint-clean the other now-unused mix params (`onRefreshMix/onEditMix/onDeleteMix/onCreateMix`) on `LibraryScreen`/`PlaylistsGrid`.
+- [ ] **Step 4: Fix the test source set.** Two Library test files read the removed slices: `LibraryViewModelMixTest.kt` (asserts `stashMixes/spotifyMixes/youtubeMixes/likedPlaylists`) and `LibraryUiStateTest.kt` (asserts their empty defaults). The main-source compile in Step 5 WON'T catch this. Delete the mix-slicing assertions from both (the slicing logic now lives in Home's `MixRailClassifierTest` — Task 1); keep any Liked/recently-added assertions that still apply.
+- [ ] **Step 5: Compile + test** — `./gradlew :feature:library:compileDebugKotlin :feature:library:testDebugUnitTest`. Both must pass (the test run is what catches the removed-slice references in the test source set). Fix any dangling references.
+- [ ] **Step 6: Commit** — `refactor(library): remove the mixes shelf (moved to Home)`.
 
 ---
 
