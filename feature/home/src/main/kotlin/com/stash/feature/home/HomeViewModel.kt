@@ -479,6 +479,19 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * Home cards carry only a [HomeMix] (id), not the full [Playlist]. Resolve
+     * the playlist from the current stream and delegate to [deleteCustomMix].
+     * No-ops if it's already gone.
+     */
+    fun deleteCustomMix(playlistId: Long) {
+        viewModelScope.launch {
+            val playlist = musicRepository.getAllPlaylists().first()
+                .firstOrNull { it.id == playlistId } ?: return@launch
+            deleteCustomMix(playlist)
+        }
+    }
+
+    /**
      * If [playlistId] backs a user (non-builtin) recipe whose last refresh
      * is older than [STALE_MIX_MS], kick a refresh. Fire-and-forget from the
      * mix-card tap so opening a stale custom mix transparently freshens it.

@@ -106,6 +106,7 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.core.ui.components.AlbumSquareCard
+import com.stash.core.ui.components.CardRail
 import com.stash.core.ui.components.CrispChipRow
 import com.stash.core.ui.components.DiscoverHeroCard
 import com.stash.core.ui.components.GlassCard
@@ -134,8 +135,19 @@ fun HomeScreen(
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
     onSeeAllPlaylists: (String) -> Unit = {},
+    onNavigateToMixBuilder: (Long?) -> Unit = {},
+    // Task 7 wires the actual mix-browse destination; today a no-op from the host.
+    onSeeAllMixes: (MixRail) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
+    // Long-pressed Stash mix whose action sheet is open (null = closed).
+    var actionSheetMixId by remember { mutableStateOf<Long?>(null) }
+    // Opening a mix = open its materialized playlist + freshen it if stale.
+    // A HomeMix's id IS its playlist id, so this reuses the existing playlist nav.
+    val openMix: (Long) -> Unit = { id ->
+        viewModel.refreshMixIfStale(id)
+        onNavigateToPlaylist(id)
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     // Master streaming-mode flag. Both the top-bar StreamingModeChip and
     // the sheet (StreamingModeSheet) render from this single source of
@@ -331,12 +343,75 @@ fun HomeScreen(
                     artUrl = hero.artUrl,
                     onPlay = viewModel::playHero,
                     onOpen = { onNavigateToPlaylist(hero.playlistId) },
+                    onCreateMix = { onNavigateToMixBuilder(null) },
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
                 else -> PersonalizeCard(
                     onConnect = onNavigateToSettings,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
+            }
+        }
+
+        // ── Mix rails (Made for you · Radios · Mood & decades · Your mixes) ──
+        // Derived from the user's playlists + recipes (HomeViewModel.mixRail).
+        // Each rail renders only when non-empty. "Your mixes" (Stash mixes)
+        // additionally long-press → the action sheet below.
+        if (uiState.madeForYou.isNotEmpty()) item {
+            CardRail(
+                title = "Made for you",
+                actionText = "See all",
+                onActionClick = { onSeeAllMixes(MixRail.MADE_FOR_YOU) },
+            ) {
+                items(uiState.madeForYou, key = { it.id }) { m ->
+                    MixRailCard(
+                        title = m.title, artUrl = m.artUrl, source = m.source,
+                        buildState = m.buildState, onClick = { openMix(m.id) },
+                    )
+                }
+            }
+        }
+        if (uiState.radios.isNotEmpty()) item {
+            CardRail(
+                title = "Radios",
+                actionText = "See all",
+                onActionClick = { onSeeAllMixes(MixRail.RADIOS) },
+            ) {
+                items(uiState.radios, key = { it.id }) { m ->
+                    MixRailCard(
+                        title = m.title, artUrl = m.artUrl, source = m.source,
+                        buildState = m.buildState, onClick = { openMix(m.id) },
+                    )
+                }
+            }
+        }
+        if (uiState.moodDecades.isNotEmpty()) item {
+            CardRail(
+                title = "Mood & decades",
+                actionText = "See all",
+                onActionClick = { onSeeAllMixes(MixRail.MOOD_DECADES) },
+            ) {
+                items(uiState.moodDecades, key = { it.id }) { m ->
+                    MixRailCard(
+                        title = m.title, artUrl = m.artUrl, source = m.source,
+                        buildState = m.buildState, onClick = { openMix(m.id) },
+                    )
+                }
+            }
+        }
+        if (uiState.yourMixes.isNotEmpty()) item {
+            CardRail(
+                title = "Your mixes",
+                actionText = "See all",
+                onActionClick = { onSeeAllMixes(MixRail.YOUR_MIXES) },
+            ) {
+                items(uiState.yourMixes, key = { it.id }) { m ->
+                    MixRailCard(
+                        title = m.title, artUrl = m.artUrl, source = m.source,
+                        buildState = m.buildState, onClick = { openMix(m.id) },
+                        onLongPress = { actionSheetMixId = m.id },
+                    )
+                }
             }
         }
 
@@ -406,6 +481,115 @@ fun HomeScreen(
             },
             onDismiss = { showStreamingSheet = false },
             sheetState = streamingSheetState,
+        )
+    }
+
+    // ── Stash-mix action sheet (long-press a "Your mixes" card) ──────────
+    // Moved from LibraryMixesSection (Library keeps its own copy until Task 8).
+    // Gating mirrors Library: Refresh for every Stash mix, Edit/Delete for
+    // custom mixes only, Open always. "Your mixes" == the STASH_MIX rail, so
+    // membership there stands in for the type == STASH_MIX check.
+    actionSheetMixId?.let { id ->
+        val mix = (uiState.madeForYou + uiState.radios + uiState.moodDecades + uiState.yourMixes)
+            .firstOrNull { it.id == id }
+        if (mix == null) {
+            actionSheetMixId = null
+        } else {
+            val sheetState = rememberModalBottomSheetState()
+            val isStashMix = uiState.yourMixes.any { it.id == id }
+            val isCustom = id in uiState.customMixPlaylistIds
+            ModalBottomSheet(
+                onDismissRequest = { actionSheetMixId = null },
+                sheetState = sheetState,
+                containerColor = MaterialTheme.colorScheme.surface,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 8.dp),
+                ) {
+                    Text(
+                        text = mix.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                if (isStashMix) {
+                    MixActionRow(
+                        icon = Icons.Default.Refresh,
+                        label = "Refresh this mix",
+                        onClick = {
+                            viewModel.refreshMix(id)
+                            actionSheetMixId = null
+                        },
+                    )
+                }
+                if (isCustom) {
+                    MixActionRow(
+                        icon = Icons.Default.Edit,
+                        label = "Edit mix",
+                        onClick = {
+                            viewModel.editRecipeId(id) { recipeId -> onNavigateToMixBuilder(recipeId) }
+                            actionSheetMixId = null
+                        },
+                    )
+                    MixActionRow(
+                        icon = Icons.Default.Delete,
+                        label = "Delete mix",
+                        tint = MaterialTheme.colorScheme.error,
+                        onClick = {
+                            viewModel.deleteCustomMix(id)
+                            actionSheetMixId = null
+                        },
+                    )
+                }
+                MixActionRow(
+                    icon = Icons.Default.PlayArrow,
+                    label = "Open",
+                    onClick = {
+                        openMix(id)
+                        actionSheetMixId = null
+                    },
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+}
+
+// ── Mix action-sheet row ──────────────────────────────────────────────────
+
+/** A single action row inside the Stash-mix action sheet. */
+@Composable
+private fun MixActionRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(24.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = tint,
         )
     }
 }

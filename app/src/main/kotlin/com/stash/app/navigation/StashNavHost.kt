@@ -80,6 +80,11 @@ fun StashNavHost(
                 onSeeAllPlaylists = { genre ->
                     navController.navigate(PlaylistBrowseRoute(genre))
                 },
+                onNavigateToMixBuilder = { recipeId ->
+                    navController.navigate(MixBuilderRoute(recipeId))
+                },
+                // TODO(Task 7): route to the mix-browse ("See all") destination.
+                onSeeAllMixes = {},
             )
         }
         composable<PlaylistBrowseRoute> {
