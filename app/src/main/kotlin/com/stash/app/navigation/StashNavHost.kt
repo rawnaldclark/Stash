@@ -29,6 +29,7 @@ import com.stash.feature.settings.equalizer.EqualizerScreen
 import com.stash.feature.settings.libraryhealth.LibraryHealthScreen
 import com.stash.feature.sync.FailedDownloadsScreen
 import com.stash.feature.sync.FailedMatchesScreen
+import com.stash.feature.sync.ManagePlaylistsScreen
 import com.stash.feature.sync.SyncScreen
 
 /** Transition duration for the Now Playing slide animation in milliseconds. */
@@ -167,8 +168,13 @@ fun StashNavHost(
                         launchSingleTop = true
                     }
                 },
-                // TODO(Task 5): navigate to ManagePlaylistsRoute(source.name)
-                onManageSource = { },
+                onManageSource = { source -> navController.navigate(ManagePlaylistsRoute(source.name)) },
+            )
+        }
+        composable<ManagePlaylistsRoute> {
+            ManagePlaylistsScreen(
+                source = com.stash.feature.sync.SyncSource.valueOf(it.toRoute<ManagePlaylistsRoute>().source),
+                onBack = { navController.popBackStack() },
             )
         }
         composable<SettingsRoute> {

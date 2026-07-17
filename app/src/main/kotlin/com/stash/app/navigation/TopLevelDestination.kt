@@ -75,3 +75,7 @@ data class PlaylistBrowseRoute(val genre: String = "All")
 /** "See all" browse of one Home mix rail; [rail] is a [MixRail] name. */
 @Serializable
 data class MixBrowseRoute(val rail: String)
+
+/** Full-screen per-source playlist management; [source] is a [SyncSource] name. */
+@Serializable
+data class ManagePlaylistsRoute(val source: String)

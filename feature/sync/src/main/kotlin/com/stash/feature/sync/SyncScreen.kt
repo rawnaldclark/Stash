@@ -713,7 +713,7 @@ private fun SyncModeChipRow(
 // ── Spotify sync toggle row ─────────────────────────────────────────────────
 
 @Composable
-private fun SpotifySyncToggleRow(
+internal fun SpotifySyncToggleRow(
     name: String,
     trackCount: Int,
     enabled: Boolean,
@@ -752,7 +752,7 @@ private fun SpotifySyncToggleRow(
 }
 
 @Composable
-private fun StudioOnlyToggleRow(
+internal fun StudioOnlyToggleRow(
     enabled: Boolean,
     onChange: (Boolean) -> Unit,
     accent: Color,
@@ -799,7 +799,7 @@ private fun StudioOnlyToggleRow(
  * Playlists" sections, where heavy users can easily exceed 100 items.
  */
 @Composable
-private fun <T> SearchablePlaylistList(
+internal fun <T> SearchablePlaylistList(
     items: List<T>,
     accent: Color,
     name: (T) -> String,
