@@ -202,7 +202,6 @@ fun SyncScreen(
                                 playlistsEnabled = playlists.count { it.type == PlaylistType.CUSTOM && it.syncEnabled },
                                 playlistsTotal = playlists.count { it.type == PlaylistType.CUSTOM },
                                 likedCount = playlists.firstOrNull { it.type == PlaylistType.LIKED_SONGS }?.trackCount,
-                                accent = purple,
                             )
                         } else {
                             SourceEmptyHint(
@@ -252,7 +251,6 @@ fun SyncScreen(
                                 playlistsEnabled = playlists.count { isOther(it.type) && it.syncEnabled },
                                 playlistsTotal = playlists.count { isOther(it.type) },
                                 likedCount = playlists.firstOrNull { it.type == PlaylistType.LIKED_SONGS }?.trackCount,
-                                accent = accent,
                             )
                         } else {
                             SourceEmptyHint(
@@ -350,7 +348,7 @@ enum class SyncSource { SPOTIFY, YOUTUBE }
 // -- Source dashboard: numbers row ───────────────────────────────────────────
 
 /**
- * Compact stats row for a source card, e.g. "42 MIXES · AUTO   5/30 PLAYLISTS
+ * Compact stats row for a source card, e.g. "42 MIXES   5/30 PLAYLISTS
  * 1.2k LIKED". Numerals in Space Grotesk; cells are omitted when they have
  * nothing to show (no mixes, no liked playlist). Derived client-side — no VM.
  */
@@ -360,7 +358,6 @@ private fun SourceStatsRow(
     playlistsEnabled: Int,
     playlistsTotal: Int,
     likedCount: Int?,
-    accent: Color,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -368,22 +365,20 @@ private fun SourceStatsRow(
         verticalAlignment = Alignment.Bottom,
     ) {
         if (mixesCount > 0) {
-            SourceStatCell(number = "$mixesCount", label = "MIXES", accentSuffix = "AUTO", accent = accent)
+            SourceStatCell(number = "$mixesCount", label = "MIXES")
         }
-        SourceStatCell(number = "$playlistsEnabled/$playlistsTotal", label = "PLAYLISTS", accent = accent)
+        SourceStatCell(number = "$playlistsEnabled/$playlistsTotal", label = "PLAYLISTS")
         if (likedCount != null) {
-            SourceStatCell(number = compactCount(likedCount), label = "LIKED", accent = accent)
+            SourceStatCell(number = compactCount(likedCount), label = "LIKED")
         }
     }
 }
 
-/** One "42 MIXES · AUTO" stat cell: bold Space-Grotesk numeral + dim label. */
+/** One "42 MIXES" stat cell: bold Space-Grotesk numeral + dim label. */
 @Composable
 private fun SourceStatCell(
     number: String,
     label: String,
-    accent: Color,
-    accentSuffix: String? = null,
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
@@ -398,12 +393,6 @@ private fun SourceStatCell(
                 ),
             ) { append(number) }
             withStyle(SpanStyle(color = dim, letterSpacing = 0.5.sp)) { append(" $label") }
-            if (accentSuffix != null) {
-                withStyle(SpanStyle(color = dim.copy(alpha = 0.5f))) { append(" · ") }
-                withStyle(
-                    SpanStyle(color = accent, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp),
-                ) { append(accentSuffix) }
-            }
         },
         style = MaterialTheme.typography.labelMedium,
     )
