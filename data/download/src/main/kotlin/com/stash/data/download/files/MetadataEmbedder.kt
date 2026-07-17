@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,7 +21,7 @@ import javax.inject.Singleton
  *
  * The ffmpeg binary is bundled by youtubedl-android as a native .so.
  * If tagging fails for any reason, the original untagged file is
- * preserved — an untagged download is preferable to a missing one.
+ * preserved and the failure is reported to the caller.
  *
  * Vorbis-comment casing: writes each key twice (canonical
  * `ALBUMARTIST` + legacy `album_artist`) so both strict Vorbis
@@ -34,6 +35,10 @@ class MetadataEmbedder @Inject constructor(
     @ApplicationContext private val context: Context,
     private val appVersion: AppVersionProvider,
 ) {
+    internal var renameFile: (File, File) -> Boolean = { source, target ->
+        source.renameTo(target)
+    }
+
     suspend fun embedMetadata(
         audioFile: File,
         track: Track,
@@ -43,6 +48,7 @@ class MetadataEmbedder @Inject constructor(
             audioFile.parent,
             "${audioFile.nameWithoutExtension}_tagged.${audioFile.extension}",
         )
+        var backupFile: File? = null
 
         // Issue #118: realistic album art (300–500KB JPEG → 400–700KB base64)
         // can push a single argv entry near or past Linux's MAX_ARG_STRLEN
@@ -59,7 +65,8 @@ class MetadataEmbedder @Inject constructor(
         )
 
         try {
-            val ffmpegPath = resolveFfmpegBinary() ?: return@withContext audioFile
+            val ffmpegPath = resolveFfmpegBinary()
+                ?: throw IOException("ffmpeg binary not found")
             val pb = ProcessBuilder(listOf(ffmpegPath.absolutePath) + args)
             // Keep stderr separate from stdout so we can log it verbatim on
             // failure — merging via redirectErrorStream(true) and then never
@@ -91,17 +98,40 @@ class MetadataEmbedder @Inject constructor(
                 if (stdout.isNotBlank()) {
                     Log.d(TAG, "ffmpeg stdout: ${stdout.take(200)}")
                 }
+                throw IOException("ffmpeg exited $exit for ${audioFile.absolutePath}")
             }
 
-            if (outputFile.exists() && outputFile.length() > 0) {
-                audioFile.delete()
-                outputFile.renameTo(audioFile)
-            } else {
-                Log.w(TAG, "ffmpeg produced no output for ${audioFile.absolutePath} (exit=$exit)")
+            if (!outputFile.exists() || outputFile.length() <= 0) {
+                throw IOException("ffmpeg produced no output for ${audioFile.absolutePath}")
+            }
+
+            val backup = File.createTempFile(
+                "stash_${audioFile.nameWithoutExtension}_untagged_",
+                ".${audioFile.extension}",
+                audioFile.parentFile,
+            ).apply { delete() }
+            backupFile = backup
+            if (!renameFile(audioFile, backup)) {
+                throw IOException("could not preserve original file ${audioFile.absolutePath}")
+            }
+            if (!renameFile(outputFile, audioFile)) {
+                throw IOException("could not install tagged file ${audioFile.absolutePath}")
+            }
+            if (!backup.delete()) {
+                Log.w(TAG, "could not delete backup file ${backup.absolutePath}")
             }
         } catch (e: Exception) {
             Log.w(TAG, "ffmpeg embed failed for ${audioFile.absolutePath}: ${e.message}", e)
             outputFile.delete()
+            backupFile?.let { backup ->
+                if (backup.exists() && !audioFile.exists()) {
+                    if (!renameFile(backup, audioFile)) {
+                        backup.copyTo(audioFile, overwrite = true)
+                        backup.delete()
+                    }
+                }
+            }
+            throw e
         } finally {
             opusPictureMetadataFile?.delete()
         }

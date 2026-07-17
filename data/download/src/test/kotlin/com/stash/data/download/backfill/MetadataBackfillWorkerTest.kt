@@ -114,6 +114,23 @@ class MetadataBackfillWorkerTest {
     }
 
     @Test
+    fun `embed failure stamps 0L instead of a success timestamp`() = runTest {
+        val file = newTempAudio()
+        val rows = listOf(stubEntity(id = 3, filePath = file.absolutePath))
+        every { trackDao.observeTracksNeedingEmbedCount() } returns flowOf(1)
+        coEvery { trackDao.getTracksNeedingEmbed(any(), any()) } returnsMany listOf(rows, emptyList())
+        coEvery { albumArtCache.resolveArt(any()) } returns null
+        coEvery { metadataEmbedder.embedMetadata(any(), any(), any()) } throws
+            IllegalStateException("ffmpeg failed")
+
+        val result = buildSubject().doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        coVerify(exactly = 1) { trackDao.setMetadataEmbeddedAt(eq(3L), eq(0L)) }
+        coVerify(exactly = 0) { trackDao.setMetadataEmbeddedAt(eq(3L), match { it > 0L }) }
+    }
+
+    @Test
     fun `SAF row stamps 0L and increments safSkipped`() = runTest {
         val rows = listOf(
             stubEntity(id = 5, filePath = "content://com.android.externalstorage.documents/blah"),
