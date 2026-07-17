@@ -44,6 +44,16 @@ internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean =
     type == PlaylistType.DAILY_MIX && online
 
 /**
+ * Whether a playlist's tracks should be enqueued for download during this sync.
+ * Online/streaming mode never downloads (tracks stream on tap). In Offline mode
+ * everything downloads EXCEPT algorithmic mixes (DAILY_MIX) — those are
+ * surface-only (stream-on-tap), so an auto-enabled mix never pulls bytes even
+ * after the user switches to Offline and re-syncs.
+ */
+internal fun shouldEnqueueForDownload(type: PlaylistType, streamingMode: Boolean): Boolean =
+    !streamingMode && type != PlaylistType.DAILY_MIX
+
+/**
  * Second worker in the sync chain. Compares remote playlist/track snapshots
  * against the local database to find new tracks that need downloading.
  *
@@ -448,9 +458,11 @@ class DiffWorker @AssistedInject constructor(
                 // normally so the playlist surfaces on Home and the playlist
                 // detail screen can stream the track via Kennyy on tap. We
                 // skip the download_queue enqueue so no bytes hit disk.
-                // Offline mode: enqueue the download as usual.
+                // Offline mode: enqueue the download — EXCEPT algorithmic mixes
+                // (DAILY_MIX), which stay surface-only (stream-on-tap) so an
+                // auto-enabled mix never pulls bytes after switching to Offline.
                 val searchQuery = "${trackSnapshot.artist} - ${trackSnapshot.title}"
-                if (!streamingMode) {
+                if (shouldEnqueueForDownload(localPlaylist.type, streamingMode)) {
                     Log.i(TAG, "QueueTrace: DiffWorker.insert track_id=$trackId playlist=${localPlaylist.id} '${trackSnapshot.artist} - ${trackSnapshot.title}'")
                     downloadQueueDao.insert(
                         DownloadQueueEntity(
