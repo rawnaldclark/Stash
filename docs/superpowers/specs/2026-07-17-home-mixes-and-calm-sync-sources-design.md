@@ -107,7 +107,7 @@ Because the mix-variety work auto-enables + surface-onlys mixes, the manage scre
 **This flag is new work owned entirely by Part 2 / plan 2:**
 - A new persisted boolean, e.g. `PlaylistEntity.hideFromHome` (default `false`) — no such field exists today. Requires: a **Room migration 33→34** (`ALTER TABLE playlists ADD COLUMN hide_from_home INTEGER NOT NULL DEFAULT 0`), the `Playlist` domain field, `PlaylistMapper`, and a DAO write path.
 - **Two control surfaces, both shipped in this plan:** the manage screen's mix summary (tap a mix → hide it) **and** the mix card's long-press on Home (adds "Hide from Home" to the existing action sheet).
-- **One read point:** the Home rail classifier (§2.3) filters out `hideFromHome == true` mixes. In plan 1 this filter is a no-op (the column defaults false / doesn't exist yet); plan 2 adds the column and the filter honors it. Sequencing note: if plan 2 lands after plan 1, plan 2's migration + the classifier filter update ship together.
+- **One read point:** the Home rail classifier (§2.3) filters out `hideFromHome == true` mixes. Plan 1 has **no such filter** (the column doesn't exist yet); plan 2 adds the column and the classifier filter **together** in the same migration.
 
 ---
 
