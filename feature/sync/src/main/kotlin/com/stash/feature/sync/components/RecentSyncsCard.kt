@@ -43,10 +43,11 @@ import com.stash.core.ui.theme.StashTheme
  */
 data class RecentSyncRow(
     val id: Long,
-    val trigger: String,        // "Manual" / "Scheduled"
+    val modeLabel: String?,     // "Online" / "Offline"; null on pre-migration rows
     val relativeTime: String,   // "35m ago"
     val duration: String?,      // "45s" / "1m 12s"; null when unknown/interrupted
-    val added: Int,             // tracks downloaded this run
+    val added: Int,             // surfaced (online) or downloaded (offline/legacy) this run
+    val addedNoun: String,      // "surfaced" (online) / "downloaded" (offline/legacy)
     val playlists: Int,         // playlists checked
     val sizeLabel: String?,     // "340 MB"; null when nothing downloaded
     val failed: Int,            // tracks that failed
@@ -55,7 +56,7 @@ data class RecentSyncRow(
     val diagnostics: String? = null,
 )
 
-enum class SyncRowStatus { HEALTHY, PARTIAL, FAILED }
+enum class SyncRowStatus { HEALTHY, PARTIAL, FAILED, CANCELLED }
 
 /**
  * Single [GlassCard] that lists recent sync results with internal dividers.
@@ -104,10 +105,14 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
         ) {
             Text(
                 text = buildAnnotatedString {
-                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)) {
-                        append(row.trigger)
+                    if (row.modeLabel != null) {
+                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)) {
+                            append(row.modeLabel)
+                        }
+                        withStyle(SpanStyle(color = dim)) { append("  ·  ${row.relativeTime}") }
+                    } else {
+                        withStyle(SpanStyle(color = dim)) { append(row.relativeTime) }
                     }
-                    withStyle(SpanStyle(color = dim)) { append("  ·  ${row.relativeTime}") }
                 },
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -124,7 +129,10 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
 
         // Line 2 — the receipt: additions in green, neutral stats, failures stand out
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (row.status == SyncRowStatus.FAILED && row.added == 0) {
+            if (row.status == SyncRowStatus.CANCELLED) {
+                Pill("Cancelled", dim)          // neutral, not the red fail tint
+                Spacer(Modifier.weight(1f))
+            } else if (row.status == SyncRowStatus.FAILED && row.added == 0) {
                 Pill("Sync failed", fail)
                 Spacer(Modifier.weight(1f))
             } else {
@@ -135,7 +143,7 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
                     style = MaterialTheme.typography.bodyMedium,
                     text = buildAnnotatedString {
                         withStyle(SpanStyle(color = success, fontWeight = FontWeight.Medium)) { append("+${row.added} ") }
-                        withStyle(SpanStyle(color = dim)) { append("tracks") }
+                        withStyle(SpanStyle(color = dim)) { append(row.addedNoun) }
                         if (row.playlists > 0) withStyle(SpanStyle(color = dim)) { append("  ·  ${row.playlists} playlists") }
                         if (row.sizeLabel != null) withStyle(SpanStyle(color = dim)) { append("  ·  ${row.sizeLabel}") }
                     },
