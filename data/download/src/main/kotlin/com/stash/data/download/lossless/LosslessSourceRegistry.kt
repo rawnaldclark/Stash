@@ -37,6 +37,14 @@ class LosslessSourceRegistry @Inject constructor(
      * Path ii of the source-priority model).
      */
     suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult? {
+        // Build-time credential gate: if the qbdlx trio isn't fully configured
+        // OR the ARCOD private stream base is missing, none of our lossless
+        // sources can produce a result — skip the whole chain (no per-source
+        // HTTP calls, no rate-limit spend) and fail over to YouTube immediately.
+        if (!com.stash.data.download.BuildConfig.LOSSLESS_SOURCES_CONFIGURED) {
+            Log.d(TAG, "lossless sources not configured at build time — skipping straight to YouTube")
+            return null
+        }
         // Test toggles (outage drills). ARCOD-only takes precedence over
         // amz-only: filter the chain to a single source so a forced download
         // exercises that source even when the Qobuz proxies are healthy. A
@@ -48,10 +56,17 @@ class LosslessSourceRegistry @Inject constructor(
         } else if (streamingPreference.isForceAmzOnly()) {
             orderedSources().filter { it.id == "amz" }
         } else {
-            // Normal chain skips the parked (host-down) sources. Only the
-            // normal path filters — force-X toggles above still reach a parked
+            // Normal chain skips (a) parked (host-down) sources and (b) any
+            // source whose build-time credentials aren't fully configured —
+            // an unconfigured qbdlx or ARCOD can't produce a result, so
+            // skipping it here avoids a wasted HTTP round-trip / rate-limit
+            // spend per resolve() call. Force-X toggles above bypass both
+            // filters so a manual test can still reach a parked/unconfigured
             // source on demand, and orderedSources()/Settings still list them.
-            orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }
+            orderedSources()
+                .filterNot { it.id in PARKED_SOURCE_IDS }
+                .filterNot { it.id == "qbdlx_qobuz" && !com.stash.data.download.BuildConfig.QBDLX_CONFIGURED }
+                .filterNot { it.id == "arcod" && !com.stash.data.download.BuildConfig.ARCOD_CONFIGURED }
         }
         val minQuality = prefs.minQualityNow()
 

@@ -73,6 +73,9 @@ fun poolFp(plain: String): String =
 val qbdlxTokenPoolEnc = encryptPool(qbdlxTokenPool)
 val qbdlxPoolFp = poolFp(qbdlxTokenPool)
 
+val qbdlxConfigured = qbdlxAppId.isNotBlank() && qbdlxAppSecret.isNotBlank() && qbdlxTokenPool.isNotBlank()
+val arcodConfigured = arcodStreamBase.isNotBlank()
+
 android {
     namespace = "com.stash.data.download"
 
@@ -85,6 +88,8 @@ android {
         buildConfigField("String", "QBDLX_APP_SECRET", "\"$qbdlxAppSecret\"")
         buildConfigField("String", "QBDLX_TOKEN_POOL", "\"$qbdlxTokenPoolEnc\"")
         buildConfigField("String", "QBDLX_POOL_FP", "\"$qbdlxPoolFp\"")
+        buildConfigField("Boolean", "QBDLX_CONFIGURED", "$qbdlxConfigured")
+        buildConfigField("Boolean", "ARCOD_CONFIGURED", "$arcodConfigured")
     }
 
     buildFeatures {
