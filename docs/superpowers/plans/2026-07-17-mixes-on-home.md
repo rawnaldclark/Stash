@@ -20,7 +20,7 @@
 
 **Create:**
 - `core/ui/src/main/kotlin/com/stash/core/ui/components/CardRail.kt` — shared `Column{Spacer+SectionHeader+LazyRow}` rail (replaces the copy-pasted `DiscoveryAlbumRow`/`DiscoveryPlaylistRow` scaffold).
-- `core/ui/src/main/kotlin/com/stash/core/ui/components/MixRailCard.kt` — Premium-Crisp mix card (cover, title, source dot, build-state).
+- `feature/home/src/main/kotlin/com/stash/feature/home/MixRailCard.kt` — Premium-Crisp mix card (cover, title, source dot, build-state). **In `:feature:home`, not `:core:ui`** — `MixBuildState` lives in `:core:data`, which `:core:ui` correctly does not depend on; the card is Home-only so it lives with Home (decided during Task 3).
 - `feature/home/src/main/kotlin/com/stash/feature/home/MixRail.kt` — `enum MixRail` + pure `mixRail(playlist): MixRail?` classifier + `HomeMix` UI model.
 - `feature/home/src/main/kotlin/com/stash/feature/home/MixBrowseScreen.kt` — the "See all" grid for one rail.
 - `feature/home/src/test/kotlin/com/stash/feature/home/MixRailClassifierTest.kt`
