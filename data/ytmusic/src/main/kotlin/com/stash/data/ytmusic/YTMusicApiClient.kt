@@ -80,6 +80,42 @@ class YTMusicApiClient @Inject constructor(
          * no artist shelf parses). Verified live: top row = Official Artist Channel.
          */
         private const val ARTISTS_FILTER = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"
+
+        /**
+         * Whether a home-feed playlist ID is an algorithmic mix worth syncing.
+         *
+         * Explicit-reject-first, then accept broad personalized radios. YouTube
+         * mix IDs are recognizable by prefix because they are generated, not
+         * user-created:
+         * - Accept `RD*` / `VLRD*` — personalized radios (Daily/Discover/Supermix,
+         *   `RDMM` My Mix, `RDAT*` artist/track radios, `RDEM*` "em" mixes, …).
+         * - Accept `LM` — Liked Music.
+         *
+         * Explicitly rejects (these never start with `RD`, and the reject runs
+         * first regardless):
+         * - `MPRE*` — album browse IDs
+         * - `UC*` — channel IDs (artists)
+         * - `VLPL*` / `PL*` — user-created playlists (community content)
+         * - `OLAK5uy_*` — album content playlists
+         *
+         * Pure (only inspects the string) so [YTMixFilterTest] calls it directly.
+         */
+        internal fun isAllowedMixPlaylist(playlistId: String): Boolean {
+            // Explicit rejects first (albums, user playlists, channels, album
+            // content). None of these start with "RD", so the accept below is
+            // safe, but reject-first makes the intent unambiguous.
+            if (playlistId.startsWith("MPRE") ||
+                playlistId.startsWith("UC") ||
+                playlistId.startsWith("VLPL") || playlistId.startsWith("PL") ||
+                playlistId.startsWith("OLAK5uy_")
+            ) {
+                return false
+            }
+            // Personalized mixes/radios + built-ins.
+            return playlistId.startsWith("RD") || playlistId.startsWith("VLRD") ||
+                playlistId == "RDMM" ||
+                playlistId == "LM"
+        }
     }
 
     /**
@@ -967,31 +1003,6 @@ class YTMusicApiClient @Inject constructor(
     }
 
     // ── Utility helpers ──────────────────────────────────────────────────
-
-    /**
-     * Whitelists algorithmic mix playlist IDs from YouTube Music's home feed.
-     *
-     * YouTube Music mixes all share identifiable ID prefixes because they are
-     * generated playlists rather than user-created content:
-     * - `VLRDTMAK5uy_*` — Daily Mixes, Discover Mix, Supermix, Replay Mix, Archive Mix
-     * - `RDTMAK5uy_*` — Same playlists, without the `VL` browse prefix
-     * - `RDCLAK5uy_*` — YouTube Music radio / station mixes
-     * - `RDMM` — "My Mix" (personalized mix)
-     * - `LM` — Liked Music
-     *
-     * This explicitly rejects:
-     * - `MPRE*` — Album browse IDs
-     * - `UC*` — Channel IDs (artists)
-     * - `VLPL*` / `PL*` — User-created playlists (community content)
-     * - `OLAK5uy_*` — Album content playlists
-     */
-    private fun isAllowedMixPlaylist(playlistId: String): Boolean {
-        return playlistId.startsWith("VLRDTMAK5uy_") ||
-            playlistId.startsWith("RDTMAK5uy_") ||
-            playlistId.startsWith("RDCLAK5uy_") ||
-            playlistId == "RDMM" ||
-            playlistId == "LM"
-    }
 
     /**
      * Parses a duration string like "3:45" or "1:02:30" into milliseconds.
