@@ -101,8 +101,8 @@ class SpotifyApiClient @Inject constructor(
         /**
          * Names of Spotify-generated personalized playlists that appear in the
          * home feed. These are all owned by "spotify" and rotate on various
-         * schedules. We capture any playlist whose name matches one of these
-         * patterns OR is owned by "spotify" with a known name.
+         * schedules. See [isSpotifyMix] for the full keep-decision (this set is
+         * one branch of it).
          */
         private val SPOTIFY_MIX_NAMES = setOf(
             "discover weekly",
@@ -120,12 +120,15 @@ class SpotifyApiClient @Inject constructor(
          * Blend, Made-For-You mood mixes, "This Is <artist>": names vary by
          * locale but all are spotify-owned).
          *
+         * Note the caller defaults [ownerId] to "spotify" when the home item
+         * carries no owner data, so owner-less items also take the catch-all.
+         *
          * ponytail: owner rule first; add a deny-set only if device shows
          * editorial leakage (e.g. "Today's Top Hits" surfacing in the home feed).
          */
         internal fun isSpotifyMix(name: String, ownerId: String): Boolean {
             if (DAILY_MIX_REGEX.matches(name)) return true
-            if (name.lowercase() in SPOTIFY_MIX_NAMES) return true
+            if (name.lowercase(java.util.Locale.ROOT) in SPOTIFY_MIX_NAMES) return true
             return ownerId == "spotify"
         }
     }

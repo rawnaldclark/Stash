@@ -16,10 +16,20 @@ import org.junit.Test
  */
 class SpotifyMixFilterTest {
 
-    @Test fun keepsDailyMixes()        = assertTrue(isSpotifyMix("Daily Mix 3", "spotify"))
-    @Test fun keepsNamedMixes()        = assertTrue(isSpotifyMix("Discover Weekly", "spotify"))
+    // Name branches use a NON-spotify owner so only the name rule can carry
+    // them — otherwise the owner catch-all would mask the regex/name-set checks.
+    @Test fun keepsDailyMixes()        = assertTrue(isSpotifyMix("Daily Mix 3", "someuser"))
+    @Test fun keepsNamedMixes()        = assertTrue(isSpotifyMix("Discover Weekly", "someuser"))
+
+    // Owner catch-all: personalized items whose names match no rule.
     @Test fun keepsYourTopSongs()      = assertTrue(isSpotifyMix("Your Top Songs 2025", "spotify"))
     @Test fun keepsBlend()             = assertTrue(isSpotifyMix("Rawn + Alex", "spotify")) // Blend, spotify-owned
     @Test fun keepsMadeForYouMood()    = assertTrue(isSpotifyMix("Chill Mix", "spotify"))
+
     @Test fun rejectsUserOwnedCustom() = assertFalse(isSpotifyMix("My Road Trip", "rawnaldclark"))
+
+    // Pins the known ceiling as intentional: a spotify-owned editorial title
+    // currently leaks through the owner catch-all. If B4 shows this on-device,
+    // a deny-set flips this assertion (and this test guards that change).
+    @Test fun keepsSpotifyOwnedEditorial() = assertTrue(isSpotifyMix("Today's Top Hits", "spotify"))
 }
