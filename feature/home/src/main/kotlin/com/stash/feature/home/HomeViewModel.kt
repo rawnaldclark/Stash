@@ -74,6 +74,7 @@ class HomeViewModel @Inject constructor(
     private val tipJarRepository: com.stash.core.data.tipjar.TipJarRepository,
     private val recipeDao: StashMixRecipeDao,
     private val discoveryQueueDao: DiscoveryQueueDao,
+    private val playlistDao: com.stash.core.data.db.dao.PlaylistDao,
     private val downloadNetworkPreference: DownloadNetworkPreference,
     private val streamingPreference: StreamingPreference,
     private val metadataBackfillState: MetadataBackfillState,
@@ -226,7 +227,7 @@ class HomeViewModel @Inject constructor(
         val radios = mutableListOf<HomeMix>()
         val moodDecades = mutableListOf<HomeMix>()
         val yourMixes = mutableListOf<HomeMix>()
-        for (p in playlists) {
+        for (p in playlists.filter { !it.hideFromHome }) {
             when (mixRail(p)) {
                 MixRail.MADE_FOR_YOU -> madeForYou += p.toHomeMix()
                 MixRail.RADIOS -> radios += p.toHomeMix()
@@ -516,6 +517,11 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             onResult(recipeDao.findByPlaylistId(playlistId)?.id)
         }
+    }
+
+    /** Hide (or unhide) a mix's playlist from the Home rails. */
+    fun setHideFromHome(playlistId: Long, hidden: Boolean) {
+        viewModelScope.launch { playlistDao.setHideFromHome(playlistId, hidden) }
     }
 
     companion object {

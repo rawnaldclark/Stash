@@ -367,6 +367,7 @@ fun HomeScreen(
                     MixRailCard(
                         title = m.title, artUrl = m.artUrl, source = m.source,
                         buildState = m.buildState, onClick = { openMix(m.id) },
+                        onLongPress = { actionSheetMixId = m.id },
                     )
                 }
             }
@@ -381,6 +382,7 @@ fun HomeScreen(
                     MixRailCard(
                         title = m.title, artUrl = m.artUrl, source = m.source,
                         buildState = m.buildState, onClick = { openMix(m.id) },
+                        onLongPress = { actionSheetMixId = m.id },
                     )
                 }
             }
@@ -395,6 +397,7 @@ fun HomeScreen(
                     MixRailCard(
                         title = m.title, artUrl = m.artUrl, source = m.source,
                         buildState = m.buildState, onClick = { openMix(m.id) },
+                        onLongPress = { actionSheetMixId = m.id },
                     )
                 }
             }
@@ -549,6 +552,14 @@ fun HomeScreen(
                         },
                     )
                 }
+                MixActionRow(
+                    icon = Icons.Filled.RemoveCircleOutline,
+                    label = "Hide from Home",
+                    onClick = {
+                        viewModel.setHideFromHome(id, true)
+                        actionSheetMixId = null
+                    },
+                )
                 MixActionRow(
                     icon = Icons.Default.PlayArrow,
                     label = "Open",
