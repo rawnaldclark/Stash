@@ -57,6 +57,16 @@ In Online mode `TrackDownloadWorker` returns early (`:171`) and never runs `upda
 
 Each is independently shippable, device-verifiable, and testable. Suggested order: A first (self-contained, extends the existing receipts commit), then B.
 
+## 6b. Known limitation (found in final review, follow-up)
+
+The `CANCELLED` write lives only in `TrackDownloadWorker` (Task 3). In **Offline** mode the download drain is the long phase, so a user-cancel lands there → the row is written `CANCELLED` and the receipt shows the neutral "Cancelled" pill. In **Online** mode `TrackDownloadWorker` early-returns instantly, so a cancel almost always lands in `PlaylistFetchWorker`/`DiffWorker`/`SyncFinalizeWorker`, whose generic `catch (Exception)` swallows the `CancellationException` and writes `FAILED` (the documented repo gotcha — see `feedback_cancellation_in_worker_catches`). So an Online-mode cancel currently renders "Sync failed", not "Cancelled". Not a regression (those phases wrote FAILED before this work too) and not a masquerade after the §6c fix, but the neutral Cancelled marker won't appear for the headline Online scenario.
+
+**Follow-up fix:** add a `catch (ce: CancellationException) { withContext(NonCancellable) { updateStatus(CANCELLED, "Cancelled") }; throw ce }` ahead of the generic catch in `PlaylistFetchWorker`, `DiffWorker`, and `SyncFinalizeWorker` (mirror `TrackDownloadWorker`'s handler; `NonCancellable` so the DB write survives the cancelling coroutine). Small and pattern-established, but touches the delicate worker-cancellation path so it deserves its own change + test.
+
+## 6c. Final-review fix (applied)
+
+`RecentSyncsCard` gated the "Sync failed" pill on `added == 0` — safe when `added` was the download count, but this feature binds `added` to the *surfaced* count in Online mode, which can be >0 on a late failure. That let a failed Online sync render "+N surfaced" in green. Fixed: any `FAILED` row shows the failure pill (commit on branch).
+
 ## 7. Out of scope
 
 - Trigger (Manual/Scheduled) plumbing — the label is being replaced by mode, so the dead trigger is simply no longer rendered (column kept, no destructive migration).
