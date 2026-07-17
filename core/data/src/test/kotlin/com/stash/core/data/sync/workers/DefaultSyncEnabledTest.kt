@@ -27,4 +27,12 @@ class DefaultSyncEnabledTest {
     fun `liked songs always opt-in`() {
         assertThat(defaultSyncEnabled(PlaylistType.LIKED_SONGS, online = true)).isFalse()
     }
+
+    // STASH_MIX is a "mix" by name and sits next to DAILY_MIX in findOrCreatePlaylist's
+    // art-refresh logic — guard against a future refactor broadening the check to
+    // "mix-like" types and accidentally auto-enabling locally-generated mixes.
+    @Test
+    fun `stash mix always opt-in`() {
+        assertThat(defaultSyncEnabled(PlaylistType.STASH_MIX, online = true)).isFalse()
+    }
 }

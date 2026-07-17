@@ -37,7 +37,8 @@ import kotlinx.coroutines.flow.first
  * Algorithmic mixes (DAILY_MIX) auto-enable in Online mode so they surface
  * immediately with no download. Everything else — and every playlist in
  * Offline mode — stays opt-in: the first Sync Now is a discovery pass that
- * downloads nothing unasked.
+ * downloads nothing unasked. [online] is the streaming-mode flag (on = stream,
+ * don't download).
  */
 internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean =
     type == PlaylistType.DAILY_MIX && online
