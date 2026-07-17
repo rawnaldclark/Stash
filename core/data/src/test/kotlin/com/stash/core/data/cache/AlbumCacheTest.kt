@@ -29,6 +29,7 @@ class AlbumCacheTest {
     /** Unused in these YT-path tests — the QOBUZ branch is covered by AlbumCacheRoutingTest. */
     private val noFetcher = object : QobuzAlbumFetcher {
         override suspend fun getAlbum(qobuzAlbumId: String): AlbumDetail = error("unused")
+        override suspend fun getPlaylist(playlistId: String): AlbumDetail = error("unused")
     }
 
     @Test
