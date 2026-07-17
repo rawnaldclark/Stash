@@ -20,6 +20,8 @@ const val INTERRUPTED_ERROR_MARKER = "Interrupted"
  * Decision tree:
  *
  *  1. [SyncState.IDLE] → [SyncDisplayStatus.Idle]
+ *  1b. [SyncState.CANCELLED] → [SyncDisplayStatus.Cancelled] (user-cancelled,
+ *      kept distinct from a zero-track success)
  *  2. Terminal states:
  *     - COMPLETED + zero failed → Success
  *     - COMPLETED + any failed  → PartialSuccess (the sync finalizer always
@@ -34,6 +36,8 @@ const val INTERRUPTED_ERROR_MARKER = "Interrupted"
 fun SyncHistoryEntity.toDisplayStatus(): SyncDisplayStatus {
     return when (status) {
         SyncState.IDLE -> SyncDisplayStatus.Idle
+
+        SyncState.CANCELLED -> SyncDisplayStatus.Cancelled
 
         SyncState.COMPLETED -> {
             if (tracksFailed > 0) {

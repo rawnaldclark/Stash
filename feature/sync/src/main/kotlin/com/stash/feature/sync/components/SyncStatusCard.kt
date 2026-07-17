@@ -146,6 +146,7 @@ private fun syncStatusLabel(
         SyncDisplayStatus.Idle -> "Ready to sync"
         SyncDisplayStatus.Running -> "Syncing..."
         SyncDisplayStatus.Success -> "Synced"
+        SyncDisplayStatus.Cancelled -> "Cancelled"
         is SyncDisplayStatus.PartialSuccess ->
             "Partially synced — ${s.downloaded} saved, ${s.failed} failed"
         is SyncDisplayStatus.Interrupted ->
@@ -173,6 +174,7 @@ private fun syncStatusDotColor(
             SyncDisplayStatus.Idle -> extendedColors.warning
             SyncDisplayStatus.Running -> extendedColors.warning
             SyncDisplayStatus.Success -> extendedColors.success
+            SyncDisplayStatus.Cancelled -> MaterialTheme.colorScheme.onSurfaceVariant
             is SyncDisplayStatus.PartialSuccess -> extendedColors.warning
             is SyncDisplayStatus.Interrupted -> extendedColors.warning
             is SyncDisplayStatus.Failed -> Color(0xFFEF4444)

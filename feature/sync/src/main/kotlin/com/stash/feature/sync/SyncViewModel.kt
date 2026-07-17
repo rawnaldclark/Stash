@@ -530,6 +530,7 @@ class SyncViewModel @Inject constructor(
                     SyncDisplayStatus.Success -> "✓"
                     is SyncDisplayStatus.PartialSuccess -> "!"
                     is SyncDisplayStatus.Interrupted -> "!"
+                    SyncDisplayStatus.Cancelled -> "⊘"
                     is SyncDisplayStatus.Failed -> "×"
                     else -> ""
                 }
@@ -539,6 +540,8 @@ class SyncViewModel @Inject constructor(
                     is SyncDisplayStatus.PartialSuccess,
                     is SyncDisplayStatus.Interrupted ->
                         androidx.compose.ui.graphics.Color(0xFFF59E0B)
+                    SyncDisplayStatus.Cancelled ->
+                        androidx.compose.ui.graphics.Color(0xFF9CA3AF)
                     is SyncDisplayStatus.Failed ->
                         androidx.compose.ui.graphics.Color(0xFFEF4444)
                     else -> androidx.compose.ui.graphics.Color.Transparent

@@ -18,6 +18,9 @@ package com.stash.core.model
  * - [Interrupted]   — sync was terminated mid-run (process kill, phone die,
  *                     force-close). Any tracks downloaded before the
  *                     interruption are preserved and counted.
+ * - [Cancelled]     — sync was deliberately cancelled by the user. Distinct
+ *                     from [Idle] so a cancelled run isn't mis-rendered as a
+ *                     zero-track success.
  * - [Failed]        — sync errored out with zero downloads; a genuine
  *                     pipeline failure.
  */
@@ -57,6 +60,9 @@ sealed class SyncDisplayStatus {
         val downloaded: Int,
         val failed: Int,
     ) : SyncDisplayStatus()
+
+    /** Sync was deliberately cancelled by the user (not an error, not idle). */
+    data object Cancelled : SyncDisplayStatus()
 
     /**
      * Sync errored out before any tracks could be downloaded (auth failure,

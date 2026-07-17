@@ -305,6 +305,8 @@ fun SyncScreen(
                             is SyncDisplayStatus.Failed -> SyncRowStatus.FAILED
                             SyncDisplayStatus.Running -> SyncRowStatus.PARTIAL
                             SyncDisplayStatus.Idle -> SyncRowStatus.PARTIAL
+                            // ponytail: temporary placeholder — a later task adds SyncRowStatus.CANCELLED
+                            SyncDisplayStatus.Cancelled -> SyncRowStatus.PARTIAL
                         },
                         errorMessage = sync.errorMessage,
                         diagnostics = sync.diagnostics,
