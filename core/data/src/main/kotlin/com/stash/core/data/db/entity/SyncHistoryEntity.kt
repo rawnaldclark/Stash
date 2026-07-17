@@ -45,4 +45,12 @@ data class SyncHistoryEntity(
     val diagnostics: String? = null,
 
     val trigger: SyncTrigger = SyncTrigger.MANUAL,
+
+    /**
+     * Whether this run executed in Online/streaming mode (true) or
+     * Offline/download mode (false). Null on rows written before the
+     * mode column existed — the UI suppresses the label for those.
+     */
+    @ColumnInfo(name = "streaming_mode")
+    val streamingMode: Boolean? = null,
 )

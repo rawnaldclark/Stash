@@ -79,7 +79,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         LastFmCacheEntity::class,
         SpotifyResolutionEntity::class,
     ],
-    version = 32,
+    version = 33,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -853,6 +853,18 @@ abstract class StashDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        /**
+         * v32 → v33: add nullable `streaming_mode` to sync_history so each
+         * receipt can show whether the run streamed (Online) or downloaded
+         * (Offline). NULL on pre-migration rows — the UI suppresses the
+         * label for those since their mode is unknown.
+         */
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sync_history ADD COLUMN streaming_mode INTEGER DEFAULT NULL")
             }
         }
     }
