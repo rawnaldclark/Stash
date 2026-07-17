@@ -9,6 +9,7 @@ import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.RepeatMode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -86,7 +87,21 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
     /** Must be called exactly once from Application.onCreate. */
     fun start() {
-        // ── Collector 1: track-change transitions ─────────────────────
+        scope.launch {
+            try {
+                listeningEventDao.backfillMissingTrackStats()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to backfill track play stats", e)
+            }
+            startTrackChangeCollector()
+            startRepeatCollector()
+        }
+    }
+
+    // ── Collector 1: track-change transitions ─────────────────────
+    private fun startTrackChangeCollector() {
         scope.launch {
             // Drop repeats on the SAME track id so we only react to track
             // transitions. Pause/resume mid-track re-emits the same state
@@ -130,8 +145,10 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     schedulePendingFire(track.id, track.artist, track.title, track.album, track.durationMs)
                 }
         }
+    }
 
-        // ── Collector 2: repeat-one loop detection ────────────────────
+    // ── Collector 2: repeat-one loop detection ────────────────────
+    private fun startRepeatCollector() {
         scope.launch {
             var lastPositionMs = 0L
             var lastTrackId = -1L
@@ -197,18 +214,23 @@ class ListeningRecorder @VisibleForTesting internal constructor(
             // the correct state when it reads .get().
             if (nowPlaying == trackId) {
                 firedFlag.set(true)
-                runCatching {
-                    listeningEventDao.insert(
+                try {
+                    val completedAt = System.currentTimeMillis()
+                    listeningEventDao.recordCompletedListen(
                         ListeningEventEntity(
                             trackId = trackId,
                             startedAt = sessionStart,
                             scrobbled = false,
                             // v0.9.13: insert IS the completion event — recorder only fires
                             // after threshold delay. AutoSaveScrobbler reads completed_at.
-                            completedAt = sessionStart,
+                            completedAt = completedAt,
                         ),
                     )
-                }.onFailure { Log.w(TAG, "Failed to insert listening event", it) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to record completed listen", e)
+                }
             }
         }
         pending = PendingFire(

@@ -16,13 +16,19 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -132,9 +138,10 @@ class ListeningRecorderSkipTest {
         runCurrent()
         advanceUntilIdle()
 
+        coVerify(exactly = 1) { listeningDao.backfillMissingTrackStats() }
         coVerify(exactly = 1) { skipDao.insert(any()) }
         assertEquals(trackA.id, skipCapture.captured.trackId)
-        coVerify(exactly = 0) { listeningDao.insert(any()) }
+        coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
     }
 
     @Test
@@ -145,7 +152,7 @@ class ListeningRecorderSkipTest {
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
         val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
         val listenCapture = slot<ListeningEventEntity>()
-        coEvery { listeningDao.insert(capture(listenCapture)) } returns 1L
+        coEvery { listeningDao.recordCompletedListen(capture(listenCapture)) } returns 1L
 
         val recorder = ListeningRecorder(
             playerRepository = playerRepo,
@@ -164,19 +171,19 @@ class ListeningRecorderSkipTest {
         runCurrent()
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { listeningDao.insert(any()) }
+        coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
         assertEquals(trackA.id, listenCapture.captured.trackId)
         coVerify(exactly = 0) { skipDao.insert(any()) }
     }
 
     @Test
-    fun `repeat-one loop restart schedules a new scrobble session`() = runTest {
+    fun `completed repeat-one loops each record a play`() = runTest {
         val playerRepo = FakePlayerRepository(
             PlayerState(currentTrack = trackA, repeatMode = RepeatMode.ONE, positionMs = 0),
         )
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
         val capture = slot<ListeningEventEntity>()
-        coEvery { listeningDao.insert(capture(capture)) } returns 1L
+        coEvery { listeningDao.recordCompletedListen(capture(capture)) } returns 1L
 
         val recorder = ListeningRecorder(
             playerRepository = playerRepo,
@@ -190,6 +197,10 @@ class ListeningRecorderSkipTest {
         // the pending fire BEFORE we loop.
         runCurrent()
 
+        // Complete the initial listening session.
+        advanceTimeBy(95_000)
+        runCurrent()
+
         // Simulate playing past 10s then looping back to near zero.
         playerRepo.setPosition(15_000L)
         runCurrent()
@@ -201,7 +212,7 @@ class ListeningRecorderSkipTest {
         runCurrent()
         advanceUntilIdle()
 
-        coVerify(atLeast = 1) { listeningDao.insert(any()) }
+        coVerify(exactly = 2) { listeningDao.recordCompletedListen(any()) }
         assertEquals(trackA.id, capture.captured.trackId)
     }
 
@@ -234,7 +245,7 @@ class ListeningRecorderSkipTest {
 
         // Only the original session's threshold fire — no extra insert
         // from the scrub-back.
-        coVerify(exactly = 1) { listeningDao.insert(any()) }
+        coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
     }
 
     @Test
@@ -245,7 +256,7 @@ class ListeningRecorderSkipTest {
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
         val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
         val capture = slot<ListeningEventEntity>()
-        coEvery { listeningDao.insert(capture(capture)) } returns 1L
+        coEvery { listeningDao.recordCompletedListen(capture(capture)) } returns 1L
 
         val recorder = ListeningRecorder(
             playerRepository = playerRepo,
@@ -278,7 +289,61 @@ class ListeningRecorderSkipTest {
 
         // Exactly one insert for track B's threshold — no double-schedule
         // from the spurious loop misfire.
-        coVerify(exactly = 1) { listeningDao.insert(any()) }
+        coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
         assertEquals(trackB.id, capture.captured.trackId)
+    }
+
+    @Test
+    fun `playback collectors wait for stats backfill`() = runTest {
+        val playerRepo = FakePlayerRepository(PlayerState(currentTrack = trackA))
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val backfill = CompletableDeferred<Unit>()
+        coEvery { listeningDao.backfillMissingTrackStats() } coAnswers { backfill.await() }
+        val recorder = ListeningRecorder(
+            playerRepository = playerRepo,
+            listeningEventDao = listeningDao,
+            trackSkipEventDao = mockk(relaxed = true),
+            scrobbler = mockk(relaxed = true),
+            scope = backgroundScope,
+        )
+
+        recorder.start()
+        runCurrent()
+        advanceTimeBy(95_000)
+        runCurrent()
+        coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
+
+        backfill.complete(Unit)
+        runCurrent()
+        advanceTimeBy(90_000)
+        runCurrent()
+
+        coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
+    }
+
+    @Test
+    fun `completed-listen cancellation cancels the threshold job`() = runTest {
+        val playerRepo = FakePlayerRepository(PlayerState(currentTrack = trackA))
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        coEvery { listeningDao.recordCompletedListen(any()) } throws CancellationException("cancelled")
+        val parent = SupervisorJob()
+        val recorderScope = CoroutineScope(parent + StandardTestDispatcher(testScheduler))
+        val recorder = ListeningRecorder(
+            playerRepository = playerRepo,
+            listeningEventDao = listeningDao,
+            trackSkipEventDao = mockk(relaxed = true),
+            scrobbler = mockk(relaxed = true),
+            scope = recorderScope,
+        )
+        recorder.start()
+        runCurrent()
+        val initialChildren = parent.children.toList()
+
+        advanceTimeBy(95_000)
+        runCurrent()
+
+        coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
+        assertEquals(1, initialChildren.count { it.isCancelled })
+        recorderScope.cancel()
     }
 }

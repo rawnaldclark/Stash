@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.stash.core.data.db.entity.ListeningEventEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -17,6 +18,46 @@ interface ListeningEventDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(event: ListeningEventEntity): Long
+
+    @Query(
+        """
+        UPDATE tracks
+        SET play_count = play_count + 1, last_played = :playedAt
+        WHERE id = :trackId
+        """
+    )
+    suspend fun updateTrackAfterCompletedListen(trackId: Long, playedAt: Long): Int
+
+    /** Atomically persist a completed listen and its denormalized track stats. */
+    @Transaction
+    suspend fun recordCompletedListen(event: ListeningEventEntity): Long {
+        val eventId = insert(event)
+        check(updateTrackAfterCompletedListen(event.trackId, requireNotNull(event.completedAt)) == 1) {
+            "Track ${event.trackId} missing while recording completed listen"
+        }
+        return eventId
+    }
+
+    /** Restore missing denormalized stats for users with existing completed history. */
+    @Query(
+        """
+        UPDATE tracks
+        SET play_count = (
+                SELECT COUNT(*) FROM listening_events
+                WHERE track_id = tracks.id
+            ),
+            last_played = (
+                SELECT MAX(COALESCE(completed_at, started_at)) FROM listening_events
+                WHERE track_id = tracks.id
+            )
+        WHERE play_count = 0
+          AND EXISTS (
+              SELECT 1 FROM listening_events
+              WHERE track_id = tracks.id
+          )
+        """
+    )
+    suspend fun backfillMissingTrackStats()
 
     @Query(
         """
