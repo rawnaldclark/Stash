@@ -447,6 +447,11 @@ class SettingsViewModel @Inject constructor(
 
     // -- Storage actions ------------------------------------------------------
 
+    /** Recomputes storage usage from the configured library filesystem. */
+    fun refreshStorageUsage() {
+        librarySizeHolder.refresh()
+    }
+
     /**
      * Persists the user's chosen SAF tree URI (or null to revert to
      * internal). Callers MUST have already called

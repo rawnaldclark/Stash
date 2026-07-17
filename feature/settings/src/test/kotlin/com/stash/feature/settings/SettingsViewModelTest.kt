@@ -1,12 +1,14 @@
 package com.stash.feature.settings
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,12 +41,13 @@ class SettingsViewModelTest {
     private val qbdlxStore = mockk<QbdlxCredentialStore>(relaxed = true).also {
         coEvery { it.allDead() } returns false
     }
+    private val librarySizeHolder = mockk<LibrarySizeHolder>(relaxed = true)
 
     private fun newVm() = SettingsViewModel(
         appContext = mockk(relaxed = true),
         tokenManager = mockk(relaxed = true),
         musicRepository = mockk(relaxed = true),
-        librarySizeHolder = mockk(relaxed = true),
+        librarySizeHolder = librarySizeHolder,
         qualityPreference = mockk(relaxed = true),
         themePreference = mockk(relaxed = true),
         storagePreference = mockk(relaxed = true),
@@ -80,6 +83,14 @@ class SettingsViewModelTest {
         vm.onQbdlxEnabledChange(false)
         advanceUntilIdle()
         coVerify { losslessPrefs.setQbdlxEnabled(false) }
+    }
+
+    @Test fun `refreshStorageUsage requests a fresh filesystem calculation`() {
+        val vm = newVm()
+
+        vm.refreshStorageUsage()
+
+        verify(exactly = 1) { librarySizeHolder.refresh() }
     }
 
     @Test fun `onQbdlxTokenPaste stores the pasted token`() = runTest {

@@ -76,6 +76,10 @@ fun SettingsLibraryStorageScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
+    LaunchedEffect(viewModel) {
+        viewModel.refreshStorageUsage()
+    }
+
     SettingsScaffold(title = "Library & Storage", onBack = onBack, modifier = modifier) {
         val context = LocalContext.current
         val contentResolver = context.contentResolver

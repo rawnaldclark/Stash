@@ -6,12 +6,15 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 
 /**
  * Single source of truth for the music library's on-disk size + lossless
@@ -46,9 +49,12 @@ class LibrarySizeHolder @Inject constructor(
     private val musicRepository: MusicRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val refreshVersion = MutableStateFlow(0L)
 
-    val size: StateFlow<LibrarySizeBreakdown> = musicRepository.getTrackCount()
-        .distinctUntilChanged()
+    val size: StateFlow<LibrarySizeBreakdown> = combine(
+        musicRepository.getTrackCount().distinctUntilChanged(),
+        refreshVersion,
+    ) { _, _ -> Unit }
         .scan(LibrarySizeBreakdown(0L, 0L, 0)) { prev, _ ->
             runCatching { fileOrganizer.computeMusicLibrarySize() }
                 .getOrDefault(prev)
@@ -59,4 +65,9 @@ class LibrarySizeHolder @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = LibrarySizeBreakdown(0L, 0L, 0),
         )
+
+    /** Requests a fresh filesystem walk even when the track count is unchanged. */
+    fun refresh() {
+        refreshVersion.update { it + 1 }
+    }
 }
