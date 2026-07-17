@@ -610,16 +610,17 @@ class TrackDownloadWorker @AssistedInject constructor(
                 )
             )
         } catch (ce: kotlinx.coroutines.CancellationException) {
-            // User cancelled the sync (or system pulled the plug). Drop the
-            // sync history row to a clean state and reset the in-memory phase
-            // back to Idle so the UI stops showing a progress card. DO NOT
-            // mark the sync FAILED — cancellation isn't a failure, and the
-            // chain's leftover IN_PROGRESS queue rows will be reset to
-            // PENDING by the next run's resetStaleInProgress() sweep.
+            // User cancelled the sync (or system pulled the plug). Mark the
+            // sync history row CANCELLED and reset the in-memory phase back to
+            // Idle so the UI stops showing a progress card. DO NOT mark the
+            // sync FAILED — cancellation isn't a failure (it renders as a
+            // neutral receipt, not a red one), and the chain's leftover
+            // IN_PROGRESS queue rows will be reset to PENDING by the next
+            // run's resetStaleInProgress() sweep.
             Log.i(TAG, "Sync cancelled by user or system")
             syncHistoryDao.updateStatus(
                 id = syncId,
-                status = SyncState.IDLE,
+                status = SyncState.CANCELLED,
                 completedAt = System.currentTimeMillis(),
                 errorMessage = "Cancelled",
             )

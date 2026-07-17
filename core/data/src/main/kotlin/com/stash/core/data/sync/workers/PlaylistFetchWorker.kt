@@ -71,6 +71,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val syncPreferencesManager: SyncPreferencesManager,
     private val spotifyAuthHealthProbe: SpotifyAuthHealthProbe,
     private val youtubeAuthHealthProbe: YoutubeAuthHealthProbe,
+    private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -122,6 +123,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         val syncEntry = SyncHistoryEntity(
             status = SyncState.AUTHENTICATING,
             trigger = SyncTrigger.MANUAL,
+            streamingMode = streamingPreference.current(),
             startedAt = Instant.now(),
         )
         val syncId = syncHistoryDao.insert(syncEntry)
