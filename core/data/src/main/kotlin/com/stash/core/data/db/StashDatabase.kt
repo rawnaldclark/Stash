@@ -79,7 +79,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         LastFmCacheEntity::class,
         SpotifyResolutionEntity::class,
     ],
-    version = 33,
+    version = 34,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -865,6 +865,17 @@ abstract class StashDatabase : RoomDatabase() {
         val MIGRATION_32_33 = object : Migration(32, 33) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE sync_history ADD COLUMN streaming_mode INTEGER DEFAULT NULL")
+            }
+        }
+
+        /**
+         * v33 → v34: add `hide_from_home` to playlists so surfaced/synced
+         * mixes can be suppressed from the Home rails without disabling sync
+         * or deleting them. NOT NULL DEFAULT 0 — existing rows stay visible.
+         */
+        val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playlists ADD COLUMN hide_from_home INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

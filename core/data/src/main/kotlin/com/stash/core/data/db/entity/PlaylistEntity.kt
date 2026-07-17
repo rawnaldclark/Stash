@@ -71,4 +71,13 @@ data class PlaylistEntity(
      */
     @ColumnInfo(name = "date_added", defaultValue = "0")
     val dateAdded: Instant = Instant.now(),
+
+    /**
+     * When true, this playlist is suppressed from the Home rails (but still
+     * appears in Library). Lets surfaced/synced mixes be hidden from Home
+     * without disabling sync or deleting them. Default `false` — nothing is
+     * hidden until the user opts in.
+     */
+    @ColumnInfo(name = "hide_from_home", defaultValue = "0")
+    val hideFromHome: Boolean = false,
 )

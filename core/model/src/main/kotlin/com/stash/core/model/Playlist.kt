@@ -24,6 +24,8 @@ data class Playlist(
      */
     val artTileUrls: List<String> = emptyList(),
     val syncEnabled: Boolean = false,
+    /** Suppresses this playlist from the Home rails; still shows in Library. */
+    val hideFromHome: Boolean = false,
     val tracks: List<Track> = emptyList(),
     /**
      * Epoch-millis timestamp of when this playlist was first added to

@@ -29,6 +29,7 @@ fun PlaylistEntity.toDomain(): Playlist {
         artUrl = tileUrls.firstOrNull(),
         artTileUrls = tileUrls,
         syncEnabled = syncEnabled,
+        hideFromHome = hideFromHome,
         dateAdded = dateAdded.toEpochMilli(),
     )
 }
@@ -53,5 +54,6 @@ fun Playlist.toEntity(): PlaylistEntity = PlaylistEntity(
     // if the caller never populated artTileUrls.
     artUrl = artTileUrls.takeIf { it.isNotEmpty() }?.joinToString("|") ?: artUrl,
     syncEnabled = syncEnabled,
+    hideFromHome = hideFromHome,
     dateAdded = Instant.ofEpochMilli(dateAdded),
 )

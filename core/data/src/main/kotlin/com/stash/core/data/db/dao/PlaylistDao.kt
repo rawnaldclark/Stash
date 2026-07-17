@@ -302,6 +302,10 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET sync_enabled = :enabled WHERE id = :playlistId")
     suspend fun updateSyncEnabled(playlistId: Long, enabled: Boolean)
 
+    /** Toggle whether a playlist is hidden from the Home rails. */
+    @Query("UPDATE playlists SET hide_from_home = :hidden WHERE id = :playlistId")
+    suspend fun setHideFromHome(playlistId: Long, hidden: Boolean)
+
     /**
      * v0.9.26 — flip `is_active` on every playlist materialized by a
      * built-in Stash Mix recipe. Used by the Stash-Mixes opt-out toggle
