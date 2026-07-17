@@ -1,13 +1,8 @@
 package com.stash.feature.library
 
-import android.content.Context
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
-import com.stash.core.data.db.dao.DiscoveryQueueDao
-import com.stash.core.data.db.dao.StashMixRecipeDao
-import com.stash.core.data.db.entity.StashMixRecipeEntity
-import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
@@ -24,7 +19,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -36,9 +30,9 @@ import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
 
 /**
- * Pins the mix-slice derivation ported into [LibraryViewModel] from Home:
- * STASH_MIX (minus the builtin Daily Discover), DAILY_MIX split by source,
- * and LIKED_SONGS — folded in via the recipe/discovery holder flow.
+ * Pins that the Library Playlists tab surfaces CUSTOM playlists only (mixes
+ * and Liked moved to Home) and the delete-preview math. Mix-slice derivation
+ * itself now lives in Home's `MixRailClassifierTest`.
  *
  * Same harness as [LibraryViewModelTest] / [PlaylistDetailViewModelTest]:
  * StandardTestDispatcher + setMain/resetMain, runTest{}, mockito-kotlin.
@@ -50,41 +44,6 @@ class LibraryViewModelMixTest {
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
-
-    @Test
-    fun uiState_derives_mix_slices_by_type_and_source_excluding_builtin() = runTest {
-        val builtinStashMix = playlist(10L, PlaylistType.STASH_MIX, MusicSource.SPOTIFY)
-        val customStashMix = playlist(11L, PlaylistType.STASH_MIX, MusicSource.SPOTIFY)
-        val downloadsMix = playlist(12L, PlaylistType.DOWNLOADS_MIX, MusicSource.SPOTIFY)
-        val spotifyDaily = playlist(20L, PlaylistType.DAILY_MIX, MusicSource.SPOTIFY)
-        val youtubeDaily = playlist(21L, PlaylistType.DAILY_MIX, MusicSource.YOUTUBE)
-        val externalLiked = playlist(30L, PlaylistType.LIKED_SONGS, MusicSource.SPOTIFY)
-        val localLiked = playlist(31L, PlaylistType.STASH_LIKED, MusicSource.SPOTIFY)
-        val custom = playlist(40L, PlaylistType.CUSTOM, MusicSource.SPOTIFY)
-
-        val musicRepo = musicRepoMock(
-            playlists = listOf(
-                builtinStashMix, customStashMix, downloadsMix, spotifyDaily, youtubeDaily,
-                externalLiked, localLiked, custom,
-            ),
-        )
-        // Playlist id 10 is the builtin Daily Discover — must be excluded from stashMixes.
-        val recipeDao = recipeDaoMock(builtinPlaylistIds = listOf(10L))
-
-        val vm = buildVm(musicRepository = musicRepo, recipeDao = recipeDao)
-
-        val state = vm.uiState.first { !it.isLoading }
-
-        // stashMixes: the custom STASH_MIX only — NOT the builtin, NOT DOWNLOADS_MIX
-        // ("Your Downloads" is a hidden system playlist, never carded).
-        assertThat(state.stashMixes.map { it.id }).containsExactly(11L)
-        assertThat(state.stashMixes.map { it.id }).containsNoneOf(10L, 12L)
-        // DAILY_MIX split by source (matches Home's derivation).
-        assertThat(state.spotifyMixes.map { it.id }).containsExactly(20L)
-        assertThat(state.youtubeMixes.map { it.id }).containsExactly(21L)
-        // Liked: both the external LIKED_SONGS mirror AND the local STASH_LIKED.
-        assertThat(state.likedPlaylists.map { it.id }).containsExactly(30L, 31L)
-    }
 
     @Test
     fun uiState_playlists_tab_shows_only_custom_playlists() = runTest {
@@ -141,22 +100,6 @@ class LibraryViewModelMixTest {
         assertThat(preview.willDelete).isEqualTo(2) // N=3 − K=1
     }
 
-    @Test
-    fun editRecipeId_invokes_callback_with_recipe_id() = runTest {
-        val recipeDao: StashMixRecipeDao = mock {
-            on { observeAll() } doReturn flowOf(emptyList())
-            onBlocking { getBuiltinPlaylistIds() } doReturn emptyList()
-            onBlocking { findByPlaylistId(55L) } doReturn StashMixRecipeEntity(id = 42L, name = "R")
-        }
-        val vm = buildVm(musicRepository = musicRepoMock(emptyList()), recipeDao = recipeDao)
-
-        var captured: Long? = null
-        vm.editRecipeId(55L) { captured = it }
-        advanceUntilIdle()
-
-        assertThat(captured).isEqualTo(42L)
-    }
-
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
@@ -177,11 +120,6 @@ class LibraryViewModelMixTest {
         on { getRecentlyAdded(any()) } doReturn flowOf(emptyList())
     }
 
-    private fun recipeDaoMock(builtinPlaylistIds: List<Long>): StashMixRecipeDao = mock {
-        on { observeAll() } doReturn flowOf(emptyList())
-        onBlocking { getBuiltinPlaylistIds() } doReturn builtinPlaylistIds
-    }
-
     private fun tokenManagerMock(): TokenManager = mock {
         on { spotifyAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
         on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
@@ -195,23 +133,13 @@ class LibraryViewModelMixTest {
         localImportCoordinator: LocalImportCoordinator = mock {
             on { state } doReturn MutableStateFlow<LocalImportState>(LocalImportState.Idle)
         },
-        recipeDao: StashMixRecipeDao = recipeDaoMock(emptyList()),
-        discoveryQueueDao: DiscoveryQueueDao = mock {
-            on { observeNonFailedCountsByRecipe() } doReturn flowOf(emptyList())
-        },
-        downloadNetworkPreference: DownloadNetworkPreference = mock(),
         streamingPreference: StreamingPreference = mock(),
-        context: Context = mock(),
     ): LibraryViewModel = LibraryViewModel(
         musicRepository = musicRepository,
         playerRepository = playerRepository,
         tokenManager = tokenManager,
         playlistImageHelper = playlistImageHelper,
         localImportCoordinator = localImportCoordinator,
-        recipeDao = recipeDao,
-        discoveryQueueDao = discoveryQueueDao,
-        downloadNetworkPreference = downloadNetworkPreference,
         streamingPreference = streamingPreference,
-        context = context,
     )
 }

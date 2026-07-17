@@ -87,7 +87,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import coil3.compose.AsyncImage
@@ -118,8 +117,6 @@ fun LibraryScreen(
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToArtist: (String) -> Unit = {},
     onNavigateToAlbum: (String, String) -> Unit = { _, _ -> },
-    onNavigateToLikedSongs: (String?) -> Unit = {},
-    onNavigateToMixBuilder: (Long?) -> Unit = {},
     onSelectionModeChanged: (Boolean) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -175,15 +172,6 @@ fun LibraryScreen(
             onStartImport = viewModel::startLocalImport,
             onCancelImport = viewModel::cancelLocalImport,
             onDismissImport = viewModel::dismissLocalImport,
-            onOpenPlaylistId = onNavigateToPlaylist,
-            onOpenLikedSongs = onNavigateToLikedSongs,
-            onPlayAllMixes = viewModel::playAllMixes,
-            onRefreshMix = viewModel::refreshMix,
-            onEditMix = { playlistId ->
-                viewModel.editRecipeId(playlistId) { recipeId -> onNavigateToMixBuilder(recipeId) }
-            },
-            onDeleteMix = viewModel::deleteCustomMix,
-            onCreateMix = { onNavigateToMixBuilder(null) },
             selection = selection,
             likedTracks = likedTracks,
             likedFilter = likedFilter,
@@ -352,13 +340,6 @@ private fun LibraryContent(
     onStartImport: (List<Uri>) -> Unit,
     onCancelImport: () -> Unit,
     onDismissImport: () -> Unit,
-    onOpenPlaylistId: (Long) -> Unit,
-    onOpenLikedSongs: (String?) -> Unit,
-    onPlayAllMixes: (MusicSource?) -> Unit,
-    onRefreshMix: (Long) -> Unit,
-    onEditMix: (Long) -> Unit,
-    onDeleteMix: (Playlist) -> Unit,
-    onCreateMix: () -> Unit,
     selection: SelectionState,
     likedTracks: List<Track>,
     likedFilter: LikedFilter,
@@ -508,31 +489,7 @@ private fun LibraryContent(
                     onDeletePlaylist = onDeletePlaylist,
                     onSetPlaylistImage = onSetPlaylistImage,
                     onRemovePlaylistImage = onRemovePlaylistImage,
-                    mixesHeader = {
-                        // Single Column so the two blocks stack vertically — a
-                        // grid item lambda overlaps multiple direct children.
-                        Column {
-                            libraryHeader()
-                            LibraryMixesSection(
-                                stashMixes = state.stashMixes,
-                                spotifyMixes = state.spotifyMixes,
-                                youtubeMixes = state.youtubeMixes,
-                                likedPlaylists = state.likedPlaylists,
-                                customMixPlaylistIds = state.customMixPlaylistIds,
-                                buildingMixIds = state.buildingMixIds,
-                                emptyMixIds = state.emptyMixIds,
-                                onOpenPlaylist = onOpenPlaylistId,
-                                onOpenLikedSongs = onOpenLikedSongs,
-                                onPlayAllMixes = onPlayAllMixes,
-                                onRefreshMix = onRefreshMix,
-                                onEditMix = onEditMix,
-                                onDeleteMix = onDeleteMix,
-                                onCreateMix = onCreateMix,
-                                // Grid contentPadding already insets 20dp; avoid double-indent.
-                                horizontalPadding = 0.dp,
-                            )
-                        }
-                    },
+                    header = libraryHeader,
                 )
                 LibraryTab.TRACKS -> TracksTab(
                     tracks = state.tracks,
@@ -815,7 +772,7 @@ private fun PlaylistsGrid(
     onDeletePlaylist: (Playlist, Boolean) -> Unit,
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
-    mixesHeader: @Composable () -> Unit = {},
+    header: @Composable () -> Unit = {},
 ) {
     // Playlist selected for the context-menu bottom sheet.
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
@@ -839,9 +796,9 @@ private fun PlaylistsGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Mixes group (Stash mixes, daily mixes, liked) spans both columns.
+        // Full-width leading header (Shuffle hero + recent rail, Songs-tab only).
         item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-            mixesHeader()
+            header()
         }
         if (playlists.isEmpty()) {
             item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {

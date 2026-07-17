@@ -129,12 +129,6 @@ fun StashNavHost(
                 onNavigateToAlbum = { albumName, artistName ->
                     navController.navigate(AlbumDetailRoute(albumName, artistName))
                 },
-                onNavigateToLikedSongs = { source ->
-                    navController.navigate(LikedSongsDetailRoute(source))
-                },
-                onNavigateToMixBuilder = { recipeId ->
-                    navController.navigate(MixBuilderRoute(recipeId))
-                },
                 onSelectionModeChanged = onSelectionModeChanged,
             )
         }

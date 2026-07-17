@@ -18,22 +18,8 @@ data class LibraryUiState(
     val tracks: List<Track> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
 
-    /** Recipe-generated Stash Mixes (STASH_MIX minus the builtin Daily Discover). */
-    val stashMixes: List<Playlist> = emptyList(),
-    /** Spotify daily/imported mixes (DAILY_MIX) — split kept so playAllMixes ports verbatim. */
-    val spotifyMixes: List<Playlist> = emptyList(),
-    /** YouTube daily/imported mixes (DAILY_MIX). */
-    val youtubeMixes: List<Playlist> = emptyList(),
-    /** Liked-songs playlists (LIKED_SONGS). */
-    val likedPlaylists: List<Playlist> = emptyList(),
-    /** Recently downloaded tracks. */
+    /** Recently downloaded tracks — feeds the Songs recently-downloaded rail. */
     val recentlyAdded: List<Track> = emptyList(),
-    /** Custom-mix playlist ids (user-built recipes) — drives Edit/Delete menu rows. */
-    val customMixPlaylistIds: Set<Long> = emptySet(),
-    /** Custom-mix playlist ids still populating — card shows "Building…". */
-    val buildingMixIds: Set<Long> = emptySet(),
-    /** Custom-mix playlist ids whose discovery finished with no tracks. */
-    val emptyMixIds: Set<Long> = emptySet(),
 
     /** Artists with 2+ tracks, sorted by track count descending. */
     val artists: List<ArtistInfo> = emptyList(),

@@ -1,12 +1,8 @@
 package com.stash.feature.library
 
-import android.content.Context
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
-import com.stash.core.data.db.dao.DiscoveryQueueDao
-import com.stash.core.data.db.dao.StashMixRecipeDao
-import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
@@ -81,13 +77,6 @@ class LibraryViewModelSortTest {
         },
         playlistImageHelper = mock(),
         localImportCoordinator = mock { on { state } doReturn MutableStateFlow<LocalImportState>(LocalImportState.Idle) },
-        recipeDao = mock<StashMixRecipeDao> {
-            on { observeAll() } doReturn flowOf(emptyList())
-            onBlocking { getBuiltinPlaylistIds() } doReturn emptyList()
-        },
-        discoveryQueueDao = mock<DiscoveryQueueDao> { on { observeNonFailedCountsByRecipe() } doReturn flowOf(emptyList()) },
-        downloadNetworkPreference = mock(),
         streamingPreference = mock(),
-        context = mock<Context>(),
     )
 }
