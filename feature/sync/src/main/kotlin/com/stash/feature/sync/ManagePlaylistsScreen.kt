@@ -110,7 +110,7 @@ fun ManagePlaylistsScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            // -- Pinned search (styling copied from SearchablePlaylistList) ----
+            // -- Pinned search (stays fixed above the scrolling list) ----------
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -160,7 +160,7 @@ fun ManagePlaylistsScreen(
                     item(key = "liked-label") { ManageSectionLabel("Liked") }
                     item(key = "liked-row") {
                         SpotifySyncToggleRow(
-                            name = "Liked Songs",
+                            name = liked.name,
                             trackCount = liked.trackCount,
                             enabled = liked.syncEnabled,
                             onToggle = { viewModel.onTogglePlaylistSync(liked.id, it) },

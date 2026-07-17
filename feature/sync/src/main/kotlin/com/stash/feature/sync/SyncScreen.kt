@@ -20,16 +20,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -784,78 +780,6 @@ internal fun StudioOnlyToggleRow(
                 checkedTrackColor = accent.copy(alpha = 0.5f),
             ),
         )
-    }
-}
-
-// ── SourcePreferencesCard helpers ────────────────────────────────────────────
-
-/**
- * Renders a [SpotifySyncPlaylist] list with a leading search field that
- * filters by name. Filter is client-side over already-fetched items —
- * no extra network. Shows a "No matches" stub when the query has zero
- * hits so the user doesn't see a blank section after a typo.
- *
- * Used for the long-tail Spotify "Your Playlists" and YT Music "Other
- * Playlists" sections, where heavy users can easily exceed 100 items.
- */
-@Composable
-internal fun <T> SearchablePlaylistList(
-    items: List<T>,
-    accent: Color,
-    name: (T) -> String,
-    trackCount: (T) -> Int,
-    enabled: (T) -> Boolean,
-    id: (T) -> Long,
-    onPlaylistToggled: (Long, Boolean) -> Unit,
-) {
-    var query by remember { mutableStateOf("") }
-    OutlinedTextField(
-        value = query,
-        onValueChange = { query = it },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 4.dp, bottom = 4.dp),
-        placeholder = { Text("Filter playlists\u2026") },
-        singleLine = true,
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Filled.Search,
-                contentDescription = null,
-                tint = accent,
-            )
-        },
-        trailingIcon = if (query.isNotEmpty()) {
-            {
-                IconButton(onClick = { query = "" }) {
-                    Icon(
-                        imageVector = Icons.Filled.Clear,
-                        contentDescription = "Clear filter",
-                    )
-                }
-            }
-        } else null,
-    )
-    val filtered = if (query.isBlank()) {
-        items
-    } else {
-        items.filter { name(it).contains(query.trim(), ignoreCase = true) }
-    }
-    if (filtered.isEmpty()) {
-        Text(
-            text = "No playlists matching \u201C${query.trim()}\u201D",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(vertical = 8.dp),
-        )
-    } else {
-        filtered.forEach { playlist ->
-            SpotifySyncToggleRow(
-                name = name(playlist),
-                trackCount = trackCount(playlist),
-                enabled = enabled(playlist),
-                onToggle = { onPlaylistToggled(id(playlist), it) },
-            )
-        }
     }
 }
 
