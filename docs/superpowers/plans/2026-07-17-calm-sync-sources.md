@@ -27,7 +27,7 @@
 - `core/data/.../di/DatabaseModule.kt` — register the migration.
 - Commit generated `core/data/schemas/.../34.json`.
 
-**Modify (Home — Task 2):** `feature/home/.../HomeViewModel.kt` (filter + `setHideFromHome`), `feature/home/.../HomeScreen.kt` (Hide row + 3 streaming long-press wires).
+**Modify (Home — Task 2):** `feature/home/.../HomeViewModel.kt` (filter + inject `PlaylistDao` + `setHideFromHome` — no `MusicRepository` change), `feature/home/.../HomeScreen.kt` (Hide row + 3 streaming long-press wires).
 
 **Modify (Sync VM — Task 3):** `feature/sync/.../SyncViewModel.kt` (hideFromHome on the ui models + mappers + `onToggleHideFromHome`).
 
@@ -41,22 +41,25 @@
 
 **Files:** `PlaylistEntity.kt`, `Playlist.kt`, `PlaylistMapper.kt`, `PlaylistDao.kt`, `StashDatabase.kt`, `DatabaseModule.kt`, `schemas/.../34.json`, migration test.
 
-- [ ] **Step 1: Write the failing migration test** (mirror `MigrationV32V33Test.kt` exactly — `@RunWith(RobolectricTestRunner)`, `@Config(sdk=[33])`, 4-arg `MigrationTestHelper`, JUnit4):
+- [ ] **Step 1: Write the failing migration test** — mirror `MigrationV32V33Test.kt` EXACTLY (it uses plain JUnit `org.junit.Assert.*`, NOT Truth, and `@Config(manifest = Config.NONE, sdk = [33])`, `@RunWith(RobolectricTestRunner)`, 4-arg `MigrationTestHelper`):
 ```kotlin
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+
 @Test
 fun migrate33To34_addsHideFromHomeColumn_defaultsZero() {
     helper.createDatabase(TEST_DB, 33).apply {
         execSQL("INSERT INTO playlists (name, source, source_id, type, sync_enabled, date_added) " +
-                "VALUES ('X', 'SPOTIFY', 's1', 'CUSTOM', 1, 0)")  // adjust cols to the real v33 playlists schema
+                "VALUES ('X', 'SPOTIFY', 's1', 'CUSTOM', 1, 0)")  // match the real v33 playlists cols
         close()
     }
     val db = helper.runMigrationsAndValidate(TEST_DB, 34, true, StashDatabase.MIGRATION_33_34)
     db.query("SELECT hide_from_home FROM playlists LIMIT 1").use { c ->
-        assertThat(c.moveToFirst()).isTrue(); assertThat(c.getInt(0)).isEqualTo(0)
+        assertTrue(c.moveToFirst()); assertEquals(0, c.getInt(0))
     }
 }
 ```
-> Read the real v33 `playlists` `createSql` in `schemas/.../33.json` and match the INSERT columns exactly (the sketch's column list is illustrative).
+> Read the real v33 `playlists` `createSql` in `schemas/.../33.json` and match the INSERT columns exactly (the sketch's list is illustrative). Copy `MigrationV32V33Test.kt`'s exact scaffold (helper construction, `TEST_DB` constant, imports).
 
 - [ ] **Step 2: Run it, verify FAIL** — `./gradlew :core:data:testDebugUnitTest --tests "*MigrationV33V34*"` (no `MIGRATION_33_34`).
 
@@ -101,21 +104,24 @@ Register `StashDatabase.MIGRATION_33_34` in `DatabaseModule.addMigrations(...)` 
 ```
 One filter covers all four rails (every playlist routes through this loop). (Compiles only after Task 1 adds `Playlist.hideFromHome`.)
 
-- [ ] **Step 2: VM write** — add to `HomeViewModel` (mirror `deleteCustomMix(playlistId)` at ~:486 for the Playlist lookup, but call the DAO/repo setter; add a `musicRepository.setHideFromHome(id, hidden)` passthrough or use the DAO — check how the repo exposes writes):
+- [ ] **Step 2: VM write** — `HomeViewModel` currently injects only `MusicRepository` (an interface), which has no playlist-write passthrough. **Inject `PlaylistDao` directly into `HomeViewModel`** (exactly as `SyncViewModel` does — `PlaylistDao` is Hilt-provided) and call the DAO from Task 1:
 ```kotlin
+// constructor: add `private val playlistDao: com.stash.core.data.db.dao.PlaylistDao,`
     fun setHideFromHome(playlistId: Long, hidden: Boolean) {
-        viewModelScope.launch { musicRepository.setHideFromHome(playlistId, hidden) }
+        viewModelScope.launch { playlistDao.setHideFromHome(playlistId, hidden) }
     }
 ```
-If `MusicRepository` has no such method, add one that delegates to `playlistDao.setHideFromHome` (mirror an existing `updateSyncEnabled`-style passthrough).
+This is one file (no `MusicRepository` interface+impl plumbing) and matches Task 3's pattern.
 
-- [ ] **Step 3: Hide row in the action sheet** — in `HomeScreen.kt` (~:552, before the `Open` `MixActionRow`), add an ungated row (icon `Icons.Filled.RemoveCircleOutline` — already imported ~:65):
+- [ ] **Step 3: Hide row in the action sheet** — in `HomeScreen.kt` (~:552, before the `Open` `MixActionRow`), add an ungated row (icon `Icons.Filled.RemoveCircleOutline` — already imported ~:65). NOTE `MixActionRow`'s signature has a trailing non-function `tint` param, so `onClick` must be a **named arg** (match the existing call sites — no trailing lambda):
 ```kotlin
-    MixActionRow(Icons.Filled.RemoveCircleOutline, "Hide from Home") {
-        viewModel.setHideFromHome(id, true); actionSheetMixId = null
-    }
+    MixActionRow(
+        icon = Icons.Filled.RemoveCircleOutline,
+        label = "Hide from Home",
+        onClick = { viewModel.setHideFromHome(id, true); actionSheetMixId = null },
+    )
 ```
-Ungated so it applies to any rail's mix (streaming + Your mixes).
+Ungated so it applies to any rail's mix (streaming + Your mixes). (Confirm `MixActionRow`'s exact param names against its definition in HomeScreen.kt.)
 
 - [ ] **Step 4: Enable long-press on the streaming rails** — in `HomeScreen.kt`, add `onLongPress = { actionSheetMixId = m.id }` to the `MixRailCard(...)` calls in the madeForYou (~:366), radios (~:380), and moodDecades (~:394) rails — identical to the yourMixes rail (~:412). No change to `MixRailCard.kt`.
 
