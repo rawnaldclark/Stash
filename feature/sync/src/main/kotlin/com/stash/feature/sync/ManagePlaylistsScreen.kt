@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
@@ -29,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,6 +83,16 @@ fun ManagePlaylistsScreen(
     val mixes = rows.filter { it.type == PlaylistType.DAILY_MIX }
     val customAll = rows.filter { it.type == PlaylistType.CUSTOM }
     val customEnabled = customAll.count { it.syncEnabled }
+
+    // Land at the true top once playlists load. The sections fill in async:
+    // the first frame has empty data (only the custom section), then Liked +
+    // Mixes get prepended when the flow emits. With stable item keys LazyColumn
+    // anchors to the already-shown custom section, leaving Liked + Mixes
+    // scrolled off above the fold — so snap back to item 0 on the 0→N load.
+    val listState = rememberLazyListState()
+    LaunchedEffect(rows.isEmpty()) {
+        if (rows.isNotEmpty()) listState.scrollToItem(0)
+    }
 
     val bySegment = when (segment) {
         ManageSegment.ALL -> customAll
@@ -152,6 +164,7 @@ fun ManagePlaylistsScreen(
             }
 
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             ) {
