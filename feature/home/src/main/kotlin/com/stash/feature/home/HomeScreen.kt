@@ -353,6 +353,51 @@ fun HomeScreen(
             }
         }
 
+        // ── Qobuz discovery rows (genre-filtered) ─────────────────────
+        // These are what the genre chips at the top actually control, so
+        // they sit directly under the hero; the imported/auto mix rails
+        // follow. Each row renders only when it has content — a failed or
+        // empty row (fail-soft repository) is simply omitted.
+        if (uiState.newReleases.isNotEmpty()) {
+            item {
+                DiscoveryAlbumRow(
+                    title = "New Releases",
+                    albums = uiState.newReleases,
+                    onOpen = onNavigateToAlbum,
+                )
+            }
+        }
+        if (uiState.playlists.isNotEmpty()) {
+            item {
+                DiscoveryPlaylistRow(
+                    title = "Qobuz Playlists",
+                    playlists = uiState.playlists,
+                    onOpen = onNavigateToAlbum,
+                    onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
+                )
+            }
+        }
+        if (uiState.topAlbums.isNotEmpty()) {
+            item {
+                Column {
+                    Spacer(Modifier.height(16.dp))
+                    SectionHeader(title = "Top Albums")
+                    RankedAlbumList(
+                        items = uiState.topAlbums.mapIndexed { i, a ->
+                            RankedAlbumUi(
+                                rank = i + 1,
+                                title = a.title,
+                                artist = a.artist,
+                                artUrl = a.thumbnailUrl,
+                                movement = null,   // Qobuz best-sellers carries no chart delta
+                            )
+                        },
+                        onClick = { ranked -> onNavigateToAlbum(uiState.topAlbums[ranked.rank - 1]) },
+                    )
+                }
+            }
+        }
+
         // ── Mix rails (Made for you · Radios · Mood & decades · Your mixes) ──
         // Derived from the user's playlists + recipes (HomeViewModel.mixRail).
         // Each rail renders only when non-empty. "Your mixes" (Stash mixes)
@@ -418,48 +463,6 @@ fun HomeScreen(
             }
         }
 
-        // ── Qobuz discovery rows (genre-filtered) ─────────────────────
-        // Each row renders only when it has content — a failed/empty row
-        // (fail-soft repository) is simply omitted; Home never blocks on it.
-        if (uiState.newReleases.isNotEmpty()) {
-            item {
-                DiscoveryAlbumRow(
-                    title = "New Releases",
-                    albums = uiState.newReleases,
-                    onOpen = onNavigateToAlbum,
-                )
-            }
-        }
-        if (uiState.playlists.isNotEmpty()) {
-            item {
-                DiscoveryPlaylistRow(
-                    title = "Qobuz Playlists",
-                    playlists = uiState.playlists,
-                    onOpen = onNavigateToAlbum,
-                    onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
-                )
-            }
-        }
-        if (uiState.topAlbums.isNotEmpty()) {
-            item {
-                Column {
-                    Spacer(Modifier.height(16.dp))
-                    SectionHeader(title = "Top Albums")
-                    RankedAlbumList(
-                        items = uiState.topAlbums.mapIndexed { i, a ->
-                            RankedAlbumUi(
-                                rank = i + 1,
-                                title = a.title,
-                                artist = a.artist,
-                                artUrl = a.thumbnailUrl,
-                                movement = null,   // Qobuz best-sellers carries no chart delta
-                            )
-                        },
-                        onClick = { ranked -> onNavigateToAlbum(uiState.topAlbums[ranked.rank - 1]) },
-                    )
-                }
-            }
-        }
     }
 
     // ── Streaming privacy disclosure (first-use only) ────────────────────
