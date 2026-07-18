@@ -42,6 +42,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import java.time.Instant
 import java.util.concurrent.TimeUnit
@@ -95,6 +96,9 @@ class StashMixRefreshWorker @AssistedInject constructor(
     companion object {
         private const val TAG = "StashMixRefresh"
         private const val WORK_NAME = "stash_mix_refresh"
+
+        /** Serializes [materializeMix] across concurrent worker instances. */
+        private val materializeMutex = kotlinx.coroutines.sync.Mutex()
         const val ONE_SHOT_WORK_NAME = "stash_mix_refresh_oneshot"
         private const val TOP_ARTISTS_LIMIT = 8
         private const val SIMILAR_REQUEST_INTERVAL_MS = 220L
@@ -382,7 +386,15 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 continue
             }
 
-            val result = materializeMix(recipe, tracks, now, excludeSnapshot, rotationSeed)
+            // #287: serialize materialization across worker instances — the
+            // manual single-recipe refresh and the chained batch pass can run
+            // concurrently (separate WorkManager unique chains), and the
+            // clear-then-reinsert membership write is not atomic. Observed on
+            // device: two runs 10s apart interleaved and left Daily Discover
+            // with 25 of 39 rows (and a wrong count) — a torn playlist.
+            val result = materializeMutex.withLock {
+                materializeMix(recipe, tracks, now, excludeSnapshot, rotationSeed)
+            }
             recipeDao.setPlaylistId(recipe.id, result.playlistId)
             recipeDao.setLastRefreshedAt(recipe.id, now)
 
@@ -568,8 +580,19 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // library-only when refreshed after their peers had already grabbed
         // the shared candidates. See conversation 2026-05-12: Deep Cuts had
         // 102 recipe-4 downloaded tracks but 0 discovery survivors.
-        val (preferredIds, sharedIds) = nonLibraryCandidates
+        val (preferredRaw, sharedIds) = nonLibraryCandidates
             .partition { it !in excludeIds }
+        // #287: unheard discoveries outrank repeats — rotation exists to
+        // serve NEW music, so the pool orders unplayed-first (each half
+        // stays newest-first internally; the rotation's guaranteed head is
+        // therefore the newest UNHEARD finds).
+        val playedIds = if (preferredRaw.isEmpty()) {
+            emptySet()
+        } else {
+            listeningEventDao.getPlayedTrackIdsAmong(preferredRaw).toHashSet()
+        }
+        val (unplayedPool, playedPool) = preferredRaw.partition { it !in playedIds }
+        val preferredIds = unplayedPool + playedPool
         val survivorCandidates = if (preferredIds.size >= discoveryCap) {
             rotateSurvivorWindow(preferredIds, discoveryCap, rotationSeed)
         } else {

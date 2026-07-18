@@ -234,6 +234,13 @@ interface ListeningEventDao {
     )
     suspend fun getTopArtistsSince(sinceEpochMs: Long, limit: Int = 20): List<ArtistPlayCount>
 
+    /**
+     * Which of [trackIds] the user has ever played. Lets the mix
+     * survivor rotation serve unheard discoveries before repeats.
+     */
+    @Query("SELECT DISTINCT track_id FROM listening_events WHERE track_id IN (:trackIds)")
+    suspend fun getPlayedTrackIdsAmong(trackIds: List<Long>): List<Long>
+
     data class ArtistPlayCount(val artist: String, val plays: Int)
 
     /**

@@ -107,14 +107,16 @@ class StashDiscoveryWorker @AssistedInject constructor(
         private const val WORK_NAME = "stash_discovery"
         private const val ONE_SHOT_WORK_NAME = "stash_discovery_oneshot"
         private const val BATCH_SIZE = 60
-        // Raised from 30 → 100 on 2026-04-22. With Stash Discover at 100%
-        // discovery ratio + targetLength=50, a 30/week drain couldn't
-        // sustain a fresh mix; Last.fm was producing candidates 3× faster
-        // than downloads could complete them. 100/week tracks a steady-
-        // state of "full mix refresh every 10-14 days" — in line with the
-        // 14-day freshness window the recipe filters on.
-        private const val PER_RECIPE_WEEKLY_CAP = 100
-        private const val WEEK_MS = 7L * 24 * 60 * 60 * 1000
+        // #287: was 100/rolling-7-days — a download-era relic (its own
+        // comment sanctioned raising it once storage cost was gone, which
+        // v0.9.37's stream-only stubs delivered). A capped pipe starves
+        // "Daily" Discover: on the reporting device 212 candidates sat
+        // PENDING behind an exhausted weekly window, so every refresh
+        // rotated a frozen backlog. 40/rolling-24h (~280/wk of DB rows,
+        // no files) keeps genuinely-new tracks arriving every day while
+        // still bounding Last.fm/resolver work.
+        private const val PER_RECIPE_DAILY_CAP = 40
+        private val DAY_CAP_WINDOW_MS = TimeUnit.DAYS.toMillis(1)
         /** Age-out cutoff for PENDING discovery rows — 30 days. */
         private const val PENDING_TTL_MS = 30L * 24 * 60 * 60 * 1000
 
@@ -202,8 +204,8 @@ class StashDiscoveryWorker @AssistedInject constructor(
         // cap query was also dead in v0.9.37 — fixed in the DAO by
         // counting both downloaded AND streamable DONE rows.
         val cappedRecipeIds = discoveryQueueDao.findRecipesAtWeeklyCap(
-            sinceMillis = System.currentTimeMillis() - WEEK_MS,
-            cap = PER_RECIPE_WEEKLY_CAP,
+            sinceMillis = System.currentTimeMillis() - DAY_CAP_WINDOW_MS,
+            cap = PER_RECIPE_DAILY_CAP,
         )
         if (cappedRecipeIds.isNotEmpty()) {
             Log.i(TAG, "recipes at cap (excluded from fetch): $cappedRecipeIds")
@@ -235,7 +237,7 @@ class StashDiscoveryWorker @AssistedInject constructor(
             Log.i(TAG, "draining ${pending.size} discovery candidates")
 
             val now = System.currentTimeMillis()
-            val weekAgo = now - WEEK_MS
+            val capWindowStart = now - DAY_CAP_WINDOW_MS
 
             // Per-recipe caps — counted lazily to avoid a DAO hit per candidate.
             val recipeBudget = HashMap<Long, Int>()
@@ -245,15 +247,15 @@ class StashDiscoveryWorker @AssistedInject constructor(
 
             for (entry in pending) {
                 val used = recipeBudget.getOrPut(entry.recipeId) {
-                    discoveryQueueDao.countRecentCompletedForRecipe(entry.recipeId, weekAgo)
+                    discoveryQueueDao.countRecentCompletedForRecipe(entry.recipeId, capWindowStart)
                 }
-                if (used >= PER_RECIPE_WEEKLY_CAP) {
-                    // Leave as PENDING so next week's cycle can pick it up.
+                if (used >= PER_RECIPE_DAILY_CAP) {
+                    // Leave as PENDING so tomorrow's window picks it up.
                     if (cappedRecipesLogged.add(entry.recipeId)) {
                         Log.i(
                             TAG,
                             "recipe ${entry.recipeId} at cap " +
-                                "($used downloaded in last 7d, limit $PER_RECIPE_WEEKLY_CAP) — deferring pending",
+                                "($used completed in last 24h, limit $PER_RECIPE_DAILY_CAP) — deferring pending",
                         )
                     }
                     continue

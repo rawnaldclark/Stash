@@ -26,11 +26,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import com.stash.core.ui.theme.StashTheme
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -42,23 +42,21 @@ private class ScrollbarTrackInfo {
     var thumbFraction by mutableStateOf(1f)
 }
 
-/** Fader-cap palette, resolved from the theme like StashSwitch does. */
-private class FaderColors(val fill: Color, val ridge: Color)
+/** Fader-cap palette, resolved from the active theme's own chrome tokens. */
+private class FaderColors(val body: Color, val border: Color, val groove: Color)
 
 /**
- * Plum & cream, matching StashSwitch — the thumb reads as a physical fader
- * cap from the same mixing desk. Cream cap on dark grounds, plum on light.
- * Luminance-driven (not isSystemInDarkTheme) so manual/AMOLED overrides work.
+ * The cap dresses like the rest of the app's chrome — chip surface body,
+ * glass hairline edge, one plum groove — rather than importing its own
+ * palette. surfaceVariant/primary/glassBorderBright all resolve per theme,
+ * so light, dark, and AMOLED each get their native rendering for free.
  */
 @Composable
-private fun faderColors(): FaderColors {
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    return if (dark) {
-        FaderColors(fill = Color(0xFFF2ECE2), ridge = Color(0xFF7E6A90))
-    } else {
-        FaderColors(fill = Color(0xFF6E5A7E), ridge = Color(0xFFF2ECE2))
-    }
-}
+private fun faderColors(): FaderColors = FaderColors(
+    body = MaterialTheme.colorScheme.surfaceVariant,
+    border = StashTheme.extendedColors.glassBorderBright,
+    groove = MaterialTheme.colorScheme.primary,
+)
 
 /** The thumb never shrinks below this — a scrubbable cap, not a sliver. */
 private val MIN_THUMB_HEIGHT = 48.dp
@@ -82,8 +80,9 @@ private fun avgSizeSkippingHeader(items: List<Pair<Int, Int>>): Float {
 }
 
 /**
- * Draws the fader cap: a rounded plum/cream body with a hairline outline and
- * three grip ridges across the middle — analog hardware, not a scroll sliver.
+ * Draws the fader cap: a near-square chip-surface block with a glass
+ * hairline edge and a single plum groove across the middle — the classic
+ * mixer fader cap, in the app's own chrome.
  */
 private fun DrawScope.drawFaderCap(
     info: ScrollbarTrackInfo,
@@ -97,38 +96,34 @@ private fun DrawScope.drawFaderCap(
     val thumbHeight = (trackHeight * info.thumbFraction) + thumbHeightOffset
     val thumbOffsetY = info.progress * (trackHeight - thumbHeight)
     val left = size.width - capWidthPx - 3.dp.toPx()
-    val corner = CornerRadius(capWidthPx / 2f, capWidthPx / 2f)
+    val corner = CornerRadius(3.dp.toPx(), 3.dp.toPx())
 
-    // Cap body.
+    // Cap body — chip surface, faintly translucent so it sits IN the page.
     drawRoundRect(
-        color = colors.fill.copy(alpha = 0.95f * alpha),
+        color = colors.body.copy(alpha = 0.95f * alpha),
         topLeft = Offset(left, thumbOffsetY),
         size = Size(capWidthPx, thumbHeight),
         cornerRadius = corner,
     )
-    // Hairline outline so the cap keeps an edge over any art behind it.
+    // Glass hairline edge (token carries its own low alpha).
     drawRoundRect(
-        color = colors.ridge.copy(alpha = 0.55f * alpha),
+        color = colors.border.copy(alpha = colors.border.alpha * alpha),
         topLeft = Offset(left, thumbOffsetY),
         size = Size(capWidthPx, thumbHeight),
         cornerRadius = corner,
         style = Stroke(width = 1.dp.toPx()),
     )
-    // Grip ridges, centered.
-    val ridgeWidth = capWidthPx * 0.45f
-    val rx = left + (capWidthPx - ridgeWidth) / 2f
+    // Single center groove — the fader-cap signature.
+    val grooveWidth = capWidthPx * 0.6f
+    val gx = left + (capWidthPx - grooveWidth) / 2f
     val cy = thumbOffsetY + thumbHeight / 2f
-    val gap = 5.dp.toPx()
-    for (i in -1..1) {
-        val y = cy + i * gap
-        drawLine(
-            color = colors.ridge.copy(alpha = 0.9f * alpha),
-            start = Offset(rx, y),
-            end = Offset(rx + ridgeWidth, y),
-            strokeWidth = 1.5.dp.toPx(),
-            cap = StrokeCap.Round,
-        )
-    }
+    drawLine(
+        color = colors.groove.copy(alpha = 0.9f * alpha),
+        start = Offset(gx, cy),
+        end = Offset(gx + grooveWidth, cy),
+        strokeWidth = 2.dp.toPx(),
+        cap = StrokeCap.Round,
+    )
 }
 
 /**
@@ -197,7 +192,7 @@ private fun Modifier.thumbGestureExclusion(
 @Composable
 fun BoxScope.VerticalScrollbar(
     state: LazyListState,
-    width: Dp = 14.dp,
+    width: Dp = 12.dp,
     idleDelayMs: Long = 1500L,
     thumbHeightOffset: Float = 0f,
     hitZoneWidth: Dp = 44.dp,
@@ -273,7 +268,7 @@ fun BoxScope.VerticalScrollbar(
 @Composable
 fun BoxScope.VerticalScrollbar(
     state: LazyGridState,
-    width: Dp = 14.dp,
+    width: Dp = 12.dp,
     idleDelayMs: Long = 1500L,
     thumbHeightOffset: Float = 0f,
     hitZoneWidth: Dp = 44.dp,
