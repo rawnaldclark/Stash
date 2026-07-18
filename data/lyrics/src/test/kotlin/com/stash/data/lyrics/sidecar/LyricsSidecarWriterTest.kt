@@ -10,9 +10,11 @@ import com.stash.core.data.prefs.StoragePreference
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -21,6 +23,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.io.IOException
 
 /**
  * Robolectric-backed sidecar-writer tests. Internal-storage paths are
@@ -34,8 +37,8 @@ import java.io.File
  *   1. internal-storage write lands `<basename>.lrc` next to the audio
  *      with the canonical header tags + body
  *   2. syncedLrc is preferred when present, plainText is the fallback
- *   3. instrumental (both null) writes nothing
- *   4. a missing track row short-circuits silently
+ *   3. instrumental (both null) is rejected without writing
+ *   4. a missing track row throws
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -80,42 +83,57 @@ class LyricsSidecarWriterTest {
         assertTrue("plain text written: $body", body.contains("plain text only"))
     }
 
-    @Test fun `does nothing when both syncedLrc and plainText are null - instrumental`() = runTest {
+    @Test fun `blank syncedLrc falls back to nonblank plain text on filesystem`() = runTest {
+        val audio = tmp.newFile("blank-synced.flac")
+        val track = stubTrack(filePath = audio.absolutePath)
+        val writer = makeWriter(track)
+
+        writer.write(track.id, lyricsEntity(syncedLrc = " \n\t ", plainText = "fallback words"))
+
+        val sidecar = File(audio.parent, "blank-synced.lrc")
+        assertTrue("sidecar exists for plain-text fallback", sidecar.exists())
+        assertTrue(
+            "nonblank plain text replaces blank synced text",
+            sidecar.readText(Charsets.UTF_8).endsWith("fallback words"),
+        )
+    }
+
+    @Test fun `blank lyrics throws instead of silently skipping`() = runTest {
         val audio = tmp.newFile("inst.opus")
         val track = stubTrack(filePath = audio.absolutePath)
         val writer = makeWriter(track)
 
-        writer.write(track.id, lyricsEntity(syncedLrc = null, plainText = null, instrumental = true))
-
+        assertThrows(IOException::class.java) {
+            runBlocking { writer.write(track.id, lyricsEntity(instrumental = true)) }
+        }
         val sidecar = File(audio.parent, "inst.lrc")
         assertFalse("sidecar must NOT exist for instrumental", sidecar.exists())
     }
 
-    @Test fun `missing track returns silently without writing`() = runTest {
+    @Test fun `missing track throws instead of silently skipping`() = runTest {
         val trackDao = mockk<TrackDao>()
         coEvery { trackDao.getById(99L) } returns null
         val storagePrefs = mockk<StoragePreference>()
         // Should not even touch storage prefs when the track row is gone.
         val writer = LyricsSidecarWriter(trackDao = trackDao, context = context, storagePreference = storagePrefs)
 
-        // Must not throw; must not write anything.
-        writer.write(99L, lyricsEntity(syncedLrc = "x", plainText = "x"))
-        // No file system assertion possible (no path) — the test passes
-        // by virtue of not throwing.
+        assertThrows(IOException::class.java) {
+            runBlocking { writer.write(99L, lyricsEntity(syncedLrc = "x", plainText = "x")) }
+        }
     }
 
     @Test fun `instrumental short-circuit precedes track lookup`() = runTest {
-        // Defensive check: even if some caller bypasses LyricsRepository's
-        // own instrumental guard, the writer must skip the DAO + write
-        // entirely when both lyric bodies are null.
+        // Even if a caller bypasses LyricsRepository's instrumental guard,
+        // the writer must reject the body before touching the DAO.
         val trackDao = mockk<TrackDao>()
         // No `coEvery` stub for getById — if the writer reaches the DAO
         // it will throw, failing the test.
         val storagePrefs = mockk<StoragePreference>()
         val writer = LyricsSidecarWriter(trackDao = trackDao, context = context, storagePreference = storagePrefs)
 
-        writer.write(1L, lyricsEntity(syncedLrc = null, plainText = null, instrumental = true))
-        // assertion is the lack of MockKException — we never called getById
+        assertThrows(IOException::class.java) {
+            runBlocking { writer.write(1L, lyricsEntity(instrumental = true)) }
+        }
     }
 
     private fun makeWriter(track: TrackEntity): LyricsSidecarWriter {

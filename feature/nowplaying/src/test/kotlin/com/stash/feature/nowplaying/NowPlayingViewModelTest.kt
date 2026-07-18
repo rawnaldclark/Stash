@@ -211,6 +211,7 @@ class NowPlayingViewModelFindInFlacTest {
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
         lyricsPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
         appContext = appContext,
         ytMusicApiClient = mockk(relaxed = true),
     )
@@ -337,6 +338,7 @@ class NowPlayingViewModelLikeRoutingTest {
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
         lyricsPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
         appContext = appContext,
         ytMusicApiClient = mockk(relaxed = true),
     )
@@ -409,6 +411,7 @@ class NowPlayingViewModelTrackTapTest {
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
         lyricsPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
         appContext = appContext,
         ytMusicApiClient = api,
     )

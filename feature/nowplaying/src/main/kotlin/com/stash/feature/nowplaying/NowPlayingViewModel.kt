@@ -14,6 +14,7 @@ import com.stash.core.model.isFlac
 import com.stash.core.ui.components.PlaylistInfo
 import com.stash.core.model.Track
 import com.stash.data.lyrics.LyricsRepository
+import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.feature.nowplaying.ui.LyricsViewState
 import com.stash.feature.nowplaying.ui.lyricsViewStateFor
@@ -73,6 +74,7 @@ class NowPlayingViewModel @Inject constructor(
     // codebase (it's not Hilt-injectable in this project).
     private val lyricsRepository: LyricsRepository,
     private val lyricsPreference: com.stash.core.data.prefs.LyricsPreference,
+    private val lyricsSidecarWriter: LyricsSidecarWriter,
     @ApplicationContext private val appContext: Context,
     // Tap-to-artist: resolves the playing track's artist NAME to a YT
     // browseId so Now Playing can open the artist profile.
@@ -152,6 +154,9 @@ class NowPlayingViewModel @Inject constructor(
             downloadKeyFor(t) in keys && !t.isDownloaded
         }.distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), false)
+
+    private val _exportingLyricsTrackId = MutableStateFlow<Long?>(null)
+    val exportingLyricsTrackId: StateFlow<Long?> = _exportingLyricsTrackId.asStateFlow()
 
     private fun downloadKeyFor(t: com.stash.core.model.Track): String =
         t.youtubeId?.takeIf { it.isNotBlank() } ?: t.id.toString()
@@ -783,6 +788,29 @@ class NowPlayingViewModel @Inject constructor(
         val track = _uiState.value.currentTrack ?: return
         if (track.id > 0L) fetchLibraryLyrics(track, force = true)
         else fetchStreamingLyrics(track)
+    }
+
+    fun exportLyricsForCurrentTrack() {
+        val track = _uiState.value.currentTrack?.takeIf { it.id > 0L && it.isDownloaded } ?: return
+        if (!_exportingLyricsTrackId.compareAndSet(expect = null, update = track.id)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val message = try {
+                    val lyrics = lyricsRepository.get(track.id)
+                    if (lyrics == null || lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) {
+                        "No cached lyrics to save"
+                    } else {
+                        lyricsSidecarWriter.write(track.id, lyrics)
+                        "Lyrics sidecar saved"
+                    }
+                } catch (e: CancellationException) { throw e }
+                catch (e: Exception) { "Couldn't save lyrics sidecar" }
+                val suffix = if (_uiState.value.currentTrack?.id != track.id) " for ‘${track.title}’" else ""
+                _userMessages.emit("$message$suffix.")
+            } finally {
+                _exportingLyricsTrackId.compareAndSet(expect = track.id, update = null)
+            }
+        }
     }
 
     /**

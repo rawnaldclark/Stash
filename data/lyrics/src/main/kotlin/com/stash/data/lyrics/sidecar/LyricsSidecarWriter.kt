@@ -12,6 +12,7 @@ import com.stash.data.download.files.FileOrganizerSlugs
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,7 +37,7 @@ import javax.inject.Singleton
  *    same directory the download created.
  *
  * Write failure is non-fatal for the Room state: [LyricsRepository]
- * wraps `write()` in `runCatching`. The contract here is best-effort
+ * wraps the throwing `write()` API in `runCatching`; only that path is best-effort
  * — the lyrics row + `tracks.lyrics_fetched_at` stamp are the source
  * of truth for the in-app reader; the sidecar is a courtesy.
  *
@@ -50,7 +51,7 @@ import javax.inject.Singleton
  * <synced LRC body, or plain text if synced is missing>
  * ```
  *
- * Skipped entirely when both `syncedLrc` and `plainText` are null/blank
+ * Rejected with [IOException] when both bodies are null/blank
  * (the instrumental case). `LyricsRepository` already guards this for
  * the instrumental flag, but `write()` re-checks defensively so callers
  * can't accidentally create a header-only `.lrc` with no body.
@@ -65,21 +66,21 @@ class LyricsSidecarWriter @Inject constructor(
     /**
      * Writes the `.lrc` sidecar for [trackId] using [lyrics].
      *
-     * No-ops when:
+     * Fails when:
      *   - Both `syncedLrc` and `plainText` are null/blank (instrumental).
      *   - The track row is gone (deleted mid-flight).
      *   - The track has no [TrackEntity.filePath] (legacy / sync-only row).
      *   - The SAF tree URI is unset on a `content://` filePath (the user
      *     swapped storage modes; we can't infer the tree root from the
-     *     child URI, so we skip rather than guess).
+     *     child URI, so writing fails rather than guessing).
      *
      * Throws on disk/SAF I/O failure so [LyricsRepository] can
      * `runCatching` it as non-fatal.
      */
     suspend fun write(trackId: Long, lyrics: LyricsEntity) {
-        if (lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) return
-        val track = trackDao.getById(trackId) ?: return
-        val path = track.filePath ?: return
+        if (lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) fail("No lyrics body for track $trackId")
+        val track = trackDao.getById(trackId) ?: fail("Track $trackId no longer exists")
+        val path = track.filePath ?: fail("Track $trackId has no downloaded file")
         val body = buildLrcBody(track, lyrics)
         if (path.startsWith("content://")) {
             writeSafSidecar(track, body)
@@ -92,7 +93,7 @@ class LyricsSidecarWriter @Inject constructor(
         val audio = File(audioPath)
         val parent = audio.parentFile ?: run {
             Log.w(TAG, "Cannot resolve parent directory for $audioPath; sidecar skipped")
-            return
+            throw IOException("Cannot resolve parent directory for $audioPath")
         }
         val sidecar = File(parent, "${audio.nameWithoutExtension}.lrc")
         sidecar.writeText(body, Charsets.UTF_8)
@@ -104,42 +105,42 @@ class LyricsSidecarWriter @Inject constructor(
         // child's URI would yield "permission denied" or worse. The
         // tree URI lives in [StoragePreference]; if it's unset on a
         // `content://` path the user has swapped storage modes since
-        // download and we can't recover, so we skip.
+        // download and we can't recover, so this writer throws.
         val treeUri: Uri = storagePreference.externalTreeUri.first() ?: run {
             Log.w(
                 TAG,
                 "Track ${track.id} has SAF filePath but no externalTreeUri persisted; sidecar skipped",
             )
-            return
+            throw IOException("Missing SAF tree for track ${track.id}")
         }
         val tree = DocumentFile.fromTreeUri(context, treeUri) ?: run {
             Log.w(TAG, "DocumentFile.fromTreeUri returned null for $treeUri; sidecar skipped")
-            return
+            throw IOException("Invalid SAF tree $treeUri")
         }
         val artistName = track.albumArtist.ifBlank { track.artist }
         val artistDir = findOrCreateDir(tree, FileOrganizerSlugs.slugify(artistName))
-            ?: return
+            ?: fail("Could not create artist directory")
         val albumSlug = if (track.album.isNotBlank()) {
             FileOrganizerSlugs.slugify(track.album)
         } else {
             "singles"
         }
-        val albumDir = findOrCreateDir(artistDir, albumSlug) ?: return
+        val albumDir = findOrCreateDir(artistDir, albumSlug) ?: fail("Could not create album directory")
         val filename = "${FileOrganizerSlugs.slugify(track.title)}.lrc"
         val existing = albumDir.findFile(filename)
         val target = existing ?: albumDir.createFile(LRC_MIME, filename) ?: run {
             Log.w(TAG, "Could not create SAF sidecar '$filename' under ${albumDir.uri}")
-            return
+            throw IOException("Could not create SAF sidecar $filename")
         }
         context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
             out.write(body.toByteArray(Charsets.UTF_8))
-        } ?: Log.w(TAG, "Could not open SAF output stream for sidecar ${target.uri}")
+        } ?: fail("Could not open SAF output stream for sidecar ${target.uri}")
     }
 
     /**
      * SAF-side `findOrCreateDir`. Mirrors the helper in `FileOrganizer`
      * but returns `null` (logged) instead of throwing — sidecar failure
-     * must stay non-fatal end-to-end.
+     * is converted to IOException by its caller.
      */
     private fun findOrCreateDir(parent: DocumentFile, name: String): DocumentFile? {
         parent.findFile(name)?.takeIf { it.isDirectory }?.let { return it }
@@ -159,8 +160,10 @@ class LyricsSidecarWriter @Inject constructor(
             appendLine("[length:${sec / 60}:%02d]".format(sec % 60))
         }
         appendLine("[by:Stash]")
-        append(lyrics.syncedLrc ?: lyrics.plainText.orEmpty())
+        append(lyrics.syncedLrc?.takeUnless(String::isBlank) ?: lyrics.plainText.orEmpty())
     }
+
+    private fun fail(message: String): Nothing = throw IOException(message).also { Log.w(TAG, message) }
 
     private companion object {
         private const val TAG = "LyricsSidecarWriter"
