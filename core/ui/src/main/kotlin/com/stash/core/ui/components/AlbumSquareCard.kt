@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,9 +62,14 @@ fun AlbumSquareCard(
                 modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),
             )
             if (isLossless) {
+                // Bottom-right, translucent: the industry-standard corner for a
+                // quality mark, and see-through enough to not block the art.
                 FlacBadge(
                     fileFormat = "flac",
-                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(6.dp)
+                        .alpha(0.78f),
                 )
             }
         }

@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.RemoveCircleOutline
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -144,6 +145,8 @@ fun HomeScreen(
 ) {
     // Long-pressed Stash mix whose action sheet is open (null = closed).
     var actionSheetMixId by remember { mutableStateOf<Long?>(null) }
+    // Long-pressed Daily Discover hero → its own two-row sheet (refresh / minimize).
+    var heroActionSheet by remember { mutableStateOf(false) }
     // Opening a mix = open its materialized playlist + freshen it if stale.
     // A HomeMix's id IS its playlist id, so this reuses the existing playlist nav.
     val openMix: (Long) -> Unit = { id ->
@@ -151,6 +154,7 @@ fun HomeScreen(
         onNavigateToPlaylist(id)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val heroMinimized by viewModel.heroMinimized.collectAsStateWithLifecycle()
     // Master streaming-mode flag. Both the top-bar StreamingModeChip and
     // the sheet (StreamingModeSheet) render from this single source of
     // truth; the chip itself early-returns to nothing while the build-
@@ -329,7 +333,10 @@ fun HomeScreen(
         // Replaces the old "Your mixes" rail.
         item {
             Spacer(Modifier.height(6.dp))
-            val hero = uiState.hero
+            // Minimized (long-press → "Minimize for now") drops the hero page
+            // for the session; the mix pages keep the pager alive. Distinct
+            // from hero == null (not connected), which shows PersonalizeCard.
+            val hero = if (heroMinimized) null else uiState.hero
             val mixPages = uiState.yourMixes
             when {
                 uiState.isLoading -> DiscoverHeroCard(
@@ -342,10 +349,11 @@ fun HomeScreen(
                     loading = true,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
-                hero == null && mixPages.isEmpty() -> PersonalizeCard(
+                uiState.hero == null && mixPages.isEmpty() -> PersonalizeCard(
                     onConnect = onNavigateToSettings,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
+                hero == null && mixPages.isEmpty() -> Unit // minimized, nothing to page
                 else -> {
                     val heroPages = if (hero != null) 1 else 0
                     val pageCount = heroPages + mixPages.size
@@ -367,6 +375,7 @@ fun HomeScreen(
                                     onPlay = viewModel::playHero,
                                     onOpen = { onNavigateToPlaylist(hero.playlistId) },
                                     onCreateMix = { onNavigateToMixBuilder(null) },
+                                    onLongPress = { heroActionSheet = true },
                                 )
                             } else {
                                 val m = mixPages[page - heroPages]
@@ -629,6 +638,53 @@ fun HomeScreen(
                     onClick = {
                         openMix(id)
                         actionSheetMixId = null
+                    },
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+
+    // ── Daily Discover hero action sheet (long-press the hero page) ──────
+    if (heroActionSheet) {
+        val hero = uiState.hero
+        if (hero != null) {
+            val sheetState = rememberModalBottomSheetState()
+            ModalBottomSheet(
+                onDismissRequest = { heroActionSheet = false },
+                sheetState = sheetState,
+                containerColor = MaterialTheme.colorScheme.surface,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 8.dp),
+                ) {
+                    Text(
+                        text = hero.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                MixActionRow(
+                    icon = Icons.Default.Refresh,
+                    label = "Refresh",
+                    onClick = {
+                        viewModel.refreshMix(hero.playlistId)
+                        heroActionSheet = false
+                    },
+                )
+                MixActionRow(
+                    icon = Icons.Default.VisibilityOff,
+                    label = "Minimize for now",
+                    onClick = {
+                        viewModel.setHeroMinimized(true)
+                        heroActionSheet = false
                     },
                 )
                 Spacer(Modifier.height(12.dp))

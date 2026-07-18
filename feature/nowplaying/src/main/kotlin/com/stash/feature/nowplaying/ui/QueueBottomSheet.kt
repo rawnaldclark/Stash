@@ -38,12 +38,12 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -78,15 +78,20 @@ fun QueueBottomSheet(
 
     // Local mutable copy of upcoming tracks for drag reordering.
     // Swaps happen here visually during drag; committed to player on drag end.
+    // Each entry carries a uid assigned at sync time. LazyColumn keys MUST NOT
+    // include the position: index-based keys change identity on every swap,
+    // which recreates the dragged row and cancels its pointerInput mid-gesture
+    // (the original "can't reorder" bug). uids stay glued to their entries
+    // across swaps and are only reassigned on resync, when no drag is active.
     val upcomingSource = queue.drop(currentIndex + 1)
-    val localQueue = remember { mutableStateListOf<Track>() }
+    val localQueue = remember { mutableStateListOf<QueueEntry>() }
 
     // Sync local queue with source when not dragging
     var draggedIdx by remember { mutableIntStateOf(-1) }
     LaunchedEffect(upcomingSource) {
         if (draggedIdx < 0) {
             localQueue.clear()
-            localQueue.addAll(upcomingSource)
+            upcomingSource.forEachIndexed { i, t -> localQueue.add(QueueEntry(i, t)) }
         }
     }
 
@@ -135,16 +140,19 @@ fun QueueBottomSheet(
             ) {
                 itemsIndexed(
                     items = localQueue,
-                    key = { idx, track -> "queue-row-$idx-${track.youtubeId ?: track.id}" },
-                ) { idx, track ->
+                    key = { _, entry -> entry.uid },
+                ) { idx, entry ->
+                    val track = entry.track
                     val isDragging = idx == draggedIdx
                     val queueIndex = currentIndex + 1 + idx
-                    val rowKey = "queue-row-$idx-${track.youtubeId ?: track.id}"
+                    // The item's index shifts under an active drag as rows swap;
+                    // pointerInput's coroutine captures values at launch, so it
+                    // reads the live index through this instead.
+                    val currentIdx by rememberUpdatedState(idx)
 
-                    key(rowKey) {
                     // One-shot guard so confirmValueChange can't mass-remove if
                     // Compose's swipe state transitions re-fire during a single
-                    // gesture. Tied to rowKey identity via the surrounding key().
+                    // gesture. Tied to row identity via the LazyColumn item key.
                     val dismissedOnce = remember { mutableStateOf(false) }
 
                     Box(
@@ -244,15 +252,15 @@ fun QueueBottomSheet(
                             Box(
                                 modifier = Modifier
                                     .size(48.dp)
-                                    .pointerInput(idx) {
+                                    .pointerInput(entry.uid) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = {
-                                                draggedIdx = idx
+                                                draggedIdx = currentIdx
                                                 dragOffsetY = 0f
                                                 pendingMoves.clear()
                                                 // Measure item height
                                                 val info = listState.layoutInfo.visibleItemsInfo
-                                                    .firstOrNull { it.index == idx }
+                                                    .firstOrNull { it.index == currentIdx }
                                                 if (info != null) itemHeight = info.size
                                             },
                                             onDrag = { change, amount ->
@@ -300,7 +308,9 @@ fun QueueBottomSheet(
                                             onDragCancel = {
                                                 // Revert: resync local queue from source
                                                 localQueue.clear()
-                                                localQueue.addAll(upcomingSource)
+                                                upcomingSource.forEachIndexed { i, t ->
+                                                    localQueue.add(QueueEntry(i, t))
+                                                }
                                                 pendingMoves.clear()
                                                 draggedIdx = -1
                                                 dragOffsetY = 0f
@@ -320,7 +330,6 @@ fun QueueBottomSheet(
                         }
                         } // SwipeToDismissBox
                     }
-                    } // key(rowKey)
                 }
             }
 
@@ -345,6 +354,14 @@ fun QueueBottomSheet(
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * A queue row with a drag-stable identity. [uid] is assigned when the local
+ * queue syncs from the player and never changes while rows are swapped, so
+ * LazyColumn item identity (and the active drag gesture) survives reordering.
+ * Also makes duplicate tracks in the queue naturally unique.
+ */
+private class QueueEntry(val uid: Int, val track: Track)
 
 @Composable
 private fun QueueHeader(trackCount: Int, currentIndex: Int, onClose: () -> Unit) {
