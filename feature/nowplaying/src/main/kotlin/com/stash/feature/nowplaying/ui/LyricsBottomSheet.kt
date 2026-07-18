@@ -1,5 +1,7 @@
 package com.stash.feature.nowplaying.ui
 
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,34 +63,11 @@ fun LyricsBottomSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding(),
         ) {
-            LyricsHeader(onClose = onDismiss)
-
-            // Live-bar opt-in (default OFF): shows the currently-sung line at
-            // the bottom of Now Playing for synced tracks. Lives here — the
-            // one place every lyrics user visits — rather than in Settings.
-            androidx.compose.foundation.layout.Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 2.dp),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Live lyrics bar",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = "Show the current line at the bottom of Now Playing",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                com.stash.core.ui.components.StashSwitch(
-                    checked = liveLyricsEnabled,
-                    onCheckedChange = onLiveLyricsToggle,
-                )
-            }
+            LyricsHeader(
+                liveEnabled = liveLyricsEnabled,
+                onLiveToggle = onLiveLyricsToggle,
+                onClose = onDismiss,
+            )
 
             // Fixed-height body region so the renderers (which all use
             // fillMaxSize) have a bounded parent. 70% of screen leaves
@@ -126,12 +105,17 @@ fun LyricsBottomSheet(
 }
 
 /**
- * Compact header — title on the left, close button on the right. Matches
- * QueueBottomSheet's header proportions so the two sheets share their
- * silhouette when stacked in the Now Playing UI.
+ * Compact header — title on the left; the "Live" toggle (the live
+ * synced-line bar opt-in) sits seamlessly beside the close button.
+ * Matches QueueBottomSheet's header proportions so the two sheets share
+ * their silhouette when stacked in the Now Playing UI.
  */
 @Composable
-private fun LyricsHeader(onClose: () -> Unit) {
+private fun LyricsHeader(
+    liveEnabled: Boolean,
+    onLiveToggle: (Boolean) -> Unit,
+    onClose: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -144,8 +128,20 @@ private fun LyricsHeader(onClose: () -> Unit) {
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
-        IconButton(onClick = onClose) {
-            Icon(Icons.Default.Close, contentDescription = "Close")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Live",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(6.dp))
+            com.stash.core.ui.components.StashSwitch(
+                checked = liveEnabled,
+                onCheckedChange = onLiveToggle,
+            )
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
+            }
         }
     }
 }

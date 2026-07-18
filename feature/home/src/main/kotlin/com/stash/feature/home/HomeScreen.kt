@@ -261,11 +261,12 @@ fun HomeScreen(
                     Supporter(name = it.name, amount = "$${it.amountUsd}", message = it.message)
                 }.ifEmpty { HOME_SUPPORTERS }
             }
+            // Edge-to-edge: the ticker runs the full screen width, no card
+            // chrome — maximum runway for the scrolling messages.
             SupporterTicker(
                 supporters = pillSupporters,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
                     .padding(bottom = 12.dp),
             )
         }
@@ -817,11 +818,11 @@ private fun SupporterTicker(
         }
     }
 
+    // Full-bleed strip: no card, no border, no rounding — just a whisper of
+    // glass tint separating the wire from the ground.
     Surface(
         modifier = modifier.clickable { uriHandler.openUri("https://ko-fi.com/rawnald") },
         color = extendedColors.glassBackground,
-        shape = RoundedCornerShape(14.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
