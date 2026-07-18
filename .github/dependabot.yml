@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/infra/tipjar-worker"
+    schedule:
+      interval: "daily"
+    ignore:
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "npm"
+    directory: "/infra/lastfm-proxy"
+    schedule:
+      interval: "daily"
+    ignore:
+        update-types: ["version-update:semver-major"]
