@@ -61,7 +61,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -133,6 +137,14 @@ fun SearchScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding(),
         ) {
+            // Command hero: the page owns its name like Library/Sync do.
+            Text(
+                text = "Search",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 20.dp, top = 8.dp),
+            )
             SearchBar(
                 query = state.query,
                 onQueryChanged = viewModel::onQueryChanged,
@@ -213,16 +225,21 @@ private fun SearchBar(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    // Command-hero field: a soft plum tonal pill — the loud violet outline is
+    // retired; focus is signaled by the cursor + keyboard, not a border.
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val plum = if (dark) Color(0xFF7E6A90) else Color(0xFF6E5A7E)
+    val tonal = plum.copy(alpha = if (dark) 0.22f else 0.10f)
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChanged,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 20.dp, vertical = 12.dp)
             .focusRequester(focusRequester),
         placeholder = {
             Text(
-                text = "Search songs, artists...",
+                text = "Songs, artists, albums…",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
@@ -230,7 +247,7 @@ private fun SearchBar(
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = "Search",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = plum,
             )
         },
         trailingIcon = {
@@ -249,12 +266,12 @@ private fun SearchBar(
             }
         },
         singleLine = true,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(28.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = StashTheme.extendedColors.glassBackground,
-            unfocusedContainerColor = StashTheme.extendedColors.glassBackground,
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = StashTheme.extendedColors.glassBorder,
+            focusedContainerColor = tonal,
+            unfocusedContainerColor = tonal,
+            focusedBorderColor = Color.Transparent,
+            unfocusedBorderColor = Color.Transparent,
             cursorColor = MaterialTheme.colorScheme.primary,
         ),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -296,16 +313,16 @@ private fun RecentSearches(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 8.dp, top = 8.dp),
+                    .padding(start = 20.dp, end = 8.dp, top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Recent searches",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = "RECENT",
+                    style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onClearAll) { Text("Clear all") }
+                TextButton(onClick = onClearAll) { Text("Clear") }
             }
         }
         items(entries, key = { "${it.type}:${it.text.lowercase()}" }) { entry ->
@@ -313,7 +330,7 @@ private fun RecentSearches(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onTap(entry) }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RecentSearchThumb(entry)
@@ -326,20 +343,22 @@ private fun RecentSearches(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    val sub = when (entry.type) {
-                        RecentSearch.Type.ARTIST -> "Artist"
-                        RecentSearch.Type.TRACK -> entry.subtitle
-                        RecentSearch.Type.QUERY -> null
-                    }
-                    if (sub != null) {
+                    // TRACK keeps its artist line; ARTIST/QUERY need none —
+                    // the type chip (below) carries the kind.
+                    if (entry.type == RecentSearch.Type.TRACK && entry.subtitle != null) {
                         Text(
-                            text = sub,
+                            text = entry.subtitle,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                }
+                when (entry.type) {
+                    RecentSearch.Type.TRACK -> RecentTypeChip("SONG")
+                    RecentSearch.Type.ARTIST -> RecentTypeChip("ARTIST")
+                    RecentSearch.Type.QUERY -> Unit
                 }
                 IconButton(onClick = { onRemove(entry) }) {
                     Icon(
@@ -351,6 +370,19 @@ private fun RecentSearches(
             }
         }
     }
+}
+
+/** Small outlined kind tag on a recents row ("SONG" / "ARTIST"). */
+@Composable
+private fun RecentTypeChip(label: String) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .border(1.dp, StashTheme.extendedColors.glassBorder, RoundedCornerShape(99.dp))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
 }
 
 /**
