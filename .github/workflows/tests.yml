@@ -10,6 +10,10 @@ on:
     branches: [master]
   pull_request:
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   unit-tests:
     name: core:media unit tests
