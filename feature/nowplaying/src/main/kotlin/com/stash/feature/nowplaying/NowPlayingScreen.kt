@@ -53,6 +53,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -76,11 +78,38 @@ import com.stash.feature.nowplaying.ui.LiveLyricsBar
 import com.stash.feature.nowplaying.ui.LyricsBottomSheet
 import com.stash.feature.nowplaying.ui.QueueBottomSheet
 
+/** Light-ground ink for the pastel-wash Now Playing (the app's plum-black). */
+private val NpInkLight = Color(0xFF241C36)
+
+/**
+ * Foreground ink for the Now Playing surface: white on the dark ambient,
+ * plum-black on the light pastel wash. Reads the *resolved* theme background
+ * (not the system setting) so manual/AMOLED overrides pick the right ink.
+ */
+@Composable
+private fun npInk(): Color =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color.White else NpInkLight
+
+/**
+ * Album palettes can be too pale to hold contrast on the light wash — darken
+ * toward ink until they do. Dark theme passes the raw palette through.
+ */
+@Composable
+private fun npAccent(raw: Color): Color =
+    if (MaterialTheme.colorScheme.background.luminance() >= 0.5f && raw.luminance() > 0.55f) {
+        lerp(raw, NpInkLight, 0.35f)
+    } else {
+        raw
+    }
+
 /**
  * Full-screen Now Playing screen with premium visual design.
  *
  * Displays album art with ambient background, playback controls, progress bar,
  * and track information. Colors are extracted from album art via Palette API.
+ * The ambient ground + inks follow the app theme: near-black with drifting
+ * art-derived orbs in dark, the same orbs as a pastel wash over lavender
+ * paper in light.
  *
  * @param onDismiss Callback invoked when the user taps the dismiss (down arrow) button.
  * @param viewModel The [NowPlayingViewModel] provided by Hilt.
@@ -134,7 +163,7 @@ fun NowPlayingScreen(
         QueueBottomSheet(
             queue = uiState.queue,
             currentIndex = uiState.currentIndex,
-            accentColor = uiState.vibrantColor,
+            accentColor = npAccent(uiState.vibrantColor),
             onDismiss = { showQueue = false },
             onTrackClick = { index ->
                 viewModel.onSkipToQueueIndex(index)
@@ -260,11 +289,13 @@ fun NowPlayingScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Ambient animated background behind everything.
+        // Ambient animated background behind everything — dark canvas or the
+        // light pastel wash, following the resolved app theme.
         AmbientBackground(
             dominantColor = uiState.dominantColor,
             vibrantColor = uiState.vibrantColor,
             mutedColor = uiState.mutedColor,
+            lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -295,7 +326,7 @@ fun NowPlayingScreen(
                     radioActive = radioLabel != null,
                     onStartRadio = viewModel::startRadioFromCurrent,
                     onStopRadio = viewModel::stopRadio,
-                    accentColor = uiState.vibrantColor,
+                    accentColor = npAccent(uiState.vibrantColor),
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -304,7 +335,7 @@ fun NowPlayingScreen(
                 AlbumArtSection(
                     albumArtUrl = track?.albumArtUrl,
                     albumArtPath = track?.albumArtPath,
-                    accentColor = uiState.vibrantColor,
+                    accentColor = npAccent(uiState.vibrantColor),
                     onBitmapLoaded = viewModel::onAlbumArtLoaded,
                 )
 
@@ -341,7 +372,7 @@ fun NowPlayingScreen(
                             text = track?.title ?: "Not Playing",
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = npInk(),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
@@ -354,20 +385,20 @@ fun NowPlayingScreen(
                                 bitsPerSample = track.bitsPerSample,
                                 sampleRateHz = track.sampleRateHz,
                                 size = 18.dp,
-                                tint = Color.White,
+                                tint = npInk(),
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             if (resolvingArtist) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(16.dp),
                                     strokeWidth = 2.dp,
-                                    color = Color.White,
+                                    color = npInk(),
                                 )
                             } else {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                     contentDescription = "Open artist",
-                                    tint = Color.White.copy(alpha = 0.6f),
+                                    tint = npInk().copy(alpha = 0.6f),
                                     modifier = Modifier.size(18.dp),
                                 )
                             }
@@ -387,7 +418,7 @@ fun NowPlayingScreen(
                             }
                         },
                         fontSize = 14.sp,
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = npInk().copy(alpha = 0.7f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
@@ -401,7 +432,7 @@ fun NowPlayingScreen(
                         com.stash.core.ui.components.LikeButton(
                             isLiked = uiState.currentTrack?.stashLikedAt != null,
                             onTap = viewModel::onLikeTap,
-                            unlikedTint = Color.White.copy(alpha = 0.7f),
+                            unlikedTint = npInk().copy(alpha = 0.7f),
                             size = 26.dp,
                             modifier = Modifier.align(Alignment.CenterEnd),
                         )
@@ -430,7 +461,7 @@ fun NowPlayingScreen(
                 // -- Progress bar --
                 GlowingProgressBar(
                     progress = uiState.progressFraction,
-                    accentColor = uiState.vibrantColor,
+                    accentColor = npAccent(uiState.vibrantColor),
                     elapsedMs = uiState.currentPositionMs,
                     totalMs = uiState.durationMs,
                     onSeek = viewModel::onSeekTo,
@@ -445,7 +476,7 @@ fun NowPlayingScreen(
                     isBuffering = uiState.isBuffering,
                     shuffleEnabled = uiState.shuffleEnabled,
                     repeatMode = uiState.repeatMode,
-                    accentColor = uiState.vibrantColor,
+                    accentColor = npAccent(uiState.vibrantColor),
                     onPlayPauseClick = viewModel::onPlayPauseClick,
                     onSkipNext = viewModel::onSkipNext,
                     onSkipPrevious = viewModel::onSkipPrevious,
@@ -463,7 +494,7 @@ fun NowPlayingScreen(
             LiveLyricsBar(
                 state = lyricsState,
                 currentPositionMs = lyricsPositionMs,
-                accentColor = uiState.vibrantColor,
+                accentColor = npAccent(uiState.vibrantColor),
                 onTap = viewModel::onShowLyrics,
             )
         }
@@ -510,7 +541,7 @@ private fun TopBar(
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
                 contentDescription = "Dismiss",
-                tint = Color.White,
+                tint = npInk(),
                 modifier = Modifier.size(28.dp),
             )
         }
@@ -524,7 +555,7 @@ private fun TopBar(
                 Icon(
                     imageVector = Icons.Default.Radio,
                     contentDescription = if (radioActive) "Stop radio" else "Start radio",
-                    tint = if (radioActive) accentColor else Color.White,
+                    tint = if (radioActive) accentColor else npInk(),
                     modifier = Modifier.size(24.dp),
                 )
             }
@@ -539,7 +570,7 @@ private fun TopBar(
                 Icon(
                     imageVector = Icons.Default.Flag,
                     contentDescription = "Flag as wrong match",
-                    tint = Color.White,
+                    tint = npInk(),
                     modifier = Modifier.size(24.dp),
                 )
             }
@@ -559,7 +590,7 @@ private fun TopBar(
                     CircularProgressIndicator(
                         modifier = Modifier.size(22.dp),
                         strokeWidth = 2.5.dp,
-                        color = Color.White,
+                        color = npInk(),
                     )
                 }
             } else {
@@ -567,7 +598,7 @@ private fun TopBar(
                     Icon(
                         imageVector = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
                         contentDescription = if (isDownloaded) "Remove download" else "Download",
-                        tint = Color.White,
+                        tint = npInk(),
                         modifier = Modifier.size(24.dp),
                     )
                 }
@@ -580,7 +611,7 @@ private fun TopBar(
                 Icon(
                     imageVector = Icons.Default.BookmarkBorder,
                     contentDescription = "Save to Playlist",
-                    tint = Color.White,
+                    tint = npInk(),
                     modifier = Modifier.size(24.dp),
                 )
             }
@@ -590,7 +621,7 @@ private fun TopBar(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                 contentDescription = "Queue ($queueSize tracks)",
-                tint = Color.White,
+                tint = npInk(),
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -684,7 +715,7 @@ private fun PlaybackControls(
             Icon(
                 imageVector = Icons.Default.Shuffle,
                 contentDescription = "Shuffle",
-                tint = if (shuffleEnabled) accentColor else Color.White.copy(alpha = 0.6f),
+                tint = if (shuffleEnabled) accentColor else npInk().copy(alpha = 0.6f),
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -694,7 +725,7 @@ private fun PlaybackControls(
             Icon(
                 imageVector = Icons.Default.SkipPrevious,
                 contentDescription = "Previous",
-                tint = Color.White,
+                tint = npInk(),
                 modifier = Modifier.size(36.dp),
             )
         }
@@ -715,6 +746,8 @@ private fun PlaybackControls(
                     shape = CircleShape,
                 ),
         ) {
+            // On the accent-gradient circle, not the ambient ground — stays
+            // white in both themes (the accent is contrast-adjusted instead).
             if (isBuffering) {
                 CircularProgressIndicator(
                     color = Color.White,
@@ -736,7 +769,7 @@ private fun PlaybackControls(
             Icon(
                 imageVector = Icons.Default.SkipNext,
                 contentDescription = "Next",
-                tint = Color.White,
+                tint = npInk(),
                 modifier = Modifier.size(36.dp),
             )
         }
@@ -750,7 +783,7 @@ private fun PlaybackControls(
                 },
                 contentDescription = "Repeat",
                 tint = when (repeatMode) {
-                    RepeatMode.OFF -> Color.White.copy(alpha = 0.6f)
+                    RepeatMode.OFF -> npInk().copy(alpha = 0.6f)
                     else -> accentColor
                 },
                 modifier = Modifier.size(24.dp),
@@ -840,7 +873,7 @@ private fun QualityLine(
             Text(
                 text = qualityText,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.5f),
+                color = npInk().copy(alpha = 0.5f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -849,7 +882,7 @@ private fun QualityLine(
         Text(
             text = qualityText,
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.5f),
+            color = npInk().copy(alpha = 0.5f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,

@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +57,12 @@ internal fun liveBarModeFor(state: LyricsViewState): LiveBarMode = when (state) 
 
 /** Near-black scrim base — matches `AmbientBackground.BaseDark`. */
 private val BarBase = Color(0xFF06060C)
+
+/** Light-theme scrim base — matches `AmbientBackground.BaseLight`. */
+private val BarBaseLight = Color(0xFFF4F1FA)
+
+/** Light-theme ink for the Static "View lyrics ♪" line. */
+private val BarInkLight = Color(0xFF241C36)
 
 /**
  * Live synced-lyrics bar pinned at the bottom of Now Playing, where the
@@ -94,14 +101,18 @@ fun LiveLyricsBar(
             animationSpec = tween(800),
             label = "liveBarAccent",
         )
+        // Scrim + static ink follow the resolved theme so the bar reads on
+        // both the dark ambient and the light pastel wash.
+        val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val scrimBase = if (darkTheme) BarBase else BarBaseLight
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClickLabel = "Open lyrics", onClick = onTap)
                 .background(
                     Brush.verticalGradient(
-                        0f to BarBase.copy(alpha = 0.30f),
-                        1f to BarBase.copy(alpha = 0.65f),
+                        0f to scrimBase.copy(alpha = 0.30f),
+                        1f to scrimBase.copy(alpha = 0.65f),
                     ),
                 )
                 .padding(horizontal = 20.dp, vertical = 16.dp),
@@ -146,7 +157,7 @@ fun LiveLyricsBar(
                 LiveBarMode.Static -> Text(
                     text = "View lyrics ♪",
                     style = MaterialTheme.typography.titleSmall,
-                    color = Color.White.copy(alpha = 0.45f),
+                    color = (if (darkTheme) Color.White else BarInkLight).copy(alpha = 0.45f),
                     maxLines = 1,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),

@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -20,18 +21,24 @@ import kotlin.math.sin
 /** Base dark fill used as the canvas background. */
 private val BaseDark = Color(0xFF06060C)
 
+/** Light-theme base: lavender paper matching the app's light ground. */
+private val BaseLight = Color(0xFFF4F1FA)
+
 /** Duration of the crossfade when album-art colors change. */
 private const val CROSSFADE_MS = 800
 
 /**
  * A full-bleed ambient background that renders three slowly-drifting radial
- * gradients on a dark canvas. The gradients orbit in circles at different
- * periods (12 s, 16 s, 20 s) creating a subtle, living backdrop that
- * reacts to album-art colors.
+ * gradients on the theme's canvas. The gradients orbit in circles at
+ * different periods (12 s, 16 s, 20 s) creating a subtle, living backdrop
+ * that reacts to album-art colors. In [lightMode] the same orbs render as a
+ * pastel wash over lavender paper — each palette color is blended a step
+ * toward white and drawn at lower alpha so the ground stays airy.
  *
  * @param dominantColor Primary palette color (highest alpha gradient).
  * @param vibrantColor  Secondary palette color.
  * @param mutedColor    Tertiary palette color (lowest alpha gradient).
+ * @param lightMode     Pastel wash on lavender paper instead of the dark canvas.
  * @param modifier      Standard Compose [Modifier].
  */
 @Composable
@@ -39,6 +46,7 @@ fun AmbientBackground(
     dominantColor: Color,
     vibrantColor: Color,
     mutedColor: Color,
+    lightMode: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     // Animate colors so track changes produce a smooth 800 ms crossfade.
@@ -97,8 +105,16 @@ fun AmbientBackground(
         val orbitRadius = min(w, h) * 0.18f
         val gradientRadius = min(w, h) * 0.65f
 
-        // Dark base fill.
-        drawRect(color = BaseDark)
+        // Theme base fill.
+        drawRect(color = if (lightMode) BaseLight else BaseDark)
+
+        // Pastel treatment for the light wash: blend toward white, lower alpha.
+        fun orbColor(color: Color, darkAlpha: Float, lightAlpha: Float): Color =
+            if (lightMode) {
+                lerp(color, Color.White, 0.25f).copy(alpha = lightAlpha)
+            } else {
+                color.copy(alpha = darkAlpha)
+            }
 
         // Helper: compute orbital center from angle.
         fun orbitalCenter(angleDeg: Float): Offset {
@@ -112,7 +128,7 @@ fun AmbientBackground(
         // Gradient 1 — dominant, highest presence.
         val center1 = orbitalCenter(angle1)
         drawCircle(
-            color = animDominant.copy(alpha = 0.35f),
+            color = orbColor(animDominant, darkAlpha = 0.35f, lightAlpha = 0.22f),
             radius = gradientRadius,
             center = center1,
         )
@@ -120,7 +136,7 @@ fun AmbientBackground(
         // Gradient 2 — vibrant, medium presence.
         val center2 = orbitalCenter(angle2)
         drawCircle(
-            color = animVibrant.copy(alpha = 0.25f),
+            color = orbColor(animVibrant, darkAlpha = 0.25f, lightAlpha = 0.15f),
             radius = gradientRadius * 0.85f,
             center = center2,
         )
@@ -128,7 +144,7 @@ fun AmbientBackground(
         // Gradient 3 — muted, subtle presence.
         val center3 = orbitalCenter(angle3)
         drawCircle(
-            color = animMuted.copy(alpha = 0.20f),
+            color = orbColor(animMuted, darkAlpha = 0.20f, lightAlpha = 0.11f),
             radius = gradientRadius * 0.70f,
             center = center3,
         )

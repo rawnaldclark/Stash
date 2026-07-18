@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -75,6 +76,14 @@ fun GlowingProgressBar(
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(progress) }
 
+    // Ink follows the resolved theme (white on the dark ambient, plum-black
+    // on the light pastel wash) — captured here for use inside the Canvas.
+    val ink = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+        Color.White
+    } else {
+        Color(0xFF241C36)
+    }
+
     // Smoothly animate progress when not dragging to avoid jitter.
     val displayProgress by animateFloatAsState(
         targetValue = if (isDragging) dragProgress else progress,
@@ -119,7 +128,7 @@ fun GlowingProgressBar(
 
             // --- Background track ---
             drawRoundRect(
-                color = Color.White.copy(alpha = 0.15f),
+                color = ink.copy(alpha = 0.15f),
                 topLeft = Offset(0f, barY - barHeight / 2f),
                 size = Size(barWidth, barHeight),
                 cornerRadius = CornerRadius(barHeight / 2f),
@@ -153,9 +162,9 @@ fun GlowingProgressBar(
 
             // --- Thumb (only visible while dragging) ---
             if (isDragging) {
-                // Outer white ring.
+                // Outer ink ring (white on dark, plum-black on light).
                 drawCircle(
-                    color = Color.White,
+                    color = ink,
                     radius = THUMB_OUTER_RADIUS,
                     center = Offset(playheadX, barY),
                 )
@@ -181,12 +190,12 @@ fun GlowingProgressBar(
             Text(
                 text = formatTime(displayMs),
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.7f),
+                color = ink.copy(alpha = 0.7f),
             )
             Text(
                 text = "-${formatTime((totalMs - displayMs).coerceAtLeast(0L))}",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.7f),
+                color = ink.copy(alpha = 0.7f),
             )
         }
     }
