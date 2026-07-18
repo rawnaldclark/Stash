@@ -72,6 +72,7 @@ class NowPlayingViewModel @Inject constructor(
     // `WorkManager.getInstance(appContext)` to match the rest of the
     // codebase (it's not Hilt-injectable in this project).
     private val lyricsRepository: LyricsRepository,
+    private val lyricsPreference: com.stash.core.data.prefs.LyricsPreference,
     @ApplicationContext private val appContext: Context,
     // Tap-to-artist: resolves the playing track's artist NAME to a YT
     // browseId so Now Playing can open the artist profile.
@@ -80,6 +81,18 @@ class NowPlayingViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(NowPlayingUiState())
     val uiState: StateFlow<NowPlayingUiState> = _uiState.asStateFlow()
+
+    /**
+     * Live synced-line bar opt-in (default OFF — the ticking line can pull
+     * the listener out of the music). Off, synced tracks still get the
+     * "View lyrics ♪" bar; the toggle lives in the lyrics sheet.
+     */
+    val liveLyricsBarEnabled: StateFlow<Boolean> = lyricsPreference.liveBarEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setLiveLyricsBarEnabled(enabled: Boolean) {
+        viewModelScope.launch { lyricsPreference.setLiveBarEnabled(enabled) }
+    }
 
     private val _userMessages = MutableSharedFlow<String>(
         // v0.9.18: bumped from 1 → 8. The Find-in-FLAC action emits TWO

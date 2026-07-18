@@ -185,10 +185,13 @@ fun NowPlayingScreen(
     // extra position collect adds no new recomposition pressure.
     val lyricsState by viewModel.lyricsViewState.collectAsStateWithLifecycle()
     val lyricsPositionMs by viewModel.currentPositionMs.collectAsStateWithLifecycle()
+    val liveLyricsEnabled by viewModel.liveLyricsBarEnabled.collectAsStateWithLifecycle()
     if (showLyrics) {
         LyricsBottomSheet(
             state = lyricsState,
             currentPositionMs = lyricsPositionMs,
+            liveLyricsEnabled = liveLyricsEnabled,
+            onLiveLyricsToggle = viewModel::setLiveLyricsBarEnabled,
             onSeek = viewModel::onLyricsLineSeek,
             onRetry = viewModel::onLyricsRetry,
             onDismiss = viewModel::onDismissLyrics,
@@ -495,6 +498,7 @@ fun NowPlayingScreen(
                 state = lyricsState,
                 currentPositionMs = lyricsPositionMs,
                 accentColor = npAccent(uiState.vibrantColor),
+                liveEnabled = liveLyricsEnabled,
                 onTap = viewModel::onShowLyrics,
             )
         }

@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 fun LyricsBottomSheet(
     state: LyricsViewState,
     currentPositionMs: Long,
+    liveLyricsEnabled: Boolean,
+    onLiveLyricsToggle: (Boolean) -> Unit,
     onSeek: (Long) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
@@ -60,6 +62,33 @@ fun LyricsBottomSheet(
                 .navigationBarsPadding(),
         ) {
             LyricsHeader(onClose = onDismiss)
+
+            // Live-bar opt-in (default OFF): shows the currently-sung line at
+            // the bottom of Now Playing for synced tracks. Lives here — the
+            // one place every lyrics user visits — rather than in Settings.
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 2.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Live lyrics bar",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Show the current line at the bottom of Now Playing",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                com.stash.core.ui.components.StashSwitch(
+                    checked = liveLyricsEnabled,
+                    onCheckedChange = onLiveLyricsToggle,
+                )
+            }
 
             // Fixed-height body region so the renderers (which all use
             // fillMaxSize) have a bounded parent. 70% of screen leaves

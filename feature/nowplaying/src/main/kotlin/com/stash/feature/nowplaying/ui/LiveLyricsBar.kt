@@ -49,8 +49,12 @@ internal sealed interface LiveBarMode {
     data object Hidden : LiveBarMode
 }
 
-internal fun liveBarModeFor(state: LyricsViewState): LiveBarMode = when (state) {
-    is LyricsViewState.Synced -> LiveBarMode.Live(state.lines)
+internal fun liveBarModeFor(state: LyricsViewState, liveEnabled: Boolean): LiveBarMode = when (state) {
+    // Live line only when the user opted in; otherwise synced tracks get the
+    // same quiet "View lyrics ♪" bar as plain ones — lyrics stay one tap away
+    // without the ticking line pulling focus from the music.
+    is LyricsViewState.Synced ->
+        if (liveEnabled) LiveBarMode.Live(state.lines) else LiveBarMode.Static
     is LyricsViewState.Plain -> LiveBarMode.Static
     else -> LiveBarMode.Hidden
 }
@@ -82,12 +86,13 @@ fun LiveLyricsBar(
     state: LyricsViewState,
     currentPositionMs: Long,
     accentColor: Color,
+    liveEnabled: Boolean,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // remember(state): the 250ms position ticks recompose this composable
     // every tick; without the cache each tick would re-allocate a Live() wrapper.
-    val mode = remember(state) { liveBarModeFor(state) }
+    val mode = remember(state, liveEnabled) { liveBarModeFor(state, liveEnabled) }
     AnimatedVisibility(
         visible = mode != LiveBarMode.Hidden,
         enter = fadeIn(tween(400)) + expandVertically(tween(400)),
