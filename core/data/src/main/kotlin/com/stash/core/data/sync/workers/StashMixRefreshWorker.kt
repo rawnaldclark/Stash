@@ -597,7 +597,18 @@ class StashMixRefreshWorker @AssistedInject constructor(
         )
         // The full ordered membership we are about to write: library slice
         // (generator order) followed by discovery survivors.
-        val finalOrderedIds = tracks.map { it.id } + discoveryTrackIds
+        // #287 follow-up: a discovery-led mix leads WITH its discoveries —
+        // fresh finds own the top of the list, the cover mosaic (built from
+        // the first 4 positions), and the first tap of Play. Under the old
+        // library-first order a successful rotation was visually invisible:
+        // same openers, same art, same count — users read Refresh as a no-op.
+        // Library-led mixes keep their library-first order.
+        val discoveryFirst = recipe.discoveryRatio >= 0.5f
+        val finalOrderedIds = if (discoveryFirst) {
+            discoveryTrackIds + tracks.map { it.id }
+        } else {
+            tracks.map { it.id } + discoveryTrackIds
+        }
         val totalCount = finalOrderedIds.size
 
         // v0.9.42: idempotency short-circuit. If the playlist already exists
@@ -639,24 +650,14 @@ class StashMixRefreshWorker @AssistedInject constructor(
             playlistDao.insert(newPlaylist)
         }
 
-        // Rebuild track membership in generator order (library slice first).
+        // Rebuild track membership in the final order computed above.
         val nowInstant = Instant.ofEpochMilli(now)
-        tracks.forEachIndexed { position, track ->
-            playlistDao.insertCrossRef(
-                PlaylistTrackCrossRef(
-                    playlistId = playlistId,
-                    trackId = track.id,
-                    position = position,
-                    addedAt = nowInstant,
-                )
-            )
-        }
-        discoveryTrackIds.forEachIndexed { offset, trackId ->
+        finalOrderedIds.forEachIndexed { position, trackId ->
             playlistDao.insertCrossRef(
                 PlaylistTrackCrossRef(
                     playlistId = playlistId,
                     trackId = trackId,
-                    position = tracks.size + offset,
+                    position = position,
                     addedAt = nowInstant,
                 )
             )
