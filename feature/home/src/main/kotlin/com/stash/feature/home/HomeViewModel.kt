@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -248,7 +249,10 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun Playlist.toHomeMix(buildState: MixBuildState = MixBuildState.READY) =
-        HomeMix(id = id, title = name, artUrl = artUrl, source = source, buildState = buildState)
+        HomeMix(
+            id = id, title = name, artUrl = artUrl, source = source,
+            buildState = buildState, trackCount = trackCount,
+        )
 
     /**
      * Lossless connect nudge: only visible when the user has not
@@ -284,24 +288,32 @@ class HomeViewModel @Inject constructor(
 
     /**
      * The three Qobuz discovery rows, re-fetched whenever the genre chip
-     * changes ([flatMapLatest] cancels the previous fetch). Clears the rows
-     * immediately on switch (empty emit) so stale content doesn't linger, then
-     * fetches all three in parallel. The repository is fail-soft — a failed row
-     * comes back empty and the screen hides it; discovery never blocks Home.
+     * changes ([flatMapLatest] cancels the previous fetch). The previous
+     * genre's rows STAY on screen while the new fetch runs (the scan keeps
+     * the last loaded state) — the rows sit directly under the hero, so
+     * clearing them eagerly made the mix rails jump up for the fetch
+     * duration on every chip tap. The chip highlight still updates
+     * instantly via the loading emission (null rows = keep previous), and
+     * the loaded emission replaces wholesale — even when empty — so stale
+     * content never survives a completed fetch. Fail-soft as before.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val discoveryFlow: Flow<DiscoveryUi> = genreFilter.flatMapLatest { label ->
-        flow {
-            val genreId = GenreCatalog.idFor(label)
-            emit(DiscoveryUi(label, emptyList(), emptyList(), emptyList()))
-            coroutineScope {
-                val newReleases = async { homeDiscoveryRepository.newReleases(genreId) }
-                val playlists = async { homeDiscoveryRepository.communityPlaylists(genreId) }
-                val topAlbums = async { homeDiscoveryRepository.topAlbums(genreId) }
-                emit(DiscoveryUi(label, newReleases.await(), topAlbums.await(), playlists.await()))
+    private val discoveryFlow: Flow<DiscoveryUi> = genreFilter
+        .flatMapLatest { label ->
+            flow<Pair<String, DiscoveryUi?>> {
+                val genreId = GenreCatalog.idFor(label)
+                emit(label to null) // loading: re-label, keep previous rows
+                coroutineScope {
+                    val newReleases = async { homeDiscoveryRepository.newReleases(genreId) }
+                    val playlists = async { homeDiscoveryRepository.communityPlaylists(genreId) }
+                    val topAlbums = async { homeDiscoveryRepository.topAlbums(genreId) }
+                    emit(label to DiscoveryUi(label, newReleases.await(), topAlbums.await(), playlists.await()))
+                }
             }
         }
-    }
+        .scan(DiscoveryUi("All", emptyList(), emptyList(), emptyList())) { prev, (label, loaded) ->
+            loaded ?: prev.copy(selectedGenre = label)
+        }
 
     /** Select a genre chip; re-derives all three discovery rows. */
     fun onSelectGenre(label: String) { genreFilter.value = label }
@@ -376,9 +388,14 @@ class HomeViewModel @Inject constructor(
      */
     fun playHero() {
         val heroPlaylistId = uiState.value.hero?.playlistId ?: return
+        playMix(heroPlaylistId)
+    }
+
+    /** Play any mix playlist from the hero pager (same gate as [playHero]). */
+    fun playMix(playlistId: Long) {
         viewModelScope.launch {
             val streamingOn = streamingPreference.current()
-            val tracks = musicRepository.getTracksByPlaylist(heroPlaylistId).first()
+            val tracks = musicRepository.getTracksByPlaylist(playlistId).first()
                 .let { if (streamingOn) it else it.filter { t -> t.filePath != null } }
             if (tracks.isNotEmpty()) playerRepository.setQueue(tracks, startIndex = 0)
         }

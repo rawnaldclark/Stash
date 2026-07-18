@@ -1,8 +1,9 @@
 package com.stash.core.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,8 +59,11 @@ import com.stash.core.ui.theme.StashPurpleDark
  * @param onOpen   Invoked when the card body is tapped (open the playlist).
  * @param onCreateMix Optional — when non-null a small "＋ ring" renders beneath the
  *   play button; tapping it starts a new mix. Omitted callers show no ＋.
+ * @param onLongPress Optional — long-press on the card body (the hero pager's
+ *   Your-mix pages use it to open the mix action sheet).
  * @param loading  When true, render a shimmer skeleton instead of the hero body.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DiscoverHeroCard(
     label: String,
@@ -69,6 +73,7 @@ fun DiscoverHeroCard(
     onPlay: () -> Unit,
     onOpen: () -> Unit,
     onCreateMix: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     loading: Boolean = false,
 ) {
@@ -79,7 +84,13 @@ fun DiscoverHeroCard(
             .height(150.dp)
             .shadow(StashElevation.Hero, shape, clip = false)
             .clip(shape)
-            .then(if (!loading) Modifier.clickable(onClick = onOpen) else Modifier),
+            .then(
+                if (!loading) {
+                    Modifier.combinedClickable(onClick = onOpen, onLongClick = onLongPress)
+                } else {
+                    Modifier
+                }
+            ),
     ) {
         if (loading) {
             ShimmerPlaceholder(modifier = Modifier.fillMaxSize(), shape = shape)

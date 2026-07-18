@@ -80,6 +80,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.Crossfade
 import androidx.compose.ui.Alignment
@@ -318,13 +319,16 @@ fun HomeScreen(
             )
         }
 
-        // ── Discover hero (or cold-start personalize card) ───────────
-        // Premium Crisp discovery surface. The materialized Daily Discover
-        // mix is the hero; a brand-new / thin-library user gets the
-        // personalize card instead — Home never renders blank.
+        // ── Discover hero pager (Daily Discover + your Stash mixes) ──
+        // A mix created from the hero's ＋ ring lands right here as an
+        // identical sibling card — swipe between Daily Discover and your
+        // own mixes (dots below signal the pages). Long-press a Your-mix
+        // page for the action sheet (refresh / edit / delete / hide).
+        // Replaces the old "Your mixes" rail.
         item {
             Spacer(Modifier.height(6.dp))
             val hero = uiState.hero
+            val mixPages = uiState.yourMixes
             when {
                 uiState.isLoading -> DiscoverHeroCard(
                     label = "Daily discovery",
@@ -336,20 +340,75 @@ fun HomeScreen(
                     loading = true,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
-                hero != null -> DiscoverHeroCard(
-                    label = "Daily discovery",
-                    title = hero.title,
-                    subtitle = hero.subtitle,
-                    artUrl = hero.artUrl,
-                    onPlay = viewModel::playHero,
-                    onOpen = { onNavigateToPlaylist(hero.playlistId) },
-                    onCreateMix = { onNavigateToMixBuilder(null) },
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                else -> PersonalizeCard(
+                hero == null && mixPages.isEmpty() -> PersonalizeCard(
                     onConnect = onNavigateToSettings,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
+                else -> {
+                    val heroPages = if (hero != null) 1 else 0
+                    val pageCount = heroPages + mixPages.size
+                    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+                        pageCount = { pageCount },
+                    )
+                    Column {
+                        androidx.compose.foundation.pager.HorizontalPager(
+                            state = pagerState,
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            pageSpacing = 10.dp,
+                        ) { page ->
+                            if (page < heroPages && hero != null) {
+                                DiscoverHeroCard(
+                                    label = "Daily discovery",
+                                    title = hero.title,
+                                    subtitle = hero.subtitle,
+                                    artUrl = hero.artUrl,
+                                    onPlay = viewModel::playHero,
+                                    onOpen = { onNavigateToPlaylist(hero.playlistId) },
+                                    onCreateMix = { onNavigateToMixBuilder(null) },
+                                )
+                            } else {
+                                val m = mixPages[page - heroPages]
+                                DiscoverHeroCard(
+                                    label = "Your mix",
+                                    title = m.title,
+                                    subtitle = when (m.buildState) {
+                                        MixBuildState.BUILDING -> "building…"
+                                        MixBuildState.EMPTY -> "empty — edit to fill"
+                                        else -> "${m.trackCount} tracks"
+                                    },
+                                    artUrl = m.artUrl,
+                                    onPlay = { viewModel.playMix(m.id) },
+                                    onOpen = { openMix(m.id) },
+                                    onLongPress = { actionSheetMixId = m.id },
+                                )
+                            }
+                        }
+                        if (pageCount > 1) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                repeat(pageCount) { i ->
+                                    val active = pagerState.currentPage == i
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 3.dp)
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (active) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                                },
+                                            ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -379,11 +438,25 @@ fun HomeScreen(
         }
         if (uiState.topAlbums.isNotEmpty()) {
             item {
+                // Collapsed to the top 5 by default; "Show all N" expands the
+                // full best-sellers chart in place. Saveable so the choice
+                // survives the item scrolling out of composition.
+                var topAlbumsExpanded by rememberSaveable { mutableStateOf(false) }
+                val visibleTop =
+                    if (topAlbumsExpanded) uiState.topAlbums else uiState.topAlbums.take(5)
                 Column {
                     Spacer(Modifier.height(16.dp))
-                    SectionHeader(title = "Top Albums")
+                    SectionHeader(
+                        title = "Top Albums",
+                        actionText = when {
+                            uiState.topAlbums.size <= 5 -> null
+                            topAlbumsExpanded -> "Show less"
+                            else -> "Show all ${uiState.topAlbums.size}"
+                        },
+                        onActionClick = { topAlbumsExpanded = !topAlbumsExpanded },
+                    )
                     RankedAlbumList(
-                        items = uiState.topAlbums.mapIndexed { i, a ->
+                        items = visibleTop.mapIndexed { i, a ->
                             RankedAlbumUi(
                                 rank = i + 1,
                                 title = a.title,
@@ -439,21 +512,6 @@ fun HomeScreen(
                 onActionClick = { onSeeAllMixes(MixRail.MOOD_DECADES) },
             ) {
                 items(uiState.moodDecades, key = { it.id }) { m ->
-                    MixRailCard(
-                        title = m.title, artUrl = m.artUrl, source = m.source,
-                        buildState = m.buildState, onClick = { openMix(m.id) },
-                        onLongPress = { actionSheetMixId = m.id },
-                    )
-                }
-            }
-        }
-        if (uiState.yourMixes.isNotEmpty()) item {
-            CardRail(
-                title = "Your mixes",
-                actionText = "See all",
-                onActionClick = { onSeeAllMixes(MixRail.YOUR_MIXES) },
-            ) {
-                items(uiState.yourMixes, key = { it.id }) { m ->
                     MixRailCard(
                         title = m.title, artUrl = m.artUrl, source = m.source,
                         buildState = m.buildState, onClick = { openMix(m.id) },

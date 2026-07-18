@@ -183,6 +183,9 @@ class HomeViewModelTest {
         }
         val recipeDao = mock<StashMixRecipeDao> {
             onBlocking { getBuiltinPlaylistIds() } doReturn builtinIds
+            // Feeds the homePlaylistFlow combine — an unstubbed (null) flow
+            // NPEs the combine and uiState never emits (tests hang).
+            on { observeAll() } doReturn flowOf(emptyList())
         }
         val streamingPreference = mock<StreamingPreference> {
             on { enabled } doReturn flowOf(streamingEnabled)
@@ -211,6 +214,10 @@ class HomeViewModelTest {
             onBlocking { topAlbums(anyOrNull()) } doReturn emptyList()
             onBlocking { communityPlaylists(anyOrNull()) } doReturn emptyList()
         }
+        // Feeds the homePlaylistFlow combine — must emit or uiState never does.
+        val discoveryQueueDao = mock<com.stash.core.data.db.dao.DiscoveryQueueDao> {
+            on { observeNonFailedCountsByRecipe() } doReturn flowOf(emptyList())
+        }
         return HomeViewModel(
             musicRepository = musicRepo,
             playerRepository = playerRepository,
@@ -218,6 +225,9 @@ class HomeViewModelTest {
             settingsDeepLinkController = mock(),
             tipJarRepository = tipJar,
             recipeDao = recipeDao,
+            discoveryQueueDao = discoveryQueueDao,
+            playlistDao = mock(),
+            downloadNetworkPreference = mock(),
             streamingPreference = streamingPreference,
             metadataBackfillState = metadataBackfill,
             homeDiscoveryRepository = discovery,

@@ -76,6 +76,8 @@ data class HomeMix(
     val id: Long, val title: String, val artUrl: String?,
     val source: com.stash.core.model.MusicSource,
     val buildState: com.stash.core.data.mix.MixBuildState = com.stash.core.data.mix.MixBuildState.READY,
+    /** Hero-pager subtitle ("N tracks") for the Your-mix pages. */
+    val trackCount: Int = 0,
 )
 
 /**
