@@ -73,16 +73,24 @@ interface DiscoveryQueueDao {
     suspend fun getRecipesWithPending(cappedRecipeIds: List<Long>): List<Long>
 
     /**
-     * PENDING rows for a single recipe, oldest first. Used by the
+     * PENDING rows for a single recipe, NEWEST first. Used by the
      * round-robin scheduler to pull a bounded per-recipe quota out of the
      * queue so no one recipe can starve the others — v0.9.38 fairness fix.
+     *
+     * #287: was oldest-first (FIFO). With a deep backlog that meant the
+     * daily completion budget got spent on candidates from weeks-old
+     * seeds while TODAY's recent-listening candidates waited days at the
+     * back of the line — observed on device as Motown-era completions
+     * while fresh Panda Bear/Dan Deacon candidates sat pending. Newest
+     * seeds complete first; the stale tail drains with leftover budget
+     * and ages out via the 30-day PENDING TTL.
      */
     @Query(
         """
         SELECT * FROM discovery_queue
         WHERE status = 'PENDING'
           AND recipe_id = :recipeId
-        ORDER BY queued_at ASC
+        ORDER BY queued_at DESC
         LIMIT :limit
         """
     )
