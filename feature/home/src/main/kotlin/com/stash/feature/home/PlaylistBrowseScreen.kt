@@ -2,6 +2,7 @@ package com.stash.feature.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,10 +14,14 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -31,15 +36,18 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.AlbumSquareCard
+import com.stash.core.ui.components.VerticalScrollbar
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
 
 /**
  * "See all" browse of the Qobuz editorial playlist catalog — a paginated
- * 2-column grid that loads more as the user scrolls. Reached from the Home
- * "Qobuz Playlists" row header; tapping a playlist opens it via the shared
- * album-detail screen (QOBUZ_PLAYLIST source).
+ * 2-column grid that loads more as the user scrolls, with a pinned search
+ * field (catalog-wide search — Qobuz search has no genre filter) and the
+ * fader scrollbar for fast travel. Reached from the Home "Qobuz Playlists"
+ * row header; tapping a playlist opens it via the shared album-detail screen
+ * (QOBUZ_PLAYLIST source).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,32 +86,73 @@ fun PlaylistBrowseScreen(
             )
         },
     ) { innerPadding ->
-        LazyVerticalGrid(
-            state = gridState,
-            columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
-        ) {
-            items(state.playlists) { playlist ->
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    AlbumSquareCard(
-                        title = playlist.title,
-                        artist = "${playlist.trackCount} tracks",   // curator is always "Qobuz" — show count instead
-                        thumbnailUrl = playlist.thumbnailUrl,
-                        year = null,
-                        isLossless = true,
-                        onClick = { onNavigateToAlbum(playlist.toAlbumNav()) },
+        Column(Modifier.fillMaxSize().padding(innerPadding)) {
+            // ── Pinned search (stays fixed above the scrolling grid) ────────
+            OutlinedTextField(
+                value = state.query,
+                onValueChange = viewModel::onQueryChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                placeholder = { Text("Search all Qobuz playlists…") },
+                singleLine = true,
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
                     )
-                }
-            }
-            if (state.isLoading) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                },
+                trailingIcon = if (state.query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { viewModel.onQueryChange("") }) {
+                            Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+                        }
+                    }
+                } else null,
+            )
+
+            Box(Modifier.fillMaxSize()) {
+                LazyVerticalGrid(
+                    state = gridState,
+                    columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(state.playlists) { playlist ->
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            AlbumSquareCard(
+                                title = playlist.title,
+                                artist = "${playlist.trackCount} tracks",   // curator is always "Qobuz" — show count instead
+                                thumbnailUrl = playlist.thumbnailUrl,
+                                year = null,
+                                isLossless = true,
+                                onClick = { onNavigateToAlbum(playlist.toAlbumNav()) },
+                            )
+                        }
+                    }
+                    if (state.playlists.isEmpty() && !state.isLoading && state.query.isNotBlank()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "No playlists match \"${state.query.trim()}\"",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    if (state.isLoading) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        }
                     }
                 }
+                VerticalScrollbar(state = gridState)
             }
         }
     }

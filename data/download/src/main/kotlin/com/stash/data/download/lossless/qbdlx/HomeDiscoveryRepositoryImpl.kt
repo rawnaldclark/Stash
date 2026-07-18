@@ -49,6 +49,12 @@ class HomeDiscoveryRepositoryImpl @Inject constructor(
                 .map { it.toPlaylistSummary() }
         }
 
+    override suspend fun searchPlaylists(query: String, offset: Int, limit: Int): List<PlaylistSummary> =
+        cached("psearch:$query:$offset:$limit") {
+            withToken { tok -> client.searchPlaylists(query, tok, limit, offset) }
+                .map { it.toPlaylistSummary() }
+        }
+
     private suspend fun albums(type: String, genreId: Int?): List<AlbumSummary> =
         cached("$type:$genreId") {
             withToken { tok -> client.getFeaturedAlbums(type, genreId, tok) }.map { it.toAlbumSummary() }

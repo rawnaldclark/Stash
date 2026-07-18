@@ -12,14 +12,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
@@ -35,18 +42,169 @@ private class ScrollbarTrackInfo {
     var thumbFraction by mutableStateOf(1f)
 }
 
+/** Fader-cap palette, resolved from the theme like StashSwitch does. */
+private class FaderColors(val fill: Color, val ridge: Color)
+
+/**
+ * Plum & cream, matching StashSwitch — the thumb reads as a physical fader
+ * cap from the same mixing desk. Cream cap on dark grounds, plum on light.
+ * Luminance-driven (not isSystemInDarkTheme) so manual/AMOLED overrides work.
+ */
+@Composable
+private fun faderColors(): FaderColors {
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    return if (dark) {
+        FaderColors(fill = Color(0xFFF2ECE2), ridge = Color(0xFF7E6A90))
+    } else {
+        FaderColors(fill = Color(0xFF6E5A7E), ridge = Color(0xFFF2ECE2))
+    }
+}
+
+/** The thumb never shrinks below this — a scrubbable cap, not a sliver. */
+private val MIN_THUMB_HEIGHT = 48.dp
+
+/** Extra vertical slack around the cap that still counts as grabbing it. */
+private val GRAB_TOLERANCE = 32.dp
+
+/** Clamp the raw viewport fraction so the drawn cap keeps its minimum size. */
+private fun DrawScope.clampedThumbFraction(rawFraction: Float): Float =
+    maxOf(rawFraction, MIN_THUMB_HEIGHT.toPx() / size.height.coerceAtLeast(1f))
+        .coerceAtMost(1f)
+
+/**
+ * Average row height excluding item 0 — every wired list/grid leads with one
+ * oversized full-width header item, and averaging it in makes the position
+ * estimate lurch whenever the header scrolls in or out of the viewport.
+ */
+private fun avgSizeSkippingHeader(items: List<Pair<Int, Int>>): Float {
+    val body = items.filter { it.first != 0 }.ifEmpty { items }
+    return body.sumOf { it.second }.toFloat() / body.size
+}
+
+/**
+ * Draws the fader cap: a rounded plum/cream body with a hairline outline and
+ * three grip ridges across the middle — analog hardware, not a scroll sliver.
+ */
+private fun DrawScope.drawFaderCap(
+    info: ScrollbarTrackInfo,
+    colors: FaderColors,
+    alpha: Float,
+    capWidthPx: Float,
+    thumbHeightOffset: Float,
+) {
+    if (alpha <= 0.001f) return
+    val trackHeight = size.height
+    val thumbHeight = (trackHeight * info.thumbFraction) + thumbHeightOffset
+    val thumbOffsetY = info.progress * (trackHeight - thumbHeight)
+    val left = size.width - capWidthPx - 3.dp.toPx()
+    val corner = CornerRadius(capWidthPx / 2f, capWidthPx / 2f)
+
+    // Cap body.
+    drawRoundRect(
+        color = colors.fill.copy(alpha = 0.95f * alpha),
+        topLeft = Offset(left, thumbOffsetY),
+        size = Size(capWidthPx, thumbHeight),
+        cornerRadius = corner,
+    )
+    // Hairline outline so the cap keeps an edge over any art behind it.
+    drawRoundRect(
+        color = colors.ridge.copy(alpha = 0.55f * alpha),
+        topLeft = Offset(left, thumbOffsetY),
+        size = Size(capWidthPx, thumbHeight),
+        cornerRadius = corner,
+        style = Stroke(width = 1.dp.toPx()),
+    )
+    // Grip ridges, centered.
+    val ridgeWidth = capWidthPx * 0.45f
+    val rx = left + (capWidthPx - ridgeWidth) / 2f
+    val cy = thumbOffsetY + thumbHeight / 2f
+    val gap = 5.dp.toPx()
+    for (i in -1..1) {
+        val y = cy + i * gap
+        drawLine(
+            color = colors.ridge.copy(alpha = 0.9f * alpha),
+            start = Offset(rx, y),
+            end = Offset(rx + ridgeWidth, y),
+            strokeWidth = 1.5.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+/**
+ * Shared scrub gesture: claims (and scrubs) ONLY when the touch lands on the
+ * VISIBLE cap. Off-thumb or faded-out touches are left unconsumed so the
+ * list/grid underneath scrolls normally — otherwise this full-height strip
+ * would swallow every right-edge drag and freeze scrolling along that edge.
+ */
+private fun Modifier.faderScrubber(
+    stateKey: Any,
+    info: ScrollbarTrackInfo,
+    animatedAlpha: () -> Float,
+    thumbHeightOffset: Float,
+    onWake: () -> Unit,
+    onScrub: (Float) -> Unit,
+): Modifier = pointerInput(stateKey) {
+    val grabTolerance = GRAB_TOLERANCE.toPx()
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val trackHeight = size.height.toFloat()
+        val thumbHeight = (trackHeight * info.thumbFraction) + thumbHeightOffset
+        val thumbOffsetY = info.progress * (trackHeight - thumbHeight)
+        val onThumb = animatedAlpha() > 0.01f && down.position.y in
+            (thumbOffsetY - grabTolerance)..(thumbOffsetY + thumbHeight + grabTolerance)
+        if (!onThumb) return@awaitEachGesture
+        down.consume()
+        onWake()
+        var dragProgress = info.progress
+        val maxOffset = trackHeight - thumbHeight
+        verticalDrag(down.id) { change ->
+            // Read the delta BEFORE consuming — a consumed change reports a
+            // zero positionChange, which would freeze the scrub in place.
+            val deltaY = change.positionChange().y
+            change.consume()
+            if (maxOffset > 0f) {
+                dragProgress = (dragProgress + deltaY / maxOffset).coerceIn(0f, 1f)
+                onScrub(dragProgress)
+            }
+        }
+    }
+}
+
+/**
+ * Excludes ONLY the thumb's current rect (plus grab slack) from the system
+ * back-gesture band. Android silently caps exclusion at 200dp per edge, so
+ * excluding the whole strip is quietly ignored and the system keeps stealing
+ * edge touches — a thumb-sized rect always fits the budget and follows the
+ * cap wherever it sits.
+ */
+private fun Modifier.thumbGestureExclusion(
+    info: ScrollbarTrackInfo,
+    thumbHeightOffset: Float,
+    grabTolerancePx: Float,
+): Modifier = systemGestureExclusion { coords ->
+    val trackHeight = coords.size.height.toFloat()
+    val thumbHeight = (trackHeight * info.thumbFraction) + thumbHeightOffset
+    val thumbOffsetY = info.progress * (trackHeight - thumbHeight)
+    Rect(
+        left = 0f,
+        top = (thumbOffsetY - grabTolerancePx).coerceAtLeast(0f),
+        right = coords.size.width.toFloat(),
+        bottom = (thumbOffsetY + thumbHeight + grabTolerancePx).coerceAtMost(trackHeight),
+    )
+}
+
 @Composable
 fun BoxScope.VerticalScrollbar(
     state: LazyListState,
-    color: Color = Color.White.copy(alpha = 0.5f),
-    width: Dp = 6.dp,
-    idleDelayMs: Long = 800L,
+    width: Dp = 14.dp,
+    idleDelayMs: Long = 1500L,
     thumbHeightOffset: Float = 0f,
-    hitZoneWidth: Dp = 36.dp,
+    hitZoneWidth: Dp = 44.dp,
 ) {
     val info = remember { ScrollbarTrackInfo() }
-    val density = LocalDensity.current
-    val widthPx = with(density) { width.toPx() }
+    val colors = faderColors()
+    val grabTolerancePx = with(LocalDensity.current) { GRAB_TOLERANCE.toPx() }
     var alpha by remember { mutableStateOf(0f) }
     val animatedAlpha by animateFloatAsState(alpha, tween(200), label = "scrollbarAlpha")
     val scope = rememberCoroutineScope()
@@ -63,81 +221,66 @@ fun BoxScope.VerticalScrollbar(
             val totalItems = layout.totalItemsCount
             if (totalItems == 0 || layout.visibleItemsInfo.isEmpty()) return@drawWithContent
             val firstVisible = layout.visibleItemsInfo.first()
-            val avgItemSize = layout.visibleItemsInfo.sumOf { it.size }.toFloat() / layout.visibleItemsInfo.size
+            val avgItemSize = avgSizeSkippingHeader(layout.visibleItemsInfo.map { it.index to it.size })
             val estimatedTotalHeight = avgItemSize * totalItems
             if (estimatedTotalHeight <= layout.viewportEndOffset) return@drawWithContent
 
             val scrolledPx = firstVisible.index * avgItemSize - firstVisible.offset
             val maxScrollPx = estimatedTotalHeight - layout.viewportEndOffset
-            info.thumbFraction = (layout.viewportEndOffset / estimatedTotalHeight).coerceIn(0.05f, 1f)
+            info.thumbFraction = clampedThumbFraction(layout.viewportEndOffset / estimatedTotalHeight)
             info.progress = (scrolledPx / maxScrollPx).coerceIn(0f, 1f)
-            if (animatedAlpha <= 0.001f) return@drawWithContent
-
-            val trackHeight = size.height
-            val thumbHeight = (trackHeight * info.thumbFraction) + thumbHeightOffset
-            val thumbOffsetY = info.progress * (trackHeight - thumbHeight)
-            drawRoundRect(
-                color = color.copy(alpha = color.alpha * animatedAlpha),
-                topLeft = Offset(size.width - widthPx - 2f, thumbOffsetY),
-                size = Size(widthPx, thumbHeight),
-                cornerRadius = CornerRadius(widthPx / 2f, widthPx / 2f),
-            )
+            drawFaderCap(info, colors, animatedAlpha, width.toPx(), thumbHeightOffset)
         },
     )
 
     // Narrow grab strip — ONLY this slice is touchable, everything left of it
-    // passes straight through to the list/grid underneath untouched.
+    // passes straight through to the list underneath untouched.
+    // systemGestureExclusion: the strip lives on the screen's right edge,
+    // which Android's back-gesture nav owns — without the exclusion the
+    // system intercepts edge drags and the cap is randomly ungrabbable.
     Box(
         modifier = Modifier
             .align(Alignment.CenterEnd)
             .fillMaxHeight()
             .width(hitZoneWidth)
-            .pointerInput(state) {
-                val grabTolerance = 24.dp.toPx()
-                // Manual gesture: claim (and scrub) ONLY when the touch lands on
-                // the VISIBLE thumb. Off-thumb or faded-out touches are left
-                // unconsumed so the list underneath scrolls normally — otherwise
-                // this full-height strip would swallow every right-edge drag and
-                // freeze scrolling along that edge.
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val trackHeight = size.height.toFloat()
-                    val thumbHeight = (trackHeight * info.thumbFraction) + thumbHeightOffset
-                    val thumbOffsetY = info.progress * (trackHeight - thumbHeight)
-                    val onThumb = animatedAlpha > 0.01f && down.position.y in
-                        (thumbOffsetY - grabTolerance)..(thumbOffsetY + thumbHeight + grabTolerance)
-                    if (!onThumb) return@awaitEachGesture
-                    down.consume()
-                    alpha = 1f
-                    var dragProgress = info.progress
-                    val maxOffset = trackHeight - thumbHeight
-                    verticalDrag(down.id) { change ->
-                        change.consume()
-                        if (maxOffset > 0f) {
-                            dragProgress = (dragProgress + change.positionChange().y / maxOffset)
-                                .coerceIn(0f, 1f)
-                            val targetIndex =
-                                (dragProgress * (state.layoutInfo.totalItemsCount - 1)).roundToInt()
-                            scope.launch { state.scrollToItem(targetIndex) }
-                        }
+            .thumbGestureExclusion(info, thumbHeightOffset, grabTolerancePx)
+            .faderScrubber(
+                stateKey = state,
+                info = info,
+                animatedAlpha = { animatedAlpha },
+                thumbHeightOffset = thumbHeightOffset,
+                onWake = { alpha = 1f },
+                onScrub = { progress ->
+                    // Pixel-granular target: index + intra-item offset. Snapping
+                    // to whole items reads as comically jumpy on tall rows.
+                    val layout = state.layoutInfo
+                    val total = layout.totalItemsCount
+                    if (total > 0 && layout.visibleItemsInfo.isNotEmpty()) {
+                        val avgItemSize =
+                            avgSizeSkippingHeader(layout.visibleItemsInfo.map { it.index to it.size })
+                        val maxScrollPx =
+                            (avgItemSize * total - layout.viewportEndOffset).coerceAtLeast(0f)
+                        val targetPx = progress * maxScrollPx
+                        val index = (targetPx / avgItemSize).toInt().coerceIn(0, total - 1)
+                        val offsetPx = (targetPx - index * avgItemSize).roundToInt()
+                        scope.launch { state.scrollToItem(index, offsetPx) }
                     }
-                }
-            },
+                },
+            ),
     )
 }
 
 @Composable
 fun BoxScope.VerticalScrollbar(
     state: LazyGridState,
-    color: Color = Color.White.copy(alpha = 0.5f),
-    width: Dp = 6.dp,
-    idleDelayMs: Long = 800L,
+    width: Dp = 14.dp,
+    idleDelayMs: Long = 1500L,
     thumbHeightOffset: Float = 0f,
-    hitZoneWidth: Dp = 36.dp,
+    hitZoneWidth: Dp = 44.dp,
 ) {
     val info = remember { ScrollbarTrackInfo() }
-    val density = LocalDensity.current
-    val widthPx = with(density) { width.toPx() }
+    val colors = faderColors()
+    val grabTolerancePx = with(LocalDensity.current) { GRAB_TOLERANCE.toPx() }
     var alpha by remember { mutableStateOf(0f) }
     val animatedAlpha by animateFloatAsState(alpha, tween(200), label = "scrollbarAlpha")
     val scope = rememberCoroutineScope()
@@ -153,7 +296,8 @@ fun BoxScope.VerticalScrollbar(
             val totalItems = layout.totalItemsCount
             if (totalItems == 0 || layout.visibleItemsInfo.isEmpty()) return@drawWithContent
             val firstVisible = layout.visibleItemsInfo.first()
-            val avgItemHeight = layout.visibleItemsInfo.map { it.size.height }.average().toFloat()
+            val avgItemHeight =
+                avgSizeSkippingHeader(layout.visibleItemsInfo.map { it.index to it.size.height })
             val columns = layout.visibleItemsInfo.map { it.column }.distinct().size.coerceAtLeast(1)
             val totalRows = (totalItems + columns - 1) / columns
             val estimatedTotalHeight = avgItemHeight * totalRows
@@ -161,19 +305,9 @@ fun BoxScope.VerticalScrollbar(
 
             val scrolledPx = firstVisible.row * avgItemHeight - firstVisible.offset.y
             val maxScrollPx = estimatedTotalHeight - layout.viewportEndOffset
-            info.thumbFraction = (layout.viewportEndOffset / estimatedTotalHeight).coerceIn(0.05f, 1f)
+            info.thumbFraction = clampedThumbFraction(layout.viewportEndOffset / estimatedTotalHeight)
             info.progress = (scrolledPx / maxScrollPx).coerceIn(0f, 1f)
-            if (animatedAlpha <= 0.001f) return@drawWithContent
-
-            val trackHeight = size.height
-            val thumbHeight = (trackHeight * info.thumbFraction) + thumbHeightOffset
-            val thumbOffsetY = info.progress * (trackHeight - thumbHeight)
-            drawRoundRect(
-                color = color.copy(alpha = color.alpha * animatedAlpha),
-                topLeft = Offset(size.width - widthPx - 2f, thumbOffsetY),
-                size = Size(widthPx, thumbHeight),
-                cornerRadius = CornerRadius(widthPx / 2f, widthPx / 2f),
-            )
+            drawFaderCap(info, colors, animatedAlpha, width.toPx(), thumbHeightOffset)
         },
     )
 
@@ -182,40 +316,33 @@ fun BoxScope.VerticalScrollbar(
             .align(Alignment.CenterEnd)
             .fillMaxHeight()
             .width(hitZoneWidth)
-            .pointerInput(state) {
-                val grabTolerance = 24.dp.toPx()
-                // Manual gesture: claim (and scrub) ONLY when the touch lands on
-                // the VISIBLE thumb. Off-thumb or faded-out touches are left
-                // unconsumed so the grid underneath scrolls normally — otherwise
-                // this full-height strip would swallow every right-edge drag and
-                // freeze scrolling along that edge.
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val trackHeight = size.height.toFloat()
-                    val thumbHeight = (trackHeight * info.thumbFraction) + thumbHeightOffset
-                    val thumbOffsetY = info.progress * (trackHeight - thumbHeight)
-                    val onThumb = animatedAlpha > 0.01f && down.position.y in
-                        (thumbOffsetY - grabTolerance)..(thumbOffsetY + thumbHeight + grabTolerance)
-                    if (!onThumb) return@awaitEachGesture
-                    down.consume()
-                    alpha = 1f
-                    var dragProgress = info.progress
-                    val maxOffset = trackHeight - thumbHeight
-                    verticalDrag(down.id) { change ->
-                        change.consume()
-                        if (maxOffset > 0f) {
-                            dragProgress = (dragProgress + change.positionChange().y / maxOffset)
-                                .coerceIn(0f, 1f)
-                            val columns = state.layoutInfo.visibleItemsInfo
-                                .map { it.column }.distinct().size.coerceAtLeast(1)
-                            val totalItems = state.layoutInfo.totalItemsCount
-                            val totalRows = (totalItems + columns - 1) / columns
-                            val targetRow = (dragProgress * (totalRows - 1)).roundToInt()
-                            val targetIndex = (targetRow * columns).coerceIn(0, totalItems - 1)
-                            scope.launch { state.scrollToItem(targetIndex) }
-                        }
+            .thumbGestureExclusion(info, thumbHeightOffset, grabTolerancePx)
+            .faderScrubber(
+                stateKey = state,
+                info = info,
+                animatedAlpha = { animatedAlpha },
+                thumbHeightOffset = thumbHeightOffset,
+                onWake = { alpha = 1f },
+                onScrub = { progress ->
+                    // Pixel-granular target: row + intra-row offset (see list overload).
+                    val layout = state.layoutInfo
+                    val totalItems = layout.totalItemsCount
+                    if (totalItems > 0 && layout.visibleItemsInfo.isNotEmpty()) {
+                        val columns = layout.visibleItemsInfo
+                            .map { it.column }.distinct().size.coerceAtLeast(1)
+                        val totalRows = (totalItems + columns - 1) / columns
+                        val avgRowHeight = avgSizeSkippingHeader(
+                            layout.visibleItemsInfo.map { it.index to it.size.height },
+                        )
+                        val maxScrollPx =
+                            (avgRowHeight * totalRows - layout.viewportEndOffset).coerceAtLeast(0f)
+                        val targetPx = progress * maxScrollPx
+                        val targetRow = (targetPx / avgRowHeight).toInt().coerceAtLeast(0)
+                        val index = (targetRow * columns).coerceIn(0, totalItems - 1)
+                        val offsetPx = (targetPx - targetRow * avgRowHeight).roundToInt()
+                        scope.launch { state.scrollToItem(index, offsetPx) }
                     }
-                }
-            },
+                },
+            ),
     )
 }

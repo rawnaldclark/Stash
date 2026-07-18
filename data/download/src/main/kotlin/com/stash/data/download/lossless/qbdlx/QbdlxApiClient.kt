@@ -62,6 +62,25 @@ class QbdlxApiClient @Inject constructor(
             runCatching { json.decodeFromString<QbdlxArtistSearchResponse>(body).artists.items }.getOrDefault(emptyList())
         }
 
+    /**
+     * Search the Qobuz catalog for playlists (read-only metadata). Same
+     * `catalog/search` endpoint as tracks/artists — the playlists bucket
+     * shares the featured-playlists envelope. Search is catalog-global:
+     * the endpoint has no genre filter.
+     */
+    suspend fun searchPlaylists(query: String, token: String, limit: Int = 30, offset: Int = 0): List<QbdlxPlaylistItem> =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api.json/0.2/catalog/search".toHttpUrl().newBuilder()
+                .addQueryParameter("query", query)
+                .addQueryParameter("type", "playlists")
+                .addQueryParameter("limit", limit.toString())
+                .addQueryParameter("offset", offset.toString())
+                .addQueryParameter("app_id", appId)
+                .build()
+            val body = get(url.toString(), token)
+            runCatching { json.decodeFromString<QbdlxFeaturedPlaylistsResponse>(body).playlists.items }.getOrDefault(emptyList())
+        }
+
     /** Fetch an artist's albums (read-only discography metadata). */
     suspend fun getArtistAlbums(artistId: Long, token: String, limit: Int = 100): List<QbdlxAlbumItem> =
         withContext(Dispatchers.IO) {

@@ -26,4 +26,11 @@ interface HomeDiscoveryRepository {
      * (null = all). Fail-soft (empty on error). A short page signals the end.
      */
     suspend fun browsePlaylists(genreId: Int?, offset: Int, limit: Int = 30): List<PlaylistSummary>
+
+    /**
+     * One page of catalog-wide playlist search for the browse screen's search
+     * field. Global by nature — Qobuz's catalog/search has no genre filter.
+     * Fail-soft (empty on error). A short page signals the end.
+     */
+    suspend fun searchPlaylists(query: String, offset: Int, limit: Int = 30): List<PlaylistSummary>
 }
