@@ -7,7 +7,6 @@ import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MarqueeSpacing
@@ -26,7 +25,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -82,7 +84,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.animation.Crossfade
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -260,7 +261,7 @@ fun HomeScreen(
                     Supporter(name = it.name, amount = "$${it.amountUsd}", message = it.message)
                 }.ifEmpty { HOME_SUPPORTERS }
             }
-            SupporterPill(
+            SupporterTicker(
                 supporters = pillSupporters,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -769,22 +770,15 @@ private val HOME_SUPPORTERS = listOf(
 )
 
 /**
- * v0.9.13: Tip Jar pill — calmer, on-brand redesign.
+ * Tip-jar ticker — dublab-style community marquee.
  *
- * Replaces the prior typewriter+sheet approach (felt corny). Now:
- *  - Small mono lowercase `tip jar` tag with subtle purple glow
- *  - Avatar circle with the supporter's initial (track-row vocabulary)
- *  - Name in Space Grotesk Bold (heroic, like a song title)
- *  - Amount right-aligned in mono (the only number on the surface)
- *  - Message in Inter italic, low-contrast (testimonial / liner-note)
- *  - Footer hint `ko-fi.com/rawnald →` so the tap target is obvious
- *  - Crossfade between supporters every ~6s
- *
- * Tap on the whole card opens ko-fi in the browser. No in-app sheet —
- * goal/progress tracking lives at ko-fi where it actually happens.
+ * One slim strip, ALL supporters flowing through it as a continuous
+ * horizontal scroll (name · amount, then their message, ✦-separated) —
+ * grassroots radio-station energy instead of a rotating card. Tap
+ * anywhere opens ko-fi; goal/progress tracking lives there.
  */
 @Composable
-private fun SupporterPill(
+private fun SupporterTicker(
     supporters: List<Supporter>,
     modifier: Modifier = Modifier,
 ) {
@@ -792,16 +786,26 @@ private fun SupporterPill(
     val uriHandler = LocalUriHandler.current
     val extendedColors = StashTheme.extendedColors
 
-    var index by remember { mutableStateOf(0) }
-    LaunchedEffect(supporters.size) {
-        while (true) {
-            kotlinx.coroutines.delay(7000)
-            if (supporters.isNotEmpty()) {
-                index = (index + 1) % supporters.size
+    val ink = MaterialTheme.colorScheme.onSurface
+    val dim = MaterialTheme.colorScheme.onSurfaceVariant
+    val gold = Color(0xFFFFC947)
+    // One long styled line; basicMarquee scrolls it forever. Rebuilt only
+    // when the supporter list (or theme inks) change.
+    val line = remember(supporters, ink, dim) {
+        buildAnnotatedString {
+            supporters.forEach { s ->
+                withStyle(SpanStyle(color = ink, fontWeight = FontWeight.SemiBold)) {
+                    append("${s.name} · ${s.amount}")
+                }
+                if (s.message.isNotBlank()) {
+                    withStyle(SpanStyle(color = dim, fontStyle = FontStyle.Italic)) {
+                        append("  “${s.message}”")
+                    }
+                }
+                withStyle(SpanStyle(color = gold)) { append("   ✦   ") }
             }
         }
     }
-    val current = supporters[index.coerceIn(0, supporters.lastIndex)]
 
     Surface(
         modifier = modifier.clickable { uriHandler.openUri("https://ko-fi.com/rawnald") },
@@ -810,45 +814,30 @@ private fun SupporterPill(
         border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.Top,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             androidx.compose.material3.Icon(
                 imageVector = androidx.compose.material.icons.Icons.Default.FavoriteBorder,
                 contentDescription = "Supporters on Ko-fi",
-                tint = Color(0xFFFFC947),
-                modifier = Modifier
-                    .size(16.dp)
-                    .padding(top = 2.dp),
+                tint = gold,
+                modifier = Modifier.size(16.dp),
             )
-            Crossfade(
-                targetState = current,
-                animationSpec = tween(durationMillis = 600),
-                label = "supporter-crossfade",
-                modifier = Modifier.weight(1f),
-            ) { s ->
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = "${s.name} \u00B7 ${s.amount}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "\u201C${s.message}\u201D",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontStyle = FontStyle.Italic,
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        // Cap long donation messages at 2 lines so a paragraph
-                        // can't balloon the pill height; ellipsis trims the rest.
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            Text(
+                text = line,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier
+                    .weight(1f)
+                    .basicMarquee(
+                        iterations = Int.MAX_VALUE,
+                        repeatDelayMillis = 0,
+                        initialDelayMillis = 800,
+                        velocity = 28.dp,
+                    ),
+            )
         }
     }
 }

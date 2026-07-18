@@ -61,7 +61,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
-import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
@@ -344,7 +343,8 @@ private fun RecentSearches(
                         overflow = TextOverflow.Ellipsis,
                     )
                     // TRACK keeps its artist line; ARTIST/QUERY need none —
-                    // the type chip (below) carries the kind.
+                    // the thumb shape already carries the kind (circle=artist,
+                    // square=song, clock=plain query).
                     if (entry.type == RecentSearch.Type.TRACK && entry.subtitle != null) {
                         Text(
                             text = entry.subtitle,
@@ -354,11 +354,6 @@ private fun RecentSearches(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                }
-                when (entry.type) {
-                    RecentSearch.Type.TRACK -> RecentTypeChip("SONG")
-                    RecentSearch.Type.ARTIST -> RecentTypeChip("ARTIST")
-                    RecentSearch.Type.QUERY -> Unit
                 }
                 IconButton(onClick = { onRemove(entry) }) {
                     Icon(
@@ -372,18 +367,6 @@ private fun RecentSearches(
     }
 }
 
-/** Small outlined kind tag on a recents row ("SONG" / "ARTIST"). */
-@Composable
-private fun RecentTypeChip(label: String) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .border(1.dp, StashTheme.extendedColors.glassBorder, RoundedCornerShape(99.dp))
-            .padding(horizontal = 8.dp, vertical = 2.dp),
-    )
-}
 
 /**
  * Leading visual for a recents row: circular avatar for artists, rounded-

@@ -3,39 +3,30 @@ package com.stash.app.navigation
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.stash.core.ui.theme.StashElevation
@@ -196,50 +187,52 @@ private fun StashBottomBar(
     currentRoute: String?,
     onNavigate: (TopLevelDestination) -> Unit,
 ) {
-    // Premium Crisp: the nav is a floating glass dock — a detached frosted
-    // pill with margins, framed by the app ground, the active tab a solid
-    // plum coin with a cream icon (the StashSwitch color language). Icons
-    // only; the coin is the label. contentDescription keeps TalkBack naming.
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val coin = if (dark) Color(0xFF7E6A90) else Color(0xFF6E5A7E)
-    val coinIcon = Color(0xFFF2ECE2)
-    val dockShape = RoundedCornerShape(29.dp)
-    Box(
+    val extendedColors = StashTheme.extendedColors
+    val hairline = extendedColors.glassBorderBright
+
+    NavigationBar(
+        // Premium Crisp §3.3: the nav is the one depth cue — a translucent
+        // frosted surface with a soft shadow and a top hairline. (Edge-to-edge
+        // "scroll behind the nav" + true blur are deferred to the Home rewrite;
+        // this is the purely-additive frosting that's safe on every tab.)
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 6.dp, bottom = 10.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(58.dp)
-                .shadow(StashElevation.Chrome, dockShape, clip = false)
-                .clip(dockShape)
-                .background(
-                    MaterialTheme.colorScheme.surface.copy(alpha = if (dark) 0.90f else 0.82f),
+            .shadow(StashElevation.Chrome)
+            .drawBehind {
+                drawLine(
+                    color = hairline,
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.dp.toPx(),
                 )
-                .border(1.dp, StashTheme.extendedColors.glassBorderBright, dockShape),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TopLevelDestination.entries.forEach { dest ->
-                val isSelected = currentRoute == dest.route::class.qualifiedName
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(if (isSelected) coin else Color.Transparent)
-                        .clickable { onNavigate(dest) },
-                    contentAlignment = Alignment.Center,
-                ) {
+            },
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
+        windowInsets = WindowInsets(0.dp),
+    ) {
+        TopLevelDestination.entries.forEach { dest ->
+            val isSelected = currentRoute == dest.route::class.qualifiedName
+
+            NavigationBarItem(
+                selected = isSelected,
+                onClick = { onNavigate(dest) },
+                icon = {
                     Icon(
                         imageVector = if (isSelected) dest.selectedIcon else dest.unselectedIcon,
                         contentDescription = dest.label,
-                        tint = if (isSelected) coinIcon else StashTheme.extendedColors.textTertiary,
-                        modifier = Modifier.size(24.dp),
                     )
-                }
-            }
+                },
+                label = {
+                    Text(text = dest.label, style = MaterialTheme.typography.labelSmall)
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    unselectedIconColor = extendedColors.textTertiary,
+                    unselectedTextColor = extendedColors.textTertiary,
+                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                ),
+            )
         }
     }
 }
