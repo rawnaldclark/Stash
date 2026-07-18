@@ -16,9 +16,15 @@ class StashMixRefreshWorkerRotationTest {
     private val pool = (1L..100L).toList() // newest-first by contract
 
     @Test
-    fun `pool at or under cap is returned whole and untouched`() {
-        assertEquals(pool.take(10), rotateSurvivorWindow(pool.take(10), cap = 20, seed = 7L))
-        assertEquals(pool.take(20), rotateSurvivorWindow(pool.take(20), cap = 20, seed = 7L))
+    fun `pool at or under cap keeps full membership but rotates order`() {
+        val window = rotateSurvivorWindow(pool.take(10), cap = 20, seed = 7L)
+        assertEquals(pool.take(10).toSet(), window.toSet())
+        // Order itself must rotate across seeds — a static order is the
+        // invisible-refresh bug at small-pool scale.
+        assertNotEquals(
+            rotateSurvivorWindow(pool.take(10), cap = 20, seed = 1L),
+            rotateSurvivorWindow(pool.take(10), cap = 20, seed = 2L),
+        )
     }
 
     @Test
@@ -27,10 +33,18 @@ class StashMixRefreshWorkerRotationTest {
     }
 
     @Test
-    fun `newest head is always preserved`() {
+    fun `newest head is always IN the window — membership, not position`() {
         val window = rotateSurvivorWindow(pool, cap = 20, seed = 42L)
-        // 30% of 20 = 6 newest ids stay pinned at the front.
-        assertEquals(pool.take(6), window.take(6))
+        // 30% of 20 = 6 newest ids are guaranteed present; their position
+        // rotates (pinning them froze the visible top + cover mosaic).
+        assertTrue(window.containsAll(pool.take(6)))
+    }
+
+    @Test
+    fun `position zero rotates across seeds`() {
+        val firsts = (1L..8L).map { rotateSurvivorWindow(pool, cap = 20, seed = it).first() }.toSet()
+        // Eight seeds should not all land the same opener (art mosaic driver).
+        assertTrue(firsts.size > 1)
     }
 
     @Test

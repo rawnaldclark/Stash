@@ -165,11 +165,20 @@ class StashMixRefreshWorker @AssistedInject constructor(
          */
         internal fun rotateSurvivorWindow(pool: List<Long>, cap: Int, seed: Long): List<Long> {
             if (cap <= 0) return emptyList()
-            if (pool.size <= cap) return pool
+            val rnd = kotlin.random.Random(seed)
+            // Small pools rotate their ORDER too — a static order is the same
+            // invisibility bug at smaller scale.
+            if (pool.size <= cap) return pool.shuffled(rnd)
             val freshHead = (cap * FRESH_HEAD_RATIO).roundToInt().coerceIn(0, cap)
             val head = pool.take(freshHead)
-            val rest = pool.drop(freshHead).shuffled(kotlin.random.Random(seed))
-            return head + rest.take(cap - head.size)
+            val rest = pool.drop(freshHead).shuffled(rnd)
+            // The freshness guarantee is MEMBERSHIP, not position: pinning the
+            // newest finds at the top froze positions 0..N (and the cover
+            // mosaic = first 4 positions) across refreshes — users watched the
+            // one part of the mix that never moved and read Refresh as a
+            // no-op. Shuffle the final window so position 0 and the art
+            // rotate every seed while new finds stay guaranteed present.
+            return (head + rest.take(cap - head.size)).shuffled(rnd)
         }
 
         /**
