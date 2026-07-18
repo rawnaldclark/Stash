@@ -72,6 +72,7 @@ import coil3.toBitmap
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.isFlac
 import com.stash.core.ui.components.SaveToPlaylistSheet
+import com.stash.core.ui.theme.LocalIsAmoledTheme
 import com.stash.feature.nowplaying.ui.AmbientBackground
 import com.stash.feature.nowplaying.ui.GlowingProgressBar
 import com.stash.feature.nowplaying.ui.LiveLyricsBar
@@ -292,13 +293,15 @@ fun NowPlayingScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Ambient animated background behind everything — dark canvas or the
-        // light pastel wash, following the resolved app theme.
+        // Ambient animated background behind everything — dark canvas, the
+        // light pastel wash, or a dead-black AMOLED ground, following the
+        // resolved app theme.
         AmbientBackground(
             dominantColor = uiState.dominantColor,
             vibrantColor = uiState.vibrantColor,
             mutedColor = uiState.mutedColor,
             lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
+            amoledMode = LocalIsAmoledTheme.current,
             modifier = Modifier.fillMaxSize(),
         )
 

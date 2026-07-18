@@ -28,6 +28,8 @@ data class SettingsUiState(
     val youTubeAuthState: AuthState = AuthState.NotConnected,
     val audioQuality: QualityTier = QualityTier.MAX,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** Pure-black (AMOLED) backgrounds whenever the effective theme is dark. */
+    val amoledDark: Boolean = false,
     /**
      * Network + power conditions under which Stash runs background
      * downloads (Stash Discover, tag enrichment). Changing this in

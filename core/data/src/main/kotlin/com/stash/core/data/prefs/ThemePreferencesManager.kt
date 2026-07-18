@@ -6,6 +6,7 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.stash.core.model.ThemeMode
@@ -44,6 +45,20 @@ class ThemePreferencesManager @Inject constructor(
     override suspend fun setThemeMode(mode: ThemeMode) {
         context.themeDataStore.edit { prefs ->
             prefs[themeKey] = mode.name
+        }
+    }
+
+    private val amoledKey = booleanPreferencesKey("amoled_dark")
+
+    /** Emits the pure-black (AMOLED) dark preference, defaulting to false. */
+    override val amoledDark: Flow<Boolean> = context.themeDataStore.data.map { prefs ->
+        prefs[amoledKey] ?: false
+    }
+
+    /** Persists the pure-black dark preference. */
+    override suspend fun setAmoledDark(enabled: Boolean) {
+        context.themeDataStore.edit { prefs ->
+            prefs[amoledKey] = enabled
         }
     }
 }

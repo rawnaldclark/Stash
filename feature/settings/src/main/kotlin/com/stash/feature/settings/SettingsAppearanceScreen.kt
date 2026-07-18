@@ -42,12 +42,15 @@ import com.stash.core.ui.theme.StashTextSecondaryLight
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
+import com.stash.feature.settings.components.SettingsToggleRow
 
 /**
  * Appearance category screen. Replaces the old RadioButton theme list
  * (SettingsScreen.kt:1089-1139) with three tappable T1 theme-preview thumbnails
  * (Dark / Light / Follow system). The underlying control is the SAME existing
- * callback: [SettingsViewModel.onThemeChanged].
+ * callback: [SettingsViewModel.onThemeChanged]. Below the thumbnails, a
+ * "Pure black (AMOLED)" switch upgrades whichever dark theme is in effect
+ * to true #000000 backgrounds.
  */
 @Composable
 fun SettingsAppearanceScreen(
@@ -95,6 +98,16 @@ fun SettingsAppearanceScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
+        )
+
+        Spacer(Modifier.height(20.dp))
+        SettingsSectionLabel("Dark theme")
+
+        SettingsToggleRow(
+            title = "Pure black (AMOLED)",
+            subtitle = "True-black backgrounds whenever dark theme is active — OLED pixels switch off",
+            checked = uiState.amoledDark,
+            onCheckedChange = viewModel::onAmoledDarkChanged,
         )
     }
 }

@@ -39,6 +39,9 @@ private const val CROSSFADE_MS = 800
  * @param vibrantColor  Secondary palette color.
  * @param mutedColor    Tertiary palette color (lowest alpha gradient).
  * @param lightMode     Pastel wash on lavender paper instead of the dark canvas.
+ * @param amoledMode    Pure #000000 canvas, no orbs — and no animation
+ *   infrastructure at all: the point of AMOLED is pixels (and the GPU)
+ *   doing nothing. Wins over [lightMode].
  * @param modifier      Standard Compose [Modifier].
  */
 @Composable
@@ -47,8 +50,13 @@ fun AmbientBackground(
     vibrantColor: Color,
     mutedColor: Color,
     lightMode: Boolean = false,
+    amoledMode: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    if (amoledMode) {
+        Canvas(modifier = modifier) { drawRect(color = Color.Black) }
+        return
+    }
     // Animate colors so track changes produce a smooth 800 ms crossfade.
     val animDominant by animateColorAsState(
         targetValue = dominantColor,

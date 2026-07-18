@@ -164,6 +164,26 @@ class SettingsHubSummariesTest {
         assertEquals("Dark", s.appearance)
     }
 
+    @Test fun `appearance DARK plus AMOLED → Dark · Pure black`() {
+        val s = settingsHubSummaries(
+            state = SettingsUiState(themeMode = ThemeMode.DARK, amoledDark = true),
+            versionName = "0.9.51",
+            streamingEnabled = true,
+            streamOnCellular = false,
+        )
+        assertEquals("Dark · Pure black", s.appearance)
+    }
+
+    @Test fun `appearance LIGHT hides dormant AMOLED flag`() {
+        val s = settingsHubSummaries(
+            state = SettingsUiState(themeMode = ThemeMode.LIGHT, amoledDark = true),
+            versionName = "0.9.51",
+            streamingEnabled = true,
+            streamOnCellular = false,
+        )
+        assertEquals("Light", s.appearance)
+    }
+
     // --- about ------------------------------------------------------------
 
     @Test fun `about prefixes v to versionName`() {

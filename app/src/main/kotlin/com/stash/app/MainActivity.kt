@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by themeModeFlow.collectAsState(initial = ThemeMode.SYSTEM)
+            val amoledDark by themePreference.amoledDark.collectAsState(initial = false)
             val systemDark = isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
                 ThemeMode.LIGHT -> false
@@ -53,7 +54,7 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.SYSTEM -> systemDark
             }
 
-            StashTheme(darkTheme = darkTheme) {
+            StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
                 StashScaffold(
                     pendingDeepLink = pendingDeepLink.value,
                     onDeepLinkConsumed = { pendingDeepLink.value = null },

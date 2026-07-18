@@ -60,6 +60,9 @@ fun settingsHubSummaries(
         ThemeMode.LIGHT -> "Light"
         ThemeMode.DARK -> "Dark"
         ThemeMode.SYSTEM -> "Follow system"
+    }.let { base ->
+        // AMOLED only ever applies to dark; a forced-light picker hides it.
+        if (state.amoledDark && state.themeMode != ThemeMode.LIGHT) "$base · Pure black" else base
     }
 
     val about = "v$versionName"

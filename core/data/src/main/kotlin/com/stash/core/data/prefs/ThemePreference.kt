@@ -17,4 +17,13 @@ interface ThemePreference {
 
     /** Persists the selected [mode] for the next app session and beyond. */
     suspend fun setThemeMode(mode: ThemeMode)
+
+    /**
+     * Emits whether dark theme should use pure-black (AMOLED) backgrounds.
+     * Dormant while the effective theme is light. Defaults to false.
+     */
+    val amoledDark: Flow<Boolean>
+
+    /** Persists the pure-black dark preference. */
+    suspend fun setAmoledDark(enabled: Boolean)
 }

@@ -345,6 +345,7 @@ class SettingsViewModel @Inject constructor(
         streamingQualityPrefs.wifiTier,
         streamingQualityPrefs.cellularTier,
         streamingQualityPrefs.saveData,
+        themePreference.amoledDark,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val spotifyAuth = values[0] as AuthState
@@ -380,6 +381,7 @@ class SettingsViewModel @Inject constructor(
         val streamingWifiTier = values[30] as LosslessQualityTier
         val streamingCellularTier = values[31] as LosslessQualityTier
         val streamingSaveData = values[32] as Boolean
+        val amoledDark = values[33] as Boolean
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
@@ -396,6 +398,7 @@ class SettingsViewModel @Inject constructor(
             youTubeAuthState = youTubeAuth,
             audioQuality = quality,
             themeMode = theme,
+            amoledDark = amoledDark,
             downloadNetworkMode = downloadNetworkMode,
             totalStorageBytes = storageBytes,
             totalTracks = trackCount,
@@ -949,6 +952,13 @@ class SettingsViewModel @Inject constructor(
     fun onThemeChanged(mode: ThemeMode) {
         viewModelScope.launch {
             themePreference.setThemeMode(mode)
+        }
+    }
+
+    /** Persists the pure-black (AMOLED) dark preference. */
+    fun onAmoledDarkChanged(enabled: Boolean) {
+        viewModelScope.launch {
+            themePreference.setAmoledDark(enabled)
         }
     }
 

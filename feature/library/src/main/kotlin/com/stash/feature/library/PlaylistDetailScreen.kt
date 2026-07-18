@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -75,6 +76,7 @@ import com.stash.core.data.mix.MixBuildState
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
+import com.stash.core.ui.components.VerticalScrollbar
 import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.SourceIndicator
@@ -143,6 +145,7 @@ fun PlaylistDetailScreen(
         }
     }
 
+    val listState = rememberLazyListState()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -156,6 +159,7 @@ fun PlaylistDetailScreen(
             )
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 // Task 7 hides the mini-player while selecting, but the bottom
                 // selection bar (~100dp + nav insets) then takes its place. Pad
@@ -293,6 +297,7 @@ fun PlaylistDetailScreen(
                     }
                 }
             }
+            VerticalScrollbar(state = listState)
         }
 
         // ── Selection chrome (overlaid contextual top + bottom bars) ────────

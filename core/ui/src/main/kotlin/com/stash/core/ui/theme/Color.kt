@@ -21,6 +21,11 @@ val StashSuccess = Color(0xFF10B981)
 val StashBackground = Color(0xFF06060C)
 val StashSurface = Color(0xFF0D0D18)
 val StashElevatedSurface = Color(0xFF1A1A2E)
+
+// ── AMOLED (pure-black dark) ───────────────────────────────────────────────
+// Backgrounds and surfaces go to true #000000 so OLED pixels switch off;
+// only the raised-container tier keeps a dim lift for hierarchy.
+val StashAmoledSurfaceHigh = Color(0xFF14141E)
 val StashTextPrimary = Color(0xFFE8E8F0)
 val StashTextSecondary = Color(0xFFA0A0B8)
 val StashTextTertiary = Color(0xFF606078)

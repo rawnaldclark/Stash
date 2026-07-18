@@ -62,9 +62,41 @@ val StashLightColorScheme = lightColorScheme(
     outlineVariant = StashGlassBorderBrightLight,
 )
 
+/**
+ * AMOLED variant of the dark scheme: every ground the eye reads as "the app's
+ * canvas" is pure #000000 so OLED panels switch those pixels off entirely.
+ *
+ * Beyond background/surface, the whole M3 surface-container family and
+ * [androidx.compose.material3.ColorScheme.surfaceTint] are forced black —
+ * components that default to `surfaceContainerLow` (ModalBottomSheet) or
+ * apply tonal elevation would otherwise render M3's baseline dark gray on
+ * top of our black. With surfaceTint black, `surfaceColorAtElevation()` is
+ * a no-op by construction. Raised tiers (surfaceVariant, containerHigh /
+ * Highest) keep a dim lift so chips, thumbnails, and drag targets stay
+ * distinguishable on true black — hierarchy on AMOLED is carried by the
+ * glass borders, not by big tonal fills.
+ */
+val StashAmoledColorScheme = StashDarkColorScheme.copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceTint = Color.Black,
+    surfaceDim = Color.Black,
+    surfaceBright = StashElevatedSurface,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color.Black,
+    surfaceContainer = Color.Black,
+    surfaceContainerHigh = StashAmoledSurfaceHigh,
+    surfaceContainerHighest = StashElevatedSurface,
+)
+
 // ── LocalIsDarkTheme — queried by composables that need theme-aware assets
 //    (e.g. the wordmark drawable selection in HomeScreen). ────────────────
 val LocalIsDarkTheme = staticCompositionLocalOf { true }
+
+// ── LocalIsAmoledTheme — true only when the pure-black dark theme is
+//    active. Queried by surfaces that paint their own canvas (e.g. Now
+//    Playing's AmbientBackground) instead of sniffing colorScheme values. ──
+val LocalIsAmoledTheme = staticCompositionLocalOf { false }
 
 /**
  * Root theme for the Stash app.
@@ -73,6 +105,10 @@ val LocalIsDarkTheme = staticCompositionLocalOf { true }
  * preference (Light/Dark/System) instead of always following the OS.
  * When the caller wants to mirror the system, pass
  * `isSystemInDarkTheme()` — that's also the default for safety.
+ *
+ * [amoled] upgrades the DARK scheme to pure black ([StashAmoledColorScheme]);
+ * it composes with any mode — on light (or system-day) it is dormant and
+ * kicks in whenever the effective theme is dark.
  *
  * Switching between schemes is done purely in Compose state — no activity
  * recreation, no resource configuration override — so the flip is instant
@@ -84,9 +120,15 @@ val LocalIsDarkTheme = staticCompositionLocalOf { true }
 @Composable
 fun StashTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    amoled: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (darkTheme) StashDarkColorScheme else StashLightColorScheme
+    val useAmoled = darkTheme && amoled
+    val colorScheme = when {
+        useAmoled -> StashAmoledColorScheme
+        darkTheme -> StashDarkColorScheme
+        else -> StashLightColorScheme
+    }
     val extendedColors = if (darkTheme) StashExtendedColorsDark else StashExtendedColorsLight
 
     val view = LocalView.current
@@ -105,6 +147,7 @@ fun StashTheme(
     CompositionLocalProvider(
         LocalStashColors provides extendedColors,
         LocalIsDarkTheme provides darkTheme,
+        LocalIsAmoledTheme provides useAmoled,
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
