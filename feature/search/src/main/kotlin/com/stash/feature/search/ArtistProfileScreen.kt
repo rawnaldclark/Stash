@@ -121,6 +121,7 @@ fun ArtistProfileScreen(
                 ArtistHero(
                     hero = state.hero,
                     status = state.status,
+                    socials = state.about?.socials.orEmpty(),
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
