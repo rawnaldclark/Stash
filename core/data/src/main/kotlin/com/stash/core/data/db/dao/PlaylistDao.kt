@@ -54,6 +54,23 @@ interface PlaylistDao {
     """)
     suspend fun getCrossRef(playlistId: Long, trackId: Long): PlaylistTrackCrossRef?
 
+    /**
+     * Bulk counterpart to [insertCrossRef] — one INSERT statement covering
+     * every row instead of N round-trips. Used by DiffWorker's batched
+     * sync-diff pass to link (or re-link) many tracks to a playlist at once.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllCrossRefs(crossRefs: List<PlaylistTrackCrossRef>)
+
+    /**
+     * Every current cross-ref row for a playlist (including soft-deleted
+     * ones). Used by DiffWorker to preload addedAt-preservation and
+     * soft-delete state for the WHOLE playlist in one query instead of one
+     * [getCrossRef] SELECT per track.
+     */
+    @Query("SELECT * FROM playlist_tracks WHERE playlist_id = :playlistId")
+    suspend fun getCrossRefsForPlaylist(playlistId: Long): List<PlaylistTrackCrossRef>
+
     // ── Update / Delete ─────────────────────────────────────────────────
 
     /** Update an existing playlist entity. */
