@@ -92,7 +92,6 @@ import com.stash.core.model.PlaylistType
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
-import com.stash.core.ui.components.ShuffleHeroCard
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackListItem
 import com.stash.core.ui.selection.SelectionAction
@@ -367,20 +366,14 @@ private fun LibraryContent(
         var searchOpen by remember { mutableStateOf(false) }
         var sortFilterOpen by remember { mutableStateOf(false) }
 
-        // Hero + recent-downloads rail — reused as the scrolling leading content
-        // of whichever chip's list/grid is active, so it scrolls away while the
-        // compact header + category chips stay pinned (spec §2/§3).
+        // Recent-downloads rail — the scrolling leading content of the Songs
+        // landing (scrolls away while the compact header + category chips stay
+        // pinned). The old purple shuffle hero is gone — it duplicated the
+        // header's shuffle action.
         val libraryHeader: @Composable () -> Unit = {
-            // Shuffle hero + recent-downloads rail belong to the Songs landing
-            // only — they're noise above the Playlists/Artists/Albums/Liked grids.
+            // Songs landing only — noise above the other grids.
             if (state.activeTab == LibraryTab.TRACKS) {
                 Column {
-                    Spacer(Modifier.height(4.dp))
-                    ShuffleHeroCard(
-                        songCount = state.librarySongCount,
-                        onShuffle = onShuffleLibrary,
-                        modifier = Modifier.padding(horizontal = 20.dp),
-                    )
                     if (state.recentlyAdded.isNotEmpty()) {
                         RecentlyDownloadedRail(
                             tracks = state.recentlyAdded.take(12),
