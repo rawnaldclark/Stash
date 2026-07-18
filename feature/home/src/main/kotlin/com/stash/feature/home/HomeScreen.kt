@@ -804,6 +804,16 @@ private fun SupporterTicker(
                 }
                 withStyle(SpanStyle(color = gold)) { append("   ✦   ") }
             }
+            // The station voice — once per full cycle, after the last
+            // supporter (plain ink: not a name, not a quote).
+            withStyle(SpanStyle(color = ink)) {
+                append(
+                    "Stash is a community powered open-source project " +
+                        "dedicated to the love and growth of music. " +
+                        "Thank you to our supporters.",
+                )
+            }
+            withStyle(SpanStyle(color = gold)) { append("   ✦   ") }
         }
     }
 
