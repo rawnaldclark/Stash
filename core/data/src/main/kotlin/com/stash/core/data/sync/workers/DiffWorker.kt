@@ -87,6 +87,7 @@ class DiffWorker @AssistedInject constructor(
         const val KEY_PLAYLISTS_CHECKED = "playlists_checked"
         private const val TAG = "DiffWorker"
         private const val NEVER_MATCH_SENTINEL = "\u0000__stash_never_match__"
+    }
 
     override suspend fun doWork(): Result {
         val syncId = inputData.getLong(PlaylistFetchWorker.KEY_SYNC_ID, -1L)
