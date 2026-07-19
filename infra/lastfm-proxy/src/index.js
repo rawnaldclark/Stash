@@ -108,7 +108,8 @@ async function handleLastFmRead(url, env, ctx) {
             headers: { "User-Agent": "Stash-LastFm-Proxy/1.0" },
         });
     } catch (e) {
-        return json({ error: "upstream_unreachable", message: String(e) }, 502);
+        console.error("Last.fm upstream request failed", e);
+        return json({ error: "upstream_unreachable", message: "Upstream service unreachable" }, 502);
     }
 
     // Hard HTTP rate limit.
