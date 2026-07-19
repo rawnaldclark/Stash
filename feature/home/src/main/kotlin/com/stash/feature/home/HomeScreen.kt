@@ -427,14 +427,17 @@ fun HomeScreen(
         // ── Genre filter chips ───────────────────────────────────────
         // Steer ONLY the Qobuz discovery rows below, so they sit with
         // them — directly under the hero, above New Releases — instead of
-        // topping the whole page (they never affected the hero).
-        item {
-            Spacer(Modifier.height(14.dp))
-            CrispChipRow(
-                chips = uiState.genres.map { it.label },
-                selected = uiState.selectedGenre,
-                onSelect = viewModel::onSelectGenre,
-            )
+        // topping the whole page (they never affected the hero). Hidden
+        // entirely when Qobuz discovery is switched off in Settings.
+        if (uiState.qobuzDiscoveryEnabled) {
+            item {
+                Spacer(Modifier.height(14.dp))
+                CrispChipRow(
+                    chips = uiState.genres.map { it.label },
+                    selected = uiState.selectedGenre,
+                    onSelect = viewModel::onSelectGenre,
+                )
+            }
         }
 
         // ── Qobuz discovery rows (genre-filtered) ─────────────────────

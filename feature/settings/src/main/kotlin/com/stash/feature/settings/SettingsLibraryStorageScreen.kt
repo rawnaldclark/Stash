@@ -190,6 +190,18 @@ fun SettingsLibraryStorageScreen(
                         onCheckedChange = viewModel::onStashMixesEnabledChanged,
                     )
                 },
+                {
+                    SettingsToggleRow(
+                        title = "Qobuz discovery on Home",
+                        subtitle = if (uiState.qobuzDiscoveryEnabled) {
+                            "New Releases, Qobuz Playlists, and Top Albums show on Home."
+                        } else {
+                            "Home keeps only your mixes and imported music."
+                        },
+                        checked = uiState.qobuzDiscoveryEnabled,
+                        onCheckedChange = viewModel::onQobuzDiscoveryEnabledChanged,
+                    )
+                },
             ),
         )
 

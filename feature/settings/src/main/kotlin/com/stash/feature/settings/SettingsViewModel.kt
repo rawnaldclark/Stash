@@ -93,6 +93,7 @@ class SettingsViewModel @Inject constructor(
     private val lastFmScrobbler: LastFmScrobbler,
     private val youTubeHistoryPreference: YouTubeHistoryPreference,
     private val stashMixPreference: com.stash.core.data.prefs.StashMixPreference,
+    private val homeDiscoveryPreference: com.stash.core.data.prefs.HomeDiscoveryPreference,
     private val youTubeHistoryScrobbler: YouTubeHistoryScrobbler,
     private val youTubeScrobblerState: YouTubeScrobblerState,
     private val losslessPrefs: LosslessSourcePreferences,
@@ -347,6 +348,7 @@ class SettingsViewModel @Inject constructor(
         streamingQualityPrefs.cellularTier,
         streamingQualityPrefs.saveData,
         themePreference.amoledDark,
+        homeDiscoveryPreference.enabled,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val spotifyAuth = values[0] as AuthState
@@ -383,6 +385,7 @@ class SettingsViewModel @Inject constructor(
         val streamingCellularTier = values[31] as LosslessQualityTier
         val streamingSaveData = values[32] as Boolean
         val amoledDark = values[33] as Boolean
+        val qobuzDiscoveryEnabled = values[34] as Boolean
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
@@ -419,6 +422,7 @@ class SettingsViewModel @Inject constructor(
             scrobbleDrainResult = local.lastScrobbleDrainResult,
             ytHistoryEnabled = ytHistoryEnabled,
             stashMixesEnabled = stashMixesEnabled,
+            qobuzDiscoveryEnabled = qobuzDiscoveryEnabled,
             ytHistoryHealth = ytHistoryHealth,
             ytPendingCount = ytPendingCount,
             losslessEnabled = losslessEnabled,
@@ -1014,6 +1018,15 @@ class SettingsViewModel @Inject constructor(
                     android.util.Log.e("SettingsVM", "applyStashMixesEnabled failed: ${e.message}", e)
                 }
         }
+    }
+
+    /**
+     * Hide/show the Qobuz discovery sections on Home (New Releases, Qobuz
+     * Playlists, Top Albums + the genre chips). Pref-only — Home's
+     * discovery flow gates its own catalog fetches off this.
+     */
+    fun onQobuzDiscoveryEnabledChanged(enabled: Boolean) {
+        viewModelScope.launch { homeDiscoveryPreference.setEnabled(enabled) }
     }
 
     /** Clear the kill-switch after PROTOCOL_BROKEN. Exposed to the Settings

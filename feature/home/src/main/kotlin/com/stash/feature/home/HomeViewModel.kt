@@ -78,6 +78,7 @@ class HomeViewModel @Inject constructor(
     private val playlistDao: com.stash.core.data.db.dao.PlaylistDao,
     private val downloadNetworkPreference: DownloadNetworkPreference,
     private val streamingPreference: StreamingPreference,
+    private val homeDiscoveryPreference: com.stash.core.data.prefs.HomeDiscoveryPreference,
     private val metadataBackfillState: MetadataBackfillState,
     private val homeDiscoveryRepository: HomeDiscoveryRepository,
     @ApplicationContext private val context: Context,
@@ -296,6 +297,7 @@ class HomeViewModel @Inject constructor(
         val newReleases: List<AlbumSummary>,
         val topAlbums: List<AlbumSummary>,
         val playlists: List<PlaylistSummary>,
+        val enabled: Boolean = true,
     )
 
     /**
@@ -310,21 +312,32 @@ class HomeViewModel @Inject constructor(
      * content never survives a completed fetch. Fail-soft as before.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val discoveryFlow: Flow<DiscoveryUi> = genreFilter
-        .flatMapLatest { label ->
-            flow<Pair<String, DiscoveryUi?>> {
-                val genreId = GenreCatalog.idFor(label)
-                emit(label to null) // loading: re-label, keep previous rows
-                coroutineScope {
-                    val newReleases = async { homeDiscoveryRepository.newReleases(genreId) }
-                    val playlists = async { homeDiscoveryRepository.communityPlaylists(genreId) }
-                    val topAlbums = async { homeDiscoveryRepository.topAlbums(genreId) }
-                    emit(label to DiscoveryUi(label, newReleases.await(), topAlbums.await(), playlists.await()))
-                }
+    private val discoveryFlow: Flow<DiscoveryUi> = homeDiscoveryPreference.enabled
+        .flatMapLatest { qobuzEnabled ->
+            if (!qobuzEnabled) {
+                // Opted out: no Qobuz catalog fetches at all — Home keeps
+                // only the mix rails and imported content.
+                kotlinx.coroutines.flow.flowOf(
+                    DiscoveryUi("All", emptyList(), emptyList(), emptyList(), enabled = false),
+                )
+            } else {
+                genreFilter
+                    .flatMapLatest { label ->
+                        flow<Pair<String, DiscoveryUi?>> {
+                            val genreId = GenreCatalog.idFor(label)
+                            emit(label to null) // loading: re-label, keep previous rows
+                            coroutineScope {
+                                val newReleases = async { homeDiscoveryRepository.newReleases(genreId) }
+                                val playlists = async { homeDiscoveryRepository.communityPlaylists(genreId) }
+                                val topAlbums = async { homeDiscoveryRepository.topAlbums(genreId) }
+                                emit(label to DiscoveryUi(label, newReleases.await(), topAlbums.await(), playlists.await()))
+                            }
+                        }
+                    }
+                    .scan(DiscoveryUi("All", emptyList(), emptyList(), emptyList())) { prev, (label, loaded) ->
+                        loaded ?: prev.copy(selectedGenre = label)
+                    }
             }
-        }
-        .scan(DiscoveryUi("All", emptyList(), emptyList(), emptyList())) { prev, (label, loaded) ->
-            loaded ?: prev.copy(selectedGenre = label)
         }
 
     /** Select a genre chip; re-derives all three discovery rows. */
@@ -344,6 +357,7 @@ class HomeViewModel @Inject constructor(
             tipJar = tipJar,
             metadataBackfillBanner = metadataBackfillBanner,
             selectedGenre = discovery.selectedGenre,
+            qobuzDiscoveryEnabled = discovery.enabled,
             newReleases = discovery.newReleases,
             topAlbums = discovery.topAlbums,
             playlists = discovery.playlists,

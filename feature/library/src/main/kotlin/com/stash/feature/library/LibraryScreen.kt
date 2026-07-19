@@ -72,11 +72,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -374,18 +378,18 @@ private fun LibraryContent(
         // landing (scrolls away while the compact header + category chips stay
         // pinned). The old purple shuffle hero is gone — it duplicated the
         // header's shuffle action.
+        // Songs landing only — noise above the other grids. Handed ONLY to
+        // TracksTab: with the pager, neighbor pages compose mid-swipe, so
+        // gating on activeTab here would flash the rail onto other pages.
         val libraryHeader: @Composable () -> Unit = {
-            // Songs landing only — noise above the other grids.
-            if (state.activeTab == LibraryTab.TRACKS) {
-                Column {
-                    if (state.recentlyAdded.isNotEmpty()) {
-                        RecentlyDownloadedRail(
-                            tracks = state.recentlyAdded.take(12),
-                            onTrackClick = onTrackClick,
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
+            Column {
+                if (state.recentlyAdded.isNotEmpty()) {
+                    RecentlyDownloadedRail(
+                        tracks = state.recentlyAdded.take(12),
+                        onTrackClick = onTrackClick,
+                    )
                 }
+                Spacer(Modifier.height(4.dp))
             }
         }
 
@@ -476,54 +480,75 @@ private fun LibraryContent(
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else {
-            when (state.activeTab) {
-                LibraryTab.PLAYLISTS -> PlaylistsGrid(
-                    playlists = state.playlists,
-                    anyServiceConnected = anyServiceConnected,
-                    onPlayPlaylist = onPlayPlaylist,
-                    onAddPlaylistToQueue = onAddPlaylistToQueue,
-                    onRemovePlaylist = onRemovePlaylist,
-                    onDeletePlaylist = onDeletePlaylist,
-                    onSetPlaylistImage = onSetPlaylistImage,
-                    onRemovePlaylistImage = onRemovePlaylistImage,
-                    header = libraryHeader,
-                )
-                LibraryTab.TRACKS -> TracksTab(
-                    tracks = state.tracks,
-                    currentlyPlayingTrackId = state.currentlyPlayingTrackId,
-                    onTrackClick = onTrackClick,
-                    onPlayNext = onPlayNext,
-                    onAddToQueue = onAddToQueue,
-                    onDeleteTrack = onDeleteTrack,
-                    anyServiceConnected = anyServiceConnected,
-                    selection = selection,
-                    header = libraryHeader,
-                )
-                LibraryTab.LIKED -> LikedTab(
-                    tracks = likedTracks,
-                    filter = likedFilter,
-                    sources = likedSources,
-                    currentlyPlayingTrackId = state.currentlyPlayingTrackId,
-                    onSelectSource = onSelectLikedSource,
-                    onTrackClick = onPlayLikedTrack,
-                )
-                LibraryTab.ARTISTS -> ArtistsGrid(
-                    artists = state.artists,
-                    singleTrackArtists = state.singleTrackArtists,
-                    anyServiceConnected = anyServiceConnected,
-                    onPlayArtist = onPlayArtist,
-                    onAddArtistToQueue = onAddArtistToQueue,
-                    onDeleteArtist = onDeleteArtist,
-                    header = libraryHeader,
-                )
-                LibraryTab.ALBUMS -> AlbumsGrid(
-                    albums = state.albums,
-                    singleTrackAlbums = state.singleTrackAlbums,
-                    anyServiceConnected = anyServiceConnected,
-                    onPlayAlbum = onPlayAlbum,
-                    onAddAlbumToQueue = onAddAlbumToQueue,
-                    header = libraryHeader,
-                )
+            // Swiping left/right moves between the category pages too — the
+            // pager and the chip row drive the same activeTab state: a chip
+            // tap animates the pager here; a settled swipe pushes the tab
+            // back to the ViewModel (both sync no-ops when already aligned).
+            val pagerState = rememberPagerState(
+                initialPage = chipTabs.indexOfFirst { it.second == state.activeTab }.coerceAtLeast(0),
+            ) { chipTabs.size }
+            LaunchedEffect(state.activeTab) {
+                val idx = chipTabs.indexOfFirst { it.second == state.activeTab }
+                if (idx >= 0 && idx != pagerState.currentPage) pagerState.animateScrollToPage(idx)
+            }
+            LaunchedEffect(pagerState) {
+                snapshotFlow { pagerState.settledPage }.collect { page ->
+                    onTabSelected(chipTabs[page].second)
+                }
+            }
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                when (chipTabs[page].second) {
+                    LibraryTab.PLAYLISTS -> PlaylistsGrid(
+                        playlists = state.playlists,
+                        anyServiceConnected = anyServiceConnected,
+                        onPlayPlaylist = onPlayPlaylist,
+                        onAddPlaylistToQueue = onAddPlaylistToQueue,
+                        onRemovePlaylist = onRemovePlaylist,
+                        onDeletePlaylist = onDeletePlaylist,
+                        onSetPlaylistImage = onSetPlaylistImage,
+                        onRemovePlaylistImage = onRemovePlaylistImage,
+                        header = {},
+                    )
+                    LibraryTab.TRACKS -> TracksTab(
+                        tracks = state.tracks,
+                        currentlyPlayingTrackId = state.currentlyPlayingTrackId,
+                        onTrackClick = onTrackClick,
+                        onPlayNext = onPlayNext,
+                        onAddToQueue = onAddToQueue,
+                        onDeleteTrack = onDeleteTrack,
+                        anyServiceConnected = anyServiceConnected,
+                        selection = selection,
+                        header = libraryHeader,
+                    )
+                    LibraryTab.LIKED -> LikedTab(
+                        tracks = likedTracks,
+                        filter = likedFilter,
+                        sources = likedSources,
+                        currentlyPlayingTrackId = state.currentlyPlayingTrackId,
+                        onSelectSource = onSelectLikedSource,
+                        onTrackClick = onPlayLikedTrack,
+                    )
+                    LibraryTab.ARTISTS -> ArtistsGrid(
+                        artists = state.artists,
+                        singleTrackArtists = state.singleTrackArtists,
+                        anyServiceConnected = anyServiceConnected,
+                        onPlayArtist = onPlayArtist,
+                        onAddArtistToQueue = onAddArtistToQueue,
+                        onDeleteArtist = onDeleteArtist,
+                        header = {},
+                    )
+                    LibraryTab.ALBUMS -> AlbumsGrid(
+                        albums = state.albums,
+                        singleTrackAlbums = state.singleTrackAlbums,
+                        anyServiceConnected = anyServiceConnected,
+                        onPlayAlbum = onPlayAlbum,
+                        onAddAlbumToQueue = onAddAlbumToQueue,
+                        header = {},
+                    )
+                }
             }
         }
     }

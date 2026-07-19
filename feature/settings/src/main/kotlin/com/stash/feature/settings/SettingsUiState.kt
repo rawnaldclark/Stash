@@ -44,6 +44,9 @@ data class SettingsUiState(
      * built-in mix playlists from Home / Library. See issues #56, #57.
      */
     val stashMixesEnabled: Boolean = true,
+    /** Qobuz discovery sections on Home (New Releases / Qobuz Playlists /
+     * Top Albums + genre chips). False = Home keeps only mixes + imports. */
+    val qobuzDiscoveryEnabled: Boolean = true,
     val ytHistoryHealth: YouTubeScrobblerHealth = YouTubeScrobblerHealth.DISABLED,
     val ytPendingCount: Int = 0,
     /**

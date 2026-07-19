@@ -56,6 +56,9 @@ data class HomeUiState(
     val genres: List<Genre> = GenreCatalog.GENRES,
     /** Currently-selected chip label; drives the three rows below. */
     val selectedGenre: String = "All",
+    /** False when the user opted out of Qobuz discovery on Home — hides the
+     * genre chips (the rows hide themselves via their empty lists). */
+    val qobuzDiscoveryEnabled: Boolean = true,
     val newReleases: List<AlbumSummary> = emptyList(),
     val topAlbums: List<AlbumSummary> = emptyList(),
     val playlists: List<PlaylistSummary> = emptyList(),
