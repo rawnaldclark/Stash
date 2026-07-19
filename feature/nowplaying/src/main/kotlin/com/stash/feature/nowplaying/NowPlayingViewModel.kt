@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
@@ -79,14 +80,26 @@ class NowPlayingViewModel @Inject constructor(
     // Tap-to-artist: resolves the playing track's artist NAME to a YT
     // browseId so Now Playing can open the artist profile.
     private val ytMusicApiClient: com.stash.data.ytmusic.YTMusicApiClient,
-    private val sleepTimerController: com.stash.core.media.SleepTimerController,
 ) : ViewModel() {
 
-    // ── Sleep timer (fork issue ParaliyzedEvo/Stash#26) ─────────────────
-    val sleepTimerState = sleepTimerController.state
-    fun onSleepTimerMinutes(minutes: Int) = sleepTimerController.startMinutes(minutes)
-    fun onSleepTimerEndOfTrack() = sleepTimerController.stopAtEndOfTrack()
-    fun onSleepTimerCancel() = sleepTimerController.cancel()
+    // ── Share (fork issue ParaliyzedEvo/Stash#40) ──
+    // The player-state Track is a slim media-session reconstruction with
+    // null spotifyUri/youtubeId; fetch the FULL DB row before the sheet
+    // opens so the link options actually appear.
+    private val _shareTrack = kotlinx.coroutines.flow.MutableStateFlow<com.stash.core.model.Track?>(null)
+    val shareTrack: kotlinx.coroutines.flow.StateFlow<com.stash.core.model.Track?> = _shareTrack
+
+    fun onShareCurrent() {
+        val slim = uiState.value.currentTrack ?: return
+        viewModelScope.launch {
+            _shareTrack.value = musicRepository.observeTrackById(slim.id)
+                .firstOrNull() ?: slim
+        }
+    }
+
+    fun onShareDismissed() {
+        _shareTrack.value = null
+    }
 
     private val _uiState = MutableStateFlow(NowPlayingUiState())
     val uiState: StateFlow<NowPlayingUiState> = _uiState.asStateFlow()

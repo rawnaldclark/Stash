@@ -24,11 +24,19 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        /** [pendingDeepLink] target for an incoming stash://track share link. */
+        const val DEEP_LINK_SHARED_TRACK = "shared_track"
+    }
+
     @Inject
     lateinit var themePreference: ThemePreference
 
     @Inject
     lateinit var localImportCoordinator: LocalImportCoordinator
+
+    @Inject
+    lateinit var sharedTrackLinkHolder: com.stash.core.data.share.SharedTrackLinkHolder
 
     /**
      * Pending deep-link target read from the launch / new-intent extras.
@@ -82,6 +90,24 @@ class MainActivity : ComponentActivity() {
      */
     private fun handleDeepLinkIntent(intent: Intent?) {
         if (intent == null) return
+
+        // stash://track?t=<title>&a=<artist>[&s=..][&y=..] — a shared song
+        // link. Deposit a search query and route to the Search tab.
+        if (intent.action == Intent.ACTION_VIEW &&
+            intent.data?.scheme == "stash" && intent.data?.host == "track"
+        ) {
+            val data = intent.data ?: return
+            val title = data.getQueryParameter("t").orEmpty()
+            val artist = data.getQueryParameter("a").orEmpty()
+            val query = "$artist $title".trim()
+            if (query.isNotBlank()) {
+                sharedTrackLinkHolder.set(query)
+                pendingDeepLink.value = DEEP_LINK_SHARED_TRACK
+            }
+            intent.data = null // don't reprocess on config change
+            return
+        }
+
         val target = intent.getStringExtra(CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET)
             ?: return
         pendingDeepLink.value = target

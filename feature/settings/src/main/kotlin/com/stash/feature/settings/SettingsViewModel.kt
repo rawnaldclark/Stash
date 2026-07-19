@@ -81,6 +81,7 @@ class SettingsViewModel @Inject constructor(
     private val librarySizeHolder: LibrarySizeHolder,
     private val qualityPreference: QualityPreference,
     private val themePreference: ThemePreference,
+    private val sleepTimerController: com.stash.core.media.SleepTimerController,
     private val storagePreference: StoragePreference,
     private val downloadNetworkPreference: DownloadNetworkPreference,
     private val moveLibraryCoordinator: MoveLibraryCoordinator,
@@ -959,6 +960,12 @@ class SettingsViewModel @Inject constructor(
             themePreference.setThemeMode(mode)
         }
     }
+
+    // ── Sleep timer (fork issue ParaliyzedEvo/Stash#26) ─────────────────
+    val sleepTimerState = sleepTimerController.state
+    fun onSleepTimerMinutes(minutes: Int) = sleepTimerController.startMinutes(minutes)
+    fun onSleepTimerEndOfTrack() = sleepTimerController.stopAtEndOfTrack()
+    fun onSleepTimerCancel() = sleepTimerController.cancel()
 
     /** Persists the pure-black (AMOLED) dark preference. */
     fun onAmoledDarkChanged(enabled: Boolean) {

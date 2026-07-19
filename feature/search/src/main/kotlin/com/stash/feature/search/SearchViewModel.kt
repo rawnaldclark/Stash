@@ -61,6 +61,7 @@ class SearchViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val streamingPreference: StreamingPreference,
     private val recentSearchesStore: RecentSearchesStore,
+    private val sharedTrackLinkHolder: com.stash.core.data.share.SharedTrackLinkHolder,
 ) : ViewModel() {
 
     companion object {
@@ -229,6 +230,10 @@ class SearchViewModel @Inject constructor(
                 .flatMapLatest { q -> runSearch(q) }
                 .collect { status -> _uiState.update { it.copy(status = status) } }
         }
+
+        // Incoming stash://track share link: MainActivity deposited the
+        // song's "artist title" query before navigating here — run it.
+        sharedTrackLinkHolder.consume()?.let { onQueryChanged(it) }
     }
 
     /**

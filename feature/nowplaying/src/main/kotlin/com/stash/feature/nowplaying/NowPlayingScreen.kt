@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -79,7 +78,6 @@ import com.stash.feature.nowplaying.ui.AmbientBackground
 import com.stash.feature.nowplaying.ui.GlowingProgressBar
 import com.stash.feature.nowplaying.ui.LiveLyricsBar
 import com.stash.feature.nowplaying.ui.LyricsBottomSheet
-import com.stash.feature.nowplaying.ui.SleepTimerSheet
 import com.stash.feature.nowplaying.ui.QueueBottomSheet
 
 /** Light-ground ink for the pastel-wash Now Playing (the app's plum-black). */
@@ -133,9 +131,7 @@ fun NowPlayingScreen(
     val radioLabel by viewModel.radioSeedLabel.collectAsStateWithLifecycle()
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
-    var showShareSheet by remember { mutableStateOf(false) }
-    var showSleepSheet by remember { mutableStateOf(false) }
-    val sleepTimerState by viewModel.sleepTimerState.collectAsStateWithLifecycle()
+    val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
     // the action (find a replacement / delete / delete + block).
@@ -166,26 +162,17 @@ fun NowPlayingScreen(
         }
     }
 
-    // Share + sleep-timer sheets (fork issues ParaliyzedEvo/Stash#40, #26).
-    // Screen scope — NOT inside the showQueue block, or the icons dead-end
-    // unless the queue sheet happens to be open.
-    val shareTrack = uiState.currentTrack
-    if (showShareSheet && shareTrack != null) {
+    // Share sheet (fork issue ParaliyzedEvo/Stash#40) — VM-driven with the
+    // FULL DB track: the player-state Track is a slim media-session
+    // reconstruction whose spotifyUri/youtubeId are null, which is why the
+    // link rows never appeared when this read uiState.currentTrack.
+    shareTrack?.let { full ->
         com.stash.core.ui.components.ShareTrackSheet(
-            title = shareTrack.title,
-            artist = shareTrack.artist,
-            spotifyUri = shareTrack.spotifyUri,
-            youtubeId = shareTrack.youtubeId,
-            onDismiss = { showShareSheet = false },
-        )
-    }
-    if (showSleepSheet) {
-        SleepTimerSheet(
-            state = sleepTimerState,
-            onMinutes = { viewModel.onSleepTimerMinutes(it); showSleepSheet = false },
-            onEndOfTrack = { viewModel.onSleepTimerEndOfTrack(); showSleepSheet = false },
-            onCancelTimer = { viewModel.onSleepTimerCancel(); showSleepSheet = false },
-            onDismiss = { showSleepSheet = false },
+            title = full.title,
+            artist = full.artist,
+            spotifyUri = full.spotifyUri,
+            youtubeId = full.youtubeId,
+            onDismiss = viewModel::onShareDismissed,
         )
     }
 
@@ -351,9 +338,6 @@ fun NowPlayingScreen(
                     onFlagWrongMatch = { showWrongMatchDialog = true },
                     onSaveClick = { showSaveSheet = true },
                     onQueueClick = { showQueue = true },
-                    onShareClick = { showShareSheet = true },
-                    sleepTimerActive = sleepTimerState !is com.stash.core.media.SleepTimerController.State.Off,
-                    onSleepTimerClick = { showSleepSheet = true },
                     hasTrack = uiState.hasTrack,
                     queueSize = uiState.queueSize,
                     onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
@@ -464,6 +448,22 @@ fun NowPlayingScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                    // Share — on the track itself (leading edge), mirroring the
+                    // heart. Loads the FULL DB row before opening the sheet so
+                    // the Spotify/YouTube link rows actually have identities.
+                    if (track != null) {
+                        IconButton(
+                            onClick = viewModel::onShareCurrent,
+                            modifier = Modifier.align(Alignment.CenterStart),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share song",
+                                tint = npInk().copy(alpha = 0.7f),
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
                     // Like heart — relocated from the top icon row to a cleaner
                     // primary spot, floated to the trailing edge and vertically
                     // centred against the title/artist block.
@@ -573,9 +573,6 @@ private fun TopBar(
     onFlagWrongMatch: () -> Unit,
     onSaveClick: () -> Unit,
     onQueueClick: () -> Unit,
-    onShareClick: () -> Unit,
-    sleepTimerActive: Boolean,
-    onSleepTimerClick: () -> Unit,
     hasTrack: Boolean,
     queueSize: Int,
     onDownloadTap: () -> Unit,
@@ -614,28 +611,6 @@ private fun TopBar(
                     modifier = Modifier.size(24.dp),
                 )
             }
-        }
-
-        // Share the current song as a link (fork issue ParaliyzedEvo/Stash#40).
-        if (hasTrack) {
-            IconButton(onClick = onShareClick) {
-                Icon(
-                    imageVector = Icons.Default.Share,
-                    contentDescription = "Share song",
-                    tint = npInk(),
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
-        // Sleep timer (fork issue ParaliyzedEvo/Stash#26) — accent tint while armed.
-        IconButton(onClick = onSleepTimerClick) {
-            Icon(
-                imageVector = Icons.Default.Bedtime,
-                contentDescription = "Sleep timer",
-                tint = if (sleepTimerActive) accentColor else npInk(),
-                modifier = Modifier.size(24.dp),
-            )
         }
 
         // Flag as wrong match — only shown when a track is loaded. Lives

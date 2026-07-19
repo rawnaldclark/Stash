@@ -66,6 +66,16 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/*" />
             </intent-filter>
+            <!--
+                stash://track share links (Share sheet "Stash link"): opens
+                the app on Search pre-queried with the shared song.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="stash" android:host="track" />
+            </intent-filter>
             <!-- Static app shortcuts (e.g. "Resume playback"). Must live on
                  the launcher activity. -->
             <meta-data

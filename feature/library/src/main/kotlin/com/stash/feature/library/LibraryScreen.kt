@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
@@ -1091,6 +1092,17 @@ private fun TracksTab(
     // Track selected for the context-menu bottom sheet (opened via the ⋮ now;
     // long-press enters multi-select instead).
     var selectedTrack by remember { mutableStateOf<Track?>(null) }
+    // Track whose share sheet is open (fork issue ParaliyzedEvo/Stash#40).
+    var trackToShare by remember { mutableStateOf<Track?>(null) }
+    trackToShare?.let { t ->
+        com.stash.core.ui.components.ShareTrackSheet(
+            title = t.title,
+            artist = t.artist,
+            spotifyUri = t.spotifyUri,
+            youtubeId = t.youtubeId,
+            onDismiss = { trackToShare = null },
+        )
+    }
     // Track pending delete confirmation.
     var trackToDelete by remember { mutableStateOf<Track?>(null) }
 
@@ -1181,6 +1193,14 @@ private fun TracksTab(
                 label = "Add to Queue",
                 onClick = {
                     onAddToQueue(track)
+                    selectedTrack = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.Share,
+                label = "Share",
+                onClick = {
+                    trackToShare = track
                     selectedTrack = null
                 },
             )

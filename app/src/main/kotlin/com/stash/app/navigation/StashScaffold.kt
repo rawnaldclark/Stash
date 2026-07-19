@@ -92,6 +92,14 @@ fun StashScaffold(
                 }
                 onDeepLinkConsumed()
             }
+            com.stash.app.MainActivity.DEEP_LINK_SHARED_TRACK -> {
+                // Shared stash://track link: land on Search — SearchViewModel
+                // consumes the pre-deposited query from SharedTrackLinkHolder.
+                navController.navigate(SearchRoute) {
+                    launchSingleTop = true
+                }
+                onDeepLinkConsumed()
+            }
             null -> Unit
             else -> onDeepLinkConsumed()  // unknown target — clear so we don't loop
         }

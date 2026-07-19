@@ -1,6 +1,7 @@
 package com.stash.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +20,7 @@ import com.stash.core.common.constants.StashConstants
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsRowPadH
 import com.stash.feature.settings.components.SettingsRowPadV
+import com.stash.core.media.SleepTimerController
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsSegmented
@@ -129,7 +131,84 @@ fun SettingsPlaybackScreen(
                 }
             },
         )
+
+        // Sleep timer (fork issue ParaliyzedEvo/Stash#26): pauses playback
+        // after the chosen delay or when the current track finishes. Lives
+        // here per user direction — playback behavior belongs in Settings,
+        // not the Now Playing chrome.
+        val sleepTimer by viewModel.sleepTimerState.collectAsStateWithLifecycle()
+        SettingsSectionLabel("Sleep timer")
+        SettingsGroupCard(
+            rows = buildList {
+                val status = when (val st = sleepTimer) {
+                    is SleepTimerController.State.Countdown -> {
+                        val minutesLeft =
+                            ((st.endsAtMs - System.currentTimeMillis()) / 60_000L)
+                                .coerceAtLeast(0) + 1
+                        "Music pauses in about $minutesLeft min"
+                    }
+                    SleepTimerController.State.EndOfTrack -> "Music pauses when the current track ends"
+                    SleepTimerController.State.Off -> "Off"
+                }
+                add {
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (sleepTimer == SleepTimerController.State.Off) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        modifier = Modifier.padding(
+                            horizontal = SettingsRowPadH,
+                            vertical = SettingsRowPadV,
+                        ),
+                    )
+                }
+                listOf(15, 30, 45, 60).forEach { minutes ->
+                    add {
+                        SleepTimerChoiceRow(
+                            label = "$minutes minutes",
+                            onClick = { viewModel.onSleepTimerMinutes(minutes) },
+                        )
+                    }
+                }
+                add {
+                    SleepTimerChoiceRow(
+                        label = "End of track",
+                        onClick = viewModel::onSleepTimerEndOfTrack,
+                    )
+                }
+                if (sleepTimer != SleepTimerController.State.Off) {
+                    add {
+                        SleepTimerChoiceRow(
+                            label = "Cancel timer",
+                            tint = MaterialTheme.colorScheme.error,
+                            onClick = viewModel::onSleepTimerCancel,
+                        )
+                    }
+                }
+            },
+        )
     }
+}
+
+/** One tappable sleep-timer choice row. */
+@Composable
+private fun SleepTimerChoiceRow(
+    label: String,
+    onClick: () -> Unit,
+    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.bodyLarge,
+        color = tint,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV),
+    )
 }
 
 /**

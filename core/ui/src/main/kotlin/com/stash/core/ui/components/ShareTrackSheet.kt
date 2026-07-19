@@ -87,6 +87,17 @@ fun ShareTrackSheet(
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+        ShareRow(
+            label = "Stash link",
+            tint = MaterialTheme.colorScheme.primary,
+            onClick = {
+                val link = stashShareLink(title, artist, spotifyUri, youtubeId)
+                send(
+                    "$artist — $title\n$link\n" +
+                        "(Opens in Stash — get it: https://github.com/rawnaldclark/Stash/releases/latest)"
+                )
+            },
+        )
         if (spotifyUrl != null) {
             ShareRow(
                 label = "Spotify link",
@@ -131,6 +142,20 @@ private fun ShareRow(label: String, tint: androidx.compose.ui.graphics.Color, on
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
         )
+    }
+}
+
+/**
+ * Deep link a friend's Stash can open (see MainActivity's stash://track
+ * intent-filter): lands them on Search with the song pre-queried. Includes
+ * the source ids when known so future receivers can resolve directly.
+ */
+fun stashShareLink(title: String, artist: String, spotifyUri: String?, youtubeId: String?): String {
+    fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
+    return buildString {
+        append("stash://track?t=").append(enc(title)).append("&a=").append(enc(artist))
+        spotifyShareUrl(spotifyUri)?.let { append("&s=").append(enc(it)) }
+        youtubeId?.takeIf { it.isNotBlank() }?.let { append("&y=").append(enc(it)) }
     }
 }
 
