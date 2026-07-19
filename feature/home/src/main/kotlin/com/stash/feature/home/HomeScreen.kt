@@ -853,13 +853,12 @@ private fun SupporterTicker(
 
     val ink = MaterialTheme.colorScheme.onSurface
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
-    val plum = MaterialTheme.colorScheme.primary
 
     // Supporters woven with station announcements (mission line, dev and
     // contributor calls) so the wire carries variety, not just gratitude.
-    // Separator: a small plum diamond — accent-colored, not gold, so the
-    // strip sits inside the app's palette instead of fighting it.
-    val line = remember(supporters, ink, dim, plum) {
+    // Separator: a dimmed interpunct — no color pop, so the
+    // strip stays quiet inside the app's palette.
+    val line = remember(supporters, ink, dim) {
         val segments = buildTickerSegments(
             supporters.map { TickerSegment.Shoutout(it.name, it.amount, it.message) },
         )
@@ -884,7 +883,9 @@ private fun SupporterTicker(
                         }
                     }
                 }
-                withStyle(SpanStyle(color = plum.copy(alpha = 0.55f))) { append("   ◆   ") }
+                // Entry separator: the app's own interpunct, dimmed — no
+                // color pop, just a quiet beat of air between voices.
+                withStyle(SpanStyle(color = dim.copy(alpha = 0.5f))) { append("    ·    ") }
             }
         }
     }
