@@ -3,6 +3,7 @@ package com.stash.core.media.streaming
 import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.data.download.BuildConfig  
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -117,33 +118,38 @@ class StreamSourceRegistry @Inject constructor(
                 // both-sources-down outage).
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             } else {
-                // PARKED 2026-07-01: kennyy/squid/arcod hosts are down for us,
-                // so they're commented out of the normal chain (re-enabling is
-                // uncommenting). Kept in sync with
-                // LosslessSourceRegistry.PARKED_SOURCE_IDS (download side).
+                // PARKED 2026-07-01: kennyy/squid hosts are down for us. Kept in
+                // sync with LosslessSourceRegistry.PARKED_SOURCE_IDS (download
+                // side) — re-enabling is uncommenting these two lines.
                 // add("kennyy" to kennyy::resolve)
                 // add("squid" to qobuz::resolve)
-                // if (allowYtDlp) add("arcod" to arcod::resolve)
 
-                // qbdlx (direct Qobuz API, per-account token pool) is now the
+                // qbdlx (direct Qobuz API, per-account token pool) is the
                 // primary lossless source: plain Range-seekable FLAC, no proxy,
-                // no client-side decrypt — the fastest path, so it's tried FIRST
-                // (ahead of amz). Like the parked per-account/slow sources it runs
-                // ONLY on foreground/next-up resolves (allowYtDlp = true), NEVER
-                // on the speculative queue-wide background fill — otherwise one
-                // playlist tap spends a search + the pool account's quota on every
-                // queue track speculatively, not just the ones actually played.
-                if (allowYtDlp) add("qbdlx" to qbdlx::resolve)
+                // no client-side decrypt — the fastest path. Foreground/next-up
+                // only (allowYtDlp = true), never the speculative background
+                // fill, and only when the build actually bundles qbdlx creds —
+                // an unconfigured build can never get a match here, so skipping
+                // the attempt avoids a wasted round-trip.
+                if (allowYtDlp && BuildConfig.QBDLX_CONFIGURED) {
+                    add("qbdlx" to qbdlx::resolve)
+                }
                 // amz (Amazon Music) is the SLOWEST lossless source: its stream
                 // resolver decrypts the whole FLAC to a local cache file before
                 // returning a URL (tens of seconds), serialized behind a single
-                // captcha / per-asin lock. So it sits LAST among lossless and,
-                // like qbdlx, runs ONLY on foreground/next-up resolves
-                // (allowYtDlp = true), NEVER on the speculative background fill —
-                // routing background tracks through the slow decrypt starves the
-                // fast YouTube fallback and leaves the timeline too sparse to skip
-                // (observed on-device 2026-06-21: 52s to resolve one next-up).
-                if (allowYtDlp) add("amz" to amz::resolve)
+                // captcha / per-asin lock. Foreground/next-up only, and skipped
+                // on cellular fast-start so it doesn't starve the YouTube
+                // fallback (observed on-device 2026-06-21: 52s to resolve one
+                // next-up).
+                if (allowYtDlp) {
+                    add("amz" to amz::resolve)
+                }
+                // ARCOD is an authenticated, per-user-account fallback. Foreground/
+                // next-up only, and only when the build bundles the private
+                // stream base — an unconfigured build can never get a match.
+                if (allowYtDlp && BuildConfig.ARCOD_CONFIGURED) {
+                    add("arcod" to arcod::resolve)
+                }
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             }
         }

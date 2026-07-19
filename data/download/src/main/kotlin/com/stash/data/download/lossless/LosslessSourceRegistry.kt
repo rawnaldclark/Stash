@@ -48,10 +48,17 @@ class LosslessSourceRegistry @Inject constructor(
         } else if (streamingPreference.isForceAmzOnly()) {
             orderedSources().filter { it.id == "amz" }
         } else {
-            // Normal chain skips the parked (host-down) sources. Only the
-            // normal path filters — force-X toggles above still reach a parked
+            // Normal chain skips (a) parked (host-down) sources and (b) any
+            // source whose build-time credentials aren't fully configured —
+            // an unconfigured qbdlx or ARCOD can't produce a result, so
+            // skipping it here avoids a wasted HTTP round-trip / rate-limit
+            // spend per resolve() call. Force-X toggles above bypass both
+            // filters so a manual test can still reach a parked/unconfigured
             // source on demand, and orderedSources()/Settings still list them.
-            orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }
+            orderedSources()
+                .filterNot { it.id in PARKED_SOURCE_IDS }
+                .filterNot { it.id == "qbdlx_qobuz" && !com.stash.data.download.BuildConfig.QBDLX_CONFIGURED }
+                .filterNot { it.id == "arcod" && !com.stash.data.download.BuildConfig.ARCOD_CONFIGURED }
         }
         val minQuality = prefs.minQualityNow()
 
