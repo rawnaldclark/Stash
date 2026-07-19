@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -41,6 +42,16 @@ class UpdateCheckWorker(
     context: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
+
+    private companion object {
+        val TRUSTED_BROWSER_PACKAGES = listOf(
+            "com.android.chrome",
+            "org.mozilla.firefox",
+            "com.microsoft.emmx",
+            "com.brave.browser",
+            "com.sec.android.app.sbrowser",
+        )
+    }
 
     companion object {
         private const val TAG = "UpdateCheckWorker"
@@ -214,9 +225,24 @@ class UpdateCheckWorker(
             return false
         }
 
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD_URL))
+        val packageManager = applicationContext.packageManager
+        val resolved = packageManager.queryIntentActivities(
+            browserIntent,
+            PackageManager.MATCH_DEFAULT_ONLY,
+        )
+
+        val preferredPackage = TRUSTED_BROWSER_PACKAGES.firstOrNull { trusted ->
+            resolved.any { it.activityInfo?.packageName == trusted }
+        } ?: resolved.firstOrNull()?.activityInfo?.packageName
+
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD_URL)).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            if (preferredPackage != null) {
+                setPackage(preferredPackage)
+            }
         }
+
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,
             0,
