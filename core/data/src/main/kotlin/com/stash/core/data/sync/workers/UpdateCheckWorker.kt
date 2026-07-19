@@ -43,16 +43,6 @@ class UpdateCheckWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
 
-    private companion object {
-        val TRUSTED_BROWSER_PACKAGES = listOf(
-            "com.android.chrome",
-            "org.mozilla.firefox",
-            "com.microsoft.emmx",
-            "com.brave.browser",
-            "com.sec.android.app.sbrowser",
-        )
-    }
-
     companion object {
         private const val TAG = "UpdateCheckWorker"
         private const val UNIQUE_WORK_NAME = "stash_update_check"
@@ -225,16 +215,37 @@ class UpdateCheckWorker(
             return false
         }
 
-        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD_URL))
         val packageManager = applicationContext.packageManager
+
+        // Discover installed apps that are actually browsers by querying for
+        // handlers of a GENERIC http:// URL — this is the same signal Android
+        // itself uses to populate "Open with…" browser pickers. Avoids
+        // hardcoding a package allowlist (which excludes Vivaldi, Edge, Opera,
+        // Samsung Internet, Kiwi, DuckDuckGo, etc.) while still preferring a
+        // genuine browser over some unrelated app that happens to register an
+        // intent-filter for github.com links (e.g. a GitHub client).
+        val genericBrowserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://")).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+        }
+        val browserPackages = packageManager.queryIntentActivities(
+            genericBrowserIntent,
+            PackageManager.MATCH_ALL,
+        ).mapNotNull { it.activityInfo?.packageName }.toSet()
+
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD_URL))
         val resolved = packageManager.queryIntentActivities(
             browserIntent,
             PackageManager.MATCH_DEFAULT_ONLY,
         )
 
-        val preferredPackage = TRUSTED_BROWSER_PACKAGES.firstOrNull { trusted ->
-            resolved.any { it.activityInfo?.packageName == trusted }
-        } ?: resolved.firstOrNull()?.activityInfo?.packageName
+        // Prefer a resolver that's a genuine browser; otherwise fall back to
+        // whatever the system resolved (still lets the OS show its own
+        // disambiguation dialog if nothing matches — never silently picks an
+        // arbitrary non-browser handler).
+        val preferredPackage = resolved
+            .map { it.activityInfo?.packageName }
+            .firstOrNull { it != null && it in browserPackages }
+            ?: resolved.firstOrNull()?.activityInfo?.packageName
 
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD_URL)).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
