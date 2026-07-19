@@ -97,11 +97,15 @@ fun ManagePlaylistsScreen(
         ManageSegment.SYNCED -> customAll.filter { it.syncEnabled }
         ManageSegment.OFF -> customAll.filter { !it.syncEnabled }
     }
-    val visibleCustom = if (query.isBlank()) {
-        bySegment
-    } else {
-        bySegment.filter { it.name.contains(query.trim(), ignoreCase = true) }
-    }
+    // The query filters EVERY section. Spotify accounts can carry 100+ algo
+    // mixes, so a filter that only touched the custom section below them
+    // looked completely dead (#310).
+    val q = query.trim()
+    fun List<ManageRow>.matching() =
+        if (q.isBlank()) this else filter { it.name.contains(q, ignoreCase = true) }
+    val visibleLiked = liked?.takeIf { q.isBlank() || it.name.contains(q, ignoreCase = true) }
+    val visibleMixes = mixes.matching()
+    val visibleCustom = bySegment.matching()
 
     Scaffold(
         topBar = {
@@ -167,14 +171,14 @@ fun ManagePlaylistsScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 // -- Liked ------------------------------------------------------
-                if (liked != null) {
+                if (visibleLiked != null) {
                     item(key = "liked-label") { ManageSectionLabel("Liked") }
                     item(key = "liked-row") {
                         SpotifySyncToggleRow(
-                            name = liked.name,
-                            trackCount = liked.trackCount,
-                            enabled = liked.syncEnabled,
-                            onToggle = { viewModel.onTogglePlaylistSync(liked.id, it) },
+                            name = visibleLiked.name,
+                            trackCount = visibleLiked.trackCount,
+                            enabled = visibleLiked.syncEnabled,
+                            onToggle = { viewModel.onTogglePlaylistSync(visibleLiked.id, it) },
                         )
                     }
                     if (source == SyncSource.YOUTUBE) {
@@ -188,17 +192,17 @@ fun ManagePlaylistsScreen(
                 }
 
                 // -- Mixes (auto) ----------------------------------------------
-                if (mixes.isNotEmpty()) {
+                if (visibleMixes.isNotEmpty()) {
                     item(key = "mixes-label") { ManageSectionLabel("Mixes (auto)") }
                     item(key = "mixes-summary") {
                         Text(
-                            text = "${mixes.size} mixes · surfaced on Home",
+                            text = "${visibleMixes.size} mixes · surfaced on Home",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 4.dp),
                         )
                     }
-                    items(mixes, key = { "mix-${it.id}" }) { mix ->
+                    items(visibleMixes, key = { "mix-${it.id}" }) { mix ->
                         MixHideRow(
                             name = mix.name,
                             hideFromHome = mix.hideFromHome,
