@@ -877,7 +877,9 @@ private fun SupporterTicker(
                         }
                     }
                     is TickerSegment.Announcement -> {
-                        withStyle(SpanStyle(color = plum, fontWeight = FontWeight.SemiBold)) {
+                        // Station voice: quiet by design — muted ink, regular
+                        // weight (names are bold, quotes italic; this murmurs).
+                        withStyle(SpanStyle(color = dim)) {
                             append(seg.text)
                         }
                     }
