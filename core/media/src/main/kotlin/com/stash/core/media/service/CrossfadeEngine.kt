@@ -81,6 +81,11 @@ class CrossfadeEngine(
                 if (pausedForFocusLoss) {
                     pausedForFocusLoss = false
                     playerA.playWhenReady = true
+                    // Mid-fade a transient loss paused BOTH players; the
+                    // incoming (spare) is the audible future master — leaving
+                    // it paused promotes a dead player at the swap (car nav
+                    // prompt during a fade → silence at the seam, #251).
+                    if (transitioning) playerB.playWhenReady = true
                 }
             }
         }
@@ -89,7 +94,13 @@ class CrossfadeEngine(
     /** Requests focus when the master starts; abandons when it stops. */
     private val masterFocusListener = object : Player.Listener {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            if (playWhenReady) requestFocus() else if (!pausedForFocusLoss) abandonFocus()
+            // During a fade this listener still sits on the OUTGOING player,
+            // whose pauseAtEndOfMediaItems fires playWhenReady=false if it
+            // runs out mid-ramp (streaming durations drift). The incoming is
+            // still audible — abandoning would drop the whole app out of the
+            // focus stack while music keeps playing (#251 car-route ghost).
+            if (playWhenReady) requestFocus()
+            else if (!pausedForFocusLoss && !transitioning) abandonFocus()
         }
     }
 
@@ -120,9 +131,16 @@ class CrossfadeEngine(
         focusRequest?.let { audioManager.abandonAudioFocusRequest(it); focusRequest = null }
     }
 
+    /** Stable per-instance tag so field logs name WHICH player each stop hit. */
+    private fun tag(p: ExoPlayer) = "p" + Integer.toHexString(System.identityHashCode(p))
+
     /** Prime the spare on [item] (buffered, paused, silent) for an upcoming fade. */
     fun prepareNext(item: MediaItem) {
         val spare = playerB
+        android.util.Log.i(
+            "Crossfade",
+            "prepareNext: stop+prime spare=${tag(spare)} (master=${tag(playerA)}) item=${item.mediaId}",
+        )
         spare.stop()
         spare.clearMediaItems()
         spare.playWhenReady = false
@@ -168,6 +186,10 @@ class CrossfadeEngine(
         transitionJob = scope.launch {
             val outgoing = playerA
             val incoming = playerB
+            android.util.Log.i(
+                "Crossfade",
+                "transition start: out=${tag(outgoing)} in=${tag(incoming)} fadeMs=$fadeMs",
+            )
             incoming.volume = 0f
             incoming.playWhenReady = true
             incoming.play()
@@ -202,6 +224,15 @@ class CrossfadeEngine(
             incoming.pauseAtEndOfMediaItems = false
             playerA = incoming
             playerB = outgoing
+            // The incoming's playWhenReady=true edge fired while it was a
+            // listener-less spare, so no focus request ever ran for it. If
+            // focus was lost/abandoned during the ramp, the new master would
+            // play focusless forever. Idempotent when focus is already held.
+            requestFocus()
+            android.util.Log.i(
+                "Crossfade",
+                "swap: master=${tag(incoming)} spare=${tag(outgoing)} (resetting spare)",
+            )
             onSwap(playerA)
 
             // Reset the old master to a clean spare.
@@ -237,6 +268,13 @@ class CrossfadeEngine(
     fun cancelTransition() {
         transitionJob?.cancel()
         transitionJob = null
+        if (::playerA.isInitialized && ::playerB.isInitialized) {
+            android.util.Log.i(
+                "Crossfade",
+                "cancel: restore master=${tag(playerA)} stop spare=${tag(playerB)} " +
+                    "(wasTransitioning=$transitioning)",
+            )
+        }
         if (::playerA.isInitialized) {
             playerA.volume = 1f
             playerA.pauseAtEndOfMediaItems = false
