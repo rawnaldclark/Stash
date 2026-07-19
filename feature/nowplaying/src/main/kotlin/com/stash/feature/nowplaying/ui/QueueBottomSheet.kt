@@ -102,8 +102,12 @@ fun QueueBottomSheet(
         }
     }
 
-    // Track cumulative moves during a drag so we can commit them
-    val pendingMoves = remember { mutableStateListOf<Pair<Int, Int>>() }
+    // Where the dragged row started, in local upcoming-list index space.
+    var dragStartIdx by remember { mutableIntStateOf(-1) }
+    // Commit closures live inside pointerInput and outlast recompositions;
+    // read currentIndex through updated-state so a track advancing while
+    // the sheet is open can't stale the committed absolute indices.
+    val liveCurrentIndex by rememberUpdatedState(currentIndex)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -160,10 +164,6 @@ fun QueueBottomSheet(
                         val from = draggedIdx
                         val to = draggedIdx - 1
                         Collections.swap(localQueue, from, to)
-                        pendingMoves.add(Pair(
-                            currentIndex + 1 + from,
-                            currentIndex + 1 + to,
-                        ))
                         draggedIdx = to
                         dragOffsetY += itemHeight
                     }
@@ -171,14 +171,29 @@ fun QueueBottomSheet(
                         val from = draggedIdx
                         val to = draggedIdx + 1
                         Collections.swap(localQueue, from, to)
-                        pendingMoves.add(Pair(
-                            currentIndex + 1 + from,
-                            currentIndex + 1 + to,
-                        ))
                         draggedIdx = to
                         dragOffsetY -= itemHeight
                     }
                 }
+            }
+
+            // The whole drag commits as ONE move: its net effect is "take the
+            // row from where it started to where it was dropped" — exactly the
+            // remove-then-insert the player's moveInQueue performs. Replaying
+            // per-slot swaps as N separate player calls raced the queue
+            // round-trip and could snap the row back to its old place on drop.
+            val commitDrag = {
+                autoScrollJob?.cancel()
+                autoScrollJob = null
+                if (dragStartIdx >= 0 && draggedIdx >= 0 && dragStartIdx != draggedIdx) {
+                    onMoveTrack(
+                        liveCurrentIndex + 1 + dragStartIdx,
+                        liveCurrentIndex + 1 + draggedIdx,
+                    )
+                }
+                dragStartIdx = -1
+                draggedIdx = -1
+                dragOffsetY = 0f
             }
 
             LazyColumn(
@@ -304,8 +319,8 @@ fun QueueBottomSheet(
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = {
                                                 draggedIdx = currentIdx
+                                                dragStartIdx = currentIdx
                                                 dragOffsetY = 0f
-                                                pendingMoves.clear()
                                                 // Measure item height
                                                 val info = listState.layoutInfo.visibleItemsInfo
                                                     .firstOrNull { it.index == currentIdx }
@@ -344,29 +359,12 @@ fun QueueBottomSheet(
                                                 dragOffsetY += amount.y
                                                 normalizeSwaps()
                                             },
-                                            onDragEnd = {
-                                                autoScrollJob?.cancel()
-                                                autoScrollJob = null
-                                                // Commit all moves to the actual player queue
-                                                pendingMoves.forEach { (from, to) ->
-                                                    onMoveTrack(from, to)
-                                                }
-                                                pendingMoves.clear()
-                                                draggedIdx = -1
-                                                dragOffsetY = 0f
-                                            },
-                                            onDragCancel = {
-                                                autoScrollJob?.cancel()
-                                                autoScrollJob = null
-                                                // Revert: resync local queue from source
-                                                localQueue.clear()
-                                                upcomingSource.forEachIndexed { i, t ->
-                                                    localQueue.add(QueueEntry(i, t))
-                                                }
-                                                pendingMoves.clear()
-                                                draggedIdx = -1
-                                                dragOffsetY = 0f
-                                            },
+                                            onDragEnd = { commitDrag() },
+                                            // A stolen pointer (sheet grab, palm
+                                            // rejection) commits the row where it
+                                            // visibly sits instead of silently
+                                            // snapping the whole drag back.
+                                            onDragCancel = { commitDrag() },
                                         )
                                     },
                                 contentAlignment = Alignment.Center,
