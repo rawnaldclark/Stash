@@ -100,7 +100,12 @@ class CaptchaExpiredNotifier @Inject constructor(
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 putExtra(INTENT_EXTRA_NAV_TARGET, DEEP_LINK_TARGET)
             }
-            ?: Intent()
+            ?: Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                setPackage(context.packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra(INTENT_EXTRA_NAV_TARGET, DEEP_LINK_TARGET)
+            }
         return PendingIntent.getActivity(
             context,
             REQUEST_CODE,
