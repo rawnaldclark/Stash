@@ -83,6 +83,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -845,66 +853,90 @@ private fun SupporterTicker(
 
     val ink = MaterialTheme.colorScheme.onSurface
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
-    val gold = Color(0xFFFFC947)
-    // One long styled line; basicMarquee scrolls it forever. Rebuilt only
-    // when the supporter list (or theme inks) change.
-    val line = remember(supporters, ink, dim) {
+    val plum = MaterialTheme.colorScheme.primary
+
+    // Supporters woven with station announcements (mission line, dev and
+    // contributor calls) so the wire carries variety, not just gratitude.
+    // Separator: a small plum diamond — accent-colored, not gold, so the
+    // strip sits inside the app's palette instead of fighting it.
+    val line = remember(supporters, ink, dim, plum) {
+        val segments = buildTickerSegments(
+            supporters.map { TickerSegment.Shoutout(it.name, it.amount, it.message) },
+        )
         buildAnnotatedString {
-            supporters.forEach { s ->
-                withStyle(SpanStyle(color = ink, fontWeight = FontWeight.SemiBold)) {
-                    append("${s.name} · ${s.amount}")
-                }
-                if (s.message.isNotBlank()) {
-                    withStyle(SpanStyle(color = dim, fontStyle = FontStyle.Italic)) {
-                        append("  “${s.message}”")
+            segments.forEach { seg ->
+                when (seg) {
+                    is TickerSegment.Shoutout -> {
+                        withStyle(SpanStyle(color = ink, fontWeight = FontWeight.SemiBold)) {
+                            append("${seg.name} · ${seg.amount}")
+                        }
+                        if (seg.message.isNotBlank()) {
+                            withStyle(SpanStyle(color = dim, fontStyle = FontStyle.Italic)) {
+                                append("  “${seg.message}”")
+                            }
+                        }
+                    }
+                    is TickerSegment.Announcement -> {
+                        withStyle(SpanStyle(color = plum, fontWeight = FontWeight.SemiBold)) {
+                            append(seg.text)
+                        }
                     }
                 }
-                withStyle(SpanStyle(color = gold)) { append("   ✦   ") }
+                withStyle(SpanStyle(color = plum.copy(alpha = 0.55f))) { append("   ◆   ") }
             }
-            // The station voice — once per full cycle, after the last
-            // supporter (plain ink: not a name, not a quote).
-            withStyle(SpanStyle(color = ink)) {
-                append(
-                    "Stash is a community powered open-source project " +
-                        "dedicated to the love and growth of music. " +
-                        "Thank you to our supporters.",
-                )
-            }
-            withStyle(SpanStyle(color = gold)) { append("   ✦   ") }
         }
     }
 
-    // Full-bleed strip: no card, no border, no rounding — just a whisper of
-    // glass tint separating the wire from the ground.
+    // Wall-clock marquee: offset is a pure function of elapsed-since-epoch
+    // (see marqueeOffsetPx), so the tape RESUMES mid-flow after the item
+    // leaves and re-enters composition. basicMarquee restarted from zero on
+    // every return to the top of Home — which is why announcements deep in
+    // the tape were never seen. rememberSaveable pins the epoch across
+    // lazy-item disposal.
+    val epochMs = rememberSaveable { System.currentTimeMillis() }
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            withFrameMillis { nowMs = System.currentTimeMillis() }
+        }
+    }
+    val velocityPxPerSec = with(LocalDensity.current) { 28.dp.toPx() }
+    var tapeWidthPx by remember { mutableIntStateOf(0) }
+
+    // Full-bleed strip: no card, no border, no leading icon — every pixel
+    // of width belongs to the tape.
     Surface(
         modifier = modifier.clickable { uriHandler.openUri("https://ko-fi.com/rawnald") },
         color = extendedColors.glassBackground,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp)
+                .clipToBounds(),
         ) {
-            androidx.compose.material3.Icon(
-                imageVector = androidx.compose.material.icons.Icons.Default.FavoriteBorder,
-                contentDescription = "Supporters on Ko-fi",
-                tint = gold,
-                modifier = Modifier.size(16.dp),
-            )
-            Text(
-                text = line,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                softWrap = false,
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .basicMarquee(
-                        iterations = Int.MAX_VALUE,
-                        repeatDelayMillis = 0,
-                        initialDelayMillis = 800,
-                        velocity = 28.dp,
-                    ),
-            )
+                    .wrapContentWidth(align = Alignment.Start, unbounded = true)
+                    .graphicsLayer {
+                        translationX = -marqueeOffsetPx(nowMs - epochMs, velocityPxPerSec, tapeWidthPx)
+                    },
+            ) {
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.onSizeChanged { tapeWidthPx = it.width },
+                )
+                // Second copy of the tape for a seamless wrap.
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
         }
     }
 }
