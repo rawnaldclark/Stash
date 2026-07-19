@@ -152,25 +152,30 @@ class DatabaseBackupManager @Inject constructor(
                         }
 
                         val outFile = when {
-                            entry.name == "stash.db" -> {
-                                dbFile.parentFile?.mkdirs()
-                                dbFile
-                            }
+                            entry.name == "stash.db" -> dbFile
                             entry.name.startsWith("datastore/") -> {
-                                val file = File(datastoreDir, entry.name.substringAfter("datastore/"))
-                                file.parentFile?.mkdirs()
-                                file
+                                File(datastoreDir, entry.name.substringAfter("datastore/"))
                             }
                             else -> null
                         }
 
                         if (outFile != null) {
-                            // Zip Slip Guard: ensure entry doesn't escape target directory
-                            val canonicalTargetDir = datastoreDir.canonicalPath + File.separator
-                            if (!outFile.canonicalPath.startsWith(canonicalTargetDir) && 
-                                outFile.canonicalPath != dbFile.canonicalPath) {
+                            // Zip Slip Guard: validate before any filesystem operation.
+                            val canonicalDatastoreDir = datastoreDir.canonicalFile
+                            val canonicalOutFile = outFile.canonicalFile
+                            val isDbTarget = entry.name == "stash.db"
+                            val isValidTarget = if (isDbTarget) {
+                                canonicalOutFile.path == dbFile.canonicalFile.path
+                            } else {
+                                canonicalOutFile.toPath()
+                                    .startsWith(canonicalDatastoreDir.toPath())
+                            }
+
+                            if (!isValidTarget) {
                                 throw SecurityException("Entry escapes target directory: ${entry.name}")
                             }
+
+                            outFile.parentFile?.mkdirs()
 
                             android.util.Log.d("BackupManager", "Restoring ${entry.name} to ${outFile.absolutePath}")
 
