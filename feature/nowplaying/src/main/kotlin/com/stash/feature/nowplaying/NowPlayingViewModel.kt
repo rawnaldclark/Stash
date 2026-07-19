@@ -79,7 +79,14 @@ class NowPlayingViewModel @Inject constructor(
     // Tap-to-artist: resolves the playing track's artist NAME to a YT
     // browseId so Now Playing can open the artist profile.
     private val ytMusicApiClient: com.stash.data.ytmusic.YTMusicApiClient,
+    private val sleepTimerController: com.stash.core.media.SleepTimerController,
 ) : ViewModel() {
+
+    // ── Sleep timer (fork issue ParaliyzedEvo/Stash#26) ─────────────────
+    val sleepTimerState = sleepTimerController.state
+    fun onSleepTimerMinutes(minutes: Int) = sleepTimerController.startMinutes(minutes)
+    fun onSleepTimerEndOfTrack() = sleepTimerController.stopAtEndOfTrack()
+    fun onSleepTimerCancel() = sleepTimerController.cancel()
 
     private val _uiState = MutableStateFlow(NowPlayingUiState())
     val uiState: StateFlow<NowPlayingUiState> = _uiState.asStateFlow()
