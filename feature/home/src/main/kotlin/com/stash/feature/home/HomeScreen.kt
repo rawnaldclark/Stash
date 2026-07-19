@@ -326,18 +326,6 @@ fun HomeScreen(
             }
         }
 
-        // ── Genre filter chips ───────────────────────────────────────
-        // Global genre filter for the Qobuz discovery rows below the hero
-        // (spec §3). "All" = no filter; a tap re-fetches all three rows.
-        item {
-            Spacer(Modifier.height(6.dp))
-            CrispChipRow(
-                chips = uiState.genres.map { it.label },
-                selected = uiState.selectedGenre,
-                onSelect = viewModel::onSelectGenre,
-            )
-        }
-
         // ── Discover hero pager (Daily Discover + your Stash mixes) ──
         // A mix created from the hero's ＋ ring lands right here as an
         // identical sibling card — swipe between Daily Discover and your
@@ -434,6 +422,19 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+
+        // ── Genre filter chips ───────────────────────────────────────
+        // Steer ONLY the Qobuz discovery rows below, so they sit with
+        // them — directly under the hero, above New Releases — instead of
+        // topping the whole page (they never affected the hero).
+        item {
+            Spacer(Modifier.height(14.dp))
+            CrispChipRow(
+                chips = uiState.genres.map { it.label },
+                selected = uiState.selectedGenre,
+                onSelect = viewModel::onSelectGenre,
+            )
         }
 
         // ── Qobuz discovery rows (genre-filtered) ─────────────────────
