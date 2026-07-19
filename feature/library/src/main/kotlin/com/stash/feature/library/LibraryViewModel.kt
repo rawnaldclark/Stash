@@ -42,6 +42,12 @@ import javax.inject.Inject
  */
 private val LOSSLESS_CODECS = setOf("flac", "alac", "wav", "ape", "tta", "wv", "aiff")
 
+/** Shared track search predicate — every Library list matches title/artist/album. */
+private fun Track.matchesQuery(query: String): Boolean =
+    title.lowercase().contains(query) ||
+        artist.lowercase().contains(query) ||
+        album.lowercase().contains(query)
+
 /**
  * ViewModel for the Library screen.
  *
@@ -161,9 +167,7 @@ class LibraryViewModel @Inject constructor(
 
         // -- Apply client-side search filter --
         val filteredTracks = if (query.isEmpty()) sourceFiltered else sourceFiltered.filter {
-            it.title.lowercase().contains(query)
-                    || it.artist.lowercase().contains(query)
-                    || it.album.lowercase().contains(query)
+            it.matchesQuery(query)
         }
         val filteredPlaylists = if (query.isEmpty()) allPlaylists else allPlaylists.filter {
             it.name.lowercase().contains(query)
@@ -269,7 +273,12 @@ class LibraryViewModel @Inject constructor(
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
-    /** Liked tracks for the current [likedFilter], de-duped across the liked playlists. */
+    /**
+     * Liked tracks for the current [likedFilter], de-duped across the liked
+     * playlists, then narrowed by the header search query — the Liked tab
+     * used to be the one list [ControlState.searchQuery] never reached
+     * (issue #293: searching on Liked kept showing the full list).
+     */
     @OptIn(ExperimentalCoroutinesApi::class)
     val likedTracks: StateFlow<List<Track>> =
         combine(stashLikedFlow, externalLikedFlow, _likedFilter) { stash, external, filter ->
@@ -286,6 +295,11 @@ class LibraryViewModel @Inject constructor(
                 combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
                     arrays.flatMap { it.toList() }.distinctBy { it.id }
                 }
+            }
+        }.let { likedFlow ->
+            combine(likedFlow, _controls) { tracks, controls ->
+                val query = controls.searchQuery.trim().lowercase()
+                if (query.isEmpty()) tracks else tracks.filter { it.matchesQuery(query) }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
