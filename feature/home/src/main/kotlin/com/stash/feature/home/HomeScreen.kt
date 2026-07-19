@@ -916,7 +916,13 @@ private fun SupporterTicker(
     // of width belongs to the tape.
     Surface(
         modifier = modifier.clickable { uriHandler.openUri("https://ko-fi.com/rawnald") },
-        color = extendedColors.glassBackground,
+        // AMOLED: the glass tint would keep the strip's pixels lit — let the
+        // pure-black ground show through instead.
+        color = if (com.stash.core.ui.theme.LocalIsAmoledTheme.current) {
+            Color.Transparent
+        } else {
+            extendedColors.glassBackground
+        },
     ) {
         Box(
             modifier = Modifier
