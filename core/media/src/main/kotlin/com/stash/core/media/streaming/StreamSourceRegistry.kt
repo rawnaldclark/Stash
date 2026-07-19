@@ -82,16 +82,11 @@ class StreamSourceRegistry @Inject constructor(
      *   via the fast InnerTube engine only (no slow yt-dlp). Used by the
      *   background-fill path so a 15-35s yt-dlp invocation never sits on
      *   the queue's critical path. Foreground calls leave this true.
-     * @param preferFastStartup when true, skip slow job/full-file lossless
-     *   fallbacks on the normal branch and reach YouTube sooner. Used for
-     *   cellular foreground/next-up resolves. Force toggles still override
-     *   this policy so diagnostics can exercise one source.
      */
     suspend fun resolve(
         track: TrackEntity,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
-        preferFastStartup: Boolean = false,
     ): StreamUrl? {
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
             if (streamingPreference.isForceQbdlxOnly()) {
@@ -141,15 +136,14 @@ class StreamSourceRegistry @Inject constructor(
                 }
                 // amz (Amazon Music) is the SLOWEST lossless source: its stream
                 // resolver decrypts the whole FLAC to a local cache file before
-                // returning a URL (tens of seconds), serialized behind a single
-                // captcha / per-asin lock. Foreground/next-up only, and skipped
-                // on cellular fast-start so it doesn't starve the YouTube
-                // fallback (observed on-device 2026-06-21: 52s to resolve one
-                // next-up).
-                if (allowYtDlp && !preferFastStartup) {
+                // returning a URL (tens of seconds; observed on-device
+                // 2026-06-21: 52s for one next-up), serialized behind a single
+                // captcha / per-asin lock. Foreground/next-up only. Any future
+                // "fast startup" policy that skips lossless sources needs a
+                // StreamUrlCache quality/network guard first — see the #215
+                // review history (lossy cellular results poisoned the cache).
+                if (allowYtDlp) {
                     add("amz" to amz::resolve)
-                } else if (allowYtDlp && preferFastStartup) {
-                    Log.d(TAG, "cellular fast-start: skipping amz for ${track.id} '${track.title}'")
                 }
                 // ARCOD is an authenticated, per-user-account fallback. Foreground/
                 // next-up only, and only when the build bundles the private
