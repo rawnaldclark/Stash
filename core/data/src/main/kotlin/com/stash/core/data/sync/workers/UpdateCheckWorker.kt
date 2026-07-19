@@ -239,19 +239,23 @@ class UpdateCheckWorker(
         )
 
         // Prefer a resolver that's a genuine browser; otherwise fall back to
-        // whatever the system resolved (still lets the OS show its own
-        // disambiguation dialog if nothing matches — never silently picks an
-        // arbitrary non-browser handler).
-        val preferredPackage = resolved
-            .map { it.activityInfo?.packageName }
-            .firstOrNull { it != null && it in browserPackages }
-            ?: resolved.firstOrNull()?.activityInfo?.packageName
+        // whatever the system resolved. Then make the launch explicit by
+        // binding to the chosen activity component.
+        val preferredActivity = resolved
+            .firstOrNull { info -> info.activityInfo?.packageName in browserPackages }
+            ?: resolved.firstOrNull()
+
+        if (preferredActivity?.activityInfo == null) {
+            Log.w(TAG, "No browser activity resolved for update URL; skipping notification")
+            return false
+        }
 
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD_URL)).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            if (preferredPackage != null) {
-                setPackage(preferredPackage)
-            }
+            setClassName(
+                preferredActivity.activityInfo.packageName,
+                preferredActivity.activityInfo.name,
+            )
         }
 
         val pendingIntent = PendingIntent.getActivity(
