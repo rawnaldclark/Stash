@@ -283,7 +283,7 @@ interface PlaylistDao {
      * so manual additions to imported Spotify/YT Music playlists persist.
      * See issue #42.
      */
-    @Query("DELETE FROM playlist_tracks WHERE playlist_id = :playlistId AND locally_added = 0")
+    @Query("DELETE FROM playlist_tracks WHERE playlist_id = :playlistId AND locally_added = 0 AND removed_at IS NULL")
     suspend fun clearSyncedPlaylistTracks(playlistId: Long)
 
     /**
