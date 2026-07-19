@@ -903,7 +903,7 @@ private fun SupporterTicker(
             withFrameMillis { nowMs = System.currentTimeMillis() }
         }
     }
-    val velocityPxPerSec = with(LocalDensity.current) { 28.dp.toPx() }
+    val velocityPxPerSec = with(LocalDensity.current) { 31.dp.toPx() }
     var tapeWidthPx by remember { mutableIntStateOf(0) }
 
     // Full-bleed strip: no card, no border, no leading icon — every pixel
