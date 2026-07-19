@@ -1347,6 +1347,23 @@ interface TrackDao {
     suspend fun dismissMatch(trackId: Long)
 
     /** Set the YouTube video ID for a track so future syncs don't re-queue it. */
+    /**
+     * youtube_id backfill that silently no-ops when ANOTHER track already
+     * owns the id (tracks.youtube_id is UNIQUE — an unguarded UPDATE throws
+     * SQLiteConstraintException and, in DiffWorker, failed the whole sync
+     * diff). Returns 1 when the backfill applied, 0 when skipped.
+     */
+    @Query(
+        """
+        UPDATE tracks SET youtube_id = :youtubeId
+        WHERE id = :trackId
+          AND NOT EXISTS (
+              SELECT 1 FROM tracks WHERE youtube_id = :youtubeId AND id != :trackId
+          )
+        """
+    )
+    suspend fun updateYoutubeIdIfUnclaimed(trackId: Long, youtubeId: String): Int
+
     @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId")
     suspend fun updateYoutubeId(trackId: Long, youtubeId: String)
 

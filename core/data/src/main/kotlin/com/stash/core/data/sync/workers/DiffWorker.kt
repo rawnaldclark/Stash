@@ -435,9 +435,15 @@ class DiffWorker @AssistedInject constructor(
 
             val snapshotYtId = snapshot.youtubeId
             if (!snapshotYtId.isNullOrBlank() && existingTrack.youtubeId.isNullOrBlank()) {
-                trackDao.updateYoutubeId(existingTrack.id, snapshotYtId)
-                val ytUrl = "https://music.youtube.com/watch?v=$snapshotYtId"
-                downloadQueueDao.fillMissingYoutubeUrlForTrack(existingTrack.id, ytUrl)
+                // Guarded: a DIFFERENT track can already own this youtube_id
+                // (UNIQUE column) — e.g. one snapshot matching separate rows
+                // by spotifyUri and youtubeId. The unguarded UPDATE threw
+                // SQLiteConstraintException and failed the entire diff.
+                val applied = trackDao.updateYoutubeIdIfUnclaimed(existingTrack.id, snapshotYtId)
+                if (applied == 1) {
+                    val ytUrl = "https://music.youtube.com/watch?v=$snapshotYtId"
+                    downloadQueueDao.fillMissingYoutubeUrlForTrack(existingTrack.id, ytUrl)
+                }
             }
 
             val snapshotArt = snapshot.albumArtUrl

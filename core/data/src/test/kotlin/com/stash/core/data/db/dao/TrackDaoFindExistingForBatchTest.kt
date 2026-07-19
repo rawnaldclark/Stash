@@ -39,16 +39,20 @@ class TrackDaoFindExistingForBatchTest {
 
     @After fun tearDown() { db.close() }
 
-    @Test fun `empty list argument throws — documents the footgun`() = runTest {
-        dao.insert(TrackEntity(title = "T", artist = "A", canonicalTitle = "t", canonicalArtist = "a"))
+    @Test fun `empty list for a dimension is safe and matches via the others`() = runTest {
+        // Room 2.7 expands an empty IN () safely (no SQLiteException) — the
+        // sentinel in the DAO wrapper is belt-and-suspenders for older Room,
+        // not a live requirement. Documents actual behavior.
+        val id = dao.insert(TrackEntity(title = "T", artist = "A", canonicalTitle = "t", canonicalArtist = "a"))
 
-        var threw = false
-        try {
-            dao.findExistingForBatch(spotifyUris = emptyList(), youtubeIds = listOf(sentinel), canonicalKeys = listOf("t|a"))
-        } catch (e: Exception) {
-            threw = true
-        }
-        assertTrue("an empty list for any parameter must fail — callers must pass a sentinel instead", threw)
+        val result = dao.findExistingForBatch(
+            spotifyUris = emptyList(),
+            youtubeIds = emptyList(),
+            canonicalKeys = listOf("t|a"),
+        )
+
+        assertEquals(1, result.size)
+        assertEquals(id, result.single().id)
     }
 
     @Test fun `sentinel placeholder matches nothing by itself, only real canonical key matches`() = runTest {

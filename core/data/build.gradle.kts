@@ -59,6 +59,7 @@ dependencies {
     testImplementation("app.cash.turbine:turbine:1.1.0")
     testImplementation("androidx.room:room-testing:2.7.1")
     testImplementation("androidx.test:core:1.6.1")
+    testImplementation(libs.work.testing)
     testImplementation("androidx.test.ext:junit:1.2.1")
     testImplementation("org.robolectric:robolectric:4.13")
     testImplementation("org.mockito:mockito-core:5.11.0")

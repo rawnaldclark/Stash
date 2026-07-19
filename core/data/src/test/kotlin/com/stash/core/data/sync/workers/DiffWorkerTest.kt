@@ -68,8 +68,8 @@ class DiffWorkerTest {
             .allowMainThreadQueries()
             .build()
 
-        every { blocklistGuard.isBlocked(any(), any(), any(), any()) } returns false
-        every { streamingPreference.current() } returns false
+        coEvery { blocklistGuard.isBlocked(any(), any(), any(), any()) } returns false
+        coEvery { streamingPreference.current() } returns false
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.REFRESH)
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.REFRESH)
     }
@@ -216,7 +216,8 @@ class DiffWorkerTest {
         )
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
 
-        buildWorker().doWork()
+        val result = buildWorker().doWork()
+        assertTrue("diff must succeed", result is androidx.work.ListenableWorker.Result.Success)
 
         val crossRefs = db.playlistDao().getCrossRefsForPlaylist(playlistId)
         assertEquals(1, crossRefs.size)
