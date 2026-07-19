@@ -166,28 +166,31 @@ fun NowPlayingScreen(
         }
     }
 
+    // Share + sleep-timer sheets (fork issues ParaliyzedEvo/Stash#40, #26).
+    // Screen scope — NOT inside the showQueue block, or the icons dead-end
+    // unless the queue sheet happens to be open.
+    val shareTrack = uiState.currentTrack
+    if (showShareSheet && shareTrack != null) {
+        com.stash.core.ui.components.ShareTrackSheet(
+            title = shareTrack.title,
+            artist = shareTrack.artist,
+            spotifyUri = shareTrack.spotifyUri,
+            youtubeId = shareTrack.youtubeId,
+            onDismiss = { showShareSheet = false },
+        )
+    }
+    if (showSleepSheet) {
+        SleepTimerSheet(
+            state = sleepTimerState,
+            onMinutes = { viewModel.onSleepTimerMinutes(it); showSleepSheet = false },
+            onEndOfTrack = { viewModel.onSleepTimerEndOfTrack(); showSleepSheet = false },
+            onCancelTimer = { viewModel.onSleepTimerCancel(); showSleepSheet = false },
+            onDismiss = { showSleepSheet = false },
+        )
+    }
+
     // Queue bottom sheet
     if (showQueue) {
-        // Share + sleep-timer sheets (fork issues ParaliyzedEvo/Stash#40, #26).
-        val shareTrack = uiState.currentTrack
-        if (showShareSheet && shareTrack != null) {
-            com.stash.core.ui.components.ShareTrackSheet(
-                title = shareTrack.title,
-                artist = shareTrack.artist,
-                spotifyUri = shareTrack.spotifyUri,
-                youtubeId = shareTrack.youtubeId,
-                onDismiss = { showShareSheet = false },
-            )
-        }
-        if (showSleepSheet) {
-            SleepTimerSheet(
-                state = sleepTimerState,
-                onMinutes = { viewModel.onSleepTimerMinutes(it); showSleepSheet = false },
-                onEndOfTrack = { viewModel.onSleepTimerEndOfTrack(); showSleepSheet = false },
-                onCancelTimer = { viewModel.onSleepTimerCancel(); showSleepSheet = false },
-                onDismiss = { showSleepSheet = false },
-            )
-        }
         QueueBottomSheet(
             queue = uiState.queue,
             currentIndex = uiState.currentIndex,
