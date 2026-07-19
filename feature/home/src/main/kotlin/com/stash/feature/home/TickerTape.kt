@@ -18,7 +18,7 @@ internal sealed interface TickerSegment {
 internal val TICKER_ANNOUNCEMENTS = listOf(
     "Stash is a community powered open-source project dedicated to the " +
         "love and growth of music. Thank you to our supporters.",
-    "Developers wanted — join the Discord (icon up top) and help build Stash.",
+    "Devs wanted — join the Discord to help build the future of music.",
     "Open source, open to PRs — contributors welcome on GitHub.",
 )
 

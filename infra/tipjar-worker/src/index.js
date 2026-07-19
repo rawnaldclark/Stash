@@ -18,7 +18,10 @@
  * Deploy: see ../README.md.
  */
 
-const SUPPORTERS_LIMIT = 20;
+// 2026-07-19: 20 was destructively truncating — donors pushed past the
+// cap were deleted from KV forever, which is why older donations vanished
+// from the app's ticker. 500 entries is still a trivially small KV value.
+const SUPPORTERS_LIMIT = 500;
 const KV_KEY = "supporters";
 
 export default {

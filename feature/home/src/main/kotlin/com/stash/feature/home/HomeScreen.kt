@@ -269,9 +269,14 @@ fun HomeScreen(
         item {
             val tipJar = uiState.tipJar
             val pillSupporters = remember(tipJar) {
-                tipJar.supporters.map {
+                val live = tipJar.supporters.map {
                     Supporter(name = it.name, amount = "$${it.amountUsd}", message = it.message)
-                }.ifEmpty { HOME_SUPPORTERS }
+                }
+                // Legacy donors pre-date the Ko-fi webhook and exist nowhere
+                // in the Worker's KV — they always ride the tape (deduped in
+                // case they ever re-donate through the live pipeline).
+                val liveNames = live.map { it.name.lowercase() }.toSet()
+                live + LEGACY_SUPPORTERS.filter { it.name.lowercase() !in liveNames }
             }
             // Edge-to-edge: the ticker runs the full screen width, no card
             // chrome — maximum runway for the scrolling messages.
@@ -816,7 +821,7 @@ private const val STASH_ISSUE_URL = "https://github.com/rawnaldclark/Stash/issue
 // browser. Edit when the invite rotates.
 private const val STASH_DISCORD_URL = "https://discord.gg/vcbjEby5PC"
 
-private val HOME_SUPPORTERS = listOf(
+private val LEGACY_SUPPORTERS = listOf(
     Supporter(
         name = "Cedric",
         amount = "$10",
