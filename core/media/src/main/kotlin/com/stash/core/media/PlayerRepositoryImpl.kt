@@ -1562,7 +1562,27 @@ class PlayerRepositoryImpl @Inject constructor(
                     com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(currentArt))
         }
         val metaBuilder = item.mediaMetadata.buildUpon().setExtras(newExtras)
-        betterArt?.let { metaBuilder.setArtworkUri(Uri.parse(it)) }
+        betterArt?.let { art ->
+            metaBuilder.setArtworkUri(Uri.parse(art))
+            // #336: persist the upgrade — this stamp used to die with the
+            // session, so Library/queue/playlist rows kept the video
+            // thumbnail forever on queue-driven playback (mixes resolve via
+            // prefetch/LazyResolvingDataSource, which never hit routeStream's
+            // on-stream art swap). Row art re-checked inside the write so a
+            // stale session item can't clobber an already-good row. Same
+            // guard semantics as routeStream (A1) and DownloadManager's
+            // post-download write. Fire-and-forget; cosmetic on failure.
+            scope.launch {
+                runCatching {
+                    val rowArt = trackDao.getById(trackId)?.albumArtUrl
+                    val rowNeedsUpgrade = rowArt.isNullOrBlank() ||
+                        com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(rowArt)
+                    if (rowNeedsUpgrade && rowArt != art) {
+                        trackDao.updateAlbumArtUrl(trackId, art)
+                    }
+                }
+            }
+        }
         val stamped = item.buildUpon()
             .setMediaMetadata(metaBuilder.build())
             .build()
