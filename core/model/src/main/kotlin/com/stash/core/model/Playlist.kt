@@ -26,6 +26,8 @@ data class Playlist(
     val syncEnabled: Boolean = false,
     /** Suppresses this playlist from the Home rails; still shows in Library. */
     val hideFromHome: Boolean = false,
+    /** User-pinned; pinned playlists sort first in the Library grid. */
+    val pinned: Boolean = false,
     val tracks: List<Track> = emptyList(),
     /**
      * Epoch-millis timestamp of when this playlist was first added to

@@ -323,6 +323,10 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET hide_from_home = :hidden WHERE id = :playlistId")
     suspend fun setHideFromHome(playlistId: Long, hidden: Boolean)
 
+    /** Toggle whether a playlist is pinned to the top of the Library grid. */
+    @Query("UPDATE playlists SET pinned = :pinned WHERE id = :playlistId")
+    suspend fun setPinned(playlistId: Long, pinned: Boolean)
+
     /**
      * v0.9.26 — flip `is_active` on every playlist materialized by a
      * built-in Stash Mix recipe. Used by the Stash-Mixes opt-out toggle

@@ -260,6 +260,8 @@ interface MusicRepository {
     /** Update a playlist's cover art URL (local file path or remote URL). */
     suspend fun updatePlaylistArtUrl(playlistId: Long, artUrl: String?)
 
+    suspend fun setPlaylistPinned(playlistId: Long, pinned: Boolean)
+
     // ── Cleanup ──────────────────────────────────────────────────────────
 
     /**

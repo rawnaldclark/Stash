@@ -82,7 +82,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SpotifyResolutionEntity::class,
         FlacUpgradeQueueEntity::class,
     ],
-    version = 35,
+    version = 36,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -904,6 +904,17 @@ abstract class StashDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_flac_upgrade_queue_status` ON `flac_upgrade_queue` (`status`)"
                 )
+            }
+        }
+
+        /**
+         * v35 → v36: add `pinned` to playlists so users can pin favorite
+         * playlists to the top of the Library Playlists grid. NOT NULL
+         * DEFAULT 0 — existing rows stay unpinned.
+         */
+        val MIGRATION_35_36 = object : Migration(35, 36) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playlists ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
             }
         }
     }
