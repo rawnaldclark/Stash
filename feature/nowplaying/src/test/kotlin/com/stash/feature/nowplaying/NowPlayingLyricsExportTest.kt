@@ -193,6 +193,7 @@ class NowPlayingLyricsExportTest {
         losslessUpgrader = mockk<LosslessUpgrader>(relaxed = true),
         lyricsRepository = lyricsRepository,
         lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
         lyricsSidecarWriter = lyricsSidecarWriter,
         appContext = mockk<Context>(relaxed = true),
         ytMusicApiClient = mockk<YTMusicApiClient>(relaxed = true),

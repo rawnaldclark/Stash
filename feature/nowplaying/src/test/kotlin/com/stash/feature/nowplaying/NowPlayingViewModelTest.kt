@@ -5,6 +5,7 @@ import app.cash.turbine.test
 import app.cash.turbine.testIn
 import app.cash.turbine.turbineScope
 import com.stash.core.data.lossless.LosslessUpgrader
+import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
@@ -20,10 +21,12 @@ import io.mockk.slot
 import io.mockk.verify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.yield
@@ -204,13 +207,16 @@ class NowPlayingViewModelFindInFlacTest {
     private val lyricsRepository: LyricsRepository = mockk(relaxed = true)
     private val appContext: Context = mockk(relaxed = true)
 
-    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+    private fun newViewModel(
+        nowPlayingPreference: NowPlayingPreference = mockk(relaxed = true),
+    ): NowPlayingViewModel = NowPlayingViewModel(
         playerRepository = playerRepository,
         musicRepository = musicRepository,
         likeCoordinator = likeCoordinator,
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
         lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = nowPlayingPreference,
         lyricsSidecarWriter = mockk(relaxed = true),
         appContext = appContext,
         ytMusicApiClient = mockk(relaxed = true),
@@ -223,6 +229,24 @@ class NowPlayingViewModelFindInFlacTest {
         fileFormat = "opus",
     )
     private val flacTrack = nonFlacTrack.copy(id = 99L, fileFormat = "flac")
+
+    @Test fun `cold persisted false stays unloaded until preference emits`() = runTest(dispatcher) {
+        val releasePreference = CompletableDeferred<Unit>()
+        val preference = mockk<NowPlayingPreference> {
+            every { ambientAnimationEnabled } returns flow {
+                releasePreference.await()
+                emit(false)
+            }
+        }
+        val vm = newViewModel(preference)
+
+        vm.ambientAnimationEnabled.test {
+            assertEquals(null, awaitItem())
+            releasePreference.complete(Unit)
+            assertEquals(false, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 
     /**
      * The action's body emits "Looking for FLAC…", calls `upgradeToLossless`,
@@ -338,6 +362,7 @@ class NowPlayingViewModelLikeRoutingTest {
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
         lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
         lyricsSidecarWriter = mockk(relaxed = true),
         appContext = appContext,
         ytMusicApiClient = mockk(relaxed = true),
@@ -411,6 +436,7 @@ class NowPlayingViewModelTrackTapTest {
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
         lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
         lyricsSidecarWriter = mockk(relaxed = true),
         appContext = appContext,
         ytMusicApiClient = api,
