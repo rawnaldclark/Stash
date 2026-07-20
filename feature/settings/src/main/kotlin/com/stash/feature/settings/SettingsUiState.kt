@@ -47,6 +47,8 @@ data class SettingsUiState(
     /** Qobuz discovery sections on Home (New Releases / Qobuz Playlists /
      * Top Albums + genre chips). False = Home keeps only mixes + imports. */
     val qobuzDiscoveryEnabled: Boolean = true,
+    /** Ambient animated background on the Now Playing screen. */
+    val ambientAnimationEnabled: Boolean = true,
     val ytHistoryHealth: YouTubeScrobblerHealth = YouTubeScrobblerHealth.DISABLED,
     val ytPendingCount: Int = 0,
     /**

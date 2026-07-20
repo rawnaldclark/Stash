@@ -1,7 +1,6 @@
 package com.stash.feature.nowplaying
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,8 +28,6 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MotionPhotosOff
-import androidx.compose.material.icons.filled.MotionPhotosOn
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
@@ -364,8 +360,6 @@ fun NowPlayingScreen(
                     albumArtUrl = track?.albumArtUrl,
                     albumArtPath = track?.albumArtPath,
                     accentColor = npAccent(uiState.vibrantColor),
-                    ambientAnimationEnabled = ambientAnimationEnabled,
-                    onAmbientAnimationToggle = { viewModel.setAmbientAnimationEnabled(!ambientAnimationEnabled) },
                     onBitmapLoaded = viewModel::onAlbumArtLoaded,
                 )
 
@@ -699,8 +693,6 @@ private fun AlbumArtSection(
     albumArtUrl: String?,
     albumArtPath: String?,
     accentColor: Color,
-    ambientAnimationEnabled: Boolean,
-    onAmbientAnimationToggle: () -> Unit,
     onBitmapLoaded: (android.graphics.Bitmap?) -> Unit,
 ) {
     val context = LocalContext.current
@@ -715,18 +707,11 @@ private fun AlbumArtSection(
             .build()
     }
 
-    Box(
-        modifier = Modifier
-            .widthIn(max = if (ambientAnimationEnabled) 280.dp else 360.dp)
-            .fillMaxWidth()
-            .aspectRatio(1f),
-        contentAlignment = Alignment.Center,
-    ) {
+    Box(contentAlignment = Alignment.Center) {
         // Glow behind the artwork.
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(10.dp)
+                .size(260.dp)
                 .shadow(
                     elevation = 40.dp,
                     shape = RoundedCornerShape(20.dp),
@@ -751,25 +736,9 @@ private fun AlbumArtSection(
                 }
             },
             modifier = Modifier
-                .fillMaxSize()
+                .size(280.dp)
                 .clip(RoundedCornerShape(20.dp)),
         )
-
-        IconButton(
-            onClick = onAmbientAnimationToggle,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.82f), CircleShape),
-        ) {
-            Icon(
-                imageVector =
-                    if (ambientAnimationEnabled) Icons.Default.MotionPhotosOn else Icons.Default.MotionPhotosOff,
-                contentDescription =
-                    if (ambientAnimationEnabled) "Turn off ambient animation" else "Turn on ambient animation",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
     }
 }
 

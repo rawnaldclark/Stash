@@ -94,6 +94,7 @@ class SettingsViewModel @Inject constructor(
     private val youTubeHistoryPreference: YouTubeHistoryPreference,
     private val stashMixPreference: com.stash.core.data.prefs.StashMixPreference,
     private val homeDiscoveryPreference: com.stash.core.data.prefs.HomeDiscoveryPreference,
+    private val nowPlayingPreference: com.stash.core.data.prefs.NowPlayingPreference,
     private val youTubeHistoryScrobbler: YouTubeHistoryScrobbler,
     private val youTubeScrobblerState: YouTubeScrobblerState,
     private val losslessPrefs: LosslessSourcePreferences,
@@ -349,6 +350,7 @@ class SettingsViewModel @Inject constructor(
         streamingQualityPrefs.saveData,
         themePreference.amoledDark,
         homeDiscoveryPreference.enabled,
+        nowPlayingPreference.ambientAnimationEnabled,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val spotifyAuth = values[0] as AuthState
@@ -386,6 +388,7 @@ class SettingsViewModel @Inject constructor(
         val streamingSaveData = values[32] as Boolean
         val amoledDark = values[33] as Boolean
         val qobuzDiscoveryEnabled = values[34] as Boolean
+        val ambientAnimationEnabled = values[35] as Boolean
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
@@ -423,6 +426,7 @@ class SettingsViewModel @Inject constructor(
             ytHistoryEnabled = ytHistoryEnabled,
             stashMixesEnabled = stashMixesEnabled,
             qobuzDiscoveryEnabled = qobuzDiscoveryEnabled,
+            ambientAnimationEnabled = ambientAnimationEnabled,
             ytHistoryHealth = ytHistoryHealth,
             ytPendingCount = ytPendingCount,
             losslessEnabled = losslessEnabled,
@@ -1027,6 +1031,11 @@ class SettingsViewModel @Inject constructor(
      */
     fun onQobuzDiscoveryEnabledChanged(enabled: Boolean) {
         viewModelScope.launch { homeDiscoveryPreference.setEnabled(enabled) }
+    }
+
+    /** Ambient animated background on Now Playing (Settings > Appearance). */
+    fun onAmbientAnimationEnabledChanged(enabled: Boolean) {
+        viewModelScope.launch { nowPlayingPreference.setAmbientAnimationEnabled(enabled) }
     }
 
     /** Clear the kill-switch after PROTOCOL_BROKEN. Exposed to the Settings

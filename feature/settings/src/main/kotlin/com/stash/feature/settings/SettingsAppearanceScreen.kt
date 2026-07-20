@@ -109,6 +109,16 @@ fun SettingsAppearanceScreen(
             checked = uiState.amoledDark,
             onCheckedChange = viewModel::onAmoledDarkChanged,
         )
+
+        Spacer(Modifier.height(20.dp))
+        SettingsSectionLabel("Now Playing")
+
+        SettingsToggleRow(
+            title = "Ambient motion",
+            subtitle = "Animated color wash behind Now Playing — switch off for a still backdrop that saves battery",
+            checked = uiState.ambientAnimationEnabled,
+            onCheckedChange = viewModel::onAmbientAnimationEnabledChanged,
+        )
     }
 }
 

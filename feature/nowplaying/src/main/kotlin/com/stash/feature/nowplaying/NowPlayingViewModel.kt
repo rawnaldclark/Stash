@@ -122,9 +122,6 @@ class NowPlayingViewModel @Inject constructor(
         .map<Boolean, Boolean?> { it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    fun setAmbientAnimationEnabled(enabled: Boolean) {
-        viewModelScope.launch { nowPlayingPreference.setAmbientAnimationEnabled(enabled) }
-    }
 
     private val _userMessages = MutableSharedFlow<String>(
         // v0.9.18: bumped from 1 → 8. The Find-in-FLAC action emits TWO
