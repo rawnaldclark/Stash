@@ -95,6 +95,7 @@ class SettingsViewModel @Inject constructor(
     private val stashMixPreference: com.stash.core.data.prefs.StashMixPreference,
     private val homeDiscoveryPreference: com.stash.core.data.prefs.HomeDiscoveryPreference,
     private val nowPlayingPreference: com.stash.core.data.prefs.NowPlayingPreference,
+    private val homeSectionsPreference: com.stash.core.data.prefs.HomeSectionsPreference,
     private val youTubeHistoryScrobbler: YouTubeHistoryScrobbler,
     private val youTubeScrobblerState: YouTubeScrobblerState,
     private val losslessPrefs: LosslessSourcePreferences,
@@ -351,6 +352,8 @@ class SettingsViewModel @Inject constructor(
         themePreference.amoledDark,
         homeDiscoveryPreference.enabled,
         nowPlayingPreference.ambientAnimationEnabled,
+        homeSectionsPreference.order,
+        homeSectionsPreference.hidden,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val spotifyAuth = values[0] as AuthState
@@ -389,6 +392,10 @@ class SettingsViewModel @Inject constructor(
         val amoledDark = values[33] as Boolean
         val qobuzDiscoveryEnabled = values[34] as Boolean
         val ambientAnimationEnabled = values[35] as Boolean
+        @Suppress("UNCHECKED_CAST")
+        val homeSectionOrder = values[36] as List<com.stash.core.data.prefs.HomeSection>
+        @Suppress("UNCHECKED_CAST")
+        val homeSectionsHidden = values[37] as Set<com.stash.core.data.prefs.HomeSection>
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
@@ -427,6 +434,8 @@ class SettingsViewModel @Inject constructor(
             stashMixesEnabled = stashMixesEnabled,
             qobuzDiscoveryEnabled = qobuzDiscoveryEnabled,
             ambientAnimationEnabled = ambientAnimationEnabled,
+            homeSectionOrder = homeSectionOrder,
+            homeSectionsHidden = homeSectionsHidden,
             ytHistoryHealth = ytHistoryHealth,
             ytPendingCount = ytPendingCount,
             losslessEnabled = losslessEnabled,
@@ -1036,6 +1045,16 @@ class SettingsViewModel @Inject constructor(
     /** Ambient animated background on Now Playing (Settings > Appearance). */
     fun onAmbientAnimationEnabledChanged(enabled: Boolean) {
         viewModelScope.launch { nowPlayingPreference.setAmbientAnimationEnabled(enabled) }
+    }
+
+    /** Move a Home section one slot up/down (Settings > Appearance > Home layout). */
+    fun onHomeSectionMoved(section: com.stash.core.data.prefs.HomeSection, up: Boolean) {
+        viewModelScope.launch { homeSectionsPreference.move(section, up) }
+    }
+
+    /** Show/hide a Home section without forgetting its position. */
+    fun onHomeSectionHiddenChanged(section: com.stash.core.data.prefs.HomeSection, hide: Boolean) {
+        viewModelScope.launch { homeSectionsPreference.setHidden(section, hide) }
     }
 
     /** Clear the kill-switch after PROTOCOL_BROKEN. Exposed to the Settings

@@ -49,6 +49,11 @@ data class SettingsUiState(
     val qobuzDiscoveryEnabled: Boolean = true,
     /** Ambient animated background on the Now Playing screen. */
     val ambientAnimationEnabled: Boolean = true,
+    /** Full Home-section order (including hidden) + the hidden set —
+     * drives the Settings > Appearance > Home layout editor. */
+    val homeSectionOrder: List<com.stash.core.data.prefs.HomeSection> =
+        com.stash.core.data.prefs.HomeSection.entries.toList(),
+    val homeSectionsHidden: Set<com.stash.core.data.prefs.HomeSection> = emptySet(),
     val ytHistoryHealth: YouTubeScrobblerHealth = YouTubeScrobblerHealth.DISABLED,
     val ytPendingCount: Int = 0,
     /**

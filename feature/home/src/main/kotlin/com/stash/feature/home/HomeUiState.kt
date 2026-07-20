@@ -59,6 +59,10 @@ data class HomeUiState(
     /** False when the user opted out of Qobuz discovery on Home — hides the
      * genre chips (the rows hide themselves via their empty lists). */
     val qobuzDiscoveryEnabled: Boolean = true,
+    /** User-arranged visible Home sections, in render order
+     * (Settings > Appearance > Home layout). */
+    val sections: List<com.stash.core.data.prefs.HomeSection> =
+        com.stash.core.data.prefs.HomeSection.entries.toList(),
     val newReleases: List<AlbumSummary> = emptyList(),
     val topAlbums: List<AlbumSummary> = emptyList(),
     val playlists: List<PlaylistSummary> = emptyList(),

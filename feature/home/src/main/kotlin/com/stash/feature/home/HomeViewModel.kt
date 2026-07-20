@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -79,6 +80,7 @@ class HomeViewModel @Inject constructor(
     private val downloadNetworkPreference: DownloadNetworkPreference,
     private val streamingPreference: StreamingPreference,
     private val homeDiscoveryPreference: com.stash.core.data.prefs.HomeDiscoveryPreference,
+    private val homeSectionsPreference: com.stash.core.data.prefs.HomeSectionsPreference,
     private val metadataBackfillState: MetadataBackfillState,
     private val homeDiscoveryRepository: HomeDiscoveryRepository,
     @ApplicationContext private val context: Context,
@@ -298,6 +300,11 @@ class HomeViewModel @Inject constructor(
         val topAlbums: List<AlbumSummary>,
         val playlists: List<PlaylistSummary>,
         val enabled: Boolean = true,
+        // Rides this emission (instead of a 6th uiState combine source):
+        // the user-arranged visible Home sections, which also gate the
+        // fetches above — a hidden Qobuz section costs zero requests.
+        val sections: List<com.stash.core.data.prefs.HomeSection> =
+            com.stash.core.data.prefs.HomeSection.entries.toList(),
     )
 
     /**
@@ -312,13 +319,24 @@ class HomeViewModel @Inject constructor(
      * content never survives a completed fetch. Fail-soft as before.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val discoveryFlow: Flow<DiscoveryUi> = homeDiscoveryPreference.enabled
-        .flatMapLatest { qobuzEnabled ->
-            if (!qobuzEnabled) {
-                // Opted out: no Qobuz catalog fetches at all — Home keeps
-                // only the mix rails and imported content.
+    private val discoveryFlow: Flow<DiscoveryUi> = combine(
+        homeDiscoveryPreference.enabled,
+        homeSectionsPreference.visibleSections,
+    ) { enabled, sections -> enabled to sections }
+        .distinctUntilChanged()
+        .flatMapLatest { (qobuzEnabled, sections) ->
+            // Each Qobuz row fetches only when its section is actually on
+            // Home — hiding a section in Settings > Home layout (or the
+            // global Qobuz opt-out) costs zero catalog requests.
+            val wantReleases = qobuzEnabled && com.stash.core.data.prefs.HomeSection.NEW_RELEASES in sections
+            val wantPlaylists = qobuzEnabled && com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS in sections
+            val wantTop = qobuzEnabled && com.stash.core.data.prefs.HomeSection.TOP_ALBUMS in sections
+            if (!wantReleases && !wantPlaylists && !wantTop) {
                 kotlinx.coroutines.flow.flowOf(
-                    DiscoveryUi("All", emptyList(), emptyList(), emptyList(), enabled = false),
+                    DiscoveryUi(
+                        "All", emptyList(), emptyList(), emptyList(),
+                        enabled = qobuzEnabled, sections = sections,
+                    ),
                 )
             } else {
                 genreFilter
@@ -327,14 +345,24 @@ class HomeViewModel @Inject constructor(
                             val genreId = GenreCatalog.idFor(label)
                             emit(label to null) // loading: re-label, keep previous rows
                             coroutineScope {
-                                val newReleases = async { homeDiscoveryRepository.newReleases(genreId) }
-                                val playlists = async { homeDiscoveryRepository.communityPlaylists(genreId) }
-                                val topAlbums = async { homeDiscoveryRepository.topAlbums(genreId) }
-                                emit(label to DiscoveryUi(label, newReleases.await(), topAlbums.await(), playlists.await()))
+                                val newReleases = if (wantReleases) async { homeDiscoveryRepository.newReleases(genreId) } else null
+                                val playlists = if (wantPlaylists) async { homeDiscoveryRepository.communityPlaylists(genreId) } else null
+                                val topAlbums = if (wantTop) async { homeDiscoveryRepository.topAlbums(genreId) } else null
+                                emit(
+                                    label to DiscoveryUi(
+                                        label,
+                                        newReleases?.await() ?: emptyList(),
+                                        topAlbums?.await() ?: emptyList(),
+                                        playlists?.await() ?: emptyList(),
+                                        sections = sections,
+                                    ),
+                                )
                             }
                         }
                     }
-                    .scan(DiscoveryUi("All", emptyList(), emptyList(), emptyList())) { prev, (label, loaded) ->
+                    .scan(
+                        DiscoveryUi("All", emptyList(), emptyList(), emptyList(), sections = sections),
+                    ) { prev, (label, loaded) ->
                         loaded ?: prev.copy(selectedGenre = label)
                     }
             }
@@ -358,6 +386,7 @@ class HomeViewModel @Inject constructor(
             metadataBackfillBanner = metadataBackfillBanner,
             selectedGenre = discovery.selectedGenre,
             qobuzDiscoveryEnabled = discovery.enabled,
+            sections = discovery.sections,
             newReleases = discovery.newReleases,
             topAlbums = discovery.topAlbums,
             playlists = discovery.playlists,

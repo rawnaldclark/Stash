@@ -119,6 +119,7 @@ import com.stash.core.model.Track
 import com.stash.core.ui.components.AlbumSquareCard
 import com.stash.core.ui.components.CardRail
 import com.stash.core.ui.components.CrispChipRow
+import com.stash.core.data.prefs.HomeSection
 import com.stash.core.ui.components.DiscoverHeroCard
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.RankedAlbumList
@@ -424,127 +425,135 @@ fun HomeScreen(
             }
         }
 
-        // ── Genre filter chips ───────────────────────────────────────
-        // Steer ONLY the Qobuz discovery rows below, so they sit with
-        // them — directly under the hero, above New Releases — instead of
-        // topping the whole page (they never affected the hero). Hidden
-        // entirely when Qobuz discovery is switched off in Settings.
-        if (uiState.qobuzDiscoveryEnabled) {
-            item {
-                Spacer(Modifier.height(14.dp))
-                CrispChipRow(
-                    chips = uiState.genres.map { it.label },
-                    selected = uiState.selectedGenre,
-                    onSelect = viewModel::onSelectGenre,
-                )
-            }
+        // ── User-arranged sections (Settings > Appearance > Home layout) ──
+        // Order + visibility come from uiState.sections. The genre chips
+        // steer only the Qobuz rows, so they ride glued above the FIRST
+        // visible Qobuz section wherever the user placed it — and the old
+        // chips→header seam (16dp spacer stacked on the header's 12dp
+        // padding, 28dp of blank) tightens to 2dp + 12dp for that row.
+        val firstQobuzSection = uiState.sections.firstOrNull {
+            it == HomeSection.NEW_RELEASES ||
+                it == HomeSection.QOBUZ_PLAYLISTS ||
+                it == HomeSection.TOP_ALBUMS
         }
-
-        // ── Qobuz discovery rows (genre-filtered) ─────────────────────
-        // These are what the genre chips at the top actually control, so
-        // they sit directly under the hero; the imported/auto mix rails
-        // follow. Each row renders only when it has content — a failed or
-        // empty row (fail-soft repository) is simply omitted.
-        if (uiState.newReleases.isNotEmpty()) {
-            item {
-                DiscoveryAlbumRow(
-                    title = "New Releases",
-                    albums = uiState.newReleases,
-                    onOpen = onNavigateToAlbum,
-                )
-            }
-        }
-        if (uiState.playlists.isNotEmpty()) {
-            item {
-                DiscoveryPlaylistRow(
-                    title = "Qobuz Playlists",
-                    playlists = uiState.playlists,
-                    onOpen = onNavigateToAlbum,
-                    onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
-                )
-            }
-        }
-        if (uiState.topAlbums.isNotEmpty()) {
-            item {
-                // Collapsed to the top 5 by default; "Show all N" expands the
-                // full best-sellers chart in place. Saveable so the choice
-                // survives the item scrolling out of composition.
-                var topAlbumsExpanded by rememberSaveable { mutableStateOf(false) }
-                val visibleTop =
-                    if (topAlbumsExpanded) uiState.topAlbums else uiState.topAlbums.take(5)
-                Column {
-                    Spacer(Modifier.height(16.dp))
-                    SectionHeader(
-                        title = "Top Albums",
-                        actionText = when {
-                            uiState.topAlbums.size <= 5 -> null
-                            topAlbumsExpanded -> "Show less"
-                            else -> "Show all ${uiState.topAlbums.size}"
-                        },
-                        onActionClick = { topAlbumsExpanded = !topAlbumsExpanded },
+        uiState.sections.forEach { section ->
+            val chipsLead = uiState.qobuzDiscoveryEnabled && section == firstQobuzSection
+            if (chipsLead) {
+                item(key = "section_genre_chips") {
+                    Spacer(Modifier.height(14.dp))
+                    CrispChipRow(
+                        chips = uiState.genres.map { it.label },
+                        selected = uiState.selectedGenre,
+                        onSelect = viewModel::onSelectGenre,
                     )
-                    RankedAlbumList(
-                        items = visibleTop.mapIndexed { i, a ->
-                            RankedAlbumUi(
-                                rank = i + 1,
-                                title = a.title,
-                                artist = a.artist,
-                                artUrl = a.thumbnailUrl,
-                                movement = null,   // Qobuz best-sellers carries no chart delta
+                }
+            }
+            when (section) {
+                HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
+                    item(key = "section_new_releases") {
+                        DiscoveryAlbumRow(
+                            title = "New Releases",
+                            albums = uiState.newReleases,
+                            onOpen = onNavigateToAlbum,
+                            topSpacing = if (chipsLead) 2.dp else 16.dp,
+                        )
+                    }
+                }
+                HomeSection.QOBUZ_PLAYLISTS -> if (uiState.playlists.isNotEmpty()) {
+                    item(key = "section_qobuz_playlists") {
+                        DiscoveryPlaylistRow(
+                            title = "Qobuz Playlists",
+                            playlists = uiState.playlists,
+                            onOpen = onNavigateToAlbum,
+                            onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
+                            topSpacing = if (chipsLead) 2.dp else 16.dp,
+                        )
+                    }
+                }
+                HomeSection.TOP_ALBUMS -> if (uiState.topAlbums.isNotEmpty()) {
+                    item(key = "section_top_albums") {
+                        // Collapsed to the top 5 by default; "Show all N" expands the
+                        // full best-sellers chart in place. Saveable so the choice
+                        // survives the item scrolling out of composition.
+                        var topAlbumsExpanded by rememberSaveable { mutableStateOf(false) }
+                        val visibleTop =
+                            if (topAlbumsExpanded) uiState.topAlbums else uiState.topAlbums.take(5)
+                        Column {
+                            Spacer(Modifier.height(if (chipsLead) 2.dp else 16.dp))
+                            SectionHeader(
+                                title = "Top Albums",
+                                actionText = when {
+                                    uiState.topAlbums.size <= 5 -> null
+                                    topAlbumsExpanded -> "Show less"
+                                    else -> "Show all ${uiState.topAlbums.size}"
+                                },
+                                onActionClick = { topAlbumsExpanded = !topAlbumsExpanded },
                             )
-                        },
-                        onClick = { ranked -> onNavigateToAlbum(uiState.topAlbums[ranked.rank - 1]) },
-                    )
+                            RankedAlbumList(
+                                items = visibleTop.mapIndexed { i, a ->
+                                    RankedAlbumUi(
+                                        rank = i + 1,
+                                        title = a.title,
+                                        artist = a.artist,
+                                        artUrl = a.thumbnailUrl,
+                                        movement = null,   // Qobuz best-sellers carries no chart delta
+                                    )
+                                },
+                                onClick = { ranked -> onNavigateToAlbum(uiState.topAlbums[ranked.rank - 1]) },
+                            )
+                        }
+                    }
                 }
-            }
-        }
-
-        // ── Mix rails (Made for you · Radios · Mood & decades · Your mixes) ──
-        // Derived from the user's playlists + recipes (HomeViewModel.mixRail).
-        // Each rail renders only when non-empty. "Your mixes" (Stash mixes)
-        // additionally long-press → the action sheet below.
-        if (uiState.madeForYou.isNotEmpty()) item {
-            CardRail(
-                title = "Made for you",
-                actionText = "See all",
-                onActionClick = { onSeeAllMixes(MixRail.MADE_FOR_YOU) },
-            ) {
-                items(uiState.madeForYou, key = { it.id }) { m ->
-                    MixRailCard(
-                        title = m.title, artUrl = m.artUrl, source = m.source,
-                        buildState = m.buildState, onClick = { openMix(m.id) },
-                        onLongPress = { actionSheetMixId = m.id },
-                    )
+                HomeSection.MADE_FOR_YOU -> if (uiState.madeForYou.isNotEmpty()) {
+                    item(key = "section_made_for_you") {
+                        CardRail(
+                            title = "Made for you",
+                            actionText = "See all",
+                            onActionClick = { onSeeAllMixes(MixRail.MADE_FOR_YOU) },
+                        ) {
+                            items(uiState.madeForYou, key = { it.id }) { m ->
+                                MixRailCard(
+                                    title = m.title, artUrl = m.artUrl, source = m.source,
+                                    buildState = m.buildState, onClick = { openMix(m.id) },
+                                    onLongPress = { actionSheetMixId = m.id },
+                                )
+                            }
+                        }
+                    }
                 }
-            }
-        }
-        if (uiState.radios.isNotEmpty()) item {
-            CardRail(
-                title = "Radios",
-                actionText = "See all",
-                onActionClick = { onSeeAllMixes(MixRail.RADIOS) },
-            ) {
-                items(uiState.radios, key = { it.id }) { m ->
-                    MixRailCard(
-                        title = m.title, artUrl = m.artUrl, source = m.source,
-                        buildState = m.buildState, onClick = { openMix(m.id) },
-                        onLongPress = { actionSheetMixId = m.id },
-                    )
+                HomeSection.RADIOS -> if (uiState.radios.isNotEmpty()) {
+                    item(key = "section_radios") {
+                        CardRail(
+                            title = "Radios",
+                            actionText = "See all",
+                            onActionClick = { onSeeAllMixes(MixRail.RADIOS) },
+                        ) {
+                            items(uiState.radios, key = { it.id }) { m ->
+                                MixRailCard(
+                                    title = m.title, artUrl = m.artUrl, source = m.source,
+                                    buildState = m.buildState, onClick = { openMix(m.id) },
+                                    onLongPress = { actionSheetMixId = m.id },
+                                )
+                            }
+                        }
+                    }
                 }
-            }
-        }
-        if (uiState.moodDecades.isNotEmpty()) item {
-            CardRail(
-                title = "Mood & decades",
-                actionText = "See all",
-                onActionClick = { onSeeAllMixes(MixRail.MOOD_DECADES) },
-            ) {
-                items(uiState.moodDecades, key = { it.id }) { m ->
-                    MixRailCard(
-                        title = m.title, artUrl = m.artUrl, source = m.source,
-                        buildState = m.buildState, onClick = { openMix(m.id) },
-                        onLongPress = { actionSheetMixId = m.id },
-                    )
+                HomeSection.MOOD_DECADES -> if (uiState.moodDecades.isNotEmpty()) {
+                    item(key = "section_mood_decades") {
+                        CardRail(
+                            title = "Mood & decades",
+                            actionText = "See all",
+                            onActionClick = { onSeeAllMixes(MixRail.MOOD_DECADES) },
+                        ) {
+                            items(uiState.moodDecades, key = { it.id }) { m ->
+                                MixRailCard(
+                                    title = m.title, artUrl = m.artUrl, source = m.source,
+                                    buildState = m.buildState, onClick = { openMix(m.id) },
+                                    onLongPress = { actionSheetMixId = m.id },
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -967,9 +976,10 @@ private fun DiscoveryAlbumRow(
     title: String,
     albums: List<AlbumSummary>,
     onOpen: (AlbumSummary) -> Unit,
+    topSpacing: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
     Column {
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(topSpacing))
         SectionHeader(title = title)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 20.dp),
@@ -1000,9 +1010,10 @@ private fun DiscoveryPlaylistRow(
     playlists: List<PlaylistSummary>,
     onOpen: (AlbumSummary) -> Unit,
     onSeeAll: () -> Unit,
+    topSpacing: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
     Column {
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(topSpacing))
         SectionHeader(title = title, actionText = "See all", onActionClick = onSeeAll)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 20.dp),

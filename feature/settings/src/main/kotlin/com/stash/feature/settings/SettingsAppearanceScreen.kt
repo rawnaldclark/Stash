@@ -18,8 +18,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -118,6 +121,91 @@ fun SettingsAppearanceScreen(
             subtitle = "Animated color wash behind Now Playing — switch off for a still backdrop that saves battery",
             checked = uiState.ambientAnimationEnabled,
             onCheckedChange = viewModel::onAmbientAnimationEnabledChanged,
+        )
+
+        Spacer(Modifier.height(20.dp))
+        SettingsSectionLabel("Home layout")
+        Text(
+            text = "Arrange Home's sections or hide the ones you don't use. The Discover hero stays on top.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+        )
+        uiState.homeSectionOrder.forEachIndexed { index, section ->
+            HomeSectionRow(
+                label = section.displayLabel(),
+                shown = section !in uiState.homeSectionsHidden,
+                canMoveUp = index > 0,
+                canMoveDown = index < uiState.homeSectionOrder.lastIndex,
+                onMoveUp = { viewModel.onHomeSectionMoved(section, up = true) },
+                onMoveDown = { viewModel.onHomeSectionMoved(section, up = false) },
+                onShownChange = { shown -> viewModel.onHomeSectionHiddenChanged(section, hide = !shown) },
+            )
+        }
+    }
+}
+
+private fun com.stash.core.data.prefs.HomeSection.displayLabel(): String = when (this) {
+    com.stash.core.data.prefs.HomeSection.NEW_RELEASES -> "New Releases"
+    com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS -> "Qobuz Playlists"
+    com.stash.core.data.prefs.HomeSection.TOP_ALBUMS -> "Top Albums"
+    com.stash.core.data.prefs.HomeSection.MADE_FOR_YOU -> "Made for you"
+    com.stash.core.data.prefs.HomeSection.RADIOS -> "Radios"
+    com.stash.core.data.prefs.HomeSection.MOOD_DECADES -> "Mood & decades"
+}
+
+/** One row of the Home layout editor: name, up/down movers, show switch. */
+@Composable
+private fun HomeSectionRow(
+    label: String,
+    shown: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onShownChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (shown) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onMoveUp, enabled = canMoveUp) {
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowUp,
+                contentDescription = "Move $label up",
+                tint = if (canMoveUp) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                },
+            )
+        }
+        IconButton(onClick = onMoveDown, enabled = canMoveDown) {
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowDown,
+                contentDescription = "Move $label down",
+                tint = if (canMoveDown) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                },
+            )
+        }
+        com.stash.core.ui.components.StashSwitch(
+            checked = shown,
+            onCheckedChange = onShownChange,
         )
     }
 }
