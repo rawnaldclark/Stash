@@ -825,13 +825,13 @@ class NowPlayingViewModel @Inject constructor(
                 val message = try {
                     val lyrics = lyricsRepository.get(track.id)
                     if (lyrics == null || lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) {
-                        "No cached lyrics to save"
+                        "No lyrics to save yet"
                     } else {
                         lyricsSidecarWriter.write(track.id, lyrics)
-                        "Lyrics sidecar saved"
+                        "Lyrics saved with the song file"
                     }
                 } catch (e: CancellationException) { throw e }
-                catch (e: Exception) { "Couldn't save lyrics sidecar" }
+                catch (e: Exception) { "Couldn't save lyrics" }
                 val suffix = if (_uiState.value.currentTrack?.id != track.id) " for ‘${track.title}’" else ""
                 _userMessages.emit("$message$suffix.")
             } finally {

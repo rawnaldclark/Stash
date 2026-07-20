@@ -11,14 +11,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -48,6 +51,12 @@ fun LyricsBottomSheet(
     onSeek: (Long) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
+    // "Save with song file" footer (writes the .lrc beside the downloaded
+    // audio so external players pick the lyrics up). Shown only for
+    // downloaded tracks while lyrics are actually on screen.
+    canSaveToFile: Boolean = false,
+    savingToFile: Boolean = false,
+    onSaveToFile: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -98,6 +107,37 @@ fun LyricsBottomSheet(
                         action = if (state.retryable) "Retry" else null,
                         onAction = onRetry,
                     )
+                }
+            }
+
+            // Quiet footer action: only when the track is downloaded AND
+            // lyrics are actually showing — you save what you can see.
+            val lyricsOnScreen =
+                state is LyricsViewState.Synced || state is LyricsViewState.Plain
+            if (canSaveToFile && lyricsOnScreen) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    TextButton(
+                        enabled = !savingToFile,
+                        onClick = onSaveToFile,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (savingToFile) "Saving…" else "Save with song file",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }

@@ -77,7 +77,7 @@ class NowPlayingLyricsExportTest {
             coVerify(exactly = 1) { lyricsSidecarWriter.write(42L, any()) }
 
             release.complete(Unit)
-            assertEquals("Lyrics sidecar saved.", awaitItem())
+            assertEquals("Lyrics saved with the song file.", awaitItem())
             assertEquals(null, viewModel.exportingLyricsTrackId.first { it == null })
             cancelAndIgnoreRemainingEvents()
         }
@@ -104,7 +104,7 @@ class NowPlayingLyricsExportTest {
             coVerify(exactly = 0) { lyricsRepository.get(84L) }
 
             release.complete(Unit)
-            assertEquals("Lyrics sidecar saved for ‘Song A’.", awaitItem())
+            assertEquals("Lyrics saved with the song file for ‘Song A’.", awaitItem())
             assertEquals(null, viewModel.exportingLyricsTrackId.first { it == null })
             cancelAndIgnoreRemainingEvents()
         }
@@ -116,7 +116,7 @@ class NowPlayingLyricsExportTest {
 
         viewModel.userMessages.test {
             viewModel.exportLyricsForCurrentTrack()
-            assertEquals("No cached lyrics to save.", awaitItem())
+            assertEquals("No lyrics to save yet.", awaitItem())
             coVerify(exactly = 0) { lyricsSidecarWriter.write(any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }
@@ -129,7 +129,7 @@ class NowPlayingLyricsExportTest {
 
         viewModel.userMessages.test {
             viewModel.exportLyricsForCurrentTrack()
-            assertEquals("Couldn't save lyrics sidecar.", awaitItem())
+            assertEquals("Couldn't save lyrics.", awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -140,7 +140,7 @@ class NowPlayingLyricsExportTest {
 
         viewModel.userMessages.test {
             viewModel.exportLyricsForCurrentTrack()
-            assertEquals("Couldn't save lyrics sidecar.", awaitItem())
+            assertEquals("Couldn't save lyrics.", awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
     }

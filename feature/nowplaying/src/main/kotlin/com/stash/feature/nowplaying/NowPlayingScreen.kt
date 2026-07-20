@@ -212,6 +212,9 @@ fun NowPlayingScreen(
             liveLyricsEnabled = liveLyricsEnabled,
             onLiveLyricsToggle = viewModel::setLiveLyricsBarEnabled,
             onSeek = viewModel::onLyricsLineSeek,
+            canSaveToFile = track?.isDownloaded == true,
+            savingToFile = exportingLyricsTrackId != null,
+            onSaveToFile = viewModel::exportLyricsForCurrentTrack,
             onRetry = viewModel::onLyricsRetry,
             onDismiss = viewModel::onDismissLyrics,
         )
@@ -493,18 +496,6 @@ fun NowPlayingScreen(
                             qualityText = qualityText,
                             isStreaming = uiState.isStreaming,
                         )
-                    }
-                    if (track.isDownloaded) {
-                        androidx.compose.material3.TextButton(
-                            enabled = exportingLyricsTrackId == null,
-                            onClick = viewModel::exportLyricsForCurrentTrack,
-                        ) {
-                            Text(when (exportingLyricsTrackId) {
-                                track.id -> "Saving lyrics sidecar"
-                                null -> "Save lyrics sidecar"
-                                else -> "Saving another track’s lyrics sidecar"
-                            })
-                        }
                     }
                 }
 
