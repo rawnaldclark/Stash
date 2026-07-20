@@ -38,7 +38,11 @@ class StashLikedPlaylistRepository @Inject constructor(
      * leaves the existing timestamp untouched.
      */
     suspend fun add(trackId: Long) {
-        val playlistId = ensureSeeded()
+        val trackArt = trackDao.getById(trackId)?.let { track ->
+            sequenceOf(track.albumArtPath, track.albumArtUrl)
+                .firstOrNull { !it.isNullOrBlank() }
+        }
+        val playlistId = ensureSeeded(trackArt)
         val existing = playlistDao.getCrossRef(playlistId, trackId)
         if (existing != null && existing.removedAt == null) return
         // Order matters: mark the timestamp FIRST so the Room observation
@@ -90,13 +94,19 @@ class StashLikedPlaylistRepository @Inject constructor(
      * liked tracks. Sync pipeline ignores `MusicSource.BOTH`, so this
      * flag only affects visibility, not actual sync behavior.
      */
-    private suspend fun ensureSeeded(): Long {
-        playlistDao.findBySourceId(STASH_LIKED_SOURCE_ID)?.let { return it.id }
+    private suspend fun ensureSeeded(trackArt: String?): Long {
+        playlistDao.findBySourceId(STASH_LIKED_SOURCE_ID)?.let { existing ->
+            if (existing.artUrl.isNullOrBlank() && !trackArt.isNullOrBlank()) {
+                playlistDao.updateArtUrl(existing.id, trackArt)
+            }
+            return existing.id
+        }
         val entity = PlaylistEntity(
             name = "Liked Songs",
             source = MusicSource.BOTH,
             sourceId = STASH_LIKED_SOURCE_ID,
             type = PlaylistType.STASH_LIKED,
+            artUrl = trackArt?.takeUnless { it.isBlank() },
             syncEnabled = true,
         )
         return playlistDao.insert(entity)

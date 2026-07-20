@@ -243,10 +243,9 @@ class DiffWorker @AssistedInject constructor(
             // Art refresh: ONLY for DAILY_MIX. Daily Mixes (and Spotify's
             // weekly mixes — Discover Weekly, Release Radar, etc., which
             // share the DAILY_MIX type) rotate, so their cover should
-            // follow the tracks. Curated content (LIKED_SONGS, CUSTOM,
-            // STASH_MIX) keeps whatever art was imported on first sync —
-            // overwriting it surprises users whose personal playlists
-            // would otherwise look different every sync.
+            // follow the tracks. Other playlist types never rotate here;
+            // LIKED_SONGS gets only a missing-art repair during metadata
+            // finalization below.
             val rotatesArt = existing.type == PlaylistType.DAILY_MIX
             if (rotatesArt && snapshot.artUrl != null && snapshot.artUrl != existing.artUrl) {
                 playlistDao.updateArtUrl(existing.id, snapshot.artUrl)
@@ -541,6 +540,12 @@ class DiffWorker @AssistedInject constructor(
             if (coverToSet != null && coverToSet != localPlaylist.artUrl) {
                 playlistDao.updateArtUrl(localPlaylist.id, coverToSet)
             }
+        } else if (
+            localPlaylist.type == PlaylistType.LIKED_SONGS &&
+            localPlaylist.artUrl.isNullOrBlank() &&
+            !playlistSnapshot.artUrl.isNullOrBlank()
+        ) {
+            playlistDao.updateArtUrl(localPlaylist.id, playlistSnapshot.artUrl)
         }
     }   
 }

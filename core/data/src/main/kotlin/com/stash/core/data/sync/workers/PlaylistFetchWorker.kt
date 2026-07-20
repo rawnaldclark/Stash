@@ -49,6 +49,11 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.Instant
 
+internal fun likedPlaylistArtUrl(trackArtUrls: Sequence<String?>): String? =
+    com.stash.core.common.ArtUrlUpgrader.upgrade(
+        trackArtUrls.firstOrNull { !it.isNullOrBlank() }
+    )
+
 /**
  * First worker in the sync chain. Authenticates with configured music services,
  * fetches playlist and track metadata, and writes everything to the remote
@@ -379,6 +384,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         playlistName = "Liked Songs",
                         playlistType = PlaylistType.LIKED_SONGS,
                         trackCount = allLikedSongs.size,
+                        artUrl = likedPlaylistArtUrl(
+                            allLikedSongs.asSequence().map {
+                                it.track?.album?.images?.firstOrNull()?.url
+                            }
+                        ),
                     )
                 )
 
@@ -757,6 +767,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             playlistName = "Liked Songs",
                             playlistType = PlaylistType.LIKED_SONGS,
                             trackCount = likedSongs.size,
+                            artUrl = likedPlaylistArtUrl(
+                                likedSongs.asSequence().map { it.thumbnailUrl }
+                            ),
                             partial = paged.partial,
                             expectedCount = paged.expectedCount,
                         )

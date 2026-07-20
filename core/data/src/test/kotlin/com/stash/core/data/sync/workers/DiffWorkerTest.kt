@@ -225,6 +225,54 @@ class DiffWorkerTest {
         assertEquals("no new track should be inserted — matched existing", 3, trackDao.getAllForIntegrityScan().size)
     }
 
+    @Test
+    fun `LIKED_SONGS backfills missing art from the snapshot`() = runBlocking {
+        assertEquals(
+            "https://cdn.example/new-cover.jpg",
+            syncLikedPlaylistArt(existingArt = "  ", snapshotArt = "https://cdn.example/new-cover.jpg"),
+        )
+    }
+
+    @Test
+    fun `LIKED_SONGS preserves an existing nonblank cover`() = runBlocking {
+        assertEquals(
+            "https://cdn.example/established-cover.jpg",
+            syncLikedPlaylistArt(
+                existingArt = "https://cdn.example/established-cover.jpg",
+                snapshotArt = "https://cdn.example/new-cover.jpg",
+            ),
+        )
+    }
+
+    private suspend fun syncLikedPlaylistArt(existingArt: String?, snapshotArt: String?): String? {
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Liked Songs",
+                source = MusicSource.SPOTIFY,
+                sourceId = "spotify_liked_songs",
+                type = PlaylistType.LIKED_SONGS,
+                artUrl = existingArt,
+                syncEnabled = true,
+            )
+        )
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 4L,
+            syncId = 1L,
+            source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "spotify_liked_songs",
+            playlistName = "Liked Songs",
+            playlistType = PlaylistType.LIKED_SONGS,
+            artUrl = snapshotArt,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(4L) } returns emptyList()
+
+        val result = buildWorker().doWork()
+
+        assertTrue("diff must succeed", result is androidx.work.ListenableWorker.Result.Success)
+        return db.playlistDao().getById(playlistId)?.artUrl
+    }
+
     private fun buildWorker(): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
         .setInputData(workDataOf(PlaylistFetchWorker.KEY_SYNC_ID to 1L))
         .setWorkerFactory(object : WorkerFactory() {
