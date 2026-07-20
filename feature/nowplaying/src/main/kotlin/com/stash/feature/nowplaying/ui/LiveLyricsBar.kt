@@ -89,7 +89,10 @@ fun LiveLyricsBar(
     liveEnabled: Boolean,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
+    showBlurLayer: Boolean = true,
 ) {
+    val mode = remember(state) { liveBarModeFor(state) }
+    val barBase = if (isAmoled && !showBlurLayer) Color.Black else BarBase
     // remember(state): the 250ms position ticks recompose this composable
     // every tick; without the cache each tick would re-allocate a Live() wrapper.
     val mode = remember(state, liveEnabled) { liveBarModeFor(state, liveEnabled) }

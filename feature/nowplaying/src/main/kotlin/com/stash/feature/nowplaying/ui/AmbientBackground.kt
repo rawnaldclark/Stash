@@ -51,9 +51,10 @@ fun AmbientBackground(
     mutedColor: Color,
     lightMode: Boolean = false,
     amoledMode: Boolean = false,
+    showBlurLayer: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    if (amoledMode) {
+    if (amoledMode && !showBlurLayer) {
         Canvas(modifier = modifier) { drawRect(color = Color.Black) }
         return
     }
@@ -114,7 +115,7 @@ fun AmbientBackground(
         val gradientRadius = min(w, h) * 0.65f
 
         // Theme base fill.
-        drawRect(color = if (lightMode) BaseLight else BaseDark)
+        drawRect(color = if (amoledMode) Color.Black else if (lightMode) BaseLight else BaseDark)
 
         // Pastel treatment for the light wash: blend toward white, lower alpha.
         fun orbColor(color: Color, darkAlpha: Float, lightAlpha: Float): Color =

@@ -145,6 +145,7 @@ fun NowPlayingScreen(
     var showSaveSheet by remember { mutableStateOf(false) }
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var queueSaveTrack by remember { mutableStateOf<com.stash.core.model.Track?>(null) }
+    val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle(initialValue = true)
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
@@ -580,6 +581,16 @@ fun NowPlayingScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
+
+            AmbientBackground(
+                dominantColor = uiState.dominantColor,
+                vibrantColor = uiState.vibrantColor,
+                mutedColor = uiState.mutedColor,
+                lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
+                amoledMode = LocalIsAmoledTheme.current,
+                showBlurLayer = showBlurLayer,
+                modifier = Modifier.fillMaxSize(),
+            )
 
             // Live-lyrics bar — sits exactly where the MiniPlayer is on other
             // screens (the scaffold hides MiniPlayer on this route), directly

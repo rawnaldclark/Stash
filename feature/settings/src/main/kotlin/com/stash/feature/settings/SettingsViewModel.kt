@@ -991,6 +991,21 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** Exposes the blur layer visibility preference for AMOLED mode. */
+    val showBlurLayerInAmoled: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        themePreference.showBlurLayerInAmoled.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            initialValue = true,
+        )
+
+    /** Persists the blur layer visibility preference for AMOLED mode. */
+    fun onShowBlurLayerInAmoledChanged(show: Boolean) {
+        viewModelScope.launch {
+            themePreference.setShowBlurLayerInAmoled(show)
+        }
+    }
+
     /**
      * Persists a new download-network mode AND re-schedules the two
      * workers that depend on it ([StashDiscoveryWorker],
