@@ -3,6 +3,7 @@ package com.stash.data.spotify
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -66,6 +67,7 @@ class SpotifyLibraryParserTest {
         // a paginator using playlists.size (2) would stop a 50-item walk
         // at the first folder-heavy page.
         assertEquals(5, page.rawItemCount)
+        assertTrue(page.isComplete)
     }
 
     @Test
@@ -76,5 +78,23 @@ class SpotifyLibraryParserTest {
         assertEquals(0, page.rawItemCount)
         assertTrue(page.playlists.isEmpty())
         assertTrue(page.folderUris.isEmpty())
+        assertFalse(page.isComplete)
+    }
+
+    @Test
+    fun `GraphQL errors and malformed playlist rows mark inventory incomplete`() {
+        val withErrors = parseLibraryPage(
+            Json.parseToJsonElement(
+                """{"errors":[{"message":"partial"}],"data":{"me":{"libraryV3":{"items":[]}}}}""",
+            ).jsonObject,
+        )
+        val malformedPlaylist = parseLibraryPage(
+            Json.parseToJsonElement(
+                """{"data":{"me":{"libraryV3":{"items":[{"item":{"data":{"__typename":"Playlist"}}}]}}}}""",
+            ).jsonObject,
+        )
+
+        assertFalse(withErrors.isComplete)
+        assertFalse(malformedPlaylist.isComplete)
     }
 }

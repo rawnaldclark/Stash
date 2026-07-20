@@ -462,6 +462,19 @@ interface PlaylistDao {
         currentSourceIds: List<String>,
     ): Int
 
+    /** Soft-deactivate only Spotify CUSTOM playlists absent from a complete inventory. */
+    @Query(
+        """
+        UPDATE playlists SET is_active = 0
+        WHERE source = 'SPOTIFY' AND type = 'CUSTOM' AND is_active = 1
+          AND (:hasCurrentIds = 0 OR source_id NOT IN (:currentSourceIds))
+        """
+    )
+    suspend fun deactivateMissingSpotifyCustomPlaylists(
+        currentSourceIds: List<String>,
+        hasCurrentIds: Boolean,
+    ): Int
+
     /** Flip [is_active] back to 1 for a specific playlist id. Paired with
      *  [deactivateMissingForSource] so a rotating home-feed mix that
      *  returns tomorrow re-surfaces on the Home screen instead of

@@ -11,6 +11,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
+import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
@@ -25,12 +26,14 @@ import com.stash.core.data.sync.auth.YoutubeAuthHealthProbe
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.StepStatus
+import com.stash.core.model.SyncMode
 import com.stash.core.model.SyncResult
 import com.stash.core.model.SyncState
 import com.stash.core.model.SyncStepResult
 import com.stash.core.model.SyncTrigger
 import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.spotify.SpotifyApiException
+import com.stash.data.spotify.SpotifyLibraryPage
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.MusicVideoType
@@ -40,7 +43,10 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -53,6 +59,11 @@ internal fun likedPlaylistArtUrl(trackArtUrls: Sequence<String?>): String? =
     com.stash.core.common.ArtUrlUpgrader.upgrade(
         trackArtUrls.firstOrNull { !it.isNullOrBlank() }
     )
+
+internal fun shouldDeactivateMissingSpotifyPlaylists(
+    syncMode: SyncMode,
+    inventoryComplete: Boolean,
+): Boolean = syncMode == SyncMode.REFRESH && inventoryComplete
 
 /**
  * First worker in the sync chain. Authenticates with configured music services,
@@ -69,6 +80,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val spotifyApiClient: SpotifyApiClient,
     private val ytMusicApiClient: YTMusicApiClient,
     private val innerTubeClient: InnerTubeClient,
+    private val playlistDao: PlaylistDao,
     private val syncHistoryDao: SyncHistoryDao,
     private val remoteSnapshotDao: RemoteSnapshotDao,
     private val syncStateManager: SyncStateManager,
@@ -231,6 +243,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             syncStateManager.onError("Spotify API rate limited, retrying...", e)
             return Result.retry()
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "Playlist fetch failed", e)
             syncHistoryDao.updateDiagnostics(syncId, Json.encodeToString(diagnostics.toList()))
             syncHistoryDao.updateStatus(
@@ -423,6 +436,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
         // Fetch user-created/saved playlists from the Spotify library.
         var userPlaylistCount = 0
+        var inventoryComplete = true
         try {
             // v0.9.21: paginate libraryV3 instead of a single 50-item fetch.
             // The previous single-call path silently capped users at ≤50
@@ -450,34 +464,43 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val folderQueue = ArrayDeque<Pair<String, Int>>() // folder uri to depth
             val visitedFolders = mutableSetOf<String>()
 
-            suspend fun pageThrough(folderUri: String?, depth: Int) {
+            suspend fun pageThrough(folderUri: String?, depth: Int): Boolean {
                 var offset = 0
+                var complete = true
                 while (pagesFetched < pageCap) {
                     val page = spotifyApiClient.getUserPlaylists(
                         limit = pageSize,
                         offset = offset,
                         folderUri = folderUri,
                     )
+                    // SpotifyApiClient uses this singleton as its failure/invalid-response
+                    // sentinel. A genuinely empty parsed library is a distinct instance.
+                    currentCoroutineContext().ensureActive()
+                    if (page === SpotifyLibraryPage.EMPTY) return false
+                    if (!page.isComplete) complete = false
                     pagesFetched++
                     userPlaylists += page.playlists
                     for (uri in page.folderUris) {
                         if (visitedFolders.add(uri)) folderQueue.addLast(uri to depth + 1)
                     }
-                    if (page.rawItemCount < pageSize) break // true last page
+                    if (page.rawItemCount < pageSize) return complete
                     offset += pageSize
                 }
+                return false
             }
 
-            pageThrough(folderUri = null, depth = 0)
+            inventoryComplete = pageThrough(folderUri = null, depth = 0)
             while (folderQueue.isNotEmpty() && pagesFetched < pageCap) {
                 val (uri, depth) = folderQueue.removeFirst()
                 if (depth > maxFolderDepth) {
+                    inventoryComplete = false
                     Log.w(TAG, "fetchSpotifyPlaylists: folder '$uri' beyond depth $maxFolderDepth, skipping")
                     continue
                 }
                 foldersWalked++
-                pageThrough(folderUri = uri, depth = depth)
+                if (!pageThrough(folderUri = uri, depth = depth)) inventoryComplete = false
             }
+            if (folderQueue.isNotEmpty()) inventoryComplete = false
 
             Log.i(
                 TAG,
@@ -541,13 +564,25 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         }
                     }
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    inventoryComplete = false
                     Log.w(TAG, "fetchSpotifyPlaylists: failed to fetch tracks for '${playlist.name}'", e)
                 }
+            }
+
+            if (shouldDeactivateMissingSpotifyPlaylists(syncPreferencesManager.spotifySyncMode.first(), inventoryComplete)) {
+                val currentIds = customPlaylists.map { it.id }
+                val hidden = playlistDao.deactivateMissingSpotifyCustomPlaylists(
+                    currentSourceIds = currentIds,
+                    hasCurrentIds = currentIds.isNotEmpty(),
+                )
+                if (hidden > 0) Log.i(TAG, "Deactivated $hidden missing Spotify custom playlist(s)")
             }
             diagnostics.add(SyncStepResult("SPOTIFY", "getUserPlaylists", StepStatus.SUCCESS, userPlaylistCount))
         } catch (e: SpotifyApiException) {
             throw e
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "fetchSpotifyPlaylists: user playlists fetch failed", e)
             diagnostics.add(SyncStepResult("SPOTIFY", "getUserPlaylists", StepStatus.ERROR, errorMessage = e.message))
         }

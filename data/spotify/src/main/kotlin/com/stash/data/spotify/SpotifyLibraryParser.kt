@@ -38,9 +38,10 @@ data class SpotifyLibraryPage(
     val playlists: List<SpotifyPlaylistItem>,
     val folderUris: List<String>,
     val rawItemCount: Int,
+    val isComplete: Boolean = true,
 ) {
     companion object {
-        val EMPTY = SpotifyLibraryPage(emptyList(), emptyList(), 0)
+        val EMPTY = SpotifyLibraryPage(emptyList(), emptyList(), 0, isComplete = false)
     }
 }
 
@@ -71,13 +72,22 @@ fun parseLibraryPage(responseJson: JsonObject): SpotifyLibraryPage {
 
         val playlists = mutableListOf<SpotifyPlaylistItem>()
         val folderUris = mutableListOf<String>()
+        var isComplete = responseJson["errors"] == null
 
         for (element in items) {
             try {
                 val wrapper = element.jsonObject
-                val item = wrapper["item"]?.jsonObject ?: continue
+                val item = wrapper["item"]?.jsonObject
+                if (item == null) {
+                    isComplete = false
+                    continue
+                }
                 val typeName = item["__typename"]?.jsonPrimitive?.contentOrNull
-                val data = item["data"]?.jsonObject ?: continue
+                val data = item["data"]?.jsonObject
+                if (data == null) {
+                    isComplete = false
+                    continue
+                }
                 val dataTypeName = data["__typename"]?.jsonPrimitive?.contentOrNull
                 val uri = data["uri"]?.jsonPrimitive?.contentOrNull
 
@@ -89,6 +99,7 @@ fun parseLibraryPage(responseJson: JsonObject): SpotifyLibraryPage {
                         folderUris += uri
                         Log.d(TAG, "parseLibraryPage: folder '$uri' queued for descent")
                     } else {
+                        isComplete = false
                         Log.w(TAG, "parseLibraryPage: folder item without uri: $item")
                     }
                     continue
@@ -99,7 +110,10 @@ fun parseLibraryPage(responseJson: JsonObject): SpotifyLibraryPage {
                     continue
                 }
 
-                if (uri == null || !uri.startsWith("spotify:playlist:")) continue
+                if (uri == null || !uri.startsWith("spotify:playlist:")) {
+                    isComplete = false
+                    continue
+                }
 
                 val playlistId = uri.removePrefix("spotify:playlist:")
                 val name = data["name"]?.jsonPrimitive?.contentOrNull ?: "Untitled"
@@ -143,6 +157,7 @@ fun parseLibraryPage(responseJson: JsonObject): SpotifyLibraryPage {
                     )
                 }
             } catch (e: Exception) {
+                isComplete = false
                 Log.w(TAG, "parseLibraryPage: failed to parse item", e)
             }
         }
@@ -156,6 +171,7 @@ fun parseLibraryPage(responseJson: JsonObject): SpotifyLibraryPage {
             playlists = playlists,
             folderUris = folderUris,
             rawItemCount = items.size,
+            isComplete = isComplete,
         )
     } catch (e: Exception) {
         Log.e(TAG, "parseLibraryPage: failed to parse response", e)
