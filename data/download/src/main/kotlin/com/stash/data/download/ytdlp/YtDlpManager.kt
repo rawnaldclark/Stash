@@ -169,8 +169,11 @@ class YtDlpManager @Inject constructor(
                             addOption("--remote-components", "ejs:github")
                         }
                     }
+                    // null processId for the same reason as the download/preview
+                    // paths: a non-null id can collide with a concurrent
+                    // execute() of the same video. (#210)
                     val response = YoutubeDL.getInstance()
-                        .execute(request, WARMUP_VIDEO_URL, null)
+                        .execute(request, null, null)
                     val dt = System.currentTimeMillis() - t0
                     Log.i(
                         TAG,

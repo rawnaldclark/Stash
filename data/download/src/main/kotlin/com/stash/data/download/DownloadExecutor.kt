@@ -159,7 +159,12 @@ class DownloadExecutor @Inject constructor(
 
             Log.d(TAG, "download: starting url=$url client=${playerClient ?: "default"} args=$qualityArgs")
 
-            val response = YoutubeDL.getInstance().execute(request, url) { progress, _, _ ->
+            // processId must be null, not `url`: youtubedl-android throws
+            // "Process ID already exists" if two execute() calls share a
+            // non-null id, and a preview prefetch + this download routinely
+            // hit the same video at once. Nothing cancels by id (no
+            // destroyProcessById caller), so the handle was unused anyway. (#210)
+            val response = YoutubeDL.getInstance().execute(request, null) { progress, _, _ ->
                 onProgress((progress / 100f).coerceIn(0f, 1f))
             }
 

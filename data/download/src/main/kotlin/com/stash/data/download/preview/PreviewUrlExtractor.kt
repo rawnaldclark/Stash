@@ -537,7 +537,10 @@ class PreviewUrlExtractor @Inject constructor(
             }
 
             Log.d(TAG, "yt-dlp: invoking for videoId=$videoId client=${playerClient ?: "default"}")
-            val response = YoutubeDL.getInstance().execute(request, url, null)
+            // null processId: sharing the video url as the id collides with a
+            // concurrent download of the same track ("Process ID already
+            // exists"). The id is never used to cancel. (#210)
+            val response = YoutubeDL.getInstance().execute(request, null, null)
 
             val stdout = response.out.orEmpty()
             val stderr = response.err.orEmpty()
