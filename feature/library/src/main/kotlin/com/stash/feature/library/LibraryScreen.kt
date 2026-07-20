@@ -1434,23 +1434,43 @@ private fun TracksTab(
                 onRemoveDownload = { onRemoveDownloadTrack(it.id); selectedTrack = null },
                 onDelete = { trackToDelete = it; selectedTrack = null },
             )
-        }
-    }
+            BottomSheetActionRow(
+                icon = Icons.Default.PlaylistAdd,
+                label = "Add to Queue",
+                onClick = {
+                    onAddToQueue(track)
+                    selectedTrack = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.FavoriteBorder,
+                label = "Save to Playlist",
+                onClick = { 
+                    onSaveToPlaylist(track) 
+                    selectedTrack = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.Share,
+                label = "Share",
+                onClick = {
+                    trackToShare = track
+                    selectedTrack = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.Delete,
+                label = "Delete",
+                tint = MaterialTheme.colorScheme.error,
+                onClick = {
+                    trackToDelete = track
+                    selectedTrack = null
+                },
+            )
 
-    // ── Save to Playlist sheet (single-track) ───────────────────────────
-    trackToSave?.let { track ->
-        com.stash.core.ui.components.SaveToPlaylistSheet(
-            playlists = userPlaylists,
-            onSaveToPlaylist = { playlistId ->
-                onSaveToPlaylist(track.id, playlistId)
-                trackToSave = null
-            },
-            onCreatePlaylist = { name ->
-                onCreatePlaylistWithTrack(name, track.id)
-                trackToSave = null
-            },
-            onDismiss = { trackToSave = null },
-        )
+            // Bottom padding for gesture navigation inset
+            Spacer(modifier = Modifier.height(24.dp))
+        }
     }
 
     // ── Delete confirmation dialog ──────────────────────────────────────
