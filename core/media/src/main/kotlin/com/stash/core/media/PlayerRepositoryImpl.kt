@@ -607,17 +607,54 @@ class PlayerRepositoryImpl @Inject constructor(
                     resolved.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
                     resolved.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
                 }
+                // #336 follow-up: upgrade the artwork here too. This refresh
+                // stamps EXTRA_STREAM_CODEC into the session item, which makes
+                // maybeStampCurrentItemQuality's already-stamped guard exit
+                // early when the track starts playing — so a prefetched track
+                // skipped-to from Now Playing kept its video thumbnail
+                // (session AND row) even though the resolve carried the real
+                // cover. Fix it at the source: swap the art on the refreshed
+                // item and persist the row while the cover is in hand.
+                val currentArt = item.mediaMetadata.artworkUri?.toString()
+                val artUpgrade = resolved.coverArtUrl?.takeIf {
+                    it != currentArt &&
+                        (currentArt.isNullOrBlank() ||
+                            com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(currentArt))
+                }
+                val refreshedMeta = item.mediaMetadata.buildUpon().setExtras(newExtras)
+                artUpgrade?.let { art ->
+                    refreshedMeta.setArtworkUri(Uri.parse(art))
+                    persistArtUpgradeAsync(next.id, art)
+                }
                 val refreshed = item.buildUpon()
                     .setUri(resolved.url)
-                    .setMediaMetadata(
-                        item.mediaMetadata.buildUpon().setExtras(newExtras).build(),
-                    )
+                    .setMediaMetadata(refreshedMeta.build())
                     .build()
                 controller.replaceMediaItem(i, refreshed)
                 return true
             }
         }
         return false
+    }
+
+    /**
+     * Guarded, fire-and-forget write of an upgraded album-art URL to the
+     * track row (#336). The row is re-checked inside the write — only
+     * blank or YouTube-video-thumbnail art is replaced — so a stale
+     * session item can never clobber an already-good cover. Shared by the
+     * prefetch refresh above and [maybeStampCurrentItemQuality].
+     */
+    private fun persistArtUpgradeAsync(trackId: Long, art: String) {
+        scope.launch {
+            runCatching {
+                val rowArt = trackDao.getById(trackId)?.albumArtUrl
+                val rowNeedsUpgrade = rowArt.isNullOrBlank() ||
+                    com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(rowArt)
+                if (rowNeedsUpgrade && rowArt != art) {
+                    trackDao.updateAlbumArtUrl(trackId, art)
+                }
+            }
+        }
     }
 
     override suspend fun shuffleLibrary() {
@@ -1568,20 +1605,8 @@ class PlayerRepositoryImpl @Inject constructor(
             // session, so Library/queue/playlist rows kept the video
             // thumbnail forever on queue-driven playback (mixes resolve via
             // prefetch/LazyResolvingDataSource, which never hit routeStream's
-            // on-stream art swap). Row art re-checked inside the write so a
-            // stale session item can't clobber an already-good row. Same
-            // guard semantics as routeStream (A1) and DownloadManager's
-            // post-download write. Fire-and-forget; cosmetic on failure.
-            scope.launch {
-                runCatching {
-                    val rowArt = trackDao.getById(trackId)?.albumArtUrl
-                    val rowNeedsUpgrade = rowArt.isNullOrBlank() ||
-                        com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(rowArt)
-                    if (rowNeedsUpgrade && rowArt != art) {
-                        trackDao.updateAlbumArtUrl(trackId, art)
-                    }
-                }
-            }
+            // on-stream art swap).
+            persistArtUpgradeAsync(trackId, art)
         }
         val stamped = item.buildUpon()
             .setMediaMetadata(metaBuilder.build())
