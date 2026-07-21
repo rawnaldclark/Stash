@@ -15,10 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
@@ -143,7 +141,6 @@ fun NowPlayingScreen(
     // content doesn't overflow so scroll stays at 0; on narrow screens the
     // user's scroll position aligns with controls and we want it preserved
     // across track changes.
-    val scrollState = rememberScrollState()
 
     // One-shot Toast confirmation for the "wrong match" flag action. Toast
     // instead of Snackbar so we don't have to restructure the screen into
@@ -328,33 +325,21 @@ fun NowPlayingScreen(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .statusBarsPadding(),
-            ) {
-                // #333: the fixed chrome around the art (top bar, title block,
-                // progress, controls, spacers) needs ~460dp at full spacing.
-                // Screens that fall short — large display/font scale, shorter
-                // phones, the lyrics bar eating a row — used to push the
-                // PLAY CONTROLS below the fold. The art absorbs the shortfall
-                // instead (280dp design size down to 180dp), and compact mode
-                // halves the decorative spacers. verticalScroll stays as the
-                // net for anything below 180dp of slack.
-                val artSize = (this.maxHeight - 460.dp).coerceIn(180.dp, 280.dp)
-                // Spacers stay at FULL size while the art alone can absorb
-                // the shortfall — art + spacers then fill the column exactly,
-                // with no dead band. Compact (halved spacers) kicks in only
-                // when the art is genuinely squeezed toward its floor. A
-                // threshold at the design size was a 1dp cliff that dropped
-                // the Pixel itself into compact mode: title crowding the art
-                // and ~200dp of dead space pooling above the lyrics bar.
-                val compact = artSize <= 200.dp
+            // #333 v2 — the slot system. No estimated heights, no thresholds:
+            // the title/progress/controls stack is FIXED and anchors to the
+            // bottom of the column (directly above the lyrics bar when it's
+            // present), while the album art lives in a weight(1f) slot that
+            // absorbs exactly whatever height this phone/scale/bar
+            // combination leaves over. The art sizes to its slot (capped by
+            // width and the 300dp design ceiling) and centers in it, so any
+            // slack splits evenly around the art instead of pooling anywhere.
+            // Every phone renders the same anatomy, scaled — nothing clips,
+            // nothing crowds, nothing pools.
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(scrollState)
+                    .weight(1f)
+                    .statusBarsPadding()
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -378,18 +363,23 @@ fun NowPlayingScreen(
                     accentColor = npAccent(uiState.vibrantColor),
                 )
 
-                Spacer(modifier = Modifier.height(if (compact) 12.dp else 24.dp))
-
-                // -- Album art --
-                AlbumArtSection(
-                    albumArtUrl = track?.albumArtUrl,
-                    albumArtPath = track?.albumArtPath,
-                    accentColor = npAccent(uiState.vibrantColor),
-                    artSize = artSize,
-                    onBitmapLoaded = viewModel::onAlbumArtLoaded,
-                )
-
-                Spacer(modifier = Modifier.height(if (compact) 16.dp else 32.dp))
+                // -- Album art slot: absorbs all flexible height --
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val artSize = minOf(this.maxHeight, this.maxWidth, 300.dp)
+                    AlbumArtSection(
+                        albumArtUrl = track?.albumArtUrl,
+                        albumArtPath = track?.albumArtPath,
+                        accentColor = npAccent(uiState.vibrantColor),
+                        artSize = artSize,
+                        onBitmapLoaded = viewModel::onAlbumArtLoaded,
+                    )
+                }
 
                 // -- Track info -- (tap the title/artist to open the artist
                 // profile; the trailing chevron signals it's actionable, and
@@ -522,7 +512,7 @@ fun NowPlayingScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(if (compact) 16.dp else 28.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // -- Progress bar --
                 GlowingProgressBar(
@@ -534,7 +524,7 @@ fun NowPlayingScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                Spacer(modifier = Modifier.height(if (compact) 12.dp else 20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // -- Playback controls --
                 PlaybackControls(
@@ -550,8 +540,7 @@ fun NowPlayingScreen(
                     onCycleRepeatMode = viewModel::onCycleRepeatMode,
                 )
 
-                Spacer(modifier = Modifier.height(if (compact) 24.dp else 48.dp))
-            }
+                Spacer(modifier = Modifier.height(16.dp))
             }
 
             // Live-lyrics bar — sits exactly where the MiniPlayer is on other
