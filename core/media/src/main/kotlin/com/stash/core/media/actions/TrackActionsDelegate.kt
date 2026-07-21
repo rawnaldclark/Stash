@@ -388,8 +388,12 @@ class TrackActionsDelegate @Inject constructor(
     fun playNext(item: TrackItem) {
         scope().launch {
             try {
-                playerRepository.addNext(item.toDomainTrack())
-                _userMessages.tryEmit("Playing next")
+                if (!streamingPreference.current()) {
+                    _userMessages.tryEmit("Turn on Online mode to queue this track.")
+                    return@launch
+                }
+                val added = playerRepository.addNext(item.toDomainTrack())
+                _userMessages.tryEmit(if (added) "Playing next" else "Couldn't add to queue")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -416,8 +420,12 @@ class TrackActionsDelegate @Inject constructor(
     fun addToQueue(item: TrackItem) {
         scope().launch {
             try {
-                playerRepository.addToQueue(item.toDomainTrack())
-                _userMessages.tryEmit("Added to queue")
+                if (!streamingPreference.current()) {
+                    _userMessages.tryEmit("Turn on Online mode to queue this track.")
+                    return@launch
+                }
+                val added = playerRepository.addToQueue(item.toDomainTrack())
+                _userMessages.tryEmit(if (added) "Added to queue" else "Couldn't add to queue")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

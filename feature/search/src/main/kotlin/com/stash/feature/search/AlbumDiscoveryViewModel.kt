@@ -295,11 +295,14 @@ class AlbumDiscoveryViewModel @Inject constructor(
         viewModelScope.launch {
             val tracks = buildQueueTracks()
             if (tracks.isEmpty()) return@launch
-            // Emit immediately — URL resolution can take ~20-30s for 15
-            // streaming tracks against a degraded Kennyy/Squid. Without this
-            // optimistic toast the user gets zero feedback during the wait.
-            _userMessages.emit("Adding ${tracks.size} tracks to queue...")
-            playerRepository.addToQueue(tracks)
+            val added = playerRepository.addToQueue(tracks)
+            _userMessages.emit(
+                if (added) {
+                    "Added album to queue"
+                } else {
+                    "Couldn't add album to queue"
+                },
+            )
         }
     }
 

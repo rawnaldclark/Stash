@@ -28,6 +28,7 @@ class TrackActionsDelegateQueueActionsTest {
     private val musicRepository: com.stash.core.data.repository.MusicRepository = mockk(relaxed = true)
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard = mockk(relaxed = true)
     private val trackDao: com.stash.core.data.db.dao.TrackDao = mockk(relaxed = true)
+    private val streamingPreference: com.stash.core.data.prefs.StreamingPreference = mockk(relaxed = true)
 
     // Real flows, not relaxed stubs: bindToScope collects playerErrors, and a
     // relaxed mock's `collect` (returns Nothing) throws, killing the scope.
@@ -36,18 +37,21 @@ class TrackActionsDelegateQueueActionsTest {
         every { playerErrors } returns MutableSharedFlow()
     }
 
-    private fun delegate() = TrackActionsDelegate(
-        previewPlayer = previewPlayer,
-        searchPreviewMediaSource = mockk(relaxed = true),
-        previewUrlExtractor = mockk(relaxed = true),
-        previewUrlCache = mockk(relaxed = true),
-        trackDao = trackDao,
-        searchDownloadCoordinator = mockk(relaxed = true),
-        playerRepository = playerRepository,
-        streamingPreference = mockk(relaxed = true),
-        musicRepository = musicRepository,
-        blocklistGuard = blocklistGuard,
-    )
+    private fun delegate(online: Boolean = true): TrackActionsDelegate {
+        coEvery { streamingPreference.current() } returns online
+        return TrackActionsDelegate(
+            previewPlayer = previewPlayer,
+            searchPreviewMediaSource = mockk(relaxed = true),
+            previewUrlExtractor = mockk(relaxed = true),
+            previewUrlCache = mockk(relaxed = true),
+            trackDao = trackDao,
+            searchDownloadCoordinator = mockk(relaxed = true),
+            playerRepository = playerRepository,
+            streamingPreference = streamingPreference,
+            musicRepository = musicRepository,
+            blocklistGuard = blocklistGuard,
+        )
+    }
 
     private val item = TrackItem(
         videoId = "abc123", title = "Song", artist = "Artist",
@@ -58,7 +62,7 @@ class TrackActionsDelegateQueueActionsTest {
     fun `addToQueue maps TrackItem and calls repo with streamable Track`() = runTest {
         val d = delegate().apply { bindToScope(backgroundScope) }
         val slot = slot<Track>()
-        coEvery { playerRepository.addToQueue(capture(slot)) } returns Unit
+        coEvery { playerRepository.addToQueue(capture(slot)) } returns true
 
         val messages = mutableListOf<String>()
         backgroundScope.launch { d.userMessages.collect { messages.add(it) } }
@@ -78,8 +82,37 @@ class TrackActionsDelegateQueueActionsTest {
     }
 
     @Test
+    fun `offline addToQueue refuses stream track with an Online mode hint`() = runTest {
+        val d = delegate(online = false).apply { bindToScope(backgroundScope) }
+        val messages = mutableListOf<String>()
+        backgroundScope.launch { d.userMessages.collect { messages.add(it) } }
+        runCurrent()
+
+        d.addToQueue(item)
+        runCurrent()
+
+        assertThat(messages).containsExactly("Turn on Online mode to queue this track.")
+        coVerify(exactly = 0) { playerRepository.addToQueue(any<Track>()) }
+    }
+
+    @Test
+    fun `addToQueue reports failure when repository rejects after the mode precheck`() = runTest {
+        val d = delegate().apply { bindToScope(backgroundScope) }
+        coEvery { playerRepository.addToQueue(any<Track>()) } returns false
+        val messages = mutableListOf<String>()
+        backgroundScope.launch { d.userMessages.collect { messages.add(it) } }
+        runCurrent()
+
+        d.addToQueue(item)
+        runCurrent()
+
+        assertThat(messages).containsExactly("Couldn't add to queue")
+    }
+
+    @Test
     fun `playNext calls addNext and emits message`() = runTest {
         val d = delegate().apply { bindToScope(backgroundScope) }
+        coEvery { playerRepository.addNext(any<Track>()) } returns true
 
         val messages = mutableListOf<String>()
         backgroundScope.launch { d.userMessages.collect { messages.add(it) } }
@@ -90,6 +123,20 @@ class TrackActionsDelegateQueueActionsTest {
 
         assertThat(messages).containsExactly("Playing next")
         coVerify(exactly = 1) { playerRepository.addNext(any<Track>()) }
+    }
+
+    @Test
+    fun `playNext reports failure when repository rejects after the mode precheck`() = runTest {
+        val d = delegate().apply { bindToScope(backgroundScope) }
+        coEvery { playerRepository.addNext(any<Track>()) } returns false
+        val messages = mutableListOf<String>()
+        backgroundScope.launch { d.userMessages.collect { messages.add(it) } }
+        runCurrent()
+
+        d.playNext(item)
+        runCurrent()
+
+        assertThat(messages).containsExactly("Couldn't add to queue")
     }
 
     @Test

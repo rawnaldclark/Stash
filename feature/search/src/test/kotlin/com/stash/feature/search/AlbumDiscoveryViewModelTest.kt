@@ -293,6 +293,7 @@ class AlbumDiscoveryViewModelTest {
             whenever(it.get(any(), any())).thenReturn(detail)
         }
         val player = mock<PlayerRepository>()
+        whenever(player.addToQueue(any<List<Track>>())).thenReturn(true)
 
         val vm = vmWith(cache = cache, playerRepository = player)
         advanceUntilIdle()
@@ -300,7 +301,29 @@ class AlbumDiscoveryViewModelTest {
         vm.userMessages.test {
             vm.addAlbumToQueue()
             advanceUntilIdle()
-            assertEquals("Adding 3 tracks to queue...", awaitItem())
+            assertEquals("Added album to queue", awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `addAlbumToQueue reports when the repository rejects the album`() = runTest {
+        val detail = albumDetail(
+            tracks = listOf("v1", "v2", "v3").map(::trackSummary),
+        )
+        val cache = mock<AlbumCache>().also {
+            whenever(it.get(any(), any())).thenReturn(detail)
+        }
+        val player = mock<PlayerRepository>()
+        whenever(player.addToQueue(any<List<Track>>())).thenReturn(false)
+
+        val vm = vmWith(cache = cache, playerRepository = player)
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.addAlbumToQueue()
+            advanceUntilIdle()
+            assertEquals("Couldn't add album to queue", awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
     }

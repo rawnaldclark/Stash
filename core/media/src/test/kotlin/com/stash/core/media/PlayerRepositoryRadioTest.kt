@@ -137,6 +137,24 @@ class PlayerRepositoryRadioTest {
         assertThat(repo.radioSeedLabel.value).isNull()
     }
 
+    @Test fun `startRadio rejects a batch when Online mode turns off during generation`() = runTest {
+        var online = true
+        coEvery { streamingPreference.current() } answers { online }
+        val session = mockk<RadioSession>(relaxed = true)
+        coEvery { radioGenerator.start(any()) } answers {
+            online = false
+            session to listOf(track(1))
+        }
+
+        val started = repo.startRadio(RadioSeed.Artist("MBV", "id"))
+
+        assertThat(started).isFalse()
+        assertThat(repo.radioSeedLabel.value).isNull()
+        verify(exactly = 0) {
+            controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>())
+        }
+    }
+
     @Test fun `setQueue disarms the station`() = runTest {
         coEvery { streamingPreference.current() } returns true
         val session = mockk<RadioSession>(relaxed = true)
@@ -198,6 +216,38 @@ class PlayerRepositoryRadioTest {
 
         coVerify { radioGenerator.nextBatch(session) }
         verify { controller.addMediaItems(any<List<MediaItem>>()) }
+    }
+
+    @Test fun `growRadio disarms without appending when Online mode was turned off`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        val session = mockk<RadioSession>(relaxed = true)
+        coEvery { radioGenerator.start(any()) } returns (session to listOf(track(1)))
+        coEvery { radioGenerator.nextBatch(session) } returns listOf(track(2))
+        repo.startRadio(RadioSeed.Artist("MBV", "id"))
+        coEvery { streamingPreference.current() } returns false
+
+        repo.growRadio()
+
+        assertThat(repo.radioSeedLabel.value).isNull()
+        coVerify(exactly = 0) { radioGenerator.nextBatch(session) }
+        verify(exactly = 0) { controller.addMediaItems(any<List<MediaItem>>()) }
+    }
+
+    @Test fun `growRadio disarms when Online mode turns off during generation`() = runTest {
+        var online = true
+        coEvery { streamingPreference.current() } answers { online }
+        val session = mockk<RadioSession>(relaxed = true)
+        coEvery { radioGenerator.start(any()) } returns (session to listOf(track(1)))
+        coEvery { radioGenerator.nextBatch(session) } answers {
+            online = false
+            listOf(track(2))
+        }
+        repo.startRadio(RadioSeed.Artist("MBV", "id"))
+
+        repo.growRadio()
+
+        assertThat(repo.radioSeedLabel.value).isNull()
+        verify(exactly = 0) { controller.addMediaItems(any<List<MediaItem>>()) }
     }
 
     @Test fun `growRadio is a no-op when no station is active`() = runTest {

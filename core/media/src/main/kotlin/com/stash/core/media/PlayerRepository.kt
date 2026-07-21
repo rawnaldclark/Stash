@@ -145,25 +145,28 @@ interface PlayerRepository {
     /**
      * Insert [track] immediately after the currently-playing track in the queue.
      * Playback continues uninterrupted; the inserted track will play next.
+     * Returns false when the track is not playable in the current mode or the
+     * player controller is unavailable.
      */
-    suspend fun addNext(track: Track)
+    suspend fun addNext(track: Track): Boolean
 
     /**
      * Append [track] to the end of the current queue.
-     * Playback continues uninterrupted.
+     * Playback continues uninterrupted. Returns false when the track is not
+     * playable in the current mode or the player controller is unavailable.
      */
-    suspend fun addToQueue(track: Track)
+    suspend fun addToQueue(track: Track): Boolean
 
     /**
      * Append [tracks] (in order) to the end of the current queue.
      * Single MediaController.addMediaItems round-trip — preferred
      * over looping the single-track variant for known-size batches
      * like an album's full tracklist or an artist's catalog. Empty
-     * list is a no-op.
+     * list is a no-op. Returns true when at least one track was appended.
      *
      * Playback continues uninterrupted.
      */
-    suspend fun addToQueue(tracks: List<Track>)
+    suspend fun addToQueue(tracks: List<Track>): Boolean
 
     /**
      * Start a radio station seeded from an artist or track. Builds a balanced

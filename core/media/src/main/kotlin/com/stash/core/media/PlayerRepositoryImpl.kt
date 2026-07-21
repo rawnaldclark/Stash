@@ -423,12 +423,20 @@ class PlayerRepositoryImpl @Inject constructor(
         // repeat/shuffle are correct because ExoPlayer sees the whole queue.
         // Item building does per-track disk checks (filePathExistsOnDisk), so
         // it runs off the main thread; a 2.6k-track queue must not jank the UI.
-        val playable = tracks.filter { track ->
-            track.isDownloaded || (streamingOn && !track.isUnavailableForDisplay)
+        val builtItems = withContext(Dispatchers.IO) {
+            tracks.mapNotNull { track ->
+                track.takeIf { it.isPlayableForQueueAppend(streamingOn) }
+                    ?.let { it to it.toQueueMediaItem() }
+            }
         }
-        val items = withContext(Dispatchers.IO) {
-            playable.map { it.toQueueMediaItem() }
+        val streamingAtMutation = streamingPreference.current()
+        val acceptedItems = if (streamingAtMutation) {
+            builtItems
+        } else {
+            builtItems.filter { (_, item) -> item.isUsableOfflineQueueItem() }
         }
+        val playable = acceptedItems.map { it.first }
+        val items = acceptedItems.map { it.second }
         if (items.isEmpty()) {
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return
@@ -691,7 +699,8 @@ class PlayerRepositoryImpl @Inject constructor(
         if (!streamingPreference.current()) return RadioStartResult.StreamingOff
         val controller = ensureController() ?: return RadioStartResult.PlayerNotReady
         val (session, firstBatch) = radioGenerator.start(seed)
-        if (firstBatch.isEmpty()) return RadioStartResult.NoStation
+        if (firstBatch.isEmpty()) return false
+        if (!streamingPreference.current()) return false
         radioSession = session
         radioActive = true
         // Only ONE grower may run: startRadio bypasses setQueueInternal (which is
@@ -766,10 +775,18 @@ class PlayerRepositoryImpl @Inject constructor(
     internal suspend fun growRadio() {
         radioGrowMutex.withLock {
             if (!radioActive) return
+            if (!streamingPreference.current()) {
+                stopRadio()
+                return
+            }
             val controller = controllerDeferred ?: return
             val session = radioSession ?: return
             val batch = radioGenerator.nextBatch(session)
             if (batch.isEmpty()) return
+            if (!radioActive || !streamingPreference.current()) {
+                stopRadio()
+                return
+            }
             // Streaming tracks → stash-resolve:// placeholders (see startRadio).
             controller.addMediaItems(batch.map { it.toQueueMediaItem() })
             currentQueueTracks = currentQueueTracks + batch
@@ -813,14 +830,56 @@ class PlayerRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun addNext(track: Track) {
-        val controller = ensureController() ?: return
+    /**
+     * Queue identity is also the Media3 mediaId and StreamUrlCache key.
+     * Native Qobuz rows reach per-track actions without a video id, which
+     * previously mapped every one of them to id=0. Persist those transient
+     * rows before queueing so different songs cannot share one cached URL.
+     */
+    private suspend fun Track.withQueueIdentity(): Track =
+        if (id != 0L) this else copy(id = musicRepository.ensureTrackPersisted(this))
+
+    /**
+     * Applies the queue's Online/Offline contract at the repository boundary.
+     * Offline entries must have a real, usable local file; a stale Room path
+     * must not fall through to a stash-resolve placeholder and hit the network.
+     */
+    private fun Track.isPlayableForQueueAppend(streamingEnabled: Boolean): Boolean {
+        val localPath = filePath
+        return if (streamingEnabled) {
+            !isUnavailableForDisplay
+        } else {
+            isDownloaded &&
+                !localPath.isNullOrBlank() &&
+                filePathExistsOnDisk(localPath)
+        }
+    }
+
+    private fun MediaItem.isUsableOfflineQueueItem(): Boolean {
+        val scheme = localConfiguration?.uri?.scheme
+        return scheme == "file" || scheme == "content"
+    }
+
+    override suspend fun addNext(track: Track): Boolean {
+        val controller = ensureController() ?: return false
+        val playable = track.takeIf {
+            it.isPlayableForQueueAppend(streamingPreference.current())
+        }
+        if (playable == null) {
+            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+            return false
+        }
+        val queueTrack = playable.withQueueIdentity()
+        if (!queueTrack.isPlayableForQueueAppend(streamingPreference.current())) {
+            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+            return false
+        }
         val wasEmpty = controller.mediaItemCount == 0
         // Instant add: stream tracks enter as stash-resolve:// placeholders
         // (resolved at play time), so the queue grows immediately instead of
         // waiting out a slow resolve.
         val insertIndex = controller.currentMediaItemIndex + 1
-        controller.addMediaItem(insertIndex, track.toQueueMediaItem())
+        controller.addMediaItem(insertIndex, queueTrack.toQueueMediaItem())
         // Mirror into the logical queue right after the playing track's
         // logical position (falling back to append) so the queue sheet
         // shows the Play-Next insert where it will actually play.
@@ -828,10 +887,10 @@ class PlayerRepositoryImpl @Inject constructor(
             ?.getLong(EXTRA_TRACK_ID, -1L) ?: -1L
         val logicalPos = currentQueueTracks.indexOfFirst { it.id == currentId }
         currentQueueTracks = when {
-            wasEmpty -> listOf(track)
+            wasEmpty -> listOf(queueTrack)
             logicalPos >= 0 -> currentQueueTracks.toMutableList()
-                .apply { add(logicalPos + 1, track) }
-            else -> currentQueueTracks + track
+                .apply { add(logicalPos + 1, queueTrack) }
+            else -> currentQueueTracks + queueTrack
         }
         // If the queue was empty, the user tapped "Play next" with nothing
         // playing — they expect the song to actually start, not just sit
@@ -840,33 +899,69 @@ class PlayerRepositoryImpl @Inject constructor(
             controller.prepare()
             controller.play()
         }
+        return true
     }
 
-    override suspend fun addToQueue(track: Track) {
-        val controller = ensureController() ?: return
+    override suspend fun addToQueue(track: Track): Boolean {
+        val controller = ensureController() ?: return false
+        val playable = track.takeIf {
+            it.isPlayableForQueueAppend(streamingPreference.current())
+        }
+        if (playable == null) {
+            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+            return false
+        }
+        val queueTrack = playable.withQueueIdentity()
+        if (!queueTrack.isPlayableForQueueAppend(streamingPreference.current())) {
+            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+            return false
+        }
         val wasEmpty = controller.mediaItemCount == 0
-        controller.addMediaItem(track.toQueueMediaItem())
-        currentQueueTracks = if (wasEmpty) listOf(track) else currentQueueTracks + track
+        controller.addMediaItem(queueTrack.toQueueMediaItem())
+        currentQueueTracks = if (wasEmpty) listOf(queueTrack) else currentQueueTracks + queueTrack
         if (wasEmpty) {
             controller.prepare()
             controller.play()
         }
+        return true
     }
 
-    override suspend fun addToQueue(tracks: List<Track>) {
-        if (tracks.isEmpty()) return
-        val controller = ensureController() ?: return
+    override suspend fun addToQueue(tracks: List<Track>): Boolean {
+        if (tracks.isEmpty()) return false
+        val controller = ensureController() ?: return false
+        val streamingEnabled = streamingPreference.current()
+        val playable = tracks.filter { it.isPlayableForQueueAppend(streamingEnabled) }
+        if (playable.isEmpty()) {
+            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+            return false
+        }
+        val persistedTracks = playable.map { it.withQueueIdentity() }
+        val builtItems = withContext(Dispatchers.IO) {
+            persistedTracks.map { it to it.toQueueMediaItem() }
+        }
+        val streamingAtMutation = streamingPreference.current()
+        val acceptedItems = if (streamingAtMutation) {
+            builtItems
+        } else {
+            builtItems.filter { (_, item) -> item.isUsableOfflineQueueItem() }
+        }
+        if (acceptedItems.isEmpty()) {
+            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+            return false
+        }
+        val queueTracks = acceptedItems.map { it.first }
+        val items = acceptedItems.map { it.second }
         val wasEmpty = controller.mediaItemCount == 0
         // Instant batch add: every track becomes a MediaItem now (placeholders
         // for streams), preserving tap order — no resolve fan-out, no dropped
         // rows, "Added N tracks" is finally literally true.
-        val items = withContext(Dispatchers.IO) { tracks.map { it.toQueueMediaItem() } }
-        currentQueueTracks = if (wasEmpty) tracks else currentQueueTracks + tracks
+        currentQueueTracks = if (wasEmpty) queueTracks else currentQueueTracks + queueTracks
         controller.addMediaItems(items)
         if (wasEmpty) {
             controller.prepare()
             controller.play()
         }
+        return true
     }
 
     override suspend fun toggleShuffle() {
@@ -1878,4 +1973,3 @@ internal fun shouldPersistPosition(
 
 /** Minimum position drift before an unforced persist write. */
 internal const val POSITION_PERSIST_MIN_DELTA_MS = 5_000L
-
