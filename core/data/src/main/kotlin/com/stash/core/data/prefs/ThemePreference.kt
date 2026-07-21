@@ -26,7 +26,4 @@ interface ThemePreference {
 
     /** Persists the pure-black dark preference. */
     suspend fun setAmoledDark(enabled: Boolean)
-
-    val showBlurLayerInAmoled: Flow<Boolean>
-    suspend fun setShowBlurLayerInAmoled(show: Boolean)
 }

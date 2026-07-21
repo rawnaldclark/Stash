@@ -582,16 +582,6 @@ fun NowPlayingScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            AmbientBackground(
-                dominantColor = uiState.dominantColor,
-                vibrantColor = uiState.vibrantColor,
-                mutedColor = uiState.mutedColor,
-                lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
-                amoledMode = LocalIsAmoledTheme.current,
-                showBlurLayer = showBlurLayer,
-                modifier = Modifier.fillMaxSize(),
-            )
-
             // Live-lyrics bar — sits exactly where the MiniPlayer is on other
             // screens (the scaffold hides MiniPlayer on this route), directly
             // above the nav bar. Zero-height when Hidden, so the content

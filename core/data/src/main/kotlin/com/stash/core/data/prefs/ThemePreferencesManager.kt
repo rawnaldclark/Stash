@@ -61,12 +61,4 @@ class ThemePreferencesManager @Inject constructor(
             prefs[amoledKey] = enabled
         }
     }
-
-    override val showBlurLayerInAmoled: Flow<Boolean> = context.themeDataStore.data.map { prefs ->
-        prefs[showBlurLayerKey] ?: true
-    }
-
-    override suspend fun setShowBlurLayerInAmoled(show: Boolean) {
-        context.themeDataStore.edit { prefs -> prefs[showBlurLayerKey] = show }
-    }
 }

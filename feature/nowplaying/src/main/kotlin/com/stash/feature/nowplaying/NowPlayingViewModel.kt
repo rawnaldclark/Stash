@@ -71,7 +71,6 @@ class NowPlayingViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
     private val losslessUpgrader: LosslessUpgrader,
-    private val themePreference: com.stash.core.data.prefs.ThemePreference,
     // v0.9.36 Task 12 — lyrics sheet observes the lyrics row and may
     // enqueue a priority on-open fetch. WorkManager is sourced via
     // `WorkManager.getInstance(appContext)` to match the rest of the
@@ -85,12 +84,6 @@ class NowPlayingViewModel @Inject constructor(
     // browseId so Now Playing can open the artist profile.
     private val ytMusicApiClient: com.stash.data.ytmusic.YTMusicApiClient,
 ) : ViewModel() {
-
-    val showBlurLayerInAmoled: StateFlow<Boolean> = themePreference.showBlurLayerInAmoled.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = true,
-    )
 
     // ── Share (fork issue ParaliyzedEvo/Stash#40) ──
     // The player-state Track is a slim media-session reconstruction with

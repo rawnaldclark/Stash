@@ -51,14 +51,13 @@ fun AmbientBackground(
     mutedColor: Color,
     lightMode: Boolean = false,
     amoledMode: Boolean = false,
-    showBlurLayer: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    if (amoledMode && !showBlurLayer) {
-        Canvas(modifier = modifier) { drawRect(color = Color.Black) }
-        return
-    }
-    // Animate colors so track changes produce a smooth 800 ms crossfade.
+    // NOTE: no early-return here anymore — amoledMode only swaps the base
+    // fill color below. Whether this composable renders at all (i.e.
+    // whether the orbs animate) is entirely gated by the caller's
+    // ambientAnimationEnabled check in NowPlayingScreen.
+
     val animDominant by animateColorAsState(
         targetValue = dominantColor,
         animationSpec = tween(durationMillis = CROSSFADE_MS),
@@ -79,30 +78,18 @@ fun AmbientBackground(
     val infiniteTransition = rememberInfiniteTransition(label = "ambientOrbit")
 
     val angle1 by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 12_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(12_000, easing = LinearEasing), RepeatMode.Restart),
         label = "orbit12s",
     )
     val angle2 by infiniteTransition.animateFloat(
-        initialValue = 120f,
-        targetValue = 480f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 16_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
+        initialValue = 120f, targetValue = 480f,
+        animationSpec = infiniteRepeatable(tween(16_000, easing = LinearEasing), RepeatMode.Restart),
         label = "orbit16s",
     )
     val angle3 by infiniteTransition.animateFloat(
-        initialValue = 240f,
-        targetValue = 600f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 20_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
+        initialValue = 240f, targetValue = 600f,
+        animationSpec = infiniteRepeatable(tween(20_000, easing = LinearEasing), RepeatMode.Restart),
         label = "orbit20s",
     )
 
@@ -114,7 +101,8 @@ fun AmbientBackground(
         val orbitRadius = min(w, h) * 0.18f
         val gradientRadius = min(w, h) * 0.65f
 
-        // Theme base fill.
+        // AMOLED wins over light/dark base — true black instead of BaseDark —
+        // but the orbs below still draw on top of it.
         drawRect(color = if (amoledMode) Color.Black else if (lightMode) BaseLight else BaseDark)
 
         // Pastel treatment for the light wash: blend toward white, lower alpha.
