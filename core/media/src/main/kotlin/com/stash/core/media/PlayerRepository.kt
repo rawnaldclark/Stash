@@ -138,7 +138,9 @@ interface PlayerRepository {
      * auto-grow watcher so the queue refills from the unused remainder
      * once the user nears the tail. No-op if no tracks are downloaded.
      */
-    suspend fun shuffleLibrary()
+    /** Shuffle-play every downloaded track. Returns false when there is
+     * nothing downloaded to shuffle (caller surfaces the why). */
+    suspend fun shuffleLibrary(): Boolean
 
     /**
      * Insert [track] immediately after the currently-playing track in the queue.

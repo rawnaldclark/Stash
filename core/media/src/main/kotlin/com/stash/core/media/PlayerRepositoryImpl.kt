@@ -657,33 +657,30 @@ class PlayerRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun shuffleLibrary() {
-        val controller = ensureController() ?: return
-        val all = musicRepository.getAllDownloadedTracks()
-        if (all.isEmpty()) return
+    override suspend fun shuffleLibrary(): Boolean {
+        ensureController() ?: return false
+        // #332: Library is downloaded-only BY DESIGN, and so is its shuffle.
+        // The fix here is the failure mode: the old silent return on an
+        // empty pool read as a dead/stuck button — the caller now gets a
+        // Boolean so the Library screen can say why nothing happened.
+        // Routing through setQueueInternal (instead of the old hand-rolled
+        // toMediaItem+setMediaItems) keeps the logical-queue bookkeeping in
+        // one place.
+        val pool = musicRepository.getAllDownloadedTracks()
+        if (pool.isEmpty()) return false
 
-        val shuffled = all.shuffled()
+        val shuffled = pool.shuffled()
         librarySnapshot = shuffled
         libraryShuffleActive = true
         // Mutually exclusive with radio: shuffling the library ends any station.
         radioActive = false
         radioSession = null
         _radioSeedLabel.value = null
-        // Keep the logical queue in lockstep: all-downloaded tracks resolve
-        // 1:1 into the timeline, but a stale logical list from an earlier
-        // setQueue would otherwise hijack the queue display whenever the
-        // playing track happened to be in it.
-        currentQueueTracks = shuffled
-
-        val mediaItems = shuffled.map { it.toMediaItem() }
-        controller.setMediaItems(mediaItems, /* startIndex = */ 0, /* startPositionMs = */ 0L)
-        // Match user expectation: pressing "Shuffle Library" implies shuffle
-        // is on, regardless of the previous toggle state. The Media3 shuffle
-        // mode toggles randomized advance order; we already pre-shuffled the
-        // queue ourselves, so we leave shuffleModeEnabled alone — the queue
-        // we hand to the controller IS the playback order.
-        controller.prepare()
-        controller.play()
+        // setQueueInternal owns the logical-queue bookkeeping and playback
+        // start; the pre-shuffled list IS the playback order, so Media3's
+        // shuffleModeEnabled stays untouched as before.
+        setQueueInternal(shuffled, startIndex = 0, startPositionMs = 0L)
+        return true
     }
 
     override suspend fun startRadio(

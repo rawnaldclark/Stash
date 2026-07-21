@@ -525,7 +525,9 @@ class LibraryViewModel @Inject constructor(
      */
     fun shuffleLibrary() {
         viewModelScope.launch {
-            playerRepository.shuffleLibrary()
+            if (!playerRepository.shuffleLibrary()) {
+                _userMessages.tryEmit("Nothing downloaded to shuffle yet — download some songs first.")
+            }
         }
     }
 
