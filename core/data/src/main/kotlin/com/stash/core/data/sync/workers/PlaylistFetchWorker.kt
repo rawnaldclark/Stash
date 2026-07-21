@@ -368,6 +368,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val allLikedSongs = mutableListOf<com.stash.data.spotify.model.SpotifyTrackItem>()
             var likedOffset = 0
             val likedPageSize = 50
+            // #343: an error mid-pagination used to break out and snapshot
+            // the truncated pile as if it were the complete library —
+            // REFRESH then mirrored Liked Songs DOWN to it. Track the
+            // failure so the snapshot admits incompleteness.
+            var likedFetchPartial = false
 
             while (true) {
                 when (val result = spotifyApiClient.getLikedSongs(limit = likedPageSize, offset = likedOffset)) {
@@ -379,6 +384,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     }
                     is SyncResult.Empty -> break
                     is SyncResult.Error -> {
+                        likedFetchPartial = true
                         Log.e(TAG, "fetchSpotifyPlaylists: liked songs page error at offset=$likedOffset: ${result.message}")
                         break
                     }
@@ -402,6 +408,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                 it.track?.album?.images?.firstOrNull()?.url
                             }
                         ),
+                        partial = likedFetchPartial,
                     )
                 )
 
@@ -518,6 +525,31 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
             for (playlist in customPlaylists) {
                 try {
+                    // #343: fetch tracks FIRST (like the YouTube paths) so
+                    // the snapshot row can carry an HONEST partial flag. The
+                    // old order inserted the snapshot, then a failed track
+                    // fetch left it present-but-empty with partial=false —
+                    // which REFRESH mode mirror-cleared into real data loss.
+                    var fetchFailed = false
+                    val fetchedItems = try {
+                        when (val tracksResult = spotifyApiClient.getPlaylistTracks(playlist.id)) {
+                            is SyncResult.Success -> tracksResult.data
+                            is SyncResult.Empty -> emptyList()
+                            is SyncResult.Error -> {
+                                fetchFailed = true
+                                inventoryComplete = false
+                                Log.w(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — error: ${tracksResult.message}")
+                                emptyList()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        fetchFailed = true
+                        inventoryComplete = false
+                        Log.w(TAG, "fetchSpotifyPlaylists: failed to fetch tracks for '${playlist.name}'", e)
+                        emptyList()
+                    }
+
                     val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
                         RemotePlaylistSnapshotEntity(
                             syncId = syncId,
@@ -529,44 +561,38 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             artUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
                                 playlist.images?.firstOrNull()?.url,
                             ),
+                            partial = fetchFailed,
+                            expectedCount = playlist.tracks?.total,
                         )
                     )
 
-                    when (val tracksResult = spotifyApiClient.getPlaylistTracks(playlist.id)) {
-                        is SyncResult.Success -> {
-                            val trackSnapshots = tracksResult.data.mapIndexedNotNull { index, item ->
-                                val track = item.track ?: return@mapIndexedNotNull null
-                                RemoteTrackSnapshotEntity(
-                                    syncId = syncId,
-                                    snapshotPlaylistId = playlistSnapshotId,
-                                    title = track.name,
-                                    artist = track.artists.joinToString(", ") { it.name },
-                                    album = track.album?.name,
-                                    durationMs = track.duration_ms,
-                                    spotifyUri = track.uri,
-                                    albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.album?.images?.firstOrNull()?.url),
-                                    position = index,
-                                    isrc = track.isrc,
-                                    explicit = track.explicit,
-                                )
-                            }
-                            if (trackSnapshots.isNotEmpty()) {
-                                remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
-                            }
-                            userPlaylistCount++
-                            Log.d(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — ${trackSnapshots.size} tracks")
-                        }
-                        is SyncResult.Empty -> {
-                            Log.d(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — empty")
-                        }
-                        is SyncResult.Error -> {
-                            Log.w(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — error: ${tracksResult.message}")
-                        }
+                    val trackSnapshots = fetchedItems.mapIndexedNotNull { index, item ->
+                        val track = item.track ?: return@mapIndexedNotNull null
+                        RemoteTrackSnapshotEntity(
+                            syncId = syncId,
+                            snapshotPlaylistId = playlistSnapshotId,
+                            title = track.name,
+                            artist = track.artists.joinToString(", ") { it.name },
+                            album = track.album?.name,
+                            durationMs = track.duration_ms,
+                            spotifyUri = track.uri,
+                            albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.album?.images?.firstOrNull()?.url),
+                            position = index,
+                            isrc = track.isrc,
+                            explicit = track.explicit,
+                        )
+                    }
+                    if (trackSnapshots.isNotEmpty()) {
+                        remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+                    }
+                    if (!fetchFailed) {
+                        userPlaylistCount++
+                        Log.d(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — ${trackSnapshots.size} tracks")
                     }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     inventoryComplete = false
-                    Log.w(TAG, "fetchSpotifyPlaylists: failed to fetch tracks for '${playlist.name}'", e)
+                    Log.w(TAG, "fetchSpotifyPlaylists: snapshot failed for '${playlist.name}'", e)
                 }
             }
 

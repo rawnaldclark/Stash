@@ -310,7 +310,29 @@ class DiffWorker @AssistedInject constructor(
         streamingMode: Boolean,
     ): Int {
         if (syncMode == SyncMode.REFRESH) {
-            playlistDao.clearSyncedPlaylistTracks(localPlaylist.id)
+            // #343: NEVER mirror-clear against a fetch that admits (or looks
+            // like) incompleteness — one flaky API call was emptying whole
+            // playlists, and the orphan cleaner then deleted the files.
+            //  - partial: the fetch worker marked this snapshot incomplete
+            //    (track fetch threw/errored, or pagination hit its cap — the
+            //    long-standing YT truncation loss is this same hole).
+            //  - suspiciousEmpty: zero tracks fetched while the playlist
+            //    LISTING claimed some exist — an unmarked failure shape.
+            // In both cases we fall through and merge additions only
+            // (accumulate semantics); a later clean fetch re-mirrors fully.
+            if (snapshotUnreliable(playlistSnapshot, trackSnapshots)) {
+                Log.w(
+                    TAG,
+                    "REFRESH: keeping local tracks for '${playlistSnapshot.playlistName}' — " +
+                        if (playlistSnapshot.partial) {
+                            "fetch marked partial (${trackSnapshots.size} snapshot tracks)"
+                        } else {
+                            "snapshot empty but listing claims ${playlistSnapshot.trackCount} tracks"
+                        },
+                )
+            } else {
+                playlistDao.clearSyncedPlaylistTracks(localPlaylist.id)
+            }
         }
 
         if (trackSnapshots.isEmpty()) {
@@ -517,6 +539,19 @@ class DiffWorker @AssistedInject constructor(
     }
 
     /**
+     * A snapshot that must NOT be treated as the full remote truth (#343):
+     * either the fetch worker marked it partial (track fetch errored, or
+     * pagination hit a cap), or it fetched zero tracks while the playlist
+     * LISTING claims some exist — an unmarked failure shape. Shared by the
+     * REFRESH clear guard and [finalizePlaylistMetadata] so the "don't
+     * mirror" and "don't record mirrored state" decisions can't drift.
+     */
+    private fun snapshotUnreliable(
+        snapshot: RemotePlaylistSnapshotEntity,
+        trackSnapshots: List<RemoteTrackSnapshotEntity>,
+    ): Boolean = snapshot.partial || (trackSnapshots.isEmpty() && snapshot.trackCount > 0)
+
+    /**
      * Playlist metadata bookkeeping shared by every processPlaylist exit
      * path (including the early-return-on-empty branches). Unchanged from
      * the original inline tail of processPlaylist.
@@ -527,6 +562,14 @@ class DiffWorker @AssistedInject constructor(
         trackSnapshots: List<RemoteTrackSnapshotEntity>,
     ) {
         playlistDao.updateLastSynced(localPlaylist.id, System.currentTimeMillis())
+        if (snapshotUnreliable(playlistSnapshot, trackSnapshots)) {
+            // #343: an unreliable fetch was NOT mirrored (see processPlaylist).
+            // Recording its snapshot_id would make the next sync skip this
+            // playlist as "unchanged" and the missing tracks would never
+            // re-sync; stamping trackSnapshots.size would show a lying track
+            // count over retained content. Leave both as they were.
+            return
+        }
         if (playlistSnapshot.snapshotId != null) {
             playlistDao.updateSnapshotId(localPlaylist.id, playlistSnapshot.snapshotId)
         }

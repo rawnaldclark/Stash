@@ -273,6 +273,120 @@ class DiffWorkerTest {
         return db.playlistDao().getById(playlistId)?.artUrl
     }
 
+    // ── #343: REFRESH must never mirror-clear against unreliable fetches ──
+
+    private suspend fun seedSyncedPlaylist(
+        snapshotId: String? = "old-snap",
+    ): Pair<Long, Long> {
+        val trackId = db.trackDao().insert(
+            TrackEntity(
+                title = "Keeper", artist = "Artist",
+                canonicalTitle = "keeper", canonicalArtist = "artist",
+                spotifyUri = "spotify:track:keeper",
+            )
+        )
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Jams", source = MusicSource.SPOTIFY,
+                sourceId = "pl1", type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+        db.playlistDao().insertCrossRef(
+            PlaylistTrackCrossRef(playlistId = playlistId, trackId = trackId, position = 0)
+        )
+        snapshotId?.let { db.playlistDao().updateSnapshotId(playlistId, it) }
+        db.playlistDao().updateTrackCount(playlistId, 1)
+        return playlistId to trackId
+    }
+
+    private fun stubSnapshot(
+        partial: Boolean,
+        listedTrackCount: Int,
+        trackSnapshots: List<RemoteTrackSnapshotEntity> = emptyList(),
+    ) {
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 4L, syncId = 1L, source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "pl1", playlistName = "Jams",
+            playlistType = PlaylistType.CUSTOM, trackCount = listedTrackCount,
+            partial = partial, snapshotId = "new-snap",
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(4L) } returns trackSnapshots
+    }
+
+    private suspend fun activeTrackCount(playlistId: Long): Int =
+        db.playlistDao().getCrossRefsForPlaylist(playlistId).count { it.removedAt == null }
+
+    @Test
+    fun `REFRESH keeps local tracks when the snapshot is marked partial`() = runBlocking {
+        val (playlistId, _) = seedSyncedPlaylist()
+        stubSnapshot(partial = true, listedTrackCount = 12)
+
+        val result = buildWorker().doWork()
+
+        assertTrue("diff must succeed", result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals("local track survives a partial fetch", 1, activeTrackCount(playlistId))
+    }
+
+    @Test
+    fun `REFRESH keeps local tracks when the snapshot is empty but the listing claims tracks`() = runBlocking {
+        val (playlistId, _) = seedSyncedPlaylist()
+        stubSnapshot(partial = false, listedTrackCount = 12)
+
+        val result = buildWorker().doWork()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals("unmarked failure shape must not clear", 1, activeTrackCount(playlistId))
+    }
+
+    @Test
+    fun `REFRESH mirrors a genuinely emptied playlist`() = runBlocking {
+        val (playlistId, _) = seedSyncedPlaylist()
+        stubSnapshot(partial = false, listedTrackCount = 0)
+
+        val result = buildWorker().doWork()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals("clean empty fetch mirrors the empty remote", 0, activeTrackCount(playlistId))
+    }
+
+    @Test
+    fun `partial fetch does not advance snapshot id or track count`() = runBlocking {
+        val (playlistId, _) = seedSyncedPlaylist(snapshotId = "old-snap")
+        stubSnapshot(partial = true, listedTrackCount = 12)
+
+        val result = buildWorker().doWork()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals(
+            "snapshot id must stay stale so the next sync re-diffs this playlist",
+            "old-snap", db.playlistDao().getSnapshotId(playlistId),
+        )
+        assertEquals("track count must not lie over retained tracks", 1, db.playlistDao().getById(playlistId)?.trackCount)
+    }
+
+    @Test
+    fun `partial fetch still merges the additions it did return`() = runBlocking {
+        val (playlistId, _) = seedSyncedPlaylist()
+        stubSnapshot(
+            partial = true, listedTrackCount = 12,
+            trackSnapshots = listOf(
+                RemoteTrackSnapshotEntity(
+                    id = 9L, syncId = 1L, snapshotPlaylistId = 4L,
+                    title = "Newcomer", artist = "Artist",
+                    durationMs = 200_000, spotifyUri = "spotify:track:new",
+                    position = 0,
+                )
+            ),
+        )
+
+        val result = buildWorker().doWork()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals("existing track kept AND the fetched addition merged", 2, activeTrackCount(playlistId))
+    }
+
     private fun buildWorker(): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
         .setInputData(workDataOf(PlaylistFetchWorker.KEY_SYNC_ID to 1L))
         .setWorkerFactory(object : WorkerFactory() {
