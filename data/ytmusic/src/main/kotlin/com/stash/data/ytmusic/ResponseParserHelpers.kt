@@ -38,6 +38,13 @@ internal val PLAY_COUNT_REGEX =
     Regex("""^[\d.,]+\s*[KMB]?\s*plays?$""", RegexOption.IGNORE_CASE)
 
 /**
+ * Leading content-type labels that flat search rows (issue #268) put before the
+ * artist in a song row's subtitle ("Song • <artist>"). The titled "Songs" shelf
+ * omits these, so stripping a single leading match is safe for both shapes.
+ */
+internal val SONG_ROW_TYPE_LABELS = setOf("Song", "Video", "Music video", "Episode")
+
+/**
  * Parses a `musicResponsiveListItemRenderer` into a [TrackSummary].
  *
  * Expected shape:
@@ -88,15 +95,19 @@ internal fun parseTrackSummaryFromListItem(
     // without an artist). The caller — typically AlbumResponseParser —
     // passes the album header's artist as fallbackArtist so per-row
     // artists default to that when the shelf row carries none.
-    val artistRuns = flexColumns.getOrNull(1)?.asObject()
+    val artistTexts = flexColumns.getOrNull(1)?.asObject()
         ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
         ?.asArray()
-    val parsedArtist = artistRuns
         ?.mapNotNull { it.asObject()?.get("text")?.asString() }
-        ?.filterNot { it == " & " || it == ", " || it == " x " }
-        ?.joinToString(", ")
-        .orEmpty()
-    val artist = parsedArtist.ifBlank { fallbackArtist.orEmpty() }
+        ?.filterNot { it == " & " || it == ", " || it == " x " || it == " • " }
+        ?: emptyList()
+    // Flat search rows (issue #268) prefix the subtitle with a content-type
+    // label — "Song • <artist>" — that the titled "Songs" shelf omits. Drop a
+    // single leading label so it doesn't pollute the artist string; harmless
+    // for legacy rows, whose first token is already the artist.
+    val cleanedArtistTexts =
+        if (artistTexts.firstOrNull() in SONG_ROW_TYPE_LABELS) artistTexts.drop(1) else artistTexts
+    val artist = cleanedArtistTexts.joinToString(", ").ifBlank { fallbackArtist.orEmpty() }
 
     // flexColumns[2] is the album ONLY on album-page tracklists (a different
     // parser). This helper's callers are the search "Songs" shelf and the artist

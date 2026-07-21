@@ -342,6 +342,21 @@ class YTMusicApiClient @Inject constructor(
             }
         }
 
+        // The titled musicShelfRenderer shape above is only served to
+        // authenticated YT-Music clients in supported regions. Unauthenticated
+        // / region-limited requests get a FLAT itemSectionRenderer list with no
+        // titled shelves, which the loop above skips entirely — the user then
+        // sees "No results found" over a response full of hits (issue #268).
+        // Recover those rows when no list shelf matched.
+        val hasListSections = sections.any {
+            it is SearchResultSection.Songs ||
+                it is SearchResultSection.Artists ||
+                it is SearchResultSection.Albums
+        }
+        if (!hasListSections) {
+            sections.addAll(parseFlatSearchSections(shelves))
+        }
+
         Log.d(TAG, "searchAll('$query'): ${sections.size} sections")
         return SearchAllResults(sections)
     }
