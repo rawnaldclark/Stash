@@ -343,7 +343,14 @@ fun NowPlayingScreen(
                 // halves the decorative spacers. verticalScroll stays as the
                 // net for anything below 180dp of slack.
                 val artSize = (this.maxHeight - 460.dp).coerceIn(180.dp, 280.dp)
-                val compact = artSize < 280.dp
+                // Spacers stay at FULL size while the art alone can absorb
+                // the shortfall — art + spacers then fill the column exactly,
+                // with no dead band. Compact (halved spacers) kicks in only
+                // when the art is genuinely squeezed toward its floor. A
+                // threshold at the design size was a 1dp cliff that dropped
+                // the Pixel itself into compact mode: title crowding the art
+                // and ~200dp of dead space pooling above the lyrics bar.
+                val compact = artSize <= 200.dp
             Column(
                 modifier = Modifier
                     .fillMaxSize()
