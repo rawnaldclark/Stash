@@ -3,6 +3,7 @@ package com.stash.feature.nowplaying
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -327,11 +328,25 @@ fun NowPlayingScreen(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
-            Column(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .statusBarsPadding()
+                    .statusBarsPadding(),
+            ) {
+                // #333: the fixed chrome around the art (top bar, title block,
+                // progress, controls, spacers) needs ~460dp at full spacing.
+                // Screens that fall short — large display/font scale, shorter
+                // phones, the lyrics bar eating a row — used to push the
+                // PLAY CONTROLS below the fold. The art absorbs the shortfall
+                // instead (280dp design size down to 180dp), and compact mode
+                // halves the decorative spacers. verticalScroll stays as the
+                // net for anything below 180dp of slack.
+                val artSize = (this.maxHeight - 460.dp).coerceIn(180.dp, 280.dp)
+                val compact = artSize < 280.dp
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
                     .verticalScroll(scrollState)
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -356,17 +371,18 @@ fun NowPlayingScreen(
                     accentColor = npAccent(uiState.vibrantColor),
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(if (compact) 12.dp else 24.dp))
 
                 // -- Album art --
                 AlbumArtSection(
                     albumArtUrl = track?.albumArtUrl,
                     albumArtPath = track?.albumArtPath,
                     accentColor = npAccent(uiState.vibrantColor),
+                    artSize = artSize,
                     onBitmapLoaded = viewModel::onAlbumArtLoaded,
                 )
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(if (compact) 16.dp else 32.dp))
 
                 // -- Track info -- (tap the title/artist to open the artist
                 // profile; the trailing chevron signals it's actionable, and
@@ -499,7 +515,7 @@ fun NowPlayingScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(if (compact) 16.dp else 28.dp))
 
                 // -- Progress bar --
                 GlowingProgressBar(
@@ -511,7 +527,7 @@ fun NowPlayingScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(if (compact) 12.dp else 20.dp))
 
                 // -- Playback controls --
                 PlaybackControls(
@@ -527,7 +543,8 @@ fun NowPlayingScreen(
                     onCycleRepeatMode = viewModel::onCycleRepeatMode,
                 )
 
-                Spacer(modifier = Modifier.height(48.dp))
+                Spacer(modifier = Modifier.height(if (compact) 24.dp else 48.dp))
+            }
             }
 
             // Live-lyrics bar — sits exactly where the MiniPlayer is on other
@@ -684,6 +701,7 @@ private fun AlbumArtSection(
     albumArtUrl: String?,
     albumArtPath: String?,
     accentColor: Color,
+    artSize: androidx.compose.ui.unit.Dp = 280.dp,
     onBitmapLoaded: (android.graphics.Bitmap?) -> Unit,
 ) {
     val context = LocalContext.current
@@ -702,7 +720,7 @@ private fun AlbumArtSection(
         // Glow behind the artwork.
         Box(
             modifier = Modifier
-                .size(260.dp)
+                .size(artSize - 20.dp)
                 .shadow(
                     elevation = 40.dp,
                     shape = RoundedCornerShape(20.dp),
@@ -727,7 +745,7 @@ private fun AlbumArtSection(
                 }
             },
             modifier = Modifier
-                .size(280.dp)
+                .size(artSize)
                 .clip(RoundedCornerShape(20.dp)),
         )
     }
