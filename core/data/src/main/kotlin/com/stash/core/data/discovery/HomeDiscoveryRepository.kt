@@ -16,6 +16,9 @@ import com.stash.data.ytmusic.model.PlaylistSummary
  * [genreId] null = all genres (the "All" chip).
  */
 interface HomeDiscoveryRepository {
+    /** Live reason the last discovery fetch failed, or OK. Drives the Home banner. */
+    val status: kotlinx.coroutines.flow.StateFlow<QobuzDiscoveryStatus>
+
     suspend fun newReleases(genreId: Int?): List<AlbumSummary>
     suspend fun topAlbums(genreId: Int?): List<AlbumSummary>
     suspend fun communityPlaylists(genreId: Int?): List<PlaylistSummary>

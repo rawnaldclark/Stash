@@ -29,6 +29,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.theme.StashElevation
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -119,7 +121,18 @@ fun StashScaffold(
             // takes the bottom edge. This drops innerPadding.bottom to 0 so the
             // content extends full-height behind that action bar.
             if (!selectionActive) {
+                val qobuzStatusViewModel: QobuzStatusViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+                val qobuzStatus by qobuzStatusViewModel.bannerStatus.collectAsStateWithLifecycle()
+                val onNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName
+
                 Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+                    AnimatedVisibility(
+                        visible = !onNowPlaying,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                    ) {
+                        com.stash.core.ui.components.QobuzDiscoveryBanner(status = qobuzStatus)
+                    }
                     // On Now Playing the LiveLyricsBar (rendered inside the
                     // screen itself) takes the MiniPlayer's spot — the full
                     // player already shows all transport controls, so the
