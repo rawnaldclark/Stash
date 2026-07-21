@@ -70,4 +70,33 @@ class LocalFileOpsTest {
     @Test fun `classify - null path is MISSING`() {
         assertEquals(LocalFileState.MISSING, ops.classify(null, floor))
     }
+
+    // ── Removable-volume safety (issue #98) ──────────────────────────────
+    // A file that "doesn't exist" because its whole volume is unmounted (SD
+    // card ejected) must never classify as MISSING — the sweep would un-mark
+    // the entire external library and the damage would stick after reinsert.
+
+    @Test fun `classify - missing file on an unmounted volume is INCONCLUSIVE`() {
+        ops.volumeMounted = { false }
+        assertEquals(
+            LocalFileState.INCONCLUSIVE,
+            ops.classify("/storage/ABCD-1234/Music/track.flac", floor),
+        )
+    }
+
+    @Test fun `classify - missing file on a mounted volume is MISSING`() {
+        ops.volumeMounted = { true }
+        assertEquals(
+            LocalFileState.MISSING,
+            ops.classify("/storage/ABCD-1234/Music/track.flac", floor),
+        )
+    }
+
+    @Test fun `classify - internal missing file never consults the mount probe`() {
+        ops.volumeMounted = { error("must not be called for /data paths") }
+        assertEquals(
+            LocalFileState.MISSING,
+            ops.classify("/data/user/0/com.stash.app/files/music/nope/missing.flac", floor),
+        )
+    }
 }

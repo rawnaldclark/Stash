@@ -1,6 +1,7 @@
 package com.stash.core.data.files
 
 import android.content.Context
+import android.os.Environment
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.stash.core.common.constants.StashConstants
@@ -43,6 +44,34 @@ enum class LocalFileState {
 class LocalFileOps @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
+    /**
+     * Mount-state probe for the volume containing a plain path. Overridable in
+     * unit tests (Environment is Android framework). Defaults to "is the
+     * volume MOUNTED"; any resolution failure reads as not-mounted so the
+     * sweep never acts on a path it can't attribute to a live volume.
+     */
+    internal var volumeMounted: (File) -> Boolean = { f ->
+        try {
+            Environment.getExternalStorageState(f) == Environment.MEDIA_MOUNTED
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * True when [f]'s absence can be trusted as a real deletion. Internal app
+     * storage (`/data/...`) never unmounts, so `exists()` is reliable there.
+     * Any other plain path (`/storage/XXXX-XXXX/...` on an SD card, USB-OTG)
+     * only counts when its volume is currently mounted: with the card ejected
+     * every file on it "doesn't exist", and classifying that as MISSING would
+     * un-mark the user's whole library — permanently, since the sweep result
+     * sticks after the card is reinserted (issue #98).
+     */
+    private fun absenceIsReliable(f: File): Boolean =
+        // File() normalizes to the platform separator; compare with '/' so the
+        // prefix check also holds in JVM unit tests on Windows.
+        f.path.replace(File.separatorChar, '/').startsWith("/data/") || volumeMounted(f)
+
     /** Size of the file behind [path] in bytes; 0 if null/blank/missing/unreadable. */
     fun sizeBytes(path: String?): Long {
         if (path.isNullOrBlank()) return 0L
@@ -78,7 +107,9 @@ class LocalFileOps @Inject constructor(
             } else {
                 val f = File(plainPath(path))
                 when {
-                    !f.exists() -> LocalFileState.MISSING       // internal storage: reliable
+                    !f.exists() ->
+                        if (absenceIsReliable(f)) LocalFileState.MISSING
+                        else LocalFileState.INCONCLUSIVE // volume unmounted (e.g. SD ejected) — don't touch
                     f.length() < minBytes -> LocalFileState.TOO_SMALL // includes a 0-byte present file
                     else -> LocalFileState.OK
                 }
