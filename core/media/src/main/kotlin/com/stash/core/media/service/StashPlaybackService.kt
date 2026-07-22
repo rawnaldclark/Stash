@@ -34,6 +34,7 @@ import com.stash.core.media.equalizer.computeGain
 import com.stash.core.media.PlaybackResumer
 import com.stash.core.media.ResumePlayGate
 import com.stash.core.media.ResumeStreamResolver
+import com.stash.core.media.SleepTimerController
 import com.stash.core.media.streaming.PrefetchOrchestrator
 import com.stash.core.media.streaming.StashMediaSourceFactory
 import com.stash.core.media.streaming.StreamingMediaSourceFactory
@@ -78,6 +79,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var playlistDao: PlaylistDao
     @Inject lateinit var likeCoordinator: LikeCoordinator
     @Inject lateinit var prefetchOrchestrator: PrefetchOrchestrator
+    @Inject lateinit var sleepTimerController: SleepTimerController
     @Inject lateinit var streamingMediaSourceFactory: StreamingMediaSourceFactory
     @Inject lateinit var playbackResumer: PlaybackResumer
     @Inject lateinit var resumeStreamResolver: ResumeStreamResolver
@@ -191,6 +193,15 @@ class StashPlaybackService : MediaLibraryService() {
 
         /** Below this much usable fade, skip the crossfade (hard cut). */
         private const val MIN_FADE_MS = 800L
+
+        /** Separate, low-priority channel for the sleep-timer status notification. */
+        private const val SLEEP_TIMER_CHANNEL_ID = "stash_sleep_timer"
+
+        /** Notification id for the sleep-timer status notification (distinct from Media3's default media notification id). */
+        private const val SLEEP_TIMER_NOTIFICATION_ID = 9001
+
+        /** How often the sleep-timer notification's remaining-time text refreshes. */
+        private const val SLEEP_TIMER_TICK_MS = 60_000L
     }
 
     private var mediaSession: MediaLibrarySession? = null
@@ -209,6 +220,9 @@ class StashPlaybackService : MediaLibraryService() {
      * required thread.
      */
     private var prefetchPollJob: Job? = null
+
+    /** Ticks the sleep-timer status notification while a countdown is armed. */
+    private var sleepTimerNotificationJob: Job? = null
 
     /**
      * Two-player crossfade engine (role-swap). Owns players A and B; whichever
@@ -403,7 +417,72 @@ class StashPlaybackService : MediaLibraryService() {
         serviceScope.launch { crossfadePreference.enabled.collect { crossfadeEnabled = it } }
         serviceScope.launch { crossfadePreference.durationMs.collect { crossfadeDurationMs = it } }
 
+        // Sleep-timer status notification — separate from the media notification
+        // (Media3's default provider owns that one); mirrors the "Resuming…"
+        // placeholder notification's channel/build pattern below.
+        serviceScope.launch { observeSleepTimerState() }
+
         updateCustomLayout()
+    }
+
+    /**
+     * Reacts to [SleepTimerController.State] changes: posts/updates a quiet
+     * status notification while a timer is armed (ticking the remaining
+     * minutes every [SLEEP_TIMER_TICK_MS] for a Countdown), and cancels it
+     * once disarmed.
+     */
+    private suspend fun observeSleepTimerState() {
+        sleepTimerController.state.collect { state ->
+            sleepTimerNotificationJob?.cancel()
+            when (state) {
+                is SleepTimerController.State.Countdown -> {
+                    sleepTimerNotificationJob = serviceScope.launch {
+                        while (isActive) {
+                            val now = System.currentTimeMillis()
+                            val minutesLeft = ((state.endsAtMs - now) / 60_000L).coerceAtLeast(0) + 1
+                            showSleepTimerNotification("Pauses in about $minutesLeft min")
+                            if (state.endsAtMs <= now) break
+                            delay(SLEEP_TIMER_TICK_MS)
+                        }
+                    }
+                }
+                SleepTimerController.State.EndOfTrack -> {
+                    showSleepTimerNotification("Pauses when the current track ends")
+                }
+                SleepTimerController.State.Off -> cancelSleepTimerNotification()
+            }
+        }
+    }
+
+    /** Posts (or refreshes) the low-priority sleep-timer status notification. */
+    private fun showSleepTimerNotification(statusText: String) {
+        val nm = getSystemService(android.app.NotificationManager::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            nm.getNotificationChannel(SLEEP_TIMER_CHANNEL_ID) == null
+        ) {
+            nm.createNotificationChannel(
+                android.app.NotificationChannel(
+                    SLEEP_TIMER_CHANNEL_ID,
+                    "Sleep timer",
+                    android.app.NotificationManager.IMPORTANCE_LOW,
+                ),
+            )
+        }
+        val notification = androidx.core.app.NotificationCompat.Builder(this, SLEEP_TIMER_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle("Sleep timer")
+            .setContentText(statusText)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+            .build()
+        nm.notify(SLEEP_TIMER_NOTIFICATION_ID, notification)
+    }
+
+    /** Cancels the sleep-timer status notification once the timer is disarmed. */
+    private fun cancelSleepTimerNotification() {
+        getSystemService(android.app.NotificationManager::class.java)
+            .cancel(SLEEP_TIMER_NOTIFICATION_ID)
     }
 
     /**
@@ -768,6 +847,8 @@ class StashPlaybackService : MediaLibraryService() {
         likeObserverJob?.cancel()
         prefetchPollJob?.cancel()
         crossfadePollJob?.cancel()
+        sleepTimerNotificationJob?.cancel()
+        cancelSleepTimerNotification()
         listenedPlayer?.removeListener(playerListener)
         listenedPlayer = null
         serviceScope.cancel()

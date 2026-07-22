@@ -37,6 +37,11 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Close
+import com.stash.core.media.SleepTimerController
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
@@ -150,6 +155,10 @@ fun NowPlayingScreen(
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
     var showOptionsSheet by remember { mutableStateOf(false) }
+    var showSleepTimerSheet by remember { mutableStateOf(false) }
+    var showCustomTimerDialog by remember { mutableStateOf(false) }
+    val sleepTimerState by viewModel.sleepTimerState.collectAsStateWithLifecycle()
+    val sleepTimerSheetState = rememberModalBottomSheetState()
     val optionsSheetState = rememberModalBottomSheetState()
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var queueSaveTrack by remember { mutableStateOf<com.stash.core.model.Track?>(null) }
@@ -280,6 +289,42 @@ fun NowPlayingScreen(
                 viewModel.createPlaylistAndAddTrack(name, track.id)
             },
             onDismiss = { showSaveSheet = false },
+        )
+    }
+
+    // Sleep timer bottom sheet — opened by the icon next to the track title.
+    if (showSleepTimerSheet) {
+        SleepTimerSheet(
+            currentState = sleepTimerState,
+            onSelectMinutes = { minutes ->
+                viewModel.onSleepTimerMinutes(minutes)
+                showSleepTimerSheet = false
+            },
+            onSelectEndOfTrack = {
+                viewModel.onSleepTimerEndOfTrack()
+                showSleepTimerSheet = false
+            },
+            onSelectCustom = {
+                showSleepTimerSheet = false
+                showCustomTimerDialog = true
+            },
+            onCancel = {
+                viewModel.onSleepTimerCancel()
+                showSleepTimerSheet = false
+            },
+            onDismiss = { showSleepTimerSheet = false },
+            sheetState = sleepTimerSheetState,
+        )
+    }
+
+    // Custom sleep-timer minutes dialog — opened from the sheet's "Custom" row.
+    if (showCustomTimerDialog) {
+        CustomSleepTimerDialog(
+            onConfirm = { minutes ->
+                viewModel.onSleepTimerMinutes(minutes)
+                showCustomTimerDialog = false
+            },
+            onDismiss = { showCustomTimerDialog = false },
         )
     }
 
@@ -513,6 +558,27 @@ fun NowPlayingScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                    // Sleep timer — floated to the leading edge, mirroring the
+                    // Like heart's placement on the trailing edge. Accented
+                    // while a timer is armed so the state is visible at a
+                    // glance without opening the sheet.
+                    if (track != null) {
+                        val sleepTimerActive = sleepTimerState != SleepTimerController.State.Off
+                        androidx.compose.material3.IconButton(
+                            onClick = { showSleepTimerSheet = true },
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .size(26.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bedtime,
+                                contentDescription = if (sleepTimerActive) "Sleep timer active" else "Set sleep timer",
+                                tint = if (sleepTimerActive) npAccent(uiState.vibrantColor) else npInk().copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+
                     // Like heart — the sole action left inline, floated to the
                     // trailing edge and vertically centred against the
                     // title/artist block. Share/Queue/Save/Download/Flag all
@@ -526,7 +592,7 @@ fun NowPlayingScreen(
                             modifier = Modifier.align(Alignment.CenterEnd),
                         )
                     }
-                }
+                }   
 
                 // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
                 // Sized smaller than the artist/album line; degrades gracefully when
@@ -1086,6 +1152,123 @@ private fun NowPlayingOptionsSheet(
             )
         }
     }
+}
+
+/**
+ * Sleep-timer picker, opened from the icon beside the track title. Shows
+ * the current countdown/end-of-track status (if armed), then the preset
+ * durations, a Custom entry, End of Track, and — only while a timer is
+ * running — a Cancel row.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SleepTimerSheet(
+    currentState: SleepTimerController.State,
+    onSelectMinutes: (Int) -> Unit,
+    onSelectEndOfTrack: () -> Unit,
+    onSelectCustom: () -> Unit,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit,
+    sheetState: androidx.compose.material3.SheetState,
+) {
+    val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = extendedColors.elevatedSurface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 36.dp),
+        ) {
+            Text(
+                text = "Sleep Timer",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier
+                    .padding(bottom = 20.dp)
+                    .align(Alignment.CenterHorizontally),
+            )
+
+            when (currentState) {
+                is SleepTimerController.State.Countdown -> {
+                    val minutesLeft = ((currentState.endsAtMs - System.currentTimeMillis()) / 60_000L)
+                        .coerceAtLeast(0) + 1
+                    Text(
+                        text = "Music pauses in about $minutesLeft min",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
+                }
+                SleepTimerController.State.EndOfTrack -> Text(
+                    text = "Music pauses when the current track ends",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+                SleepTimerController.State.Off -> Unit
+            }
+
+            listOf(15, 30, 45, 60, 120, 180).forEach { minutes ->
+                SheetOptionRow(
+                    icon = Icons.Default.Timer,
+                    label = "$minutes min",
+                    onClick = { onSelectMinutes(minutes) },
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            SheetOptionRow(icon = Icons.Default.Edit, label = "Custom", onClick = onSelectCustom)
+            Spacer(Modifier.height(8.dp))
+            SheetOptionRow(icon = Icons.Default.Bedtime, label = "End of Track", onClick = onSelectEndOfTrack)
+
+            if (currentState != SleepTimerController.State.Off) {
+                Spacer(Modifier.height(8.dp))
+                SheetOptionRow(
+                    icon = Icons.Default.Close,
+                    label = "Cancel timer",
+                    onClick = onCancel,
+                )
+            }
+        }
+    }
+}
+
+/** Plain numeric-minutes entry, reached via the sheet's "Custom" row. */
+@Composable
+private fun CustomSleepTimerDialog(
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var minutesText by remember { mutableStateOf("") }
+    val parsedMinutes = minutesText.toIntOrNull()
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Custom sleep timer") },
+        text = {
+            androidx.compose.material3.OutlinedTextField(
+                value = minutesText,
+                onValueChange = { if (it.all(Char::isDigit)) minutesText = it },
+                label = { Text("Minutes") },
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                ),
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = { parsedMinutes?.let(onConfirm) },
+                enabled = parsedMinutes != null && parsedMinutes > 0,
+            ) {
+                Text("Start")
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @androidx.compose.ui.tooling.preview.Preview(

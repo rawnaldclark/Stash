@@ -10,6 +10,7 @@ import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.media.SleepTimerController
 import com.stash.core.model.AlbumNavTarget
 import com.stash.core.model.RadioStartResult
 import com.stash.core.model.UpgradeResult
@@ -69,6 +70,7 @@ data class ArtistNavTarget(
 @HiltViewModel
 class NowPlayingViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
+    private val sleepTimerController: SleepTimerController,
     private val musicRepository: MusicRepository,
     private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
     private val losslessUpgrader: LosslessUpgrader,
@@ -304,6 +306,28 @@ class NowPlayingViewModel @Inject constructor(
 
     /** Stop the active radio station. */
     fun stopRadio() = playerRepository.stopRadio()
+
+    // ------------------------------------------------------------------
+    // Sleep timer
+    // ------------------------------------------------------------------
+
+    /** Current sleep-timer state, mirrored from the app-wide singleton. */
+    val sleepTimerState: StateFlow<SleepTimerController.State> = sleepTimerController.state
+
+    /** Arm a countdown timer for [minutes] minutes. */
+    fun onSleepTimerMinutes(minutes: Int) {
+        sleepTimerController.startMinutes(minutes)
+    }
+
+    /** Arm a timer that pauses at the end of the current track. */
+    fun onSleepTimerEndOfTrack() {
+        sleepTimerController.stopAtEndOfTrack()
+    }
+
+    /** Disarm the sleep timer without touching playback. */
+    fun onSleepTimerCancel() {
+        sleepTimerController.cancel()
+    }
 
     fun onTrackInfoTapped() {
         val track = _uiState.value.currentTrack ?: return
