@@ -19,7 +19,7 @@ fun QobuzDiscoveryBanner(status: QobuzDiscoveryStatus, modifier: Modifier = Modi
     if (status == QobuzDiscoveryStatus.OK) return
     val message = when (status) {
         QobuzDiscoveryStatus.NO_INTERNET -> "No internet connection — discovery rows may be outdated"
-        QobuzDiscoveryStatus.NO_TOKEN -> "Qobuz not connected — set up a token in Settings to see discovery rows"
+        QobuzDiscoveryStatus.NO_TOKEN -> "Qobuz not connected — set up tokens via github actions to see discovery rows"
         QobuzDiscoveryStatus.OK -> return
     }
     Surface(
