@@ -21,10 +21,12 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.TrackMatcher
+import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.SyncMode
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
@@ -223,6 +225,304 @@ class DiffWorkerTest {
         assertEquals(1, crossRefs.size)
         assertEquals("spotifyUri match must win", bySpotify, crossRefs.single().trackId)
         assertEquals("no new track should be inserted — matched existing", 3, trackDao.getAllForIntegrityScan().size)
+    }
+
+    @Test
+    fun `duplicate new Spotify URI reuses one track and keeps the last playlist position`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Duplicates", source = MusicSource.SPOTIFY,
+                sourceId = "spotify:playlist:duplicates", type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 5L, syncId = 1L, source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "spotify:playlist:duplicates",
+            playlistName = "Duplicates", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(5L) } returns listOf(
+            RemoteTrackSnapshotEntity(
+                id = 51L, syncId = 1L, snapshotPlaylistId = 5L,
+                title = "Repeated Song", artist = "Artist",
+                spotifyUri = "spotify:track:repeat", position = 1,
+            ),
+            RemoteTrackSnapshotEntity(
+                id = 52L, syncId = 1L, snapshotPlaylistId = 5L,
+                title = "Provider Renamed Song", artist = "Different Artist",
+                spotifyUri = "spotify:track:repeat", position = 7,
+            ),
+        )
+        val result = buildWorker().doWork()
+
+        assertTrue("duplicate provider identities must not fail the diff", result is androidx.work.ListenableWorker.Result.Success)
+        val tracks = db.trackDao().getAllForIntegrityScan()
+        assertEquals("one provider identity creates one track row", 1, tracks.size)
+        assertEquals("spotify:track:repeat", tracks.single().spotifyUri)
+        val crossRefs = db.playlistDao().getCrossRefsForPlaylist(playlistId)
+        assertEquals("one track has one membership row in the current schema", 1, crossRefs.size)
+        assertEquals("duplicate membership keeps the existing last-occurrence behavior", 7, crossRefs.single().position)
+        assertEquals("only one new track is reported", 1, result.outputData.getInt(DiffWorker.KEY_NEW_TRACKS, -1))
+        coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
+    }
+
+    @Test
+    fun `duplicate new YouTube ID queues one offline download`() = runBlocking {
+        every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "YouTube Duplicates", source = MusicSource.YOUTUBE,
+                sourceId = "youtube:playlist:duplicates", type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 6L, syncId = 1L, source = MusicSource.YOUTUBE,
+            sourcePlaylistId = "youtube:playlist:duplicates",
+            playlistName = "YouTube Duplicates", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(6L) } returns listOf(
+            RemoteTrackSnapshotEntity(
+                id = 61L, syncId = 1L, snapshotPlaylistId = 6L,
+                title = "Repeated Video", artist = "Artist",
+                youtubeId = "repeat-video", position = 2,
+            ),
+            RemoteTrackSnapshotEntity(
+                id = 62L, syncId = 1L, snapshotPlaylistId = 6L,
+                title = "Provider Renamed Video", artist = "Different Artist",
+                youtubeId = "repeat-video", position = 9,
+            ),
+        )
+
+        val result = buildWorker().doWork()
+
+        assertTrue("duplicate YouTube identities must not fail the diff", result is androidx.work.ListenableWorker.Result.Success)
+        val storedTrack = db.trackDao().getAllForIntegrityScan().single()
+        assertEquals(9, db.playlistDao().getCrossRefsForPlaylist(playlistId).single().position)
+        assertEquals(1, result.outputData.getInt(DiffWorker.KEY_NEW_TRACKS, -1))
+        coVerify(exactly = 1) {
+            downloadQueueDao.insertAll(match { entries ->
+                entries.size == 1 &&
+                    entries.single().trackId == storedTrack.id &&
+                    entries.single().syncId == 1L &&
+                    entries.single().status == DownloadStatus.PENDING &&
+                    entries.single().youtubeUrl == "https://music.youtube.com/watch?v=repeat-video"
+            })
+        }
+    }
+
+    @Test
+    fun `canonical-only duplicates create one offline track and queue entry`() = runBlocking {
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Canonical Duplicates", source = MusicSource.SPOTIFY,
+                sourceId = "spotify:playlist:canonical-duplicates", type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 10L, syncId = 1L, source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "spotify:playlist:canonical-duplicates",
+            playlistName = "Canonical Duplicates", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(10L) } returns listOf(
+            RemoteTrackSnapshotEntity(
+                id = 101L, syncId = 1L, snapshotPlaylistId = 10L,
+                title = "Canonical Song", artist = "The Artist", position = 4,
+            ),
+            RemoteTrackSnapshotEntity(
+                id = 102L, syncId = 1L, snapshotPlaylistId = 10L,
+                title = "Canonical Song", artist = "The Artist", position = 6,
+            ),
+        )
+
+        val result = buildWorker().doWork()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals(1, db.trackDao().getAllForIntegrityScan().size)
+        assertEquals(6, db.playlistDao().getCrossRefsForPlaylist(playlistId).single().position)
+        assertEquals(1, result.outputData.getInt(DiffWorker.KEY_NEW_TRACKS, -1))
+        coVerify(exactly = 1) {
+            downloadQueueDao.insertAll(match { it.size == 1 })
+        }
+    }
+
+    @Test
+    fun `blank provider IDs are stored as missing and do not merge unrelated tracks`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Blank IDs", source = MusicSource.SPOTIFY,
+                sourceId = "spotify:playlist:blank-ids", type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 7L, syncId = 1L, source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "spotify:playlist:blank-ids",
+            playlistName = "Blank IDs", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(7L) } returns listOf(
+            RemoteTrackSnapshotEntity(
+                id = 71L, syncId = 1L, snapshotPlaylistId = 7L,
+                title = "First Song", artist = "First Artist",
+                spotifyUri = " ", youtubeId = "", position = 0,
+            ),
+            RemoteTrackSnapshotEntity(
+                id = 72L, syncId = 1L, snapshotPlaylistId = 7L,
+                title = "Second Song", artist = "Second Artist",
+                spotifyUri = "", youtubeId = " ", position = 1,
+            ),
+        )
+
+        val result = buildWorker().doWork()
+        val tracks = db.trackDao().getAllForIntegrityScan()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals("different canonical identities stay distinct", 2, tracks.size)
+        assertTrue(tracks.all { it.spotifyUri == null && it.youtubeId == null })
+    }
+
+    @Test
+    fun `canonical identity keeps title and artist delimiters separate`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Delimiter IDs", source = MusicSource.SPOTIFY,
+                sourceId = "spotify:playlist:delimiter-ids", type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 9L, syncId = 1L, source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "spotify:playlist:delimiter-ids",
+            playlistName = "Delimiter IDs", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(9L) } returns listOf(
+            RemoteTrackSnapshotEntity(
+                id = 91L, syncId = 1L, snapshotPlaylistId = 9L,
+                title = "A|B", artist = "C", position = 0,
+            ),
+            RemoteTrackSnapshotEntity(
+                id = 92L, syncId = 1L, snapshotPlaylistId = 9L,
+                title = "A", artist = "B|C", position = 1,
+            ),
+        )
+
+        val result = buildWorker().doWork()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals(
+            "canonical pairs must not collide through their query-string encoding",
+            2,
+            db.trackDao().getAllForIntegrityScan().size,
+        )
+    }
+
+    @Test
+    fun `canonical query false positive is rejected by the typed in-memory key`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        val existingTrackId = db.trackDao().insert(
+            TrackEntity(
+                title = "A|B", artist = "C",
+                canonicalTitle = "a|b", canonicalArtist = "c",
+            )
+        )
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Delimiter Candidate", source = MusicSource.SPOTIFY,
+                sourceId = "spotify:playlist:delimiter-candidate", type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 11L, syncId = 1L, source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "spotify:playlist:delimiter-candidate",
+            playlistName = "Delimiter Candidate", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(11L) } returns listOf(
+            RemoteTrackSnapshotEntity(
+                id = 111L, syncId = 1L, snapshotPlaylistId = 11L,
+                title = "A", artist = "B|C", position = 0,
+            )
+        )
+
+        val result = buildWorker().doWork()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals(2, db.trackDao().getAllForIntegrityScan().size)
+        val linkedTrackId = db.playlistDao().getCrossRefsForPlaylist(playlistId).single().trackId
+        assertTrue("the delimiter collision must not select the existing row", linkedTrackId != existingTrackId)
+    }
+
+    @Test
+    fun `duplicate existing track keeps first YouTube ID final artwork and original addedAt`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        val trackId = db.trackDao().insert(
+            TrackEntity(
+                title = "Mutable", artist = "Artist",
+                spotifyUri = "spotify:track:mutable",
+                albumArtUrl = "https://cdn.example/original.jpg",
+                canonicalTitle = "mutable", canonicalArtist = "artist",
+            )
+        )
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Mutable State", source = MusicSource.SPOTIFY,
+                sourceId = "spotify:playlist:mutable", type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+        val originalAddedAt = Instant.parse("2024-01-01T00:00:00Z")
+        db.playlistDao().insertCrossRef(
+            PlaylistTrackCrossRef(
+                playlistId = playlistId, trackId = trackId, position = 0,
+                addedAt = originalAddedAt,
+            )
+        )
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 8L, syncId = 1L, source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "spotify:playlist:mutable",
+            playlistName = "Mutable State", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(8L) } returns listOf(
+            RemoteTrackSnapshotEntity(
+                id = 81L, syncId = 1L, snapshotPlaylistId = 8L,
+                title = "Mutable", artist = "Artist",
+                spotifyUri = "spotify:track:mutable", youtubeId = "first-video",
+                albumArtUrl = "https://cdn.example/alternate.jpg", position = 3,
+            ),
+            RemoteTrackSnapshotEntity(
+                id = 82L, syncId = 1L, snapshotPlaylistId = 8L,
+                title = "Mutable", artist = "Artist",
+                spotifyUri = "spotify:track:mutable", youtubeId = "second-video",
+                albumArtUrl = "https://cdn.example/original.jpg", position = 8,
+            ),
+        )
+
+        val result = buildWorker().doWork()
+        val storedTrack = db.trackDao().getById(trackId)
+        val membership = db.playlistDao().getCrossRef(playlistId, trackId)
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals("first nonblank YouTube ID wins", "first-video", storedTrack?.youtubeId)
+        assertEquals("last nonblank artwork wins", "https://cdn.example/original.jpg", storedTrack?.albumArtUrl)
+        assertEquals(originalAddedAt, membership?.addedAt)
+        assertEquals(8, membership?.position)
     }
 
     @Test
