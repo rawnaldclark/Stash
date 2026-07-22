@@ -8,6 +8,7 @@ import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.FlacUpgradeEnqueuer
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.AlbumNavTarget
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.data.download.files.LocalImportCoordinator
@@ -770,10 +771,10 @@ class LibraryViewModel @Inject constructor(
      * albumNavEvents — same shape, same reasoning (extraBufferCapacity so
      * a config-change re-subscribe right after emit doesn't drop it).
      */
-    private val _albumNavEvents = MutableSharedFlow<com.stash.feature.nowplaying.AlbumNavTarget>(
-        extraBufferCapacity = 1,
+    private val _albumNavEvents = MutableSharedFlow<com.stash.core.model.AlbumNavTarget>(
+    extraBufferCapacity = 1,
     )
-    val albumNavEvents: SharedFlow<com.stash.feature.nowplaying.AlbumNavTarget> =
+    val albumNavEvents: SharedFlow<com.stash.core.model.AlbumNavTarget> =
         _albumNavEvents.asSharedFlow()
 
     private val _resolvingAlbumTrackId = MutableStateFlow<Long?>(null)
@@ -800,9 +801,9 @@ class LibraryViewModel @Inject constructor(
                 val album = ytMusicApiClient.resolveAlbum(track.album, artistName)
                 if (album != null) {
                     _albumNavEvents.emit(
-                        com.stash.feature.nowplaying.AlbumNavTarget(
+                        com.stash.core.model.AlbumNavTarget(
                             albumId = album.id,
-                            name = album.name,
+                            name = album.title,
                             artUrl = album.thumbnailUrl,
                             artistName = artistName,
                         ),

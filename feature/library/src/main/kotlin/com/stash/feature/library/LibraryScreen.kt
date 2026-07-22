@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.ImageNotSupported
@@ -149,6 +150,7 @@ fun LibraryScreen(
     var showBatchSave by remember { mutableStateOf(false) }
     var showBatchDelete by remember { mutableStateOf(false) }
     var showFlacConfirm by remember { mutableStateOf(false) }
+    var trackToSave by remember { mutableStateOf<Track?>(null) }
 
     // Snackbar for the batch roll-up summaries.
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -184,10 +186,11 @@ fun LibraryScreen(
             onRemovePlaylistImage = viewModel::removePlaylistImage,
             onTogglePlaylistPinned = viewModel::togglePlaylistPinned,
             onPlayArtist = onNavigateToArtist,
+            onSaveToPlaylist = { trackToSave = it },
             onViewAlbum = viewModel::onViewAlbumTapped,
             onAddArtistToQueue = viewModel::addArtistToQueue,
             onDeleteArtist = viewModel::deleteArtist,
-            onPlayAlbum = onNavigateToAlbum,
+            onPlayAlbum = viewModel::playAlbum,
             onAddAlbumToQueue = viewModel::addAlbumToQueue,
             onStartImport = viewModel::startLocalImport,
             onCancelImport = viewModel::cancelLocalImport,
@@ -426,6 +429,9 @@ private fun LibraryContent(
     onDeletePlaylist: (Playlist, Boolean) -> Unit,
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
+    onTogglePlaylistPinned: (Playlist) -> Unit,
+    onSaveToPlaylist: (Track) -> Unit,
+    onViewAlbum: (Track) -> Unit,
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
     onDeleteArtist: (String) -> Unit,
@@ -602,6 +608,7 @@ private fun LibraryContent(
                         onDeletePlaylist = onDeletePlaylist,
                         onSetPlaylistImage = onSetPlaylistImage,
                         onRemovePlaylistImage = onRemovePlaylistImage,
+                        onTogglePlaylistPinned = onTogglePlaylistPinned,
                         header = {},
                     )
                     LibraryTab.TRACKS -> TracksTab(
@@ -1037,8 +1044,6 @@ private fun PlaylistsGrid(
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
-    onSaveToPlaylist: (Track) -> Unit,
-    onViewAlbum: (Track) -> Unit,
     header: @Composable () -> Unit = {},
 ) {
     // Playlist selected for the context-menu bottom sheet.
@@ -1149,7 +1154,6 @@ private fun PlaylistsGrid(
                                     .size(16.dp),
                             )
                         }
-                    }
                 } else {
                     // No artwork: keep the original GlassCard look
                     GlassCard(

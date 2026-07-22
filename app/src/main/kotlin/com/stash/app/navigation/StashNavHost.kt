@@ -127,8 +127,8 @@ fun StashNavHost(
                 onNavigateToArtist = { artistName ->
                     navController.navigate(ArtistDetailRoute(artistName))
                 },
-                onNavigateToAlbum = { albumName, artistName ->
-                    navController.navigate(AlbumDetailRoute(albumName, artistName))
+                onNavigateToAlbum = { _, name, _, artistName ->
+                    navController.navigate(AlbumDetailRoute(name, artistName))
                 },
                 onSelectionModeChanged = onSelectionModeChanged,
             )
@@ -414,6 +414,9 @@ fun StashNavHost(
                 onDismiss = { navController.popBackStack() },
                 onNavigateToArtist = { id, name, avatar, focusAlbum ->
                     navController.navigate(SearchArtistRoute(id, name, avatar, focusAlbum))
+                },
+                onNavigateToAlbum = { _, name, _, artistName ->
+                    navController.navigate(AlbumDetailRoute(name, artistName))
                 },
             )
         }

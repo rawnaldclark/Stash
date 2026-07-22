@@ -3,7 +3,7 @@ package com.stash.app.navigation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.discovery.HomeDiscoveryRepository
-import com.stash.core.data.discovery.QobuzDiscoveryStatus
+import com.stash.core.model.discovery.QobuzDiscoveryStatus
 import com.stash.core.data.prefs.HomeDiscoveryPreference
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted

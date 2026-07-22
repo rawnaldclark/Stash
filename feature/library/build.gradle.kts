@@ -19,6 +19,7 @@ dependencies {
     implementation(project(":core:media"))
     // LocalImportCoordinator for "Import from device" flow.
     implementation(project(":data:download"))
+    implementation(project(":data:ytmusic"))
     implementation(libs.compose.material.icons.extended)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)

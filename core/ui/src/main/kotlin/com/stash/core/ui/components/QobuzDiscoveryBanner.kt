@@ -12,7 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.stash.core.data.discovery.QobuzDiscoveryStatus
+import com.stash.core.model.discovery.QobuzDiscoveryStatus
 
 @Composable
 fun QobuzDiscoveryBanner(status: QobuzDiscoveryStatus, modifier: Modifier = Modifier) {

@@ -1,5 +1,6 @@
 package com.stash.core.data.discovery
 
+import com.stash.core.model.discovery.QobuzDiscoveryStatus
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
 

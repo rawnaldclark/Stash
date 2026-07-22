@@ -10,6 +10,7 @@ import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.AlbumNavTarget
 import com.stash.core.model.RadioStartResult
 import com.stash.core.model.UpgradeResult
 import com.stash.core.model.isFlac
@@ -56,14 +57,6 @@ data class ArtistNavTarget(
     val name: String,
     val avatarUrl: String?,
     val focusAlbum: String?,
-)
-
-/** One-shot target for navigating from Now Playing to a (remote) album page. */
-data class AlbumNavTarget(
-    val albumId: String,
-    val name: String,
-    val artUrl: String?,
-    val artistName: String,
 )
 
 /**
@@ -199,7 +192,7 @@ class NowPlayingViewModel @Inject constructor(
                     _albumNavEvents.emit(
                         AlbumNavTarget(
                             albumId = album.id,
-                            name = album.name,
+                            name = album.title,
                             artUrl = album.thumbnailUrl,
                             artistName = artistName,
                         ),
