@@ -362,6 +362,47 @@ class YTMusicApiClient @Inject constructor(
     }
 
     /**
+     * Resolve an album to its YouTube Music browse identity via a plain
+     * search + the existing Albums-shelf parser ([parseAlbumsShelf], reused
+     * by [searchAll]). Unlike [resolveArtist] this has no dedicated filter
+     * param — an ALBUMS_FILTER-equivalent isn't wired up — so this runs an
+     * unfiltered search and picks the best Albums-shelf match:
+     *
+     *  1. Prefer a result whose artist field matches [artist] (case-
+     *     insensitive contains, either direction) — guards against a
+     *     same-named album by a different artist ranking first.
+     *  2. Otherwise take the first Albums-shelf result.
+     *
+     * Used by the Now Playing / Library "View Album" actions, which open
+     * the real remote album page — distinct from the local Albums library
+     * tab, which just filters downloaded tracks.
+     *
+     * Returns null when [album] is blank, the search returns no Albums
+     * shelf, or on failure.
+     */
+    suspend fun resolveAlbum(album: String, artist: String): AlbumSummary? {
+        if (album.isBlank()) return null
+        val query = if (artist.isBlank()) album else "$album $artist"
+        val results = try {
+            searchAll(query)
+        } catch (t: Throwable) {
+            Log.w(TAG, "resolveAlbum: search failed for '$query'", t)
+            return null
+        }
+        val albums = results.sections
+            .filterIsInstance<SearchResultSection.Albums>()
+            .firstOrNull()
+            ?.albums
+            ?: return null
+        if (albums.isEmpty()) return null
+
+        return albums.firstOrNull {
+            it.artist.contains(artist, ignoreCase = true) ||
+                artist.contains(it.artist, ignoreCase = true)
+        } ?: albums.first()
+    }
+
+    /**
      * Resolve an artist name to its YouTube Music browse identity. Runs an
      * artists-filtered search and returns the top [ArtistSummary] (browseId,
      * name, avatar), or null when the name is blank / there is no artist result

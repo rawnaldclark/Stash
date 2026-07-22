@@ -67,6 +67,7 @@ class LibraryViewModel @Inject constructor(
     private val playlistImageHelper: PlaylistImageHelper,
     private val localImportCoordinator: LocalImportCoordinator,
     private val streamingPreference: StreamingPreference,
+    private val ytMusicApiClient: com.stash.data.ytmusic.YTMusicApiClient,
     private val flacUpgradeEnqueuer: FlacUpgradeEnqueuer,
 ) : ViewModel() {
 
@@ -760,6 +761,62 @@ class LibraryViewModel @Inject constructor(
                     && it.filePath != null
             }
             downloaded.forEach { playerRepository.addToQueue(it) }
+        }
+    }
+
+    /**
+     * One-shot navigation targets emitted when the user taps "View Album"
+     * from a track's context sheet. Mirrors NowPlayingViewModel's
+     * albumNavEvents — same shape, same reasoning (extraBufferCapacity so
+     * a config-change re-subscribe right after emit doesn't drop it).
+     */
+    private val _albumNavEvents = MutableSharedFlow<com.stash.feature.nowplaying.AlbumNavTarget>(
+        extraBufferCapacity = 1,
+    )
+    val albumNavEvents: SharedFlow<com.stash.feature.nowplaying.AlbumNavTarget> =
+        _albumNavEvents.asSharedFlow()
+
+    private val _resolvingAlbumTrackId = MutableStateFlow<Long?>(null)
+    /** Non-null id of the track whose "View Album" resolve is in flight. */
+    val resolvingAlbumTrackId: StateFlow<Long?> = _resolvingAlbumTrackId.asStateFlow()
+
+    /**
+     * "View Album" tap from a Library track's context sheet. Resolves
+     * [track]'s album via YT Music search and emits a nav target. No-op if
+     * a resolve is already running for this track, or the track has no
+     * album tag. Opens the real remote album page — deliberately NOT the
+     * local Albums tab (which just filters this device's downloaded tracks).
+     */
+    fun onViewAlbumTapped(track: Track) {
+        if (_resolvingAlbumTrackId.value == track.id) return
+        if (track.album.isBlank()) {
+            _userMessages.tryEmit("This track has no album info")
+            return
+        }
+        val artistName = track.albumArtist.ifBlank { track.artist }
+        _resolvingAlbumTrackId.value = track.id
+        viewModelScope.launch {
+            try {
+                val album = ytMusicApiClient.resolveAlbum(track.album, artistName)
+                if (album != null) {
+                    _albumNavEvents.emit(
+                        com.stash.feature.nowplaying.AlbumNavTarget(
+                            albumId = album.id,
+                            name = album.name,
+                            artUrl = album.thumbnailUrl,
+                            artistName = artistName,
+                        ),
+                    )
+                } else {
+                    _userMessages.tryEmit("Couldn't find this album")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _userMessages.tryEmit("Couldn't find this album")
+            } finally {
+                if (_resolvingAlbumTrackId.value == track.id) _resolvingAlbumTrackId.value = null
+            }
         }
     }
 }

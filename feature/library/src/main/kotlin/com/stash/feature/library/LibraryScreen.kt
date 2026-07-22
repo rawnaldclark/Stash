@@ -126,7 +126,7 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToArtist: (String) -> Unit = {},
-    onNavigateToAlbum: (String, String) -> Unit = { _, _ -> },
+    onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit = { _, _, _, _ -> },
     onSelectionModeChanged: (Boolean) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -156,6 +156,13 @@ fun LibraryScreen(
         viewModel.userMessages.collect { snackbarHostState.showSnackbar(it) }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.albumNavEvents.collect { a ->
+            onNavigateToAlbum(a.albumId, a.name, a.artUrl, a.artistName)
+        }
+    }
+    
+
     Box(modifier = modifier.fillMaxSize()) {
         LibraryContent(
             state = state,
@@ -177,6 +184,7 @@ fun LibraryScreen(
             onRemovePlaylistImage = viewModel::removePlaylistImage,
             onTogglePlaylistPinned = viewModel::togglePlaylistPinned,
             onPlayArtist = onNavigateToArtist,
+            onViewAlbum = viewModel::onViewAlbumTapped,
             onAddArtistToQueue = viewModel::addArtistToQueue,
             onDeleteArtist = viewModel::deleteArtist,
             onPlayAlbum = onNavigateToAlbum,
@@ -603,6 +611,8 @@ private fun LibraryContent(
                         onPlayNext = onPlayNext,
                         onAddToQueue = onAddToQueue,
                         onDeleteTrack = onDeleteTrack,
+                        onSaveToPlaylist = onSaveToPlaylist,
+                        onViewAlbum = onViewAlbum,
                         anyServiceConnected = anyServiceConnected,
                         selection = selection,
                         userPlaylists = userPlaylists,
@@ -1027,6 +1037,8 @@ private fun PlaylistsGrid(
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
+    onSaveToPlaylist: (Track) -> Unit,
+    onViewAlbum: (Track) -> Unit,
     header: @Composable () -> Unit = {},
 ) {
     // Playlist selected for the context-menu bottom sheet.
@@ -1349,6 +1361,8 @@ private fun TracksTab(
     onPlayNext: (Track) -> Unit,
     onAddToQueue: (Track) -> Unit,
     onDeleteTrack: (Track, Boolean) -> Unit,
+    onSaveToPlaylist: (Track) -> Unit,
+    onViewAlbum: (Track) -> Unit,
     anyServiceConnected: Boolean,
     selection: SelectionState,
     userPlaylists: List<com.stash.core.ui.components.PlaylistInfo>,
@@ -1447,6 +1461,14 @@ private fun TracksTab(
                 label = "Save to Playlist",
                 onClick = { 
                     onSaveToPlaylist(track) 
+                    selectedTrack = null
+                },
+            )
+            BottomSheetActionRow(
+                icon = Icons.Default.Album,
+                label = "View Album",
+                onClick = {
+                    onViewAlbum(track)
                     selectedTrack = null
                 },
             )

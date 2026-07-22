@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -124,6 +125,7 @@ private fun npAccent(raw: Color): Color =
 fun NowPlayingScreen(
     onDismiss: () -> Unit,
     onNavigateToArtist: (id: String, name: String, avatarUrl: String?, focusAlbum: String?) -> Unit,
+    onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -179,6 +181,12 @@ fun NowPlayingScreen(
     LaunchedEffect(Unit) {
         viewModel.artistNavEvents.collect { t ->
             onNavigateToArtist(t.artistId, t.name, t.avatarUrl, t.focusAlbum)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.albumNavEvents.collect { a ->
+            onNavigateToAlbum(a.albumId, a.name, a.artUrl, a.artistName)
         }
     }
 
@@ -591,6 +599,7 @@ fun NowPlayingScreen(
             onShareClick = viewModel::onShareCurrent,
             onQueueClick = { showQueue = true },
             onFlagWrongMatch = { showWrongMatchDialog = true },
+            onViewAlbum = viewModel::onViewAlbumTapped,
             onDismiss = { showOptionsSheet = false },
             sheetState = optionsSheetState,
         )
@@ -982,6 +991,7 @@ private fun NowPlayingOptionsSheet(
     onShareClick: () -> Unit,
     onQueueClick: () -> Unit,
     onFlagWrongMatch: () -> Unit,
+    onViewAlbum: () -> Unit,
     onDismiss: () -> Unit,
     sheetState: androidx.compose.material3.SheetState,
     modifier: Modifier = Modifier,
@@ -1008,24 +1018,24 @@ private fun NowPlayingOptionsSheet(
                     .align(Alignment.CenterHorizontally)
             )
 
-            // Save to Playlist
+            // View Queue
             SheetOptionRow(
-                icon = Icons.Default.BookmarkBorder,
-                label = "Save to Playlist",
+                icon = Icons.AutoMirrored.Filled.QueueMusic,
+                label = "Queue ($queueSize)",
                 onClick = {
-                    onSaveClick()
+                    onQueueClick()
                     onDismiss()
                 }
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Download / Remove download
+            // Save to Playlist
             SheetOptionRow(
-                icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                label = if (isDownloaded) "Remove download" else "Download",
+                icon = Icons.Default.BookmarkBorder,
+                label = "Save to Playlist",
                 onClick = {
-                    onDownloadTap()
+                    onSaveClick()
                     onDismiss()
                 }
             )
@@ -1044,12 +1054,21 @@ private fun NowPlayingOptionsSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // View Queue
+            // View Album — resolves and opens the actual remote album page,
             SheetOptionRow(
-                icon = Icons.AutoMirrored.Filled.QueueMusic,
-                label = "Queue ($queueSize)",
+                icon = Icons.Default.Album,
+                label = "View Album",
+                onClick = { onViewAlbum(); onDismiss() }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Download / Remove download
+            SheetOptionRow(
+                icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                label = if (isDownloaded) "Remove download" else "Download",
                 onClick = {
-                    onQueueClick()
+                    onDownloadTap()
                     onDismiss()
                 }
             )

@@ -58,6 +58,14 @@ data class ArtistNavTarget(
     val focusAlbum: String?,
 )
 
+/** One-shot target for navigating from Now Playing to a (remote) album page. */
+data class AlbumNavTarget(
+    val albumId: String,
+    val name: String,
+    val artUrl: String?,
+    val artistName: String,
+)
+
 /**
  * ViewModel for the full-screen Now Playing screen.
  *
@@ -143,6 +151,71 @@ class NowPlayingViewModel @Inject constructor(
      * v0.9.27: holds optimistic heart-toggle states to prevent flickering.
      */
     private val optimisticLikeState = MutableStateFlow<Map<Long, Boolean>>(emptyMap())
+
+    // ------------------------------------------------------------------
+    // Tap-to-album — resolve the playing track's album and navigate to it
+    // ------------------------------------------------------------------
+
+    /**
+     * One-shot navigation targets emitted when the user taps "View Album".
+     * Mirrors [_artistNavEvents]/[artistNavEvents] exactly — same buffer
+     * reasoning (a config-change re-subscribe landing right after emit
+     * shouldn't drop the event).
+     */
+    private val _albumNavEvents = MutableSharedFlow<AlbumNavTarget>(extraBufferCapacity = 1)
+    val albumNavEvents: SharedFlow<AlbumNavTarget> = _albumNavEvents.asSharedFlow()
+
+    /**
+     * True while an album resolve is in flight. Mirrors [_resolvingArtist] —
+     * the screen can swap the "View Album" row's icon for a spinner and/or
+     * use this as a double-tap guard.
+     */
+    private val _resolvingAlbum = MutableStateFlow(false)
+    val resolvingAlbum: StateFlow<Boolean> = _resolvingAlbum.asStateFlow()
+
+    /**
+     * "View Album" tap. Resolves the playing track's album NAME (scoped to
+     * its artist, to disambiguate same-named albums) to a YT browseId and
+     * emits an [AlbumNavTarget]. No-op when nothing is playing, the track
+     * has no album tag, or a resolve is already in flight. Resolve
+     * miss/failure -> snackbar, no nav. This intentionally does NOT route
+     * through the local Albums library tab — it opens the real remote
+     * album page, same as [onTrackInfoTapped] opens the real artist page.
+     */
+    fun onViewAlbumTapped() {
+        val track = _uiState.value.currentTrack ?: return
+        if (_resolvingAlbum.value) return
+        val albumName = track.album
+        if (albumName.isBlank()) {
+            _userMessages.tryEmit("This track has no album info")
+            return
+        }
+        val artistName = track.albumArtist.ifBlank { track.artist }
+        _resolvingAlbum.value = true
+        viewModelScope.launch {
+            try {
+                val album = ytMusicApiClient.resolveAlbum(albumName, artistName)
+                if (album != null) {
+                    _albumNavEvents.emit(
+                        AlbumNavTarget(
+                            albumId = album.id,
+                            name = album.name,
+                            artUrl = album.thumbnailUrl,
+                            artistName = artistName,
+                        ),
+                    )
+                } else {
+                    _userMessages.emit("Couldn't find this album")
+                }
+            } catch (t: CancellationException) {
+                throw t
+            } catch (t: Throwable) {
+                _userMessages.emit("Couldn't find this album")
+            } finally {
+                _resolvingAlbum.value = false
+            }
+        }
+    }
 
     // ------------------------------------------------------------------
     // Tap-to-artist — resolve the playing artist and navigate to profile
