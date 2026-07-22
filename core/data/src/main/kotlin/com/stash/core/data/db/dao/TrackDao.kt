@@ -10,6 +10,16 @@ import com.stash.core.data.db.entity.TrackEntity
 import kotlinx.coroutines.flow.Flow
 
 /**
+ * Max IN() keys per dimension in one [TrackDao.findExistingForBatchRaw] call.
+ * Android <= 11 caps a statement at 999 bind variables; 800 + two sentinel
+ * pads keeps every chunked query comfortably under it.
+ */
+private const val BATCH_BIND_LIMIT = 800
+
+/** Never-match pad for unused dimensions in a chunked batch query. */
+private const val BATCH_NEVER_MATCH = "\u0000__stash_never_match__"
+
+/**
  * Summary projection for artist browsing.
  *
  * @property artist  Artist name.
@@ -384,6 +394,11 @@ interface TrackDao {
      * SQLite `IN ()` clause is a syntax error. Pass a sentinel value
      * (e.g. a value guaranteed not to appear in real data) instead of an
      * empty list when a caller has no identifiers of that kind.
+     *
+     * Do not call this directly — use [findExistingForBatch], which chunks
+     * the key lists so no single query exceeds SQLite's bind-variable cap
+     * (999 on Android <= 11; a ~500-track playlist blows it and the whole
+     * sync fails with "too many SQL variables" — issue #337).
      */
     @Query(
         """
@@ -393,11 +408,39 @@ interface TrackDao {
            OR (canonical_title || '|' || canonical_artist) IN (:canonicalKeys)
         """
     )
-    suspend fun findExistingForBatch(
+    suspend fun findExistingForBatchRaw(
         spotifyUris: List<String>,
         youtubeIds: List<String>,
         canonicalKeys: List<String>,
     ): List<TrackEntity>
+
+    /**
+     * Bind-safe wrapper for [findExistingForBatchRaw]: when the combined key
+     * count fits one query it passes straight through; otherwise each
+     * dimension is queried in chunks (other dimensions padded with a
+     * never-match sentinel) and the results are unioned by id.
+     */
+    suspend fun findExistingForBatch(
+        spotifyUris: List<String>,
+        youtubeIds: List<String>,
+        canonicalKeys: List<String>,
+    ): List<TrackEntity> {
+        if (spotifyUris.size + youtubeIds.size + canonicalKeys.size <= BATCH_BIND_LIMIT) {
+            return findExistingForBatchRaw(spotifyUris, youtubeIds, canonicalKeys)
+        }
+        val pad = listOf(BATCH_NEVER_MATCH)
+        val byId = LinkedHashMap<Long, TrackEntity>()
+        spotifyUris.chunked(BATCH_BIND_LIMIT).forEach { chunk ->
+            findExistingForBatchRaw(chunk, pad, pad).forEach { byId[it.id] = it }
+        }
+        youtubeIds.chunked(BATCH_BIND_LIMIT).forEach { chunk ->
+            findExistingForBatchRaw(pad, chunk, pad).forEach { byId[it.id] = it }
+        }
+        canonicalKeys.chunked(BATCH_BIND_LIMIT).forEach { chunk ->
+            findExistingForBatchRaw(pad, pad, chunk).forEach { byId[it.id] = it }
+        }
+        return byId.values.toList()
+    }
 
     /** Find a track by primary key. */
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")

@@ -81,4 +81,56 @@ class TrackDaoFindExistingForBatchTest {
 
         assertTrue(result.isEmpty())
     }
+
+    @Test fun `oversized key sets stay under the SQLite bind limit and lose no matches`() = runTest {
+        // Issue #337: Android <= 11 ships SQLite with a 999 bind-variable cap.
+        // A ~500-track playlist produces >999 IN() variables in one query and
+        // sync dies with "too many SQL variables". Robolectric's SQLite is too
+        // new to enforce the cap, so assert on observed bind counts instead.
+        var maxSelectBinds = 0
+        val watchedDb = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            StashDatabase::class.java,
+        )
+            .allowMainThreadQueries()
+            .setQueryCallback(
+                { sqlQuery, bindArgs ->
+                    if (sqlQuery.trimStart().startsWith("SELECT", ignoreCase = true)) {
+                        maxSelectBinds = maxOf(maxSelectBinds, bindArgs.size)
+                    }
+                },
+                Runnable::run,
+            )
+            .build()
+        try {
+            val watchedDao = watchedDb.trackDao()
+            // Rows 0..899 are queried by spotify_uri and youtube_id; rows
+            // 900..999 ONLY by canonical key — they can only be found by a
+            // later chunk, so a dropped or unmerged chunk fails the test.
+            watchedDao.insertAll(
+                (0 until 1000).map { i ->
+                    TrackEntity(
+                        title = "T$i", artist = "A$i",
+                        spotifyUri = "spotify:track:$i", youtubeId = "yt$i",
+                        canonicalTitle = "t$i", canonicalArtist = "a$i",
+                    )
+                }
+            )
+
+            val result = watchedDao.findExistingForBatch(
+                spotifyUris = (0 until 900).map { "spotify:track:$it" },
+                youtubeIds = (0 until 900).map { "yt$it" },
+                canonicalKeys = (900 until 1000).map { "t$it|a$it" },
+            )
+
+            assertEquals(1000, result.size)
+            assertEquals(1000, result.map { it.id }.distinct().size)
+            assertTrue(
+                "a single SELECT bound $maxSelectBinds variables (device limit is 999)",
+                maxSelectBinds <= 999,
+            )
+        } finally {
+            watchedDb.close()
+        }
+    }
 }
