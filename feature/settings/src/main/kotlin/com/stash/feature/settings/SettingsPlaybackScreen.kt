@@ -131,65 +131,6 @@ fun SettingsPlaybackScreen(
                 }
             },
         )
-
-        // Sleep timer (fork issue ParaliyzedEvo/Stash#26): pauses playback
-        // after the chosen delay or when the current track finishes. Lives
-        // here per user direction — playback behavior belongs in Settings,
-        // not the Now Playing chrome.
-        val sleepTimer by viewModel.sleepTimerState.collectAsStateWithLifecycle()
-        SettingsSectionLabel("Sleep timer")
-        SettingsGroupCard(
-            rows = buildList {
-                val status = when (val st = sleepTimer) {
-                    is SleepTimerController.State.Countdown -> {
-                        val minutesLeft =
-                            ((st.endsAtMs - System.currentTimeMillis()) / 60_000L)
-                                .coerceAtLeast(0) + 1
-                        "Music pauses in about $minutesLeft min"
-                    }
-                    SleepTimerController.State.EndOfTrack -> "Music pauses when the current track ends"
-                    SleepTimerController.State.Off -> "Off"
-                }
-                add {
-                    Text(
-                        text = status,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (sleepTimer == SleepTimerController.State.Off) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        },
-                        modifier = Modifier.padding(
-                            horizontal = SettingsRowPadH,
-                            vertical = SettingsRowPadV,
-                        ),
-                    )
-                }
-                listOf(15, 30, 45, 60).forEach { minutes ->
-                    add {
-                        SleepTimerChoiceRow(
-                            label = "$minutes minutes",
-                            onClick = { viewModel.onSleepTimerMinutes(minutes) },
-                        )
-                    }
-                }
-                add {
-                    SleepTimerChoiceRow(
-                        label = "End of track",
-                        onClick = viewModel::onSleepTimerEndOfTrack,
-                    )
-                }
-                if (sleepTimer != SleepTimerController.State.Off) {
-                    add {
-                        SleepTimerChoiceRow(
-                            label = "Cancel timer",
-                            tint = MaterialTheme.colorScheme.error,
-                            onClick = viewModel::onSleepTimerCancel,
-                        )
-                    }
-                }
-            },
-        )
     }
 }
 
