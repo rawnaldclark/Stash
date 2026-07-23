@@ -65,6 +65,28 @@ internal fun shouldDeactivateMissingSpotifyPlaylists(
     inventoryComplete: Boolean,
 ): Boolean = syncMode == SyncMode.REFRESH && inventoryComplete
 
+private val DAILY_MIX_NAME = Regex("""Daily Mix \d+""")
+
+/**
+ * Whether a `libraryV3` row should be snapshotted as a user playlist.
+ *
+ * libraryV3 lists what the user actually SAVED, so ownership says nothing
+ * about whether they want it synced: a followed "Made For You" playlist —
+ * a friend's Discover Weekly or Release Radar — is owned by "spotify" but
+ * never appears in the user's OWN home feed, so the old
+ * `owner != "spotify"` filter dropped it here and no other pass picked it
+ * up (issue #354).
+ *
+ * Skip only what the home-feed mix pass already snapshotted this run
+ * ([homeFeedMixIds]), plus "Daily Mix N" by name so the home feed stays
+ * the single source of those even when the sp_dc call behind it fails.
+ */
+internal fun keepAsLibraryPlaylist(
+    id: String,
+    name: String,
+    homeFeedMixIds: Set<String>,
+): Boolean = id !in homeFeedMixIds && !DAILY_MIX_NAME.matches(name)
+
 /**
  * First worker in the sync chain. Authenticates with configured music services,
  * fetches playlist and track metadata, and writes everything to the remote
@@ -276,6 +298,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
         Log.d(TAG, "fetchSpotifyPlaylists: starting for syncId=$syncId")
         var dailyMixCount = 0
         var likedSongCount = 0
+        // Ids covered by the home-feed mix pass below; the library walk
+        // excludes exactly these instead of everything spotify owns (#354).
+        val homeFeedMixIds = mutableSetOf<String>()
 
         // Fetch Daily Mixes (sp_dc dependent -- may return empty if GraphQL fails).
         try {
@@ -286,6 +311,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     Log.d(TAG, "fetchSpotifyPlaylists: found ${dailyMixes.size} daily mixes")
 
                     for (mix in dailyMixes) {
+                        homeFeedMixIds += mix.id
                         try {
                             val mixNumber = Regex("""\d+""").find(mix.name)?.value?.toIntOrNull()
                             val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
@@ -514,12 +540,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 "fetchSpotifyPlaylists: paged ${userPlaylists.size} playlists across " +
                     "$pagesFetched page(s), $foldersWalked folder(s) descended",
             )
-            // Filter out daily mixes (already handled above) and any Spotify-owned playlists.
+            // Drop only what the home-feed mix pass already covered (#354).
             // distinctBy: defensive — a playlist must not snapshot twice even if
             // Spotify ever lists it both at the root and inside a folder.
             val customPlaylists = userPlaylists.distinctBy { it.id }.filter { playlist ->
-                !playlist.owner.id.equals("spotify", ignoreCase = true) &&
-                    !playlist.name.matches(Regex("""Daily Mix \d+"""))
+                keepAsLibraryPlaylist(playlist.id, playlist.name, homeFeedMixIds)
             }
             Log.d(TAG, "fetchSpotifyPlaylists: found ${customPlaylists.size} user playlists (filtered from ${userPlaylists.size})")
 
