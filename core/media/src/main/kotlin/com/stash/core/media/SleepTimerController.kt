@@ -41,11 +41,7 @@ class SleepTimerController @VisibleForTesting internal constructor(
 
     sealed interface State {
         data object Off : State
-
-        /** Counting down to [endsAtMs] (epoch millis). */
         data class Countdown(val endsAtMs: Long) : State
-
-        /** Pausing when the currently-playing track changes or ends. */
         data object EndOfTrack : State
     }
 
@@ -54,38 +50,65 @@ class SleepTimerController @VisibleForTesting internal constructor(
 
     private var job: Job? = null
 
-    /** Arm (or re-arm) a countdown of [minutes]; replaces any running timer. */
-    fun startMinutes(minutes: Int) {
+    fun startMinutes(minutes: Int, fadeOutMs: Long = DEFAULT_FADE_MS) {
         require(minutes > 0)
         job?.cancel()
         val durationMs = minutes * 60_000L
         _state.value = State.Countdown(System.currentTimeMillis() + durationMs)
         job = scope.launch {
-            delay(durationMs)
-            playerRepository.pause()
+            val preFadeMs = (durationMs - fadeOutMs).coerceAtLeast(0)
+            delay(preFadeMs)
+            fadeOutAndPause(fadeOutMs.coerceAtMost(durationMs))
             _state.value = State.Off
         }
     }
 
-    /** Pause when the current track transitions (ends or is skipped). */
-    fun stopAtEndOfTrack() {
+    fun stopAtEndOfTrack(fadeOutMs: Long = DEFAULT_FADE_MS) {
         job?.cancel()
         _state.value = State.EndOfTrack
         job = scope.launch {
-            playerRepository.playerState
-                .map { it.currentTrack?.id }
-                .distinctUntilChanged()
-                .drop(1) // the value at arm time — wait for the NEXT transition
-                .first()
-            playerRepository.pause()
-            _state.value = State.Off
+            val startTrackId = playerRepository.playerState.value.currentTrack?.id
+            playerRepository.currentPosition.collect { positionMs ->
+                val current = playerRepository.playerState.value
+                if (current.currentTrack?.id != startTrackId) {
+                    // user skipped away — disarm without pausing
+                    _state.value = State.Off
+                    this.coroutineContext.job.cancel()
+                    return@collect
+                }
+                val remaining = current.durationMs - positionMs
+                if (current.durationMs > 0 && remaining <= fadeOutMs) {
+                    fadeOutAndPause(remaining.coerceAtLeast(0))
+                    _state.value = State.Off
+                    this.coroutineContext.job.cancel()
+                }
+            }
         }
     }
 
-    /** Disarm without touching playback. */
     fun cancel() {
         job?.cancel()
         job = null
+        playerRepository.setVolume(1f) // in case we cancelled mid-fade
         _state.value = State.Off
+    }
+
+    private suspend fun fadeOutAndPause(fadeMs: Long) {
+        if (fadeMs <= 0) {
+            playerRepository.pause()
+            return
+        }
+        val steps = 20
+        val stepDelay = fadeMs / steps
+        for (i in steps downTo 0) {
+            playerRepository.setVolume(i / steps.toFloat())
+            delay(stepDelay)
+        }
+        playerRepository.pause()
+        playerRepository.setVolume(1f) // restore for next playback
+    }
+
+    companion object {
+        private const val DEFAULT_FADE_MS = 7_000L
     }
 }

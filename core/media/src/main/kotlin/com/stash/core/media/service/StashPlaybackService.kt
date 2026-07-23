@@ -107,6 +107,9 @@ class StashPlaybackService : MediaLibraryService() {
         /** Custom command action for toggling Stash Liked on the current track. */
         const val COMMAND_TOGGLE_LIKE = "com.stash.TOGGLE_LIKE"
 
+        /** Custom command action for cancelling an armed sleep timer. */
+        const val COMMAND_STOP_SLEEP_TIMER = "com.stash.STOP_SLEEP_TIMER"
+
         /** Extra key for the track ID in MediaMetadata extras. */
         const val EXTRA_TRACK_ID = "stash_track_id"
 
@@ -434,6 +437,8 @@ class StashPlaybackService : MediaLibraryService() {
     private suspend fun observeSleepTimerState() {
         sleepTimerController.state.collect { state ->
             sleepTimerNotificationJob?.cancel()
+            sleepTimerActive = state != SleepTimerController.State.Off
+            updateCustomLayout()
             when (state) {
                 is SleepTimerController.State.Countdown -> {
                     sleepTimerNotificationJob = serviceScope.launch {
@@ -722,6 +727,7 @@ class StashPlaybackService : MediaLibraryService() {
 
     private var lastTrackId: Long? = null
     private var lastIsLiked: Boolean = false
+    @Volatile private var sleepTimerActive: Boolean = false
 
     /**
      * Updates the MediaSession custom layout with the heart, shuffle, and repeat icons.
@@ -781,11 +787,23 @@ class StashPlaybackService : MediaLibraryService() {
 
     @OptIn(UnstableApi::class)
     private fun pushLayout(session: MediaSession, player: Player, isLiked: Boolean) {
-        val layout = ImmutableList.of(
+        val buttons = mutableListOf(
             buildLikeButton(isLiked),
-            buildRepeatButton(player.repeatMode)
+            buildRepeatButton(player.repeatMode),
         )
-        session.setCustomLayout(layout)
+        if (sleepTimerActive) buttons.add(buildStopSleepTimerButton())
+        session.setCustomLayout(ImmutableList.copyOf(buttons))
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun buildStopSleepTimerButton(): CommandButton {
+        return CommandButton.Builder()
+            .setDisplayName("Stop timer")
+            .setIconResId(R.drawable.ic_timer_off) // swap for whatever icon you have
+            .setSessionCommand(
+                SessionCommand(COMMAND_STOP_SLEEP_TIMER, android.os.Bundle.EMPTY),
+            )
+            .build()
     }
 
     @OptIn(UnstableApi::class)
@@ -1333,6 +1351,7 @@ class StashPlaybackService : MediaLibraryService() {
                 SessionCommand(COMMAND_TOGGLE_SHUFFLE, /* extras = */ android.os.Bundle.EMPTY),
                 SessionCommand(COMMAND_CYCLE_REPEAT, /* extras = */ android.os.Bundle.EMPTY),
                 SessionCommand(COMMAND_TOGGLE_LIKE, /* extras = */ android.os.Bundle.EMPTY),
+                SessionCommand(COMMAND_STOP_SLEEP_TIMER, /* extras = */ android.os.Bundle.EMPTY),
             )
             // FULL library command set — not DEFAULT_SESSION_COMMANDS plus a
             // hand-picked subset. The old hand-picked list omitted
@@ -1371,6 +1390,9 @@ class StashPlaybackService : MediaLibraryService() {
             args: android.os.Bundle,
         ): ListenableFuture<SessionResult> {
             when (customCommand.customAction) {
+                COMMAND_STOP_SLEEP_TIMER -> {
+                    sleepTimerController.cancel()
+                }
                 COMMAND_TOGGLE_SHUFFLE -> {
                     val player = session.player
                     player.shuffleModeEnabled = !player.shuffleModeEnabled

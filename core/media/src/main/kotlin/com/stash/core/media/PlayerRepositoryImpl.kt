@@ -365,6 +365,18 @@ class PlayerRepositoryImpl @Inject constructor(
         ensureController()?.pause()
     }
 
+    override fun setVolume(volume: Float) {
+        // Not suspend — SleepTimerController's fade loop calls this every
+        // ~350ms and can't afford a full ensureController() connect-await
+        // per tick. Read the already-connected controller directly; volume
+        // is a Player/MediaController property, main-thread-affine, so hop
+        // there explicitly since callers (SleepTimerController) run on
+        // Dispatchers.Default.
+        scope.launch {
+            controllerDeferred?.volume = volume.coerceIn(0f, 1f)
+        }
+    }
+
     override suspend fun skipNext() {
         cascadeGuard.onUserTransport()
         val controller = ensureController() ?: return

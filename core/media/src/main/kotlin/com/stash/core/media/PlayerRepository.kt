@@ -104,6 +104,12 @@ interface PlayerRepository {
     /** Pause playback. */
     suspend fun pause()
 
+    /**
+     * Set output volume, 0f (silent) to 1f (full). Used by
+     * [com.stash.core.media.SleepTimerController] to fade out before pausing.
+     */
+    fun setVolume(volume: Float)
+
     /** Skip to the next track in the queue. */
     suspend fun skipNext()
 
