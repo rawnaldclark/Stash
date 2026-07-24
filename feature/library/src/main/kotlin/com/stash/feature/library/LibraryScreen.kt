@@ -186,7 +186,6 @@ fun LibraryScreen(
             onRemovePlaylistImage = viewModel::removePlaylistImage,
             onTogglePlaylistPinned = viewModel::togglePlaylistPinned,
             onPlayArtist = onNavigateToArtist,
-            onSaveToPlaylist = { trackToSave = it },
             onViewAlbum = viewModel::onViewAlbumTapped,
             onAddArtistToQueue = viewModel::addArtistToQueue,
             onDeleteArtist = viewModel::deleteArtist,
@@ -430,7 +429,6 @@ private fun LibraryContent(
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
-    onSaveToPlaylist: (Track) -> Unit,
     onViewAlbum: (Track) -> Unit,
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
@@ -618,7 +616,6 @@ private fun LibraryContent(
                         onPlayNext = onPlayNext,
                         onAddToQueue = onAddToQueue,
                         onDeleteTrack = onDeleteTrack,
-                        onSaveToPlaylist = onSaveToPlaylist,
                         onViewAlbum = onViewAlbum,
                         anyServiceConnected = anyServiceConnected,
                         selection = selection,
@@ -1365,7 +1362,6 @@ private fun TracksTab(
     onPlayNext: (Track) -> Unit,
     onAddToQueue: (Track) -> Unit,
     onDeleteTrack: (Track, Boolean) -> Unit,
-    onSaveToPlaylist: (Track) -> Unit,
     onViewAlbum: (Track) -> Unit,
     anyServiceConnected: Boolean,
     selection: SelectionState,
@@ -1451,38 +1447,6 @@ private fun TracksTab(
                 onDownload = { onDownloadTrack(it.id); selectedTrack = null },
                 onRemoveDownload = { onRemoveDownloadTrack(it.id); selectedTrack = null },
                 onDelete = { trackToDelete = it; selectedTrack = null },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.PlaylistAdd,
-                label = "Add to Queue",
-                onClick = {
-                    onAddToQueue(track)
-                    selectedTrack = null
-                },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.FavoriteBorder,
-                label = "Save to Playlist",
-                onClick = { 
-                    onSaveToPlaylist(track) 
-                    selectedTrack = null
-                },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.Album,
-                label = "View Album",
-                onClick = {
-                    onViewAlbum(track)
-                    selectedTrack = null
-                },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.Share,
-                label = "Share",
-                onClick = {
-                    trackToShare = track
-                    selectedTrack = null
-                },
             )
             BottomSheetActionRow(
                 icon = Icons.Default.Delete,
