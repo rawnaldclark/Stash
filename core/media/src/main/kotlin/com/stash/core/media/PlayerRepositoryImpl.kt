@@ -699,8 +699,8 @@ class PlayerRepositoryImpl @Inject constructor(
         if (!streamingPreference.current()) return RadioStartResult.StreamingOff
         val controller = ensureController() ?: return RadioStartResult.PlayerNotReady
         val (session, firstBatch) = radioGenerator.start(seed)
-        if (firstBatch.isEmpty()) return false
-        if (!streamingPreference.current()) return false
+        if (firstBatch.isEmpty()) return RadioStartResult.NoStation
+        if (!streamingPreference.current()) return RadioStartResult.StreamingOff
         radioSession = session
         radioActive = true
         // Only ONE grower may run: startRadio bypasses setQueueInternal (which is
