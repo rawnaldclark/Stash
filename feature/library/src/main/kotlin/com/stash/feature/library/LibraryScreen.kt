@@ -1449,11 +1449,10 @@ private fun TracksTab(
                 onDelete = { trackToDelete = it; selectedTrack = null },
             )
             BottomSheetActionRow(
-                icon = Icons.Default.Delete,
-                label = "Delete",
-                tint = MaterialTheme.colorScheme.error,
+                icon = Icons.Default.Album,
+                label = "View Album",
                 onClick = {
-                    trackToDelete = track
+                    onViewAlbum(track)
                     selectedTrack = null
                 },
             )
