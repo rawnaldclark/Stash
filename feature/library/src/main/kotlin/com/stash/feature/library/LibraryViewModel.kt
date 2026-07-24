@@ -50,6 +50,30 @@ private fun Track.matchesQuery(query: String): Boolean =
         album.lowercase().contains(query)
 
 /**
+ * Collapses album rows that describe the SAME album but arrived as separate
+ * DAO groups. `getAllAlbums` groups by `(album, album_artist)`, so an album
+ * whose tracks disagree on the `album_artist` tag (common in tag-inconsistent
+ * FLAC rips) yields two rows that resolve to the same displayed name+artist.
+ * The Albums grid keys each card on `"name|artist"`, and two identical keys
+ * crash `LazyVerticalGrid` — the Albums tab force-close in issue #244.
+ *
+ * Merging by case-insensitive (name, artist) guarantees the grid key is
+ * unique again and shows one card per album with the combined track count.
+ */
+internal fun mergeDuplicateAlbums(albums: List<AlbumInfo>): List<AlbumInfo> =
+    albums
+        .groupBy { it.name.lowercase() to it.artist.lowercase() }
+        .map { (_, group) ->
+            group.reduce { acc, next ->
+                acc.copy(
+                    trackCount = acc.trackCount + next.trackCount,
+                    artPath = acc.artPath ?: next.artPath,
+                    artUrl = acc.artUrl ?: next.artUrl,
+                )
+            }
+        }
+
+/**
  * ViewModel for the Library screen.
  *
  * Collects tracks, playlists, artists, albums, and auth state from
@@ -154,7 +178,9 @@ class LibraryViewModel @Inject constructor(
 
         // -- Map DAO projections to UI models --
         val artists = allArtists.map { ArtistInfo(it.artist, it.trackCount, it.totalDurationMs, it.artUrl) }
-        val albums = allAlbums.map { AlbumInfo(it.album, it.artist, it.trackCount, it.artPath, it.artUrl) }
+        val albums = mergeDuplicateAlbums(
+            allAlbums.map { AlbumInfo(it.album, it.artist, it.trackCount, it.artPath, it.artUrl) }
+        )
 
         // -- Apply source filter --
         val sourceFiltered = when (controls.sourceFilter) {
