@@ -799,7 +799,7 @@ class StashPlaybackService : MediaLibraryService() {
     private fun buildStopSleepTimerButton(): CommandButton {
         return CommandButton.Builder()
             .setDisplayName("Stop timer")
-            .setIconResId(R.drawable.ic_timer_off) // swap for whatever icon you have
+            .setIconResId(R.drawable.ic_timer_off)
             .setSessionCommand(
                 SessionCommand(COMMAND_STOP_SLEEP_TIMER, android.os.Bundle.EMPTY),
             )
