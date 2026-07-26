@@ -108,7 +108,7 @@ class DatabaseBackupManager @Inject constructor(
      */
     internal fun verifyDatabaseIntegrity(file: File) {
         val db = android.database.sqlite.SQLiteDatabase.openDatabase(
-            file.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+            file.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE,
         )
         db.use {
             val ok = it.rawQuery("PRAGMA integrity_check", null).use { cursor ->
