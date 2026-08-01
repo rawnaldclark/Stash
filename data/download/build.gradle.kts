@@ -28,6 +28,14 @@ val arcodLocalProperties = Properties().apply {
 val arcodStreamBase: String =
     arcodLocalProperties.getProperty("arcod.streamBase") ?: System.getenv("ARCOD_STREAM_BASE").orEmpty()
 
+// Private per-integration key the arcod operator issues for Stash's /v2/stash/*
+// routes, sent as the `X-Stash-Key` header. Shared on the condition it stays
+// private, so it lives in local.properties / a CI secret and is NEVER committed —
+// same rule as arcod.streamBase above. Empty is valid: ARCOD then reports itself
+// unconfigured and the source chain skips it.
+val arcodStashKey: String =
+    arcodLocalProperties.getProperty("arcod.stashKey") ?: System.getenv("ARCOD_STASH_KEY").orEmpty()
+
 // ── qbdlx (direct-Qobuz) credentials + token pool ──────────────────────────
 // Bundled at build time from local.properties / env. APP_ID + APP_SECRET are
 // public (shown on qbdlx's login page). TOKEN_POOL is a comma-separated list of
@@ -84,6 +92,8 @@ android {
         // env at build time so it never lives in the public repo. Empty when
         // unconfigured — ARCOD streaming then no-ops and the registry fails over.
         buildConfigField("String", "ARCOD_STREAM_BASE", "\"$arcodStreamBase\"")
+        buildConfigField("String", "ARCOD_STASH_KEY", "\"$arcodStashKey\"")
+        buildConfigField("String", "ARCOD_API_BASE", "\"https://api.arcod.xyz\"")
         buildConfigField("String", "QBDLX_APP_ID", "\"$qbdlxAppId\"")
         buildConfigField("String", "QBDLX_APP_SECRET", "\"$qbdlxAppSecret\"")
         buildConfigField("String", "QBDLX_TOKEN_POOL", "\"$qbdlxTokenPoolEnc\"")
