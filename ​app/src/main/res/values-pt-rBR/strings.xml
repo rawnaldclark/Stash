@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Stash</string>
+    <string name="resume_playback_short">Continuar</string>
+    <string name="resume_playback_long">Continuar reprodução</string>
+</resources>
