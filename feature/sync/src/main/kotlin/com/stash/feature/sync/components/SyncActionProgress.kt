@@ -125,6 +125,8 @@ internal fun phaseLabel(phase: SyncPhase): String = when (phase) {
             "Comparing changes..."
         }
     }
+    
+    is SyncPhase.VerifyingLibrary -> "Checking your library (${phase.step}/${phase.total})..."
     is SyncPhase.Downloading -> "Downloading ${phase.downloaded}/${phase.total}..."
     is SyncPhase.Finalizing -> "Finalizing..."
     is SyncPhase.Completed -> "Complete"

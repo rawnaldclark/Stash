@@ -59,6 +59,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val classifier: DownloadFailureClassifier,
+    private val reconciliationUseCase: com.stash.core.data.library.LibraryReconciliationUseCase,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -125,6 +126,7 @@ class TrackDownloadWorker @AssistedInject constructor(
 
         try {
             syncHistoryDao.updateStatus(syncId, SyncState.DOWNLOADING)
+            syncStateManager.onVerifyingLibrary(step = 0, total = 5)
 
             // Determine which services are connected so we only retry their tracks.
             val connectedSources = buildList {
@@ -137,78 +139,21 @@ class TrackDownloadWorker @AssistedInject constructor(
             // Diagnostic: log the actual queue state before any changes
             val statusCounts = downloadQueueDao.getStatusCounts()
             Log.i(TAG, "Queue status breakdown: ${statusCounts.map { "${it.status}=${it.count}" }}")
-            val orphanCounts = downloadQueueDao.getOrphanedTrackCounts()
-            Log.i(TAG, "Orphaned undownloaded tracks (no active queue entry): ${orphanCounts.map { "${it.source}=${it.cnt}" }}")
 
-            // Self-healing sweep: drop queue entries whose track has no
-            // currently sync-enabled parent playlist. Without this, queues
-            // built before the predicate fix (when 1 enabled playlist could
-            // pull thousands of orphaned rows) stay bloated forever.
-            val sweptOrphans = downloadQueueDao.deleteOrphanedQueueEntries()
-            if (sweptOrphans > 0) {
-                Log.i(TAG, "Swept $sweptOrphans orphaned queue entries (tracks with no sync-enabled parent playlist)")
-            }
-
-            // Reset exhausted retries so tracks get another chance each sync.
-            downloadQueueDao.resetExhaustedRetries()
-
-            // Reset stale IN_PROGRESS entries from a previous interrupted run.
-            // Safe because this worker is a unique chain — only one runs at a time.
-            val resetInProgress = downloadQueueDao.resetStaleInProgress()
-            if (resetInProgress > 0) {
-                Log.i(TAG, "Reset $resetInProgress stale IN_PROGRESS entries back to PENDING")
-            }
-
-            // Streaming mode: do not drain ANY pending downloads — DiffWorker
-            // already skipped enqueueing fresh ones (see its v0.9.30 gate),
-            // but pre-toggle PENDING rows (queued while the user was in
-            // Offline mode) would otherwise drain on every Sync Now and the
-            // user sees "downloads happening" despite being in Online mode.
-            // Leave them PENDING so a future switch back to Offline naturally
-            // resumes them. Housekeeping above (orphan sweep, stale-IP reset)
-            // still ran so counters stay accurate. Fall through to finalize
-            // with downloaded=0 so the chain closes cleanly.
-            if (streamingPreference.current()) {
-                Log.i(TAG, "Streaming mode: skipping download drain (PENDING rows preserved)")
-                syncStateManager.onDownloading(downloaded = 0, total = 0)
-                return Result.success(
-                    workDataOf(
-                        KEY_SYNC_ID to syncId,
-                        KEY_DOWNLOADED to 0,
-                        KEY_FAILED to 0,
-                    )
-                )
-            }
-
-            // Re-queue tracks that are undownloaded but have no active queue entry.
-            // This catches tracks whose retries were all exhausted and entries cleaned up,
-            // or tracks that somehow never got queued.
-            //
-            // v0.9.30: SKIP this auto-requeue in streaming mode. DiffWorker
-            // intentionally does NOT enqueue downloads for synced tracks
-            // when streaming is on (the user wants metadata-only sync,
-            // tracks play via Kennyy). Without this guard the auto-requeue
-            // here would silently undo DiffWorker's skip and download
-            // everything anyway. User-initiated downloads via the long-press
-            // "Download to library" path still work — they insert into
-            // download_queue directly and this worker processes the
-            // existing pending rows further down.
+            syncStateManager.onVerifyingLibrary(step = 0, total = LibraryReconciliationUseCase.TOTAL_STEPS)
             if (!streamingPreference.current()) {
-                val unqueuedTrackIds = downloadQueueDao.getUnqueuedTrackIds(connectedSources)
-                if (unqueuedTrackIds.isNotEmpty()) {
-                    Log.i(TAG, "Re-queuing ${unqueuedTrackIds.size} undownloaded tracks with no active queue entry")
-                    Log.i(TAG, "QueueTrace: TrackDownloadWorker.requeue track_ids=${unqueuedTrackIds.take(50)}${if (unqueuedTrackIds.size > 50) "...(${unqueuedTrackIds.size - 50} more)" else ""}")
-                    val newEntries = unqueuedTrackIds.map { trackId ->
-                        com.stash.core.data.db.entity.DownloadQueueEntity(
-                            trackId = trackId,
-                            syncId = syncId,
-                        )
-                    }
-                    downloadQueueDao.insertAll(newEntries)
+                val result = reconciliationUseCase.reconcile { step, total ->
+                    syncStateManager.onVerifyingLibrary(step, total)
                 }
+                Log.i(
+                    TAG,
+                    "Reconciliation: swept=${result.orphansSwept} staleResumed=${result.staleResumed} " +
+                        "requeued=${result.unqueuedRequeued}",
+                )
             } else {
                 Log.i(TAG, "Streaming mode: skipping auto-requeue of undownloaded tracks")
             }
+            syncStateManager.onVerifyingLibrary(step = 4, total = 5)
 
             // Collect ALL pending items (from any sync) plus retryable failed items.
             val allPending = if (connectedSources.isNotEmpty()) {

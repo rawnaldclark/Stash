@@ -66,6 +66,30 @@ sealed interface SyncPhase {
     }
 
     /**
+     * Reconciling the local download queue against the library before any
+     * bytes move: sweeping orphaned queue rows, resetting exhausted/stale
+     * retries, and re-queuing undownloaded tracks with no active queue
+     * entry. This is DB housekeeping, not network — separated from Diffing
+     * (remote-vs-local snapshot comparison) so a long pass here reads as
+     * "checking your library" instead of a stalled Diffing phase.
+     *
+     * @property step  Which housekeeping step is currently running.
+     * @property total Total housekeeping steps.
+     */
+    data class VerifyingLibrary(
+        val step: Int = 0,
+        val total: Int = 5,
+    ) : SyncPhase {
+        override val progress: Float
+            get() {
+                val base = 0.25f
+                val span = 0.05f
+                val fraction = if (total > 0) step.toFloat() / total else 0f
+                return base + span * fraction
+            }
+    }
+
+    /**
      * Downloading new or updated tracks.
      *
      * @property downloaded Number of tracks downloaded so far.
@@ -78,8 +102,8 @@ sealed interface SyncPhase {
         override val progress: Float
             get() {
                 // Download phase spans 25%..95% of the overall progress.
-                val base = 0.25f
-                val span = 0.70f
+                val base = 0.30f
+                val span = 0.65f
                 val fraction = if (total > 0) downloaded.toFloat() / total else 0f
                 return base + span * fraction
             }

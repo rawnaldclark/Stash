@@ -102,6 +102,14 @@ class SyncScheduler @Inject constructor(
             return
         }
 
+        val verificationActive = workManager.getWorkInfosForUniqueWork(
+            com.stash.core.data.sync.workers.LibraryVerificationWorker.UNIQUE_WORK_NAME
+        ).get().any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING }
+        if (isSyncChainActive() || verificationActive) {
+            Log.i(TAG, "Manual sync requested, but a sync or verification is already running — ignoring")
+            return
+        }
+
         Log.i(TAG, "Manual sync triggered by user")
         // Immediately signal the UI that sync is starting so the button
         // shows progress feedback even before WorkManager picks up the work.
