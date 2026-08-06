@@ -2,7 +2,6 @@ package com.stash.core.data.library
 
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.auth.TokenManager
-import com.stash.data.download.files.LibrarySizeHolder
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,26 +16,27 @@ data class ReconciliationResult(
  * The library-housekeeping pass previously inlined at the top of
  * [com.stash.core.data.sync.workers.TrackDownloadWorker.doWork]: sweeping
  * orphaned queue rows, resetting exhausted/stale retries, and re-queuing
- * undownloaded tracks with no active queue entry — then refreshing the
- * disk-truth size stats.
+ * undownloaded tracks with no active queue entry.
+ *
+ * Deliberately does NOT touch [com.stash.data.download.files.LibrarySizeHolder] —
+ * that type lives in a module that depends on :core:data, so reaching for it
+ * here would invert the module graph. Callers that already have access to it
+ * (SyncViewModel, LibraryHealthViewModel — both feature-layer) should call
+ * `librarySizeHolder.refresh()` themselves right after [reconcile] returns.
  *
  * Extracted so the same pass can run either as the first step of a full
  * sync (chain mode) or standalone from Library & Storage. Every step here
  * is sync-agnostic — none of the underlying queries key off a `syncId`.
  *
  * @param onProgress Invoked after each step with (stepIndex, totalSteps).
- *   Callers decide where that goes — chain mode feeds it to
- *   [com.stash.core.data.sync.SyncStateManager.onVerifyingLibrary];
- *   standalone mode feeds it to [LibraryVerificationStateManager].
  */
 @Singleton
 class LibraryReconciliationUseCase @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val tokenManager: TokenManager,
-    private val librarySizeHolder: LibrarySizeHolder,
 ) {
     companion object {
-        const val TOTAL_STEPS = 5
+        const val TOTAL_STEPS = 4
     }
 
     suspend fun reconcile(onProgress: (step: Int, total: Int) -> Unit = { _, _ -> }): ReconciliationResult {
@@ -65,11 +65,6 @@ class LibraryReconciliationUseCase @Inject constructor(
             downloadQueueDao.insertAll(newEntries)
         }
         onProgress(4, TOTAL_STEPS)
-
-        // Recompute disk-truth size/FLAC stats so a standalone "Verify" run
-        // also answers "rebuild my stats" — same flow the Sync screen reads.
-        librarySizeHolder.refresh()
-        onProgress(5, TOTAL_STEPS)
 
         return ReconciliationResult(
             orphansSwept = sweptOrphans,

@@ -18,6 +18,7 @@ import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.library.LibraryReconciliationUseCase
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncStateManager
@@ -59,7 +60,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val classifier: DownloadFailureClassifier,
-    private val reconciliationUseCase: com.stash.core.data.library.LibraryReconciliationUseCase,
+    private val reconciliationUseCase: LibraryReconciliationUseCase,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -126,7 +127,6 @@ class TrackDownloadWorker @AssistedInject constructor(
 
         try {
             syncHistoryDao.updateStatus(syncId, SyncState.DOWNLOADING)
-            syncStateManager.onVerifyingLibrary(step = 0, total = 5)
 
             // Determine which services are connected so we only retry their tracks.
             val connectedSources = buildList {
@@ -153,7 +153,6 @@ class TrackDownloadWorker @AssistedInject constructor(
             } else {
                 Log.i(TAG, "Streaming mode: skipping auto-requeue of undownloaded tracks")
             }
-            syncStateManager.onVerifyingLibrary(step = 4, total = 5)
 
             // Collect ALL pending items (from any sync) plus retryable failed items.
             val allPending = if (connectedSources.isNotEmpty()) {

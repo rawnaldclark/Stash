@@ -73,12 +73,21 @@ class SyncStateManager @Inject constructor() {
     }
 
     /**
+     * Transition to (or update progress within) [SyncPhase.Diffing]. Unlike
+     * fetch, the diff worker knows its total playlist count upfront, so this
+     * reports a real fraction, not just a live count.
+     */
+    fun onDiffing(playlistsDiffed: Int = 0, totalPlaylists: Int = 0) {
+        _phase.value = SyncPhase.Diffing(playlistsDiffed, totalPlaylists)
+    }
+
+    /**
      * Transition to (or update progress within) [SyncPhase.VerifyingLibrary].
      * Called at each housekeeping step in TrackDownloadWorker before the
      * download loop starts, so a long reconciliation pass on a big library
      * visibly advances instead of leaving the bar frozen on Diffing.
      */
-    fun onVerifyingLibrary(step: Int = 0, total: Int = 5) {
+    fun onVerifyingLibrary(step: Int = 0, total: Int = 4) {
         _phase.value = SyncPhase.VerifyingLibrary(step, total)
     }
 
