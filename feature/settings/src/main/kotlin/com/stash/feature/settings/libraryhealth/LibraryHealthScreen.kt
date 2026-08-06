@@ -97,16 +97,6 @@ fun LibraryHealthScreen(
 
         Spacer(Modifier.height(20.dp))
 
-        QualityInfoRefreshSection(onClick = viewModel::runQualityInfoBackfill)
-
-        BackfillSection(
-            status = state.backfill,
-            buckets = state.buckets,
-            onRunBackfill = viewModel::runBackfill,
-        )
-
-        Spacer(Modifier.height(20.dp))
-
         VerifyLibrarySection(
             status = state.verification,
             onRunVerification = viewModel::runVerification,
