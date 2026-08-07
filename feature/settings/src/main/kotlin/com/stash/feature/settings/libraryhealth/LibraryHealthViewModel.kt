@@ -38,7 +38,7 @@ class LibraryHealthViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val trackDao: TrackDao,
     private val metadataExtractor: AudioDurationExtractor,
-    private val fileOrganizer: com.stash.data.download.files.FileOrganizer,
+        private val fileExistenceChecker: com.stash.core.data.library.FileExistenceChecker,
     private val reconciliationUseCase: com.stash.core.data.library.LibraryReconciliationUseCase,
 ) : ViewModel() {
 
@@ -184,7 +184,7 @@ class LibraryHealthViewModel @Inject constructor(
                         onProgress = { step, total ->
                             _state.update { it.copy(verification = LibraryVerificationStatus.Running(step, total)) }
                         },
-                        checkFileExists = fileOrganizer::fileExists,
+                        checkFileExists = fileExistenceChecker::exists,
                     )
                 }
                 Log.i(TAG, "verification complete: swept=${result.orphansSwept} " +

@@ -61,7 +61,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val classifier: DownloadFailureClassifier,
     private val reconciliationUseCase: LibraryReconciliationUseCase,
-    private val fileOrganizer: com.stash.data.download.files.FileOrganizer,
+    private val fileExistenceChecker: com.stash.core.data.library.FileExistenceChecker,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -145,7 +145,7 @@ class TrackDownloadWorker @AssistedInject constructor(
             if (!streamingPreference.current()) {
                 val result = reconciliationUseCase.reconcile(
                     onProgress = { step, total -> syncStateManager.onVerifyingLibrary(step, total) },
-                    checkFileExists = fileOrganizer::fileExists,
+                    checkFileExists = fileExistenceChecker::exists,
                 )
                 Log.i(
                     TAG,
