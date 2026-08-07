@@ -12,7 +12,6 @@ import java.io.FileInputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
-import java.nio.file.Path
 import javax.inject.Inject
 import javax.inject.Singleton
 import androidx.core.net.toUri
@@ -237,7 +236,7 @@ class DatabaseBackupManager @Inject constructor(
                             entry.name == "stash.db" -> stagedDb
                             entry.name.startsWith("datastore/") -> {
                                 val relativeName = entry.name.substringAfter("datastore/")
-                                if (relativeName.isBlank() || Path.of(relativeName).isAbsolute) {
+                                if (relativeName.isBlank() || File(relativeName).isAbsolute) {
                                     throw SecurityException("Invalid datastore entry path: ${entry.name}")
                                 }
 

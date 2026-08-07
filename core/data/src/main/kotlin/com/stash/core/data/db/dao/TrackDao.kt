@@ -233,6 +233,25 @@ interface TrackDao {
 
     // ── Update / Delete ─────────────────────────────────────────────────
 
+    /** One-shot read of every track currently marked downloaded, for the
+    *  library-verification disk-existence check. Not a Flow — this is a
+    *  batch background pass, not something the UI observes. */
+    @Query("SELECT id, file_path FROM tracks WHERE is_downloaded = 1 AND file_path IS NOT NULL")
+    suspend fun getDownloadedTrackPaths(): List<TrackPathRow>
+
+    /** Reverts tracks whose file no longer exists on disk back to
+    *  "needs download" — clears is_downloaded, file_path, and the stale
+    *  size so LibrarySizeHolder's next walk doesn't count phantom bytes. */
+    @Query("""
+        UPDATE tracks
+        SET is_downloaded = 0, file_path = NULL, file_size_bytes = 0
+        WHERE id IN (:ids)
+    """)
+    suspend fun resetMissingFilesRaw(ids: List<Long>)
+
+    suspend fun resetMissingFiles(ids: List<Long>) =
+        ids.chunkedForBindWrite { resetMissingFilesRaw(it) }
+
     /** Update an existing track entity. */
     @Update
     suspend fun update(track: TrackEntity)

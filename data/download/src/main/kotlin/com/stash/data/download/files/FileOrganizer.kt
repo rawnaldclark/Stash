@@ -61,6 +61,27 @@ class FileOrganizer @Inject constructor(
     /** Temporary download directory inside the cache. Cleaned by the OS as needed. */
     fun getTempDir(): File = File(context.cacheDir, "downloads").also { it.mkdirs() }
 
+    /**
+     * Whether the file at [filePath] still exists on disk. [filePath] is
+     * whatever was stored in [com.stash.core.model.Track.filePath] by
+     * [commitDownload] — either an absolute internal path or a
+     * `content://…` SAF URI — so this branches the same way every other
+     * dual-mode method in this class does.
+     *
+     * Used by library reconciliation to catch tracks the DB believes are
+     * downloaded but whose file was deleted outside the app (manually, by
+     * the OS, or by another app on shared/external storage).
+     */
+    fun fileExists(filePath: String): Boolean {
+        return if (filePath.startsWith("content://")) {
+            runCatching {
+                DocumentFile.fromSingleUri(context, Uri.parse(filePath))?.exists() == true
+            }.getOrDefault(false)
+        } else {
+            File(filePath).exists()
+        }
+    }
+
     /** Directory for cached album artwork files. */
     fun getAlbumArtDir(): File = File(context.cacheDir, "albumart").also { it.mkdirs() }
 

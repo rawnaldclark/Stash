@@ -349,7 +349,8 @@ private fun VerifyLibrarySection(
                 }
                 is LibraryVerificationStatus.Done -> {
                     Text(
-                        text = "Verified — ${status.result.unqueuedRequeued} track(s) requeued, " +
+                        text = "Verified — ${status.result.filesMissing} missing file${if (status.result.filesMissing == 1) "" else "s"} found, " +
+                            "${status.result.unqueuedRequeued} track(s) requeued, " +
                             "${status.result.orphansSwept} stale entr${if (status.result.orphansSwept == 1) "y" else "ies"} cleaned up.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,

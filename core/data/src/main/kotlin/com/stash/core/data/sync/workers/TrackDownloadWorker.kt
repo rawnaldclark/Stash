@@ -61,6 +61,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val classifier: DownloadFailureClassifier,
     private val reconciliationUseCase: LibraryReconciliationUseCase,
+    private val fileOrganizer: com.stash.data.download.files.FileOrganizer,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -142,13 +143,14 @@ class TrackDownloadWorker @AssistedInject constructor(
 
             syncStateManager.onVerifyingLibrary(step = 0, total = LibraryReconciliationUseCase.TOTAL_STEPS)
             if (!streamingPreference.current()) {
-                val result = reconciliationUseCase.reconcile { step, total ->
-                    syncStateManager.onVerifyingLibrary(step, total)
-                }
+                val result = reconciliationUseCase.reconcile(
+                    onProgress = { step, total -> syncStateManager.onVerifyingLibrary(step, total) },
+                    checkFileExists = fileOrganizer::fileExists,
+                )
                 Log.i(
                     TAG,
                     "Reconciliation: swept=${result.orphansSwept} staleResumed=${result.staleResumed} " +
-                        "requeued=${result.unqueuedRequeued}",
+                        "filesMissing=${result.filesMissing} requeued=${result.unqueuedRequeued}",
                 )
             } else {
                 Log.i(TAG, "Streaming mode: skipping auto-requeue of undownloaded tracks")

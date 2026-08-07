@@ -1,6 +1,7 @@
 package com.stash.core.data.library
 
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.auth.TokenManager
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -9,20 +10,26 @@ import javax.inject.Singleton
 data class ReconciliationResult(
     val orphansSwept: Int,
     val staleResumed: Int,
+    val filesMissing: Int,
     val unqueuedRequeued: Int,
 )
 
 /**
  * The library-housekeeping pass previously inlined at the top of
  * [com.stash.core.data.sync.workers.TrackDownloadWorker.doWork]: sweeping
- * orphaned queue rows, resetting exhausted/stale retries, and re-queuing
+ * orphaned queue rows, resetting exhausted/stale retries, verifying that
+ * every "downloaded" track's file still exists on disk, and re-queuing
  * undownloaded tracks with no active queue entry.
  *
- * Deliberately does NOT touch [com.stash.data.download.files.LibrarySizeHolder] —
- * that type lives in a module that depends on :core:data, so reaching for it
- * here would invert the module graph. Callers that already have access to it
- * (SyncViewModel, LibraryHealthViewModel — both feature-layer) should call
- * `librarySizeHolder.refresh()` themselves right after [reconcile] returns.
+ * Deliberately does NOT touch [com.stash.data.download.files.FileOrganizer]
+ * or [com.stash.data.download.files.LibrarySizeHolder] directly — those
+ * types live in a module that depends on :core:data, so reaching for them
+ * here would invert the module graph. The disk-existence check is passed
+ * in as [checkFileExists] by callers that already have FileOrganizer
+ * (TrackDownloadWorker, LibraryHealthViewModel — both feature/worker-layer).
+ * Callers should also call `librarySizeHolder.refresh()` themselves right
+ * after [reconcile] returns, since a missing-file reset changes storage
+ * totals.
  *
  * Extracted so the same pass can run either as the first step of a full
  * sync (chain mode) or standalone from Library & Storage. Every step here
@@ -33,13 +40,24 @@ data class ReconciliationResult(
 @Singleton
 class LibraryReconciliationUseCase @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
+    private val trackDao: TrackDao,
     private val tokenManager: TokenManager,
 ) {
     companion object {
-        const val TOTAL_STEPS = 4
+        const val TOTAL_STEPS = 5
     }
 
-    suspend fun reconcile(onProgress: (step: Int, total: Int) -> Unit = { _, _ -> }): ReconciliationResult {
+    /**
+     * @param checkFileExists Returns whether the file at a stored
+     *   `Track.filePath` still exists. Defaults to "always exists" (skips
+     *   the disk check entirely) for callers that don't have file-system
+     *   access — currently none, but keeps the signature safe to call
+     *   without a lambda if a future caller needs that.
+     */
+    suspend fun reconcile(
+        onProgress: (step: Int, total: Int) -> Unit = { _, _ -> },
+        checkFileExists: (filePath: String) -> Boolean = { true },
+    ): ReconciliationResult {
         onProgress(0, TOTAL_STEPS)
 
         val connectedSources = buildList {
@@ -57,6 +75,17 @@ class LibraryReconciliationUseCase @Inject constructor(
         val resetInProgress = downloadQueueDao.resetStaleInProgress()
         onProgress(3, TOTAL_STEPS)
 
+        // Disk-truth check: every track the DB believes is downloaded gets
+        // its file_path verified. A track whose file was deleted outside
+        // the app has its is_downloaded flag reset here so it's visible to
+        // the requeue step immediately below — same pass, not a second run.
+        val downloadedTracks = trackDao.getDownloadedTrackPaths()
+        val missingIds = downloadedTracks.filterNot { checkFileExists(it.filePath) }.map { it.id }
+        if (missingIds.isNotEmpty()) {
+            trackDao.resetMissingFiles(missingIds)
+        }
+        onProgress(4, TOTAL_STEPS)
+
         val unqueuedTrackIds = downloadQueueDao.getUnqueuedTrackIds(connectedSources)
         if (unqueuedTrackIds.isNotEmpty()) {
             val newEntries = unqueuedTrackIds.map { trackId ->
@@ -64,11 +93,12 @@ class LibraryReconciliationUseCase @Inject constructor(
             }
             downloadQueueDao.insertAll(newEntries)
         }
-        onProgress(4, TOTAL_STEPS)
+        onProgress(5, TOTAL_STEPS)
 
         return ReconciliationResult(
             orphansSwept = sweptOrphans,
             staleResumed = resetInProgress,
+            filesMissing = missingIds.size,
             unqueuedRequeued = unqueuedTrackIds.size,
         )
     }

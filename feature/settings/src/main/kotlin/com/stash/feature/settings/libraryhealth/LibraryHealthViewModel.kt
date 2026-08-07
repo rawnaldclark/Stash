@@ -38,6 +38,7 @@ class LibraryHealthViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val trackDao: TrackDao,
     private val metadataExtractor: AudioDurationExtractor,
+    private val fileOrganizer: com.stash.data.download.files.FileOrganizer,
     private val reconciliationUseCase: com.stash.core.data.library.LibraryReconciliationUseCase,
 ) : ViewModel() {
 
@@ -179,15 +180,16 @@ class LibraryHealthViewModel @Inject constructor(
             }
             try {
                 val result = withContext(Dispatchers.IO) {
-                    reconciliationUseCase.reconcile { step, total ->
-                        _state.update { it.copy(verification = LibraryVerificationStatus.Running(step, total)) }
-                    }
+                    reconciliationUseCase.reconcile(
+                        onProgress = { step, total ->
+                            _state.update { it.copy(verification = LibraryVerificationStatus.Running(step, total)) }
+                        },
+                        checkFileExists = fileOrganizer::fileExists,
+                    )
                 }
-                Log.i(
-                    TAG,
-                    "verification complete: swept=${result.orphansSwept} " +
-                        "staleResumed=${result.staleResumed} requeued=${result.unqueuedRequeued}",
-                )
+                Log.i(TAG, "verification complete: swept=${result.orphansSwept} " +
+                    "staleResumed=${result.staleResumed} filesMissing=${result.filesMissing} " +
+                    "requeued=${result.unqueuedRequeued}")
                 _state.update { it.copy(verification = LibraryVerificationStatus.Done(result)) }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
