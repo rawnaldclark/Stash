@@ -17,5 +17,7 @@ import dagger.hilt.components.SingletonComponent
 object FileExistenceCheckerModule {
     @Provides
     fun provideFileExistenceChecker(fileOrganizer: FileOrganizer): FileExistenceChecker =
-        FileExistenceChecker { path -> fileOrganizer.fileExists(path) }
+        FileExistenceChecker { artist, album, title, filePath ->
+            fileOrganizer.checkExists(artist, album, title, filePath)
+        }
 }

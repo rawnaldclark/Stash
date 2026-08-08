@@ -56,7 +56,8 @@ class LibraryReconciliationUseCase @Inject constructor(
      */
     suspend fun reconcile(
         onProgress: (step: Int, total: Int) -> Unit = { _, _ -> },
-        checkFileExists: (filePath: String) -> Boolean = { true },
+        checkFileExists: suspend (artist: String, album: String?, title: String, filePath: String) -> com.stash.core.data.library.FileExistenceResult =
+            { _, _, _, _ -> com.stash.core.data.library.FileExistenceResult(exists = true) },
     ): ReconciliationResult {
         onProgress(0, TOTAL_STEPS)
 
@@ -79,8 +80,18 @@ class LibraryReconciliationUseCase @Inject constructor(
         // its file_path verified. A track whose file was deleted outside
         // the app has its is_downloaded flag reset here so it's visible to
         // the requeue step immediately below — same pass, not a second run.
-        val downloadedTracks = trackDao.getDownloadedTrackPaths()
-        val missingIds = downloadedTracks.filterNot { checkFileExists(it.filePath) }.map { it.id }
+        // A track whose file IS present but under a fresh SAF URI (stale
+        // cached document id post-reinstall) gets its file_path healed in
+        // place instead of being wrongly treated as missing.
+        val downloadedTracks = trackDao.getDownloadedTrackRefs()
+        val missingIds = mutableListOf<Long>()
+        for (t in downloadedTracks) {
+            val result = checkFileExists(t.artist, t.album, t.title, t.filePath)
+            when {
+                !result.exists -> missingIds.add(t.id)
+                result.resolvedFilePath != null -> trackDao.healFilePath(t.id, result.resolvedFilePath)
+            }
+        }
         if (missingIds.isNotEmpty()) {
             trackDao.resetMissingFiles(missingIds)
         }

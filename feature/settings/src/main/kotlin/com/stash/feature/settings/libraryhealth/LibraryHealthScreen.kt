@@ -348,13 +348,30 @@ private fun VerifyLibrarySection(
                     )
                 }
                 is LibraryVerificationStatus.Done -> {
+                    val r = status.reconciliation
+                    val a = status.adoption
                     Text(
-                        text = "Verified — ${status.result.filesMissing} missing file${if (status.result.filesMissing == 1) "" else "s"} found, " +
-                            "${status.result.unqueuedRequeued} track(s) requeued, " +
-                            "${status.result.orphansSwept} stale entr${if (status.result.orphansSwept == 1) "y" else "ies"} cleaned up.",
+                        text = "Verified — ${r.filesMissing} missing file${if (r.filesMissing == 1) "" else "s"} found, " +
+                            "${r.unqueuedRequeued} track(s) requeued, " +
+                            "${r.orphansSwept} stale entr${if (r.orphansSwept == 1) "y" else "ies"} cleaned up.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
+                    if (a.adopted > 0) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Found ${a.adopted} song${if (a.adopted == 1) "" else "s"} already on disk and added to your library.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    } else if (a.scanned > 0) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Checked ${a.scanned} track${if (a.scanned == 1) "" else "s"} not yet downloaded — none matched a file on disk.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = onRunVerification) {
                         Text("Verify again")

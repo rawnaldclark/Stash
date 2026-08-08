@@ -233,11 +233,57 @@ interface TrackDao {
 
     // ── Update / Delete ─────────────────────────────────────────────────
 
+    /**
+     * Undownloaded tracks in a currently sync-enabled, non-mix playlist —
+     * the same playlist-eligibility predicate as
+     * [com.stash.core.data.db.dao.DownloadQueueDao.getUnqueuedTrackIds],
+     * deliberately WITHOUT that query's `t.source IN (:sources)` gate.
+     * This is a local-only disk scan — no network call, no auth needed —
+     * so it must not be limited to currently-connected services the way
+     * a real network requeue is. This is Verify's candidate pool: tracks
+     * the DB doesn't think are downloaded yet, that the user has actually
+     * asked for by leaving their playlist enabled.
+     */
+    @Query("""
+        SELECT t.id, t.artist, t.album, t.title
+        FROM tracks t
+        LEFT JOIN track_blocklist bl
+            ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+            OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+        WHERE t.is_downloaded = 0
+          AND t.match_dismissed = 0
+          AND bl.canonical_key IS NULL
+          AND EXISTS (
+              SELECT 1 FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.track_id = t.id
+                AND pt.removed_at IS NULL
+                AND p.sync_enabled = 1
+                AND p.is_active = 1
+                AND p.type NOT IN ('STASH_MIX', 'DAILY_MIX')
+          )
+    """)
+    suspend fun getAdoptionCandidates(): List<TrackAdoptionCandidate>
+
     /** One-shot read of every track currently marked downloaded, for the
     *  library-verification disk-existence check. Not a Flow — this is a
     *  batch background pass, not something the UI observes. */
     @Query("SELECT id, file_path FROM tracks WHERE is_downloaded = 1 AND file_path IS NOT NULL")
     suspend fun getDownloadedTrackPaths(): List<TrackPathRow>
+
+    /** [TrackExistenceRef] variant of [getDownloadedTrackPaths] — used by
+     *  library reconciliation, which needs artist/album/title to verify
+     *  SAF-stored files without trusting a possibly-stale cached URI. */
+    @Query("SELECT id, artist, album, title, file_path FROM tracks WHERE is_downloaded = 1 AND file_path IS NOT NULL")
+    suspend fun getDownloadedTrackRefs(): List<TrackExistenceRef>
+
+    /** Heals a stale SAF `file_path` after [FileOrganizer.resolveExistingSafFile]
+     *  finds the real file under a fresh document URI. Companion to
+     *  [resetMissingFiles] — this is the "found it, just needed re-pointing"
+     *  branch instead of the "genuinely gone" branch. */
+    @Query("UPDATE tracks SET file_path = :filePath WHERE id = :trackId")
+    suspend fun healFilePath(trackId: Long, filePath: String)
 
     /** Reverts tracks whose file no longer exists on disk back to
     *  "needs download" — clears is_downloaded, file_path, and the stale
