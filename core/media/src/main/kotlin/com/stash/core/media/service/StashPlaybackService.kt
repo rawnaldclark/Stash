@@ -434,6 +434,17 @@ class StashPlaybackService : MediaLibraryService() {
         } else null
 
         val sessionBuilder = MediaLibrarySession.Builder(this, player, StashSessionCallback())
+            // #387: hand the platform session a throwaway copy of each artwork
+            // bitmap so an Android-15 AOSP ROM recycling media3's shared cached
+            // instance can't crash setMetadata. Wraps the default
+            // cache→datasource chain (kept, so artwork isn't re-decoded).
+            .setBitmapLoader(
+                SafeBitmapLoader(
+                    androidx.media3.session.CacheBitmapLoader(
+                        androidx.media3.datasource.DataSourceBitmapLoader(this),
+                    ),
+                ),
+            )
         if (sessionActivity != null) {
             sessionBuilder.setSessionActivity(sessionActivity)
         }
