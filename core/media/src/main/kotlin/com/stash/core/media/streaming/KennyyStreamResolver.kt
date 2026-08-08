@@ -48,6 +48,7 @@ data class StreamUrl(
      * so the user knows quality has degraded from the Qobuz baseline.
      *
      * Conventional values:
+     *  - `"jiosaavn"`            - JioSaavn AAC-320 fallback (lossy)
      *  - `"kennyy"` / `"squid"`  — Qobuz catalog (lossless)
      *  - `"youtube"`             — yt-dlp/InnerTube extraction (lossy)
      */

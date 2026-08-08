@@ -30,5 +30,5 @@ sealed interface SearchDownloadStatus {
     data object WaitingForLossless : SearchDownloadStatus
 
     /** Which path delivered the bytes, for UI labelling. */
-    enum class Source { LOSSLESS, YOUTUBE }
+    enum class Source { LOSSLESS, JIOSAAVN, YOUTUBE }
 }

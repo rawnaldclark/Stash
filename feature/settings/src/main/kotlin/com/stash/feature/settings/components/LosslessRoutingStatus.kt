@@ -71,7 +71,7 @@ internal fun LosslessRoutingStatus(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Lossless comes from Qobuz. Anything Qobuz doesn't carry falls " +
+            text = "Lossless comes from Qobuz. Misses try JioSaavn AAC 320 before falling " +
                 "back to YouTube, shown as \"via YT\" while it plays.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

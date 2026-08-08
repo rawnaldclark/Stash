@@ -15,18 +15,27 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.MusicSource
 import com.stash.core.model.TrackItem
 import com.stash.data.download.DownloadExecutor
+import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.DownloadResult
 import com.stash.data.download.files.FileOrganizer.CommittedTrack
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
+import com.stash.data.download.lossless.AudioFormat
+import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lyrics.LyricsFetchTrigger
 import com.stash.data.download.shared.TrackFinalizer
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -48,6 +57,11 @@ class SearchDownloadCoordinatorCompletionTest {
     private val blocklistGuard: BlocklistGuard = mockk(relaxed = true)
     private val context: Context = mockk(relaxed = true)
     private val losslessPrefs: LosslessSourcePreferences = mockk(relaxed = true)
+    private val jioSaavnResolver: JioSaavnResolver = mockk {
+        coEvery { resolve(any(), any()) } returns null
+    }
+    private val losslessUrlDownloader: com.stash.data.download.lossless.LosslessUrlDownloader = mockk()
+    private val audioDurationExtractor: com.stash.core.data.audio.AudioDurationExtractor = mockk()
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true)
     private val localFileOps: LocalFileOps = mockk()
     private val loudnessMeasurer: LoudnessMeasurer = mockk(relaxed = true)
@@ -70,6 +84,9 @@ class SearchDownloadCoordinatorCompletionTest {
         blocklistGuard = blocklistGuard,
         context = context,
         losslessPrefs = losslessPrefs,
+        jioSaavnResolver = jioSaavnResolver,
+        losslessUrlDownloader = losslessUrlDownloader,
+        audioDurationExtractor = audioDurationExtractor,
         downloadQueueDao = downloadQueueDao,
         localFileOps = localFileOps,
         loudnessMeasurer = loudnessMeasurer,
@@ -129,11 +146,147 @@ class SearchDownloadCoordinatorCompletionTest {
         } returns 1
     }
 
+    private fun arrangeFinalizedJioSaavnDownload() {
+        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { jioSaavnResolver.resolve(any(), any()) } returns SourceResult(
+            sourceId = JioSaavnResolver.SOURCE_ID,
+            downloadUrl = "https://aac.saavncdn.com/song_320.mp4",
+            format = AudioFormat(
+                codec = "aac",
+                bitrateKbps = 320,
+                sampleRateHz = 44_100,
+                fileExtension = "m4a",
+            ),
+            confidence = 0.97f,
+        )
+        coEvery { losslessUrlDownloader.download(any(), any(), any()) } coAnswers {
+            Result.success(arg<File>(1))
+        }
+        coEvery { audioDurationExtractor.extract(any()) } returns AudioMetadata(
+            durationMs = 200_000L,
+            bitrateKbps = 313,
+            format = "aac",
+            sampleRateHz = 44_100,
+            bitsPerSample = 16,
+        )
+        coEvery { trackFinalizer.finalizeFile(any(), any(), any(), any()) } returns
+            TrackFinalizer.FinalizeResult.Success(
+                committed = CommittedTrack(
+                    filePath = "/library/Sample Artist/Sample.m4a",
+                    sizeBytes = 4096L,
+                ),
+                meta = AudioMetadata(
+                    durationMs = 200_000L,
+                    bitrateKbps = 313,
+                    format = "aac",
+                    sampleRateHz = 44_100,
+                    bitsPerSample = 16,
+                ),
+            )
+        coEvery { trackDao.findByYoutubeId("vid42") } returns existingTrack()
+        coEvery {
+            trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any())
+        } returns 1
+    }
+
     private fun assertFailedNeverCompleted(statuses: List<SearchDownloadStatus>) {
         assertTrue("terminal status must be Failed, got $statuses", statuses.last() is SearchDownloadStatus.Failed)
         assertFalse("Completed must never be emitted after persistence failure, got $statuses", statuses.any {
             it is SearchDownloadStatus.Completed
         })
+    }
+
+    @Test
+    fun `lossless disabled still tries JioSaavn before YouTube`() = runTest {
+        arrangeFinalizedYtDlpDownload()
+
+        val statuses = newSubject().download(track()).toList()
+
+        assertTrue(statuses.last() is SearchDownloadStatus.Completed)
+        coVerifyOrder {
+            jioSaavnResolver.resolve(any(), any())
+            downloadExecutor.download(any(), any(), any(), any(), any())
+        }
+    }
+
+    @Test
+    fun `valid JioSaavn AAC commits and never starts YouTube`() = runTest {
+        arrangeFinalizedJioSaavnDownload()
+
+        val statuses = newSubject().download(track()).toList()
+
+        assertTrue(statuses.last() is SearchDownloadStatus.Completed)
+        assertTrue(
+            statuses.any {
+                it == SearchDownloadStatus.Downloading(SearchDownloadStatus.Source.JIOSAAVN)
+            },
+        )
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `invalid JioSaavn media falls through to YouTube before commit`() = runTest {
+        arrangeFinalizedYtDlpDownload()
+        coEvery { jioSaavnResolver.resolve(any(), any()) } returns SourceResult(
+            sourceId = JioSaavnResolver.SOURCE_ID,
+            downloadUrl = "https://aac.saavncdn.com/song_320.mp4",
+            format = AudioFormat("aac", 320, 44_100, fileExtension = "m4a"),
+            confidence = 0.97f,
+        )
+        coEvery { losslessUrlDownloader.download(any(), any(), any()) } coAnswers {
+            Result.success(arg<File>(1))
+        }
+        coEvery { audioDurationExtractor.extract(any()) } returns AudioMetadata(
+            durationMs = 200_000L,
+            bitrateKbps = 160,
+            format = "aac",
+            sampleRateHz = 44_100,
+            bitsPerSample = 16,
+        )
+
+        val statuses = newSubject().download(track()).toList()
+
+        assertTrue(statuses.last() is SearchDownloadStatus.Completed)
+        coVerify(exactly = 1) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 1) { trackFinalizer.finalizeFile(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `JioSaavn persistence failure is terminal and never starts YouTube`() = runTest {
+        arrangeFinalizedJioSaavnDownload()
+        coEvery {
+            trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any())
+        } throws IllegalStateException("database unavailable")
+
+        val statuses = newSubject().download(track()).toList()
+
+        assertFailedNeverCompleted(statuses)
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `cancelling one collector keeps the shared producer deduplicated`() = runTest {
+        arrangeFinalizedYtDlpDownload()
+        val resolverStarted = CompletableDeferred<Unit>()
+        val releaseResolver = CompletableDeferred<Unit>()
+        coEvery { jioSaavnResolver.resolve(any(), any()) } coAnswers {
+            resolverStarted.complete(Unit)
+            releaseResolver.await()
+            null
+        }
+        val subject = newSubject()
+
+        val firstCollector = launch { subject.download(track()).collect() }
+        resolverStarted.await()
+        firstCollector.cancelAndJoin()
+
+        val secondCollector = async { subject.download(track()).toList() }
+        releaseResolver.complete(Unit)
+        val statuses = secondCollector.await()
+
+        assertTrue(statuses.last() is SearchDownloadStatus.Completed)
+        coVerify(exactly = 1) { jioSaavnResolver.resolve(any(), any()) }
+        coVerify(exactly = 1) { downloadExecutor.download(any(), any(), any(), any(), any()) }
     }
 
     @Test

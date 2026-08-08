@@ -89,6 +89,8 @@ data class TrackQuery(
     val album: String? = null,
     val isrc: String? = null,
     val durationMs: Long? = null,
+    /** Explicit-content identity when known; null means the source cannot verify it. */
+    val explicit: Boolean? = null,
     /**
      * The track's Spotify URI (`spotify:track:<id>`, a bare id, or an
      * `open.spotify.com/track/<id>` URL), when known. Used only by sources
@@ -242,6 +244,8 @@ data class AudioFormat(
     val sampleRateHz: Int = 0,
     /** Bits per sample for lossless; 0 if unknown / lossy. */
     val bitsPerSample: Int = 0,
+    /** On-disk container extension; differs from [codec] for AAC in MP4/M4A. */
+    val fileExtension: String = codec,
 ) {
     /**
      * True for codecs that encode audio without information loss —

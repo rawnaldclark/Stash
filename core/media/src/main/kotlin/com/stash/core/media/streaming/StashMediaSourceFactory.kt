@@ -50,6 +50,7 @@ class StashMediaSourceFactory(
     private val streamingFactory: StreamingMediaSourceFactory,
     private val streamingTrackId: (MediaItem) -> Long?,
     private val isAmzOrigin: (MediaItem) -> Boolean,
+    private val isJioSaavnOrigin: (MediaItem) -> Boolean,
     amzHttpClient: okhttp3.OkHttpClient,
     resolver: StreamSourceRegistry,
     urlCache: StreamUrlCache,
@@ -66,6 +67,13 @@ class StashMediaSourceFactory(
     // how lossless Kennyy/Squid already streams).
     private val amzFactory = DefaultMediaSourceFactory(
         androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(amzHttpClient),
+    )
+    internal val jioSaavnHttpClient = amzHttpClient.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+    private val jioSaavnFactory = DefaultMediaSourceFactory(
+        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(jioSaavnHttpClient),
     )
 
     // Full-timeline placeholders: stash-resolve://track/<id> items resolve
@@ -87,6 +95,10 @@ class StashMediaSourceFactory(
                     androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(amzHttpClient)
                         .createDataSource()
                 },
+                jioSaavnDelegate = {
+                    androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(jioSaavnHttpClient)
+                        .createDataSource()
+                },
             )
         },
     )
@@ -96,6 +108,7 @@ class StashMediaSourceFactory(
     ): MediaSource.Factory {
         localFactory.setDrmSessionManagerProvider(provider)
         amzFactory.setDrmSessionManagerProvider(provider)
+        jioSaavnFactory.setDrmSessionManagerProvider(provider)
         lazyFactory.setDrmSessionManagerProvider(provider)
         return this
     }
@@ -105,6 +118,7 @@ class StashMediaSourceFactory(
     ): MediaSource.Factory {
         localFactory.setLoadErrorHandlingPolicy(policy)
         amzFactory.setLoadErrorHandlingPolicy(policy)
+        jioSaavnFactory.setLoadErrorHandlingPolicy(policy)
         lazyFactory.setLoadErrorHandlingPolicy(policy)
         return this
     }
@@ -126,6 +140,9 @@ class StashMediaSourceFactory(
         }
         if (isAmzOrigin(mediaItem)) {
             return amzFactory.createMediaSource(mediaItem)
+        }
+        if (isJioSaavnOrigin(mediaItem)) {
+            return jioSaavnFactory.createMediaSource(mediaItem)
         }
         return localFactory.createMediaSource(mediaItem)
     }

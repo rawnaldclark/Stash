@@ -999,7 +999,10 @@ private fun trackQualityText(track: com.stash.core.model.Track): String? {
         // two. We don't badge "via Kennyy" / "via squid" because those
         // are the expected primary sources; only the lossy fallback
         // deserves a callout.
-        if (track.streamOrigin == "youtube") add("via YT")
+        when (track.streamOrigin) {
+            "jiosaavn" -> add("via JioSaavn")
+            "youtube" -> add("via YT")
+        }
     }.joinToString(" · ")
 }
 

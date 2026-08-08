@@ -38,11 +38,13 @@ class StashMediaSourceFactoryTest {
     private fun newFactory(
         streamingTrackId: (MediaItem) -> Long?,
         isAmzOrigin: (MediaItem) -> Boolean,
+        isJioSaavnOrigin: (MediaItem) -> Boolean = { false },
     ): StashMediaSourceFactory = StashMediaSourceFactory(
         context = ApplicationProvider.getApplicationContext(),
         streamingFactory = streamingFactory,
         streamingTrackId = streamingTrackId,
         isAmzOrigin = isAmzOrigin,
+        isJioSaavnOrigin = isJioSaavnOrigin,
         amzHttpClient = OkHttpClient(),
         resolver = mockk(relaxed = true),
         urlCache = mockk(relaxed = true),
@@ -77,6 +79,23 @@ class StashMediaSourceFactoryTest {
         // DefaultMediaSourceFactory yields a ProgressiveMediaSource for a plain
         // progressive (FLAC) URI — backed here by the amz OkHttpDataSource.Factory.
         assertThat(source).isInstanceOf(ProgressiveMediaSource::class.java)
+    }
+
+    @Test
+    fun jioSaavnItem_routesToDedicatedProgressiveSource_notStreamingChain() {
+        val jio = item("https://aac.saavncdn.com/song_320.mp4")
+        val factory = newFactory(
+            streamingTrackId = { null },
+            isAmzOrigin = { false },
+            isJioSaavnOrigin = { it === jio },
+        )
+
+        val source = factory.createMediaSource(jio)
+
+        verify(exactly = 0) { streamingFactory.create(any()) }
+        assertThat(source).isInstanceOf(ProgressiveMediaSource::class.java)
+        assertThat(factory.jioSaavnHttpClient.followRedirects).isFalse()
+        assertThat(factory.jioSaavnHttpClient.followSslRedirects).isFalse()
     }
 
     @Test

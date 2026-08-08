@@ -149,6 +149,19 @@ class AggregatorRateLimiter @Inject constructor() {
             circuitBreakDurationMs = 10 * 60_000L,
             rateLimitTripsBreaker = false, // a Qobuz 429 = "slow down", not "broken"
         )
+
+        // JioSaavn is an opportunistic lossy fallback. A small burst keeps a
+        // foreground tap responsive, while the steady rate prevents an album
+        // sync from hammering the unofficial web endpoint. Any 429 or repeated
+        // transport/media-probe failures should cool it quickly so YouTube can
+        // take over without adding latency to every track.
+        configs["jiosaavn"] = Config(
+            tokensPerSecond = 1.0 / 2.0,
+            burstCapacity = 3.0,
+            backoff429Ms = 60_000L,
+            circuitBreakAfter = 3,
+            circuitBreakDurationMs = 10 * 60_000L,
+        )
     }
 
     companion object {

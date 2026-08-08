@@ -14,6 +14,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.TrackItem
 import com.stash.data.download.DownloadExecutor
+import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.DownloadResult
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
@@ -57,6 +58,11 @@ class SearchDownloadCoordinatorDeferTest {
     private val blocklistGuard: BlocklistGuard = mockk(relaxed = true)
     private val context: Context = mockk(relaxed = true)
     private val losslessPrefs: LosslessSourcePreferences = mockk(relaxed = true)
+    private val jioSaavnResolver: JioSaavnResolver = mockk {
+        coEvery { resolve(any(), any()) } returns null
+    }
+    private val losslessUrlDownloader: com.stash.data.download.lossless.LosslessUrlDownloader = mockk()
+    private val audioDurationExtractor: com.stash.core.data.audio.AudioDurationExtractor = mockk()
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true)
     private val loudnessMeasurer: com.stash.core.data.audio.LoudnessMeasurer = mockk(relaxed = true)
     private val lyricsFetchTrigger: LyricsFetchTrigger = mockk(relaxed = true)
@@ -73,6 +79,9 @@ class SearchDownloadCoordinatorDeferTest {
         blocklistGuard = blocklistGuard,
         context = context,
         losslessPrefs = losslessPrefs,
+        jioSaavnResolver = jioSaavnResolver,
+        losslessUrlDownloader = losslessUrlDownloader,
+        audioDurationExtractor = audioDurationExtractor,
         downloadQueueDao = downloadQueueDao,
         localFileOps = mockk(relaxed = true) { every { acceptDownloadOrDelete(any()) } returns true },
         loudnessMeasurer = loudnessMeasurer,

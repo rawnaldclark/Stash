@@ -5,7 +5,14 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -43,6 +50,14 @@ class LosslessUrlDownloader @Inject constructor(
     private val fetchClient: OkHttpClient = httpClient.newBuilder()
         .readTimeout(FETCH_STALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .writeTimeout(FETCH_STALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .build()
+
+    // JioSaavn URLs are accepted only on the exact aac.saavncdn.com host.
+    // Disable redirects for the actual whole-file fetch so a URL that was
+    // safe during the range probe cannot later pivot to an arbitrary host.
+    private val noRedirectFetchClient: OkHttpClient = fetchClient.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
 
     // Caps concurrent ENCRYPTED (amz) whole-file fetches. The DownloadManager
@@ -86,15 +101,36 @@ class LosslessUrlDownloader @Inject constructor(
         // a permit and wedge the source.
         if (key != null) amzFetchGate.acquire()
         try {
-            fetchClient.newCall(request).execute().use { response ->
+            val client = if (source.sourceId == NO_REDIRECT_SOURCE_ID) {
+                noRedirectFetchClient
+            } else {
+                fetchClient
+            }
+            val call = client.newCall(request)
+            coroutineScope {
+                // A blocking response-body read does not observe coroutine
+                // cancellation itself. This child is started immediately and
+                // cancels the OkHttp call as soon as the parent is cancelled.
+                val cancellationWatcher = launch(
+                    context = Dispatchers.IO,
+                    start = CoroutineStart.UNDISPATCHED,
+                ) {
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        call.cancel()
+                    }
+                }
+                try {
+                    call.execute().use { response ->
                 if (!response.isSuccessful) {
-                    return@withContext Result.failure(
+                    return@use Result.failure(
                         IllegalStateException(
                             "fetch ${source.sourceId} failed: HTTP ${response.code} ${response.message}",
                         ),
                     )
                 }
-                val body = response.body ?: return@withContext Result.failure(
+                val body = response.body ?: return@use Result.failure(
                     IllegalStateException("fetch ${source.sourceId} failed: empty body"),
                 )
                 val totalBytes = body.contentLength().coerceAtLeast(0L)
@@ -108,6 +144,7 @@ class LosslessUrlDownloader @Inject constructor(
                     var bytesRead = 0L
                     val buf = okio.Buffer()
                     while (true) {
+                        currentCoroutineContext().ensureActive()
                         val read = bodySource.read(buf, 64 * 1024)
                         if (read == -1L) break
                         sink.write(buf, read)
@@ -119,7 +156,7 @@ class LosslessUrlDownloader @Inject constructor(
 
                 if (fetchTarget.length() == 0L) {
                     runCatching { if (fetchTarget.exists()) fetchTarget.delete() }
-                    return@withContext Result.failure(
+                    return@use Result.failure(
                         IllegalStateException("fetch ${source.sourceId} produced empty file"),
                     )
                 }
@@ -141,7 +178,15 @@ class LosslessUrlDownloader @Inject constructor(
                         IllegalStateException("decrypt ${source.sourceId} failed for ${destination.name}"),
                     )
                 }
+                    }
+                } finally {
+                    cancellationWatcher.cancel()
+                }
             }
+        } catch (e: CancellationException) {
+            runCatching { if (fetchTarget.exists()) fetchTarget.delete() }
+            runCatching { if (destination.exists()) destination.delete() }
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "fetch ${source.sourceId} threw: ${e.javaClass.simpleName}: ${e.message}")
             // Best-effort cleanup of any partial files so the caller's
@@ -166,5 +211,6 @@ class LosslessUrlDownloader @Inject constructor(
         // client). amz ultrahd whole-file pulls stalled past 30 s on a congested
         // hotspot; 90 s tolerates the pause without masking a truly dead socket.
         const val FETCH_STALL_TIMEOUT_SECONDS = 90L
+        const val NO_REDIRECT_SOURCE_ID = "jiosaavn"
     }
 }

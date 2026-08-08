@@ -13,6 +13,7 @@ import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
 import com.stash.data.download.lyrics.LyricsFetchTrigger
+import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.shared.TrackFinalizer
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.data.download.lossless.LosslessSourceHealthGate
@@ -108,6 +109,7 @@ class DownloadManager @Inject constructor(
     private val losslessRegistry: LosslessSourceRegistry,
     private val losslessUrlDownloader: LosslessUrlDownloader,
     private val losslessPrefs: LosslessSourcePreferences,
+    private val jioSaavnResolver: JioSaavnResolver,
     private val trackFinalizer: TrackFinalizer,
     private val loudnessMeasurer: com.stash.core.data.audio.LoudnessMeasurer,
     private val metadataEmbedder: MetadataEmbedder,
@@ -129,7 +131,7 @@ class DownloadManager @Inject constructor(
     private val losslessHealthGate: LosslessSourceHealthGate,
 ) {
     /**
-     * Test/build seam for the debug-build YT-fallback carve-out below.
+     * Test/build seam for the debug-build lossy-fallback carve-out below.
      * Defaults to the real [BuildConfig.DEBUG] so production behavior is
      * unchanged, but unit tests — which always run under the debug test
      * variant, where BuildConfig.DEBUG is unconditionally true — can flip
@@ -157,6 +159,9 @@ class DownloadManager @Inject constructor(
          * (kennyy, squid, + headroom) so it can't spin.
          */
         internal const val MAX_LOSSLESS_FAILOVER_ATTEMPTS = 3
+        internal const val MIN_JIOSAAVN_BITRATE_KBPS = 256
+        private const val JIOSAAVN_DURATION_TOLERANCE_MS = 8_000L
+        private const val JIOSAAVN_DURATION_TOLERANCE_FRACTION = 0.03
     }
 
     /**
@@ -227,11 +232,12 @@ class DownloadManager @Inject constructor(
                 // ARCOD_CONFIGURED are false, amz needs none but is proxy-outage-prone) —
                 // respecting "fallback off" here would permanently strand every beta
                 // tester's tracks in WAITING_FOR_LOSSLESS regardless of their toggle.
-                // Force YT fallback on debug builds; release keeps real strict-FLAC.
+                // Force the lossy fallback chain on debug builds; release keeps
+                // real strict-FLAC. The chain is JioSaavn first, then YouTube.
                 if (forceYoutubeFallbackOnDebugBuilds) {
                     Log.i(
                         TAG,
-                        "debug build: forcing YT fallback for '${track.artist} - ${track.title}' " +
+                        "debug build: forcing lossy fallback for '${track.artist} - ${track.title}' " +
                             "despite fallback-off (no lossless tokens on beta builds)",
                     )
                 } else {
@@ -244,7 +250,14 @@ class DownloadManager @Inject constructor(
             }
         }
 
-        // Step 1: Resolve YouTube URL
+        // Step 1: Try the high-bitrate AAC fallback before YouTube. This is
+        // deliberately outside the lossless registry: AAC is lossy, and must
+        // never satisfy a strict-lossless request. If strict fallback is off,
+        // the branch above already returned Deferred before reaching here.
+        val jioSaavnResult = tryJioSaavnDownload(track)
+        if (jioSaavnResult != null) return jioSaavnResult
+
+        // Step 2: Resolve YouTube URL
         val resolveResult = if (preResolvedUrl != null) ResolveResult(url = preResolvedUrl) else resolveUrl(track)
         if (resolveResult.url == null) {
             emitProgress(track.id, 0f, DownloadStatus.UNMATCHED)
@@ -389,6 +402,106 @@ class DownloadManager @Inject constructor(
             .onFailure { Log.w(TAG, "isTrackInStashMix lookup failed for $trackId", it) }
             .getOrDefault(false)
 
+    internal suspend fun tryJioSaavnDownload(track: Track): TrackDownloadResult? {
+        val query = TrackQuery(
+            artist = track.artist,
+            title = track.title,
+            album = track.album.takeIf { it.isNotBlank() },
+            durationMs = track.durationMs.takeIf { it > 0 },
+            explicit = track.explicit,
+            trackId = track.id,
+        )
+
+        val match = try {
+            jioSaavnResolver.resolve(query)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w(TAG, "JioSaavn resolve failed for '${track.artist} - ${track.title}'", error)
+            null
+        } ?: return null
+
+        emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)
+        val tempFile = File(fileOrganizer.getTempDir(), "jiosaavn_${track.id}.m4a")
+        val fetched = losslessUrlDownloader.download(
+            source = match,
+            destination = tempFile,
+            onProgress = { read, total ->
+                val fraction = if (total > 0L) read.toFloat() / total else 0f
+                emitProgress(track.id, 0.1f + fraction * 0.7f, DownloadStatus.DOWNLOADING)
+            },
+        ).getOrElse { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            Log.w(TAG, "JioSaavn fetch failed for '${track.artist} - ${track.title}': ${error.message}")
+            runCatching { tempFile.delete() }
+            return null
+        }
+
+        val metadata = audioDurationExtractor.extract(fetched.absolutePath)
+        val durationTolerance = maxOf(
+            JIOSAAVN_DURATION_TOLERANCE_MS,
+            (track.durationMs * JIOSAAVN_DURATION_TOLERANCE_FRACTION).toLong(),
+        )
+        val durationValid = track.durationMs <= 0L ||
+            (metadata != null && kotlin.math.abs(metadata.durationMs - track.durationMs) <= durationTolerance)
+        val codecValid = metadata?.format == "aac"
+        val bitrateValid = metadata != null && metadata.bitrateKbps >= MIN_JIOSAAVN_BITRATE_KBPS
+        if (!codecValid || !bitrateValid || !durationValid) {
+            Log.w(
+                TAG,
+                "JioSaavn media rejected for '${track.artist} - ${track.title}': " +
+                    "format=${metadata?.format}, bitrate=${metadata?.bitrateKbps}, " +
+                    "duration=${metadata?.durationMs}, expected=${track.durationMs}",
+            )
+            runCatching { fetched.delete() }
+            return null
+        }
+
+        emitProgress(track.id, 0.85f, DownloadStatus.PROCESSING)
+        val effectiveTrack = trackDao.getById(track.id)?.toDomain() ?: track
+        return when (
+            val finalized = trackFinalizer.finalizeFile(
+                sourceFile = fetched,
+                track = effectiveTrack,
+                format = match.format,
+            )
+        ) {
+            is TrackFinalizer.FinalizeResult.Success -> {
+                Log.i(
+                    TAG,
+                    "JioSaavn AAC downloaded: ${effectiveTrack.artist} - ${effectiveTrack.title} " +
+                        "-> ${finalized.committed.filePath}",
+                )
+                match.coverArtUrl?.let { url ->
+                    runCatching {
+                        val existingArt = trackDao.getById(effectiveTrack.id)?.albumArtUrl
+                        if (existingArt.isNullOrBlank() ||
+                            com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(existingArt)
+                        ) {
+                            trackDao.updateAlbumArtUrl(effectiveTrack.id, url)
+                        }
+                    }.onFailure { error ->
+                        Log.w(TAG, "JioSaavn album-art update failed for ${effectiveTrack.id}: ${error.message}")
+                    }
+                }
+                loudnessMeasurer.measureAndPersistInBackground(
+                    trackId = track.id,
+                    file = File(finalized.committed.filePath),
+                )
+                runCatching { trackDao.setMetadataEmbeddedAt(track.id, System.currentTimeMillis()) }
+                    .onFailure { Log.w(TAG, "setMetadataEmbeddedAt failed for ${track.id}: ${it.message}") }
+                lyricsFetchTrigger.enqueueFor(track.id)
+                emitProgress(track.id, 1f, DownloadStatus.COMPLETED)
+                TrackDownloadResult.Success(finalized.committed.filePath)
+            }
+            is TrackFinalizer.FinalizeResult.Failed -> {
+                Log.w(TAG, "JioSaavn finalize failed for ${track.id}: ${finalized.message}")
+                runCatching { fetched.delete() }
+                null
+            }
+        }
+    }
+
     internal suspend fun tryLosslessDownload(track: Track, forced: Boolean = false): TrackDownloadResult? {
         val query = TrackQuery(
             artist = track.artist,
@@ -396,6 +509,7 @@ class DownloadManager @Inject constructor(
             album = track.album.takeIf { it.isNotBlank() },
             isrc = track.isrc,
             durationMs = track.durationMs.takeIf { it > 0 },
+            explicit = track.explicit,
             spotifyUri = track.spotifyUri,
             trackId = track.id,
         )
@@ -424,7 +538,8 @@ class DownloadManager @Inject constructor(
         // Choose extension from the source's stated codec rather than
         // hardcoding "flac" — sources may legitimately return "alac",
         // "mp3", etc. and the file organizer just plumbs through.
-        val ext = match.format.codec.lowercase().ifBlank { "flac" }
+        val ext = match.format.fileExtension.lowercase()
+            .ifBlank { match.format.codec.lowercase().ifBlank { "flac" } }
         val tempFile = File(fileOrganizer.getTempDir(), "lossless_${track.id}.$ext")
 
         val fetched = losslessUrlDownloader.download(

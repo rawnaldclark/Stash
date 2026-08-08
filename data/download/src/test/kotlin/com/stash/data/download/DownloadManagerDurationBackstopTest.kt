@@ -10,6 +10,7 @@ import com.stash.core.model.Track
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
+import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.lossless.AudioFormat
 import com.stash.data.download.lossless.LosslessSourceHealthGate
 import com.stash.data.download.lossless.LosslessSourcePreferences
@@ -80,6 +81,9 @@ class DownloadManagerDurationBackstopTest {
     private val losslessRegistry: LosslessSourceRegistry = mockk()
     private val losslessUrlDownloader: LosslessUrlDownloader = mockk()
     private val losslessPrefs: LosslessSourcePreferences = mockk(relaxed = true)
+    private val jioSaavnResolver: JioSaavnResolver = mockk {
+        coEvery { resolve(any(), any()) } returns null
+    }
     private val trackFinalizer: TrackFinalizer = mockk()
     private val loudnessMeasurer: com.stash.core.data.audio.LoudnessMeasurer = mockk(relaxed = true)
     private val metadataEmbedder: MetadataEmbedder = mockk(relaxed = true)
@@ -104,6 +108,7 @@ class DownloadManagerDurationBackstopTest {
         losslessRegistry = losslessRegistry,
         losslessUrlDownloader = losslessUrlDownloader,
         losslessPrefs = losslessPrefs,
+        jioSaavnResolver = jioSaavnResolver,
         trackFinalizer = trackFinalizer,
         loudnessMeasurer = loudnessMeasurer,
         metadataEmbedder = metadataEmbedder,

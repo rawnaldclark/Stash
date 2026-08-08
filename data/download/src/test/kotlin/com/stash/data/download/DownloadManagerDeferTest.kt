@@ -11,6 +11,7 @@ import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
 import com.stash.data.download.lyrics.LyricsFetchTrigger
+import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
 import com.stash.data.download.lossless.LosslessUrlDownloader
@@ -60,6 +61,9 @@ class DownloadManagerDeferTest {
     private val losslessRegistry: LosslessSourceRegistry = mockk()
     private val losslessUrlDownloader: LosslessUrlDownloader = mockk(relaxed = true)
     private val losslessPrefs: LosslessSourcePreferences = mockk(relaxed = true)
+    private val jioSaavnResolver: JioSaavnResolver = mockk {
+        coEvery { resolve(any(), any()) } returns null
+    }
     private val trackFinalizer: TrackFinalizer = mockk(relaxed = true)
     private val loudnessMeasurer: com.stash.core.data.audio.LoudnessMeasurer = mockk(relaxed = true)
     private val metadataEmbedder: MetadataEmbedder = mockk(relaxed = true)
@@ -86,6 +90,7 @@ class DownloadManagerDeferTest {
         losslessRegistry = losslessRegistry,
         losslessUrlDownloader = losslessUrlDownloader,
         losslessPrefs = losslessPrefs,
+        jioSaavnResolver = jioSaavnResolver,
         trackFinalizer = trackFinalizer,
         loudnessMeasurer = loudnessMeasurer,
         metadataEmbedder = metadataEmbedder,

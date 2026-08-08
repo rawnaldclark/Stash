@@ -85,6 +85,7 @@ class LazyResolvingDataSource(
     private val trackDao: TrackDao,
     private val httpDelegate: () -> DataSource,
     private val amzDelegate: () -> DataSource,
+    private val jioSaavnDelegate: () -> DataSource,
     private val resolveDeadlineMs: Long = RESOLVE_DEADLINE_MS,
 ) : DataSource {
 
@@ -111,7 +112,11 @@ class LazyResolvingDataSource(
             ?: throw IOException("stream resolve failed for track $trackId")
 
         val realSpec = dataSpec.buildUpon().setUri(Uri.parse(fresh.url)).build()
-        val delegate = if (fresh.origin == "amz") amzDelegate() else httpDelegate()
+        val delegate = when (fresh.origin) {
+            "amz" -> amzDelegate()
+            JioSaavnStreamResolver.ORIGIN -> jioSaavnDelegate()
+            else -> httpDelegate()
+        }
         return delegateTo(delegate, realSpec)
     }
 

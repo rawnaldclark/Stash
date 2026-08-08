@@ -76,7 +76,7 @@ class TrackFinalizer @Inject constructor(
             artist = track.artist,
             album = track.album.takeIf { it.isNotBlank() },
             title = track.title,
-            format = format.codec.ifBlank { "flac" },
+            format = format.fileExtension.ifBlank { format.codec.ifBlank { "flac" } },
         )
         val meta: AudioMetadata? = audioExtractor.extract(committed.filePath)
         FinalizeResult.Success(committed, meta)

@@ -35,6 +35,7 @@ class LazyResolvingDataSourceTest {
     private val trackDao: TrackDao = mockk()
     private val httpSource: DataSource = mockk(relaxed = true)
     private val amzSource: DataSource = mockk(relaxed = true)
+    private val jioSaavnSource: DataSource = mockk(relaxed = true)
 
     private fun source(deadlineMs: Long = 45_000L) = LazyResolvingDataSource(
         resolver = resolver,
@@ -42,6 +43,7 @@ class LazyResolvingDataSourceTest {
         trackDao = trackDao,
         httpDelegate = { httpSource },
         amzDelegate = { amzSource },
+        jioSaavnDelegate = { jioSaavnSource },
         resolveDeadlineMs = deadlineMs,
     )
 
@@ -87,6 +89,18 @@ class LazyResolvingDataSourceTest {
         source().open(placeholderSpec(7L))
 
         verify(exactly = 1) { amzSource.open(any()) }
+        verify(exactly = 0) { httpSource.open(any()) }
+    }
+
+    @Test
+    fun `jiosaavn origin routes to its no-redirect delegate`() {
+        every { urlCache.get(8L) } returns
+            stream("https://aac.saavncdn.com/song_320.mp4", JioSaavnStreamResolver.ORIGIN)
+        every { jioSaavnSource.open(any()) } returns 100L
+
+        source().open(placeholderSpec(8L))
+
+        verify(exactly = 1) { jioSaavnSource.open(any()) }
         verify(exactly = 0) { httpSource.open(any()) }
     }
 

@@ -69,18 +69,18 @@ class StreamSourceRegistry @Inject constructor(
     private val arcod: ArcodStreamResolver,
     private val amz: AmzStreamResolver,
     private val qbdlx: QbdlxStreamResolver,
+    private val jiosaavn: JioSaavnStreamResolver,
     private val youtube: YouTubeStreamResolver,
     private val streamingPreference: StreamingPreference,
     private val losslessSourceHealth: LosslessSourceHealth,
 ) {
-
     /**
      * Try each resolver in priority order; return the first non-null
      * [StreamUrl]. Returns null when no source produced a match — caller
      * should surface this as [StreamRoutingResult.NotAvailable].
      *
-     * @param allowYouTube pass `false` to skip the YouTube fallback
-     *   resolver, leaving only the two Qobuz operators. Used by
+     * @param allowYouTube pass `false` to skip lossy fallbacks (JioSaavn
+     *   and YouTube), leaving only configured lossless sources. Used by
      *   [PlayerRepositoryImpl.setQueue]'s background-fill path so
      *   yt-dlp's limited 2-slot extraction semaphore stays available
      *   for the foreground user-tap critical path. Foreground (tapped
@@ -125,6 +125,7 @@ class StreamSourceRegistry @Inject constructor(
                 // visibly" sharpness and buys back the guarantee that no
                 // preference, however stale, can leave a user unable to play music.
                 // That trade is not close.
+                if (allowYouTube && allowYtDlp) add("jiosaavn" to jiosaavn::resolve)
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
                 // NOTE: the force-amz branch is deliberately gone (2026-07-31).
                 //
@@ -192,6 +193,13 @@ class StreamSourceRegistry @Inject constructor(
                 // can only 403, so skipping it avoids a guaranteed-wasted round trip.
                 if (allowYtDlp && BuildConfig.ARCOD_CONFIGURED) {
                     add("arcod" to arcod::resolve)
+                }
+                // Fixed-quality AAC 320 fallback. Foreground/next-up only: a
+                // speculative full-queue fill must not turn into one metadata
+                // search + media probe per track. Any miss/outage continues to
+                // the existing YouTube fallback below.
+                if (allowYouTube && allowYtDlp) {
+                    add("jiosaavn" to jiosaavn::resolve)
                 }
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             }

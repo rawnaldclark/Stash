@@ -111,6 +111,12 @@ fun SettingsAudioQualityScreen(
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
+                    Text(
+                        text = "JioSaavn fallback uses AAC 320 kbps when available. " +
+                            "This picker controls the final YouTube fallback.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                     AudioQualityPicker(
                         selected = uiState.audioQuality,
@@ -461,7 +467,7 @@ fun SettingsAudioQualityScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "YouTube fallback",
+                                text = "Lossy fallback",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f),
@@ -487,13 +493,20 @@ fun SettingsAudioQualityScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Use YouTube when lossless fails",
+                                        text = "Use JioSaavn, then YouTube when lossless fails",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
                                 if (uiState.youtubeFallbackEnabled) {
                                     Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "JioSaavn uses fixed AAC 320 kbps. " +
+                                            "The quality picker below applies to YouTube only.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
                                     AudioQualityPicker(
                                         selected = uiState.audioQuality,
                                         onSelected = viewModel::onQualityChanged,

@@ -1,6 +1,7 @@
 package com.stash.data.download
 
 import com.stash.core.data.db.dao.PlaylistDao
+import com.stash.core.data.audio.AudioMetadata
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
@@ -8,6 +9,7 @@ import com.stash.core.model.Track
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
+import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.lossless.AudioFormat
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
@@ -23,6 +25,7 @@ import com.stash.data.download.prefs.QualityPreferencesManager
 import com.stash.data.download.shared.TrackFinalizer
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
@@ -67,6 +70,9 @@ class DownloadManagerEmbedStampTest {
     private val losslessRegistry: LosslessSourceRegistry = mockk()
     private val losslessUrlDownloader: LosslessUrlDownloader = mockk()
     private val losslessPrefs: LosslessSourcePreferences = mockk(relaxed = true)
+    private val jioSaavnResolver: JioSaavnResolver = mockk {
+        coEvery { resolve(any(), any()) } returns null
+    }
     private val trackFinalizer: TrackFinalizer = mockk()
     private val loudnessMeasurer: com.stash.core.data.audio.LoudnessMeasurer = mockk(relaxed = true)
     private val metadataEmbedder: MetadataEmbedder = mockk(relaxed = true)
@@ -93,6 +99,7 @@ class DownloadManagerEmbedStampTest {
         losslessRegistry = losslessRegistry,
         losslessUrlDownloader = losslessUrlDownloader,
         losslessPrefs = losslessPrefs,
+        jioSaavnResolver = jioSaavnResolver,
         trackFinalizer = trackFinalizer,
         loudnessMeasurer = loudnessMeasurer,
         metadataEmbedder = metadataEmbedder,
@@ -115,6 +122,72 @@ class DownloadManagerEmbedStampTest {
         format = AudioFormat(codec = "flac", bitrateKbps = 1000, bitsPerSample = 16, sampleRateHz = 44100),
         confidence = 0.95f,
     )
+
+    private fun jioSaavnResult() = SourceResult(
+        sourceId = JioSaavnResolver.SOURCE_ID,
+        downloadUrl = "https://aac.saavncdn.com/song_320.mp4",
+        format = AudioFormat(
+            codec = "aac",
+            bitrateKbps = 320,
+            sampleRateHz = 44_100,
+            fileExtension = "m4a",
+        ),
+        confidence = 0.94f,
+    )
+
+    @Test
+    fun `JioSaavn AAC 320 is committed as m4a before YouTube fallback`() = runTest {
+        val track = stubTrack().copy(durationMs = 200_000L)
+        val tempDir = File.createTempFile("tmp", "").apply { delete(); mkdirs() }
+        coEvery { fileOrganizer.getTempDir() } returns tempDir
+        coEvery { jioSaavnResolver.resolve(any(), any()) } returns jioSaavnResult()
+        coEvery { losslessUrlDownloader.download(any(), any(), any()) } answers {
+            val destination = secondArg<File>()
+            destination.writeText("fake-m4a-bytes")
+            Result.success(destination)
+        }
+        every { audioDurationExtractor.extract(any()) } returns AudioMetadata(
+            durationMs = 200_000L,
+            bitrateKbps = 313,
+            format = "aac",
+            sampleRateHz = 44_100,
+        )
+        val committed = FileOrganizer.CommittedTrack(
+            filePath = "/library/Sample Artist/Sample.m4a",
+            sizeBytes = 1234L,
+        )
+        coEvery { trackFinalizer.finalizeFile(any(), any(), any()) } returns
+            TrackFinalizer.FinalizeResult.Success(committed, meta = null)
+
+        val result = newSubject().tryJioSaavnDownload(track)
+
+        assertTrue("expected Success, got $result", result is TrackDownloadResult.Success)
+        assertEquals(committed.filePath, (result as TrackDownloadResult.Success).filePath)
+        coVerify { trackFinalizer.finalizeFile(any(), any(), match { it.fileExtension == "m4a" }) }
+    }
+
+    @Test
+    fun `JioSaavn media below 256 kbps is rejected before commit`() = runTest {
+        val track = stubTrack().copy(durationMs = 200_000L)
+        val tempDir = File.createTempFile("tmp", "").apply { delete(); mkdirs() }
+        coEvery { fileOrganizer.getTempDir() } returns tempDir
+        coEvery { jioSaavnResolver.resolve(any(), any()) } returns jioSaavnResult()
+        coEvery { losslessUrlDownloader.download(any(), any(), any()) } answers {
+            val destination = secondArg<File>()
+            destination.writeText("fake-low-bitrate-m4a")
+            Result.success(destination)
+        }
+        every { audioDurationExtractor.extract(any()) } returns AudioMetadata(
+            durationMs = 200_000L,
+            bitrateKbps = 160,
+            format = "aac",
+        )
+
+        val result = newSubject().tryJioSaavnDownload(track)
+
+        assertEquals(null, result)
+        coVerify(exactly = 0) { trackFinalizer.finalizeFile(any(), any(), any()) }
+    }
 
     @Test
     fun `lossless success path stamps metadata_embedded_at with non-zero timestamp`() = runTest {

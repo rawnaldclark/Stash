@@ -9,13 +9,17 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.SimpleCache
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.TrackItem
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
+import com.stash.data.download.DownloadManager
+import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.lossless.AudioFormat
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
+import com.stash.data.download.lossless.LosslessUrlDownloader
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lyrics.LyricsFetchTrigger
@@ -29,6 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -78,6 +83,9 @@ class SearchDownloadCoordinator @Inject constructor(
      * of falling through to yt-dlp.
      */
     private val losslessPrefs: LosslessSourcePreferences,
+    private val jioSaavnResolver: JioSaavnResolver,
+    private val losslessUrlDownloader: LosslessUrlDownloader,
+    private val audioDurationExtractor: AudioDurationExtractor,
     private val downloadQueueDao: DownloadQueueDao,
     private val localFileOps: com.stash.core.data.files.LocalFileOps,
     private val loudnessMeasurer: com.stash.core.data.audio.LoudnessMeasurer,
@@ -129,29 +137,34 @@ class SearchDownloadCoordinator @Inject constructor(
         emit(SearchDownloadStatus.Resolving)
 
         val deferred = mutex.withLock {
-            inFlight.getOrPut(key) { scope.async { performDownload(track) } }
-        }
-
-        try {
-            when (val job = deferred.await()) {
-                is DownloadJobResult.Resolved -> {
-                    // Signal which source is delivering bytes now that resolution is done.
-                    emit(SearchDownloadStatus.Downloading(job.source))
-                    emit(
-                        when (val r = job.outcome) {
-                            is TrackFinalizer.FinalizeResult.Success -> SearchDownloadStatus.Completed
-                            is TrackFinalizer.FinalizeResult.Failed -> SearchDownloadStatus.Failed(r.message)
+            inFlight[key] ?: scope.async { performDownload(track) }.also { created ->
+                inFlight[key] = created
+                // The producer belongs to the singleton scope, not to any one
+                // collector. Remove it only when the producer completes.
+                created.invokeOnCompletion {
+                    scope.launch {
+                        mutex.withLock {
+                            if (inFlight[key] === created) inFlight.remove(key)
                         }
-                    )
-                }
-                is DownloadJobResult.Deferred -> {
-                    emit(SearchDownloadStatus.WaitingForLossless)
+                    }
                 }
             }
-        } finally {
-            // Remove on completion OR cancellation — ensures the map never
-            // holds a reference to a completed/cancelled Deferred.
-            mutex.withLock { inFlight.remove(key) }
+        }
+
+        when (val job = deferred.await()) {
+            is DownloadJobResult.Resolved -> {
+                // Signal which source is delivering bytes now that resolution is done.
+                emit(SearchDownloadStatus.Downloading(job.source))
+                emit(
+                    when (val r = job.outcome) {
+                        is TrackFinalizer.FinalizeResult.Success -> SearchDownloadStatus.Completed
+                        is TrackFinalizer.FinalizeResult.Failed -> SearchDownloadStatus.Failed(r.message)
+                    }
+                )
+            }
+            is DownloadJobResult.Deferred -> {
+                emit(SearchDownloadStatus.WaitingForLossless)
+            }
         }
     }
 
@@ -167,10 +180,7 @@ class SearchDownloadCoordinator @Inject constructor(
         // and — with fallback also off — deferred to WAITING_FOR_LOSSLESS, so
         // artist-page / search downloads hung on "waiting for lossless" forever.
         if (!losslessPrefs.enabledNow()) {
-            return DownloadJobResult.Resolved(
-                source = SearchDownloadStatus.Source.YOUTUBE,
-                outcome = finalizeFromYtDlp(track),
-            )
+            return finalizeFromLossyFallback(track)
         }
 
         val match = runCatching { registry.resolve(track.toQuery()) }
@@ -218,6 +228,39 @@ class SearchDownloadCoordinator @Inject constructor(
             return DownloadJobResult.Deferred
         }
 
+        return finalizeFromLossyFallback(track)
+    }
+
+    /** Resolves the preferred lossy fallback, then preserves YouTube as the last resort. */
+    private suspend fun finalizeFromLossyFallback(track: TrackItem): DownloadJobResult.Resolved {
+        val match = runCatching { jioSaavnResolver.resolve(track.toQuery()) }
+            .onFailure { error ->
+                if (error is CancellationException) throw error
+                Log.w(TAG, "JioSaavn resolve threw for ${track.videoId}: ${error.message}")
+            }
+            .getOrNull()
+
+        if (match != null) {
+            when (val attempt = finalizeFromSource(track, match)) {
+                is SourceFinalizeAttempt.BeforeCommitFailure -> {
+                    Log.w(
+                        TAG,
+                        "JioSaavn failed before commit for ${track.videoId}; falling through to YouTube: " +
+                            attempt.message,
+                    )
+                }
+                is SourceFinalizeAttempt.AfterCommit -> {
+                    // Once the file reaches permanent storage, any persistence
+                    // failure is terminal. Starting YouTube here could leave an
+                    // orphaned m4a and partially-mutated library rows.
+                    return DownloadJobResult.Resolved(
+                        source = SearchDownloadStatus.Source.JIOSAAVN,
+                        outcome = attempt.outcome,
+                    )
+                }
+            }
+        }
+
         return DownloadJobResult.Resolved(
             source = SearchDownloadStatus.Source.YOUTUBE,
             outcome = finalizeFromYtDlp(track),
@@ -231,51 +274,84 @@ class SearchDownloadCoordinator @Inject constructor(
     private suspend fun finalizeFromLossless(
         track: TrackItem,
         match: SourceResult,
-    ): TrackFinalizer.FinalizeResult {
+    ): TrackFinalizer.FinalizeResult = when (val attempt = finalizeFromSource(track, match)) {
+        is SourceFinalizeAttempt.BeforeCommitFailure ->
+            TrackFinalizer.FinalizeResult.Failed(attempt.message)
+        is SourceFinalizeAttempt.AfterCommit -> attempt.outcome
+    }
+
+    private suspend fun finalizeFromSource(
+        track: TrackItem,
+        match: SourceResult,
+    ): SourceFinalizeAttempt {
         // Cache key mirrors what SearchPreviewMediaSource uses so any bytes
         // already streamed during preview are reused here.
-        val cacheKey = "lossless:${track.videoId}"
+        val cacheNamespace = if (match.sourceId == JioSaavnResolver.SOURCE_ID) "jiosaavn" else "lossless"
+        val cacheKey = "$cacheNamespace:${track.videoId}"
         val tempFile = File(
             context.cacheDir,
-            "search_lossless_${track.videoId}.${match.format.codec}",
+            "search_lossless_${track.videoId}.${match.format.fileExtension}",
         )
         runCatching { tempFile.delete() }
 
-        // CacheDataSource with FLAG_BLOCK_ON_CACHE reads cached spans first,
-        // then fills missing byte ranges from upstream HTTP. Returns bytes
-        // contiguously regardless of which spans the preview pre-filled.
-        val dataSource = CacheDataSource.Factory()
-            .setCache(previewCache)
-            .setUpstreamDataSourceFactory(httpDataSourceFactory)
-            .setCacheKeyFactory(cacheKeyFactory)
-            .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
-            .createDataSource()
-
-        runCatching {
-            val spec = DataSpec.Builder()
-                .setUri(match.downloadUrl)
-                // media3 1.9.2 API: DataSpec.Builder.setKey (NOT setCustomCacheKey).
-                // The CacheKeyFactory reads spec.key and returns it as the cache key.
-                .setKey(cacheKey)
-                .build()
-
-            dataSource.open(spec)
-            tempFile.outputStream().use { out ->
-                val buf = ByteArray(64 * 1024)
-                while (true) {
-                    val n = dataSource.read(buf, 0, buf.size)
-                    // C.RESULT_END_OF_INPUT (-1) signals EOF from the data source.
-                    if (n == C.RESULT_END_OF_INPUT) break
-                    out.write(buf, 0, n)
-                }
+        if (match.sourceId == JioSaavnResolver.SOURCE_ID) {
+            // Use the shared OkHttp downloader rather than Media3's redirect-
+            // following HTTP source. The Jio transport disables redirects so
+            // the trusted aac.saavncdn.com URL cannot pivot to another host.
+            val fetched = losslessUrlDownloader.download(match, tempFile)
+            fetched.exceptionOrNull()?.let { error ->
+                if (error is CancellationException) throw error
+                runCatching { tempFile.delete() }
+                return SourceFinalizeAttempt.BeforeCommitFailure(
+                    "JioSaavn fetch failed: ${error.message}",
+                )
             }
-        }.onFailure { e ->
+        } else {
+            // CacheDataSource with FLAG_BLOCK_ON_CACHE reads cached spans first,
+            // then fills missing byte ranges from upstream HTTP. Returns bytes
+            // contiguously regardless of which spans the preview pre-filled.
+            val dataSource = CacheDataSource.Factory()
+                .setCache(previewCache)
+                .setUpstreamDataSourceFactory(httpDataSourceFactory)
+                .setCacheKeyFactory(cacheKeyFactory)
+                .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
+                .createDataSource()
+
+            runCatching {
+                val spec = DataSpec.Builder()
+                    .setUri(match.downloadUrl)
+                    .setKey(cacheKey)
+                    .build()
+
+                dataSource.open(spec)
+                tempFile.outputStream().use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = dataSource.read(buf, 0, buf.size)
+                        if (n == C.RESULT_END_OF_INPUT) break
+                        out.write(buf, 0, n)
+                    }
+                }
+            }.onFailure { error ->
+                runCatching { dataSource.close() }
+                if (error is CancellationException) throw error
+                Log.w(TAG, "lossless cache->file copy failed for $cacheKey: ${error.message}")
+                return SourceFinalizeAttempt.BeforeCommitFailure(
+                    "Cache fill failed: ${error.message}",
+                )
+            }
             runCatching { dataSource.close() }
-            if (e is CancellationException) throw e
-            Log.w(TAG, "lossless cache->file copy failed for $cacheKey: ${e.message}")
-            return TrackFinalizer.FinalizeResult.Failed("Cache fill failed: ${e.message}")
         }
-        runCatching { dataSource.close() }
+
+        if (match.sourceId == JioSaavnResolver.SOURCE_ID) {
+            val metadata = audioDurationExtractor.extract(tempFile.absolutePath)
+            if (!isValidJioSaavnMedia(metadata, track)) {
+                runCatching { tempFile.delete() }
+                return SourceFinalizeAttempt.BeforeCommitFailure(
+                    "JioSaavn media failed AAC quality validation",
+                )
+            }
+        }
 
         val finalized = trackFinalizer.finalizeFile(
             sourceFile = tempFile,
@@ -306,7 +382,21 @@ class SearchDownloadCoordinator @Inject constructor(
         runCatching { previewCache.removeResource(cacheKey) }
             .onFailure { e -> Log.w(TAG, "removeResource failed for $cacheKey: ${e.message}") }
 
-        return outcome
+        return SourceFinalizeAttempt.AfterCommit(outcome)
+    }
+
+    private fun isValidJioSaavnMedia(
+        metadata: com.stash.core.data.audio.AudioMetadata?,
+        track: TrackItem,
+    ): Boolean {
+        metadata ?: return false
+        if (metadata.format != "aac" || metadata.bitrateKbps < DownloadManager.MIN_JIOSAAVN_BITRATE_KBPS) {
+            return false
+        }
+        if (track.durationSeconds <= 0) return true
+        val expectedMs = (track.durationSeconds * 1_000).toLong()
+        val toleranceMs = maxOf(8_000L, (expectedMs * 0.03).toLong())
+        return kotlin.math.abs(metadata.durationMs - expectedMs) <= toleranceMs
     }
 
     // -------------------------------------------------------------------------
@@ -614,6 +704,14 @@ class SearchDownloadCoordinator @Inject constructor(
 
         /** v0.9.17: lossless unavailable + fallback off → WaitingForLossless. */
         data object Deferred : DownloadJobResult
+    }
+
+    /** Distinguishes fallback-safe temp failures from terminal post-commit outcomes. */
+    private sealed interface SourceFinalizeAttempt {
+        data class BeforeCommitFailure(val message: String) : SourceFinalizeAttempt
+        data class AfterCommit(
+            val outcome: TrackFinalizer.FinalizeResult,
+        ) : SourceFinalizeAttempt
     }
 
     /** Expected policy/file rejection while converting a committed file into durable library state. */

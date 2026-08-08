@@ -6,6 +6,7 @@ import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.BuildConfig
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -43,6 +44,9 @@ class StreamSourceRegistryTest {
     private val arcod: ArcodStreamResolver = mockk()
     private val amz: AmzStreamResolver = mockk()
     private val qbdlx: QbdlxStreamResolver = mockk()
+    private val jiosaavn: JioSaavnStreamResolver = mockk {
+        coEvery { resolve(any()) } returns null
+    }
     private val youtube: YouTubeStreamResolver = mockk()
     private val streamingPreference: StreamingPreference = mockk {
         // Default: no test toggle on. Individual tests override as needed.
@@ -52,7 +56,7 @@ class StreamSourceRegistryTest {
     }
 
     private fun registry() = StreamSourceRegistry(
-        kennyy, qobuz, arcod, amz, qbdlx, youtube, streamingPreference,
+        kennyy, qobuz, arcod, amz, qbdlx, jiosaavn, youtube, streamingPreference,
         LosslessSourceHealth(),
     )
 
@@ -361,6 +365,67 @@ class StreamSourceRegistryTest {
         // Falls through to the normal chain instead of being trapped on amz.
         assertThat(result!!.origin).isEqualTo(YouTubeStreamResolver.ORIGIN)
         coVerify(exactly = 0) { amz.resolve(any()) }
+    }
+
+    @Test
+    fun `normal foreground chain tries jiosaavn before youtube`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { arcod.resolve(any()) } returns null
+        coEvery { jiosaavn.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val track = stubTrack()
+
+        registry().resolve(track, allowYouTube = true, allowYtDlp = true)
+
+        coVerifyOrder {
+            jiosaavn.resolve(track)
+            youtube.resolve(track, allowYtDlp = true)
+        }
+    }
+
+    @Test
+    fun `jiosaavn hit prevents youtube fallback`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { arcod.resolve(any()) } returns null
+        coEvery { jiosaavn.resolve(any()) } returns StreamUrl(
+            url = "https://aac.saavncdn.com/song_320.mp4",
+            expiresAtMs = Long.MAX_VALUE,
+            codec = "aac",
+            bitrateKbps = 320,
+            origin = JioSaavnStreamResolver.ORIGIN,
+        )
+        val track = stubTrack()
+
+        val result = registry().resolve(track, allowYouTube = true, allowYtDlp = true)
+
+        assertThat(result!!.origin).isEqualTo(JioSaavnStreamResolver.ORIGIN)
+        coVerify(exactly = 0) { youtube.resolve(any(), any()) }
+    }
+
+    @Test
+    fun `speculative background fill skips jiosaavn`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val track = stubTrack()
+
+        registry().resolve(track, allowYouTube = true, allowYtDlp = false)
+
+        coVerify(exactly = 0) { jiosaavn.resolve(any()) }
+        coVerify { youtube.resolve(track, allowYtDlp = false) }
+    }
+
+    @Test
+    fun `force youtube diagnostic branch bypasses jiosaavn`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns true
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val track = stubTrack()
+
+        registry().resolve(track, allowYouTube = true, allowYtDlp = true)
+
+        coVerify(exactly = 0) { jiosaavn.resolve(any()) }
+        coVerify { youtube.resolve(track, allowYtDlp = true) }
     }
 
     private fun stubTrack(): TrackEntity = TrackEntity(

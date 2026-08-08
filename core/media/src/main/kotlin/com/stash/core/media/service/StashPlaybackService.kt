@@ -404,6 +404,15 @@ class StashPlaybackService : MediaLibraryService() {
                 val origin = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)
                 (scheme == "http" || scheme == "https") && origin == "amz"
             },
+            // JioSaavn media is accepted only from its exact HTTPS CDN host.
+            // Its playback client disables redirects so a later range request
+            // cannot pivot from that validated host to another destination.
+            isJioSaavnOrigin = { item ->
+                val scheme = item.localConfiguration?.uri?.scheme?.lowercase()
+                val origin = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)
+                (scheme == "http" || scheme == "https") &&
+                    origin == com.stash.core.media.streaming.JioSaavnStreamResolver.ORIGIN
+            },
             amzHttpClient = okHttpClient,
             // Full-timeline queue: stash-resolve:// placeholders resolve
             // just-in-time inside LazyResolvingDataSource at open().
