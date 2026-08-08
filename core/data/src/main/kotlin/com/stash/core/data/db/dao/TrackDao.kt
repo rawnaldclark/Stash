@@ -234,6 +234,29 @@ interface TrackDao {
     // ── Update / Delete ─────────────────────────────────────────────────
 
     /**
+    * Downloaded tracks not currently in FLAC. Candidate pool for the FLAC-upgrade
+    * sweep, which runs every sync regardless of REFRESH/ACCUMULATE — the mode
+    * governs library membership, not audio quality. Only 'flac' is checked
+    * against (not the full lossless codec set used by getFlacCount/-StorageBytes)
+    * because Stash's lossless sources (Qobuz, Arcod) only ever deliver FLAC;
+    * ALAC/WAV/APE/etc. never appear from any source Stash downloads through.
+    */
+    @Query(
+        """
+        SELECT t.* FROM tracks t
+        LEFT JOIN track_blocklist bl
+            ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+            OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+        WHERE t.is_downloaded = 1
+        AND t.file_path IS NOT NULL
+        AND LOWER(t.file_format) != 'flac'
+        AND bl.canonical_key IS NULL
+        """
+    )
+    suspend fun getLosslessUpgradeCandidates(): List<TrackEntity>
+
+    /**
      * Undownloaded tracks in a currently sync-enabled, non-mix playlist —
      * the same playlist-eligibility predicate as
      * [com.stash.core.data.db.dao.DownloadQueueDao.getUnqueuedTrackIds],
