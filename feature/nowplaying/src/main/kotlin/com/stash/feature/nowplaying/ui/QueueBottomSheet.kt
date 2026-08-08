@@ -1,5 +1,6 @@
 package com.stash.feature.nowplaying.ui
 
+import com.stash.core.common.primaryArtist
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -320,7 +321,7 @@ fun QueueBottomSheet(
                                     )
                                 }
                                 Text(
-                                    text = track.artist,
+                                    text = track.artist.primaryArtist(),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -541,7 +542,7 @@ private fun CurrentTrackRow(track: Track, accentColor: Color) {
                 )
             }
             Text(
-                track.artist,
+                track.artist.primaryArtist(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

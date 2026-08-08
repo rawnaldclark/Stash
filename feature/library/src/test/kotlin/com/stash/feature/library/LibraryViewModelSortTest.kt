@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
@@ -97,5 +98,6 @@ class LibraryViewModelSortTest {
             onBlocking { getSortOrder() } doReturn SortOrder.RECENT
             onBlocking { getSourceFilter() } doReturn SourceFilter.ALL
         },
+        artistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
     )
 }

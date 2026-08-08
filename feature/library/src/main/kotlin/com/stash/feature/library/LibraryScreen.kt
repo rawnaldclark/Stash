@@ -7,6 +7,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -80,6 +81,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,6 +103,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
+import coil3.compose.rememberAsyncImagePainter
+import androidx.compose.ui.unit.Dp
 import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SourceIndicator
@@ -199,6 +204,9 @@ fun LibraryScreen(
             onDeleteArtist = viewModel::deleteArtist,
             onPlayAlbum = viewModel::playAlbum,
             onAddAlbumToQueue = viewModel::addAlbumToQueue,
+            onOpenAlbum = { album ->
+                onNavigateToAlbum(album.name, album.name, album.artUrl, album.artist)
+            },
             onStartImport = viewModel::startLocalImport,
             onCancelImport = viewModel::cancelLocalImport,
             onDismissImport = viewModel::dismissLocalImport,
@@ -446,6 +454,7 @@ private fun LibraryContent(
     onDeleteArtist: (String) -> Unit,
     onPlayAlbum: (String, String) -> Unit,
     onAddAlbumToQueue: (String, String) -> Unit,
+    onOpenAlbum: (AlbumInfo) -> Unit,
     onStartImport: (List<Uri>) -> Unit,
     onCancelImport: () -> Unit,
     onDismissImport: () -> Unit,
@@ -676,6 +685,7 @@ private fun LibraryContent(
                         anyServiceConnected = anyServiceConnected,
                         onPlayAlbum = onPlayAlbum,
                         onAddAlbumToQueue = onAddAlbumToQueue,
+                        onOpenAlbum = onOpenAlbum,
                         header = {},
                     )
                 }
@@ -1568,6 +1578,111 @@ private fun BottomSheetActionRow(
     }
 }
 
+// ── Shared artwork renderers with graceful load-failure fallbacks ───────────
+//
+// A dead URL (deleted CDN image, stale local path) used to render as an empty
+// box: AsyncImage only drew something while the request SUCCEEDED, and the
+// gradient/icon fallback was gated on `model == null`. These renderers observe
+// the painter state directly so a failed load degrades to the same fallback a
+// null model gets — nothing in the Library ever renders blank.
+
+/**
+ * Circular artist avatar. Prefers [photoUrl] (real artist photo), then
+ * [artUrl] (album-art proxy), and degrades to a name-gradient initial circle
+ * while loading or on failure.
+ */
+@Composable
+private fun ArtistAvatar(
+    name: String,
+    photoUrl: String?,
+    artUrl: String?,
+    size: Dp,
+) {
+    val model = photoUrl ?: artUrl
+    if (model != null) {
+        val painter = rememberAsyncImagePainter(model = model)
+        val state by painter.state.collectAsState()
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (state is AsyncImagePainter.State.Success) {
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                ArtistInitialFallback(name, size)
+            }
+        }
+    } else {
+        ArtistInitialFallback(name, size)
+    }
+}
+
+/** Gradient circle with the artist's first letter — the no-photo fallback. */
+@Composable
+private fun ArtistInitialFallback(name: String, size: Dp) {
+    val gradientColors = remember(name) { artistGradient(name) }
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(gradientColors)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+        )
+    }
+}
+
+/**
+ * Square album artwork with a fallback icon when the local path or remote URL
+ * fails to decode. Callers layer the play button over [modifier].
+ */
+@Composable
+private fun AlbumArtwork(model: Any?, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.background(StashTheme.extendedColors.elevatedSurface),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (model != null) {
+            val painter = rememberAsyncImagePainter(model = model)
+            val state by painter.state.collectAsState()
+            if (state is AsyncImagePainter.State.Success) {
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Album,
+                    contentDescription = null,
+                    tint = StashTheme.extendedColors.textTertiary,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+        } else {
+            Icon(
+                imageVector = Icons.Default.Album,
+                contentDescription = null,
+                tint = StashTheme.extendedColors.textTertiary,
+                modifier = Modifier.size(40.dp),
+            )
+        }
+    }
+}
+
 // ── Artists tab (2-column grid) ──────────────────────────────────────────────
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -1620,36 +1735,13 @@ private fun ArtistsGrid(
                             onLongClick = { selectedArtist = artist },
                         ),
                 ) {
-                    // Album art proxy or gradient circle fallback
-                    if (artist.artUrl != null) {
-                        coil3.compose.AsyncImage(
-                            model = artist.artUrl,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        )
-                    } else {
-                        val gradientColors = remember(artist.name) {
-                            artistGradient(artist.name)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(Brush.linearGradient(gradientColors)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = artist.name.firstOrNull()
-                                    ?.uppercaseChar()?.toString() ?: "?",
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                            )
-                        }
-                    }
+                    // Real artist photo → album art proxy → gradient initial
+                    ArtistAvatar(
+                        name = artist.name,
+                        photoUrl = artist.photoUrl,
+                        artUrl = artist.artUrl,
+                        size = 72.dp,
+                    )
                     Text(
                         text = artist.name,
                         style = MaterialTheme.typography.bodyMedium,
@@ -1802,6 +1894,7 @@ private fun AlbumsGrid(
     anyServiceConnected: Boolean,
     onPlayAlbum: (String, String) -> Unit,
     onAddAlbumToQueue: (String, String) -> Unit,
+    onOpenAlbum: (AlbumInfo) -> Unit,
     header: @Composable () -> Unit = {},
 ) {
     if (albums.isEmpty() && singleTrackAlbums.isEmpty()) {
@@ -1837,7 +1930,7 @@ private fun AlbumsGrid(
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
                         .combinedClickable(
-                            onClick = { onPlayAlbum(album.name, album.artist) },
+                            onClick = { onOpenAlbum(album) },
                             onLongClick = { selectedAlbum = album },
                         ),
                 ) {
@@ -1847,23 +1940,27 @@ private fun AlbumsGrid(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(120.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(StashTheme.extendedColors.elevatedSurface),
-                        contentAlignment = Alignment.Center,
+                            .clip(RoundedCornerShape(8.dp)),
                     ) {
-                        if (artModel != null) {
-                            AsyncImage(
-                                model = artModel,
-                                contentDescription = "${album.name} album art",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                        } else {
+                        AlbumArtwork(
+                            model = artModel,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .clickable { onPlayAlbum(album.name, album.artist) },
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                            shape = CircleShape,
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Album,
-                                contentDescription = null,
-                                tint = StashTheme.extendedColors.textTertiary,
-                                modifier = Modifier.size(40.dp),
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Play ${album.name}",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(4.dp),
                             )
                         }
                     }

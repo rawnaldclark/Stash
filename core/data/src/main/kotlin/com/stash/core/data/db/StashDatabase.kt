@@ -6,6 +6,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.stash.core.data.db.converter.Converters
+import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.DownloadQueueDao
@@ -25,6 +26,7 @@ import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.dao.TrackTagDao
+import com.stash.core.data.db.entity.ArtistImageEntity
 import com.stash.core.data.db.entity.ArtistProfileCacheEntity
 import com.stash.core.data.db.entity.DiscoveryQueueEntity
 import com.stash.core.data.db.entity.DownloadQueueEntity
@@ -91,8 +93,9 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoPointEntity::class,
         SyncUndoPlaylistEntity::class,
         SyncUndoMembershipEntity::class,
+        ArtistImageEntity::class,
     ],
-    version = 41,
+    version = 42,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -135,6 +138,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun listenSubmissionDao(): ListenSubmissionDao
 
     abstract fun syncUndoDao(): SyncUndoDao
+
+    abstract fun artistImageDao(): ArtistImageDao
 
 
     companion object {
@@ -1031,6 +1036,29 @@ abstract class StashDatabase : RoomDatabase() {
                         loudness_measured_at = NULL
                     WHERE loudness_lufs IS NOT NULL
                       AND loudness_lufs <= -69.9
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        /**
+         * v41 → v42: artist-photo cache table for the Library Artists tab.
+         *
+         * `ArtistImageBackfillWorker` resolves each displayed artist's official
+         * photo via the YT Music artists search and stores it here (one row per
+         * primary artist name). A row with a NULL `image_url` is a permanent
+         * "unresolvable" sentinel so the worker never re-polls local-only rips.
+         */
+        val MIGRATION_41_42 = object : Migration(41, 42) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `artist_images` (
+                        `artist_name` TEXT NOT NULL,
+                        `image_url` TEXT,
+                        `attempted_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`artist_name`)
+                    )
                     """.trimIndent(),
                 )
             }

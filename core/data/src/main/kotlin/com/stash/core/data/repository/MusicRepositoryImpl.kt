@@ -251,7 +251,16 @@ class MusicRepositoryImpl @Inject constructor(
             .map { rows -> rows.map { it.toDomain() } }
 
     override fun getTracksByArtist(artist: String): Flow<List<Track>> =
-        trackDao.getByArtist(artist).map { entities -> entities.map { it.toDomain() } }
+        trackDao.getAllByDateAdded().map { entities ->
+            entities
+                .map { it.toDomain() }
+                // Collaboration credits: "Metro Boomin, Travis Scott" counts
+                // for BOTH "Metro Boomin" and "Travis Scott" (plus the exact
+                // combined string, so a multi-artist row still matches its own
+                // display name). Exact whole-string equality is preserved.
+                .filter { com.stash.core.common.matchesArtistCredits(it.artist, it.albumArtist, artist) }
+                .sortedWith(compareBy({ it.album.lowercase() }, { it.title.lowercase() }))
+        }
 
     // v0.9.30 Path A: Library Songs/Albums/Artists views are curated =
     // downloaded-only, always. Streaming mode does NOT change what shows

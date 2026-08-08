@@ -28,6 +28,7 @@ import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.data.download.backfill.MetadataBackfillScheduler
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.stash.core.data.sync.workers.ArtBackfillWorker
+import com.stash.core.data.sync.workers.ArtistImageBackfillWorker
 import com.stash.core.data.sync.workers.AutoSaveScrobbler
 import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
 import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
@@ -392,6 +393,10 @@ class StashApplication : Application(), Configuration.Provider {
         // no thumbnail (see ArtBackfillWorker KDoc). KEEP policy means the
         // worker is a no-op on every subsequent launch once it completes.
         ArtBackfillWorker.enqueueOneTime(this)
+        // Artist photos for the Library Artists tab: resolve each displayed
+        // artist's official avatar via YT Music search into artist_images.
+        // KEEP — one launch's enqueue is enough; a re-launch is a no-op.
+        ArtistImageBackfillWorker.enqueueOneTime(this)
         // v0.9.11: kick a background sweep that fills in bit-depth +
         // sample-rate for tracks downloaded before the columns existed.
         // The flag is set immediately on enqueue (not after success) so

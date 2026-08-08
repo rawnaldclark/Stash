@@ -2,6 +2,9 @@ package com.stash.feature.library
 
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
+import com.stash.core.data.db.dao.ArtistImageDao
+import com.stash.core.data.db.dao.ArtistSummary
+import com.stash.core.data.db.entity.ArtistImageEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
@@ -12,6 +15,7 @@ import com.stash.data.download.files.LocalImportState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -193,6 +197,107 @@ class LibraryViewModelTest {
         assertEquals(listOf("Queued 2 songs for download."), messages)
     }
 
+    @Test
+    fun playAlbum_queues_every_downloaded_track_with_matching_album_name() = runTest {
+        val album = "HEROES & VILLAINS"
+        val onAlbum = listOf(
+            Track(1L, "Superhero", "Metro Boomin, Future", album = album, filePath = "/a"),
+            Track(2L, "Trance", "Metro Boomin, Travis Scott", album = album, filePath = "/b"),
+            // Same album but not downloaded — must NOT be queued.
+            Track(3L, "Creepin'", "Metro Boomin, The Weeknd, 21 Savage", album = album, filePath = null),
+        )
+        // Different album by a different artist — must NOT leak in.
+        val offAlbum = Track(4L, "Highest in the Room", "Travis Scott", album = "JACKBOYS", filePath = "/d")
+        val musicRepo = mock<MusicRepository> {
+            on { getAllTracks() } doReturn flowOf(onAlbum + offAlbum)
+        }
+
+        val playerRepo = playerRepoMock()
+        val vm = buildVm(musicRepository = musicRepo, playerRepository = playerRepo)
+
+        vm.playAlbum(album, "Metro Boomin")
+        runCurrent()
+
+        // Album matched by NAME only — the per-track credit variation across a
+        // multi-artist album must not drop rows.
+        verify(playerRepo).setQueue(listOf(onAlbum[0], onAlbum[1]), 0)
+    }
+
+    @Test
+    fun addAlbumToQueue_appends_every_downloaded_track_with_matching_album_name() = runTest {
+        val album = "HEROES & VILLAINS"
+        val onAlbum = listOf(
+            Track(1L, "Superhero", "Metro Boomin, Future", album = album, filePath = "/a"),
+            Track(2L, "Trance", "Metro Boomin, Travis Scott", album = album, filePath = "/b"),
+            Track(3L, "Creepin'", "Metro Boomin, The Weeknd, 21 Savage", album = album, filePath = null),
+        )
+        val offAlbum = Track(4L, "Highest in the Room", "Travis Scott", album = "JACKBOYS", filePath = "/d")
+        val musicRepo = mock<MusicRepository> {
+            on { getAllTracks() } doReturn flowOf(onAlbum + offAlbum)
+        }
+
+        val playerRepo = playerRepoMock()
+        val vm = buildVm(musicRepository = musicRepo, playerRepository = playerRepo)
+
+        vm.addAlbumToQueue(album, "Metro Boomin")
+        runCurrent()
+
+        verify(playerRepo).addToQueue(onAlbum[0])
+        verify(playerRepo).addToQueue(onAlbum[1])
+        verify(playerRepo, org.mockito.kotlin.never()).addToQueue(onAlbum[2])
+        verify(playerRepo, org.mockito.kotlin.never()).addToQueue(offAlbum)
+    }
+
+    @Test
+    fun artistRegroup_prefers_primary_artists_own_album_art() = runTest {
+        val musicRepo = mock<MusicRepository> {
+            on { getAllArtists() } doReturn flowOf(
+                listOf(
+                    ArtistSummary("Aarne", 5, 1000L, "own-album.jpg"),
+                    // Collab credit lands under the same "Aarne" card — its art
+                    // must NOT win when Aarne has a solo credit.
+                    ArtistSummary("Aarne, Toxi$", 3, 600L, "collab-album.jpg"),
+                ),
+            )
+            on { getAllAlbums() } doReturn flowOf(emptyList())
+            on { getAllTracks() } doReturn flowOf(emptyList())
+            on { getAllPlaylists() } doReturn flowOf(emptyList())
+            on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
+            on { getRecentlyAdded(any()) } doReturn flowOf(emptyList())
+        }
+
+        val vm = buildVm(musicRepository = musicRepo)
+        val state = vm.uiState.first { !it.isLoading }
+
+        val aarne = state.artists.single { it.name == "Aarne" }
+        assertEquals(8, aarne.trackCount)
+        assertEquals("own-album.jpg", aarne.artUrl)
+    }
+
+    @Test
+    fun artistPhotos_are_applied_from_artist_image_cache() = runTest {
+        val musicRepo = mock<MusicRepository> {
+            on { getAllArtists() } doReturn flowOf(
+                listOf(ArtistSummary("Aarne", 5, 1000L, null)),
+            )
+            on { getAllAlbums() } doReturn flowOf(emptyList())
+            on { getAllTracks() } doReturn flowOf(emptyList())
+            on { getAllPlaylists() } doReturn flowOf(emptyList())
+            on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
+            on { getRecentlyAdded(any()) } doReturn flowOf(emptyList())
+        }
+        val artistImageDao = mock<ArtistImageDao> {
+            on { observeAll() } doReturn flowOf(
+                listOf(ArtistImageEntity(artistName = "Aarne", imageUrl = "photo.jpg", attemptedAt = 1L)),
+            )
+        }
+
+        val vm = buildVm(musicRepository = musicRepo, artistImageDao = artistImageDao)
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertEquals("photo.jpg", state.artists.single { it.name == "Aarne" }.photoUrl)
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
@@ -249,6 +354,7 @@ class LibraryViewModelTest {
         },
         streamingPreference: StreamingPreference = mock { on { enabled } doReturn flowOf(false) },
         libraryPreferencesStore: LibraryPreferencesStore = libraryPreferencesStoreMock(),
+        artistImageDao: ArtistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
     ): LibraryViewModel = LibraryViewModel(
         musicRepository = musicRepository,
         playerRepository = playerRepository,
@@ -259,5 +365,6 @@ class LibraryViewModelTest {
         flacUpgradeEnqueuer = org.mockito.kotlin.mock(),
         ytMusicApiClient = org.mockito.kotlin.mock(),
         libraryPreferencesStore = libraryPreferencesStore,
+        artistImageDao = artistImageDao,
     )
 }

@@ -18,6 +18,8 @@ dependencies {
     implementation(project(":core:media"))
     implementation(project(":core:data"))
     implementation(project(":core:auth"))
+    // Artist-credit parsing for the primary-artist display helper.
+    implementation(project(":core:common"))
     // v0.9.36 — Now Playing lyrics sheet observes LyricsRepository and
     // enqueues the priority on-open LyricsFetchWorker. work-runtime gives
     // us WorkManager + OneTimeWorkRequestBuilder for the priority enqueue.

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
 import com.stash.core.media.SleepTimerController
+import com.stash.core.common.primaryArtist
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
@@ -544,7 +545,7 @@ fun NowPlayingScreen(
                     Text(
                         text = buildString {
                             if (track != null) {
-                                append(track.artist)
+                                append(track.artist.primaryArtist())
                                 if (track.album.isNotBlank()) {
                                     append(" \u2022 ")
                                     append(track.album)

@@ -4,8 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -80,6 +81,7 @@ import com.stash.core.ui.util.formatTotalDuration
  *                      queue without interrupting playback, routed through
  *                      `PlayerRepository.addToQueue(List)`.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AlbumHero(
     hero: AlbumHeroState,
@@ -231,7 +233,10 @@ fun AlbumHero(
 
             Spacer(Modifier.height(16.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(
                     onClick = onPlayAlbum,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),

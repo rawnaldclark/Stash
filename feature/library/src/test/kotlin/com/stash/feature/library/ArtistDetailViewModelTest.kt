@@ -1,6 +1,8 @@
 package com.stash.feature.library
 
 import androidx.lifecycle.SavedStateHandle
+import com.stash.core.data.db.dao.ArtistImageDao
+import com.stash.core.data.db.entity.ArtistImageEntity
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
@@ -8,6 +10,7 @@ import com.stash.core.model.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -155,6 +158,24 @@ class ArtistDetailViewModelTest {
         assertEquals(listOf("Queued 2 songs for download."), messages)
     }
 
+    @Test
+    fun photoUrl_is_overlaid_from_artist_image_cache_case_insensitively() = runTest {
+        val images = listOf(
+            ArtistImageEntity(
+                artistName = "artist",
+                imageUrl = "https://photo/artist.jpg",
+                attemptedAt = 1L,
+            ),
+        )
+        val artistImageDao = mock<ArtistImageDao> {
+            on { observeAll() } doReturn flowOf(images)
+        }
+        val vm = buildVm(artistImageDao = artistImageDao)
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertEquals("https://photo/artist.jpg", state.photoUrl)
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
@@ -197,9 +218,13 @@ class ArtistDetailViewModelTest {
         savedStateHandle: SavedStateHandle = SavedStateHandle(
             mapOf("artistName" to "Artist"),
         ),
+        artistImageDao: ArtistImageDao = mock {
+            on { observeAll() } doReturn flowOf(emptyList())
+        },
     ): ArtistDetailViewModel = ArtistDetailViewModel(
         savedStateHandle = savedStateHandle,
         musicRepository = musicRepository,
         playerRepository = playerRepository,
+        artistImageDao = artistImageDao,
     )
 }

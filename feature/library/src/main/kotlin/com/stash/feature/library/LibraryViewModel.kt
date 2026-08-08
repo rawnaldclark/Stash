@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
+import com.stash.core.common.primaryArtist
+import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.FlacUpgradeEnqueuer
@@ -97,6 +99,7 @@ class LibraryViewModel @Inject constructor(
     private val ytMusicApiClient: com.stash.data.ytmusic.YTMusicApiClient,
     private val flacUpgradeEnqueuer: FlacUpgradeEnqueuer,
     private val libraryPreferencesStore: LibraryPreferencesStore,
+    private val artistImageDao: ArtistImageDao,
 ) : ViewModel() {
 
     /** Live progress for "Import from device". Observed by LibraryScreen. */
@@ -217,9 +220,31 @@ class LibraryViewModel @Inject constructor(
         val query = controls.searchQuery.trim().lowercase()
 
         // -- Map DAO projections to UI models --
-        val artists = allArtists.map { ArtistInfo(it.artist, it.trackCount, it.totalDurationMs, it.artUrl) }
+        // Artists are regrouped by PRIMARY act so a track credit like
+        // "Aarne, Toxi$, Big Baby Tape" lands under a single "Aarne" card
+        // instead of fragmenting the artist across a wall of "Aarne …" rows.
+        val artists = allArtists
+            .map { ArtistInfo(it.artist, it.trackCount, it.totalDurationMs, it.artUrl) }
+            .groupBy { it.name.primaryArtist() }
+            .map { (primary, group) ->
+                ArtistInfo(
+                    name = primary,
+                    trackCount = group.sumOf { it.trackCount },
+                    totalDurationMs = group.sumOf { it.totalDurationMs },
+                    // Prefer art from a release credited to the primary act
+                    // alone (their own album), falling back to any collab art —
+                    // "Aarne" shows his own cover, not SLAANG's.
+                    artUrl = group.firstOrNull { it.name == primary }?.artUrl
+                        ?: group.firstNotNullOfOrNull { it.artUrl },
+                )
+            }
+        // Album cards show the album's PRIMARY act ("Aarne" for SLAANG's
+        // "Aarne, Toxi$") — the release itself is still grouped by its full
+        // (album, albumArtist) key so distinct albums never collide.
         val albums = mergeDuplicateAlbums(
-            allAlbums.map { AlbumInfo(it.album, it.artist, it.trackCount, it.artPath, it.artUrl) }
+            allAlbums.map {
+                AlbumInfo(it.album, it.artist.primaryArtist(), it.trackCount, it.artPath, it.artUrl)
+            }
         )
 
         // -- Apply source filter --
@@ -320,6 +345,16 @@ class LibraryViewModel @Inject constructor(
         // Overlay the currently-playing track ID so the UI can highlight it.
         libraryState.copy(
             currentlyPlayingTrackId = playerState.currentTrack?.id,
+        )
+    }.combine(artistImageDao.observeAll()) { libraryState, images ->
+        // Overlay real artist photos (ArtistImageBackfillWorker output) keyed
+        // by the SAME primary-artist name the Artists tab groups by. Artists
+        // without a photo keep photoUrl = null → UI falls back to artUrl.
+        val photoByName = images.associate { it.artistName to it.imageUrl }
+        libraryState.copy(
+            artists = libraryState.artists.map { it.copy(photoUrl = photoByName[it.name]) },
+            singleTrackArtists = libraryState.singleTrackArtists
+                .map { it.copy(photoUrl = photoByName[it.name]) },
         )
     }
         // The whole filter+sort+lowercase pipeline above re-runs on every
@@ -865,15 +900,21 @@ class LibraryViewModel @Inject constructor(
     // ── Album actions ───────────────────────────────────────────────────
 
     /**
-     * Load all downloaded tracks matching [albumName] by [artist] and begin playback.
+     * Load all downloaded tracks matching [albumName] and begin playback.
      * Filters from allTracks since there is no dedicated getTracksByAlbum query.
+     *
+     * Matched by album NAME only (not [artist]): the track-level `artist`
+     * credit varies across a multi-artist album's rows, so pinning on it
+     * would play a partial album — e.g. "HEROES & VILLAINS" (Metro Boomin)
+     * whose tracks are credited "Metro Boomin, Travis Scott", "Travis
+     * Scott", etc. — or nothing at all when every row's credit differs
+     * from the album's primary artist.
      */
     fun playAlbum(albumName: String, artist: String) {
         viewModelScope.launch {
             val allTracks = musicRepository.getAllTracks().first()
             val downloaded = allTracks.filter {
                 it.album.equals(albumName, ignoreCase = true)
-                    && it.artist.equals(artist, ignoreCase = true)
                     && it.filePath != null
             }
             if (downloaded.isNotEmpty()) {
@@ -887,14 +928,14 @@ class LibraryViewModel @Inject constructor(
     }
 
     /**
-     * Load all downloaded tracks matching [albumName] by [artist] and append each to the queue.
+     * Load all downloaded tracks matching [albumName] and append each to the queue.
+     * Album-name-only matching, same rationale as [playAlbum].
      */
     fun addAlbumToQueue(albumName: String, artist: String) {
         viewModelScope.launch {
             val allTracks = musicRepository.getAllTracks().first()
             val downloaded = allTracks.filter {
                 it.album.equals(albumName, ignoreCase = true)
-                    && it.artist.equals(artist, ignoreCase = true)
                     && it.filePath != null
             }
             downloaded.forEach { playerRepository.addToQueue(it) }

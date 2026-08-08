@@ -64,12 +64,14 @@ enum class SourceFilter { ALL, YOUTUBE, SPOTIFY, FLAC, NON_FLAC }
  * @property trackCount     Number of tracks by this artist in the library.
  * @property totalDurationMs Combined duration of all tracks in milliseconds.
  * @property artUrl         Remote artwork URL (album art proxy from their top track).
+ * @property photoUrl       Real artist photo (from the artist-image backfill), or null.
  */
 data class ArtistInfo(
     val name: String,
     val trackCount: Int,
     val totalDurationMs: Long,
     val artUrl: String? = null,
+    val photoUrl: String? = null,
 )
 
 /**

@@ -79,6 +79,11 @@ class SyncFinalizeWorker @AssistedInject constructor(
             // Transition to completed state.
             syncStateManager.onCompleted()
 
+            // Re-fire the artist-photo backfill so artists a sync just added
+            // get avatars without waiting for the next app launch (whose KEEP
+            // request would be a no-op after the install-time run succeeded).
+            ArtistImageBackfillWorker.enqueueAfterSync(applicationContext)
+
             Log.i(
                 TAG,
                 "Sync $syncId complete: $playlistsChecked playlists, " +

@@ -8,6 +8,7 @@ import com.stash.core.model.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -155,6 +156,54 @@ class AlbumDetailViewModelTest {
         assertEquals(listOf("Queued 2 songs for download."), messages)
     }
 
+    @Test
+    fun albumTracks_match_by_album_name_so_multi_artist_rows_all_appear() = runTest {
+        val album = "HEROES & VILLAINS"
+        val tracks = listOf(
+            Track(1L, "Superhero", "Metro Boomin, Future", album = album),
+            Track(2L, "Niagara Falls", "Metro Boomin, Travis Scott, 21 Savage", album = album),
+            Track(3L, "Trance", "Metro Boomin, Travis Scott", album = album),
+            Track(4L, "Around Me", "Metro Boomin, Don Toliver", album = album),
+        )
+        // A different album must not leak in.
+        val otherAlbum = Track(5L, "Highest in the Room", "Travis Scott", album = "JACKBOYS")
+        val musicRepo = musicRepoMockWithTracks(tracks + otherAlbum)
+
+        val vm = buildVm(
+            musicRepository = musicRepo,
+            savedStateHandle = SavedStateHandle(
+                mapOf("albumName" to album, "artistName" to "Metro Boomin"),
+            ),
+        )
+
+        val state = vm.uiState.first { !it.isLoading }
+        assertEquals(listOf(1L, 2L, 3L, 4L), state.tracks.map { it.id })
+        // The route's artist is still surfaced in the header for context.
+        assertEquals("Metro Boomin", state.artistName)
+    }
+
+    @Test
+    fun albumTracks_show_tracks_even_when_no_row_matches_the_primary_artist() = runTest {
+        // Regression for the multi-artist album: pinning the filter on the
+        // primary artist ("Metro Boomin") used to drop every row whose credit
+        // names an extra act — here the ONLY track would have vanished.
+        val album = "HEROES & VILLAINS"
+        val tracks = listOf(
+            Track(1L, "Trance", "Metro Boomin, Travis Scott", album = album),
+        )
+        val musicRepo = musicRepoMockWithTracks(tracks)
+
+        val vm = buildVm(
+            musicRepository = musicRepo,
+            savedStateHandle = SavedStateHandle(
+                mapOf("albumName" to album, "artistName" to "Metro Boomin"),
+            ),
+        )
+
+        val state = vm.uiState.first { !it.isLoading }
+        assertEquals(listOf(1L), state.tracks.map { it.id })
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
@@ -177,6 +226,12 @@ class AlbumDetailViewModelTest {
 
     private fun musicRepoMock(): MusicRepository = mock {
         on { getAllTracks() } doReturn flowOf(emptyList())
+        on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
+        onBlocking { queueDownload(any()) } doReturn true
+    }
+
+    private fun musicRepoMockWithTracks(tracks: List<Track>): MusicRepository = mock {
+        on { getAllTracks() } doReturn flowOf(tracks)
         on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         onBlocking { queueDownload(any()) } doReturn true
     }

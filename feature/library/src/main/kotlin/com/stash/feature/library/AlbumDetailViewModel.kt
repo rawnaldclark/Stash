@@ -88,14 +88,21 @@ class AlbumDetailViewModel @Inject constructor(
     }
 
     /**
-     * Filtered track flow: all tracks matching this album + artist combination.
-     * Uses case-insensitive matching to be resilient against metadata variations.
+     * Filtered track flow: all tracks matching this album.
+     *
+     * Matched by album NAME only, deliberately NOT by artist name. The
+     * track-level `artist` tag is a per-track credit, so a multi-artist
+     * album's rows disagree on it ("Metro Boomin", "Metro Boomin, Travis
+     * Scott", "Travis Scott") — pinning on `artistName` (the album's
+     * primary artist, as the Albums grid shows it) silently drops every
+     * track whose credit doesn't include the primary act. The album name
+     * is the one stable grouping key across the whole release.
+     *
+     * [artistName] is still surfaced in the header for context / to
+     * disambiguate same-named releases at a glance.
      */
     private val albumTracks = musicRepository.getAllTracks().map { allTracks ->
-        allTracks.filter {
-            it.album.equals(albumName, ignoreCase = true)
-                && it.artist.equals(artistName, ignoreCase = true)
-        }
+        allTracks.filter { it.album.equals(albumName, ignoreCase = true) }
     }
 
     /**

@@ -3,6 +3,7 @@ package com.stash.feature.library
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.media.PlayerRepository
@@ -40,6 +41,7 @@ data class ArtistDetailUiState(
     val currentlyPlayingTrackId: Long? = null,
     val searchQuery: String = "",
     val showSearch: Boolean = false,
+    val photoUrl: String? = null,
 )
 
 /**
@@ -57,6 +59,7 @@ class ArtistDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val artistImageDao: ArtistImageDao,
 ) : ViewModel() {
 
     /** The artist name extracted from the navigation route arguments. */
@@ -100,7 +103,15 @@ class ArtistDetailViewModel @Inject constructor(
         playerRepository.playerState,
         _searchQuery,
         _showSearch,
-    ) { tracks, playerState, query, showSearch ->
+        artistImageDao.observeAll(),
+    ) { tracks, playerState, query, showSearch, images ->
+        // Photo cache is keyed by the SAME primary-artist name the Library
+        // Artists tab groups by, so a case-insensitive name lookup lines the
+        // header up with the grid photo regardless of which entry point
+        // (grid, album hero, Now Playing) navigated here.
+        val photoUrl = images.firstOrNull {
+            it.artistName.equals(artistName, ignoreCase = true)
+        }?.imageUrl
         ArtistDetailUiState(
             artistName = artistName,
             tracks = tracks,
@@ -108,6 +119,7 @@ class ArtistDetailViewModel @Inject constructor(
             currentlyPlayingTrackId = playerState.currentTrack?.id,
             searchQuery = query,
             showSearch = showSearch,
+            photoUrl = photoUrl,
         )
     }.stateIn(
         scope = viewModelScope,

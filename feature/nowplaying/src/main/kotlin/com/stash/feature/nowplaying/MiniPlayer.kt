@@ -1,5 +1,6 @@
 package com.stash.feature.nowplaying
 
+import com.stash.core.common.primaryArtist
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -126,7 +127,7 @@ fun MiniPlayer(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = track?.artist ?: "",
+                            text = track?.artist?.primaryArtist() ?: "",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
