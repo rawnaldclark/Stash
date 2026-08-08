@@ -1,24 +1,26 @@
 package com.stash.core.common
 
 /**
- * Act names whose spelling contains characters the credit parser would
- * otherwise treat as separators (",", "&", "+", "/") but that describe a
- * SINGLE act, not a collaboration. Matched case-insensitively against the
- * whole candidate string, before any splitting happens.
+ * Single acts whose names happen to contain the characters the credit parser
+ * otherwise treats as separators (",", "&", "+", "/", a leading "x"), but
+ * that describe ONE act, not a collaboration. A literal split would fabricate
+ * artists that don't exist ("Earth" / "Wind" / "Fire", "AC" / "DC", ...).
  *
- * The list is deliberately small and curated: the parser's only job is to
- * turn a combined credit string into its constituent acts, and these are
- * the well-known names where a literal split would fabricate artists that
- * don't exist ("Earth" / "Wind" / "Fire", "AC" / "DC", ...).
+ * The list is small and deliberately *generic* — well-known, timeless acts,
+ * so it reads as a general music-world fact rather than anything tailored to
+ * a particular library. It is not meant to be exhaustive; it only covers the
+ * names that would be visibly broken by splitting.
  */
 val ARTIST_CREDIT_ALLOWLIST: Set<String> = setOf(
     "AC/DC",
     "Earth, Wind & Fire",
-    "Dan + Shay",
-    "Hall & Oates",
-    "Chase & Status",
     "Simon & Garfunkel",
+    "Hall & Oates",
     "Sam & Dave",
+    "Sonny & Cher",
+    "Peaches & Herb",
+    "Dan + Shay",
+    "Chase & Status",
     "X Ambassadors",
     "X Japan",
 )

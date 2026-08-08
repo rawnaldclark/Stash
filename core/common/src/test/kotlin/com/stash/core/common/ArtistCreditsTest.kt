@@ -72,7 +72,11 @@ class ArtistCreditsTest {
         assertEquals(listOf("Earth, Wind & Fire"), "Earth, Wind & Fire".splitArtistCredits())
         assertEquals(listOf("Dan + Shay"), "Dan + Shay".splitArtistCredits())
         assertEquals(listOf("Hall & Oates"), "Hall & Oates".splitArtistCredits())
+        assertEquals(listOf("Simon & Garfunkel"), "Simon & Garfunkel".splitArtistCredits())
+        assertEquals(listOf("Sonny & Cher"), "Sonny & Cher".splitArtistCredits())
+        assertEquals(listOf("Peaches & Herb"), "Peaches & Herb".splitArtistCredits())
         assertEquals(listOf("X Ambassadors"), "X Ambassadors".splitArtistCredits())
+        assertEquals(listOf("X Japan"), "X Japan".splitArtistCredits())
         // Allowlist match is case-insensitive.
         assertEquals(listOf("ac/dc"), "ac/dc".splitArtistCredits())
     }
