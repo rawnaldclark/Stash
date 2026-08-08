@@ -92,6 +92,7 @@ fun SyncScreen(
     var confirmUndo by remember { mutableStateOf(false) }
     val authState by viewModel.authExpiry.collectAsStateWithLifecycle()
     val streamingMode by viewModel.streamingEnabled.collectAsStateWithLifecycle()
+    val playbackOnline by viewModel.playbackOnline.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier
@@ -144,8 +145,10 @@ fun SyncScreen(
                 healthLabel = uiState.lastSyncHealthLabel,
                 healthColor = uiState.lastSyncHealthColor,
                 isSyncing = uiState.isSyncing,
-                streamingMode = streamingMode,
-                onStreamingModeChange = viewModel::setStreamingEnabled,
+                playbackOnline = playbackOnline,
+                onPlaybackModeChange = viewModel::setPlaybackOnline,
+                downloadOnline = streamingMode,
+                onDownloadModeChange = viewModel::setStreamingEnabled,
                 onSyncNow = viewModel::onSyncNow,
                 progressContent = {
                     SyncActionProgress(

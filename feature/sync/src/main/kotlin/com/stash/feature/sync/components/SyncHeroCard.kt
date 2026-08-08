@@ -39,22 +39,23 @@ import com.stash.core.ui.theme.StashTheme
 /**
  * Gradient-tinted hero card carrying last-sync metadata + the Sync Now button.
  *
- * When a sync is running, the button is replaced by [progressContent] (the
- * multi-phase progress widget extracted as [SyncActionProgress]).
+ * Two independent mode toggles: [playbackOnline] governs whether Now Playing
+ * can stream tracks that aren't downloaded yet; [downloadOnline] governs
+ * whether Sync Now writes real files to disk or only refreshes which tracks
+ * are stream-eligible. They're orthogonal — see [PlaybackModePreference] /
+ * [StreamingPreference] KDocs — so e.g. a user can keep playing a mixed
+ * playlist (Playback = Online) uninterrupted while a sync runs with
+ * Download = Offline in the background.
  *
- * @param lastSyncRelativeTime  e.g. "2 hours ago", "Yesterday", or "" when never synced.
- * @param lastSyncTrackCount    New tracks the most recent sync added, or null if never synced
- *                              if never synced.
- * @param healthLabel           "✓ healthy" / "! partial" / "× failed" — small status text.
- * @param healthColor           Tint for the health label (success / warning / error).
- * @param isSyncing             True while a sync is in progress.
- * @param streamingMode         When true, the app is in Online (streaming) mode — the
- *                              button label switches to "Surface Library for Streaming"
- *                              so users understand this mode does NOT download tracks.
- * @param onStreamingModeChange Invoked with true for Online, false for Offline when the
- *                              user taps the Online/Offline segmented toggle.
- * @param onSyncNow             Invoked when the Sync Now button is tapped.
- * @param progressContent       Slot shown when [isSyncing] is true, in place of the button.
+ * @param playbackOnline         Current Playback Mode. True = streams
+ *                                non-downloaded tracks on tap.
+ * @param onPlaybackModeChange   Invoked with true for Online, false for
+ *                                Offline when the user taps the Playback toggle.
+ * @param downloadOnline         Current Download Mode (was `streamingMode`).
+ *                                True = sync only refreshes the streamable
+ *                                index; false = sync writes real files.
+ * @param onDownloadModeChange   Invoked with true for Online, false for
+ *                                Offline when the user taps the Downloads toggle.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,8 +65,10 @@ fun SyncHeroCard(
     healthLabel: String,
     healthColor: Color,
     isSyncing: Boolean,
-    streamingMode: Boolean,
-    onStreamingModeChange: (Boolean) -> Unit,
+    playbackOnline: Boolean,
+    onPlaybackModeChange: (Boolean) -> Unit,
+    downloadOnline: Boolean,
+    onDownloadModeChange: (Boolean) -> Unit,
     onSyncNow: () -> Unit,
     progressContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
@@ -105,10 +108,6 @@ fun SyncHeroCard(
                     Spacer(Modifier.height(2.dp))
                     val body = when {
                         lastSyncTrackCount == null -> "Never synced"
-                        // "tracks" was ambiguous enough to hide a bug for months:
-                        // it read 0 while the run had added 159 songs. Name the
-                        // thing, and say plainly when a sync found nothing rather
-                        // than printing a bare 0.
                         lastSyncTrackCount == 0 -> "$lastSyncRelativeTime · no new songs"
                         lastSyncTrackCount == 1 -> "$lastSyncRelativeTime · 1 new song"
                         else -> "$lastSyncRelativeTime · $lastSyncTrackCount new songs"
@@ -129,18 +128,21 @@ fun SyncHeroCard(
             }
             Spacer(Modifier.height(14.dp))
 
-            // Online / Offline mode toggle. Lives right above the action
-            // button so users can flip modes without leaving the Sync tab.
-            // The button label below changes accordingly.
+            // Playback mode: can Now Playing stream a non-downloaded track?
+            Text(
+                text = "PLAYBACK",
+                style = MaterialTheme.typography.labelSmall,
+                color = StashTheme.extendedColors.purpleLight,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 SegmentedButton(
-                    selected = streamingMode,
-                    onClick = { if (!streamingMode) onStreamingModeChange(true) },
+                    selected = playbackOnline,
+                    onClick = { if (!playbackOnline) onPlaybackModeChange(true) },
                     shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
                     enabled = !isSyncing,
                     icon = {
-                        // Override M3's default selected-checkmark so our
-                        // mode glyph doesn't overlap with the label.
                         Icon(
                             imageVector = Icons.Filled.CloudQueue,
                             contentDescription = null,
@@ -150,8 +152,50 @@ fun SyncHeroCard(
                     label = { Text("Online") },
                 )
                 SegmentedButton(
-                    selected = !streamingMode,
-                    onClick = { if (streamingMode) onStreamingModeChange(false) },
+                    selected = !playbackOnline,
+                    onClick = { if (playbackOnline) onPlaybackModeChange(false) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    enabled = !isSyncing,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.OfflinePin,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                    label = { Text("Offline") },
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Download mode: does Sync Now write real files, or just refresh
+            // the streamable index?
+            Text(
+                text = "DOWNLOADS",
+                style = MaterialTheme.typography.labelSmall,
+                color = StashTheme.extendedColors.purpleLight,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = downloadOnline,
+                    onClick = { if (!downloadOnline) onDownloadModeChange(true) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    enabled = !isSyncing,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.CloudQueue,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                    label = { Text("Online") },
+                )
+                SegmentedButton(
+                    selected = !downloadOnline,
+                    onClick = { if (downloadOnline) onDownloadModeChange(false) },
                     shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
                     enabled = !isSyncing,
                     icon = {
@@ -182,7 +226,7 @@ fun SyncHeroCard(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = if (streamingMode) "Surface Library for Streaming" else "Download Tracks to Device",
+                        text = if (downloadOnline) "Update Streaming Index" else "Download Tracks to Device",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
