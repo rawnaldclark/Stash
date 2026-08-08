@@ -54,6 +54,7 @@ class SyncViewModelTest {
     private val blocklistGuard = mockk<com.stash.core.data.blocklist.BlocklistGuard>(relaxed = true)
     private val librarySizeHolder = mockk<com.stash.data.download.files.LibrarySizeHolder>(relaxed = true)
     private val streamingPreference = mockk<com.stash.core.data.prefs.StreamingPreference>(relaxed = true)
+    private val playbackModePreference = mockk<com.stash.core.data.prefs.PlaybackModePreference>(relaxed = true)
 
     /** Stub every flow the VM's init collects eagerly so construction doesn't throw. */
     private fun stubInitFlows() {
@@ -94,6 +95,7 @@ class SyncViewModelTest {
         blocklistGuard = blocklistGuard,
         librarySizeHolder = librarySizeHolder,
         streamingPreference = streamingPreference,
+        playbackModePreference = playbackModePreference,
     )
 
     @Before fun setUp() {
