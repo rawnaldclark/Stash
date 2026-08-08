@@ -821,6 +821,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                             // Discard the new file; the original stays exactly as it was.
                             runCatching { File(outcome.filePath).delete() }
                             return@launch
+                        }
 
                         val oldPath = candidate.filePath
                         val fileSize = try { File(outcome.filePath).length() } catch (_: Exception) { 0L }
