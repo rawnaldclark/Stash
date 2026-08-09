@@ -102,6 +102,10 @@ class LibrarySearchFieldQueryTest {
             streamingPreference = mock { on { enabled } doReturn flowOf(false) },
             flacUpgradeEnqueuer = mock(),
             ytMusicApiClient = mock(),
+            libraryPreferencesStore = mock {
+                onBlocking { getSortOrder() } doReturn SortOrder.RECENT
+                onBlocking { getSourceFilter() } doReturn SourceFilter.ALL
+            },
         )
     }
 }

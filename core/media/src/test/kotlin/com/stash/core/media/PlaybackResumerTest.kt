@@ -3,6 +3,8 @@ package com.stash.core.media
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.model.PlaybackSource
+import com.stash.core.model.RepeatMode
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -34,6 +36,8 @@ class PlaybackResumerTest {
             queueIndex = 1,
             queueTrackIds = listOf(10, 20, 30),
             isShuffled = false,
+            repeatMode = RepeatMode.OFF,
+            source = PlaybackSource.Unknown,
         )
         // `IN` returns rows in arbitrary order — resumer must re-sort.
         coEvery { trackDao.getByIds(listOf(10, 20, 30)) } returns
@@ -64,6 +68,8 @@ class PlaybackResumerTest {
             queueIndex = 0,
             queueTrackIds = emptyList(),
             isShuffled = false,
+            repeatMode = RepeatMode.OFF,
+            source = PlaybackSource.Unknown,
         )
 
         assertThat(resumer.buildResumePlan()).isNull()
@@ -80,6 +86,8 @@ class PlaybackResumerTest {
             queueIndex = 5,
             queueTrackIds = listOf(10, 20, 30),
             isShuffled = true,
+            repeatMode = RepeatMode.ALL,
+            source = PlaybackSource.Library,
         )
         coEvery { trackDao.getByIds(listOf(10, 20, 30)) } returns listOf(track(10), track(30))
 
@@ -98,6 +106,8 @@ class PlaybackResumerTest {
             queueIndex = 0,
             queueTrackIds = listOf(10, 20),
             isShuffled = false,
+            repeatMode = RepeatMode.OFF,
+            source = PlaybackSource.Unknown,
         )
         coEvery { trackDao.getByIds(listOf(10, 20)) } returns emptyList()
 

@@ -9,6 +9,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.StreamRoutingResult
 import com.stash.core.media.StreamingHaltedEvent
+import com.stash.core.model.PlaybackSource
 import com.stash.core.model.PlayerState
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.Track
@@ -78,7 +79,7 @@ class ListeningRecorderSkipTest {
         override suspend fun skipNext() = Unit
         override suspend fun skipPrevious() = Unit
         override suspend fun seekTo(positionMs: Long) = Unit
-        override suspend fun setQueue(tracks: List<Track>, startIndex: Int) = Unit
+        override suspend fun setQueue(tracks: List<Track>, startIndex: Int, source: PlaybackSource) = Unit
         override fun resumeLastQueue() = Unit
         override suspend fun shuffleLibrary(): Boolean = false
         override suspend fun startRadio(seed: com.stash.core.data.radio.RadioSeed, keepCurrent: Boolean) =

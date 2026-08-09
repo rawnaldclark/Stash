@@ -228,6 +228,11 @@ class LibraryViewModelTest {
         on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
     }
 
+    private fun libraryPreferencesStoreMock(): LibraryPreferencesStore = mock {
+        onBlocking { getSortOrder() } doReturn com.stash.feature.library.SortOrder.RECENT
+        onBlocking { getSourceFilter() } doReturn com.stash.feature.library.SourceFilter.ALL
+    }
+
     /**
      * Builds a [LibraryViewModel] for tests. All collaborators default to
      * plain mocks with the minimum stubs needed for the VM's `init`/`stateIn`
@@ -243,6 +248,7 @@ class LibraryViewModelTest {
             on { state } doReturn MutableStateFlow<LocalImportState>(LocalImportState.Idle)
         },
         streamingPreference: StreamingPreference = mock { on { enabled } doReturn flowOf(false) },
+        libraryPreferencesStore: LibraryPreferencesStore = libraryPreferencesStoreMock(),
     ): LibraryViewModel = LibraryViewModel(
         musicRepository = musicRepository,
         playerRepository = playerRepository,
@@ -252,5 +258,6 @@ class LibraryViewModelTest {
         streamingPreference = streamingPreference,
         flacUpgradeEnqueuer = org.mockito.kotlin.mock(),
         ytMusicApiClient = org.mockito.kotlin.mock(),
+        libraryPreferencesStore = libraryPreferencesStore,
     )
 }

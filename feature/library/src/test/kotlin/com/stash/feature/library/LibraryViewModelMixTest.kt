@@ -125,6 +125,11 @@ class LibraryViewModelMixTest {
         on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
     }
 
+    private fun libraryPreferencesStoreMock(): LibraryPreferencesStore = mock {
+        onBlocking { getSortOrder() } doReturn SortOrder.RECENT
+        onBlocking { getSourceFilter() } doReturn SourceFilter.ALL
+    }
+
     private fun buildVm(
         playerRepository: PlayerRepository = playerRepoMock(),
         musicRepository: MusicRepository,
@@ -134,6 +139,7 @@ class LibraryViewModelMixTest {
             on { state } doReturn MutableStateFlow<LocalImportState>(LocalImportState.Idle)
         },
         streamingPreference: StreamingPreference = mock { on { enabled } doReturn flowOf(false) },
+        libraryPreferencesStore: LibraryPreferencesStore = libraryPreferencesStoreMock(),
     ): LibraryViewModel = LibraryViewModel(
         musicRepository = musicRepository,
         playerRepository = playerRepository,
@@ -143,5 +149,6 @@ class LibraryViewModelMixTest {
         streamingPreference = streamingPreference,
         flacUpgradeEnqueuer = org.mockito.kotlin.mock(),
         ytMusicApiClient = org.mockito.kotlin.mock(),
+        libraryPreferencesStore = libraryPreferencesStore,
     )
 }
