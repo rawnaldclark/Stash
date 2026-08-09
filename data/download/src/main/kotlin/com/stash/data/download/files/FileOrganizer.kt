@@ -92,6 +92,82 @@ class FileOrganizer @Inject constructor(
     }
 
     /**
+    * Pre-built index of the current SAF tree, so a bulk pass (like
+    * [com.stash.core.data.library.AdoptExistingFilesUseCase]) can look up
+    * album directories in O(1) instead of re-walking `root -> artist -> album`
+    * via [DocumentFile.findFile] for every single candidate.
+    *
+    * [DocumentFile.findFile] is not a direct lookup: internally it calls
+    * `listFiles()` on the parent and linearly scans for a name match. Doing
+    * that per-candidate against thousands of tracks means re-listing the same
+    * artist/album directories over and over via ContentResolver IPC — the
+    * actual cost that was making adoption slower than downloading the same
+    * tracks over the network. Building this index means the tree is walked
+    * exactly once regardless of candidate count.
+    *
+    * Filenames are also pre-listed per album dir (see [AlbumIndex]) so a
+    * lookup for a specific title never has to hit the provider again.
+    */
+    suspend fun buildSafIndex(): SafIndex? {
+        val treeUri = storagePreference.externalTreeUri.first() ?: return null
+        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return null
+    
+        val index = HashMap<Pair<String, String>, AlbumIndex>()
+        root.listFiles().forEach { artistDir ->
+            if (!artistDir.isDirectory) return@forEach
+            val artistName = artistDir.name ?: return@forEach
+            artistDir.listFiles().forEach { albumDir ->
+                if (!albumDir.isDirectory) return@forEach
+                val albumName = albumDir.name ?: return@forEach
+                // List each album dir's files exactly once, up front, and
+                // index by name for O(1) lookup instead of a per-candidate
+                // listFiles().firstOrNull { ... } scan.
+                val filesByName = albumDir.listFiles()
+                    .filter { it.isFile }
+                    .associateBy { it.name.orEmpty() }
+                index[artistName to albumName] = AlbumIndex(albumDir, filesByName)
+            }
+        }
+        return SafIndex(index)
+    }
+    
+    /**
+    * O(1) lookup against a pre-built [SafIndex]. Same slug convention and
+    * extension-probing behaviour as [resolveExistingSafFile], but with no
+    * SAF IPC calls at all once the index is built — everything after
+    * [buildSafIndex] is in-memory map lookups.
+    */
+    fun resolveInIndex(
+        index: SafIndex,
+        artist: String,
+        album: String?,
+        title: String,
+        knownFormat: String? = null,
+    ): DocumentFile? {
+        val artistSlug = FileOrganizerSlugs.slugify(artist)
+        val albumSlug = if (!album.isNullOrBlank()) FileOrganizerSlugs.slugify(album) else "singles"
+        val titleSlug = FileOrganizerSlugs.slugify(title)
+    
+        val albumIndex = index.byArtistAlbum[artistSlug to albumSlug] ?: return null
+    
+        val candidateNames = if (knownFormat != null) {
+            setOf("$titleSlug.$knownFormat")
+        } else {
+            KNOWN_AUDIO_FORMATS.map { "$titleSlug.$it" }
+        }
+        for (name in candidateNames) {
+            albumIndex.filesByName[name]?.let { return it }
+        }
+        return null
+    }
+    
+    /** In-memory index built once per bulk pass by [buildSafIndex]. */
+    class SafIndex(val byArtistAlbum: Map<Pair<String, String>, AlbumIndex>)
+    
+    /** Pre-listed contents of a single album directory. */
+    class AlbumIndex(val dir: DocumentFile, val filesByName: Map<String, DocumentFile>)
+
+    /**
      * Resolves whether a track's file exists, without trusting any cached
      * per-document URI. Walks from the CURRENT tree grant using the same
      * artist/album/title slug convention [writeToSafTree] uses to create
