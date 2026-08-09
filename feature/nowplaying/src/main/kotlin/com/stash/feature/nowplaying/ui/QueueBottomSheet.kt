@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
+import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
 import java.util.Collections
 import kotlin.math.roundToInt
@@ -77,6 +78,7 @@ fun QueueBottomSheet(
     queue: List<Track>,
     currentIndex: Int,
     accentColor: Color,
+    source: PlaybackSource = PlaybackSource.Unknown,
     onDismiss: () -> Unit,
     onTrackClick: (index: Int) -> Unit,
     onRemoveTrack: (index: Int) -> Unit,
@@ -137,6 +139,7 @@ fun QueueBottomSheet(
             QueueHeader(
                 trackCount = queue.size,
                 currentIndex = currentIndex,
+                sourceLabel = source.displayLabel,
                 onClose = onDismiss,
             )
 
@@ -466,7 +469,12 @@ fun QueueBottomSheet(
 private class QueueEntry(val uid: Int, val track: Track)
 
 @Composable
-private fun QueueHeader(trackCount: Int, currentIndex: Int, onClose: () -> Unit) {
+private fun QueueHeader(
+    trackCount: Int,
+    currentIndex: Int,
+    sourceLabel: String,
+    onClose: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -475,6 +483,15 @@ private fun QueueHeader(trackCount: Int, currentIndex: Int, onClose: () -> Unit)
     ) {
         Column(Modifier.weight(1f)) {
             Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            if (sourceLabel.isNotBlank()) {
+                Text(
+                    "Playing from $sourceLabel",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (trackCount > 0) {
                 Text(
                     "${currentIndex + 1} of $trackCount tracks",

@@ -39,6 +39,8 @@ class PlaybackResumer @Inject constructor(
         val startIndex: Int,
         val positionMs: Long,
         val isShuffled: Boolean,
+        val repeatMode: com.stash.core.model.RepeatMode,
+        val source: com.stash.core.model.PlaybackSource,
     )
 
     suspend fun buildResumePlan(): ResumePlan? {
@@ -62,6 +64,8 @@ class PlaybackResumer @Inject constructor(
             startIndex = startIndex,
             positionMs = saved.positionMs.coerceAtLeast(0),
             isShuffled = saved.isShuffled,
+            repeatMode = saved.repeatMode,
+            source = saved.source,
         )
     }
 }

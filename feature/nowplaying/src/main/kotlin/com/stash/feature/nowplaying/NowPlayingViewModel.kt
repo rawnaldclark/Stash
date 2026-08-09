@@ -623,6 +623,7 @@ class NowPlayingViewModel @Inject constructor(
                     queue = state.queue,
                     isStreaming = state.isStreaming,
                     isBuffering = state.isBuffering,
+                    source = state.source,
                 )
             }
         }.launchIn(viewModelScope)

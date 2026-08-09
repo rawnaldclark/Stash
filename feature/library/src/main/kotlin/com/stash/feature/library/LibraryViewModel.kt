@@ -96,6 +96,7 @@ class LibraryViewModel @Inject constructor(
     private val streamingPreference: StreamingPreference,
     private val ytMusicApiClient: com.stash.data.ytmusic.YTMusicApiClient,
     private val flacUpgradeEnqueuer: FlacUpgradeEnqueuer,
+    private val libraryPreferencesStore: LibraryPreferencesStore,
 ) : ViewModel() {
 
     /** Live progress for "Import from device". Observed by LibraryScreen. */
@@ -139,6 +140,18 @@ class LibraryViewModel @Inject constructor(
      */
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    init {
+        // Seed the persisted sort/filter before anything downstream reads
+        // _controls. uiState's initialValue still starts at ControlState()'s
+        // hardcoded defaults for one frame — same tolerated flash pattern as
+        // NowPlayingViewModel.ambientAnimationEnabled starting null.
+        viewModelScope.launch {
+            val sort = libraryPreferencesStore.getSortOrder()
+            val filter = libraryPreferencesStore.getSourceFilter()
+            _controls.update { it.copy(sortOrder = sort, sourceFilter = filter) }
+        }
+    }
 
     /**
      * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
@@ -368,7 +381,11 @@ class LibraryViewModel @Inject constructor(
             val playable = if (streamingPreference.current()) all else all.filter { it.filePath != null }
             if (playable.isEmpty()) return@launch
             val index = playable.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-            playerRepository.setQueue(playable, index)
+            playerRepository.setQueue(
+                playable,
+                index,
+                source = com.stash.core.model.PlaybackSource.Liked(likedFilter.value.name),
+            )
         }
     }
 
@@ -394,11 +411,13 @@ class LibraryViewModel @Inject constructor(
     /** Change the sort order for every content list. */
     fun setSortOrder(order: SortOrder) {
         _controls.update { it.copy(sortOrder = order) }
+        viewModelScope.launch { libraryPreferencesStore.setSortOrder(order) }
     }
 
     /** Filter tracks by source (All / YouTube / Spotify). */
     fun setSourceFilter(filter: SourceFilter) {
         _controls.update { it.copy(sourceFilter = filter) }
+        viewModelScope.launch { libraryPreferencesStore.setSourceFilter(filter) }
     }
 
     /**
@@ -417,13 +436,13 @@ class LibraryViewModel @Inject constructor(
             val playable = if (online) allTracks else allTracks.filter { it.filePath != null }
             val index = playable.indexOfFirst { it.id == track.id }
             if (index >= 0) {
-                playerRepository.setQueue(playable, index)
+                playerRepository.setQueue(playable, index, source = com.stash.core.model.PlaybackSource.Library)
             } else {
                 // The tapped track isn't in the surrounding list (the Recently
                 // Added rail is its own query, so a streamable track can be absent
                 // from the Songs list). Play it on its own rather than no-op — a
                 // tap that does nothing is the bug being fixed here.
-                playerRepository.setQueue(listOf(track), 0)
+                playerRepository.setQueue(listOf(track), 0, source = com.stash.core.model.PlaybackSource.Library)
             }
         }
     }
@@ -634,7 +653,11 @@ class LibraryViewModel @Inject constructor(
             val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
             val downloaded = tracks.filter { it.filePath != null }
             if (downloaded.isNotEmpty()) {
-                playerRepository.setQueue(downloaded, startIndex = 0)
+                playerRepository.setQueue(
+                    downloaded,
+                    startIndex = 0,
+                    source = com.stash.core.model.PlaybackSource.Playlist(playlist.id, playlist.name),
+                )
             }
         }
     }
@@ -773,7 +796,11 @@ class LibraryViewModel @Inject constructor(
             val tracks = musicRepository.getTracksByArtist(artistName).first()
             val downloaded = tracks.filter { it.filePath != null }
             if (downloaded.isNotEmpty()) {
-                playerRepository.setQueue(downloaded, startIndex = 0)
+                playerRepository.setQueue(
+                    downloaded,
+                    startIndex = 0,
+                    source = com.stash.core.model.PlaybackSource.Artist(artistName),
+                )
             }
         }
     }
@@ -812,7 +839,11 @@ class LibraryViewModel @Inject constructor(
                     && it.filePath != null
             }
             if (downloaded.isNotEmpty()) {
-                playerRepository.setQueue(downloaded, startIndex = 0)
+                playerRepository.setQueue(
+                    downloaded,
+                    startIndex = 0,
+                    source = com.stash.core.model.PlaybackSource.Album(albumName, artist),
+                )
             }
         }
     }

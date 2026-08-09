@@ -34,6 +34,8 @@ data class SavedPlaybackState(
      */
     val queueTrackIds: List<Long>,
     val isShuffled: Boolean,
+    val repeatMode: com.stash.core.model.RepeatMode,
+    val source: com.stash.core.model.PlaybackSource,
 )
 
 @Singleton
@@ -46,6 +48,8 @@ class PlaybackStateStore @Inject constructor(
         val QUEUE_INDEX = intPreferencesKey("last_queue_index")
         val QUEUE_IDS = stringPreferencesKey("last_queue_ids")
         val IS_SHUFFLED = booleanPreferencesKey("last_is_shuffled")
+        val REPEAT_MODE = stringPreferencesKey("last_repeat_mode")
+        val SOURCE = stringPreferencesKey("last_source")
     }
 
     suspend fun savePosition(trackId: Long, positionMs: Long, queueIndex: Int) {
@@ -62,10 +66,17 @@ class PlaybackStateStore @Inject constructor(
      * shuffle state actually change, not on every position tick, so the
      * comma-joined id list isn't rewritten 4×/second.
      */
-    suspend fun saveQueue(trackIds: List<Long>, isShuffled: Boolean) {
+    suspend fun saveQueue(
+        trackIds: List<Long>,
+        isShuffled: Boolean,
+        repeatMode: com.stash.core.model.RepeatMode,
+        source: com.stash.core.model.PlaybackSource,
+    ) {
         context.playbackDataStore.edit { prefs ->
             prefs[Keys.QUEUE_IDS] = trackIds.joinToString(",")
             prefs[Keys.IS_SHUFFLED] = isShuffled
+            prefs[Keys.REPEAT_MODE] = repeatMode.name
+            prefs[Keys.SOURCE] = source.serialize()
         }
     }
 
@@ -76,12 +87,18 @@ class PlaybackStateStore @Inject constructor(
             ?.split(",")
             ?.mapNotNull { it.toLongOrNull() }
             ?: emptyList()
+        val repeatMode = prefs[Keys.REPEAT_MODE]
+            ?.let { runCatching { com.stash.core.model.RepeatMode.valueOf(it) }.getOrNull() }
+            ?: com.stash.core.model.RepeatMode.OFF
+        val source = com.stash.core.model.PlaybackSource.deserialize(prefs[Keys.SOURCE])
         return SavedPlaybackState(
             trackId = trackId,
             positionMs = prefs[Keys.POSITION_MS] ?: 0L,
             queueIndex = prefs[Keys.QUEUE_INDEX] ?: 0,
             queueTrackIds = queueTrackIds,
             isShuffled = prefs[Keys.IS_SHUFFLED] ?: false,
+            repeatMode = repeatMode,
+            source = source,
         )
     }
 

@@ -28,6 +28,9 @@ data class PlayerState(
      * resolve doesn't look frozen.
      */
     val isBuffering: Boolean = false,
+    /** What this queue is playing FROM (a playlist, artist, library shuffle,
+     *  radio station, etc.) — shown in Now Playing and persisted for resume. */
+    val source: PlaybackSource = PlaybackSource.Unknown,
 )
 
 enum class RepeatMode {

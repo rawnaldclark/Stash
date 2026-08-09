@@ -218,6 +218,7 @@ fun NowPlayingScreen(
             queue = uiState.queue,
             currentIndex = uiState.currentIndex,
             accentColor = npAccent(uiState.vibrantColor),
+            source = uiState.source,
             onDismiss = { showQueue = false },
             onTrackClick = { index ->
                 viewModel.onSkipToQueueIndex(index)

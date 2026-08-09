@@ -121,8 +121,16 @@ interface PlayerRepository {
 
     /**
      * Replace the current queue with [tracks] and begin playback at [startIndex].
+     * [source] records what this queue is playing FROM (a playlist, artist,
+     * the library shuffle, etc.) for display and for restoring the label on
+     * relaunch. Defaults to [com.stash.core.model.PlaybackSource.Unknown] for
+     * call sites that don't yet supply one.
      */
-    suspend fun setQueue(tracks: List<Track>, startIndex: Int = 0)
+    suspend fun setQueue(
+        tracks: List<Track>,
+        startIndex: Int = 0,
+        source: com.stash.core.model.PlaybackSource = com.stash.core.model.PlaybackSource.Unknown,
+    )
 
     /**
      * Restore the last-played queue — full queue, saved current track,

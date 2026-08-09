@@ -1,6 +1,7 @@
 package com.stash.feature.nowplaying
 
 import androidx.compose.ui.graphics.Color
+import com.stash.core.model.PlaybackSource
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.Track
 import com.stash.core.ui.components.PlaylistInfo
@@ -38,6 +39,8 @@ data class NowPlayingUiState(
      * a small wifi indicator on the quality line.
      */
     val isStreaming: Boolean = false,
+    /** What the current queue is playing from — shown in the queue sheet header. */
+    val source: PlaybackSource = PlaybackSource.Unknown,
 ) {
 
     /**

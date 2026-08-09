@@ -365,6 +365,14 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     private var lastSavedQueueIds: List<Long>? = null
     private var lastSavedShuffle: Boolean? = null
+    private var lastSavedRepeatMode: RepeatMode? = null
+    private var lastSavedSource: com.stash.core.model.PlaybackSource? = null
+
+    /** The current queue's playing-from context. Mirrors [currentQueueTracks] —
+     *  every path that replaces the queue must also set this. */
+    @Volatile
+    private var currentSource: com.stash.core.model.PlaybackSource =
+        com.stash.core.model.PlaybackSource.Unknown
 
     private val _userMessages = kotlinx.coroutines.flow.MutableSharedFlow<String>(
         extraBufferCapacity = 4,
@@ -502,20 +510,25 @@ class PlayerRepositoryImpl @Inject constructor(
         ensureController()?.seekTo(positionMs)
     }
 
-    override suspend fun setQueue(tracks: List<Track>, startIndex: Int) =
-        setQueueInternal(tracks, startIndex, startPositionMs = 0L)
+    override suspend fun setQueue(
+        tracks: List<Track>,
+        startIndex: Int,
+        source: com.stash.core.model.PlaybackSource,
+    ) = setQueueInternal(tracks, startIndex, startPositionMs = 0L, source = source)
 
     /**
      * Backing implementation for [setQueue] that also accepts a start
      * position. Kept private (not on the interface) so the public
      * [setQueue] signature — and every test that stubs/verifies it with
-     * argument matchers — stays unchanged. [resumeLastQueue] uses this to
-     * continue from the saved position.
+     * argument matchers — stays unchanged apart from the new [source]
+     * parameter. [resumeLastQueue] uses this to continue from the saved
+     * position AND the saved source.
      */
     private suspend fun setQueueInternal(
         tracks: List<Track>,
         startIndex: Int,
         startPositionMs: Long,
+        source: com.stash.core.model.PlaybackSource = com.stash.core.model.PlaybackSource.Unknown,
     ) {
         // Any explicit setQueue (playlist tap, single-song play, etc.) leaves
         // library-shuffle mode behind. Snapshot is cleared so a stale Track
@@ -526,6 +539,7 @@ class PlayerRepositoryImpl @Inject constructor(
         radioActive = false
         radioSession = null
         _radioSeedLabel.value = null
+        currentSource = source
 
         val controller = ensureController() ?: return
         if (tracks.isEmpty()) return
@@ -592,8 +606,10 @@ class PlayerRepositoryImpl @Inject constructor(
             val plan = playbackResumer.buildResumePlan()
             if (plan != null) {
                 val tracks = plan.tracks.map { it.toDomain() }
-                ensureController()?.shuffleModeEnabled = plan.isShuffled
-                setQueueInternal(tracks, plan.startIndex, plan.positionMs)
+                val controller = ensureController()
+                controller?.shuffleModeEnabled = plan.isShuffled
+                controller?.repeatMode = plan.repeatMode.toPlayerRepeatMode()
+                setQueueInternal(tracks, plan.startIndex, plan.positionMs, plan.source)
                 return@launch
             }
             // No persisted queue yet — fall back to the most recently played
@@ -801,7 +817,12 @@ class PlayerRepositoryImpl @Inject constructor(
         // setQueueInternal owns the logical-queue bookkeeping and playback
         // start; the pre-shuffled list IS the playback order, so Media3's
         // shuffleModeEnabled stays untouched as before.
-        setQueueInternal(shuffled, startIndex = 0, startPositionMs = 0L)
+        setQueueInternal(
+            shuffled,
+            startIndex = 0,
+            startPositionMs = 0L,
+            source = com.stash.core.model.PlaybackSource.Library,
+        )
         return true
     }
 
@@ -864,10 +885,12 @@ class PlayerRepositoryImpl @Inject constructor(
             controller.prepare()
             controller.play()
         }
-        _radioSeedLabel.value = when (seed) {
+        val seedLabel = when (seed) {
             is com.stash.core.data.radio.RadioSeed.Artist -> seed.name
             is com.stash.core.data.radio.RadioSeed.Song -> seed.title
         }
+        _radioSeedLabel.value = seedLabel
+        currentSource = com.stash.core.model.PlaybackSource.Radio(seedLabel)
         return RadioStartResult.Started
     }
 
@@ -875,6 +898,7 @@ class PlayerRepositoryImpl @Inject constructor(
         radioActive = false
         radioSession = null
         _radioSeedLabel.value = null
+        currentSource = com.stash.core.model.PlaybackSource.Unknown
     }
 
     /** Normalized track identity for matching the radio seed against the batch —
@@ -1294,6 +1318,7 @@ class PlayerRepositoryImpl @Inject constructor(
             // must follow, or a stale playlist list would keep hijacking the
             // queue display whenever this track happens to be in it.
             currentQueueTracks = listOf(track)
+            currentSource = com.stash.core.model.PlaybackSource.Unknown
             playSingleMediaItem(result.mediaItem)
         }
         return result
@@ -1370,6 +1395,7 @@ class PlayerRepositoryImpl @Inject constructor(
             // Single-item replacement: drop the stale logical queue so the
             // queue display falls back to the (one-item) timeline.
             currentQueueTracks = emptyList()
+            currentSource = com.stash.core.model.PlaybackSource.Search
             playSingleMediaItem(result.mediaItem)
         }
         return result
@@ -2085,6 +2111,7 @@ class PlayerRepositoryImpl @Inject constructor(
             isBuffering = computeIsBuffering(
                 controller.playbackState == Player.STATE_BUFFERING,
             ),
+            source = currentSource,
         )
         _playerState.value = newState
         lastKnownQueueSize = newState.queue.size
@@ -2126,12 +2153,23 @@ class PlayerRepositoryImpl @Inject constructor(
         // is a sparse resolved-only subset during streaming and would
         // resume into a queue with most tracks missing.
         val queueIds = newState.queue.map { it.id }
-        if (queueIds != lastSavedQueueIds || newState.isShuffleEnabled != lastSavedShuffle) {
+        if (queueIds != lastSavedQueueIds ||
+            newState.isShuffleEnabled != lastSavedShuffle ||
+            newState.repeatMode != lastSavedRepeatMode ||
+            newState.source != lastSavedSource
+        ) {
             lastSavedQueueIds = queueIds
             lastSavedShuffle = newState.isShuffleEnabled
+            lastSavedRepeatMode = newState.repeatMode
+            lastSavedSource = newState.source
             if (queueIds.isNotEmpty()) {
                 scope.launch {
-                    playbackStateStore.saveQueue(queueIds, newState.isShuffleEnabled)
+                    playbackStateStore.saveQueue(
+                        queueIds,
+                        newState.isShuffleEnabled,
+                        newState.repeatMode,
+                        newState.source,
+                    )
                 }
             }
         }
@@ -2350,3 +2388,11 @@ internal fun positionTicker(
         }
     }
     .distinctUntilChanged()
+
+/** Inverse of the existing `Int.toRepeatMode()` mapper — used only to
+ *  restore Media3's repeat mode from a persisted [RepeatMode] on resume. */
+internal fun RepeatMode.toPlayerRepeatMode(): Int = when (this) {
+    RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+    RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+    RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+}
