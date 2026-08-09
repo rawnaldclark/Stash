@@ -24,6 +24,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.activity.compose)
+    implementation(libs.datastore.preferences)
     // MixBuilderViewModel enqueues StashMixRefreshWorker on save.
     implementation(libs.work.runtime.ktx)
 
