@@ -1,6 +1,7 @@
 package com.stash.core.data.library
 
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.TrackAdoptionCandidate
 import com.stash.data.download.files.FileOrganizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -75,7 +76,7 @@ class AdoptExistingFilesUseCase @Inject constructor(
     }
 
     /** Resolves and adopts a single candidate. Returns true if it was adopted. */
-    private suspend fun adoptOne(index: com.stash.data.download.files.SafIndex, c: AdoptionCandidate): Boolean {
+    private suspend fun adoptOne(index: FileOrganizer.SafIndex, c: TrackAdoptionCandidate): Boolean {
         val match = fileOrganizer.resolveInIndex(
             index = index,
             artist = c.artist,
