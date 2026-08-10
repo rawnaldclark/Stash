@@ -1,0 +1,101 @@
+{
+  "data": {
+    "me": {
+      "library": {
+        "tracks": {
+          "totalCount": 3,
+          "pagingInfo": { "offset": 0, "limit": 50 },
+          "items": [
+            {
+              "addedAt": { "isoString": "2019-03-04T11:22:33Z" },
+              "track": {
+                "_uri": "spotify:track:oldFavourite000000000",
+                "data": {
+                  "__typename": "Track",
+                  "uri": "spotify:track:oldFavourite000000000",
+                  "name": "Old Favourite",
+                  "trackDuration": { "totalMilliseconds": 201000 },
+                  "artists": {
+                    "items": [
+                      {
+                        "uri": "spotify:artist:artistOne00000000000",
+                        "profile": { "name": "Artist One" }
+                      }
+                    ]
+                  },
+                  "albumOfTrack": {
+                    "uri": "spotify:album:albumOne000000000000",
+                    "name": "Album One",
+                    "coverArt": {
+                      "sources": [
+                        { "url": "https://i.scdn.co/image/oldfav640", "width": 640, "height": 640 }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "addedAt": { "isoString": "2026-08-01T09:00:00Z" },
+              "track": {
+                "_uri": "spotify:track:newestLike00000000000",
+                "data": {
+                  "__typename": "Track",
+                  "uri": "spotify:track:newestLike00000000000",
+                  "name": "Newest Like",
+                  "trackDuration": { "totalMilliseconds": 187500 },
+                  "artists": {
+                    "items": [
+                      {
+                        "uri": "spotify:artist:artistTwo00000000000",
+                        "profile": { "name": "Artist Two" }
+                      }
+                    ]
+                  },
+                  "albumOfTrack": {
+                    "uri": "spotify:album:albumTwo000000000000",
+                    "name": "Album Two",
+                    "coverArt": {
+                      "sources": [
+                        { "url": "https://i.scdn.co/image/newest640", "width": 640, "height": 640 }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "addedAt": { "isoString": "2023-05-15T18:30:00Z" },
+              "track": {
+                "_uri": "spotify:track:middleLike00000000000",
+                "data": {
+                  "__typename": "Track",
+                  "uri": "spotify:track:middleLike00000000000",
+                  "name": "Middle Like",
+                  "trackDuration": { "totalMilliseconds": 240000 },
+                  "artists": {
+                    "items": [
+                      {
+                        "uri": "spotify:artist:artistTwo00000000000",
+                        "profile": { "name": "Artist Two" }
+                      },
+                      {
+                        "uri": "spotify:artist:artistThree0000000000",
+                        "profile": { "name": "Artist Three" }
+                      }
+                    ]
+                  },
+                  "albumOfTrack": {
+                    "uri": "spotify:album:albumThree00000000000",
+                    "name": "Album Three",
+                    "coverArt": { "sources": [] }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

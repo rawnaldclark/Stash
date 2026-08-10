@@ -1,5 +1,6 @@
 package com.stash.data.spotify.model
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -60,6 +61,18 @@ data class SpotifyTracksResponse(
 @Serializable
 data class SpotifyTrackItem(
     val track: SpotifyTrackObject? = null,
+
+    /**
+     * ISO-8601 instant the track was saved to the library, as Spotify reports
+     * it on the *item wrapper* (not the track). Liked Songs order is this value
+     * descending; without it the sync can only mirror whatever order the
+     * endpoint happened to return, which is how tracks saved years ago surfaced
+     * at the top of Liked Songs (issue #410).
+     *
+     * Null when the response carries no add date (playlist pages, older shapes).
+     */
+    @SerialName("added_at")
+    val addedAt: String? = null,
 )
 
 @Serializable

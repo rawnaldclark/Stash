@@ -12,7 +12,11 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import java.time.Instant
+import java.time.format.DateTimeParseException
 
 private const val TAG = "StashSync"
 
@@ -153,6 +157,193 @@ internal fun parseSearchTracks(responseBody: String): List<SpotifyTrackCandidate
         }
     } catch (e: Exception) {
         Log.e(TAG, "parseSearchTracks: failed to parse response", e)
+        emptyList()
+    }
+}
+
+/**
+ * Pulls the library add-date off a `fetchLibraryTracks` item wrapper.
+ *
+ * Spotify's GraphQL library shapes have moved around, so this accepts the
+ * nested `addedAt.isoString` the desktop client reads, a flat `addedAt`
+ * string, and the Web API's `added_at` — returning null when none is present
+ * rather than guessing. Callers must stay correct with a null add date.
+ */
+internal fun parseLibraryAddedAt(wrapper: JsonObject): String? {
+    val addedAt = wrapper["addedAt"]
+    (addedAt as? JsonObject)?.get("isoString")?.let { iso ->
+        (iso as? JsonPrimitive)?.contentOrNull?.let { return it }
+    }
+    (addedAt as? JsonPrimitive)?.contentOrNull?.let { return it }
+    return (wrapper["added_at"] as? JsonPrimitive)?.contentOrNull
+}
+
+/**
+ * Orders Liked Songs newest-saved first, the way Spotify itself presents them.
+ *
+ * The sync stores list index as playlist position, so this ordering is what
+ * the user ends up seeing. `fetchLibraryTracks` is called without an `order`
+ * variable, meaning the server's own ordering is not something we can rely on
+ * (issue #410) — sorting on the reported add date makes the result independent
+ * of it.
+ *
+ * Items with no parseable add date keep their original relative order at the
+ * end of the list (the sort is stable), and a page with no add dates at all is
+ * returned untouched, so an endpoint that stops reporting them degrades to
+ * today's behaviour instead of scrambling.
+ */
+fun sortLikedSongsByAddedAtDesc(items: List<SpotifyTrackItem>): List<SpotifyTrackItem> {
+    val stamped = items.map { item ->
+        item to item.addedAt?.let { raw ->
+            try {
+                Instant.parse(raw)
+            } catch (e: DateTimeParseException) {
+                Log.w(TAG, "sortLikedSongsByAddedAtDesc: unparseable addedAt '$raw'", e)
+                null
+            }
+        }
+    }
+    if (stamped.none { (_, instant) -> instant != null }) return items
+    return stamped
+        // nullsFirst, not nullsLast: compareByDescending flips the comparator's
+        // arguments, so the nulls-are-smallest ordering is what leaves undated
+        // items at the END of the descending result.
+        .sortedWith(compareByDescending(nullsFirst()) { (_, instant) -> instant })
+        .map { (item, _) -> item }
+}
+
+/**
+ * Parses a `fetchLibraryTracks` GraphQL response (Liked Songs) into [SpotifyTrackItem]s.
+ *
+ * Response shape, confirmed against the persisted-query hash
+ * `087278b2…f944240` as used by several independent clients:
+ *
+ * ```
+ * data.me.library.tracks
+ * |- totalCount, pagingInfo
+ * `- items[]
+ *    |- addedAt.isoString : ISO-8601 save date  -> SpotifyTrackItem.addedAt
+ *    `- track._uri / track.data.{name, uri, trackDuration, artists, albumOfTrack}
+ * ```
+ *
+ * `data.me.libraryTracks.items` is accepted as a second path: the private API
+ * has renamed this node before and the cost of tolerating both is one `?:`.
+ *
+ * Returns an empty list for any unrecognised shape rather than throwing —
+ * callers treat empty as `SyncResult.Empty` and stop paginating.
+ */
+internal fun parseLibraryTracksResponse(responseJson: JsonObject): List<SpotifyTrackItem> {
+    return try {
+        // Log top-level keys for debugging
+        val dataObj = responseJson["data"]?.jsonObject
+        if (dataObj == null) {
+            Log.w(TAG, "parseLibraryTracksResponse: no 'data' key, responseKeys=${responseJson.keys}")
+            return emptyList()
+        }
+        Log.d(TAG, "parseLibraryTracksResponse: data keys: ${dataObj.keys}")
+
+        // Try multiple possible response paths
+        val items = dataObj["me"]
+            ?.jsonObject?.get("library")
+            ?.jsonObject?.get("tracks")
+            ?.jsonObject?.get("items")
+            ?.jsonArray
+            ?: dataObj["me"]
+                ?.jsonObject?.get("libraryTracks")
+                ?.jsonObject?.get("items")
+                ?.jsonArray
+
+        if (items == null) {
+            // Log what we DID find so we can fix the path
+            val meKeys = dataObj["me"]?.jsonObject?.keys
+            Log.w(TAG, "parseLibraryTracksResponse: items not found. me keys: $meKeys")
+            val meObj = dataObj["me"]?.jsonObject
+            meObj?.keys?.forEach { key ->
+                val subKeys = meObj[key]?.jsonObject?.keys
+                Log.d(TAG, "parseLibraryTracksResponse: me.$key keys: $subKeys")
+            }
+            return emptyList()
+        }
+
+        Log.d(TAG, "parseLibraryTracksResponse: found ${items.size} items")
+
+        items.mapNotNull { element ->
+            try {
+                val wrapper = element.jsonObject
+                // Response shape: items[].track.data (with _uri on the track wrapper)
+                val trackData = wrapper["track"]?.jsonObject?.get("data")?.jsonObject
+                    ?: wrapper["item"]?.jsonObject?.get("data")?.jsonObject
+                    ?: wrapper["itemV2"]?.jsonObject?.get("data")?.jsonObject
+                    ?: return@mapNotNull null
+
+                val uri = trackData["uri"]?.jsonPrimitive?.contentOrNull
+                    ?: wrapper["track"]?.jsonObject?.get("_uri")?.jsonPrimitive?.contentOrNull
+                    ?: return@mapNotNull null
+                if (!uri.startsWith("spotify:track:")) return@mapNotNull null
+
+                val trackId = uri.removePrefix("spotify:track:")
+                val name = trackData["name"]?.jsonPrimitive?.contentOrNull ?: "Unknown"
+
+                val durationMs = trackData["trackDuration"]
+                    ?.jsonObject?.get("totalMilliseconds")
+                    ?.jsonPrimitive?.longOrNull
+                    ?: trackData["duration"]
+                        ?.jsonObject?.get("totalMilliseconds")
+                        ?.jsonPrimitive?.longOrNull
+                    ?: 0L
+
+                val artistItems = trackData["artists"]
+                    ?.jsonObject?.get("items")
+                    ?.jsonArray
+
+                val artists = artistItems?.mapNotNull { artistElement ->
+                    val artistObj = artistElement.jsonObject
+                    val artistName = artistObj["profile"]
+                        ?.jsonObject?.get("name")
+                        ?.jsonPrimitive?.contentOrNull
+                        ?: return@mapNotNull null
+                    val artistUri = artistObj["uri"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val artistId = artistUri.removePrefix("spotify:artist:")
+                    SpotifyArtist(id = artistId, name = artistName)
+                } ?: emptyList()
+
+                val albumData = trackData["albumOfTrack"]?.jsonObject
+                val album = if (albumData != null) {
+                    val albumUri = albumData["uri"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val albumId = albumUri.removePrefix("spotify:album:")
+                    val albumName = albumData["name"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val coverArtUrl = albumData["coverArt"]
+                        ?.jsonObject?.get("sources")
+                        ?.jsonArray?.firstOrNull()
+                        ?.jsonObject?.get("url")
+                        ?.jsonPrimitive?.contentOrNull
+                    SpotifyAlbum(
+                        id = albumId,
+                        name = albumName,
+                        images = if (coverArtUrl != null) listOf(SpotifyImage(url = coverArtUrl)) else null,
+                    )
+                } else null
+
+                SpotifyTrackItem(
+                    track = SpotifyTrackObject(
+                        id = trackId,
+                        name = name,
+                        artists = artists,
+                        album = album,
+                        duration_ms = durationMs,
+                        uri = uri,
+                    ),
+                    addedAt = parseLibraryAddedAt(wrapper),
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "parseLibraryTracksResponse: failed to parse item", e)
+                null
+            }
+        }.also { tracks ->
+            Log.d(TAG, "parseLibraryTracksResponse: parsed ${tracks.size} tracks")
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "parseLibraryTracksResponse: failed", e)
         emptyList()
     }
 }

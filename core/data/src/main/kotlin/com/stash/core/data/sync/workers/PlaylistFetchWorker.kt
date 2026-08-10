@@ -34,6 +34,7 @@ import com.stash.core.model.SyncTrigger
 import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.spotify.SpotifyApiException
 import com.stash.data.spotify.SpotifyLibraryPage
+import com.stash.data.spotify.sortLikedSongsByAddedAtDesc
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.MusicVideoType
@@ -527,9 +528,16 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
             }
 
-            if (allLikedSongs.isNotEmpty()) {
-                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SUCCESS, allLikedSongs.size))
-                Log.d(TAG, "fetchSpotifyPlaylists: found ${allLikedSongs.size} liked songs total")
+            // #410: position IS the Liked Songs order the user sees, and it was
+            // just the index the endpoint happened to hand back — fetchLibraryTracks
+            // is called without an `order` variable, so that index is not ours to
+            // trust. Order by the add date Spotify reports instead; pages that
+            // carry no add date come back untouched.
+            val orderedLikedSongs = sortLikedSongsByAddedAtDesc(allLikedSongs)
+
+            if (orderedLikedSongs.isNotEmpty()) {
+                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SUCCESS, orderedLikedSongs.size))
+                Log.d(TAG, "fetchSpotifyPlaylists: found ${orderedLikedSongs.size} liked songs total")
 
                 val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
                     RemotePlaylistSnapshotEntity(
@@ -538,9 +546,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         sourcePlaylistId = "spotify_liked_songs",
                         playlistName = "Liked Songs",
                         playlistType = PlaylistType.LIKED_SONGS,
-                        trackCount = allLikedSongs.size,
+                        trackCount = orderedLikedSongs.size,
                         artUrl = likedPlaylistArtUrl(
-                            allLikedSongs.asSequence().map {
+                            orderedLikedSongs.asSequence().map {
                                 it.track?.album?.images?.firstOrNull()?.url
                             }
                         ),
@@ -548,7 +556,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     )
                 )
 
-                val trackSnapshots = allLikedSongs.mapIndexedNotNull { index, item ->
+                val trackSnapshots = orderedLikedSongs.mapIndexedNotNull { index, item ->
                     val track = item.track ?: return@mapIndexedNotNull null
                     RemoteTrackSnapshotEntity(
                         syncId = syncId,
