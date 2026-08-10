@@ -113,6 +113,30 @@ data class LibraryTrackRow(
 )
 
 /**
+ * Projection for the reconciliation disk-existence check: everything
+ * [FileOrganizer.checkExists] needs to verify a track, including for
+ * SAF-stored files where [filePath] alone isn't reliable across a
+ * reinstall (see FileExistenceChecker's KDoc).
+ */
+data class TrackExistenceRef(
+    val id: Long,
+    val artist: String,
+    val album: String,
+    val title: String,
+    @androidx.room.ColumnInfo(name = "file_path") val filePath: String,
+)
+
+/** Candidate projection for [AdoptExistingFilesUseCase] — everything
+ *  needed to probe for a matching on-disk file via
+ *  [FileOrganizer.resolveExistingSafFile]. */
+data class TrackAdoptionCandidate(
+    val id: Long,
+    val artist: String,
+    val album: String,
+    val title: String,
+)
+
+/**
  * Summary projection for album browsing.
  *
  * @property album  Album name.
