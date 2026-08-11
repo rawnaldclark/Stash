@@ -289,7 +289,7 @@ sealed interface LibraryVerificationStatus {
     data class Running(val step: Int, val total: Int) : LibraryVerificationStatus
     data class Done(
         val reconciliation: com.stash.core.data.library.ReconciliationResult,
-        val adoption: com.stash.core.data.library.AdoptionResult,
+        val adoption: com.stash.data.download.files.AdoptionResult,
     ) : LibraryVerificationStatus
     data class Failed(val message: String) : LibraryVerificationStatus
 }
