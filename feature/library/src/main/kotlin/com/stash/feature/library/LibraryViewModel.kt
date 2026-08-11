@@ -141,6 +141,15 @@ class LibraryViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    // Guards against the seed-vs-user-action race: if the user calls
+    // setSortOrder/setSourceFilter before the DataStore read in init
+    // resolves, the seed must not stomp their change back to the
+    // persisted (now-stale) value. Set synchronously in the setter —
+    // by the time the async read's continuation resumes, this is
+    // already true if the user acted first.
+    @Volatile private var sortOrderUserSet = false
+    @Volatile private var sourceFilterUserSet = false
+
     init {
         // Seed the persisted sort/filter before anything downstream reads
         // _controls. uiState's initialValue still starts at ControlState()'s
@@ -149,7 +158,12 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             val sort = libraryPreferencesStore.getSortOrder()
             val filter = libraryPreferencesStore.getSourceFilter()
-            _controls.update { it.copy(sortOrder = sort, sourceFilter = filter) }
+            _controls.update {
+                it.copy(
+                    sortOrder = if (sortOrderUserSet) it.sortOrder else sort,
+                    sourceFilter = if (sourceFilterUserSet) it.sourceFilter else filter,
+                )
+            }
         }
     }
 
@@ -410,12 +424,14 @@ class LibraryViewModel @Inject constructor(
 
     /** Change the sort order for every content list. */
     fun setSortOrder(order: SortOrder) {
+        sortOrderUserSet = true
         _controls.update { it.copy(sortOrder = order) }
         viewModelScope.launch { libraryPreferencesStore.setSortOrder(order) }
     }
 
     /** Filter tracks by source (All / YouTube / Spotify). */
     fun setSourceFilter(filter: SourceFilter) {
+        sourceFilterUserSet = true
         _controls.update { it.copy(sourceFilter = filter) }
         viewModelScope.launch { libraryPreferencesStore.setSourceFilter(filter) }
     }

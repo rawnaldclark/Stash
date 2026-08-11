@@ -94,7 +94,7 @@ class LibraryViewModelSortTest {
         flacUpgradeEnqueuer = mock(),
         ytMusicApiClient = mock(),
         libraryPreferencesStore = mock {
-        onBlocking { getSortOrder() } doReturn SortOrder.RECENT
+            onBlocking { getSortOrder() } doReturn SortOrder.RECENT
             onBlocking { getSourceFilter() } doReturn SourceFilter.ALL
         },
     )

@@ -86,7 +86,7 @@ class MixOfflineTapGuardTest {
         vm.playTrack(trackId = 42L)
         runCurrent()
 
-        verifyBlocking(playerRepo, never()) { setQueue(any(), any()) }
+        verifyBlocking(playerRepo, never()) { setQueue(any(), any(), any()) }
         assertThat(messages).contains("Online only — connect to play this track")
 
         msgJob.cancel()
@@ -126,7 +126,7 @@ class MixOfflineTapGuardTest {
         vm.playTrack(trackId = 99L)
         runCurrent()
 
-        verifyBlocking(playerRepo) { setQueue(any(), any()) }
+        verifyBlocking(playerRepo) { setQueue(any(), any(), any()) }
         assertThat(messages).doesNotContain("Online only — connect to play this track")
 
         msgJob.cancel()
@@ -166,7 +166,7 @@ class MixOfflineTapGuardTest {
         vm.playTrack(trackId = 42L)
         runCurrent()
 
-        verifyBlocking(playerRepo) { setQueue(any(), any()) }
+        verifyBlocking(playerRepo) { setQueue(any(), any(), any()) }
         assertThat(messages).doesNotContain("Online only — connect to play this track")
 
         msgJob.cancel()
@@ -211,7 +211,7 @@ class MixOfflineTapGuardTest {
         vm.playTrack(trackId = 42L)
         runCurrent()
 
-        verifyBlocking(playerRepo, never()) { setQueue(any(), any()) }
+        verifyBlocking(playerRepo, never()) { setQueue(any(), any(), any()) }
         assertThat(messages).contains("Switch to Online mode to play this track")
 
         msgJob.cancel()
@@ -252,7 +252,7 @@ class MixOfflineTapGuardTest {
         runCurrent()
 
         val queueCaptor = argumentCaptor<List<Track>>()
-        verifyBlocking(playerRepo) { setQueue(queueCaptor.capture(), any()) }
+        verifyBlocking(playerRepo) { setQueue(queueCaptor.capture(), any(), any()) }
         assertThat(queueCaptor.firstValue.map { it.id }).containsExactly(1L)
 
         uiJob.cancel()

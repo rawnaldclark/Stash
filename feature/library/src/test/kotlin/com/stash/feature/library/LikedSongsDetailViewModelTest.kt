@@ -71,7 +71,7 @@ class LikedSongsDetailViewModelTest {
         }
         val playerRepo = mock<PlayerRepository> {
             on { playerState } doReturn MutableStateFlow(PlayerState())
-            onBlocking { setQueue(any(), any()) } doSuspendableAnswer { gate.await() }
+            onBlocking { setQueue(any(), any(), any()) } doSuspendableAnswer { gate.await() }   
         }
         val vm = buildVm(playerRepository = playerRepo, musicRepository = musicRepo)
 
