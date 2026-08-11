@@ -83,7 +83,7 @@ class FlacUpgradeWorker @AssistedInject constructor(
             // User hit Cancel (or the system pulled the plug): drop the
             // remainder so the batch doesn't zombie-resume on retry.
             queueDao.clearPending()
-            syncNotificationManager.cancelProgress()
+            syncNotificationManager.cancelFlacUpgrade()
             throw ce
         }
 

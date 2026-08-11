@@ -49,4 +49,21 @@ class PlaybackModePreference @Inject constructor(
     suspend fun setEnabled(value: Boolean) {
         context.playbackModeDataStore.edit { it[enabledKey] = value }
     }
+
+    /**
+     * One-time migration for existing installs: if this key has never been
+     * written, seed it from the legacy StreamingPreference.enabled value
+     * instead of defaulting to false. Before this split, StreamingPreference
+     * governed both download AND playback — a user with it enabled had Now
+     * Playing streaming undownloaded tracks. Without this seed, that cohort
+     * silently loses streaming playback on update until they find the new
+     * toggle. No-op once the key exists (never overwrites a user choice).
+     */
+    suspend fun seedFromLegacyIfAbsent(legacyStreamingEnabled: Boolean) {
+        context.playbackModeDataStore.edit { prefs ->
+            if (!prefs.contains(enabledKey)) {
+                prefs[enabledKey] = legacyStreamingEnabled
+            }
+        }
+    }
 }

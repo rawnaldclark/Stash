@@ -228,6 +228,13 @@ class SyncNotificationManager @Inject constructor(
         notificationManager.cancel(NOTIFICATION_ID_PROGRESS)
     }
 
+    /** Cancel the ongoing FLAC-upgrade progress notification. Distinct from
+     *  [cancelProgress] (sync's own notification, ID 9001) — the two run
+     *  under separate IDs and must be cancelled independently. */
+    fun cancelFlacUpgrade() {
+        notificationManager.cancel(NOTIFICATION_ID_FLAC_UPGRADE)
+    }
+
     /** Summary for a finished batch FLAC upgrade (spec 2026-07-22 §3). */
     fun showFlacUpgradeSummary(upgraded: Int, noMatch: Int, failed: Int) {
         val text = buildList {

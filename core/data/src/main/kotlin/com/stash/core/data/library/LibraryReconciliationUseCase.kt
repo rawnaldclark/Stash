@@ -55,6 +55,7 @@ class LibraryReconciliationUseCase @Inject constructor(
      *   without a lambda if a future caller needs that.
      */
     suspend fun reconcile(
+        syncId: Long? = null,
         onProgress: (step: Int, total: Int) -> Unit = { _, _ -> },
         checkFileExists: suspend (artist: String, album: String?, title: String, filePath: String) -> com.stash.core.data.library.FileExistenceResult =
             { _, _, _, _ -> com.stash.core.data.library.FileExistenceResult(exists = true) },
@@ -100,7 +101,7 @@ class LibraryReconciliationUseCase @Inject constructor(
         val unqueuedTrackIds = downloadQueueDao.getUnqueuedTrackIds(connectedSources)
         if (unqueuedTrackIds.isNotEmpty()) {
             val newEntries = unqueuedTrackIds.map { trackId ->
-                com.stash.core.data.db.entity.DownloadQueueEntity(trackId = trackId, syncId = null)
+                com.stash.core.data.db.entity.DownloadQueueEntity(trackId = trackId, syncId = syncId)
             }
             downloadQueueDao.insertAll(newEntries)
         }

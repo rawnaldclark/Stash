@@ -1,8 +1,7 @@
-package com.stash.core.data.library
+package com.stash.data.download.files
 
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.TrackAdoptionCandidate
-import com.stash.data.download.files.FileOrganizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll

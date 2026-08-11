@@ -127,6 +127,9 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
 
     @Inject
+    lateinit var playbackModePreference: com.stash.core.data.prefs.PlaybackModePreference
+
+    @Inject
     lateinit var streamingQualityPreferences: com.stash.data.download.prefs.StreamingQualityPreferences
 
     @Inject
@@ -409,6 +412,14 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
         applicationScope.launch { maybePurgeAntraArtifacts() }
+        // Seed Playback Mode from the legacy StreamingPreference value for
+        // installs that predate the split. Internally idempotent — checks
+        // key-presence itself, so no SharedPreferences version gate needed
+        // here (unlike the other one-shots in this file).
+        applicationScope.launch {
+            runCatching { playbackModePreference.seedFromLegacyIfAbsent(streamingPreference.current()) }
+                .onFailure { Log.w("StashStartup", "playback mode seed failed", it) }
+        }
         // One-shot: seed the streaming Wi-Fi quality tier from the user's
         // current download tier on first run, so existing users' streaming
         // quality inherits their download choice instead of silently changing.

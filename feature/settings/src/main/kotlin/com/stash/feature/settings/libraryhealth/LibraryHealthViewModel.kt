@@ -40,7 +40,7 @@ class LibraryHealthViewModel @Inject constructor(
     private val metadataExtractor: AudioDurationExtractor,
     private val fileExistenceChecker: com.stash.core.data.library.FileExistenceChecker,
     private val reconciliationUseCase: com.stash.core.data.library.LibraryReconciliationUseCase,
-    private val adoptExistingFilesUseCase: com.stash.core.data.library.AdoptExistingFilesUseCase,
+    private val adoptExistingFilesUseCase: com.stash.data.download.files.AdoptExistingFilesUseCase,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LibraryHealthState())

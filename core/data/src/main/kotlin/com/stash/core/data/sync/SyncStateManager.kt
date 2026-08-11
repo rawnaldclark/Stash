@@ -81,13 +81,11 @@ class SyncStateManager @Inject constructor() {
         _phase.value = SyncPhase.Diffing(playlistsDiffed, totalPlaylists)
     }
 
-    /**
-     * Transition to (or update progress within) [SyncPhase.VerifyingLibrary].
-     * Called at each housekeeping step in TrackDownloadWorker before the
-     * download loop starts, so a long reconciliation pass on a big library
-     * visibly advances instead of leaving the bar frozen on Diffing.
-     */
-    fun onVerifyingLibrary(step: Int = 0, total: Int = 4) {
+    /** Default mirrors LibraryReconciliationUseCase.TOTAL_STEPS (sweep, reset,
+     *  resume-stale, disk-check, requeue = 5 steps). Kept as a literal rather
+     *  than importing across the sync/library boundary — update this if
+     *  TOTAL_STEPS changes. */
+    fun onVerifyingLibrary(step: Int = 0, total: Int = 5) {
         _phase.value = SyncPhase.VerifyingLibrary(step, total)
     }
 
