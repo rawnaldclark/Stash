@@ -17,6 +17,17 @@ class JioSaavnMatcherTest {
     }
 
     @Test
+    fun `parenthetical decoration on the query title still matches the plain title`() {
+        // Device-verified miss 2026-08-13: Spotify names the track
+        // 'Apna Bana Le (From "Bhediya")', JioSaavn names it 'Apna Bana Le'.
+        val result = JioSaavnMatcher.best(
+            TrackQuery("Arijit Singh, Sachin-Jigar", "Apna Bana Le (From \"Bhediya\")", durationMs = 261_000L),
+            listOf(song(name = "Apna Bana Le", artist = "Sachin-Jigar, Arijit Singh", duration = 261)),
+        )
+        assertThat(result).isNotNull()
+    }
+
+    @Test
     fun `karaoke candidate is rejected when target is the studio song`() {
         val result = JioSaavnMatcher.best(
             TrackQuery("Imagine Dragons", "Believer", durationMs = 204_000L),

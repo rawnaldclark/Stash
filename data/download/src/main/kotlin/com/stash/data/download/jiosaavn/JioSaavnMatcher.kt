@@ -36,7 +36,13 @@ object JioSaavnMatcher {
         }
         if (query.explicit != null && query.explicit != song.explicitContent) return null
 
-        val title = similarity(normalize(query.title), normalize(song.name))
+        // Compare CORE titles: parenthetical decorations — '(From "Bhediya")',
+        // "(Official Video)" — tank token similarity for what is the same
+        // recording (device-verified 2026-08-13: Apna Bana Le scored 0.6 and
+        // fell to YouTube). Safe to strip here because version identity
+        // ("live", "remix", …) is enforced by the versionSignature gate above,
+        // which sees the FULL title.
+        val title = similarity(coreTitle(query.title), coreTitle(song.name))
         val artist = artistSimilarity(normalize(query.artist), normalize(candidateArtist))
         if (title < MIN_TITLE || artist < MIN_ARTIST) return null
         val duration = durationSimilarity(query.durationMs, song.duration) ?: return null
@@ -89,6 +95,10 @@ object JioSaavnMatcher {
             Regex("(?:^|\\s)${Regex.escape(marker)}(?:$|\\s)").containsMatchIn(normalized)
         }
     }
+
+    /** [normalize] with parenthesized/bracketed decorations removed first. */
+    private fun coreTitle(value: String): String =
+        normalize(value.replace(Regex("[(\\[][^)\\]]*[)\\]]"), " "))
 
     private fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
         .lowercase()
