@@ -144,6 +144,7 @@ class LibraryViewModelShuffleLikedTest {
                 onBlocking { getSortOrder() } doReturn SortOrder.RECENT
                 onBlocking { getSourceFilter() } doReturn SourceFilter.ALL
             },
+            artistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
         )
     }
 }

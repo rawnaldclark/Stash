@@ -15,6 +15,8 @@ android {
 }
 dependencies {
     implementation(project(":core:auth"))
+    // Artist-credit parsing for the primary-artist display helper.
+    implementation(project(":core:common"))
     implementation(project(":core:data"))
     implementation(project(":core:media"))
     // LocalImportCoordinator for "Import from device" flow.

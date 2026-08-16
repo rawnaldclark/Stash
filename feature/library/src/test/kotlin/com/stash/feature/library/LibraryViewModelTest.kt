@@ -220,7 +220,11 @@ class LibraryViewModelTest {
 
         // Album matched by NAME only — the per-track credit variation across a
         // multi-artist album must not drop rows.
-        verify(playerRepo).setQueue(listOf(onAlbum[0], onAlbum[1]), 0)
+        verify(playerRepo).setQueue(
+            listOf(onAlbum[0], onAlbum[1]),
+            0,
+            source = com.stash.core.model.PlaybackSource.Album(album, "Metro Boomin"),
+        )
     }
 
     @Test

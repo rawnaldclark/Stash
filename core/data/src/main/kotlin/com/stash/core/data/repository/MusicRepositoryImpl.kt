@@ -251,8 +251,8 @@ class MusicRepositoryImpl @Inject constructor(
             .map { rows -> rows.map { it.toDomain() } }
 
     override fun getTracksByArtist(artist: String): Flow<List<Track>> =
-        trackDao.getAllByDateAdded().map { entities ->
-            entities
+        trackDao.getLibraryByDateAdded().map { rows ->
+            rows
                 .map { it.toDomain() }
                 // Collaboration credits: "Metro Boomin, Travis Scott" counts
                 // for BOTH "Metro Boomin" and "Travis Scott" (plus the exact
