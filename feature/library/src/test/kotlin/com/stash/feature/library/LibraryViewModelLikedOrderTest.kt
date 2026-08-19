@@ -110,6 +110,7 @@ class LibraryViewModelLikedOrderTest {
                 onBlocking { getSourceFilter() } doReturn SourceFilter.ALL
             },
             libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
+            artistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
         )
     }
 }
