@@ -1,6 +1,8 @@
 package com.stash.feature.library
 
 import androidx.lifecycle.SavedStateHandle
+import com.stash.core.data.db.dao.ArtistImageDao
+import com.stash.core.data.db.entity.ArtistImageEntity
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
@@ -8,6 +10,8 @@ import com.stash.core.model.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -17,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
@@ -122,6 +127,33 @@ class ArtistDetailViewModelTest {
     }
 
     @Test
+    fun uiState_exposes_photoUrl_from_artist_image_cache() = runTest {
+        val artistImageDao = mock<ArtistImageDao> {
+            on { observeByName(any()) } doReturn flowOf(
+                ArtistImageEntity(
+                    artistName = "Artist",
+                    imageUrl = "https://yt3.example/photo.jpg",
+                    attemptedAt = 1L,
+                ),
+            )
+        }
+        val vm = buildVm(artistImageDao = artistImageDao)
+        // drop(1): skip the WhileSubscribed initialValue (photoUrl = null)
+        // and grab the first state the combine actually computes.
+        val state = vm.uiState.drop(1).first()
+
+        assertEquals("https://yt3.example/photo.jpg", state.photoUrl)
+    }
+
+    @Test
+    fun uiState_photoUrl_is_null_when_no_cache_row_exists() = runTest {
+        val vm = buildVm()
+        val state = vm.uiState.drop(1).first()
+
+        assertNull(state.photoUrl)
+    }
+
+    @Test
     fun downloadSelected_isolates_per_item_failure() = runTest {
         val musicRepo = musicRepoMock()
         // Second item throws; first and third must still be attempted.
@@ -194,6 +226,9 @@ class ArtistDetailViewModelTest {
             on { getTracksByArtist(any()) } doReturn flowOf(emptyList())
             on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         },
+        artistImageDao: ArtistImageDao = mock {
+            on { observeByName(any()) } doReturn flowOf(null)
+        },
         savedStateHandle: SavedStateHandle = SavedStateHandle(
             mapOf("artistName" to "Artist"),
         ),
@@ -201,5 +236,6 @@ class ArtistDetailViewModelTest {
         savedStateHandle = savedStateHandle,
         musicRepository = musicRepository,
         playerRepository = playerRepository,
+        artistImageDao = artistImageDao,
     )
 }

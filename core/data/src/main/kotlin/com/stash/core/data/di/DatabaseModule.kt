@@ -33,7 +33,7 @@ object DatabaseModule {
             StashDatabase::class.java,
             StashDatabase.DATABASE_NAME,
         )
-            // Single source of truth for the chain — DatabaseBackupManager's
+// Single source of truth for the chain — DatabaseBackupManager's
             // merge-import opens a second Room instance over a staged backup
             // file with this same array, so an older backup can be rolled
             // forward to the live schema before rows are copied out of it.
@@ -66,6 +66,10 @@ object DatabaseModule {
     @Provides
     fun provideArtistProfileCacheDao(db: StashDatabase): ArtistProfileCacheDao =
         db.artistProfileCacheDao()
+
+    @Provides
+    fun provideArtistImageDao(db: StashDatabase): com.stash.core.data.db.dao.ArtistImageDao =
+        db.artistImageDao()
 
     @Provides
     fun provideListeningEventDao(db: StashDatabase): com.stash.core.data.db.dao.ListeningEventDao =

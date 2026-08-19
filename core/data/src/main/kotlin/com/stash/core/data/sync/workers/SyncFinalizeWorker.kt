@@ -79,6 +79,12 @@ class SyncFinalizeWorker @AssistedInject constructor(
             // Transition to completed state.
             syncStateManager.onCompleted()
 
+            // A finished sync may have added artists to the library — re-run
+            // the artist-photo backfill so new acts get a photo. REPLACE policy
+            // lets this supersede any queued first-run pass; it is a cheap
+            // dedupe (observed-names set) when nothing is new.
+            ArtistImageBackfillWorker.enqueueAfterSync(applicationContext)
+
             Log.i(
                 TAG,
                 "Sync $syncId complete: $playlistsChecked playlists, " +
