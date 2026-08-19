@@ -6,6 +6,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.stash.core.data.db.converter.Converters
+import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.DownloadQueueDao
@@ -25,6 +26,7 @@ import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.dao.TrackTagDao
+import com.stash.core.data.db.entity.ArtistImageEntity
 import com.stash.core.data.db.entity.ArtistProfileCacheEntity
 import com.stash.core.data.db.entity.DiscoveryQueueEntity
 import com.stash.core.data.db.entity.DownloadQueueEntity
@@ -91,8 +93,9 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoPointEntity::class,
         SyncUndoPlaylistEntity::class,
         SyncUndoMembershipEntity::class,
+        ArtistImageEntity::class,
     ],
-    version = 42,
+    version = 43,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -111,6 +114,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun remoteSnapshotDao(): RemoteSnapshotDao
 
     abstract fun artistProfileCacheDao(): ArtistProfileCacheDao
+
+    abstract fun artistImageDao(): ArtistImageDao
 
     abstract fun listeningEventDao(): ListeningEventDao
 
@@ -1011,6 +1016,33 @@ abstract class StashDatabase : RoomDatabase() {
         val MIGRATION_41_42 = object : Migration(41, 42) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE playlists ADD COLUMN pinned_to_home_at INTEGER")
+            }
+        }
+
+        /**
+         * v42 → v43: `artist_images` cache table for the Library Artists tab.
+         *
+         * `ArtistImageBackfillWorker` resolves each displayed artist's official
+         * photo via the YT Music artists search and stores it here, keyed by
+         * the primary artist name ([ArtistImageEntity]). A row with a NULL
+         * `image_url` and a non-NULL `attempted_at` is a permanent
+         * "unresolvable" sentinel so the worker never re-polls local-only rips.
+         *
+         * The primary key is COLLATE NOCASE so a case-variant credit collapses
+         * onto the same row (one photo per artist, not one per spelling).
+         */
+        val MIGRATION_42_43 = object : Migration(42, 43) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `artist_images` (
+                        `artist_name` TEXT NOT NULL COLLATE NOCASE,
+                        `image_url` TEXT,
+                        `attempted_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`artist_name`)
+                    )
+                    """.trimIndent(),
+                )
             }
         }
 

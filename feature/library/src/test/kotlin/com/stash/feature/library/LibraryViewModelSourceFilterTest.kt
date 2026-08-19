@@ -3,6 +3,7 @@ package com.stash.feature.library
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
+import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
@@ -74,5 +75,6 @@ class LibraryViewModelSourceFilterTest {
             onBlocking { getSourceFilter() } doReturn SourceFilter.ALL
         },
         libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
+        artistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
     )
 }
