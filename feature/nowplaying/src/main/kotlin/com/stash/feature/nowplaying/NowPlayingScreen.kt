@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
+import com.stash.core.common.primaryArtist
 import com.stash.core.media.SleepTimerController
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -541,10 +542,15 @@ fun NowPlayingScreen(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
+                    // Collapse collaboration credits to the lead act
+                    // ("Metro Boomin, Travis Scott" → "Metro Boomin"), and
+                    // remember the split — this Text recomposes with every
+                    // player-state change.
+                    val displayArtist = remember(track) { track?.artist?.primaryArtist() }
                     Text(
                         text = buildString {
-                            if (track != null) {
-                                append(track.artist)
+                            if (track != null && displayArtist != null) {
+                                append(displayArtist)
                                 if (track.album.isNotBlank()) {
                                     append(" \u2022 ")
                                     append(track.album)

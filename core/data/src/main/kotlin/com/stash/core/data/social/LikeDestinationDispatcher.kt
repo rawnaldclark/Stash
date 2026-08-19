@@ -1,6 +1,7 @@
 package com.stash.core.data.social
 
 import android.util.Log
+import com.stash.core.common.primaryArtist
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.social.spotify.SpotifyLibraryApiClient
 import com.stash.core.data.social.stash.StashLikedPlaylistRepository
@@ -169,13 +170,13 @@ class LikeDestinationDispatcher @Inject constructor(
      * all. That split is precisely what the toggle exists to prevent, so it has to
      * govern both writes, not just one.
      *
-     * Reuses [com.stash.core.data.lastfm.primaryArtist] rather than reimplementing
+     * Reuses [com.stash.core.common.primaryArtist] rather than reimplementing
      * the split: one definition of "primary artist", one place to fix it when the
      * "Tyler, The Creator" limitation is eventually addressed.
      */
     private suspend fun scrobbleArtist(artist: String): String =
         if (lastFmSessionPreference.firstArtistOnly.first() == true) {
-            com.stash.core.data.lastfm.primaryArtist(artist)
+            artist.primaryArtist()
         } else {
             artist
         }

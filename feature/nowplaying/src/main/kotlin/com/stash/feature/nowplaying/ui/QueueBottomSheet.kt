@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
+import com.stash.core.common.primaryArtist
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
 import java.util.Collections
@@ -320,7 +321,7 @@ fun QueueBottomSheet(
                                     )
                                 }
                                 Text(
-                                    text = track.artist,
+                                    text = remember(track.artist) { track.artist.primaryArtist() },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -541,7 +542,7 @@ private fun CurrentTrackRow(track: Track, accentColor: Color) {
                 )
             }
             Text(
-                track.artist,
+                remember(track.artist) { track.artist.primaryArtist() },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

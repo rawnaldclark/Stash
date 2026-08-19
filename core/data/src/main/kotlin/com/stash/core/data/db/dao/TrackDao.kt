@@ -442,8 +442,30 @@ interface TrackDao {
     )
     fun getLibraryByDateAdded(): Flow<List<LibraryTrackRow>>
 
-    /** All tracks by a specific artist, ordered by album then title. */
-    @Query("SELECT * FROM tracks WHERE artist = :artist ORDER BY album ASC, title ASC")
+    /**
+     * Candidate tracks for a "by artist" query.
+     *
+     * v0.9.x — the exact `artist = :artist` predicate could not see
+     * collaboration rows whose credit is a superset of the query
+     * ("Metro Boomin, Travis Scott" for query "Metro Boomin"), and a
+     * whole-library scan in the repository to catch them is wasteful.
+     * This query keeps the *narrowing* in SQL: equal-or-LIKE against
+     * both `artist` and `album_artist` returns a small superset, then
+     * [com.stash.core.common.matchesArtistCredits] in the repository
+     * filters it to the exact credit match. LIKE's `%`-wrapping is
+     * deliberately loose here — the repository filter is the authority,
+     * SQL only avoids pulling the whole table.
+     */
+    @Query(
+        """
+        SELECT * FROM tracks
+        WHERE artist = :artist
+           OR album_artist = :artist
+           OR artist LIKE '%' || :artist || '%'
+           OR album_artist LIKE '%' || :artist || '%'
+        ORDER BY album ASC, title ASC
+        """,
+    )
     fun getByArtist(artist: String): Flow<List<TrackEntity>>
 
     /**

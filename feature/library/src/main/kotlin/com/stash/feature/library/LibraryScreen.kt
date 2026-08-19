@@ -7,6 +7,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -82,6 +83,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,9 +102,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
+import coil3.compose.rememberAsyncImagePainter
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
-import coil3.compose.AsyncImage
 import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SourceIndicator
@@ -1880,32 +1884,18 @@ private fun AlbumsGrid(
                             onLongClick = { selectedAlbum = album },
                         ),
                 ) {
-                    // Album art: try local path, then remote URL, then fallback icon
+                    // Album art: try local path, then remote URL, then fallback icon.
+                    // AlbumArtwork also falls back to the icon while a remote
+                    // image is loading or after it errors — a failed URL used to
+                    // render as an empty grey box.
                     val artModel = album.artPath ?: album.artUrl
-                    Box(
+                    AlbumArtwork(
+                        model = artModel,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(120.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(StashTheme.extendedColors.elevatedSurface),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (artModel != null) {
-                            AsyncImage(
-                                model = artModel,
-                                contentDescription = "${album.name} album art",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Album,
-                                contentDescription = null,
-                                tint = StashTheme.extendedColors.textTertiary,
-                                modifier = Modifier.size(40.dp),
-                            )
-                        }
-                    }
+                            .clip(RoundedCornerShape(8.dp)),
+                    )
                     Text(
                         text = album.name,
                         style = MaterialTheme.typography.bodyMedium,
@@ -2025,6 +2015,46 @@ private fun AlbumsGrid(
             )
 
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * Album artwork with a graceful fallback. Shows the image once it actually
+ * loads; while a remote image is loading, and after it errors, a placeholder
+ * album icon renders on the elevated surface instead of an empty grey box.
+ */
+@Composable
+private fun AlbumArtwork(model: Any?, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.background(StashTheme.extendedColors.elevatedSurface),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (model != null) {
+            val painter = rememberAsyncImagePainter(model = model)
+            val state by painter.state.collectAsState()
+            if (state is AsyncImagePainter.State.Success) {
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Album,
+                    contentDescription = null,
+                    tint = StashTheme.extendedColors.textTertiary,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+        } else {
+            Icon(
+                imageVector = Icons.Default.Album,
+                contentDescription = null,
+                tint = StashTheme.extendedColors.textTertiary,
+                modifier = Modifier.size(40.dp),
+            )
         }
     }
 }

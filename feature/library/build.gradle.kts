@@ -17,6 +17,9 @@ dependencies {
     implementation(project(":core:auth"))
     implementation(project(":core:data"))
     implementation(project(":core:media"))
+    // Artist-credit parsing: album-card display (String.primaryArtist) and
+    // album/artist matching (matchesArtistCredits).
+    implementation(project(":core:common"))
     // LocalImportCoordinator for "Import from device" flow.
     implementation(project(":data:download"))
     implementation(project(":data:ytmusic"))

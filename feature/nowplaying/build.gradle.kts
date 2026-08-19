@@ -18,6 +18,9 @@ dependencies {
     implementation(project(":core:media"))
     implementation(project(":core:data"))
     implementation(project(":core:auth"))
+    // Track-artist display collapses collaboration credits to their lead act
+    // via String.primaryArtist.
+    implementation(project(":core:common"))
     // v0.9.36 — Now Playing lyrics sheet observes LyricsRepository and
     // enqueues the priority on-open LyricsFetchWorker. work-runtime gives
     // us WorkManager + OneTimeWorkRequestBuilder for the priority enqueue.

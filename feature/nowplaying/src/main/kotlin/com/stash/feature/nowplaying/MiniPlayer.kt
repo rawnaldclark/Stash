@@ -28,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +40,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
+import com.stash.core.common.primaryArtist
 
 /**
  * Compact mini player bar that sits above the bottom navigation.
@@ -118,6 +120,11 @@ fun MiniPlayer(
 
                     // Track title and artist.
                     Column(modifier = Modifier.weight(1f)) {
+                        // primaryArtist() collapses collaboration credits
+                        // ("Metro Boomin, Travis Scott" → "Metro Boomin").
+                        // remember keeps the split off the hot path: this
+                        // composable recomposes on every progress tick.
+                        val artist = remember(track?.artist) { track?.artist?.primaryArtist() }
                         Text(
                             text = track?.title ?: "",
                             style = MaterialTheme.typography.bodyMedium,
@@ -126,7 +133,7 @@ fun MiniPlayer(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = track?.artist ?: "",
+                            text = artist ?: "",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,

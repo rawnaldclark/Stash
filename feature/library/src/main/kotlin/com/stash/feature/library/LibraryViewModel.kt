@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
+import com.stash.core.common.matchesArtistCredits
+import com.stash.core.common.primaryArtist
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.FlacUpgradeEnqueuer
@@ -220,7 +222,11 @@ class LibraryViewModel @Inject constructor(
         // -- Map DAO projections to UI models --
         val artists = allArtists.map { ArtistInfo(it.artist, it.trackCount, it.totalDurationMs, it.artUrl) }
         val albums = mergeDuplicateAlbums(
-            allAlbums.map { AlbumInfo(it.album, it.artist, it.trackCount, it.artPath, it.artUrl) }
+            // Album card shows the lead act of a collaboration credit
+            // ("Metro Boomin" for "Metro Boomin, Travis Scott"), so the card
+            // reads cleanly. Merging still happens on the same display name —
+            // a collab album and its lead-act album are one release, not two.
+            allAlbums.map { AlbumInfo(it.album, it.artist.primaryArtist(), it.trackCount, it.artPath, it.artUrl) }
         )
 
         // -- Apply source filter --
@@ -885,13 +891,15 @@ class LibraryViewModel @Inject constructor(
     /**
      * Load all downloaded tracks matching [albumName] by [artist] and begin playback.
      * Filters from allTracks since there is no dedicated getTracksByAlbum query.
+     * Artist matching uses [matchesArtistCredits] so a collaboration album
+     * ("Metro Boomin, Travis Scott") plays from its primary-act card tap.
      */
     fun playAlbum(albumName: String, artist: String) {
         viewModelScope.launch {
             val allTracks = musicRepository.getAllTracks().first()
             val downloaded = allTracks.filter {
                 it.album.equals(albumName, ignoreCase = true)
-                    && it.artist.equals(artist, ignoreCase = true)
+                    && matchesArtistCredits(it.artist, it.albumArtist, artist)
                     && it.filePath != null
             }
             if (downloaded.isNotEmpty()) {
@@ -906,13 +914,14 @@ class LibraryViewModel @Inject constructor(
 
     /**
      * Load all downloaded tracks matching [albumName] by [artist] and append each to the queue.
+     * Artist matching uses [matchesArtistCredits] like [playAlbum].
      */
     fun addAlbumToQueue(albumName: String, artist: String) {
         viewModelScope.launch {
             val allTracks = musicRepository.getAllTracks().first()
             val downloaded = allTracks.filter {
                 it.album.equals(albumName, ignoreCase = true)
-                    && it.artist.equals(artist, ignoreCase = true)
+                    && matchesArtistCredits(it.artist, it.albumArtist, artist)
                     && it.filePath != null
             }
             downloaded.forEach { playerRepository.addToQueue(it) }

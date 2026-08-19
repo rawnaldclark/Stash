@@ -3,6 +3,7 @@ package com.stash.core.data.repository
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import com.stash.core.common.matchesArtistCredits
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
 import com.stash.core.data.db.dao.PlaylistDao
@@ -14,6 +15,7 @@ import com.stash.core.data.mapper.toEntity
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
@@ -251,7 +254,15 @@ class MusicRepositoryImpl @Inject constructor(
             .map { rows -> rows.map { it.toDomain() } }
 
     override fun getTracksByArtist(artist: String): Flow<List<Track>> =
-        trackDao.getByArtist(artist).map { entities -> entities.map { it.toDomain() } }
+        trackDao.getByArtist(artist)
+            .map { entities ->
+                entities
+                    .filter { matchesArtistCredits(it.artist, it.albumArtist, artist) }
+                    .map { it.toDomain() }
+            }
+            // The matchesArtistCredits post-filter is O(n) over the SQL
+            // candidate superset and off the main thread.
+            .flowOn(Dispatchers.Default)
 
     // v0.9.30 Path A: Library Songs/Albums/Artists views are curated =
     // downloaded-only, always. Streaming mode does NOT change what shows

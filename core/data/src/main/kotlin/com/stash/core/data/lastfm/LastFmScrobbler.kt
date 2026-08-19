@@ -1,6 +1,7 @@
 package com.stash.core.data.lastfm
 
 import android.util.Log
+import com.stash.core.common.primaryArtist
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.ListeningEventEntity
@@ -169,7 +170,7 @@ class LastFmScrobbler @Inject constructor(
      * Applies the "only first artist" preference, if the user enabled it.
      */
     private suspend fun scrobbleArtist(artist: String): String =
-        if (sessionPreference.firstArtistOnly.firstOrNull() == true) primaryArtist(artist) else artist
+        if (sessionPreference.firstArtistOnly.firstOrNull() == true) artist.primaryArtist() else artist
 
     companion object {
         private const val TAG = "LastFmScrobbler"
@@ -182,19 +183,3 @@ class LastFmScrobbler @Inject constructor(
         const val SCROBBLE_GATE_KEY = "scrobble-submit"
     }
 }
-
-/**
- * Best-effort primary artist for scrobbling. Every parser in the app joins
- * multiple artists with `", "` (PlaylistFetchWorker, ResponseParserHelpers,
- * SearchResponseParser), so the join delimiter is the split delimiter.
- *
- * Deliberately NOT a regex on "&" / "feat." / "x" — that shreds real band
- * names like "Simon & Garfunkel".
- *
- * Known limitation: a single artist whose own name contains ", " is
- * truncated ("Tyler, The Creator" -> "Tyler"). Fixing that properly needs a
- * structured artist list on TrackEntity and a DB migration. This is why the
- * setting is opt-in and off by default.
- */
-internal fun primaryArtist(artist: String): String =
-    artist.substringBefore(", ").trim().ifBlank { artist }

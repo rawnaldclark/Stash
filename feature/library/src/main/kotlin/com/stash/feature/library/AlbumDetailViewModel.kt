@@ -3,6 +3,7 @@ package com.stash.feature.library
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.common.matchesArtistCredits
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.media.PlayerRepository
@@ -89,12 +90,15 @@ class AlbumDetailViewModel @Inject constructor(
 
     /**
      * Filtered track flow: all tracks matching this album + artist combination.
-     * Uses case-insensitive matching to be resilient against metadata variations.
+     * Album name is compared case-insensitively; the artist is matched with
+     * [matchesArtistCredits] so a collaboration album's tracks ("Metro Boomin,
+     * Travis Scott") still belong to the album card that leads with its primary
+     * act ("Metro Boomin").
      */
     private val albumTracks = musicRepository.getAllTracks().map { allTracks ->
         allTracks.filter {
             it.album.equals(albumName, ignoreCase = true)
-                && it.artist.equals(artistName, ignoreCase = true)
+                && matchesArtistCredits(it.artist, it.albumArtist, artistName)
         }
     }
 
