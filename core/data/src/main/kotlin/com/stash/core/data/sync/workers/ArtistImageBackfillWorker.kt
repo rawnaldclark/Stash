@@ -11,6 +11,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.common.primaryArtist
 import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.db.entity.ArtistImageEntity
@@ -149,7 +150,7 @@ class ArtistImageBackfillWorker @AssistedInject constructor(
                 is ArtistPhotoResolution.Resolved -> {
                     batch += ArtistImageEntity(
                         artistName = name,
-                        imageUrl = resolution.avatarUrl?.takeIf { it.isNotBlank() },
+                        imageUrl = ArtUrlUpgrader.upgrade(resolution.avatarUrl?.takeIf { it.isNotBlank() }),
                         attemptedAt = System.currentTimeMillis(),
                     )
                     if (resolution.avatarUrl.isNullOrBlank()) unresolved++ else filled++
