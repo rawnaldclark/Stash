@@ -162,6 +162,24 @@ fun AlbumDetailScreen(
                     }
                 }
 
+                // ── No local tracks on this album ──────────────────────
+                if (state.tracks.isEmpty() && state.searchQuery.isEmpty()) {
+                    item(key = "empty-album") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "No songs in your library yet",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
                 // ── Empty search results ───────────────────────────────
                 if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
                     item(key = "no-results") {

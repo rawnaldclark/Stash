@@ -193,6 +193,64 @@ class LibraryViewModelTest {
         assertEquals(listOf("Queued 2 songs for download."), messages)
     }
 
+    @Test
+    fun playAlbum_queues_every_downloaded_track_with_matching_artist_credits() = runTest {
+        val album = "HEROES & VILLAINS"
+        val onAlbum = listOf(
+            Track(1L, "Superhero", "Metro Boomin, Future", album = album, filePath = "/a"),
+            Track(2L, "Trance", "Metro Boomin, Travis Scott", album = album, filePath = "/b"),
+            // Same album but not downloaded — must NOT be queued.
+            Track(3L, "Creepin'", "Metro Boomin, The Weeknd, 21 Savage", album = album, filePath = null),
+            // Same album but credited without the primary act — dropped by matchesArtistCredits.
+            Track(4L, "Private Dancer", "Don Toliver", album = album, filePath = "/e"),
+        )
+        // Different album by a different artist — must NOT leak in.
+        val offAlbum = Track(5L, "Highest in the Room", "Travis Scott", album = "JACKBOYS", filePath = "/d")
+        val musicRepo = mock<MusicRepository> {
+            on { getAllTracks() } doReturn flowOf(onAlbum + offAlbum)
+        }
+
+        val playerRepo = playerRepoMock()
+        val vm = buildVm(musicRepository = musicRepo, playerRepository = playerRepo)
+
+        vm.playAlbum(album, "Metro Boomin")
+        runCurrent()
+
+        // Credited rows all include the primary act, so every downloaded one is queued.
+        verify(playerRepo).setQueue(
+            listOf(onAlbum[0], onAlbum[1]),
+            0,
+            source = com.stash.core.model.PlaybackSource.Album(album, "Metro Boomin"),
+        )
+    }
+
+    @Test
+    fun addAlbumToQueue_appends_every_downloaded_track_with_matching_artist_credits() = runTest {
+        val album = "HEROES & VILLAINS"
+        val onAlbum = listOf(
+            Track(1L, "Superhero", "Metro Boomin, Future", album = album, filePath = "/a"),
+            Track(2L, "Trance", "Metro Boomin, Travis Scott", album = album, filePath = "/b"),
+            Track(3L, "Creepin'", "Metro Boomin, The Weeknd, 21 Savage", album = album, filePath = null),
+            Track(4L, "Private Dancer", "Don Toliver", album = album, filePath = "/e"),
+        )
+        val offAlbum = Track(5L, "Highest in the Room", "Travis Scott", album = "JACKBOYS", filePath = "/d")
+        val musicRepo = mock<MusicRepository> {
+            on { getAllTracks() } doReturn flowOf(onAlbum + offAlbum)
+        }
+
+        val playerRepo = playerRepoMock()
+        val vm = buildVm(musicRepository = musicRepo, playerRepository = playerRepo)
+
+        vm.addAlbumToQueue(album, "Metro Boomin")
+        runCurrent()
+
+        verify(playerRepo).addToQueue(onAlbum[0])
+        verify(playerRepo).addToQueue(onAlbum[1])
+        verify(playerRepo, org.mockito.kotlin.never()).addToQueue(onAlbum[2])
+        verify(playerRepo, org.mockito.kotlin.never()).addToQueue(onAlbum[3])
+        verify(playerRepo, org.mockito.kotlin.never()).addToQueue(offAlbum)
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
