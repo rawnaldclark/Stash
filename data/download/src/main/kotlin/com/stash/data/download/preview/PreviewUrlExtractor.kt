@@ -563,13 +563,25 @@ class PreviewUrlExtractor @Inject constructor(
                 // tracks). Swallow an android_vr-specific failure and fall back
                 // to the default clients so coverage never regresses (the broad
                 // catalog reach is the whole reason YT fallback exists).
-                val fast = try {
+                val fastRaw = try {
                     runYtDlp(videoId, playerClient = FAST_PLAYER_CLIENT)
                 } catch (ce: CancellationException) {
                     throw ce
                 } catch (e: Exception) {
                     Log.d(TAG, "yt-dlp $FAST_PLAYER_CLIENT attempt failed for $videoId: ${e.message}")
                     null
+                }
+                // The fast client (android_vr) exiting 0 with a URL is NOT proof
+                // it's playable — YouTube's PO-token gating has been observed
+                // widening past the audio-only itags yt-dlp warns about to cover
+                // the combined `best` fallback (itag 18) too, producing a URL
+                // that 403s from byte 0. Verify before trusting it, same as the
+                // InnerTube lane already does via AudioUrlTailProbe — an
+                // unverified fast-client URL here was reaching ExoPlayer as a
+                // "served" success and dying on the actual open() (2026-08-22).
+                val fast = fastRaw?.takeIf { tailProbe.opens(it) }
+                if (fastRaw != null && fast == null) {
+                    Log.i(TAG, "yt-dlp $FAST_PLAYER_CLIENT URL for $videoId failed open probe — falling to default client")
                 }
                 fast ?: (runYtDlp(videoId, playerClient = null)
                     ?: throw IllegalStateException("yt-dlp returned no stream URL for videoId=$videoId"))
