@@ -3,7 +3,14 @@ package com.stash.core.media.streaming
 import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
-import com.stash.data.download.BuildConfig  
+import com.stash.data.download.BuildConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -75,9 +82,46 @@ class StreamSourceRegistry @Inject constructor(
     private val losslessSourceHealth: LosslessSourceHealth,
 ) {
     /**
+     * Shared scope for in-flight resolves — mirrors
+     * [com.stash.data.download.preview.PreviewUrlExtractor.extractorScope].
+     * A resolve must outlive any single caller's cancellation: if the tap
+     * that started it gets superseded, a concurrent prefetch (or vice versa)
+     * waiting on the SAME track must still get the result rather than
+     * restarting the whole chain from scratch.
+     */
+    private val resolveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Single-flight cache, keyed by track id + the (allowYouTube, allowYtDlp)
+     * combo — two different call sites resolving the SAME track with
+     * DIFFERENT flags (e.g. background-fill's fast lane vs. a foreground
+     * tap's full chain) must not share a result, since a fast-lane call
+     * deliberately accepts a narrower source set. Entries self-remove on
+     * completion via invokeOnCompletion, same lifecycle as
+     * [PreviewUrlExtractor.inFlightExtracts].
+     */
+    private val inFlightResolves = ConcurrentHashMap<String, Deferred<StreamUrl?>>()
+
+    private fun resolveKey(trackId: Long, allowYouTube: Boolean, allowYtDlp: Boolean) =
+        "$trackId:$allowYouTube:$allowYtDlp"
+
+    /**
      * Try each resolver in priority order; return the first non-null
      * [StreamUrl]. Returns null when no source produced a match — caller
      * should surface this as [StreamRoutingResult.NotAvailable].
+     *
+     * Concurrent callers resolving the SAME track (with the same
+     * [allowYouTube]/[allowYtDlp] combo) are coalesced into one resolver
+     * chain — see [inFlightResolves]. Without this, a foreground tap and a
+     * next-up prefetch landing on the same track within a few hundred ms of
+     * each other each ran their own independent chain: doubled network calls
+     * to every resolver (including a rate-limited search API), and each
+     * independently drove the YouTube resolver's own internal coalescing to
+     * start, complete, and tear down before the other call even began —
+     * turning one ~6s yt-dlp extraction into two sequential ones instead of
+     * one shared result. Device-confirmed 2026-08-22: track 916 resolved
+     * successfully via yt-dlp, then a second full chain (through jiosaavn)
+     * started 325ms later for the identical track.
      *
      * @param allowYouTube pass `false` to skip lossy fallbacks (JioSaavn
      *   and YouTube), leaving only configured lossless sources. Used by
@@ -94,6 +138,29 @@ class StreamSourceRegistry @Inject constructor(
         track: TrackEntity,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
+    ): StreamUrl? {
+        val key = resolveKey(track.id, allowYouTube, allowYtDlp)
+        inFlightResolves[key]?.let { return it.await() }
+
+        val freshlyCreated = resolveScope.async(start = CoroutineStart.LAZY) {
+            doResolve(track, allowYouTube, allowYtDlp)
+        }
+        val deferred = inFlightResolves.putIfAbsent(key, freshlyCreated)
+            ?: freshlyCreated.also { d ->
+                d.invokeOnCompletion { inFlightResolves.remove(key, d) }
+                d.start()
+            }
+        return deferred.await()
+    }
+
+    /**
+     * Underlying resolver-chain walk — original `resolve` implementation.
+     * Called via the single-flight wrapper above.
+     */
+    private suspend fun doResolve(
+        track: TrackEntity,
+        allowYouTube: Boolean,
+        allowYtDlp: Boolean,
     ): StreamUrl? {
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
             if (streamingPreference.isForceQbdlxOnly()) {
