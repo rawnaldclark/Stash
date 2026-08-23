@@ -12,12 +12,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.work.WorkManager
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.core.ui.components.GlassCard
 import com.stash.feature.settings.components.SettingsScaffold
@@ -135,6 +138,34 @@ fun SettingsAboutScreen(
             }.getOrNull() ?: "0.3.5-beta.1"
         }
 
+        // The check runs in a worker, so the tap alone can't report anything.
+        // Every no-update path used to return a bare success and the user was
+        // left with "Checking for updates…" and silence (#377) — so watch the
+        // work and say what it concluded.
+        var checking by remember { mutableStateOf(false) }
+        LaunchedEffect(context) {
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWorkFlow(UpdateCheckWorker.UNIQUE_ONE_SHOT_NAME)
+                .collect { infos ->
+                    val info = infos.lastOrNull() ?: return@collect
+                    if (!info.state.isFinished) return@collect
+                    // Only speak for a check this screen started. A cold-start
+                    // check finishing in the background must stay quiet.
+                    if (!checking) return@collect
+                    checking = false
+                    val outcome = info.outputData.getString(UpdateCheckWorker.KEY_OUTCOME)
+                    val tag = info.outputData.getString(UpdateCheckWorker.KEY_LATEST_TAG)
+                    val message = when (outcome) {
+                        UpdateCheckWorker.OUTCOME_UP_TO_DATE ->
+                            "You're on the latest version ($installedVersion)"
+                        UpdateCheckWorker.OUTCOME_UPDATE_AVAILABLE ->
+                            "Update available: ${tag ?: "see Releases"}"
+                        else -> "Couldn't check for updates — try again later"
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                }
+        }
+
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 SettingsValueRow(label = "Version", value = installedVersion)
@@ -143,15 +174,17 @@ fun SettingsAboutScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = {
-                        UpdateCheckWorker.enqueueOneTimeCheck(context)
+                        checking = true
+                        UpdateCheckWorker.enqueueOneTimeCheck(context, manual = true)
                         Toast.makeText(context, "Checking for updates…", Toast.LENGTH_SHORT).show()
                     },
+                    enabled = !checking,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
                 ) {
-                    Text("Check for updates")
+                    Text(if (checking) "Checking…" else "Check for updates")
                 }
             }
         }

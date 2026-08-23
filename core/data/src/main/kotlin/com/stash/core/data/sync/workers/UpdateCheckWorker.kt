@@ -18,6 +18,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.stash.core.data.sync.SyncNotificationManager
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -46,7 +47,32 @@ class UpdateCheckWorker(
     companion object {
         private const val TAG = "UpdateCheckWorker"
         private const val UNIQUE_WORK_NAME = "stash_update_check"
-        private const val UNIQUE_ONE_SHOT_NAME = "stash_update_check_oneshot"
+        /**
+         * Unique name for the manual/cold-start check. Public so the Settings
+         * screen can observe THIS work and report its outcome — before, every
+         * terminal path returned a bare `Result.success()` and a user on the
+         * latest release saw "Checking for updates…" and then nothing (#377).
+         */
+        const val UNIQUE_ONE_SHOT_NAME = "stash_update_check_oneshot"
+
+        /** Output key naming what the check concluded. */
+        const val KEY_OUTCOME = "outcome"
+
+        /** Output key carrying the remote tag, when one was read. */
+        const val KEY_LATEST_TAG = "latest_tag"
+
+        const val OUTCOME_UP_TO_DATE = "up_to_date"
+        const val OUTCOME_UPDATE_AVAILABLE = "update_available"
+        const val OUTCOME_FAILED = "failed"
+
+        /**
+         * Input flag marking a user-initiated check. A manual check must reach a
+         * TERMINAL state so the UI can speak: a network failure becomes
+         * `Result.failure` instead of `Result.retry`, which would otherwise
+         * leave the observer waiting on work that never completes.
+         */
+        const val KEY_MANUAL = "manual"
+
         private const val PREFS_NAME = "update_check_prefs"
         private const val KEY_LAST_NOTIFIED_VERSION = "last_notified_version"
         private const val RELEASES_URL =
@@ -56,6 +82,10 @@ class UpdateCheckWorker(
 
         /** Lenient JSON parser that ignores unknown keys from the GitHub API. */
         private val json = Json { ignoreUnknownKeys = true }
+
+        /** The outcome a completed check reports when the remote [isNewer]. */
+        internal fun outcomeFor(isNewer: Boolean): String =
+            if (isNewer) OUTCOME_UPDATE_AVAILABLE else OUTCOME_UP_TO_DATE
 
         /**
          * Enqueues a periodic update-check job that runs every 24 hours.
@@ -86,12 +116,27 @@ class UpdateCheckWorker(
          * [ExistingWorkPolicy.REPLACE] ensures a stale queued check doesn't
          * starve a fresh request; multiple rapid calls collapse to one.
          */
-        fun enqueueOneTimeCheck(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
+        fun enqueueOneTimeCheck(context: Context, manual: Boolean = false) {
             val request = OneTimeWorkRequestBuilder<UpdateCheckWorker>()
-                .setConstraints(constraints)
+                // A manual check runs UNCONSTRAINED on purpose. With
+                // NetworkType.CONNECTED an offline tap leaves the work ENQUEUED
+                // forever — the worker never starts, never reaches the manual
+                // failure path, and the button that's waiting on a finished
+                // WorkInfo stays stuck on "Checking…". Someone who asked has a
+                // right to a fast "couldn't check", so let the request run and
+                // let the HTTP call fail. Background checks keep the constraint:
+                // nobody is waiting, and deferring until there's a network is
+                // exactly right for them.
+                .apply {
+                    if (!manual) {
+                        setConstraints(
+                            Constraints.Builder()
+                                .setRequiredNetworkType(NetworkType.CONNECTED)
+                                .build(),
+                        )
+                    }
+                }
+                .setInputData(workDataOf(KEY_MANUAL to manual))
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 UNIQUE_ONE_SHOT_NAME,
@@ -111,7 +156,10 @@ class UpdateCheckWorker(
          */
         internal fun isNewerVersion(remote: String, local: String): Boolean {
             val clean = { v: String ->
-                v.removePrefix("v")
+                // Case-insensitive: an uppercase "V" used to survive the strip,
+                // so "V1.0.0" parsed as [0,0,0] and every remote tag looked
+                // newer than it.
+                v.removePrefix("v").removePrefix("V")
                     .replace(Regex("-.*"), "") // strip -beta, -rc.1, etc.
                     .split(".")
                     .map { it.toIntOrNull() ?: 0 }
@@ -132,8 +180,15 @@ class UpdateCheckWorker(
     }
 
     override suspend fun doWork(): Result {
+        val manual = inputData.getBoolean(KEY_MANUAL, false)
         return try {
-            val installedVersion = getInstalledVersion() ?: return Result.success()
+            // An unreadable package manager won't fix itself on a retry, so the
+            // background path still gives up quietly; a manual check says so.
+            val installedVersion = getInstalledVersion() ?: return if (manual) {
+                Result.failure(workDataOf(KEY_OUTCOME to OUTCOME_FAILED))
+            } else {
+                Result.success()
+            }
             val client = OkHttpClient()
             val request = Request.Builder()
                 .url(RELEASES_URL)
@@ -144,25 +199,32 @@ class UpdateCheckWorker(
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 Log.w(TAG, "GitHub API returned ${response.code}")
-                return Result.retry()
+                return giveUpOrRetry(manual)
             }
 
-            val body = response.body?.string() ?: return Result.retry()
+            val body = response.body?.string() ?: return giveUpOrRetry(manual)
             val root = json.parseToJsonElement(body).jsonObject
-            val tagName = root["tag_name"]?.jsonPrimitive?.content ?: return Result.success()
+            val tagName = root["tag_name"]?.jsonPrimitive?.content
+                ?: return giveUpOrRetry(manual)
             val releaseName = root["name"]?.jsonPrimitive?.content ?: tagName
 
-            if (!isNewerVersion(tagName, installedVersion)) {
+            val outcome = outcomeFor(isNewerVersion(tagName, installedVersion))
+            val outcomeData = workDataOf(KEY_OUTCOME to outcome, KEY_LATEST_TAG to tagName)
+
+            if (outcome == OUTCOME_UP_TO_DATE) {
                 Log.d(TAG, "Already on latest ($installedVersion), remote is $tagName")
-                return Result.success()
+                return Result.success(outcomeData)
             }
 
             // Check if we already notified for this exact version.
             val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val lastNotified = prefs.getString(KEY_LAST_NOTIFIED_VERSION, null)
             if (lastNotified == tagName) {
-                Log.d(TAG, "Already notified for $tagName, skipping")
-                return Result.success()
+                // Suppresses a DUPLICATE NOTIFICATION, never the answer: a user
+                // who dismissed the notice once and then asks again still gets
+                // told an update exists (#377).
+                Log.d(TAG, "Already notified for $tagName, skipping notification")
+                return Result.success(outcomeData)
             }
 
             val notified = showUpdateNotification(tagName, releaseName)
@@ -177,14 +239,29 @@ class UpdateCheckWorker(
                 Log.w(TAG, "notify() suppressed for $tagName; will retry on next run")
             }
 
-            Result.success()
+            Result.success(outcomeData)
         } catch (e: Exception) {
             // Don't turn a cancelled worker into a retry — rethrow the CE.
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Update check failed", e)
-            Result.retry()
+            giveUpOrRetry(manual)
         }
     }
+
+    /**
+     * A failed check's terminal state.
+     *
+     * A background check retries — it has no one waiting. A MANUAL check must
+     * fail loudly instead: `Result.retry()` leaves the work RUNNING/ENQUEUED
+     * forever from an observer's point of view, which is the silence #377
+     * reported. [Result.failure] is terminal, so the UI can say so.
+     */
+    private fun giveUpOrRetry(manual: Boolean): Result =
+        if (manual) {
+            Result.failure(workDataOf(KEY_OUTCOME to OUTCOME_FAILED))
+        } else {
+            Result.retry()
+        }
 
     /**
      * Reads the installed app version from the package manager.
