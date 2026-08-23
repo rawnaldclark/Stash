@@ -93,18 +93,20 @@ fun ManagePlaylistsScreen(
         if (rows.isNotEmpty()) listState.scrollToItem(0)
     }
 
-    val bySegment = when (segment) {
-        ManageSegment.ALL -> customAll
-        ManageSegment.SYNCED -> customAll.filter { it.syncEnabled }
-        ManageSegment.OFF -> customAll.filter { !it.syncEnabled }
-    }
+    val bySegment = customAll.filter { matchesSegment(segment, it.syncEnabled) }
     // The query filters every section, not just "Your playlists": accounts can
     // have 100+ auto mixes, and an unfiltered Liked/Mixes block pushes the
     // filtered custom results off-screen - making search look broken (#310).
+    //
+    // The SEGMENT reaches every section whose switch is sync state, for the same
+    // reason: it used to filter the custom list alone, so "Off" left the Liked
+    // row and every mix on screen wearing an ON switch and read as broken
+    // (#373). Mix rows are excluded rather than filtered — their switch is a
+    // different axis (see showMixRows).
     val q = query.trim()
     fun matchesQuery(row: ManageRow) = q.isBlank() || row.name.contains(q, ignoreCase = true)
-    val visibleLiked = liked?.takeIf { matchesQuery(it) }
-    val visibleMixes = mixes.filter { matchesQuery(it) }
+    val visibleLiked = liked?.takeIf { matchesQuery(it) && matchesSegment(segment, it.syncEnabled) }
+    val visibleMixes = if (showMixRows(segment)) mixes.filter { matchesQuery(it) } else emptyList()
     val visibleCustom = bySegment.filter { matchesQuery(it) }
 
     Scaffold(
@@ -277,11 +279,40 @@ private data class ManageRow(
 )
 
 /** Segment filter over the custom "Your playlists" list. */
-private enum class ManageSegment(val label: String) {
+internal enum class ManageSegment(val label: String) {
     ALL("All"),
     SYNCED("Synced"),
     OFF("Off"),
 }
+
+/**
+ * Whether a row belongs in [segment]. Only meaningful for rows whose switch IS
+ * the sync state — the Liked row and the user's own playlists.
+ *
+ * One predicate, both call sites: the segment used to be applied inline to the
+ * custom list only, so the Liked row silently fell through and an enabled
+ * playlist survived the "Off" chip (#373).
+ */
+internal fun matchesSegment(segment: ManageSegment, syncEnabled: Boolean): Boolean =
+    when (segment) {
+        ManageSegment.ALL -> true
+        ManageSegment.SYNCED -> syncEnabled
+        ManageSegment.OFF -> !syncEnabled
+    }
+
+/**
+ * Whether mix ROWS belong under [segment].
+ *
+ * A mix row's switch is `hideFromHome` ("shown on Home"), not sync state, so a
+ * sync-state chip has nothing honest to say about it — filtering mixes by
+ * `syncEnabled` would land every one of them under "Off" still wearing an
+ * ON-looking switch, which is the same confusion #373 reported. They show
+ * under "All" only.
+ *
+ * The section's HEADER and discovery switch are deliberately NOT gated on this
+ * — see the mixes-label item for why they must stay reachable (#335/#344).
+ */
+internal fun showMixRows(segment: ManageSegment): Boolean = segment == ManageSegment.ALL
 
 @Composable
 private fun ManageSectionLabel(text: String) {
