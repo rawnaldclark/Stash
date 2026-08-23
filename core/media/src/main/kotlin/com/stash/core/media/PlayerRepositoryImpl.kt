@@ -1829,7 +1829,20 @@ class PlayerRepositoryImpl @Inject constructor(
                         // at its current position before giving up on it. The
                         // guard grants one retry per item, so a genuinely-dead
                         // URL falls through to Recover on its next error.
-                        StreamErrorCascadeGuard.Verdict.RetrySameItem -> controller?.retryCurrentItem()
+                        //
+                        // Evict the cached StreamUrl FIRST. A URL can 403 before
+                        // its own expiresAtMs (a PO-token/session-bound YouTube
+                        // URL dying early) — without this, retryCurrentItem()
+                        // just replays the exact same dead URL from
+                        // StreamUrlCache via LazyResolvingDataSource.open(),
+                        // 403s again instantly, and the guard escalates to
+                        // Recover on what was never a real second attempt.
+                        StreamErrorCascadeGuard.Verdict.RetrySameItem -> {
+                            current?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, -1L)
+                                ?.takeIf { it > 0L }
+                                ?.let { streamUrlCache.invalidate(it) }
+                            controller?.retryCurrentItem()
+                        }
                         StreamErrorCascadeGuard.Verdict.Recover -> controller?.recoverOrStop()
                         is StreamErrorCascadeGuard.Verdict.Halt -> {
                             controller?.pause()
