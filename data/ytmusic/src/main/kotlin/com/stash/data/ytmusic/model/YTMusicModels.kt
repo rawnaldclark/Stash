@@ -74,3 +74,14 @@ data class PagedPlaylists(
     val partial: Boolean = false,
     val partialReason: String? = null,
 )
+
+
+/**
+ * Result of paginating the user-library Albums list. No expectedCount —
+ * like [PagedPlaylists], the library page does not publish a total.
+ */
+data class PagedAlbums(
+    val albums: List<com.stash.data.ytmusic.model.AlbumSummary>,
+    val partial: Boolean = false,
+    val partialReason: String? = null,
+)
