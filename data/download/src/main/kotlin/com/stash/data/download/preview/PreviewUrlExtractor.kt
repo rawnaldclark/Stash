@@ -137,10 +137,15 @@ class PreviewUrlExtractor @Inject constructor(
          */
         internal const val FAST_PLAYER_CLIENT = "android_vr"
 
-        /** Extracts `clen` (content length in bytes) from a googlevideo
-         *  `videoplayback` URL's own query string — present regardless of
-         *  which extractor (InnerTube or yt-dlp) produced the URL. */
-        private val CLEN_REGEX = Regex("""[?&]clen=(\d+)""")
+        /**
+         * itags trusted from the fast (`android_vr`) client. 251/250 are Opus
+         * audio-only, 140 is m4a audio-only — the formats
+         * [FAST_CLIENT_FORMAT_SELECTOR] actually wants. Its trailing `best`
+         * fallback (observed landing on itag 18, a combined AV stream) is
+         * deliberately EXCLUDED: that fallback format has started producing
+         * PO-token-gated URLs that fail on real playback (2026-08-23).
+         */
+        private val AUDIO_ONLY_ITAGS = setOf("251", "250", "140")
 
         /**
          * Concurrency caps for the two extractors. Shared process-wide.
@@ -568,7 +573,7 @@ class PreviewUrlExtractor @Inject constructor(
                 // tracks). Swallow an android_vr-specific failure and fall back
                 // to the default clients so coverage never regresses (the broad
                 // catalog reach is the whole reason YT fallback exists).
-                val fastRaw = try {
+                val fastResult = try {
                     runYtDlp(videoId, playerClient = FAST_PLAYER_CLIENT)
                 } catch (ce: CancellationException) {
                     throw ce
@@ -577,33 +582,45 @@ class PreviewUrlExtractor @Inject constructor(
                     null
                 }
                 // The fast client (android_vr) exiting 0 with a URL is NOT proof
-                // it's playable. A gated googlevideo URL serves its opening
-                // megabyte fine and only 403s near the end (same shape
-                // AudioUrlTailProbe already guards the InnerTube lane against)
-                // — a byte-0 check cannot catch it, only a real tail check can.
-                // clen rides in the URL's own query string on every googlevideo
-                // videoplayback link regardless of which extractor produced it,
-                // so the same probe applies here with no extra API call needed.
-                val fastClen = fastRaw?.let { CLEN_REGEX.find(it) }
-                    ?.groupValues?.getOrNull(1)?.toLongOrNull()
-                val fast = fastRaw?.takeIf { tailProbe.servesFullFile(it, fastClen) }
-                if (fastRaw != null && fast == null) {
-                    Log.i(TAG, "yt-dlp $FAST_PLAYER_CLIENT URL for $videoId failed tail probe (clen=$fastClen) — falling to default client")
+                // it's playable — and verifying it with a live network probe
+                // isn't safe either: a session/token-bound URL's ONE allowed
+                // fetch can be consumed BY the verification request itself, so
+                // the probe passes and ExoPlayer's real request 403s moments
+                // later (device-confirmed 2026-08-23 — clen-based tail probe
+                // accepted the URL, playback still failed on the very next
+                // request). Distrust the FORMAT instead, no network call
+                // needed: every observed failure has been the fast client's
+                // `best` catch-all landing on a combined-AV format (itag 18)
+                // rather than a genuine audio-only stream — the exact gap
+                // FAST_CLIENT_FORMAT_SELECTOR's kdoc already flags as a
+                // "deliberate compromise" ("android_vr currently advertises NO
+                // audio-only format"). That compromise format is what's
+                // breaking; only trust the fast lane when it lands on a real
+                // audio-only itag.
+                val fast = fastResult?.takeIf { it.formatId in AUDIO_ONLY_ITAGS }?.url
+                if (fastResult != null && fast == null) {
+                    Log.i(TAG, "yt-dlp $FAST_PLAYER_CLIENT landed on non-audio-only fmt=${fastResult.formatId} for $videoId — falling to default client")
                 }
-                fast ?: (runYtDlp(videoId, playerClient = null)
+                fast ?: (runYtDlp(videoId, playerClient = null)?.url
                     ?: throw IllegalStateException("yt-dlp returned no stream URL for videoId=$videoId"))
             }
         }
     }
 
+    /** [runYtDlp]'s result: the stream URL plus the itag/format id yt-dlp
+     *  actually served, so callers can distrust a specific format without
+     *  re-parsing stdout themselves. */
+    private data class YtDlpResult(val url: String, val formatId: String?)
+
     /**
      * One yt-dlp `execute()` for [videoId]. [playerClient] pins the YouTube
      * extractor to a single client (e.g. `android_vr`); null leaves yt-dlp's
-     * default client set. Returns the stream URL, or null when this client set
-     * produced no URL (caller decides whether to fall back). Holds no semaphore
-     * — the caller already owns the cap-1 [ytDlpSemaphore] permit.
+     * default client set. Returns the stream URL + format id, or null when
+     * this client set produced no URL (caller decides whether to fall back).
+     * Holds no semaphore — the caller already owns the cap-1 [ytDlpSemaphore]
+     * permit.
      */
-    private suspend fun runYtDlp(videoId: String, playerClient: String?): String? {
+    private suspend fun runYtDlp(videoId: String, playerClient: String?): YtDlpResult? {
         val cookieFile = File(context.noBackupFilesDir, "yt_preview_cookies_${System.nanoTime()}.txt")
         return try {
             val url = "https://www.youtube.com/watch?v=$videoId"
@@ -673,8 +690,10 @@ class PreviewUrlExtractor @Inject constructor(
                 Log.d(TAG, "yt-dlp: no URL videoId=$videoId client=${playerClient ?: "default"}")
                 null
             } else {
-                Log.d(TAG, "yt-dlp: SUCCESS videoId=$videoId urlLen=${streamUrl.length}")
-                streamUrl
+                val formatId = stdout.trim().lines().firstOrNull { it.startsWith("fmt=") }
+                    ?.removePrefix("fmt=")?.substringBefore(" ")
+                Log.d(TAG, "yt-dlp: SUCCESS videoId=$videoId urlLen=${streamUrl.length} fmt=$formatId")
+                YtDlpResult(streamUrl, formatId)
             }
         } finally {
             if (cookieFile.exists()) cookieFile.delete()
