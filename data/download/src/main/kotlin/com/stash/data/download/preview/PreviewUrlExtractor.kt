@@ -137,6 +137,11 @@ class PreviewUrlExtractor @Inject constructor(
          */
         internal const val FAST_PLAYER_CLIENT = "android_vr"
 
+        /** Extracts `clen` (content length in bytes) from a googlevideo
+         *  `videoplayback` URL's own query string — present regardless of
+         *  which extractor (InnerTube or yt-dlp) produced the URL. */
+        private val CLEN_REGEX = Regex("""[?&]clen=(\d+)""")
+
         /**
          * Concurrency caps for the two extractors. Shared process-wide.
          *
@@ -572,16 +577,18 @@ class PreviewUrlExtractor @Inject constructor(
                     null
                 }
                 // The fast client (android_vr) exiting 0 with a URL is NOT proof
-                // it's playable — YouTube's PO-token gating has been observed
-                // widening past the audio-only itags yt-dlp warns about to cover
-                // the combined `best` fallback (itag 18) too, producing a URL
-                // that 403s from byte 0. Verify before trusting it, same as the
-                // InnerTube lane already does via AudioUrlTailProbe — an
-                // unverified fast-client URL here was reaching ExoPlayer as a
-                // "served" success and dying on the actual open() (2026-08-22).
-                val fast = fastRaw?.takeIf { tailProbe.opens(it) }
+                // it's playable. A gated googlevideo URL serves its opening
+                // megabyte fine and only 403s near the end (same shape
+                // AudioUrlTailProbe already guards the InnerTube lane against)
+                // — a byte-0 check cannot catch it, only a real tail check can.
+                // clen rides in the URL's own query string on every googlevideo
+                // videoplayback link regardless of which extractor produced it,
+                // so the same probe applies here with no extra API call needed.
+                val fastClen = fastRaw?.let { CLEN_REGEX.find(it) }
+                    ?.groupValues?.getOrNull(1)?.toLongOrNull()
+                val fast = fastRaw?.takeIf { tailProbe.servesFullFile(it, fastClen) }
                 if (fastRaw != null && fast == null) {
-                    Log.i(TAG, "yt-dlp $FAST_PLAYER_CLIENT URL for $videoId failed open probe — falling to default client")
+                    Log.i(TAG, "yt-dlp $FAST_PLAYER_CLIENT URL for $videoId failed tail probe (clen=$fastClen) — falling to default client")
                 }
                 fast ?: (runYtDlp(videoId, playerClient = null)
                     ?: throw IllegalStateException("yt-dlp returned no stream URL for videoId=$videoId"))

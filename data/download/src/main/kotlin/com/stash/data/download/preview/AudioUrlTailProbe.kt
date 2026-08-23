@@ -67,42 +67,6 @@ class AudioUrlTailProbe @Inject constructor(private val client: OkHttpClient) {
         return ok
     }
 
-        /**
-     * Cheap existence check: does [url] open at all? Unlike
-     * [servesFullFile], this needs no `contentLength` — it catches a URL
-     * that's blocked from byte 0 (e.g. PO-token gating that has widened to
-     * cover a format yt-dlp didn't warn about), not just one that streams a
-     * preview-sized chunk before cutting off. Same fail-open contract:
-     * timeout/transport error accepts, only an explicit non-2xx rejects.
-     */
-    suspend fun opens(url: String): Boolean {
-        val code = withTimeoutOrNull(PROBE_TIMEOUT_MS) {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    val request = Request.Builder()
-                        .url(url)
-                        .header("Range", "bytes=0-0")
-                        .build()
-                    client.newBuilder()
-                        .callTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                        .build()
-                        .newCall(request)
-                        .execute()
-                        .use { it.code }
-                }.getOrElse { t ->
-                    if (t is CancellationException) throw t
-                    Log.d(TAG, "open probe transport failure for ${url.take(60)}: ${t.message}")
-                    null
-                }
-            }
-        }
-
-        if (code == null) return true
-        val ok = code == 206 || code == 200
-        if (!ok) Log.i(TAG, "open probe rejected a blocked URL: code=$code")
-        return ok
-    }
-
     private companion object {
         private const val TAG = "AudioUrlTailProbe"
         private const val PROBE_TIMEOUT_MS = 2_000L
