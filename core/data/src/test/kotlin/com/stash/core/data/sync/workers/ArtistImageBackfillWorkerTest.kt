@@ -195,4 +195,32 @@ class ArtistImageBackfillWorkerTest {
             )
         }
     }
+
+    @Test fun `case variant primary artists are deduped to a single search`() = runTest {
+        // "Aarne" and "AARNE" both collapse to themselves (single-artist credits);
+        // the case-insensitive dedup must keep only one instead of issuing two
+        // YT Music searches for the same act.
+        coEvery { artistImageDao.distinctArtistNames() } returns
+            listOf("Aarne", "AARNE")
+        coEvery { ytMusicApiClient.resolveArtistPhoto(any()) } returns
+            ArtistPhotoResolution.Resolved("https://photo/aarne.jpg")
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) { ytMusicApiClient.resolveArtistPhoto(any()) }
+    }
+
+    @Test fun `all-transient-failure batch returns Result_retry to engage backoff`() = runTest {
+        // Every candidate gets no response (API errors). No row is written,
+        // and the worker signals WorkManager to retry with the configured
+        // exponential backoff instead of silently succeeding.
+        coEvery { artistImageDao.distinctArtistNames() } returns listOf("Down Act", "Mystery Band")
+        coEvery { ytMusicApiClient.resolveArtistPhoto(any()) } throws
+            RuntimeException("rate limited")
+
+        val result = newWorker().doWork()
+
+        assertTrue(result is ListenableWorker.Result.Retry)
+        coVerify(exactly = 0) { artistImageDao.upsertAll(any()) }
+    }
 }

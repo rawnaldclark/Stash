@@ -120,7 +120,7 @@ class ArtistImageBackfillWorker @AssistedInject constructor(
             .asSequence()
             .map { it.primaryArtist() }
             .filter { it.isNotBlank() && it.lowercase() !in observed }
-            .distinct()
+            .distinctBy { it.lowercase() }
             .toList()
 
         if (missing.isEmpty()) {
@@ -183,6 +183,14 @@ class ArtistImageBackfillWorker @AssistedInject constructor(
             "artist-photo backfill: processed=$processed filled=$filled " +
                 "unresolved=$unresolved failed=$failed remaining=${(missing.size - processed).coerceAtLeast(0)}",
         )
+
+        // Every candidate in this pass failed to get any response from the API
+        // — the whole batch was a transient failure (rate limit, DNS blip,
+        // InnerTube 5xx). Retry with WorkManager's exponential backoff
+        // (set in the request builders above) instead of waiting for the next
+        // app-launches / post-sync re-fire.
+        if (batch.isEmpty() && failed > 0) return Result.retry()
+
         return Result.success()
     }
 }
