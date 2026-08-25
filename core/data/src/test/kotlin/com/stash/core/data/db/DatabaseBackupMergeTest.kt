@@ -315,4 +315,29 @@ class DatabaseBackupMergeTest {
         assertEquals(0, summary.mergedMemberships)
         assertEquals(listOf(a), live.playlistDao().getOrderedTrackIdsForPlaylist(pid))
     }
+
+    @Test
+    fun `merged tracks never inherit the backup's downloaded state`() = runTest {
+        // A backup ZIP carries metadata, never audio — and merge skips the
+        // restart that would run the disk-truth sweep. Inheriting
+        // is_downloaded would leave a row pointing at a file that isn't here.
+        val uri = buildBackupZip { backup ->
+            backup.trackDao().insert(
+                track("Elsewhere", spotifyUri = "spotify:track:e").copy(
+                    isDownloaded = true,
+                    filePath = "/data/user/0/other.install/files/music/elsewhere.flac",
+                    fileSizeBytes = 40_000_000,
+                )
+            )
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, result.getOrThrow().addedTracks)
+        val merged = live.trackDao().getAllForIntegrityScan().single()
+        assertFalse(merged.isDownloaded)
+        assertNull(merged.filePath)
+        assertEquals(0L, merged.fileSizeBytes)
+    }
 }

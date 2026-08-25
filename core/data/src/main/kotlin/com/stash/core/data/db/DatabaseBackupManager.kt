@@ -580,9 +580,24 @@ class DatabaseBackupManager @Inject constructor(
                         continue
                     }
 
-                    // id = 0 → fresh autoincrement PK; every other column —
-                    // including like timestamps and play stats — travels as-is.
-                    val newId = trackDao.insert(track.copy(id = 0))
+                    // id = 0 → fresh autoincrement PK. Like timestamps, play
+                    // stats and match metadata all travel as-is; the LOCAL
+                    // FILE columns must not. A backup ZIP carries no audio,
+                    // and merge deliberately skips the restart that would run
+                    // the disk-truth sweep, so an inherited is_downloaded
+                    // would leave rows pointing playback, storage totals and
+                    // the library-move flow at files that aren't there.
+                    // Landing as not-downloaded is the recoverable direction:
+                    // if the audio IS present, adoption re-claims it on the
+                    // next reconcile.
+                    val newId = trackDao.insert(
+                        track.copy(
+                            id = 0,
+                            isDownloaded = false,
+                            filePath = null,
+                            fileSizeBytes = 0,
+                        )
+                    )
                     track.spotifyUri?.let { liveBySpotifyUri.putIfAbsent(it, newId) }
                     track.youtubeId?.let { liveByYoutubeId.putIfAbsent(it, newId) }
                     if (hasCanonicalIdentity(track.canonicalTitle, track.canonicalArtist)) {
