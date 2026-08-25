@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.PlaylistType
+import com.stash.core.data.mix.LastFmRecommendationState
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.common.extensions.pluralize
 
@@ -59,21 +60,30 @@ fun ManagePlaylistsScreen(
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // Issue #255 — the Last.fm manage surface is driven by recommendation
+    // state, not by imported-playlist lists.
+    val lastFmState by viewModel.lastFmState.collectAsStateWithLifecycle()
 
     // Both source playlist types share the same shape but are distinct classes;
     // map into one source-agnostic row so the rest of the screen ignores which.
     val rows: List<ManageRow> = if (source == SyncSource.SPOTIFY) {
         uiState.spotifyPlaylists.map { ManageRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.hideFromHome) }
-    } else {
+    } else if (source == SyncSource.YOUTUBE) {
         uiState.youTubePlaylists.map { ManageRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.hideFromHome) }
+    } else {
+        emptyList()
     }
 
-    val accent = if (source == SyncSource.SPOTIFY) {
-        StashTheme.extendedColors.spotifyGreen
-    } else {
-        StashTheme.extendedColors.youtubeRed
+    val accent = when (source) {
+        SyncSource.SPOTIFY -> StashTheme.extendedColors.spotifyGreen
+        SyncSource.YOUTUBE -> StashTheme.extendedColors.youtubeRed
+        SyncSource.LASTFM -> StashTheme.extendedColors.lastfmRed
     }
-    val title = if (source == SyncSource.SPOTIFY) "Spotify playlists" else "YouTube Music playlists"
+    val title = when (source) {
+        SyncSource.SPOTIFY -> "Spotify playlists"
+        SyncSource.YOUTUBE -> "YouTube Music playlists"
+        SyncSource.LASTFM -> "Last.fm"
+    }
 
     var query by remember { mutableStateOf("") }
     var segment by remember { mutableStateOf(ManageSegment.ALL) }
@@ -121,6 +131,18 @@ fun ManagePlaylistsScreen(
             )
         },
     ) { innerPadding ->
+        if (source == SyncSource.LASTFM) {
+            // Issue #255 — Last.fm has no importable playlists; its manage
+            // surface is the single Recommendations toggle + explainer.
+            LastFmManageContent(
+                state = lastFmState,
+                onToggle = viewModel::onLastFmRecommendationsToggled,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+            )
+            return@Scaffold
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -406,5 +428,89 @@ private fun MixHideRow(
             checked = shown,
             onCheckedChange = onToggleShown,
         )
+    }
+}
+
+// ── Last.fm (issue #255) ─────────────────────────────────────────────────────
+
+/**
+ * Manage surface for the Last.fm source. Last.fm has no public playlist
+ * API, so there is nothing to import and nothing to list — the entire
+ * source is the app-managed "Recommended by Last.fm" mix. This screen
+ * hosts its toggle, an honest explainer of what the playlist is and where
+ * it lands, and the connect hint when Last.fm isn't connected.
+ */
+@Composable
+private fun LastFmManageContent(
+    state: LastFmRecommendationState,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 16.dp),
+    ) {
+        Text(
+            text = "Recommendations",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp,
+            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+        )
+
+        // The toggle row mirrors SpotifySyncToggleRow's shape so all three
+        // manage screens read as siblings.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = state.connected) { onToggle(!state.enabled) }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Recommended by Last.fm",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = when {
+                        !state.connected ->
+                            "Connect Last.fm in Settings → Accounts to enable"
+                        !state.enabled ->
+                            "Off — no recommendations are generated"
+                        else ->
+                            "On · ${state.trackCount ?: 0} tracks synced"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            com.stash.core.ui.components.StashSwitch(
+                checked = state.connected && state.enabled,
+                onCheckedChange = onToggle,
+                enabled = state.connected,
+            )
+        }
+
+        Text(
+            text = "Builds a rotating playlist of tracks Last.fm recommends, " +
+                "seeded from what you play and scrobble most. Each refresh " +
+                "swaps in fresh picks; tracks are matched against YouTube " +
+                "Music / Spotify and downloaded like any other sync, " +
+                "respecting your network settings.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Text(
+            text = "Find it as “Recommended by Last.fm” under Library → Mixes.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+
+        Spacer(Modifier.height(80.dp))
     }
 }

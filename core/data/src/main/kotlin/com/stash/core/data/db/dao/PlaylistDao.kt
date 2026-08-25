@@ -350,6 +350,10 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlists WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): PlaylistEntity?
 
+    /** Reactive twin of [getById] — emits again whenever the row changes. */
+    @Query("SELECT * FROM playlists WHERE id = :id LIMIT 1")
+    fun getByIdFlow(id: Long): Flow<PlaylistEntity?>
+
     /** Find a playlist by its remote source ID (e.g. Spotify playlist ID). */
     @Query("SELECT * FROM playlists WHERE source_id = :sourceId LIMIT 1")
     suspend fun findBySourceId(sourceId: String): PlaylistEntity?
@@ -657,6 +661,29 @@ interface PlaylistDao {
      *  remaining silently hidden. */
     @Query("UPDATE playlists SET is_active = 1 WHERE id = :playlistId AND is_active = 0")
     suspend fun reactivateById(playlistId: Long): Int
+
+    /**
+     * Set [is_active] on one playlist, either direction. Used by app-managed
+     * surfaces (e.g. [com.stash.core.data.mix.LastFmRecommendationSource]) that
+     * hide their playlist without hard-deleting it — the same pattern as
+     * [setActiveForBuiltinMixes], scoped to a single row.
+     */
+    @Query("UPDATE playlists SET is_active = :active WHERE id = :playlistId")
+    suspend fun setActiveById(playlistId: Long, active: Boolean)
+
+    /**
+     * Re-file a playlist under the type today's snapshot reports.
+     *
+     * `type` used to be write-once — whichever fetch pass saw the `source_id`
+     * first owned it forever. A playlist the Spotify home-feed mix pass had
+     * filed as DAILY_MIX therefore never returned to the Library Playlists
+     * tab, no matter how many syncs saw it as the user's own (issue #437).
+     *
+     * [mixNumber] travels with the type: it only means anything for a mix, so
+     * a row leaving DAILY_MIX must not keep a stale ordinal.
+     */
+    @Query("UPDATE playlists SET type = :type, mix_number = :mixNumber WHERE id = :playlistId")
+    suspend fun updateType(playlistId: Long, type: PlaylistType, mixNumber: Int?)
 
     // ── Custom playlist management ──────────────────────────────────────
 

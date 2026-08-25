@@ -118,6 +118,37 @@ internal fun keepAsLibraryPlaylist(
 ): Boolean = id !in homeFeedMixIds && !DAILY_MIX_NAME.matches(name)
 
 /**
+ * The Spotify playlist ids this run can honestly say still exist — the set
+ * [com.stash.core.data.db.dao.PlaylistDao.deactivateMissingSpotifyCustomPlaylists]
+ * measures "missing" against.
+ *
+ * Every id the library walk LISTED, pre-filter. libraryV3 is the account's
+ * inventory, so it is the only authority on whether a saved playlist is still
+ * saved — deliberately NOT widened with `homeFeedMixIds`, or unsaving a
+ * playlist Spotify still features would leave its row active forever.
+ *
+ * Equally NOT the post-[keepAsLibraryPlaylist] list. That filter is
+ * classification routing — "the mix pass owns this id, don't snapshot it
+ * twice" — and says nothing about whether the playlist left the account.
+ * Feeding the filtered list in hid a playlist the moment it started matching
+ * the filter: appear on the home feed, or get renamed to "Daily Mix N", and
+ * the CUSTOM row the walk had just listed flipped to `is_active = 0`. The
+ * name-match case has no DAILY_MIX snapshot behind it to reactivate the row,
+ * so the playlist disappeared for good (#437).
+ *
+ * ponytail: a name-filtered id counted live here gets no snapshot this run, so
+ * its row keeps whatever tracks it already had. Deliberate — stale beats gone,
+ * and the only ids that reach it are "Daily Mix N"-named rotating mixes whose
+ * contents were never authoritative. The real repair is to snapshot such an
+ * item when the home-feed pass didn't claim it; that belongs with the name
+ * filter, which exists to keep the home feed the single source of Daily Mixes
+ * even when sp_dc fails, and which also keeps [reconciledPlaylistType] from
+ * re-filing a genuine Daily Mix as a playlist on a failed-sp_dc run.
+ */
+internal fun spotifyLivenessIds(observedLibraryIds: List<String>): List<String> =
+    observedLibraryIds.distinct()
+
+/**
  * First worker in the sync chain. Authenticates with configured music services,
  * fetches playlist and track metadata, and writes everything to the remote
  * snapshot tables for the subsequent [DiffWorker] to consume.
@@ -743,7 +774,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
             }
 
             if (shouldDeactivateMissingPlaylists(syncPreferencesManager.spotifySyncMode.first(), inventoryComplete)) {
-                val currentIds = customPlaylists.map { it.id }
+                // Observed, not snapshotted — see [spotifyLivenessIds].
+                val currentIds = spotifyLivenessIds(userPlaylists.map { it.id })
                 val hidden = playlistDao.deactivateMissingSpotifyCustomPlaylists(
                     currentSourceIds = currentIds,
                     hasCurrentIds = currentIds.isNotEmpty(),

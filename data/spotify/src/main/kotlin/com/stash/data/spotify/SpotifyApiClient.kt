@@ -143,7 +143,13 @@ class SpotifyApiClient @Inject constructor(
         private const val EDITORIAL_ID_PREFIX = "37i9dQZF1D"
 
         /** Spotify's own playlist-id namespace; anything else is a user's copy. */
-        private const val SPOTIFY_OWNED_ID_PREFIX = "37i9dQ"
+        /**
+         * Spotify's own playlist-id namespace. Every algorithmic/editorial
+         * playlist Spotify generates lives here; a playlist a user made never
+         * does. Public so the sync diff can reuse THIS distinction instead of
+         * keeping a second copy of the prefix.
+         */
+        const val SPOTIFY_OWNED_ID_PREFIX = "37i9dQ"
 
         /**
          * Search terms that surface the recaps. "Your Top Songs" alone returns the

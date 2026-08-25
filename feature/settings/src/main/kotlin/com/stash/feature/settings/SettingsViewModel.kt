@@ -118,6 +118,12 @@ class SettingsViewModel @Inject constructor(
     private val listenBrainzApiClient: com.stash.core.data.listenbrainz.ListenBrainzApiClient,
     private val listenSinkCoordinator: com.stash.core.data.listen.ListenSinkCoordinator,
     private val listenSubmissionDao: com.stash.core.data.db.dao.ListenSubmissionDao,
+    /**
+     * Issue #255 — Last.fm-as-a-source lifecycle. Connect/disconnect
+     * reconcile the "Recommended by Last.fm" recipe so the Sync-tab
+     * source card appears (or disappears) immediately, not next launch.
+     */
+    private val lastFmRecommendationSource: com.stash.core.data.mix.LastFmRecommendationSource,
 ) : ViewModel() {
 
     // ── ListenBrainz ────────────────────────────────────────────────────────
@@ -824,6 +830,14 @@ class SettingsViewModel @Inject constructor(
             result.fold(
                 onSuccess = { (username, sessionKey) ->
                     lastFmSessionPreference.save(LastFmSession(username, sessionKey))
+                    // Issue #255: the connection just became a SOURCE. Reconcile
+                    // so "Recommended by Last.fm" activates now — the user sees
+                    // it on the Sync tab without restarting.
+                    // kickRefresh: the user is watching the Sync tab right
+                    // now — without it the new playlist sits empty until the
+                    // next daily cycle or app restart.
+                    runCatching { lastFmRecommendationSource.reconcile(kickRefresh = true) }
+                        .onFailure { android.util.Log.w("SettingsVM", "lastfm reconcile failed", it) }
                     // Clear the override — the session flow now drives Connected state.
                     _localState.update { it.copy(lastFmAuthOverride = null) }
                 },
@@ -845,6 +859,10 @@ class SettingsViewModel @Inject constructor(
     fun onDisconnectLastFm() {
         viewModelScope.launch {
             lastFmSessionPreference.clear()
+            // Issue #255: no session → no source. Deactivate the recipe and
+            // hide its playlist; nothing is deleted, reconnect restores it.
+            runCatching { lastFmRecommendationSource.reconcile() }
+                .onFailure { android.util.Log.w("SettingsVM", "lastfm reconcile failed", it) }
             _localState.update { it.copy(lastFmAuthOverride = null) }
         }
     }

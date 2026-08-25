@@ -903,6 +903,100 @@ class DiffWorkerTest {
         assertEquals("existing track kept AND the fetched addition merged", 2, activeTrackCount(playlistId))
     }
 
+    // ── Type reconcile: which pairs REACH it, not just what it returns ───────
+    // ReconciledPlaylistTypeTest is a truth table over the arguments; these
+    // drive a real diff so the guard is exercised where the arguments are
+    // actually assembled.
+
+    /** The #437 case: a user's own playlist mis-filed as a mix is re-filed. */
+    @Test
+    fun `diff re-types a user playlist that a mix pass had claimed`() = runBlocking {
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Pagotaki", source = MusicSource.SPOTIFY,
+                sourceId = "0NIipN6vyz2yLYguJwbUC6", type = PlaylistType.DAILY_MIX,
+                mixNumber = 7, syncEnabled = true,
+            )
+        )
+
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 40L, syncId = 1L, source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "0NIipN6vyz2yLYguJwbUC6",
+            playlistName = "Pagotaki", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(40L) } returns emptyList()
+
+        buildWorker().doWork()
+
+        val row = db.playlistDao().findBySourceId("0NIipN6vyz2yLYguJwbUC6")!!
+        assertEquals(PlaylistType.CUSTOM, row.type)
+        assertNull("mix_number is meaningless off a mix", row.mixNumber)
+    }
+
+    /**
+     * A Spotify-GENERATED mix must survive. keepAsLibraryPlaylist can't be
+     * relied on to keep it out: homeFeedMixIds is filled only in the home-feed
+     * Success branch, so one Empty/Error/exception/discovery-off run hands the
+     * library walk every saved mix that isn't literally named "Daily Mix N".
+     */
+    @Test
+    fun `diff does not re-type a spotify-generated mix arriving as CUSTOM`() = runBlocking {
+        db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Discover Weekly", source = MusicSource.SPOTIFY,
+                sourceId = "37i9dQZEVXcQ9COmYvdajy", type = PlaylistType.DAILY_MIX,
+                mixNumber = 3, syncEnabled = true,
+            )
+        )
+
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 41L, syncId = 1L, source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "37i9dQZEVXcQ9COmYvdajy",
+            playlistName = "Discover Weekly", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(41L) } returns emptyList()
+
+        buildWorker().doWork()
+
+        val row = db.playlistDao().findBySourceId("37i9dQZEVXcQ9COmYvdajy")!!
+        assertEquals("a Spotify-generated mix must stay a mix", PlaylistType.DAILY_MIX, row.type)
+        assertEquals("mix_number must survive", 3, row.mixNumber)
+    }
+
+    /**
+     * YouTube reaches the same type pair with a real mix and no filter at all:
+     * a saved auto-mix tile is a `VLRD…` browseId, and the library parser
+     * accepts any VL-prefixed id but VLLM/VLSE and strips the `VL`, handing
+     * back the same `RD…` id the home-mix pass snapshotted as DAILY_MIX.
+     */
+    @Test
+    fun `diff does not re-type a saved youtube radio arriving as CUSTOM`() = runBlocking {
+        val radioId = "RDCLAK5uy_kmPRjHDECIcuVwnKzx3sZLoDEcnzclyVQ"
+        db.playlistDao().insert(
+            PlaylistEntity(
+                name = "My Supermix", source = MusicSource.YOUTUBE,
+                sourceId = radioId, type = PlaylistType.DAILY_MIX,
+                mixNumber = 1, syncEnabled = true,
+            )
+        )
+
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 42L, syncId = 1L, source = MusicSource.YOUTUBE,
+            sourcePlaylistId = radioId,
+            playlistName = "My Supermix", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(42L) } returns emptyList()
+
+        buildWorker().doWork()
+
+        val row = db.playlistDao().findBySourceId(radioId)!!
+        assertEquals("a saved YouTube radio must stay a mix", PlaylistType.DAILY_MIX, row.type)
+        assertEquals("mix_number must survive", 1, row.mixNumber)
+    }
+
     private fun buildWorker(): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
         .setInputData(workDataOf(PlaylistFetchWorker.KEY_SYNC_ID to 1L))
         .setWorkerFactory(object : WorkerFactory() {

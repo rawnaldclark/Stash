@@ -85,6 +85,7 @@ class SettingsViewModelTest {
         listenBrainzApiClient = mockk(relaxed = true),
         listenSinkCoordinator = mockk(relaxed = true),
         listenSubmissionDao = mockk(relaxed = true),
+        lastFmRecommendationSource = mockk(relaxed = true),
     )
 
     @Test fun `onQbdlxEnabledChange persists via setQbdlxEnabled`() = runTest {
