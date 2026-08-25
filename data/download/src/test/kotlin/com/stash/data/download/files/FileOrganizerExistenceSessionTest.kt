@@ -59,4 +59,53 @@ class FileOrganizerExistenceSessionTest {
         }
         coVerify(exactly = 1) { spied.buildSafIndex() }
     }
+
+    /**
+     * The tree-wide filename fallback must not match a BARE `<title>.<ext>`.
+     * That name is only an identity inside its own `<artist>/<album>`
+     * directory; loose in the tree it belongs to whichever artist got there
+     * first, and matching it would heal this track's file_path onto a
+     * different song's audio.
+     */
+    @Test
+    fun `tree-wide fallback ignores a bare title owned by another artist`() {
+        val otherArtistsFile: androidx.documentfile.provider.DocumentFile = mockk(relaxed = true)
+        val index = FileOrganizer.SafIndex(
+            byDirKey = emptyMap(),
+            // "Intro" by SOMEONE ELSE, sitting somewhere in the tree.
+            byFileName = mapOf("intro.opus" to listOf(otherArtistsFile)),
+        )
+
+        val hit = organizer().resolveInIndex(
+            index = index,
+            layout = com.stash.core.data.prefs.LibraryLayout.ARTIST_ALBUM,
+            artist = "Our Artist",
+            album = "Our Album",
+            title = "Intro",
+            knownFormat = "opus",
+        )
+
+        assertThat(hit).isNull()
+    }
+
+    /** The artist-qualified flat name stays matchable tree-wide. */
+    @Test
+    fun `tree-wide fallback still matches an artist qualified name`() {
+        val ourFile: androidx.documentfile.provider.DocumentFile = mockk(relaxed = true)
+        val index = FileOrganizer.SafIndex(
+            byDirKey = emptyMap(),
+            byFileName = mapOf("our-artist-intro.opus" to listOf(ourFile)),
+        )
+
+        val hit = organizer().resolveInIndex(
+            index = index,
+            layout = com.stash.core.data.prefs.LibraryLayout.ARTIST_ALBUM,
+            artist = "Our Artist",
+            album = "Our Album",
+            title = "Intro",
+            knownFormat = "opus",
+        )
+
+        assertThat(hit).isSameInstanceAs(ourFile)
+    }
 }

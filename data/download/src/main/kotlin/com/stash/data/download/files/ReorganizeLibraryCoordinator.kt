@@ -245,8 +245,42 @@ class ReorganizeLibraryCoordinator @Inject constructor(
         // the library move (crash ⇒ duplicate file, never dangling pointer).
         trackDao.healFilePath(entry.trackId, target.absolutePath)
         if (!renamed) source.delete()
+        moveInternalSidecar(source, target)
         return true
     }
+
+    /**
+     * Carry the `.lrc` lyrics sidecar along with its audio (#198/#104).
+     *
+     * [com.stash.data.lyrics.sidecar.LyricsSidecarWriter] writes
+     * `<basename>.lrc` NEXT TO the audio file, which is the contract external
+     * players rely on. Moving the audio without the sidecar silently breaks
+     * that pairing and strands the old file as litter, so the relocation is
+     * part of moving a track, not a separate concern.
+     *
+     * Best-effort by design: a missing sidecar is the normal case (most
+     * tracks have no lyrics) and a failed sidecar move must never fail the
+     * track's move — the audio and its DB row are already consistent by the
+     * time this runs.
+     */
+    private fun moveInternalSidecar(source: File, target: File) {
+        val from = File(source.parentFile, source.nameWithoutExtension + LRC_EXTENSION)
+        if (!from.exists()) return
+        val to = File(target.parentFile, target.nameWithoutExtension + LRC_EXTENSION)
+        if (from.absoluteFile == to.absoluteFile) return
+        try {
+            if (to.exists()) to.delete()
+            if (!from.renameTo(to)) {
+                from.inputStream().use { input ->
+                    to.outputStream().use { output -> input.copyTo(output) }
+                }
+                from.delete()
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Could not move lyrics sidecar for ${target.name}", t)
+        }
+    }
+
 
     /** SAF → SAF relocation within the granted tree via copy + delete. */
     private suspend fun moveWithinSaf(
@@ -254,7 +288,12 @@ class ReorganizeLibraryCoordinator @Inject constructor(
         root: DocumentFile,
         dirCache: MutableMap<String, DocumentFile>,
     ): Boolean {
-        val source = DocumentFile.fromTreeUri(context, Uri.parse(entry.sourcePath))
+        // sourcePath is the audio DOCUMENT uri healed in by a previous write
+        // (createFile().uri), not the picked TREE uri. fromTreeUri would
+        // rebuild the tree ROOT from it, so the copy+delete below would run
+        // against the wrong document and every SAF track would fail to
+        // reorganize. A document uri needs fromSingleUri.
+        val source = DocumentFile.fromSingleUri(context, Uri.parse(entry.sourcePath))
             ?: error("Source document unreadable: ${entry.sourcePath}")
 
         var cursor = root
@@ -332,6 +371,8 @@ class ReorganizeLibraryCoordinator @Inject constructor(
     }
 
     companion object {
+        /** Sidecar extension written by the lyrics module, moved alongside audio. */
+        private const val LRC_EXTENSION = ".lrc"
         private const val TAG = "ReorganizeCoord"
     }
 }

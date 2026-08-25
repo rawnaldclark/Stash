@@ -281,11 +281,20 @@ class FileOrganizer @Inject constructor(
             }
         }
         // Last resort: exactly one file somewhere in the tree carries a
-        // candidate name. Unique ⇒ unambiguous; multiple hits stay unmatched
+        // candidate name. Restricted to ARTIST-QUALIFIED names
+        // (`<artist>-<title>.<ext>`): the legacy Artist/Album candidate's
+        // filename is a bare `<title>.<ext>`, which is not an identity once
+        // it leaves its `<artist>/<album>` directory. A different artist's
+        // song that slugs to the same title would be matched here and have
+        // this track's file_path healed onto it. Uniqueness of a FILENAME is
+        // not uniqueness of a TRACK, so only names that still carry the
+        // artist may be matched tree-wide; multiple hits stay unmatched
         // (reporting "missing" for a genuinely ambiguous pair is safer than
         // adopting the wrong song's file).
+        val artistQualifiedPrefix = FileOrganizerSlugs.slugify(artist) + "-"
         for (candidate in candidates) {
             for (name in candidate.candidateFileNames) {
+                if (!name.startsWith(artistQualifiedPrefix)) continue
                 index.byFileName[name]?.singleOrNull()?.let { return it }
             }
         }
