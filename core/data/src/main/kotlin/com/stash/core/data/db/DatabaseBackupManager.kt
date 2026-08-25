@@ -644,6 +644,11 @@ class DatabaseBackupManager @Inject constructor(
                 for ((backupPlaylistId, refs) in backupRefs.groupBy { it.playlistId }) {
                     val livePlaylistId = playlistIdMap[backupPlaylistId] ?: continue
                     for (ref in refs.sortedBy { it.position }) {
+                        // A membership the user REMOVED in the backup carries
+                        // removedAt — restoring it would ADD a track the
+                        // backup itself no longer holds. Merge copies what the
+                        // backup still has; a soft-deleted row has nothing.
+                        if (ref.removedAt != null) continue
                         val liveTrackId = trackIdMap[ref.trackId] ?: continue
                         val key = livePlaylistId to liveTrackId
                         val existing = refByKey[key]

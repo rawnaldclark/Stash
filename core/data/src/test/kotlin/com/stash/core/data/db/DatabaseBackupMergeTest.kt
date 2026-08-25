@@ -288,4 +288,31 @@ class DatabaseBackupMergeTest {
             File(dbPath, "${StashDatabase.DATABASE_NAME}.import-tmp").exists().not(),
         )
     }
+
+    @Test
+    fun `merge ignores a membership the backup itself soft-removed`() = runTest {
+        val a = live.trackDao().insert(track("A", spotifyUri = "spotify:track:a"))
+        val pid = live.playlistDao().insert(playlist("List", "list-1"))
+        addMember(pid, a, position = 0)
+
+        // The backup holds A and B, but B was REMOVED from the playlist there.
+        val uri = buildBackupZip { backup ->
+            val bA = backup.trackDao().insert(track("A", spotifyUri = "spotify:track:a"))
+            val bB = backup.trackDao().insert(track("B", spotifyUri = "spotify:track:b"))
+            val bPid = backup.playlistDao().insert(playlist("List", "list-1"))
+            backup.playlistDao().insertCrossRef(PlaylistTrackCrossRef(bPid, bA, 0))
+            backup.playlistDao().insertCrossRef(PlaylistTrackCrossRef(bPid, bB, 1))
+            backup.playlistDao().softDeleteTrackFromPlaylist(bPid, bB)
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue(result.isSuccess)
+        val summary = result.getOrThrow()
+        // B's library row still arrives — merge adds tracks — but a membership
+        // the backup no longer holds must not be resurrected as an active one.
+        assertEquals(1, summary.addedTracks)
+        assertEquals(0, summary.mergedMemberships)
+        assertEquals(listOf(a), live.playlistDao().getOrderedTrackIdsForPlaylist(pid))
+    }
 }
