@@ -33,47 +33,11 @@ object DatabaseModule {
             StashDatabase::class.java,
             StashDatabase.DATABASE_NAME,
         )
-            .addMigrations(
-                StashDatabase.MIGRATION_3_4,
-                StashDatabase.MIGRATION_4_5,
-                StashDatabase.MIGRATION_5_6,
-                StashDatabase.MIGRATION_6_7,
-                StashDatabase.MIGRATION_7_8,
-                StashDatabase.MIGRATION_8_9,
-                StashDatabase.MIGRATION_9_10,
-                StashDatabase.MIGRATION_10_11,
-                StashDatabase.MIGRATION_11_12,
-                StashDatabase.MIGRATION_12_13,
-                StashDatabase.MIGRATION_13_14,
-                StashDatabase.MIGRATION_14_15,
-                StashDatabase.MIGRATION_15_16,
-                StashDatabase.MIGRATION_16_17,
-                StashDatabase.MIGRATION_17_18,
-                StashDatabase.MIGRATION_18_19,
-                StashDatabase.MIGRATION_19_20,
-                StashDatabase.MIGRATION_20_21,
-                StashDatabase.MIGRATION_21_22,
-                StashDatabase.MIGRATION_22_23,
-                StashDatabase.MIGRATION_23_24,
-                StashDatabase.MIGRATION_24_25,
-                StashDatabase.MIGRATION_25_26,
-                StashDatabase.MIGRATION_26_27,
-                StashDatabase.MIGRATION_27_28,
-                StashDatabase.MIGRATION_28_29,
-                StashDatabase.MIGRATION_29_30,
-                StashDatabase.MIGRATION_30_31,
-                StashDatabase.MIGRATION_31_32,
-                StashDatabase.MIGRATION_32_33,
-                StashDatabase.MIGRATION_33_34,
-                StashDatabase.MIGRATION_34_35,
-                StashDatabase.MIGRATION_35_36,
-                StashDatabase.MIGRATION_36_37,
-                StashDatabase.MIGRATION_37_38,
-                StashDatabase.MIGRATION_38_39,
-                StashDatabase.MIGRATION_39_40,
-                StashDatabase.MIGRATION_40_41,
-                StashDatabase.MIGRATION_41_42
-            )
+            // Single source of truth for the chain — DatabaseBackupManager's
+            // merge-import opens a second Room instance over a staged backup
+            // file with this same array, so an older backup can be rolled
+            // forward to the live schema before rows are copied out of it.
+            .addMigrations(*StashDatabase.ALL_MIGRATIONS)
             // No fallbackToDestructiveMigration() — if a migration is missing,
             // the app will crash on startup instead of silently wiping the
             // user's entire library. This forces us to write proper migrations

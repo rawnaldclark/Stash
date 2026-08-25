@@ -29,6 +29,8 @@ import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.lastfm.LastFmSession
 import com.stash.core.data.lastfm.LastFmSessionPreference
+import com.stash.core.data.db.BackupImportResult
+import com.stash.core.data.db.BackupImportScope
 import com.stash.core.data.db.DatabaseBackupManager
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.data.download.files.LibrarySizeBreakdown
@@ -696,29 +698,49 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * Triggers a database import from the chosen URI. Closes the current
-     * database and overwrites it. Success triggers an app process kill
-     * to force a clean re-init.
+     * Triggers a database import from the chosen URI. The user picks a
+     * [BackupImportScope] in the confirmation dialog; scopes that swap files
+     * behind live singletons end with an app process kill to force a clean
+     * re-init, while LIBRARY_MERGE writes through the live database and just
+     * reports its tally.
      */
     fun onImportDatabase(uri: Uri) {
         _localState.update { it.copy(showImportConfirmation = true, pendingImportUri = uri) }
     }
 
     /**
-     * Confirms the pending database import.
+     * Confirms the pending database import with the user-chosen [scope].
      */
-    fun onConfirmImportDatabase(onExternalPermissionNeeded: (Uri) -> Unit) {
+    fun onConfirmImportDatabase(
+        scope: BackupImportScope,
+        onExternalPermissionNeeded: (Uri) -> Unit,
+    ) {
         val uri = _localState.value.pendingImportUri ?: return
         _localState.update { it.copy(showImportConfirmation = false, pendingImportUri = null) }
 
         viewModelScope.launch {
             _localState.update { it.copy(databaseBackupState = DatabaseBackupState.Importing) }
-            val result = databaseBackupManager.importDatabase(uri)
+            val result = databaseBackupManager.importDatabase(uri, scope)
 
             if (result.isSuccess) {
-                // v0.9.15: The import manager peeks at the restored preferences
+                val summary = result.getOrThrow()
+
+                // v0.9.x (#235): a library MERGE never swaps files — the data
+                // is already visible through the live Room instance — so we
+                // simply report what was added instead of restarting.
+                if (!summary.requiresRestart) {
+                    _localState.update {
+                        it.copy(
+                            databaseBackupState =
+                            DatabaseBackupState.Success(mergeSuccessMessage(summary)),
+                        )
+                    }
+                    return@launch
+                }
+
+                // The import manager peeks at the restored preferences
                 // to detect if an external storage folder was configured.
-                val restoredTreeUri = result.getOrNull()
+                val restoredTreeUri = summary.restoredTreeUri
 
                 if (restoredTreeUri != null) {
                     // Check if we ALREADY have the permission (maybe it's a restore over same install)
@@ -746,6 +768,21 @@ class SettingsViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    /** Human-readable tally for a completed [BackupImportScope.LIBRARY_MERGE]. */
+    private fun mergeSuccessMessage(summary: BackupImportResult): String {
+        val pluralTracks = if (summary.addedTracks == 1) "track" else "tracks"
+        val pluralPlaylists = if (summary.addedPlaylists == 1) "playlist" else "playlists"
+        val pluralEntries = if (summary.mergedMemberships == 1) "entry" else "entries"
+        return when {
+            summary.addedTracks == 0 && summary.addedPlaylists == 0 &&
+                summary.mergedMemberships == 0 ->
+                "Nothing new to import — your library already contains everything from this backup."
+            else -> "Merge complete — added ${summary.addedTracks} new $pluralTracks, " +
+                "${summary.addedPlaylists} new $pluralPlaylists, and " +
+                "${summary.mergedMemberships} playlist $pluralEntries. Settings were left untouched."
         }
     }
 
