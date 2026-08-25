@@ -7,8 +7,9 @@ import androidx.documentfile.provider.DocumentFile
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.LyricsEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.prefs.LibraryLayout
 import com.stash.core.data.prefs.StoragePreference
-import com.stash.data.download.files.FileOrganizerSlugs
+import com.stash.data.download.files.LibraryLayoutResolver
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import java.io.File
@@ -25,16 +26,16 @@ import javax.inject.Singleton
  * integration. Two storage targets are supported:
  *
  *  - **Internal storage** — `track.filePath` is an absolute filesystem
- *    path; the sidecar is written via plain `java.io.File`.
+ *    path; the sidecar is written via plain `java.io.File` next to the
+ *    audio (correct under every folder structure).
  *  - **SAF tree** — `track.filePath` starts with `content://`; the
  *    sidecar location is derived from the user's persisted external
  *    tree URI (from [StoragePreference], NOT from the audio URI —
  *    DocumentFile.fromTreeUri requires the tree ROOT, not a child),
- *    and the slug-walked DocumentFile mirror of the download layout
- *    (`<artistSlug>/<albumSlug>/<titleSlug>.lrc`) is created on
- *    demand. Slug semantics come from
- *    [FileOrganizerSlugs.slugify] so the sidecar always lands in the
- *    same directory the download created.
+ *    walked down through the SAME [LibraryLayoutResolver] location the
+ *    download pipeline used (#198/#104: Artist/Album, Single folder,
+ *    Per playlist), so the `.lrc` always lands in the directory the
+ *    download created.
  *
  * Write failure is non-fatal for the Room state: [LyricsRepository]
  * wraps the throwing `write()` API in `runCatching`; only that path is best-effort
@@ -117,19 +118,33 @@ class LyricsSidecarWriter @Inject constructor(
             Log.w(TAG, "DocumentFile.fromTreeUri returned null for $treeUri; sidecar skipped")
             throw IOException("Invalid SAF tree $treeUri")
         }
-        val artistName = track.albumArtist.ifBlank { track.artist }
-        val artistDir = findOrCreateDir(tree, FileOrganizerSlugs.slugify(artistName))
-            ?: fail("Could not create artist directory")
-        val albumSlug = if (track.album.isNotBlank()) {
-            FileOrganizerSlugs.slugify(track.album)
-        } else {
-            "singles"
+        // Resolve the sidecar location through the SAME layout resolver the
+        // download pipeline used — Artist/Album, Single folder, or Per
+        // playlist (#198/#104). track.artist (not albumArtist) matches what
+        // commitDownload slugged into the directory names.
+        val layout = runCatching { storagePreference.libraryLayout.first() }
+            .getOrDefault(LibraryLayout.DEFAULT)
+        val playlistName =
+            if (layout == LibraryLayout.PLAYLIST) {
+                runCatching { trackDao.getFirstPlaylistNameForTrack(track.id) }.getOrNull()
+            } else {
+                null
+            }
+        val location = LibraryLayoutResolver.resolve(
+            layout,
+            artist = track.artist,
+            album = track.album.takeIf { it.isNotBlank() },
+            title = track.title,
+            playlistName = playlistName,
+        )
+        var cursor = tree
+        for (segment in location.segments) {
+            cursor = findOrCreateDir(cursor, segment) ?: fail("Could not create directory '$segment'")
         }
-        val albumDir = findOrCreateDir(artistDir, albumSlug) ?: fail("Could not create album directory")
-        val filename = "${FileOrganizerSlugs.slugify(track.title)}.lrc"
-        val existing = albumDir.findFile(filename)
-        val target = existing ?: albumDir.createFile(LRC_MIME, filename) ?: run {
-            Log.w(TAG, "Could not create SAF sidecar '$filename' under ${albumDir.uri}")
+        val filename = "${location.baseName}.lrc"
+        val existing = cursor.findFile(filename)
+        val target = existing ?: cursor.createFile(LRC_MIME, filename) ?: run {
+            Log.w(TAG, "Could not create SAF sidecar '$filename' under ${cursor.uri}")
             throw IOException("Could not create SAF sidecar $filename")
         }
         context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->

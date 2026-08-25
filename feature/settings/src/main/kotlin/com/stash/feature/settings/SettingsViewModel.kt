@@ -35,6 +35,8 @@ import com.stash.data.download.files.LibrarySizeBreakdown
 import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
+import com.stash.data.download.files.ReorganizeLibraryCoordinator
+import com.stash.data.download.files.ReorganizeLibraryState
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
@@ -87,6 +89,7 @@ class SettingsViewModel @Inject constructor(
     private val storagePreference: StoragePreference,
     private val downloadNetworkPreference: DownloadNetworkPreference,
     private val moveLibraryCoordinator: MoveLibraryCoordinator,
+    private val reorganizeLibraryCoordinator: ReorganizeLibraryCoordinator,
     private val youTubeCookieHelper: YouTubeCookieHelper,
     private val lastFmApiClient: LastFmApiClient,
     private val lastFmSessionPreference: LastFmSessionPreference,
@@ -516,6 +519,8 @@ class SettingsViewModel @Inject constructor(
         homeSectionsPreference.order,
         homeSectionsPreference.hidden,
         homeSectionsPreference.showLikedOnHome,
+        storagePreference.libraryLayout,
+        reorganizeLibraryCoordinator.state,
     ) { values ->
         // Read strictly in the order the flows are declared above. See [Values]:
         // there are no positional indices to renumber, and requireExhausted()
@@ -563,6 +568,8 @@ class SettingsViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         val homeSectionsHidden = v.next<Set<com.stash.core.data.prefs.HomeSection>>()
         val showLikedOnHome = v.next<Boolean>()
+        val libraryLayout = v.next<com.stash.core.data.prefs.LibraryLayout>()
+        val reorganizeState = v.next<ReorganizeLibraryState>()
         v.requireExhausted()
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
@@ -595,6 +602,8 @@ class SettingsViewModel @Inject constructor(
             youTubeError = local.youTubeError,
             externalTreeUri = externalTree,
             moveLibraryState = moveState,
+            libraryLayout = libraryLayout,
+            reorganizeLibraryState = reorganizeState,
             lastFmState = lastFmState,
             isScrobbleDraining = local.isScrobbleDraining,
             scrobbleDrainResult = local.lastScrobbleDrainResult,
@@ -676,6 +685,41 @@ class SettingsViewModel @Inject constructor(
     fun dismissMoveLibrary() {
         moveLibraryCoordinator.dismiss()
     }
+
+    // -- Folder structure (#198 / #104) ---------------------------------------
+
+    /**
+     * Persists the folder structure new downloads are filed under. Does not
+     * move existing files — the user opts into that with [startReorganize].
+     */
+    fun setLibraryLayout(layout: com.stash.core.data.prefs.LibraryLayout) {
+        viewModelScope.launch {
+            storagePreference.setLibraryLayout(layout)
+        }
+    }
+
+    /** Starts the reorganize job on the coordinator's app-scoped job. */
+    fun startReorganize() {
+        reorganizeLibraryCoordinator.start()
+    }
+
+    /** Cancels an in-progress reorganize. State reverts to Idle. */
+    fun cancelReorganize() {
+        reorganizeLibraryCoordinator.cancel()
+    }
+
+    /** Dismisses a terminal Done/Error state, returning to Idle. */
+    fun dismissReorganize() {
+        reorganizeLibraryCoordinator.dismiss()
+    }
+
+    /**
+     * Counts downloaded tracks whose on-disk location doesn't already match
+     * the chosen structure — used by the Settings UI to gate and label the
+     * "Reorganize" action.
+     */
+    suspend fun countMisplacedTracks(): Int =
+        runCatching { reorganizeLibraryCoordinator.countMisplacedTracks() }.getOrDefault(0)
 
     /**
      * Triggers a database export to the chosen URI.

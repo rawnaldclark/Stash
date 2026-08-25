@@ -6,6 +6,8 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.prefs.LibraryLayout
+import com.stash.core.data.prefs.StoragePreference
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -15,6 +17,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
@@ -36,10 +39,10 @@ sealed interface MoveLibraryState {
 
 /**
  * Moves every downloaded track currently stored under the app's internal
- * music directory into a user-picked SAF folder, preserving
- * `<artist>/<album>/<title>.ext` layout and updating `Track.filePath` in the
- * DB to the resulting content URI. Deletes the internal copy after each
- * successful SAF write.
+ * music directory into a user-picked SAF folder, preserving the folder
+ * structure selected by the user's [LibraryLayout] preference (#198/#104)
+ * and updating `Track.filePath` in the DB to the resulting content URI.
+ * Deletes the internal copy after each successful SAF write.
  *
  * Runs on a `@Singleton`-scoped [scope] so the move survives VM death (the
  * user can leave the Settings screen and come back to see progress). Work
@@ -61,6 +64,7 @@ sealed interface MoveLibraryState {
 class MoveLibraryCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val trackDao: TrackDao,
+    private val storagePreference: StoragePreference,
 ) {
     private val _state = MutableStateFlow<MoveLibraryState>(MoveLibraryState.Idle)
     val state: StateFlow<MoveLibraryState> = _state.asStateFlow()
@@ -123,20 +127,26 @@ class MoveLibraryCoordinator @Inject constructor(
                 return
             }
 
+            // Freeze the layout for the whole move so a mid-flight pref
+            // change can't produce a half-artist/album, half-playlist tree.
+            val layout = runCatching { storagePreference.libraryLayout.first() }
+                .getOrDefault(LibraryLayout.DEFAULT)
+
             var moved = 0
             var failed = 0
             _state.value = MoveLibraryState.Running(current = 0, total = total)
 
             // Directory-lookup cache. DocumentFile.findFile() is O(children)
             // per SAF provider — on a moving target that fills up as we go,
-            // the library-move becomes O(n²). Caching by "<artistSlug>" and
-            // "<artistSlug>/<albumSlug>" collapses the N² to O(n+unique-dirs)
+            // the library-move becomes O(n²). Caching by cumulative relative
+            // dir key ("<artistSlug>" / "<playlistSlug>" /
+            // "<artistSlug>/<albumSlug>") collapses the N² to O(n+unique-dirs)
             // which is typically a 3-5× speedup on a 1000+ track library.
             val dirCache = HashMap<String, DocumentFile>(256)
 
             for ((index, track) in tracks.withIndex()) {
                 _state.value = MoveLibraryState.Running(current = index, total = total)
-                val ok = runCatching { moveOne(track, root, dirCache) }
+                val ok = runCatching { moveOne(track, root, layout, dirCache) }
                 if (ok.isSuccess) {
                     moved++
                 } else {
@@ -158,6 +168,7 @@ class MoveLibraryCoordinator @Inject constructor(
     private suspend fun moveOne(
         track: TrackEntity,
         root: DocumentFile,
+        layout: LibraryLayout,
         dirCache: MutableMap<String, DocumentFile>,
     ) {
         val path = track.filePath ?: return
@@ -166,27 +177,37 @@ class MoveLibraryCoordinator @Inject constructor(
             error("Internal file missing: $path")
         }
 
-        val artistSlug = FileOrganizerSlugs.slugify(track.artist)
-        val albumSlug = if (track.album.isNotBlank()) {
-            FileOrganizerSlugs.slugify(track.album)
-        } else {
-            "singles"
-        }
-        val titleSlug = FileOrganizerSlugs.slugify(track.title)
-        val format = localFile.extension.ifBlank { "m4a" }
-        val filename = "$titleSlug.$format"
+        // Same resolver the download path uses, so the moved library has
+        // exactly the structure new downloads will keep producing (#198/#104).
+        val playlistName =
+            if (layout == LibraryLayout.PLAYLIST) {
+                runCatching { trackDao.getFirstPlaylistNameForTrack(track.id) }.getOrNull()
+            } else {
+                null
+            }
+        val location = LibraryLayoutResolver.resolve(
+            layout,
+            artist = track.artist,
+            album = track.album.takeIf { it.isNotBlank() },
+            title = track.title,
+            playlistName = playlistName,
+        )
 
-        val artistDir = dirCache.getOrPut("a:$artistSlug") {
-            root.findOrCreateDir(artistSlug)
+        var cursor = root
+        var cumulativeKey = ""
+        for (segment in location.segments) {
+            cumulativeKey = if (cumulativeKey.isEmpty()) segment else "$cumulativeKey/$segment"
+            cursor = dirCache.getOrPut(cumulativeKey) { cursor.findOrCreateDir(segment) }
         }
-        val albumDir = dirCache.getOrPut("b:$artistSlug/$albumSlug") {
-            artistDir.findOrCreateDir(albumSlug)
-        }
+
+        val format = localFile.extension.ifBlank { "m4a" }
+        val filename = "${location.baseName}.$format"
+
         // Overwrite: still scan for an existing file since we can't cache
         // per-title dirs (they'd explode the map). This is the only O(m)
-        // lookup left per track where m = album size, usually <15.
-        albumDir.findFile(filename)?.delete()
-        val target = albumDir.createFile(mimeTypeFor(format), filename)
+        // lookup left per track where m = target dir size, usually <15.
+        cursor.findFile(filename)?.delete()
+        val target = cursor.createFile(mimeTypeFor(format), filename)
             ?: error("Could not create SAF file for '${track.title}'")
 
         localFile.inputStream().use { input ->

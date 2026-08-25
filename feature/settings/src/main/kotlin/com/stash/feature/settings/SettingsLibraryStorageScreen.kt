@@ -460,6 +460,51 @@ fun SettingsLibraryStorageScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
+                // Folder structure (#198 / #104) ---------------------------
+                // Applies to new downloads immediately; existing files move
+                // only when the user runs the Reorganize action below.
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = extendedColors.glassBorder)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Folder structure",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Column(modifier = Modifier.selectableGroup()) {
+                    com.stash.core.data.prefs.LibraryLayout.entries.forEach { layout ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = uiState.libraryLayout == layout,
+                                    role = Role.RadioButton,
+                                    onClick = { viewModel.setLibraryLayout(layout) },
+                                )
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = uiState.libraryLayout == layout,
+                                onClick = null,
+                            )
+                            Column(modifier = Modifier.padding(start = 8.dp)) {
+                                Text(
+                                    text = layout.label,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = layout.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Move library — rendered only when there's work to do. We
                 // refresh the count reactively after each move (state
                 // transition to Idle) and when the user picks a new folder.
@@ -498,6 +543,39 @@ fun SettingsLibraryStorageScreen(
                         },
                         onCancel = viewModel::cancelMoveLibrary,
                         onDismiss = viewModel::dismissMoveLibrary,
+                    )
+                }
+
+                // Reorganize library (#198/#104) — relocate already-downloaded
+                // tracks into the chosen Folder structure, within whichever
+                // destination they're in. Hidden when everything already
+                // matches and no pass is running.
+                var misplacedCount by remember { mutableStateOf<Int?>(null) }
+                LaunchedEffect(uiState.libraryLayout, uiState.reorganizeLibraryState) {
+                    if (uiState.reorganizeLibraryState !is com.stash.data.download.files.ReorganizeLibraryState.Running) {
+                        misplacedCount = runCatching { viewModel.countMisplacedTracks() }.getOrNull()
+                    }
+                }
+
+                val showReorganizeSection = when (uiState.reorganizeLibraryState) {
+                    com.stash.data.download.files.ReorganizeLibraryState.Idle ->
+                        (misplacedCount ?: 0) > 0
+                    is com.stash.data.download.files.ReorganizeLibraryState.Done -> true
+                    is com.stash.data.download.files.ReorganizeLibraryState.Error -> true
+                    is com.stash.data.download.files.ReorganizeLibraryState.Running -> true
+                }
+
+                if (showReorganizeSection) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = extendedColors.glassBorder)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LibStorageReorganizeSection(
+                        state = uiState.reorganizeLibraryState,
+                        misplacedCount = misplacedCount ?: 0,
+                        layoutLabel = uiState.libraryLayout.label,
+                        onStart = viewModel::startReorganize,
+                        onCancel = viewModel::cancelReorganize,
+                        onDismiss = viewModel::dismissReorganize,
                     )
                 }
             }
@@ -625,6 +703,125 @@ private fun LibStorageMoveLibrarySection(
         is com.stash.data.download.files.MoveLibraryState.Error -> {
             Text(
                 text = "Couldn't move library",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = state.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Dismiss")
+            }
+        }
+    }
+}
+
+/**
+ * Renders the "Reorganize existing library" action inside the Storage card
+ * (issue #198 / #104). Relocates already-downloaded tracks into the chosen
+ * folder structure without changing their storage destination.
+ *
+ * Four visual states driven by [ReorganizeLibraryState]:
+ * - **Idle** — prompt + start button (shown only when [misplacedCount] > 0).
+ * - **Running(c, t)** — live progress + linear bar + Cancel.
+ * - **Done(moved, skipped, failed)** — result summary + Dismiss.
+ * - **Error(msg)** — error text + Dismiss.
+ */
+@Composable
+private fun LibStorageReorganizeSection(
+    state: com.stash.data.download.files.ReorganizeLibraryState,
+    misplacedCount: Int,
+    layoutLabel: String,
+    onStart: () -> Unit,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    when (state) {
+        com.stash.data.download.files.ReorganizeLibraryState.Idle -> {
+            Text(
+                text = "Reorganize existing tracks",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "$misplacedCount downloaded track${if (misplacedCount == 1) "" else "s"} " +
+                    "don't follow the \"$layoutLabel\" structure yet. Move them now? New downloads " +
+                    "already use it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.OutlinedButton(
+                onClick = onStart,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
+            ) {
+                Text("Move $misplacedCount track${if (misplacedCount == 1) "" else "s"} into \"$layoutLabel\"")
+            }
+        }
+        is com.stash.data.download.files.ReorganizeLibraryState.Running -> {
+            Text(
+                text = "Moving ${state.current} of ${state.total}...",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = {
+                    if (state.total == 0) 0f
+                    else state.current.toFloat() / state.total.toFloat()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.TextButton(
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Cancel")
+            }
+        }
+        is com.stash.data.download.files.ReorganizeLibraryState.Done -> {
+            Text(
+                text = buildString {
+                    append("Moved ${state.moved} track")
+                    if (state.moved != 1) append("s")
+                    if (state.skipped > 0) append(" • ${state.skipped} already organized")
+                    if (state.failed > 0) append(" • ${state.failed} failed")
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (state.failed > 0) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Failed tracks keep their old location. Try again later.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Dismiss")
+            }
+        }
+        is com.stash.data.download.files.ReorganizeLibraryState.Error -> {
+            Text(
+                text = "Couldn't reorganize library",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
             )

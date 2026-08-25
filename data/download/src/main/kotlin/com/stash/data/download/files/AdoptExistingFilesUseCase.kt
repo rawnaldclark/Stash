@@ -76,11 +76,18 @@ class AdoptExistingFilesUseCase @Inject constructor(
 
     /** Resolves and adopts a single candidate. Returns true if it was adopted. */
     private suspend fun adoptOne(index: FileOrganizer.SafIndex, c: TrackAdoptionCandidate): Boolean {
+        // Layout-aware lookup (#198/#104): probe the current structure first,
+        // then legacy locations, so files downloaded under an earlier layout
+        // (or before the user reorganized) are still recognized instead of
+        // being queued for a redundant network download.
+        val playlistName = runCatching { trackDao.getFirstPlaylistNameForTrack(c.id) }.getOrNull()
         val match = fileOrganizer.resolveInIndex(
             index = index,
+            layout = fileOrganizer.currentLayout(),
             artist = c.artist,
             album = c.album,
             title = c.title,
+            playlistName = playlistName,
         ) ?: return false
 
         trackDao.markAsDownloaded(

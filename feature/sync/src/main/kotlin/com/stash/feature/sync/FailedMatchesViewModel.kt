@@ -492,6 +492,7 @@ class FailedMatchesViewModel @Inject constructor(
                             album = null,
                             title = title,
                             format = result.file.extension,
+                            trackId = trackId,
                         )
                         // Reject a too-small "successful" download (failed
                         // yt-dlp run leaving a tiny error body): delete it +

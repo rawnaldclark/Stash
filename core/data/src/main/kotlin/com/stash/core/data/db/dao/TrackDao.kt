@@ -332,6 +332,22 @@ interface TrackDao {
     @Query("UPDATE tracks SET file_path = :filePath WHERE id = :trackId")
     suspend fun healFilePath(trackId: Long, filePath: String)
 
+    /**
+     * Name of the playlist a track is filed under for the PLAYLIST library
+     * layout (issue #198): the first sync-enabled playlist containing the
+     * track, lowest playlist row id as tie-break — the exact rule the
+     * Failed Downloads viewer's scalar subquery uses so both surfaces agree
+     * on "which playlist owns this track". Null when the track belongs to
+     * no playlist; callers fall back to the Artist/Album location.
+     */
+    @Query("""
+        SELECT p.name FROM playlists p
+        INNER JOIN playlist_tracks pt ON pt.playlist_id = p.id
+        WHERE pt.track_id = :trackId AND pt.removed_at IS NULL
+        ORDER BY p.sync_enabled DESC, p.id ASC LIMIT 1
+    """)
+    suspend fun getFirstPlaylistNameForTrack(trackId: Long): String?
+
     /** Reverts tracks whose file no longer exists on disk back to
     *  "needs download" — clears is_downloaded, file_path, and the stale
     *  size so LibrarySizeHolder's next walk doesn't count phantom bytes. */
