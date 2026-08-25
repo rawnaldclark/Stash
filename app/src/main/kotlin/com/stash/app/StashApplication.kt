@@ -117,6 +117,14 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var stashMixPreference: com.stash.core.data.prefs.StashMixPreference
 
+    /**
+     * Issue #255 — Last.fm-as-a-source lifecycle owner. Startup reconcile
+     * activates/deactivates the "Recommended by Last.fm" recipe to match
+     * the current session + preference state.
+     */
+    @Inject
+    lateinit var lastFmRecommendationSource: com.stash.core.data.mix.LastFmRecommendationSource
+
     @Inject
     lateinit var downloadNetworkPreference: DownloadNetworkPreference
 
@@ -359,6 +367,12 @@ class StashApplication : Application(), Configuration.Provider {
             maybeRetuneStashMixes()
             maybeRemoveRetiredBuiltinMixes()
             maybeCleanupDiscoveryLibraryHits()
+            // Issue #255: activate/deactivate the "Recommended by Last.fm"
+            // recipe BEFORE the one-shot refresh below, so a freshly
+            // reconciled recipe is picked up by that same run instead of
+            // waiting for tomorrow's periodic cycle.
+            runCatching { lastFmRecommendationSource.reconcile() }
+                .onFailure { Log.w("StashStartup", "lastfm recommendation reconcile failed", it) }
             // Fire a one-shot refresh on first launch so mixes populate
             // without waiting for the 24-hour periodic cycle. Subsequent
             // one-shots are safe (unique-work policy = REPLACE).

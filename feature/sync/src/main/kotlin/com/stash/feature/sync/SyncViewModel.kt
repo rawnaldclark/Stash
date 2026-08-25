@@ -211,6 +211,12 @@ class SyncViewModel @Inject constructor(
     * combinations this unlocks.
     */
     private val playbackModePreference: com.stash.core.data.prefs.PlaybackModePreference,
+    /**
+     * Last.fm-as-a-source manager (issue #255). Owns the "Recommended by
+     * Last.fm" mix recipe lifecycle; the Sync tab only renders its state
+     * and forwards the user's toggle.
+     */
+    private val lastFmRecommendationSource: com.stash.core.data.mix.LastFmRecommendationSource,
 ) : ViewModel() {
 
     /**
@@ -337,6 +343,31 @@ class SyncViewModel @Inject constructor(
                 started = SharingStarted.WhileSubscribed(5_000),
                 initialValue = false,
             )
+
+    /**
+     * Live Last.fm source state (issue #255): connection, Recommendations
+     * toggle, and the materialized playlist's track count. Drives the
+     * Last.fm card in the Sync tab's Sources section and its manage screen.
+     */
+    val lastFmState: StateFlow<com.stash.core.data.mix.LastFmRecommendationState> =
+        lastFmRecommendationSource.observeState()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = com.stash.core.data.mix.LastFmRecommendationState(),
+            )
+
+    /**
+     * User toggled the "Recommended by Last.fm" playlist on/off from the
+     * Sync surface. Delegates to [LastFmRecommendationSource], which
+     * persists the choice, activates/deactivates recipe + playlist, and —
+     * when enabling — kicks a one-shot refresh so the mix starts building.
+     */
+    fun onLastFmRecommendationsToggled(enabled: Boolean) {
+        viewModelScope.launch {
+            lastFmRecommendationSource.setRecommendationsEnabled(enabled)
+        }
+    }
 
     /**
     * Reactive playback-mode flag — separate from [streamingEnabled], which is
