@@ -334,17 +334,25 @@ interface TrackDao {
 
     /**
      * Name of the playlist a track is filed under for the PLAYLIST library
-     * layout (issue #198): the first sync-enabled playlist containing the
-     * track, lowest playlist row id as tie-break — the exact rule the
-     * Failed Downloads viewer's scalar subquery uses so both surfaces agree
-     * on "which playlist owns this track". Null when the track belongs to
-     * no playlist; callers fall back to the Artist/Album location.
+     * layout (issue #198): the first SYNC-ENABLED playlist containing the
+     * track, lowest playlist row id as tie-break. Null when no sync-enabled
+     * playlist owns it — callers fall back to the Artist/Album location.
+     *
+     * Deliberately NOT the same rule as [DownloadQueueDao]'s "from
+     * <playlist>" subquery, which merely ORDERs by `sync_enabled` so it can
+     * still show *some* name for a track whose only memberships are
+     * disabled. That is right for a label and wrong for a directory: filing
+     * audio under a playlist the user has switched off contradicts the
+     * documented fallback and puts files where they are not expected. A
+     * display name and a storage location are different questions, so this
+     * FILTERS where the viewer only sorts.
      */
     @Query("""
         SELECT p.name FROM playlists p
         INNER JOIN playlist_tracks pt ON pt.playlist_id = p.id
         WHERE pt.track_id = :trackId AND pt.removed_at IS NULL
-        ORDER BY p.sync_enabled DESC, p.id ASC LIMIT 1
+          AND p.sync_enabled = 1
+        ORDER BY p.id ASC LIMIT 1
     """)
     suspend fun getFirstPlaylistNameForTrack(trackId: Long): String?
 

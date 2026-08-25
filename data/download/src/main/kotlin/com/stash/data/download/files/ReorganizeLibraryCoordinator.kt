@@ -336,7 +336,61 @@ class ReorganizeLibraryCoordinator @Inject constructor(
         if (!source.delete()) {
             Log.w(TAG, "Old SAF document could not be deleted: ${entry.sourcePath}")
         }
+        moveSafSidecar(entry, root, cursor)
         return true
+    }
+
+    /**
+     * SAF twin of [moveInternalSidecar]: carry `<basename>.lrc` from the
+     * audio's OLD directory into its new one.
+     *
+     * The old directory is recovered by decoding the source document id the
+     * same way [safAlreadyInPlace] does; providers whose ids don't follow
+     * `<volume>:<path>` simply leave the sidecar alone. Best-effort — the
+     * audio and its DB row are already consistent when this runs, so a
+     * sidecar problem must never fail the track.
+     */
+    private fun moveSafSidecar(entry: PlanEntry, root: DocumentFile, targetDir: DocumentFile) {
+        try {
+            val docRel = DocumentsContract
+                .getDocumentId(Uri.parse(entry.sourcePath))
+                .substringAfter(':', "")
+            val parts = docRel.split('/').filter { it.isNotBlank() }
+            if (parts.isEmpty()) return
+            val oldName = parts.last().substringBeforeLast('.') + LRC_EXTENSION
+            val newName = entry.targetName.substringBeforeLast('.') + LRC_EXTENSION
+
+            // Walk from the tree root to the audio's old directory. The
+            // decoded path is volume-relative, so it is PREFIXED by the
+            // picked tree's own base path — those leading segments do not
+            // exist under root and are skipped. Once we have descended even
+            // once we are inside the tree, and any further miss means the
+            // path doesn't match this tree: give up rather than guess.
+            var oldDir = root
+            var descended = false
+            for (segment in parts.dropLast(1)) {
+                val child = oldDir.findFile(segment)?.takeIf { it.isDirectory }
+                if (child == null) {
+                    if (descended) return
+                    continue
+                }
+                oldDir = child
+                descended = true
+            }
+            val sidecar = oldDir.findFile(oldName)?.takeIf { it.isFile } ?: return
+            if (sidecar.uri == targetDir.findFile(newName)?.uri) return
+
+            targetDir.findFile(newName)?.delete()
+            val moved = targetDir.createFile(LRC_MIME, newName) ?: return
+            context.contentResolver.openInputStream(sidecar.uri)?.use { input ->
+                context.contentResolver.openOutputStream(moved.uri)?.use { output ->
+                    input.copyTo(output)
+                }
+            }
+            sidecar.delete()
+        } catch (t: Throwable) {
+            Log.w(TAG, "Could not move SAF lyrics sidecar for ${entry.targetName}", t)
+        }
     }
 
     /**
@@ -379,6 +433,7 @@ class ReorganizeLibraryCoordinator @Inject constructor(
     companion object {
         /** Sidecar extension written by the lyrics module, moved alongside audio. */
         private const val LRC_EXTENSION = ".lrc"
+        private const val LRC_MIME = "application/x-lrc"
         private const val TAG = "ReorganizeCoord"
     }
 }
