@@ -66,12 +66,13 @@ class LastFmRecommendationSourceTest {
                 enabledFlow.value = firstArg()
             }
         }
-        // Master switch ON would make setRecommendationsEnabled(true) try to
-        // kick a one-shot refresh through WorkManager, which isn't initialized
-        // under Robolectric. OFF keeps that glue out of these lifecycle tests;
-        // the enqueue call itself is fail-safe runCatching glue.
+        // Defaults ON, matching production: the master switch now gates
+        // ACTIVATION, not just the refresh kick, so an OFF default would make
+        // every lifecycle test below assert against a globally-disabled mix.
+        // The one-shot WorkManager enqueue that ON enables is fail-safe
+        // runCatching glue, so it stays harmless under Robolectric.
         val stashMixPreference = mockk<StashMixPreference> {
-            coEvery { current() } returns false
+            coEvery { current() } answers { stashMixesOn }
         }
 
         source = LastFmRecommendationSource(
@@ -83,6 +84,9 @@ class LastFmRecommendationSourceTest {
             context = ApplicationProvider.getApplicationContext(),
         )
     }
+
+    /** Stash-Mixes master switch seen by the mocked preference. */
+    private var stashMixesOn = true
 
     @After fun tearDown() {
         db.close()
@@ -201,5 +205,17 @@ class LastFmRecommendationSourceTest {
         val observed = dao().observeByName(LastFmRecommendationSource.RECIPE_NAME).first()
         assertNotNull(observed)
         assertEquals(false, observed!!.isActive)
+    }
+
+    @Test fun `the Stash Mixes master switch keeps the recipe inactive`() = runTest {
+        // #255 regression: the master opt-out only sweeps BUILTIN recipes, and
+        // this one is not builtin — activation must consult the switch itself.
+        stashMixesOn = false
+        sessionFlow.value = LastFmSession("scrobbler", "key")
+        enabledFlow.value = true
+
+        source.reconcile()
+
+        assertFalse(recipe()!!.isActive)
     }
 }

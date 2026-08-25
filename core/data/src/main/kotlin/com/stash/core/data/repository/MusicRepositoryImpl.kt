@@ -11,6 +11,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.mapper.toEntity
+import com.stash.core.data.mix.LastFmRecommendationSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -324,6 +325,16 @@ class MusicRepositoryImpl @Inject constructor(
             // queries that filter on is_active = 1.
             stashMixRecipeDao.setActiveForBuiltins(false)
             playlistDao.setActiveForBuiltinMixes(false)
+            // The Last.fm recommendations recipe (#255) materializes a
+            // STASH_MIX but is NOT a builtin, so both sweeps above miss it.
+            // Hide it explicitly — otherwise the master opt-out leaves one mix
+            // still visible. Re-enabling restores it through
+            // LastFmRecommendationSource.reconcile(), which re-checks that
+            // Last.fm is still connected and recommendations still enabled.
+            stashMixRecipeDao.getByName(LastFmRecommendationSource.RECIPE_NAME)?.let { recipe ->
+                stashMixRecipeDao.setActive(recipe.id, false)
+                recipe.playlistId?.let { playlistDao.setActiveById(it, false) }
+            }
         }
     }
 

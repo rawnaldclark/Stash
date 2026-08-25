@@ -183,19 +183,25 @@ class LastFmRecommendationSource @Inject constructor(
      */
     private suspend fun applyActivation(active: Boolean, kickRefresh: Boolean) {
         val recipe = recipeDao.getByName(RECIPE_NAME) ?: return
-        if (recipe.isActive != active) {
-            recipeDao.setActive(recipe.id, active)
+        // The Stash-Mixes master switch owns every mix surface, and this
+        // recipe materializes a STASH_MIX like any other. Gate HERE — the one
+        // place activation is applied — so no caller can light it up while the
+        // user has mixes switched off. Re-enabling mixes restores it on the
+        // next reconcile() (app start, or a Last.fm connect/toggle).
+        val effectiveActive = active && stashMixPreference.current()
+        if (recipe.isActive != effectiveActive) {
+            recipeDao.setActive(recipe.id, effectiveActive)
         }
         val playlistId = recipe.playlistId
         if (playlistId != null) {
             val playlist = playlistDao.getById(playlistId)
             // Only touch STASH_MIX rows: if the user somehow deleted the
             // playlist, getById returns null and there's nothing to hide.
-            if (playlist != null && playlist.type == PlaylistType.STASH_MIX && playlist.isActive != active) {
-                playlistDao.setActiveById(playlistId, active)
+            if (playlist != null && playlist.type == PlaylistType.STASH_MIX && playlist.isActive != effectiveActive) {
+                playlistDao.setActiveById(playlistId, effectiveActive)
             }
         }
-        if (active && kickRefresh && stashMixPreference.current()) {
+        if (effectiveActive && kickRefresh) {
             // Single-recipe one-shot: builds/rebuilds only this mix. REPLACE
             // policy coalesces rapid double-taps.
             runCatching { StashMixRefreshWorker.enqueueOneTime(context, recipe.id) }
