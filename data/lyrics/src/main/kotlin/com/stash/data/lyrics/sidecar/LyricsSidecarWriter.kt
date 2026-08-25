@@ -2,6 +2,7 @@ package com.stash.data.lyrics.sidecar
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.stash.core.data.db.dao.TrackDao
@@ -118,30 +119,45 @@ class LyricsSidecarWriter @Inject constructor(
             Log.w(TAG, "DocumentFile.fromTreeUri returned null for $treeUri; sidecar skipped")
             throw IOException("Invalid SAF tree $treeUri")
         }
-        // Resolve the sidecar location through the SAME layout resolver the
-        // download pipeline used — Artist/Album, Single folder, or Per
-        // playlist (#198/#104). track.artist (not albumArtist) matches what
-        // commitDownload slugged into the directory names.
-        val layout = runCatching { storagePreference.libraryLayout.first() }
-            .getOrDefault(LibraryLayout.DEFAULT)
-        val playlistName =
-            if (layout == LibraryLayout.PLAYLIST) {
-                runCatching { trackDao.getFirstPlaylistNameForTrack(track.id) }.getOrNull()
-            } else {
-                null
-            }
-        val location = LibraryLayoutResolver.resolve(
-            layout,
-            artist = track.artist,
-            album = track.album.takeIf { it.isNotBlank() },
-            title = track.title,
-            playlistName = playlistName,
-        )
+        // The sidecar contract is "next to the audio", so the audio's OWN
+        // directory wins over anything re-derived. A track downloaded under
+        // one layout stays put until Reorganize runs, and re-deriving from
+        // the CURRENT preference would drop the .lrc in an empty folder while
+        // the audio sat elsewhere — invisible to every external player.
+        // Falls back to the layout resolver when the provider's document ids
+        // don't follow the `<volume>:<path>` convention we can decode.
+        val beside = safLocationBesideAudio(treeUri, track.filePath)
+        val segments: List<String>
+        val baseName: String
+        if (beside != null) {
+            segments = beside.first
+            baseName = beside.second
+        } else {
+            // track.artist (not albumArtist) matches what commitDownload
+            // slugged into the directory names (#198/#104).
+            val layout = runCatching { storagePreference.libraryLayout.first() }
+                .getOrDefault(LibraryLayout.DEFAULT)
+            val playlistName =
+                if (layout == LibraryLayout.PLAYLIST) {
+                    runCatching { trackDao.getFirstPlaylistNameForTrack(track.id) }.getOrNull()
+                } else {
+                    null
+                }
+            val location = LibraryLayoutResolver.resolve(
+                layout,
+                artist = track.artist,
+                album = track.album.takeIf { it.isNotBlank() },
+                title = track.title,
+                playlistName = playlistName,
+            )
+            segments = location.segments
+            baseName = location.baseName
+        }
         var cursor = tree
-        for (segment in location.segments) {
+        for (segment in segments) {
             cursor = findOrCreateDir(cursor, segment) ?: fail("Could not create directory '$segment'")
         }
-        val filename = "${location.baseName}.lrc"
+        val filename = "$baseName.lrc"
         val existing = cursor.findFile(filename)
         val target = existing ?: cursor.createFile(LRC_MIME, filename) ?: run {
             Log.w(TAG, "Could not create SAF sidecar '$filename' under ${cursor.uri}")
@@ -150,6 +166,31 @@ class LyricsSidecarWriter @Inject constructor(
         context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
             out.write(body.toByteArray(Charsets.UTF_8))
         } ?: fail("Could not open SAF output stream for sidecar ${target.uri}")
+    }
+
+
+    /**
+     * Decode a SAF audio document uri into (directory segments relative to
+     * the picked tree, filename without extension) so the sidecar can be
+     * written in the audio's ACTUAL directory.
+     *
+     * Mirrors the `<volume>:<path>` decode used by the reorganize pass.
+     * Returns null whenever the ids don't parse or the document doesn't sit
+     * under the tree — the caller then falls back to the layout resolver.
+     */
+    private fun safLocationBesideAudio(treeUri: Uri, docUriString: String?): Pair<List<String>, String>? {
+        if (docUriString.isNullOrBlank() || !docUriString.startsWith("content://")) return null
+        return try {
+            val baseRel = DocumentsContract.getTreeDocumentId(treeUri).substringAfter(':', "")
+            val docRel = DocumentsContract.getDocumentId(Uri.parse(docUriString)).substringAfter(':', "")
+            if (!docRel.startsWith(baseRel, ignoreCase = true)) return null
+            val parts = docRel.substring(baseRel.length).split('/').filter { it.isNotBlank() }
+            if (parts.isEmpty()) null
+            else parts.dropLast(1) to parts.last().substringBeforeLast('.')
+        } catch (t: Throwable) {
+            Log.d(TAG, "Sidecar location undecodable for $docUriString: ${t.message}")
+            null
+        }
     }
 
     /**

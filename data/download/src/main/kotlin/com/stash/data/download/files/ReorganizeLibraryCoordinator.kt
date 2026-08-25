@@ -202,6 +202,12 @@ class ReorganizeLibraryCoordinator @Inject constructor(
                         moveWithinInternal(entry)
                     }
                 }
+                // runCatching swallows CancellationException too. Cancel works
+                // by cancelling activeJob, which surfaces here as a failed
+                // entry — the loop would carry on moving the REST of the
+                // library and then overwrite Idle with Done. Re-throw so the
+                // outer handler resets to Idle and the pass actually stops.
+                ok.exceptionOrNull()?.let { if (it is CancellationException) throw it }
                 if (ok.getOrDefault(false)) moved++ else {
                     failed++
                     Log.w(TAG, "Reorganize failed for track ${entry.trackId}", ok.exceptionOrNull())
