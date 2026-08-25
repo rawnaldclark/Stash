@@ -144,13 +144,20 @@ class LastFmRecommendationSource @Inject constructor(
 
     /**
      * Bring persisted state in line with reality. Idempotent; called from
-     * app startup and after Last.fm connect/disconnect.
+     * app startup, after Last.fm connect/disconnect, and when the
+     * Stash-Mixes master switch flips.
+     *
+     * @param kickRefresh start building the playlist immediately instead of
+     *   waiting for the daily cycle. True on an interactive connect, where
+     *   the user is looking at the Sync tab expecting something to happen;
+     *   false on startup and on master-switch flips, which have their own
+     *   refresh scheduling.
      */
-    suspend fun reconcile() {
+    suspend fun reconcile(kickRefresh: Boolean = false) {
         ensureRecipe()
         val connected = sessionPreference.session.first() != null
         val enabled = sourcePreference.recommendationsEnabled.first()
-        applyActivation(active = connected && enabled, kickRefresh = false)
+        applyActivation(active = connected && enabled, kickRefresh = kickRefresh)
         Log.i(TAG, "reconcile: connected=$connected enabled=$enabled")
     }
 

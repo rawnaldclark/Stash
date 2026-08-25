@@ -49,6 +49,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val localFileOps: com.stash.core.data.files.LocalFileOps,
     private val syncPreferencesManager: com.stash.core.data.sync.SyncPreferencesManager,
     private val singleTrackDownloadEnqueuer: com.stash.core.data.sync.SingleTrackDownloadEnqueuer,
+    private val lastFmRecommendationSource: LastFmRecommendationSource,
 ) : MusicRepository {
 
     // ── Deletion event plumbing ─────────────────────────────────────────
@@ -313,6 +314,12 @@ class MusicRepositoryImpl @Inject constructor(
             // Fire a one-shot refresh so the surfaces repopulate immediately
             // rather than waiting for the next periodic cycle.
             com.stash.core.data.sync.workers.StashMixRefreshWorker.enqueueOneTime(context)
+            // The Last.fm source (#255) is a STASH_MIX but NOT a builtin, so
+            // the sweeps above miss it in both directions. reconcile() re-
+            // derives its state from session + toggle + this switch, so one
+            // call restores it here and hides it below — no second copy of
+            // the predicate to drift.
+            runCatching { lastFmRecommendationSource.reconcile() }
         } else {
             // Cancel periodic + one-shot work by unique name. The constants
             // live inside the workers as private vals; the names are stable
@@ -325,16 +332,10 @@ class MusicRepositoryImpl @Inject constructor(
             // queries that filter on is_active = 1.
             stashMixRecipeDao.setActiveForBuiltins(false)
             playlistDao.setActiveForBuiltinMixes(false)
-            // The Last.fm recommendations recipe (#255) materializes a
-            // STASH_MIX but is NOT a builtin, so both sweeps above miss it.
-            // Hide it explicitly — otherwise the master opt-out leaves one mix
-            // still visible. Re-enabling restores it through
-            // LastFmRecommendationSource.reconcile(), which re-checks that
-            // Last.fm is still connected and recommendations still enabled.
-            stashMixRecipeDao.getByName(LastFmRecommendationSource.RECIPE_NAME)?.let { recipe ->
-                stashMixRecipeDao.setActive(recipe.id, false)
-                recipe.playlistId?.let { playlistDao.setActiveById(it, false) }
-            }
+            // Same single call as the enable branch: reconcile() reads the
+            // now-persisted master switch and deactivates the Last.fm recipe
+            // and its playlist without deleting anything.
+            runCatching { lastFmRecommendationSource.reconcile() }
         }
     }
 

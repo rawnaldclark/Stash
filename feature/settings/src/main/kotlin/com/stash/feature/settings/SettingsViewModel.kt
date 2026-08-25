@@ -833,7 +833,10 @@ class SettingsViewModel @Inject constructor(
                     // Issue #255: the connection just became a SOURCE. Reconcile
                     // so "Recommended by Last.fm" activates now — the user sees
                     // it on the Sync tab without restarting.
-                    runCatching { lastFmRecommendationSource.reconcile() }
+                    // kickRefresh: the user is watching the Sync tab right
+                    // now — without it the new playlist sits empty until the
+                    // next daily cycle or app restart.
+                    runCatching { lastFmRecommendationSource.reconcile(kickRefresh = true) }
                         .onFailure { android.util.Log.w("SettingsVM", "lastfm reconcile failed", it) }
                     // Clear the override — the session flow now drives Connected state.
                     _localState.update { it.copy(lastFmAuthOverride = null) }
