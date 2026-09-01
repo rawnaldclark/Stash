@@ -303,6 +303,21 @@ class ArcodClientTest {
         assertEquals(2, server.requestCount)
     }
 
+    @Test fun `a 429 that says quota but not daily is a burst, not a day-long lockout`() = runTest {
+        // The discriminator is the reset PERIOD ("daily"), not the kind of limit
+        // ("quota"): a momentary throttle worded like this must not cost the rest
+        // of the day.
+        server.enqueue(MockResponse().setResponseCode(429).setBody("""{"error":"rate quota exceeded, retry in 60s"}"""))
+        var now = FIXED_NOW
+        client.nowMs = { now }
+        try { client.search("first") } catch (e: ArcodRateLimitedException) { /* expected */ }
+
+        now = FIXED_NOW + 61_000L
+        server.enqueue(MockResponse().setResponseCode(200).setBody(SEARCH_BODY))
+        assertTrue(client.search("after cooldown").isNotEmpty())
+        assertEquals(2, server.requestCount)
+    }
+
     @Test fun `non-quota 429 backs off only briefly`() = runTest {
         server.enqueue(MockResponse().setResponseCode(429).setBody("""{"error":"slow down"}"""))
         var now = FIXED_NOW

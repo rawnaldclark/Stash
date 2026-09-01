@@ -289,7 +289,11 @@ class ArcodClient @Inject constructor(
     private fun note429(response: okhttp3.Response) {
         if (response.code != 429) return
         val body = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
-        val daily = body.contains("quota", ignoreCase = true)
+        // Discriminate on the RESET PERIOD, not the kind of limit: the observed
+        // body is {"error":"Daily quota reached","resetAt":"midnight UTC"}. Matching
+        // "quota" would also catch a burst body like "rate quota exceeded, retry in
+        // 60s" and lock arcod out until midnight over a momentary throttle.
+        val daily = body.contains("daily", ignoreCase = true)
         // Epoch millis are already UTC, so the next day boundary is plain arithmetic
         // — no java.time desugaring needed for one ceiling division.
         blockedUntilMs = if (daily) {
