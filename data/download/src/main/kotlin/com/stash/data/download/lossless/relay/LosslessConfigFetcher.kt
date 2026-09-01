@@ -17,6 +17,7 @@ import java.security.KeyFactory
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -44,6 +45,13 @@ data class LosslessConfig(
     val v: Int = 1,
     val relays: List<RelayEntry> = emptyList(),
     @SerialName("updated_at") val updatedAt: Long = 0,
+    /**
+     * Relay access key (spec §5.4). When present, [LosslessRelayClient] signs every
+     * mint with it. Delivered here — inside the signed, cached, every-cold-start
+     * config — rather than baked into the APK, so it rotates by publishing a new
+     * config and is dead on every device within one cold start. Null → unsigned.
+     */
+    @SerialName("relay_key") val relayKey: String? = null,
 )
 
 private val Context.losslessRelayConfigDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -78,6 +86,24 @@ class LosslessConfigFetcher @Inject constructor(
     private val _relays = MutableStateFlow<List<RelayEntry>>(emptyList())
     val relays: StateFlow<List<RelayEntry>> = _relays.asStateFlow()
 
+    private val _relayKey = MutableStateFlow<String?>(null)
+    /** The current relay access key from the applied config; null when unsigned. */
+    val relayKey: StateFlow<String?> = _relayKey.asStateFlow()
+
+    private val installIdKey = stringPreferencesKey("install_id")
+
+    /**
+     * A random id created once per install and persisted beside the config cache.
+     * Sent with every signed mint so the relay can rate-limit per install. It is a
+     * cooperative bucket, not an identity: random, no PII, never leaves the relay
+     * request. Created inside a single `edit` so two first-callers can't race two
+     * different ids into existence.
+     */
+    suspend fun installId(): String =
+        context.losslessRelayConfigDataStore.edit { p ->
+            if (p[installIdKey] == null) p[installIdKey] = UUID.randomUUID().toString()
+        }[installIdKey]!!
+
     val enabled: Boolean get() = configUrl.isNotBlank() && publicKeyB64.isNotBlank()
 
     /**
@@ -87,7 +113,7 @@ class LosslessConfigFetcher @Inject constructor(
      */
     suspend fun loadCached() {
         val cached = readCache() ?: return
-        parse(cached)?.let { _relays.value = it.relays }
+        parse(cached)?.let { _relays.value = it.relays; _relayKey.value = it.relayKey }
     }
 
     /** Fetch + verify + apply. Returns true only when a fresh, valid config was applied. Never throws. */
@@ -111,6 +137,7 @@ class LosslessConfigFetcher @Inject constructor(
             return@withContext false
         }
         _relays.value = fresh.relays
+        _relayKey.value = fresh.relayKey
         ioCatching("cache write") { context.losslessRelayConfigDataStore.edit { it[jsonKey] = text } }
         Log.i(TAG, "lossless config applied: ${fresh.relays.size} relay(s)")
         true
@@ -181,6 +208,7 @@ class LosslessConfigFetcher @Inject constructor(
 
     internal suspend fun clearForTest() {
         _relays.value = emptyList()
+        _relayKey.value = null
         context.losslessRelayConfigDataStore.edit { it.clear() }
     }
 

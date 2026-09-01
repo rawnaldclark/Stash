@@ -1,6 +1,12 @@
 package com.stash.data.download.lossless.relay
 
 import com.google.common.truth.Truth.assertThat
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
@@ -13,12 +19,18 @@ import org.junit.Test
 class LosslessRelayClientTest {
     private lateinit var server: MockWebServer
     private lateinit var client: LosslessRelayClient
+    private lateinit var config: LosslessConfigFetcher
+    /** Null by default: the existing tests exercise the unsigned path. */
+    private val relayKey = MutableStateFlow<String?>(null)
     private var now = 1_000_000L
     private val base get() = server.url("/").toString().trimEnd('/')
 
     @Before fun setUp() {
         server = MockWebServer(); server.start()
-        client = LosslessRelayClient(OkHttpClient()).also { it.clock = { now } }
+        config = mockk()
+        every { config.relayKey } returns relayKey
+        coEvery { config.installId() } returns INSTALL_ID
+        client = LosslessRelayClient(OkHttpClient(), config).also { it.clock = { now } }
     }
     @After fun tearDown() { server.shutdown() }
 
@@ -138,4 +150,47 @@ class LosslessRelayClientTest {
         assertThat(client.probe("relay.example")).isFalse()
         assertThat(server.requestCount).isEqualTo(0)
     }
+
+    // --- request signing (spec §5.4) --------------------------------------
+
+    @Test fun `no relay key means no auth headers at all`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"url":"https://cdn.example/f.flac?etsp=1"}"""))
+        client.mint(base, 42, 27)
+        val req = server.takeRequest()
+        assertThat(req.getHeader("X-Stash-Auth")).isNull()
+        assertThat(req.getHeader("X-Stash-Install")).isNull()
+        assertThat(req.getHeader("X-Stash-Ts")).isNull()
+    }
+
+    @Test fun `with a relay key the mint carries install id, timestamp, and a verifiable HMAC`() = runTest {
+        relayKey.value = "k-secret"
+        now = 1_700_000_000_123L // ts is unix SECONDS — the millis must be truncated, not rounded
+        server.enqueue(MockResponse().setBody("""{"url":"https://cdn.example/f.flac?etsp=1"}"""))
+        client.mint(base, 42, 27)
+        val req = server.takeRequest()
+        assertThat(req.getHeader("X-Stash-Install")).isEqualTo(INSTALL_ID)
+        assertThat(req.getHeader("X-Stash-Ts")).isEqualTo("1700000000")
+        // Recompute independently: the relay will do exactly this.
+        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec("k-secret".toByteArray(), "HmacSHA256")) }
+        val expected = mac.doFinal("$INSTALL_ID:42:27:1700000000".toByteArray()).joinToString("") { "%02x".format(it) }
+        assertThat(req.getHeader("X-Stash-Auth")).isEqualTo(expected)
+        // The custom-endpoint / unsigned contract header is unchanged by signing.
+        assertThat(req.getHeader("X-Stash-Version")).isEqualTo("1")
+    }
+
+    @Test fun `a failing install-id store falls back to a transient id instead of throwing`() = runTest {
+        // This runs BEFORE the HTTP try in mint(): a throw here would escape into
+        // QbdlxQobuzSource's breaker and trip qbdlx wholesale.
+        relayKey.value = "k-secret"
+        coEvery { config.installId() } throws java.io.IOException("datastore unavailable")
+        server.enqueue(MockResponse().setBody("""{"url":"https://cdn.example/f.flac?etsp=1"}"""))
+        val r = client.mint(base, 42, 27)
+        assertThat(r).isInstanceOf(RelayMint.Ok::class.java)
+        assertThat(server.takeRequest().getHeader("X-Stash-Install")).isNotEmpty()
+    }
+
+    private companion object {
+        const val INSTALL_ID = "0f7c3a2e-install"
+    }
+
 }

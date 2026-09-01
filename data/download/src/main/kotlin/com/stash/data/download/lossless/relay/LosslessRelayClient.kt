@@ -2,8 +2,11 @@ package com.stash.data.download.lossless.relay
 
 import android.util.Log
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -57,7 +60,10 @@ internal data class RelayFileResponse(
  * survive a junk value, not sanitise one.
  */
 @Singleton
-class LosslessRelayClient @Inject constructor(sharedClient: OkHttpClient) {
+class LosslessRelayClient @Inject constructor(
+    sharedClient: OkHttpClient,
+    private val config: LosslessConfigFetcher,
+) {
     /**
      * Derived client so the relay's short timeouts don't leak onto the shared
      * one — a relay that hangs must fail over fast, not stall a download.
@@ -99,6 +105,7 @@ class LosslessRelayClient @Inject constructor(sharedClient: OkHttpClient) {
         val req = Request.Builder().url(url)
             .header("X-Stash-Version", PROTOCOL_VERSION)
             .header("Accept", "application/json")
+            .also { signIfKeyed(it, trackId, formatId) }
             .get().build()
         // The body read stays INSIDE the try: a relay that returns 200 headers and then
         // stalls throws out of string(), and that must cool this base — not escape into
@@ -165,6 +172,34 @@ class LosslessRelayClient @Inject constructor(sharedClient: OkHttpClient) {
             Log.i(TAG, "probe of ${host(base)} failed (${e.javaClass.simpleName})")
             false
         }
+    }
+
+    /**
+     * Relay access control (spec §5.4). When the signed config carries a
+     * `relay_key`, the mint is signed: `X-Stash-Auth` = hex HMAC-SHA256 over
+     * `"<install_id>:<track_id>:<format_id>:<unix_ts>"`, with `X-Stash-Install` and
+     * `X-Stash-Ts` alongside. The install id sits INSIDE the MAC so a captured
+     * header cannot be replayed under another install's allowance; the timestamp
+     * lets the relay reject anything outside its ±5 min window.
+     *
+     * No key → no headers. A user-run custom endpoint built to the public contract
+     * needs none, and a relay that wants auth answers an unsigned mint with a
+     * non-2xx that [mint] already cools for 5 min.
+     *
+     * A DataStore failure fetching the install id falls back to a transient id
+     * rather than throwing: this runs BEFORE the HTTP try, and an exception here
+     * would escape into QbdlxQobuzSource's breaker and trip qbdlx wholesale.
+     *
+     * ponytail: the ±5 min window assumes an NTP-synced clock; add Date-header
+     * skew correction if relay 401s show up in the field.
+     */
+    private suspend fun signIfKeyed(b: Request.Builder, trackId: Long, formatId: Int) {
+        val key = config.relayKey.value ?: return
+        val install = runCatching { config.installId() }.getOrElse { UUID.randomUUID().toString() }
+        val ts = clock() / 1000
+        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key.toByteArray(), "HmacSHA256")) }
+        val sig = mac.doFinal("$install:$trackId:$formatId:$ts".toByteArray()).joinToString("") { "%02x".format(it) }
+        b.header("X-Stash-Install", install).header("X-Stash-Ts", ts.toString()).header("X-Stash-Auth", sig)
     }
 
     private fun cool(base: String, ms: Long) {

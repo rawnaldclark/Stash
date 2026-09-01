@@ -51,6 +51,37 @@ class LosslessConfigFetcherTest {
         assertThat(cold.relays.value.map { it.base }).containsExactly("https://a.example", "https://b.example").inOrder()
     }
 
+    @Test fun `relay_key rides the signed config, survives the cache, and rotates with it`() = runTest {
+        val keyed = """{"v":1,"relays":[{"base":"https://a.example","priority":1}],"updated_at":5,"relay_key":"k-one"}"""
+        server.enqueue(MockResponse().setBody(keyed))
+        server.enqueue(MockResponse().setBody(sign(keyed.toByteArray())))
+        val f = fetcher()
+        assertThat(f.refresh()).isTrue()
+        assertThat(f.relayKey.value).isEqualTo("k-one")
+
+        // Cold start reads the key back from the cache, not the network.
+        val cold = fetcher()
+        cold.loadCached()
+        assertThat(cold.relayKey.value).isEqualTo("k-one")
+
+        // Rotation = a newer config with a different key; and a config that DROPS
+        // the key must clear it, not leave the old one armed.
+        val unkeyed = """{"v":1,"relays":[{"base":"https://a.example","priority":1}],"updated_at":6}"""
+        server.enqueue(MockResponse().setBody(unkeyed))
+        server.enqueue(MockResponse().setBody(sign(unkeyed.toByteArray())))
+        assertThat(cold.refresh()).isTrue()
+        assertThat(cold.relayKey.value).isNull()
+    }
+
+    @Test fun `install id is created once and is stable across instances`() = runTest {
+        val a = fetcher().installId()
+        val b = fetcher().installId()
+        assertThat(a).isNotEmpty()
+        assertThat(b).isEqualTo(a)
+        // Random, not derived from anything: a UUID shape, no PII.
+        assertThat(a).matches("[0-9a-f-]{36}")
+    }
+
     @Test fun `tampered body is ignored and the cached copy kept`() = runTest {
         server.enqueue(MockResponse().setBody(body)); server.enqueue(MockResponse().setBody(sign(body.toByteArray())))
         val f = fetcher(); f.refresh()
