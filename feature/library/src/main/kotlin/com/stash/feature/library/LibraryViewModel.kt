@@ -387,7 +387,11 @@ class LibraryViewModel @Inject constructor(
         }.let { likedFlow ->
             combine(likedFlow, _controls) { tracks, controls ->
                 val query = controls.searchQuery.trim().lowercase()
-                if (query.isEmpty()) tracks else tracks.filter { it.matchesQuery(query) }
+                val narrowed = if (query.isEmpty()) tracks else tracks.filter { it.matchesQuery(query) }
+                // #455: the merged list arrives as each source's playlist glued end to
+                // end in position order, and the sort control never reached it — a song
+                // liked today sat in the middle. Sort here, where the list is complete.
+                sortLikedTracks(narrowed, controls.sortOrder)
             }
         }
             // Same rationale as uiState: dedupe + search filtering is pure
@@ -989,6 +993,22 @@ class LibraryViewModel @Inject constructor(
  * Internal holder for user-driven UI controls so they can be combined
  * with the data flows in a single [combine] call.
  */
+/**
+ * The Liked tab's sort. "Recently added" means recently LIKED here: the newest
+ * like on top whichever source it came from (Stash, Spotify, YouTube Music,
+ * Last.fm), falling back to the library add date for a row that predates the
+ * like timestamps. The other orders mirror the Songs tab.
+ */
+internal fun sortLikedTracks(tracks: List<Track>, order: SortOrder): List<Track> = when (order) {
+    SortOrder.RECENT -> tracks.sortedByDescending { it.likedAtOrAdded() }
+    SortOrder.ALPHABETICAL -> tracks.sortedBy { it.title.lowercase() }
+    SortOrder.MOST_PLAYED -> tracks.sortedByDescending { it.playCount }
+    SortOrder.DURATION -> tracks.sortedByDescending { it.durationMs }
+}
+
+private fun Track.likedAtOrAdded(): Long =
+    listOfNotNull(stashLikedAt, spotifySavedAt, ytMusicSavedAt, lastFmLovedAt).maxOrNull() ?: dateAdded
+
 private data class ControlState(
     val activeTab: LibraryTab = LibraryTab.TRACKS,
     val searchQuery: String = "",
