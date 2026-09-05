@@ -26,6 +26,8 @@ internal object QueueDisplay {
     val queue: List<Track>,
     val currentIndex: Int,
     val isLogical: Boolean,
+    /** #468: with shuffle on, row i of [queue] is timeline slot `timelineIndices[i]`; null otherwise. */
+    val timelineIndices: List<Int>? = null,
   )
 
   /**
@@ -40,7 +42,16 @@ internal object QueueDisplay {
     timelineIndex: Int,
     logicalQueue: List<Track>,
     currentTrackId: Long?,
+    shuffledTimelineIndices: List<Int>? = null,
   ): DisplayQueue {
+    // #468: with shuffle on, playback follows Media3's shuffle walk, so the sheet must
+    // show THAT order - the logical (unshuffled) list made "Up next" lie. The walk
+    // is kept so index-based actions can map a row back to its timeline slot.
+    if (shuffledTimelineIndices != null && timelineQueue.isNotEmpty()) {
+      val queue = shuffledTimelineIndices.mapNotNull { timelineQueue.getOrNull(it) }
+      val current = shuffledTimelineIndices.indexOf(timelineIndex).coerceAtLeast(0)
+      return DisplayQueue(queue, current, isLogical = false, timelineIndices = shuffledTimelineIndices)
+    }
     if (currentTrackId != null && currentTrackId > 0L) {
       val idx = logicalQueue.indexOfFirst { it.id == currentTrackId }
       if (idx >= 0) {
@@ -64,6 +75,24 @@ internal object QueueDisplay {
    * relative order, so the right slot is simply "after every timeline item
    * that is logically before the new position".
    */
+  /**
+   * Timeline window indices in shuffle play order: from [first], following [next]
+   * until it answers an index outside 0 until count or one already visited. The
+   * visited guard matters: a mocked or degenerate timeline that keeps answering
+   * the same index must not spin forever.
+   */
+  fun walkShuffleOrder(count: Int, first: Int, next: (Int) -> Int): List<Int> {
+    if (count <= 0 || first !in 0 until count) return emptyList()
+    val out = ArrayList<Int>(count)
+    val seen = HashSet<Int>(count)
+    var i = first
+    while (i in 0 until count && out.size < count && seen.add(i)) {
+      out.add(i)
+      i = next(i)
+    }
+    return out
+  }
+
   fun moveTimelineTarget(
     newLogical: List<Track>,
     toIndex: Int,

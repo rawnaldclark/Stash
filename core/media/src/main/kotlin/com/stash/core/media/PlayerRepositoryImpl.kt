@@ -369,6 +369,13 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     private var cachedTimelineQueue: List<Track> = emptyList()
 
+    /**
+     * #468: while shuffle is on, the published queue is the controller's shuffle walk
+     * and this maps each displayed row to its timeline slot (null with shuffle off).
+     * Refreshed with every [updateState]; read by the sheet's index-based actions.
+     */
+    @Volatile private var shuffledDisplayIndices: List<Int>? = null
+
     @Volatile
     private var timelineDirty: Boolean = true
 
@@ -1242,6 +1249,12 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override suspend fun removeFromQueue(index: Int) {
         val controller = ensureController() ?: return
+        shuffledDisplayIndices?.let { walk ->
+            // #468: rows are in shuffle order - map the row back to its timeline slot.
+            val slot = walk.getOrNull(index) ?: return
+            if (slot in 0 until controller.mediaItemCount) controller.removeMediaItem(slot)
+            return
+        }
         if (logicalDisplayActive(controller)) {
             val logical = currentQueueTracks
             val target = logical.getOrNull(index) ?: return
@@ -1263,6 +1276,9 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override suspend fun moveInQueue(from: Int, to: Int) {
         val controller = ensureController() ?: return
+        // #468: a MediaController cannot rewrite Media3's shuffle order, so a move
+        // under shuffle would not change what plays next. The sheet hides the handle.
+        if (shuffledDisplayIndices != null) return
         if (logicalDisplayActive(controller)) {
             val logical = currentQueueTracks
             if (from !in logical.indices || to !in logical.indices || from == to) return
@@ -1303,6 +1319,16 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override suspend fun skipToQueueIndex(index: Int) {
         val controller = ensureController() ?: return
+        shuffledDisplayIndices?.let { walk ->
+            // #468: rows are in shuffle order - seek to the timeline slot the row maps to.
+            val slot = walk.getOrNull(index) ?: return
+            if (slot !in 0 until controller.mediaItemCount) return
+            val target = queueTrackAtTimelineIndex(controller, slot)
+            if (target == null || prepareExplicitTimelineTarget(controller, slot, target)) {
+                controller.seekToDefaultPosition(slot)
+            }
+            return
+        }
         if (logicalDisplayActive(controller)) {
             val target = currentQueueTracks.getOrNull(index) ?: return
             val timelineIdx = timelineIndexOfTrackId(controller, target.id)
@@ -2264,6 +2290,17 @@ class PlayerRepositoryImpl @Inject constructor(
             timelineDirty = false
         }
         val timelineQueue = cachedTimelineQueue
+        // #468: with shuffle on, show Media3's play order, not the logical list. The
+        // controller's timeline carries the shuffle order, so walk it.
+        val shuffledIndices = if (controller.shuffleModeEnabled && controller.mediaItemCount > 0) {
+            val timeline = controller.currentTimeline
+            QueueDisplay.walkShuffleOrder(controller.mediaItemCount, timeline.getFirstWindowIndex(true)) {
+                timeline.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true)
+            }.takeIf { it.size == controller.mediaItemCount }
+        } else {
+            null
+        }
+        shuffledDisplayIndices = shuffledIndices
 
         // Display the LOGICAL queue (the Track list handed to setQueue), not
         // the raw timeline. The fast-lane background fill drops stream tracks
@@ -2279,6 +2316,7 @@ class PlayerRepositoryImpl @Inject constructor(
             timelineIndex = controller.currentMediaItemIndex,
             logicalQueue = currentQueueTracks,
             currentTrackId = currentTrackId,
+            shuffledTimelineIndices = shuffledIndices,
         )
 
         // Streaming detection: a track is "streaming" when it came from a

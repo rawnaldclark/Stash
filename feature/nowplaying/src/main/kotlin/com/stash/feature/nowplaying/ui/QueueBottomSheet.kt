@@ -80,6 +80,8 @@ fun QueueBottomSheet(
     currentIndex: Int,
     accentColor: Color,
     source: PlaybackSource = PlaybackSource.Unknown,
+    /** #468: with shuffle on the rows are in play order and cannot be dragged (see below). */
+    isShuffleEnabled: Boolean = false,
     onDismiss: () -> Unit,
     onTrackClick: (index: Int) -> Unit,
     onRemoveTrack: (index: Int) -> Unit,
@@ -344,8 +346,11 @@ fun QueueBottomSheet(
                                     )
                                 }
                             }
-                            // Drag handle
-                            Box(
+                            // Drag handle - hidden under shuffle (#468): a controller cannot
+                            // rewrite Media3's shuffle order, so a drag would move nothing.
+                            if (isShuffleEnabled) {
+                                androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(48.dp))
+                            } else Box(
                                 modifier = Modifier
                                     .size(48.dp)
                                     .pointerInput(entry.uid) {
