@@ -14,10 +14,10 @@ package com.stash.core.common
  * is cached.
  *
  * **YouTube video thumbnails (`i.ytimg.com`):**
- * `sddefault.jpg` is 640x480. We upgrade to `hqdefault.jpg` (480x360)
- * or `maxresdefault.jpg` (1280x720) if the source is `sddefault`.
- * Actually `sddefault` is already decent — the main issue is the
- * `lh3` URLs, not `ytimg`.
+ * Every variant is normalised to `hqdefault.jpg` (480x360), the only
+ * one YouTube generates for EVERY video. `sddefault` / `maxresdefault`
+ * exist for some uploads and 404 for others, and a 404 is drawn as
+ * nothing — black album art at random (see [upgrade]).
  *
  * **Spotify (`i.scdn.co`):**
  * The URL path contains a size prefix:
@@ -53,24 +53,27 @@ object ArtUrlUpgrader {
     // i.ytimg.com filenames in increasing order of quality.
     //   `default`      → 120x90
     //   `mqdefault`    → 320x180
-    //   `hqdefault`    → 480x360
-    //   `sddefault`    → 640x480
-    //   `maxresdefault`→ 1280x720 (404s for low-popularity uploads)
+    //   `hqdefault`    → 480x360   ← the ONLY one every video has
+    //   `sddefault`    → 640x480   (generated for some uploads only)
+    //   `maxresdefault`→ 1280x720  (generated for some uploads only)
     //
-    // We upgrade everything < sddefault to `sddefault`. 640x480 is sharp
-    // enough for the mosaic tile / playlist-cover surfaces at typical
-    // high-DPI sizes and is available for ~99% of YT videos. We don't
-    // chase `maxresdefault` because the 404 rate is non-trivial and
-    // Coil doesn't fall back on broken URLs.
+    // This used to "upgrade" everything to `sddefault` on the belief that
+    // ~99% of videos have it. Probed against a real library on 2026-09-05:
+    // 1 in 12 stored `sddefault` URLs 404 (every one of them has
+    // `hqdefault`), and Coil draws NOTHING for a 404 — so the upgrade was
+    // black album art, on Now Playing and every cover built from track
+    // art, for whichever videos happened to lack the variant. The stored
+    // URL is what Media3 fetches for the notification too, so the fix has
+    // to be in the URL, not in one loader: every variant now normalises
+    // to `hqdefault` (MIGRATION_42_43 repairs rows written before).
     //
     // We ALSO strip `?sqp=…&rs=…` query parameters: those are Google's
     // server-side downscale tokens that shrink the served image even
     // when the URL points at a high-res `*default.jpg`. Without
     // stripping, an `hqdefault.jpg?sqp=…` URL arrives at ~320px wide.
-    private val YTIMG_LOW_RES = listOf("default", "mqdefault", "hqdefault")
-    private const val YTIMG_TARGET = "sddefault"
+    private const val YTIMG_TARGET = "hqdefault"
     private val YTIMG_PATH_REGEX = Regex(
-        """(/vi[a-z_]*/[^/]+/)(?:default|mqdefault|hqdefault)(\.(?:jpg|webp))""",
+        """(/vi[a-z_]*/[^/]+/)(?:default|mqdefault|hqdefault|sddefault|maxresdefault)(\.(?:jpg|webp))""",
     )
 
     /**
@@ -84,8 +87,8 @@ object ArtUrlUpgrader {
      * Proper YT Music catalog art lives on `lh3.googleusercontent.com`
      * and is treated as good — not a video thumbnail.
      *
-     * Note: this stays true after [upgrade] rewrites `sddefault` →
-     * `maxresdefault` or similar; the host is the load-bearing signal.
+     * Note: this stays true whatever filename [upgrade] normalises to;
+     * the host is the load-bearing signal.
      */
     fun isYouTubeVideoThumbnail(url: String?): Boolean {
         if (url.isNullOrBlank()) return false
@@ -141,23 +144,12 @@ object ArtUrlUpgrader {
                 LASTFM_SIZE_REGEX.replace(url, "$1$LASTFM_TARGET_SIZE/")
             }
 
-            // YouTube video thumbnails (i.ytimg.com). Two upgrades:
-            //   1. Strip `?sqp=…&rs=…` query — Google's server-side
-            //      downscale tokens; they shrink the served image even
-            //      when the URL already points at `hqdefault.jpg`.
-            //   2. Rewrite `default.jpg` (120x90) and `mqdefault.jpg`
-            //      (320x180) up to `hqdefault.jpg` (480x360).
-            // `sddefault` / `maxresdefault` pass through filename-wise
-            // since they're already good — but they still get the query
-            // strip.
+            // YouTube video thumbnails (i.ytimg.com): strip the `?sqp=…&rs=…`
+            // downscale query and normalise every variant to `hqdefault` —
+            // the one filename that exists for every video (see YTIMG_TARGET).
             "i.ytimg.com" in url -> {
-                val stripped = url.substringBefore("?")
-                if (YTIMG_LOW_RES.any { "/$it." in stripped }) {
-                    YTIMG_PATH_REGEX.replace(stripped) { match ->
-                        "${match.groupValues[1]}$YTIMG_TARGET${match.groupValues[2]}"
-                    }
-                } else {
-                    stripped
+                YTIMG_PATH_REGEX.replace(url.substringBefore("?")) { match ->
+                    "${match.groupValues[1]}$YTIMG_TARGET${match.groupValues[2]}"
                 }
             }
 

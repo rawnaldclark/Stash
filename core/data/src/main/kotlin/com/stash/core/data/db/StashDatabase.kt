@@ -92,7 +92,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoPlaylistEntity::class,
         SyncUndoMembershipEntity::class,
     ],
-    version = 42,
+    version = 43,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1011,6 +1011,31 @@ abstract class StashDatabase : RoomDatabase() {
         val MIGRATION_41_42 = object : Migration(41, 42) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE playlists ADD COLUMN pinned_to_home_at INTEGER")
+            }
+        }
+
+        /**
+         * v42 → v43: every stored YouTube thumbnail that `ArtUrlUpgrader` had
+         * rewritten to `sddefault.jpg` becomes `hqdefault.jpg`, on track art and
+         * on playlist covers (which are built from track art, `|`-joined for
+         * the mosaics). YouTube only generates `sddefault` for some videos —
+         * 1 in 12 rows of a real library 404'd when probed on 2026-09-05 —
+         * and the loaders draw nothing for a 404: black art at random, on Now
+         * Playing, the media notification and every cover. `hqdefault` exists
+         * for every video. Other filenames, other hosts and NULLs are untouched;
+         * the upgrader writes `hqdefault` from now on. Data-only: the schema at
+         * 43 is identical to 42.
+         */
+        val MIGRATION_42_43 = object : Migration(42, 43) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "UPDATE tracks SET album_art_url = REPLACE(album_art_url, '/sddefault.', '/hqdefault.') " +
+                        "WHERE album_art_url LIKE 'https://i.ytimg.com/%/sddefault.%'",
+                )
+                db.execSQL(
+                    "UPDATE playlists SET art_url = REPLACE(art_url, '/sddefault.', '/hqdefault.') " +
+                        "WHERE art_url LIKE '%i.ytimg.com/%/sddefault.%'",
+                )
             }
         }
 

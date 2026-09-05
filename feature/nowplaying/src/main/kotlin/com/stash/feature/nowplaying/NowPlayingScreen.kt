@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -814,6 +815,12 @@ private fun AlbumArtSection(
 ) {
     val context = LocalContext.current
     val artModel = albumArtPath ?: albumArtUrl
+    // An image that cannot load (deleted upstream, a 404, a network failure) must
+    // read as "no art" — a quiet tile in the surface tone, same shape as the art —
+    // not as a black hole in the middle of the screen. Coil draws nothing at all
+    // for an error unless told otherwise, and never retries a failed URL.
+    val missingArtColor = MaterialTheme.colorScheme.surfaceVariant
+    val missingArt = remember(missingArtColor) { ColorPainter(missingArtColor) }
     // remember: an inline ImageRequest.Builder is a new object every
     // recomposition, which makes Coil re-evaluate the request each time this
     // recomposes (and this screen recomposes on every 250ms position tick).
@@ -841,15 +848,15 @@ private fun AlbumArtSection(
             model = artRequest,
             contentDescription = "Album art",
             contentScale = ContentScale.Crop,
-            onState = { state ->
-                if (state is AsyncImagePainter.State.Success) {
-                    try {
-                        val bitmap = state.result.image.toBitmap()
-                        onBitmapLoaded(bitmap)
-                    } catch (_: Exception) {
-                        // Bitmap extraction failed; palette will use defaults.
-                        onBitmapLoaded(null)
-                    }
+            error = missingArt,
+            fallback = missingArt,
+            onSuccess = { state: AsyncImagePainter.State.Success ->
+                try {
+                    val bitmap = state.result.image.toBitmap()
+                    onBitmapLoaded(bitmap)
+                } catch (_: Exception) {
+                    // Bitmap extraction failed; palette will use defaults.
+                    onBitmapLoaded(null)
                 }
             },
             modifier = Modifier
