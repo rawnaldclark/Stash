@@ -21,12 +21,19 @@ test("classify: a good body is ok, with sample_rate converted to Hz", () => {
     assert.equal(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 6, bit_depth: 16, sampling_rate: 44.1 })).sampleRateHz, 44100);
 });
 
-test("classify: dead-account signals mirror QbdlxApiClient", () => {
+test("classify: dead-account signals are 401, USER_BLOCKED and UserUnauthenticated only", () => {
     assert.deepEqual(classify(401, "{}"), { kind: "dead", reason: "401" });
     assert.deepEqual(classify(403, '{"code":403,"message":"USER_BLOCKED"}'), { kind: "dead", reason: "USER_BLOCKED" });
-    assert.equal(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 5, sample: false })).kind, "dead");
-    assert.equal(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 7, sample: true })).kind, "dead");
     assert.equal(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 7, restrictions: [{ code: "UserUnauthenticated" }] })).kind, "dead");
+});
+
+test("classify: a preview reply is about the TRACK, not the account — 404, never dead", () => {
+    // 2026-09-05: five of seven live accounts were retired overnight with dead_reason
+    // 'preview' while every one of them still minted full FLAC when asked directly.
+    // A 30 s sample / MP3 reply for a lossless request means this track is not
+    // streamable in full for this account (region, licensing); the account is fine.
+    assert.deepEqual(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 5, sample: false })), { kind: "locked" });
+    assert.deepEqual(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 7, sample: true })), { kind: "locked" });
 });
 
 test("classify: a region lock is 'locked' (→ 404); everything else is transient", () => {

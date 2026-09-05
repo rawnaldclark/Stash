@@ -32,7 +32,7 @@ export function extractCreds(js) {
 /**
  * Classifies one getFileUrl reply the way QbdlxApiClient.get + classify do on the device:
  *   { kind: "ok", url, formatId, bitDepth, sampleRateHz, etsp }   stream it
- *   { kind: "dead", reason }      this account is finished (401, USER_BLOCKED, previews): stop using it
+ *   { kind: "dead", reason }      this account is finished (401, USER_BLOCKED, UserUnauthenticated): stop using it
  *   { kind: "locked" }            Qobuz 404, no URL, or a lossy format: region lock / unknown track → 404 (spec §1)
  *   { kind: "transient", reason } anything else: cool the account briefly, try another
  */
@@ -45,8 +45,11 @@ export function classify(status, body) {
     let f;
     try { f = JSON.parse(body); } catch { return { kind: "transient", reason: "bad_json" }; }
     const unauth = (f.restrictions || []).some((r) => /^UserUnauthenticated$/i.test(r?.code || ""));
-    if (f.sample === true || f.format_id === 5 || unauth) return { kind: "dead", reason: "preview" };
-    if (!f.url || !(f.format_id >= 6)) return { kind: "locked" };
+    if (unauth) return { kind: "dead", reason: "UserUnauthenticated" };
+    // A 30 s sample or an MP3 (format 5) for a lossless request is about the TRACK — not
+    // streamable in full for this account's region/licence — never about the account.
+    // 2026-09-05: treating it as "dead" retired five healthy accounts overnight.
+    if (f.sample === true || !f.url || !(f.format_id >= 6)) return { kind: "locked" };
     if (!f.url.startsWith("https://")) return { kind: "transient", reason: "plaintext_url" };
     return {
         kind: "ok",
