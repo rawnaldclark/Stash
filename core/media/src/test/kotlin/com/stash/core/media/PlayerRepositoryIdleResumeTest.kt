@@ -74,6 +74,13 @@ class PlayerRepositoryIdleResumeTest {
         // as a zombie from a stopped service and rebuilds a real one.
         every { controller.isConnected } returns true
         repo.controllerDeferred = controller
+        // Let init's connect + cold-start ghost seed (#462) settle, then forget those
+        // calls so each test counts only what play() itself triggers.
+        shadowOf(Looper.getMainLooper()).idle()
+        // That idle also ran the session-bus collector, whose initial "not alive"
+        // releases the seam — re-seat it, or play() would build a real controller.
+        repo.controllerDeferred = controller
+        io.mockk.clearMocks(playbackResumer, answers = false)
     }
 
     @Test

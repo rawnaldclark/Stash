@@ -166,8 +166,13 @@ class PlayerRepositoryImpl @Inject constructor(
         // v0.9.27: Connect the controller immediately on init so we can
         // provide live state even if the app was cold-started while
         // music was already playing (e.g. via Android Auto).
+        // Then, if that connect found an empty player, put the persisted last
+        // session on screen as a paused ghost (#462) — same shape the idle-stop
+        // handshake leaves behind — so the mini player has something to show and
+        // a play button that reaches resumeLastQueue().
         scope.launch {
             ensureController()
+            seedGhostFromPersistedSession()
         }
 
         // Idle-stop handshake. The service flips this false just before it
@@ -257,6 +262,16 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     private val _playerState = MutableStateFlow(PlayerState())
+
+    /**
+     * #462: true while [_playerState] shows a paused "ghost" of the persisted last
+     * session on a player that holds NO timeline (a cold start after process
+     * death). The idle-stop design already keeps the last state on screen when only
+     * the SERVICE dies, and [play] rebuilds the queue from [PlaybackStateStore] when
+     * the timeline comes back empty; a cold start had no state to keep. Cleared the
+     * moment the controller reports real items, or when the ghost's track is deleted.
+     */
+    @Volatile private var ghostSession = false
     override val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
 
     /**
@@ -595,6 +610,41 @@ class PlayerRepositoryImpl @Inject constructor(
         // Warm the next-up URL so auto-advance never waits on a cold resolve
         // (the placeholder path is the cold-jump fallback, not the happy path).
         scope.launch { prefetchNextTrack() }
+    }
+
+    /**
+     * #462: on a cold start with nothing loaded, show the persisted last session
+     * paused at its saved position. State only — no setMediaItems, no prepare, no
+     * network, no budget spent: a stream placeholder resolves only at prepare, and
+     * [play] rebuilds the real queue through [resumeLastQueue] when the timeline is
+     * empty. Skipped when the player already holds a timeline (Android Auto or a
+     * media button started playback before the app came up) or when there is
+     * nothing persisted.
+     */
+    internal suspend fun seedGhostFromPersistedSession() {
+        if (_playerState.value.currentTrack != null) return
+        if ((controllerDeferred?.mediaItemCount ?: 0) > 0) return
+        val plan = playbackResumer.buildResumePlan() ?: return
+        val tracks = plan.tracks.map { it.toDomain() }
+        if (tracks.isEmpty()) return
+        val index = plan.startIndex.coerceIn(0, tracks.size - 1)
+        val current = tracks[index]
+        // Re-check after the suspension: a tap may have loaded a real queue meanwhile.
+        if (_playerState.value.currentTrack != null || (controllerDeferred?.mediaItemCount ?: 0) > 0) return
+        ghostSession = true
+        _playerState.value = PlayerState(
+            currentTrack = current,
+            isPlaying = false,
+            positionMs = plan.positionMs.coerceAtLeast(0L),
+            durationMs = current.durationMs,
+            isShuffleEnabled = plan.isShuffled,
+            repeatMode = plan.repeatMode,
+            queue = tracks,
+            currentIndex = index,
+            isStreaming = !current.isDownloaded,
+            source = plan.source,
+        )
+        Log.i(TAG, "cold start: showing last session paused (${tracks.size} tracks, index=$index)")
     }
 
     override fun resumeLastQueue() {
@@ -1291,6 +1341,11 @@ class PlayerRepositoryImpl @Inject constructor(
      * a track before ever hitting play this session).
      */
     private fun evictTrackFromQueue(deletedTrackId: Long) {
+        // The ghost is state only — a deleted ghost track must not linger on screen.
+        if (ghostSession && _playerState.value.currentTrack?.id == deletedTrackId) {
+            ghostSession = false
+            _playerState.value = PlayerState()
+        }
         val controller = controllerDeferred ?: return
         currentQueueTracks = currentQueueTracks.filterNot { it.id == deletedTrackId }
         var removedFromTimeline = false
@@ -2180,7 +2235,13 @@ class PlayerRepositoryImpl @Inject constructor(
         )
     }
 
-    private fun updateState(controller: MediaController) {
+    internal fun updateState(controller: MediaController) {
+        // A ghost survives refreshes from an empty player (idle events, reconnects);
+        // the first refresh that carries real items retires it.
+        if (ghostSession) {
+            if (controller.mediaItemCount == 0) return
+            ghostSession = false
+        }
         // Artwork upgrade for the playing track: see [maybeStampCurrentItemQuality].
         // It is now id-guarded so it runs once per track — its extras write does
         // NOT survive the session round-trip, so it can never self-disarm on the
