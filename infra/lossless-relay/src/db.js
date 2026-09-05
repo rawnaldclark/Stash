@@ -68,10 +68,14 @@ export async function killAccount(db, label, reason) {
     await db.prepare("UPDATE accounts SET state = 'dead', dead_reason = ?2 WHERE label = ?1").bind(label, reason).run();
 }
 
-/** Hourly cron: drop mints past their etsp and quota rows older than yesterday. */
+/** A dead account is re-tried after this long: a misclassified kill self-heals, a real one costs one failed mint per window. */
+export const DEAD_RETRY_S = 6 * 3600;
+
+/** Hourly cron: drop mints past their etsp, quota rows older than yesterday, and give stale dead accounts another chance. */
 export async function prune(db, nowSec) {
     await db.batch([
         db.prepare("DELETE FROM mints WHERE etsp < ?1").bind(nowSec),
         db.prepare("DELETE FROM quota WHERE day < ?1").bind(dayKey(nowSec - 86400)),
+        db.prepare("UPDATE accounts SET state = 'live', dead_reason = '' WHERE state = 'dead' AND last_used_at < ?1").bind(nowSec - DEAD_RETRY_S),
     ]);
 }

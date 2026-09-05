@@ -67,6 +67,20 @@ test("the cache serves only while the URL has ≥ 15 min left; prune drops expir
     assert.equal(await getCached(db, 1, 27, 0), null);
 });
 
+test("prune gives a dead account another chance after six hours; a fresh kill stays dead", async () => {
+    // Insurance against a misclassified kill (2026-09-05: five healthy accounts were
+    // retired as 'preview'). A truly dead account costs one failed mint every six hours.
+    const db = fakeD1();
+    await ensureAccounts(db, ["old", "fresh"]);
+    await db.prepare("UPDATE accounts SET last_used_at = ?1 WHERE label = 'old'").bind(T0 - 7 * 3600).run();
+    await db.prepare("UPDATE accounts SET last_used_at = ?1 WHERE label = 'fresh'").bind(T0 - 3600).run();
+    await killAccount(db, "old", "401");
+    await killAccount(db, "fresh", "401");
+    await prune(db, T0);
+    assert.deepEqual(await db.prepare("SELECT state, dead_reason FROM accounts WHERE label = 'old'").first(), { state: "live", dead_reason: "" });
+    assert.deepEqual(await db.prepare("SELECT state, dead_reason FROM accounts WHERE label = 'fresh'").first(), { state: "dead", dead_reason: "401" });
+});
+
 test("quota upserts per day and key; prune keeps today and yesterday", async () => {
     const db = fakeD1();
     await db.batch([bumpQuotaStmt(db, "2026-09-01", "global"), bumpQuotaStmt(db, "2026-09-01", "global"), bumpQuotaStmt(db, "2026-09-01", "i:x")]);
