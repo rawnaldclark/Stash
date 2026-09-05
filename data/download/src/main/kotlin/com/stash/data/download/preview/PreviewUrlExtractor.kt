@@ -153,6 +153,13 @@ class PreviewUrlExtractor @Inject constructor(
         private const val FAST_CLIENT_FORMAT_SELECTOR = "251/250/140/bestaudio/best"
 
         /**
+         * Save Data on the lossy path: the same "low" the download tier means
+         * (QualityTier.LOW → 250/249, Opus ~70 / ~50 kbps), per client shape.
+         */
+        private const val LOW_FORMAT_SELECTOR = "250/249/bestaudio"
+        private const val LOW_FAST_CLIENT_FORMAT_SELECTOR = "250/249/140/bestaudio/best"
+
+        /**
          * Ordered client chain for the pinned fast attempts. The first client
          * that yields a URL surviving [AudioUrlTailProbe] wins; a gated or
          * empty answer falls through to the next.
@@ -250,22 +257,25 @@ class PreviewUrlExtractor @Inject constructor(
          * Only formats with a direct `url` (not signatureCipher) are
          * considered; ciphered formats are skipped.
          */
-        internal fun selectBestAudioUrl(formats: List<JsonObject>): String? =
-            selectBestAudioFormat(formats)?.get("url")?.jsonPrimitive?.content
+        internal fun selectBestAudioUrl(formats: List<JsonObject>, lowestQuality: Boolean = false): String? =
+            selectBestAudioFormat(formats, lowestQuality)?.get("url")?.jsonPrimitive?.content
 
         /**
          * Format-returning form of [selectBestAudioUrl]. Playback needs the whole
          * format object, not just its `url`, so the caller can read
          * `contentLength` and tail-probe it — see [AudioUrlTailProbe].
          */
-        internal fun selectBestAudioFormat(formats: List<JsonObject>): JsonObject? {
+        internal fun selectBestAudioFormat(formats: List<JsonObject>, lowestQuality: Boolean = false): JsonObject? {
             val audio = formats.filter { f ->
                 (f["mimeType"]?.jsonPrimitive?.content ?: "").startsWith("audio/") && f["url"] != null
             }
             fun bitrate(f: JsonObject) = f["bitrate"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
             fun isOpus(f: JsonObject) = (f["mimeType"]?.jsonPrimitive?.content ?: "").contains("opus")
-            val opusBest = audio.filter(::isOpus).maxByOrNull(::bitrate)
-            val best = opusBest ?: audio.maxByOrNull(::bitrate)
+            // Save Data on the lossy path asks for the LOWEST stream; Opus still wins its rank
+            // for quality per byte.
+            fun pick(l: List<JsonObject>) = if (lowestQuality) l.minByOrNull(::bitrate) else l.maxByOrNull(::bitrate)
+            val opusBest = pick(audio.filter(::isOpus))
+            val best = opusBest ?: pick(audio)
             if (best != null) {
                 val mime = best["mimeType"]?.jsonPrimitive?.content
                 Log.d(TAG, "InnerTube selected mime=$mime bitrate=${bitrate(best)} opusPreferred=${opusBest != null}")
@@ -296,9 +306,12 @@ class PreviewUrlExtractor @Inject constructor(
          * slow default path. Ask it for the best audio it actually has, falling
          * back to a combined stream only if it offers no audio-only format.
          */
-        internal fun formatSelectorFor(playerClient: String?): String =
-            if (playerClient != null) FAST_CLIENT_FORMAT_SELECTOR
-            else FORMAT_SELECTOR
+        internal fun formatSelectorFor(playerClient: String?, lowestQuality: Boolean = false): String = when {
+            lowestQuality && playerClient != null -> LOW_FAST_CLIENT_FORMAT_SELECTOR
+            lowestQuality -> LOW_FORMAT_SELECTOR
+            playerClient != null -> FAST_CLIENT_FORMAT_SELECTOR
+            else -> FORMAT_SELECTOR
+        }
 
         /**
          * Test-only: exercises [race] directly without Android deps. Reuses
@@ -379,14 +392,14 @@ class PreviewUrlExtractor @Inject constructor(
      * [NoFastStreamException]. Fast-only and full-race calls for the same
      * [videoId] use distinct coalesce keys so they never share a Deferred.
      */
-    suspend fun extractStreamUrl(videoId: String, allowYtDlp: Boolean = true): String =
-        coalesce(coalesceKey(videoId, allowYtDlp)) { doExtract(videoId, allowYtDlp) }
+    suspend fun extractStreamUrl(videoId: String, allowYtDlp: Boolean = true, lowestQuality: Boolean = false): String =
+        coalesce(coalesceKey(videoId, allowYtDlp, lowestQuality)) { doExtract(videoId, allowYtDlp, lowestQuality) }
 
     // The `#fast` suffix is collision-safe: YouTube videoIds are `#`-free
     // 11-char base64url, so a suffixed fast-only key can never equal a real
     // (full-race) videoId key.
-    private fun coalesceKey(videoId: String, allowYtDlp: Boolean) =
-        if (allowYtDlp) videoId else "$videoId#fast"
+    private fun coalesceKey(videoId: String, allowYtDlp: Boolean, lowestQuality: Boolean = false) =
+        (if (allowYtDlp) videoId else "$videoId#fast") + (if (lowestQuality) "#low" else "")
 
     /**
      * Test-only: exercises the coalescing wrapper with the existing
@@ -456,7 +469,7 @@ class PreviewUrlExtractor @Inject constructor(
      * Underlying race body — original `extractStreamUrl` implementation.
      * Called via [coalesce] from the public entry point.
      */
-    private suspend fun doExtract(videoId: String, allowYtDlp: Boolean): String {
+    private suspend fun doExtract(videoId: String, allowYtDlp: Boolean, lowestQuality: Boolean = false): String {
         // Fast-only lane: InnerTube under its own semaphore, never the
         // serialized yt-dlp slot. A miss is signalled (not retried here) so
         // the caller can drop the track from background fill; the 1-ahead
@@ -464,7 +477,7 @@ class PreviewUrlExtractor @Inject constructor(
         if (!allowYtDlp) {
             val t0 = System.currentTimeMillis()
             Log.d("LATDIAG", "extract-start videoId=$videoId fastOnly=1")
-            val url = innerTubeSemaphore.withPermit { extractViaInnerTube(videoId) } ?: run {
+            val url = innerTubeSemaphore.withPermit { extractViaInnerTube(videoId, lowestQuality) } ?: run {
                 Log.d("LATDIAG", "extract-fail videoId=$videoId dt=${System.currentTimeMillis() - t0}ms fastOnly=1 err=NoFastStream")
                 throw NoFastStreamException(videoId)
             }
@@ -479,7 +492,7 @@ class PreviewUrlExtractor @Inject constructor(
                 videoId = videoId,
                 innerTubeExtract = { id ->
                     val it0 = System.currentTimeMillis()
-                    val result = runCatching { extractViaInnerTube(id) }
+                    val result = runCatching { extractViaInnerTube(id, lowestQuality) }
                     val dt = System.currentTimeMillis() - it0
                     val outcome = result.fold(
                         onSuccess = { if (it != null) "url" else "null" },
@@ -490,7 +503,7 @@ class PreviewUrlExtractor @Inject constructor(
                 },
                 ytDlpExtract = { id ->
                     val yt0 = System.currentTimeMillis()
-                    val result = runCatching { extractViaYtDlp(id) }
+                    val result = runCatching { extractViaYtDlp(id, lowestQuality) }
                     val dt = System.currentTimeMillis() - yt0
                     val outcome = result.fold(
                         onSuccess = { "url" },
@@ -570,7 +583,7 @@ class PreviewUrlExtractor @Inject constructor(
      * Returns null if no usable URL is found (all formats ciphered, video
      * unavailable, etc.).
      */
-    private suspend fun extractViaInnerTube(videoId: String): String? {
+    private suspend fun extractViaInnerTube(videoId: String, lowestQuality: Boolean = false): String? {
         return withTimeout(INNERTUBE_TIMEOUT_MS) {
             Log.d(TAG, "Trying InnerTube fast path for videoId=$videoId")
 
@@ -605,7 +618,7 @@ class PreviewUrlExtractor @Inject constructor(
 
             // Find the best audio format with a direct URL (not signatureCipher).
             // Prefers Opus 251/250 over AAC even at equal/lower bitrate.
-            val bestFormat = selectBestAudioFormat(adaptiveFormats.filterIsInstance<JsonObject>()) ?: run {
+            val bestFormat = selectBestAudioFormat(adaptiveFormats.filterIsInstance<JsonObject>(), lowestQuality) ?: run {
                 Log.d(TAG, "InnerTube: no audio formats with direct URL for $videoId " +
                     "(${adaptiveFormats.size} total formats, all may be ciphered)")
                 return@withTimeout null
@@ -636,7 +649,7 @@ class PreviewUrlExtractor @Inject constructor(
     /**
      * Slow fallback: extract stream URL via yt-dlp with QuickJS cipher solving.
      */
-    private suspend fun extractViaYtDlp(videoId: String): String {
+    private suspend fun extractViaYtDlp(videoId: String, lowestQuality: Boolean = false): String {
         return withTimeout(YTDLP_TIMEOUT_MS) {
             withContext(Dispatchers.IO) {
                 ytDlpManager.initialize()
@@ -656,7 +669,7 @@ class PreviewUrlExtractor @Inject constructor(
                 // that out here costs one range request instead of a dead track.
                 for (client in FAST_PLAYER_CLIENTS) {
                     val stream = try {
-                        runYtDlp(videoId, playerClient = client)
+                        runYtDlp(videoId, playerClient = client, lowestQuality = lowestQuality)
                     } catch (ce: CancellationException) {
                         throw ce
                     } catch (e: Exception) {
@@ -696,7 +709,7 @@ class PreviewUrlExtractor @Inject constructor(
                 // Last resort: yt-dlp's own default client set. Deliberately NOT
                 // probed — nothing follows it, so a false rejection would turn a
                 // playable track into a skip. Let ExoPlayer have its try.
-                (runYtDlp(videoId, playerClient = null)
+                (runYtDlp(videoId, playerClient = null, lowestQuality = lowestQuality)
                     ?: throw IllegalStateException("yt-dlp returned no stream URL for videoId=$videoId")).url
             }
         }
@@ -722,13 +735,13 @@ class PreviewUrlExtractor @Inject constructor(
      * produced no URL (caller decides whether to fall back). Holds no semaphore
      * — the caller already owns the cap-1 [ytDlpSemaphore] permit.
      */
-    private suspend fun runYtDlp(videoId: String, playerClient: String?): YtDlpStream? {
+    private suspend fun runYtDlp(videoId: String, playerClient: String?, lowestQuality: Boolean = false): YtDlpStream? {
         val cookieFile = File(context.noBackupFilesDir, "yt_preview_cookies_${System.nanoTime()}.txt")
         return try {
             val url = "https://www.youtube.com/watch?v=$videoId"
 
             val request = YoutubeDLRequest(url).apply {
-                addOption("-f", formatSelectorFor(playerClient))
+                addOption("-f", formatSelectorFor(playerClient, lowestQuality))
                 addOption("--print", "urls")
                 // Diagnostic: which format the client actually served. android_vr
                 // stopped offering itag 251/250, so a selector that demands them

@@ -4,6 +4,7 @@ import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.BuildConfig
+import com.stash.data.download.lossless.LosslessSourcePreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -71,6 +72,7 @@ class StreamSourceRegistry @Inject constructor(
     private val youtube: YouTubeStreamResolver,
     private val streamingPreference: StreamingPreference,
     private val losslessSourceHealth: LosslessSourceHealth,
+    private val losslessPrefs: LosslessSourcePreferences,
 ) {
     /**
      * Try each resolver in priority order; return the first non-null
@@ -164,6 +166,11 @@ class StreamSourceRegistry @Inject constructor(
         allowYouTube: Boolean,
         allowYtDlp: Boolean,
     ): StreamUrl? {
+        // The Lossless switch (Settings › Audio & Quality) governs streaming as well as
+        // downloads (2026-09-05): off means no FLAC anywhere, so the lossless sources
+        // leave the chain and the track streams from the lossy rungs. It outranks the
+        // force-source test toggles: a stale force pref must not override a user choice.
+        val lossless = losslessPrefs.enabledNow()
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
             if (streamingPreference.isForceQbdlxOnly()) {
                 // Test toggle: qbdlx (direct-Qobuz) ONLY — skip every other source
@@ -172,7 +179,7 @@ class StreamSourceRegistry @Inject constructor(
                 // allowYtDlp like arcod so speculative background fill spends
                 // none of that account's quota (only foreground/next-up resolves
                 // hit it).
-                if (allowYtDlp) add("qbdlx" to qbdlx::resolve)
+                if (allowYtDlp && lossless) add("qbdlx" to qbdlx::resolve)
                 // Same guarantee as the force-arcod branch below: a force toggle
                 // is a TEST instrument, but the pref outlives the build — and
                 // qbdlx can die under it (it did; #429's reporter had this
@@ -189,7 +196,7 @@ class StreamSourceRegistry @Inject constructor(
                 // forceYt) — without this, flipping the toggle and tapping a
                 // playlist would spend a search call + the user's arcod account
                 // on every queue track speculatively, not just the ones played.
-                if (allowYtDlp) add("arcod" to arcod::resolve)
+                if (allowYtDlp && lossless) add("arcod" to arcod::resolve)
                 // ...and YouTube stays available behind it. A force toggle is a
                 // TEST instrument, but the pref outlives the build that showed it.
                 // While arcod was parked, a stale `force_arcod_only = true` meant
@@ -229,7 +236,7 @@ class StreamSourceRegistry @Inject constructor(
                 // never the speculative background fill.
                 // qbdlx self-gates on LosslessAvailability (BYO / custom endpoint
                 // / relay); no build gate.
-                if (allowYtDlp) {
+                if (allowYtDlp && lossless) {
                     add("qbdlx" to qbdlx::resolve)
                 }
                 // arcod UNPARKED 2026-08-01: the operator rotated the integration
@@ -243,7 +250,7 @@ class StreamSourceRegistry @Inject constructor(
                 // user's own arcod quota, so the speculative background fill must
                 // not touch it. Also build-gated — an APK without the private key
                 // can only 403, so skipping it avoids a guaranteed-wasted round trip.
-                if (allowYtDlp && BuildConfig.ARCOD_CONFIGURED) {
+                if (allowYtDlp && lossless && BuildConfig.ARCOD_CONFIGURED) {
                     add("arcod" to arcod::resolve)
                 }
                 // Fixed-quality AAC 320 fallback. Foreground/next-up only: a
@@ -267,7 +274,7 @@ class StreamSourceRegistry @Inject constructor(
         Log.i(
             TAG,
             "chain for ${track.id}: [${resolvers.joinToString(",") { it.first }}] " +
-                "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp " +
+                "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp lossless=$lossless " +
                 "arcodConfigured=${BuildConfig.ARCOD_CONFIGURED}",
         )
 

@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.BuildConfig
+import com.stash.data.download.lossless.LosslessSourcePreferences
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
@@ -52,9 +53,13 @@ class StreamSourceRegistryTest {
         coEvery { isForceArcodOnly() } returns false
     }
 
+    private val losslessPrefs: LosslessSourcePreferences = mockk {
+        coEvery { enabledNow() } returns true // the Lossless switch, on by default
+    }
+
     private fun registry() = StreamSourceRegistry(
         kennyy, qobuz, arcod, qbdlx, jiosaavn, youtube, streamingPreference,
-        LosslessSourceHealth(),
+        LosslessSourceHealth(), losslessPrefs,
     )
 
     private fun stubStreamUrl(origin: String) = StreamUrl(
@@ -352,4 +357,38 @@ class StreamSourceRegistryTest {
         durationMs = 200_000L,
         youtubeId = "abc123",
     )
+
+    /**
+     * The Lossless switch governs streaming too (2026-09-05): off means no FLAC anywhere,
+     * so the chain skips the lossless sources and streams YouTube. Downloads read the same
+     * switch; a user who wants less than FLAC turns it off, and Save Data trims from there.
+     */
+    @Test
+    fun lossless_off_skips_qbdlx_and_arcod_and_streams_youtube() = runTest {
+        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { youtube.resolve(any(), any()) } returns stubStreamUrl("youtube")
+        val track = stubTrack()
+
+        val result = registry().resolve(track, allowYouTube = true)
+
+        assertThat(result?.origin).isEqualTo("youtube")
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+        coVerify(exactly = 0) { arcod.resolve(any()) }
+        coVerify { youtube.resolve(track, allowYtDlp = true) }
+    }
+
+    /** A stale force-qbdlx test toggle must not override the user's Lossless switch. */
+    @Test
+    fun lossless_off_ignores_a_stale_force_qbdlx_toggle() = runTest {
+        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { streamingPreference.isForceQbdlxOnly() } returns true
+        coEvery { youtube.resolve(any(), any()) } returns stubStreamUrl("youtube")
+        val track = stubTrack()
+
+        val result = registry().resolve(track, allowYouTube = true)
+
+        assertThat(result?.origin).isEqualTo("youtube")
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
 }

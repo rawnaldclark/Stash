@@ -130,6 +130,18 @@ fun SettingsAudioQualityScreen(
                         selected = uiState.audioQuality,
                         onSelected = viewModel::onQualityChanged,
                     )
+                    // Save Data lives here too: with lossless off it means "the lowest
+                    // YouTube audio quality", and the toggle must not vanish with the
+                    // lossless card — that is exactly the user it is for.
+                    Spacer(modifier = Modifier.height(8.dp))
+                    SettingsToggleRow(
+                        title = "Save Data",
+                        subtitle = "Streams YouTube at its lowest audio quality — about " +
+                            "2 MB per track instead of 5. Downloads are unaffected.",
+                        checked = uiState.streamingSaveData,
+                        onCheckedChange = viewModel::onStreamingSaveDataChanged,
+                        titleTrailing = { BetaPill() },
+                    )
                 }
             }
         }
@@ -139,7 +151,7 @@ fun SettingsAudioQualityScreen(
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 SettingsToggleRow(
-                    title = "Lossless downloads",
+                    title = "Lossless",
                     // Three-way, because keying "FLAC routing active" on the toggle
                     // alone asserted it for every user with nothing configured — the
                     // day-one state — twenty lines above three "not connected" rows.
@@ -147,10 +159,10 @@ fun SettingsAudioQualityScreen(
                     // it cannot fire while a row underneath says "ARCOD — connected".
                     subtitle = when {
                         !uiState.losslessEnabled ->
-                            "Studio-quality FLAC from your own Qobuz account. Files ~10× larger than MP3."
+                            "Stream and download studio-quality FLAC. Off, everything plays via YouTube. Files ~10× larger than MP3."
                         qbdlxExpired && !uiState.arcodConnected ->
                             "No lossless source configured — see below. Files ~10× larger than MP3."
-                        else -> "FLAC routing active. Files ~10× larger than MP3."
+                        else -> "FLAC for streaming and downloads. Files ~10× larger than MP3."
                     },
                     checked = uiState.losslessEnabled,
                     onCheckedChange = viewModel::onLosslessEnabledChanged,
@@ -334,7 +346,7 @@ fun SettingsAudioQualityScreen(
                         // Per-network tier for *streaming* playback (distinct
                         // from the download tier above). Save Data is the master
                         // override: when on, both pickers are dimmed + inert and
-                        // policy forces CD on every network.
+                        // policy forces CD — the lowest lossless tier — on every network.
                         Spacer(modifier = Modifier.height(14.dp))
                         SettingsSectionLabel("Streaming")
                         GlassCard {
@@ -398,12 +410,13 @@ fun SettingsAudioQualityScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 SettingsToggleRow(
                                     title = "Save Data",
-                                    // States the actual trade rather than hedging. The old copy
-                                    // ("Not every source honors this yet") was describing a
-                                    // limitation that no longer exists — and understated a worse
-                                    // one, since Save Data used to still stream lossless.
-                                    subtitle = "Stream at 320 kbps instead of lossless — roughly " +
-                                        "10 MB per track instead of 28 MB. Downloads are unaffected.",
+                                    // Lossless stays lossless: Save Data is the LOWEST lossless
+                                    // tier, not a drop to lossy. Less than FLAC is the lossless
+                                    // toggle's job, and then this same switch trims YouTube.
+                                    subtitle = "Streams CD quality instead of Hi-Res or Max on every " +
+                                        "network — about 28 MB per track instead of 70 or 140. Tracks " +
+                                        "that fall to YouTube use its lowest audio quality. Downloads " +
+                                        "are unaffected.",
                                     checked = uiState.streamingSaveData,
                                     onCheckedChange = viewModel::onStreamingSaveDataChanged,
                                     titleTrailing = { BetaPill() },
@@ -466,7 +479,7 @@ fun SettingsAudioQualityScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Use JioSaavn, then YouTube when lossless fails",
+                                        text = "Use JioSaavn, then YouTube when a download has no lossless match",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )

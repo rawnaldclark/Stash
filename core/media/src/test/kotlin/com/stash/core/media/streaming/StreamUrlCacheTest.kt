@@ -143,4 +143,16 @@ class StreamUrlCacheTest {
         assertThat(cache.get(1L)).isNotNull()   // survived (recently read)
         assertThat(cache.get(2L)).isNull()       // evicted as the true eldest
     }
+
+    /** A URL is only right for the tier it was minted under; when that changes, every entry goes. */
+    @Test
+    fun clear_dropsEveryEntry() {
+        cache.put(1L, url("https://cdn/1", expiresAtMs = 10_000L))
+        cache.put(2L, url("https://cdn/2", expiresAtMs = 10_000L))
+
+        cache.clear()
+
+        assertThat(cache.get(1L)).isNull()
+        assertThat(cache.get(2L)).isNull()
+    }
 }

@@ -14,7 +14,7 @@ import okhttp3.Request
 /** Outcome of a getFileUrl call, classified from the JSON body (spec §2). */
 sealed interface QbdlxResolveResult {
     data class Ok(val url: String, val codec: String, val bitDepth: Int, val sampleRateHz: Int) : QbdlxResolveResult
-    /** Token is dead/unauthenticated (preview/sample/fmt5). Caller marks it dead + rotates. */
+    /** Token is dead/unauthenticated (30 s preview sample, or UserUnauthenticated). Caller marks it dead + rotates. */
     object TokenDead : QbdlxResolveResult
     /** Track unavailable for this token's region/rights. Caller tries other tokens. */
     object RegionLocked : QbdlxResolveResult
@@ -194,11 +194,14 @@ class QbdlxApiClient @Inject constructor(
         }
 
     private fun classify(f: QbdlxFileUrl): QbdlxResolveResult {
-        val dead = f.sample || f.formatId == 5 ||
-            f.restrictions.any { it.code.equals("UserUnauthenticated", ignoreCase = true) }
+        // Only account-level signals mark a token dead. A lossy (format 5) or missing file is
+        // about the TRACK — region / licence — never the account: reading `format_id == 5` as
+        // dead retired five healthy relay pool accounts overnight (2026-09-05), and here it
+        // cooled a healthy connected account for 60 s on every such track.
+        val dead = f.sample || f.restrictions.any { it.code.equals("UserUnauthenticated", ignoreCase = true) }
         if (dead) return QbdlxResolveResult.TokenDead
         if (f.url.isNullOrBlank() || f.formatId < 6) return QbdlxResolveResult.RegionLocked
-        // formatId >= 6 here (5 already returned TokenDead) → always FLAC.
+        // formatId >= 6 → always FLAC.
         return QbdlxResolveResult.Ok(f.url, "flac", f.bitDepth, (f.samplingRate * 1000f).toInt())
     }
 

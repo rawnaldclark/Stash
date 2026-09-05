@@ -3,6 +3,7 @@ package com.stash.core.media.preview
 import android.util.Log
 import com.stash.core.model.TrackItem
 import com.stash.data.download.lossless.LosslessAvailability
+import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
@@ -37,6 +38,7 @@ import javax.inject.Singleton
 class LosslessUrlPrefetcher @Inject constructor(
     private val registry: LosslessSourceRegistry,
     private val availability: LosslessAvailability,
+    private val losslessPrefs: LosslessSourcePreferences,
 ) {
     // App-lifetime scope. The class is @Singleton so this scope lives
     // for the entire process; no leaks. (No Hilt-provided
@@ -69,7 +71,10 @@ class LosslessUrlPrefetcher @Inject constructor(
                 // caps, ARCOD's daily quota — and on launch day browsing alone drained
                 // both before anyone pressed play. The entry removes itself so a later
                 // tap does a real resolve instead of reading a cached "skipped" null.
-                if (!availability.ownAccountLiveNow()) {
+                // The Lossless switch is off → the preview is YouTube, never FLAC (it governs
+                // streaming and downloads alike; this is the one lossless entry that does not
+                // go through StreamSourceRegistry, so it checks the switch itself).
+                if (!losslessPrefs.enabledNow() || !availability.ownAccountLiveNow()) {
                     cache.remove(key)
                     return@async null
                 }
@@ -96,6 +101,7 @@ class LosslessUrlPrefetcher @Inject constructor(
      * mirrors streaming) — no redundant call, no token wait.
      */
     suspend fun lookup(track: TrackItem): SourceResult? {
+        if (!losslessPrefs.enabledNow()) return null // Lossless switch off: preview via YouTube
         val key = track.videoId
         // Already-completed warm result → instant. `await()` on a completed deferred
         // returns immediately and is NOT experimental (unlike getCompleted()). Only

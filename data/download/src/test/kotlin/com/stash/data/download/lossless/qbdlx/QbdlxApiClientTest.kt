@@ -251,4 +251,11 @@ class QbdlxApiClientTest {
         /** Fixed clock for the heal throttle — any two reads land inside the floor. */
         const val NOW = 1_000_000L
     }
+
+    /** An MP3 for a LOSSLESS request is about the track (region/licence), never the account — the relay learned this the hard way. */
+    @Test fun `getFileUrl RegionLocked not TokenDead when a lossless request is answered with format 5`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"url":"https://cdn/file?fmt=5","format_id":5,"bit_depth":16,"sampling_rate":44.1,"sample":false,"restrictions":[]}"""))
+        val r = client.getFileUrl(trackId = 42, formatId = 27, token = "tok")
+        assertThat(r).isInstanceOf(QbdlxResolveResult.RegionLocked::class.java)
+    }
 }

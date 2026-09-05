@@ -96,6 +96,15 @@ class StreamUrlCache @Inject constructor() {
         synchronized(lock) { cache.remove(trackId) }
     }
 
+    /**
+     * Drop every entry. Entries are keyed by track id alone, so a URL minted for one
+     * streaming tier would otherwise be served for up to its TTL after the effective
+     * tier changed — see [StreamQualityPolicy.streamingTier], the one caller.
+     */
+    fun clear() {
+        synchronized(lock) { cache.clear() }
+    }
+
     private companion object {
         /**
          * LRU ceiling. The functional working set (active queue + prefetch
