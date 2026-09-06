@@ -9,6 +9,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.feature.home.HomeScreen
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
@@ -148,6 +149,18 @@ fun StashNavHost(
                 },
                 onNavigateToAlbum = { _, name, _, artistName ->
                     navController.navigate(AlbumDetailRoute(name, artistName))
+                },
+                onNavigateToRemoteAlbum = { albumId, name, artUrl, artistName ->
+                    navController.navigate(
+                        SearchAlbumRoute(
+                            browseId = albumId,
+                            title = name,
+                            artist = artistName,
+                            thumbnailUrl = artUrl,
+                            year = null,
+                            source = com.stash.data.ytmusic.model.AlbumSource.YOUTUBE,
+                        ),
+                    )
                 },
                 onSelectionModeChanged = onSelectionModeChanged,
             )
@@ -440,8 +453,17 @@ fun StashNavHost(
                 onNavigateToArtist = { id, name, avatar, focusAlbum ->
                     navController.navigate(SearchArtistRoute(id, name, avatar, focusAlbum))
                 },
-                onNavigateToAlbum = { _, name, _, artistName ->
-                    navController.navigate(AlbumDetailRoute(name, artistName))
+                onNavigateToAlbum = { albumId, name, artUrl, artistName ->
+                    navController.navigate(
+                        SearchAlbumRoute(
+                            browseId = albumId,
+                            title = name,
+                            artist = artistName,
+                            thumbnailUrl = artUrl,
+                            year = null,
+                            source = AlbumSource.YOUTUBE,
+                        ),
+                    )
                 },
             )
         }

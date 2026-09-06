@@ -135,6 +135,7 @@ fun LibraryScreen(
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToArtist: (String) -> Unit = {},
     onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit = { _, _, _, _ -> },
+    onNavigateToRemoteAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit = { _, _, _, _ -> },
     onSelectionModeChanged: (Boolean) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -185,7 +186,7 @@ fun LibraryScreen(
 
     LaunchedEffect(Unit) {
         viewModel.albumNavEvents.collect { a ->
-            onNavigateToAlbum(a.albumId, a.name, a.artUrl, a.artistName)
+            onNavigateToRemoteAlbum(a.albumId, a.name, a.artUrl, a.artistName)
         }
     }
     
