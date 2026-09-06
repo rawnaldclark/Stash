@@ -87,6 +87,7 @@ fun AlbumDiscoveryScreen(
     val streamingSheetState = androidx.compose.material3.rememberModalBottomSheetState()
     val playlistSheetItem by vm.playlistSheetItem.collectAsStateWithLifecycle()
     val userPlaylists by vm.userPlaylists.collectAsStateWithLifecycle()
+    val isSaved by vm.isSaved.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(vm) {
@@ -118,6 +119,8 @@ fun AlbumDiscoveryScreen(
                     onDownloadAll = vm::onDownloadAllClicked,
                     onPlayAlbum = { vm.playAlbum(startIndex = 0) },
                     onAddToQueue = vm::addAlbumToQueue,
+                    onSave = vm::saveAlbum,
+                    isSaved = isSaved,
                     streamingEnabled = streamingEnabled,
                     onStreamingClick = { showStreamingSheet = true },
                     downloadSupported = vm.downloadSupported,

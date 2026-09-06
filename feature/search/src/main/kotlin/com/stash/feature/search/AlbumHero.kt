@@ -23,6 +23,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.LibraryAddCheck
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
@@ -97,6 +99,9 @@ fun AlbumHero(
     // Qobuz albums have no per-track videoId, so download-by-id isn't available
     // (Phase 1) — the chip is hidden for them. Defaults true for YT callers.
     downloadSupported: Boolean = true,
+    /** #304: "Save" keeps the album in the library without downloading it. */
+    onSave: () -> Unit = {},
+    isSaved: Boolean = false,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -266,6 +271,22 @@ fun AlbumHero(
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = "Queue",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+                OutlinedButton(
+                    onClick = onSave,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(
+                        imageVector = if (isSaved) Icons.Default.LibraryAddCheck else Icons.Default.LibraryAdd,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (isSaved) "Saved" else "Save",
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }

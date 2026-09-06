@@ -617,6 +617,19 @@ class MusicRepositoryImpl @Inject constructor(
         return playlistDao.insert(entity)
     }
 
+    override suspend fun ensureCustomPlaylist(name: String, sourceId: String, artUrl: String?): Long =
+        playlistDao.ensurePlaylist(
+            com.stash.core.data.db.entity.PlaylistEntity(
+                name = name,
+                source = com.stash.core.model.MusicSource.BOTH,
+                sourceId = sourceId,
+                type = com.stash.core.model.PlaylistType.CUSTOM,
+                isActive = true,
+                syncEnabled = true,
+                artUrl = artUrl,
+            ),
+        )
+
     override suspend fun addTrackToPlaylist(trackId: Long, playlistId: Long) {
         // Issue #114: this previously inserted the cross-ref unconditionally
         // and crashed the app with SQLITE_CONSTRAINT_FOREIGNKEY when either

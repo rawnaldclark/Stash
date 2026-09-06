@@ -8,6 +8,8 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.model.TrackItem
 import com.stash.core.media.preview.PreviewState
+import com.stash.core.model.MusicSource
+import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.TrackSummary
@@ -30,12 +32,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argThat
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -105,6 +109,7 @@ class AlbumDiscoveryViewModelTest {
      */
     private fun stubDelegate(
         downloadedIds: Set<String> = emptySet(),
+        userPlaylists: List<Playlist> = emptyList(),
     ): TrackActionsDelegate = mock {
         on { previewState } doReturn
             MutableStateFlow(PreviewState.Idle as PreviewState).asStateFlow()
@@ -112,7 +117,7 @@ class AlbumDiscoveryViewModelTest {
         on { downloadingIds } doReturn MutableStateFlow<Set<String>>(emptySet()).asStateFlow()
         on { this.downloadedIds } doReturn MutableStateFlow(downloadedIds).asStateFlow()
         on { previewLoadingId } doReturn MutableStateFlow<String?>(null).asStateFlow()
-        on { userPlaylists } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
+        on { this.userPlaylists } doReturn kotlinx.coroutines.flow.flowOf(userPlaylists)
     }
 
     private fun trackSummary(id: String): TrackSummary = TrackSummary(
@@ -382,8 +387,57 @@ class AlbumDiscoveryViewModelTest {
 
         // Captured queue should contain exactly the two downloaded rows.
         val captor = argumentCaptor<List<Track>>()
-        verify(player).setQueue(captor.capture(), eq(0))
+        verify(player).setQueue(captor.capture(), eq(0), any())
         assertEquals(setOf("v1", "v3"), captor.firstValue.mapNotNull { it.youtubeId }.toSet())
     }
 
+    // ── #304: "Save" keeps the album in the library without downloading it ──
+
+    @Test
+    fun `save persists the tracks and files them under one playlist keyed by the album`() = runTest {
+        val cache = mock<AlbumCache>().also {
+            whenever(it.get(eq("MPREb_xxx"), any())).thenReturn(albumDetail())
+        }
+        val repo = mock<MusicRepository>()
+        whenever(repo.ensureTrackPersisted(any())).thenReturn(11L, 12L, 13L)
+        whenever(repo.ensureCustomPlaylist(any(), any(), anyOrNull())).thenReturn(77L)
+        val vm = vmWith(cache = cache, musicRepository = repo)
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.saveAlbum()
+            advanceUntilIdle()
+            assertEquals("Saved to your library", awaitItem())
+        }
+
+        // One playlist per album (keyed by source + browse id), named after it, wearing its art.
+        verify(repo).ensureCustomPlaylist(eq("Curtains"), eq("album:youtube:MPREb_xxx"), eq("u"))
+        verify(repo).addTrackToPlaylist(11L, 77L)
+        verify(repo).addTrackToPlaylist(12L, 77L)
+        verify(repo).addTrackToPlaylist(13L, 77L)
+    }
+
+    @Test
+    fun `an album already in the library reports saved and is not written again`() = runTest {
+        val cache = mock<AlbumCache>().also {
+            whenever(it.get(eq("MPREb_xxx"), any())).thenReturn(albumDetail())
+        }
+        val repo = mock<MusicRepository>()
+        val delegate = stubDelegate(
+            userPlaylists = listOf(
+                Playlist(id = 77L, name = "Curtains", source = MusicSource.BOTH, sourceId = "album:youtube:MPREb_xxx"),
+            ),
+        )
+        val vm = vmWith(cache = cache, musicRepository = repo, delegate = delegate)
+        advanceUntilIdle()
+
+        assertTrue(vm.isSaved.value)
+        vm.userMessages.test {
+            vm.saveAlbum()
+            advanceUntilIdle()
+            assertEquals("Already in your library", awaitItem())
+        }
+        verify(repo, never()).ensureCustomPlaylist(any(), any(), anyOrNull())
+        verify(repo, never()).addTrackToPlaylist(any(), any())
+    }
 }

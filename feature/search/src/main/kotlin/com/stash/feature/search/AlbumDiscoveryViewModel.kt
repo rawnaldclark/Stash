@@ -121,6 +121,15 @@ class AlbumDiscoveryViewModel @Inject constructor(
     val userPlaylists: StateFlow<List<Playlist>> =
         delegate.userPlaylists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** The library playlist that stands for this album: one per source + browse id. */
+    private val savedAlbumSourceId: String
+        get() = "album:${albumSource.name.lowercase()}:$browseId"
+
+    /** #304: true once this album sits in the library as a saved playlist. */
+    val isSaved: StateFlow<Boolean> =
+        userPlaylists.map { lists -> lists.any { it.sourceId == savedAlbumSourceId } }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     /** youtubeId of the currently-playing track, for the SongRow now-playing indicator. */
     val currentPlayingYoutubeId: StateFlow<String?> =
         playerRepository.playerState
@@ -291,6 +300,32 @@ class AlbumDiscoveryViewModel @Inject constructor(
      * without interrupting playback. Sibling to [playAlbum]; both share
      * [synthesizeDomainTracks] for track synthesis.
      */
+    /**
+     * #304: keep this album in the library WITHOUT downloading it — a custom
+     * playlist named after the album, wearing its art, holding its tracks.
+     * Tracks are persisted by identity, so one already in the library is
+     * reused, never duplicated. Downloading stays a separate, explicit step.
+     */
+    fun saveAlbum() {
+        viewModelScope.launch {
+            if (isSaved.value) {
+                _userMessages.emit("Already in your library")
+                return@launch
+            }
+            val tracks = synthesizeDomainTracks()
+            if (tracks.isEmpty()) return@launch
+            val ids = tracks.map { musicRepository.ensureTrackPersisted(it.copy(id = 0L)) }
+            val hero = _uiState.value.hero
+            val playlistId = musicRepository.ensureCustomPlaylist(
+                name = hero.title,
+                sourceId = savedAlbumSourceId,
+                artUrl = hero.thumbnailUrl,
+            )
+            ids.forEach { musicRepository.addTrackToPlaylist(it, playlistId) }
+            _userMessages.emit("Saved to your library")
+        }
+    }
+
     fun addAlbumToQueue() {
         viewModelScope.launch {
             val tracks = buildQueueTracks()

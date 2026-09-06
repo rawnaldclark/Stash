@@ -288,6 +288,13 @@ interface MusicRepository {
     /** Create a new empty custom playlist. Returns the playlist ID. */
     suspend fun createPlaylist(name: String): Long
 
+    /**
+     * #304: the custom playlist keyed by [sourceId], created on first use with
+     * [name] and [artUrl]. Every later call returns the existing one, so a
+     * "Save" of the same album is idempotent.
+     */
+    suspend fun ensureCustomPlaylist(name: String, sourceId: String, artUrl: String?): Long
+
     /** Add a track to a playlist. */
     suspend fun addTrackToPlaylist(trackId: Long, playlistId: Long)
 
