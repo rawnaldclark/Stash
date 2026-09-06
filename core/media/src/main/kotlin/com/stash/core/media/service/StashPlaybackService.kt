@@ -172,6 +172,8 @@ class StashPlaybackService : MediaLibraryService() {
         private const val RECENTLY_ADDED_ID = "RECENTLY_ADDED"
         private const val PLAYLIST_PREFIX = "PLAYLIST_"
         private const val SHUFFLE_PLAY_PREFIX = "SHUFFLE_PLAY_"
+        /** The car's ONE merged likes entry; its shuffle id is SHUFFLE_PLAY_PREFIX + LIKED_ID. */
+        private const val LIKED_ID = "LIKED"
 
         /**
          * How often the prefetch poll checks playback position against
@@ -1150,14 +1152,9 @@ class StashPlaybackService : MediaLibraryService() {
             crossfadePreparedId = null
             return serviceScope.future {
                 if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith(SHUFFLE_PLAY_PREFIX)) {
-                    val playlistId = mediaItems[0].mediaId.removePrefix(SHUFFLE_PLAY_PREFIX).toLongOrNull()
-                    if (playlistId != null) {
-                        val tracks = playlistDao.getTracksForPlaylist(playlistId)
-                        // isPlayableInAuto, NOT the bare is_streamable flag:
-                        // never-checked synced rows must play (see AutoBrowse.kt).
-                        val items = tracks.filter { it.isPlayableInAuto() }
-                            .map { it.toAutoMediaItem() }
-                            .shuffled()
+                    val tracks = shuffleSourceTracks(mediaItems[0].mediaId)
+                    if (tracks != null) {
+                        val items = tracks.map { it.toAutoMediaItem() }.shuffled()
 
                         kotlinx.coroutines.withContext(Dispatchers.Main) {
                             mediaSession.player.shuffleModeEnabled = true
@@ -1214,9 +1211,45 @@ class StashPlaybackService : MediaLibraryService() {
                         // from a tap matches the rows the car listed.
                         ?.filter { it.isPlayableInAuto() }
                         ?: emptyList()
+                parentId == LIKED_ID -> likedTracksForAuto()
                 parentId == RECENTLY_ADDED_ID -> trackDao.getRecentlyAdded(20).first()
                 else -> emptyList()
             }
+
+        /**
+         * The car's ONE "Liked Songs" entry: every likes playlist the car lists
+         * (in-app likes + each synced likes list) merged, newest like first —
+         * the Library's Liked tab in the car. The first head-unit test of #251
+         * saw two "Liked Songs" rows because both playlists carry that name.
+         */
+        private suspend fun likedTracksForAuto(): List<TrackEntity> {
+            val liked = playlistDao.getAllVisible(includeStreamable = false).first()
+                .filter { it.isLikedPlaylist() }
+            return mergeLikedForAuto(liked.map { playlistDao.getTracksForPlaylist(it.id) })
+                .filter { it.isPlayableInAuto() }
+        }
+
+        /** Tracks behind a SHUFFLE_PLAY_ id — the merged likes or one playlist; null for a foreign id. */
+        private suspend fun shuffleSourceTracks(mediaId: String): List<TrackEntity>? {
+            val key = mediaId.removePrefix(SHUFFLE_PLAY_PREFIX)
+            if (key == LIKED_ID) return likedTracksForAuto()
+            val playlistId = key.toLongOrNull() ?: return null
+            // isPlayableInAuto, NOT the bare is_streamable flag:
+            // never-checked synced rows must play (see AutoBrowse.kt).
+            return playlistDao.getTracksForPlaylist(playlistId).filter { it.isPlayableInAuto() }
+        }
+
+        private fun shuffleItem(mediaId: String): MediaItem = MediaItem.Builder()
+            .setMediaId(mediaId)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(getString(R.string.shuffle_play))
+                    .setArtworkUri("android.resource://$packageName/drawable/ic_shuffle".toUri())
+                    .setIsBrowsable(false)
+                    .setIsPlayable(true)
+                    .build(),
+            )
+            .build()
 
         @OptIn(UnstableApi::class)
         override fun onAddMediaItems(
@@ -1226,12 +1259,8 @@ class StashPlaybackService : MediaLibraryService() {
         ): ListenableFuture<List<MediaItem>> {
             return serviceScope.future {
                 if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith(SHUFFLE_PLAY_PREFIX)) {
-                    val playlistId = mediaItems[0].mediaId.removePrefix(SHUFFLE_PLAY_PREFIX).toLongOrNull()
-                    if (playlistId != null) {
-                        return@future playlistDao.getTracksForPlaylist(playlistId)
-                            .filter { it.isPlayableInAuto() }
-                            .map { it.toAutoMediaItem() }
-                            .shuffled()
+                    shuffleSourceTracks(mediaItems[0].mediaId)?.let { tracks ->
+                        return@future tracks.map { it.toAutoMediaItem() }.shuffled()
                     }
                 }
                 mediaItems.map { item ->
@@ -1414,7 +1443,22 @@ class StashPlaybackService : MediaLibraryService() {
                         // Streaming-only tracks would fail on flaky cellular while
                         // driving — worse UX than not seeing them at all. Revisit
                         // when streaming-aware Auto support lands.
-                        playlistDao.getAllVisible(includeStreamable = false).first().map { playlist ->
+                        val visible = playlistDao.getAllVisible(includeStreamable = false).first()
+                        // ONE "Liked Songs" row for every like source (likedTracksForAuto).
+                        val likedCount = if (visible.any { it.isLikedPlaylist() }) likedTracksForAuto().size else 0
+                        val likedItem = if (likedCount == 0) null else MediaItem.Builder()
+                            .setMediaId(LIKED_ID)
+                            .setMediaMetadata(
+                                MediaMetadata.Builder()
+                                    .setTitle("Liked Songs")
+                                    .setSubtitle(pluralize(likedCount, "track"))
+                                    .setArtworkUri(visible.firstNotNullOfOrNull { p -> p.artUrl.takeIf { p.isLikedPlaylist() } }?.toUri())
+                                    .setIsBrowsable(true)
+                                    .setIsPlayable(false)
+                                    .build(),
+                            )
+                            .build()
+                        listOfNotNull(likedItem) + visible.filterNot { it.isLikedPlaylist() }.map { playlist ->
                             MediaItem.Builder()
                                 .setMediaId("$PLAYLIST_PREFIX${playlist.id}")
                                 .setMediaMetadata(
@@ -1429,6 +1473,13 @@ class StashPlaybackService : MediaLibraryService() {
                                 .build()
                         }
                     }
+                    LIKED_ID -> {
+                        listOf(shuffleItem(SHUFFLE_PLAY_PREFIX + LIKED_ID)) + likedTracksForAuto().map { track ->
+                            track.toAutoMediaItem(
+                                mediaId = AutoBrowseQueue.childMediaId(parentId, track.id),
+                            )
+                        }
+                    }
                     RECENTLY_ADDED_ID -> {
                         trackDao.getRecentlyAdded(20).first().map { track ->
                             track.toAutoMediaItem(
@@ -1440,17 +1491,7 @@ class StashPlaybackService : MediaLibraryService() {
                         if (parentId.startsWith(PLAYLIST_PREFIX)) {
                             val playlistId = parentId.removePrefix(PLAYLIST_PREFIX).toLongOrNull()
                             if (playlistId != null) {
-                                val shuffleItem = MediaItem.Builder()
-                                    .setMediaId("$SHUFFLE_PLAY_PREFIX$playlistId")
-                                    .setMediaMetadata(
-                                        MediaMetadata.Builder()
-                                            .setTitle(getString(R.string.shuffle_play))
-                                            .setArtworkUri("android.resource://$packageName/drawable/ic_shuffle".toUri())
-                                            .setIsBrowsable(false)
-                                            .setIsPlayable(true)
-                                            .build(),
-                                    )
-                                    .build()
+                                val shuffleItem = shuffleItem("$SHUFFLE_PLAY_PREFIX$playlistId")
 
                                 // isPlayableInAuto, NOT the bare is_streamable flag —
                                 // synced rows are "never checked" (is_streamable=0,

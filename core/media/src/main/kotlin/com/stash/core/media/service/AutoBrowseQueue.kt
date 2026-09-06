@@ -59,7 +59,10 @@ object AutoBrowseQueue {
      * and tap (deleted / re-synced).
      */
     fun queuePlan(tracks: List<TrackEntity>, tappedTrackId: Long): QueuePlan {
-        val playable = tracks.filter { it.isDownloaded || it.isStreamable }
+        // isPlayableInAuto, NOT the bare is_streamable flag: onGetChildren listed
+        // never-checked synced rows, so the tap must queue them too — the bare
+        // filter dropped them, shifted the start index and played the wrong song.
+        val playable = tracks.filter { it.isPlayableInAuto() }
         val startIndex = playable.indexOfFirst { it.id == tappedTrackId }
             .coerceAtLeast(0)
         return QueuePlan(playable, startIndex)

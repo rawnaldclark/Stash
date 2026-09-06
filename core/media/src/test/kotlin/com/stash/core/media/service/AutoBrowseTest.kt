@@ -1,9 +1,12 @@
 package com.stash.core.media.service
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_IS_STREAMABLE
+import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaylistType
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -107,5 +110,48 @@ class AutoBrowseTest {
         val item = track(downloaded = true, filePath = "/m/b.flac").toAutoMediaItem()
         assertThat(item.mediaMetadata.extras!!.getBoolean(EXTRA_TRACK_IS_STREAMABLE)).isFalse()
         assertThat(item.localConfiguration?.uri?.toString()).isEqualTo("file:///m/b.flac")
+    }
+
+    // ---- Liked Songs in the car: ONE entry, every like source merged ----
+    // The first head-unit test of #251 listed "Liked Songs" twice: the in-app
+    // likes playlist and the synced Spotify likes, both named the same. The
+    // Library's Liked tab merges them; the car must too.
+
+    private fun liked(
+        id: Long,
+        stash: Long? = null,
+        spotify: Long? = null,
+        yt: Long? = null,
+        lastFm: Long? = null,
+        added: Long = 0L,
+    ) = track(id = id, downloaded = true, filePath = "/m/$id.flac").copy(
+        stashLikedAt = stash,
+        spotifySavedAt = spotify,
+        ytMusicSavedAt = yt,
+        lastFmLovedAt = lastFm,
+        dateAdded = java.time.Instant.ofEpochMilli(added),
+    )
+
+    private fun playlist(type: PlaylistType) = PlaylistEntity(
+        name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "src-${type.name}", type = type,
+    )
+
+    @Test
+    fun `liked playlists are the in-app likes and every synced likes list`() {
+        assertThat(playlist(PlaylistType.STASH_LIKED).isLikedPlaylist()).isTrue()
+        assertThat(playlist(PlaylistType.LIKED_SONGS).isLikedPlaylist()).isTrue()
+        assertThat(playlist(PlaylistType.CUSTOM).isLikedPlaylist()).isFalse()
+        assertThat(playlist(PlaylistType.STASH_MIX).isLikedPlaylist()).isFalse()
+    }
+
+    @Test
+    fun `merged likes list every track once, newest like first, add date as the fallback`() {
+        val inStash = listOf(liked(1, stash = 5_000), liked(2, stash = 1_000, spotify = 3_000))
+        val onSpotify = listOf(liked(2, spotify = 3_000), liked(3, spotify = 4_500), liked(4, added = 6_000))
+
+        val merged = mergeLikedForAuto(listOf(inStash, onSpotify))
+
+        // Same rule as the Library's Liked tab: 4 (added 6000) > 1 (5000) > 3 (4500) > 2 (3000, once)
+        assertThat(merged.map { it.id }).containsExactly(4L, 1L, 3L, 2L).inOrder()
     }
 }

@@ -11,6 +11,7 @@ class AutoBrowseQueueTest {
         id: Long,
         downloaded: Boolean = true,
         streamable: Boolean = false,
+        checkedAt: Long? = null,
     ) = TrackEntity(
         id = id,
         title = "Track $id",
@@ -19,6 +20,7 @@ class AutoBrowseQueueTest {
         filePath = if (downloaded) "/music/$id.flac" else null,
         isDownloaded = downloaded,
         isStreamable = streamable,
+        isStreamableCheckedAt = checkedAt,
     )
 
     // ── mediaId round-trip ───────────────────────────────────────────
@@ -63,7 +65,7 @@ class AutoBrowseQueueTest {
     fun `queuePlan keeps streamable-only tracks and drops unplayable ones`() {
         val tracks = listOf(
             track(1),
-            track(2, downloaded = false, streamable = false), // unplayable — dropped
+            track(2, downloaded = false, streamable = false, checkedAt = 1L), // confirmed unplayable — dropped
             track(3, downloaded = false, streamable = true),
             track(4),
         )
@@ -71,6 +73,20 @@ class AutoBrowseQueueTest {
         assertEquals(listOf(1L, 3L, 4L), plan.tracks.map { it.id })
         // Index is within the FILTERED list — same filter the browse UI used.
         assertEquals(2, plan.startIndex)
+    }
+
+    /**
+     * A synced row nobody has probed yet (is_streamable=0, checked_at=null) is
+     * LISTED by onGetChildren (isPlayableInAuto). The tap rebuilds the queue from
+     * the same rows, so it must keep that row too — the bare is_streamable
+     * filter dropped it, shifted the start index, and played the wrong song.
+     */
+    @Test
+    fun `queuePlan keeps never-checked synced rows - the same rows the car listed`() {
+        val tracks = listOf(track(1), track(2, downloaded = false, streamable = false), track(3))
+        val plan = AutoBrowseQueue.queuePlan(tracks, tappedTrackId = 2L)
+        assertEquals(listOf(1L, 2L, 3L), plan.tracks.map { it.id })
+        assertEquals(1, plan.startIndex)
     }
 
     @Test

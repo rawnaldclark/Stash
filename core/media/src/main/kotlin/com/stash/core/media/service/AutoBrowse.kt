@@ -4,12 +4,14 @@ import android.net.Uri
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_IS_STREAMABLE
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_YOUTUBE_ID
 import com.stash.core.media.streaming.stashResolveUri
+import com.stash.core.model.PlaylistType
 
 /**
  * Track eligibility + MediaItem construction for the Android Auto browse
@@ -32,6 +34,28 @@ import com.stash.core.media.streaming.stashResolveUri
  * unstreamable (`is_streamable = 0` with a non-null checked-at) and it has
  * no download — the mirror of `Track.isUnavailableForDisplay`.
  */
+/**
+ * A likes list: the in-app Liked Songs (STASH_LIKED) or a synced one
+ * (LIKED_SONGS — Spotify, YouTube Music, Last.fm). Both are named "Liked
+ * Songs", and the first head-unit test of #251 listed them as two rows.
+ * The car shows ONE, built from [mergeLikedForAuto].
+ */
+internal fun PlaylistEntity.isLikedPlaylist(): Boolean =
+    type == PlaylistType.STASH_LIKED || type == PlaylistType.LIKED_SONGS
+
+/**
+ * Every like source merged into one list: each track once, newest like
+ * first — the Library's Liked tab, in the car. A row with no like stamp
+ * (older data) falls back to its library add date, the same rule as
+ * LibraryViewModel.likedAtOrAdded.
+ */
+internal fun mergeLikedForAuto(sources: List<List<TrackEntity>>): List<TrackEntity> =
+    sources.flatten().distinctBy { it.id }.sortedByDescending { it.likedAtForAuto() }
+
+private fun TrackEntity.likedAtForAuto(): Long =
+    listOfNotNull(stashLikedAt, spotifySavedAt, ytMusicSavedAt, lastFmLovedAt).maxOrNull()
+        ?: dateAdded.toEpochMilli()
+
 internal fun TrackEntity.isPlayableInAuto(): Boolean =
     isDownloaded || isStreamable || isStreamableCheckedAt == null
 
