@@ -109,6 +109,40 @@ enum class InnerTubeVariant(
         clientNameId = "5",
         sendsApiKey = false,
     ),
+    /**
+     * Apple Vision Pro client. Anonymous, no PO token, direct URLs: the one
+     * client that served on 2026-09-06 while every ANDROID_VR build and the
+     * Music clients were blocked. Pinned from YumaPlayer's client table.
+     */
+    VISIONOS(
+        clientName = "VISIONOS",
+        clientVersion = "0.1",
+        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+        extraClientFields = mapOf(
+            "deviceMake" to "Apple",
+            "deviceModel" to "RealityDevice14,1",
+            "osName" to "visionOS",
+            "osVersion" to "1.3.21O771",
+        ),
+        apiBase = "https://www.youtube.com/youtubei/v1",
+        clientNameId = "101",
+        sendsApiKey = false,
+    ),
+    /** The iPad build of the iOS client: a second identity when [IOS] is blocked. */
+    IPADOS(
+        clientName = "IOS",
+        clientVersion = "19.22.3",
+        userAgent = "com.google.ios.youtube/19.22.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)",
+        extraClientFields = mapOf(
+            "deviceMake" to "Apple",
+            "deviceModel" to "iPad7,6",
+            "osName" to "iPadOS",
+            "osVersion" to "17.7.10.21H450",
+        ),
+        apiBase = "https://www.youtube.com/youtubei/v1",
+        clientNameId = "5",
+        sendsApiKey = false,
+    ),
 
     /** Standard web YouTube Music client. URLs are typically ciphered. */
     WEB_REMIX(
@@ -182,6 +216,9 @@ class InnerTubeClient @Inject constructor(
     /** Test seam: points [player] and [warmPoTokens] at a local server instead of `variant.apiBase`. */
     internal var apiBaseOverride: String? = null
 
+    /** The variant that last served audio; asked first next time. */
+    @Volatile private var lastAudioWinner: InnerTubeVariant? = null
+
     private val mintScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -214,6 +251,8 @@ class InnerTubeClient @Inject constructor(
         internal val AUDIO_VARIANT_ORDER = listOf(
             InnerTubeVariant.ANDROID_VR,
             InnerTubeVariant.IOS,
+            InnerTubeVariant.VISIONOS,
+            InnerTubeVariant.IPADOS,
         )
     }
 
@@ -466,7 +505,10 @@ class InnerTubeClient @Inject constructor(
     suspend fun playerForAudio(videoId: String): AudioPlayerResponse? {
         val poTokens = mintPoTokens(videoId)
         var lastResponse: JsonObject? = null
-        for (variant in AUDIO_VARIANT_ORDER) {
+        // The client that last served goes first: YouTube blocks clients one policy
+        // change at a time, and a working day should cost one request, not a hunt.
+        val order = listOfNotNull(lastAudioWinner) + AUDIO_VARIANT_ORDER.filterNot { it == lastAudioWinner }
+        for (variant in order) {
             val response = runCatching { player(videoId, variant, poTokens) }
                 .onFailure {
                     Log.w(TAG, "playerForAudio variant=$variant threw: ${it.message}")
@@ -476,6 +518,7 @@ class InnerTubeClient @Inject constructor(
             lastResponse = response
             if (hasDirectAudioUrl(response)) {
                 Log.d(TAG, "playerForAudio videoId=$videoId won with variant=$variant pot=${poTokens != null}")
+                lastAudioWinner = variant
                 return AudioPlayerResponse(response, poTokens?.sessionToken)
             }
             Log.d(TAG, "playerForAudio variant=$variant gave no direct URL for $videoId")
