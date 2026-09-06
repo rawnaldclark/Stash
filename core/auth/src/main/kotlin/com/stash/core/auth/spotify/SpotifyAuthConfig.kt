@@ -63,8 +63,13 @@ object SpotifyAuthConfig {
      * Persisted query hash for the `home` operation.
      * Returns the Spotify home feed with personalized sections including
      * Daily Mixes, Discover Weekly, Release Radar, etc.
+     *
+     * SEED value (web-player.981dd70a.js, 2026-09-06). Every query hash here
+     * is a seed: on a `PersistedQueryNotFound` the client re-scrapes the live
+     * bundle (SpotifyAuthManager.scrapePersistedQueryHash) and retries once.
+     * #471: the previous seed (23e37f2e…) rotated and Daily Mixes vanished.
      */
-    const val HASH_HOME = "23e37f2e58d82d567f27080101d36609009d8c3676457b1086cb0acc55b72a5d"
+    const val HASH_HOME = "76243c78b0e20ecdbe41b794dec8cbe73f75e585b0a7201b8d2e84578412847a"
 
     /**
      * Persisted query hash for the `searchDesktop` operation — the search the

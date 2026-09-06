@@ -1,0 +1,219 @@
+{
+ "data": {
+  "home": {
+   "sectionContainer": {
+    "sections": {
+     "items": [
+      {
+       "data": {
+        "__typename": "HomeGenericSectionData",
+        "title": {
+         "text": "Made For You"
+        }
+       },
+       "sectionItems": {
+        "items": [
+         {
+          "content": {
+           "__typename": "PlaylistResponseWrapper",
+           "data": {
+            "__typename": "Playlist",
+            "attributes": [
+             {
+              "key": "madeFor.username",
+              "value": "thenewrawnald"
+             }
+            ],
+            "content": {
+             "__typename": "PlaylistItemsPage",
+             "totalCount": 200
+            },
+            "description": "Catch all the latest music from artists you follow, plus new singles picked for you. Updates every Friday.",
+            "format": "release-radar",
+            "images": {
+             "items": [
+              {
+               "extractedColors": {
+                "colorDark": {
+                 "hex": "#3800C8",
+                 "isFallback": false
+                }
+               },
+               "sources": [
+                {
+                 "height": null,
+                 "url": "https://pickasso.spotifycdn.com/image/ab67c0de0000bada/dt/v1/img/release-radar-v4/3MKCzCnpzw3TjUYs2v7vDA/en",
+                 "width": null
+                }
+               ]
+              }
+             ]
+            },
+            "name": "Release Radar",
+            "ownerV2": {
+             "data": {
+              "__typename": "User",
+              "name": "Spotify",
+              "uri": "spotify:user:spotify"
+             }
+            },
+            "uri": "spotify:playlist:37i9dQZEVXbdim3ED1Pnr8"
+           }
+          },
+          "data": null,
+          "uri": "spotify:playlist:37i9dQZEVXbdim3ED1Pnr8"
+         },
+         {
+          "content": {
+           "__typename": "PlaylistResponseWrapper",
+           "data": {
+            "__typename": "Playlist",
+            "attributes": [
+             {
+              "key": "madeFor.username",
+              "value": "thenewrawnald"
+             }
+            ],
+            "content": {
+             "__typename": "PlaylistItemsPage",
+             "totalCount": 30
+            },
+            "description": "Your shortcut to hidden gems, deep cuts, and future faves, updated every Monday. You’ll know when you hear it.",
+            "format": "discover-weekly",
+            "images": {
+             "items": [
+              {
+               "extractedColors": {
+                "colorDark": {
+                 "hex": "#D93F31",
+                 "isFallback": false
+                }
+               },
+               "sources": [
+                {
+                 "height": null,
+                 "url": "https://pickasso.spotifycdn.com/image/ab67c0de0000deef/dt/v1/img/dw/cover/en",
+                 "width": null
+                }
+               ]
+              }
+             ]
+            },
+            "name": "Discover Weekly",
+            "ownerV2": {
+             "data": {
+              "__typename": "User",
+              "name": "Spotify",
+              "uri": "spotify:user:spotify"
+             }
+            },
+            "uri": "spotify:playlist:37i9dQZEVXcUnKrYdvgYqc"
+           }
+          },
+          "data": null,
+          "uri": "spotify:playlist:37i9dQZEVXcUnKrYdvgYqc"
+         },
+         {
+          "content": {
+           "__typename": "PlaylistResponseWrapper",
+           "data": {
+            "__typename": "Playlist",
+            "attributes": [
+             {
+              "key": "madeFor.username",
+              "value": "thenewrawnald"
+             }
+            ],
+            "content": {
+             "__typename": "PlaylistItemsPage",
+             "totalCount": 50
+            },
+            "description": "Captain Beefheart & His Magic Band, The Beatles, Jimi Hendrix and more",
+            "format": "daily-mix",
+            "images": {
+             "items": [
+              {
+               "extractedColors": {
+                "colorDark": {
+                 "hex": "#048581",
+                 "isFallback": false
+                }
+               },
+               "sources": [
+                {
+                 "height": null,
+                 "url": "https://pickasso.spotifycdn.com/image/ab67c0de0000deef/dt/v1/img/daily/1/cc0e9b43b0babe4405ec13d401a47bd07a8f6314/en",
+                 "width": null
+                }
+               ]
+              }
+             ]
+            },
+            "name": "Daily Mix 1",
+            "ownerV2": {
+             "data": {
+              "__typename": "User",
+              "name": "Spotify",
+              "uri": "spotify:user:spotify"
+             }
+            },
+            "uri": "spotify:playlist:37i9dQZF1E39qBrklk1YT6"
+           }
+          },
+          "data": null,
+          "uri": "spotify:playlist:37i9dQZF1E39qBrklk1YT6"
+         },
+         {
+          "content": {
+           "__typename": "PlaylistResponseWrapper",
+           "data": {
+            "__typename": "Playlist",
+            "attributes": [],
+            "content": {
+             "__typename": "PlaylistItemsPage",
+             "totalCount": 56
+            },
+            "description": "Don&#x27;t focus",
+            "format": "",
+            "images": {
+             "items": [
+              {
+               "extractedColors": {
+                "colorDark": {
+                 "hex": "#787050",
+                 "isFallback": false
+                }
+               },
+               "sources": [
+                {
+                 "height": null,
+                 "url": "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000d72cda4755d46a85a0527e155dca",
+                 "width": null
+                }
+               ]
+              }
+             ]
+            },
+            "name": "conundrum ^#",
+            "ownerV2": {
+             "data": {
+              "__typename": "User",
+              "name": "drwx Ganto",
+              "uri": "spotify:user:lm7d11nsf65n11sojl4twwr6t"
+             }
+            },
+            "uri": "spotify:playlist:4TIjugWmvT13MmvGeGSFKP"
+           }
+          },
+          "data": null,
+          "uri": "spotify:playlist:4TIjugWmvT13MmvGeGSFKP"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

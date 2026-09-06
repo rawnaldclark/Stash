@@ -317,7 +317,7 @@ class SpotifyApiClient @Inject constructor(
             val responseJson = executeGraphQL(
                 operationName = "libraryV3",
                 variables = variables,
-                hash = SpotifyAuthConfig.HASH_LIBRARY_V3,
+                seedHash = SpotifyAuthConfig.HASH_LIBRARY_V3,
             )
 
             if (responseJson != null) {
@@ -409,7 +409,7 @@ class SpotifyApiClient @Inject constructor(
             val responseJson = executeGraphQL(
                 operationName = "fetchLibraryTracks",
                 variables = variables,
-                hash = SpotifyAuthConfig.HASH_FETCH_LIBRARY_TRACKS,
+                seedHash = SpotifyAuthConfig.HASH_FETCH_LIBRARY_TRACKS,
             )
 
             if (responseJson != null) {
@@ -478,7 +478,7 @@ class SpotifyApiClient @Inject constructor(
                 val root = executeGraphQL(
                     operationName = "searchDesktop",
                     variables = variables,
-                    hash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
+                    seedHash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
                 ) ?: continue
                 val search = root["data"]?.jsonObject?.get("search")?.jsonObject ?: continue
                 // Spotify scatters these across buckets — the yearly recaps came
@@ -529,12 +529,13 @@ class SpotifyApiClient @Inject constructor(
                 put("sp_t", spT)
                 put("facet", JsonNull)
                 put("sectionItemsLimit", 40)
+                put("includeEpisodeContentRatingsV2", false) // declared by the 981dd70a bundle's home query
             }.toString()
 
             val responseJson = executeGraphQL(
                 operationName = "home",
                 variables = variables,
-                hash = SpotifyAuthConfig.HASH_HOME,
+                seedHash = SpotifyAuthConfig.HASH_HOME,
             )
 
             if (responseJson == null) {
@@ -608,6 +609,9 @@ class SpotifyApiClient @Inject constructor(
                         val ownerData = data["ownerV2"]?.jsonObject?.get("data")?.jsonObject
                         val ownerId = ownerData?.get("username")?.jsonPrimitive?.contentOrNull
                             ?: ownerData?.get("id")?.jsonPrimitive?.contentOrNull
+                            // web-player 981dd70a (2026-09-06): the card's owner carries only
+                            // name + uri ("spotify:user:spotify"); #471 lost every mix to this.
+                            ?: ownerData?.get("uri")?.jsonPrimitive?.contentOrNull?.removePrefix("spotify:user:")
                         // Unknown owner is NOT the "spotify" catch-all — that used to sweep in
                         // user-owned playlists surfaced in non-mix home feed sections (e.g.
                         // "Jump back in") whose cards omit ownerV2. Fail closed: no owner data
@@ -765,7 +769,7 @@ class SpotifyApiClient @Inject constructor(
             val responseJson = executeGraphQL(
                 operationName = "searchDesktop",
                 variables = variables,
-                hash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
+                seedHash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
             ) ?: return@withContext emptyList<SpotifyTrackCandidate>()
 
             parseSearchDesktop(responseJson).also {
@@ -979,7 +983,7 @@ class SpotifyApiClient @Inject constructor(
             val responseJson = executeGraphQL(
                 operationName = "fetchPlaylist",
                 variables = variables,
-                hash = SpotifyAuthConfig.HASH_FETCH_PLAYLIST,
+                seedHash = SpotifyAuthConfig.HASH_FETCH_PLAYLIST,
             ) ?: break
 
             val page = parsePlaylistTracksGraphQLResponse(responseJson)
@@ -1044,7 +1048,7 @@ class SpotifyApiClient @Inject constructor(
         if (first !is PersistedQueryMissing) return@withContext first.result
 
         Log.w(TAG, "mutateLibrary: PersistedQueryNotFound — re-scraping hash")
-        val fresh = spotifyAuthManager.scrapeLibraryMutationHash()
+        val fresh = spotifyAuthManager.scrapePersistedQueryHash(operationName, libraryMutationHash)
             ?: return@withContext SpotifyLibraryWriteResult.Failed("persisted-query hash rotated; re-scrape failed")
         libraryMutationHash = fresh
         postLibraryMutation(operationName, uris, accessToken, clientToken, fresh).result
@@ -1154,11 +1158,35 @@ class SpotifyApiClient @Inject constructor(
      * @param hash          The sha256 persisted query hash.
      * @return Parsed [JsonObject] of the response, or null on failure.
      */
+    /** Hashes swapped in after a PersistedQueryNotFound, by operation; the seeds stay the first try. */
+    private val liveHashes = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun isPersistedQueryMiss(body: String?): Boolean =
+        body?.contains("PersistedQueryNotFound", ignoreCase = true) == true
+
+    /**
+     * Spotify rotates every persisted-query hash with each web-player build
+     * (#471: `home` rotated, Daily Mixes vanished from the sync). The failed
+     * hash is replaced by the live bundle's and the query retried once.
+     */
+    private suspend fun retryWithScrapedHash(operationName: String, variables: String, failedHash: String): JsonObject? {
+        val fresh = spotifyAuthManager.scrapePersistedQueryHash(operationName, failedHash)
+        if (fresh == null) {
+            Log.w(TAG, "executeGraphQL: $operationName hash rotated; no replacement in the web-player bundle")
+            return null
+        }
+        Log.i(TAG, "executeGraphQL: $operationName hash rotated; retrying with ${fresh.take(16)}...")
+        liveHashes[operationName] = fresh
+        return executeGraphQL(operationName, variables, fresh, rescrapeOnMiss = false)
+    }
+
     private suspend fun executeGraphQL(
         operationName: String,
         variables: String,
-        hash: String,
+        seedHash: String,
+        rescrapeOnMiss: Boolean = true,
     ): JsonObject? {
+        val hash = liveHashes[operationName] ?: seedHash
         val accessToken = tokenManager.getSpotifyAccessToken()
         if (accessToken == null) {
             Log.e(TAG, "executeGraphQL: no access token available")
@@ -1215,6 +1243,9 @@ class SpotifyApiClient @Inject constructor(
             Log.e(TAG, "executeGraphQL: HTTP $responseCode for $operationName, " +
                 "bodyLen=${responseBody?.length ?: 0}")
 
+            if (rescrapeOnMiss && isPersistedQueryMiss(responseBody)) {
+                return retryWithScrapedHash(operationName, variables, hash)
+            }
             // If we get 401, try refreshing the access token and retrying once
             if (responseCode == 401) {
                 Log.w(TAG, "executeGraphQL: 401, attempting token refresh and retry")
@@ -1253,6 +1284,9 @@ class SpotifyApiClient @Inject constructor(
             val errors = parsed["errors"]
             if (errors != null) {
                 Log.w(TAG, "executeGraphQL: GraphQL errors in $operationName: $errors")
+                if (rescrapeOnMiss && isPersistedQueryMiss(responseBody)) {
+                    return retryWithScrapedHash(operationName, variables, hash)
+                }
             }
             parsed
         } catch (e: Exception) {

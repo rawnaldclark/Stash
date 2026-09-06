@@ -95,62 +95,75 @@ class SpotifyAuthManager @Inject constructor(
             Regex("""src="(https://[^"]*/web-player/web-player\.[a-f0-9]+\.js)"""")
 
         /**
-         * Pulls the `addToLibrary` mutation's persisted-query hash out of the
-         * web-player bundle: `new X("addToLibrary","mutation","<64hex>",null)`.
-         * Pure + internal so it's unit-testable without a network fetch.
+         * Every persisted-query hash the web-player bundle defines, by operation
+         * name: `new X("home","query","<64hex>",null)`. One pass over the
+         * multi-MB bundle serves every operation. Pure + internal so it's
+         * unit-testable without a network fetch.
          */
+        internal fun extractPersistedQueryHashes(bundleJs: String): Map<String, String> =
+            PERSISTED_QUERY_REGEX.findAll(bundleJs).associate { it.groupValues[1] to it.groupValues[2] }
+
         internal fun extractLibraryMutationHash(bundleJs: String): String? =
-            Regex(""""addToLibrary","mutation","([0-9a-f]{64})"""")
-                .find(bundleJs)?.groupValues?.get(1)
+            extractPersistedQueryHashes(bundleJs)["addToLibrary"]
+
+        private val PERSISTED_QUERY_REGEX =
+            Regex(""""([A-Za-z0-9_]+)","(?:query|mutation)","([0-9a-f]{64})"""")
+
+        /** A hash that keeps failing is re-read from the bundle at most this often. */
+        private const val RESCRAPE_MIN_INTERVAL_MS = 10 * 60 * 1000L
 
         private const val WEB_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
     }
 
-    /** Cached library-mutation hash re-scraped after a PersistedQueryNotFound. */
+    /** Persisted-query hashes read from the live web-player bundle, by operation name. */
     @Volatile
-    private var cachedLibraryMutationHash: String? = null
+    private var scrapedHashes: Map<String, String>? = null
+    @Volatile
+    private var scrapedAtMs = 0L
 
     /**
-     * Re-scrapes the CURRENT `addToLibrary`/`removeFromLibrary` persisted-query
-     * hash from the live web player, for when the seeded
-     * [SpotifyAuthConfig.HASH_LIBRARY_MUTATION] has rotated (the mutation
-     * returns `PersistedQueryNotFound`). Fetches the open.spotify.com shell,
-     * finds the `web-player.<hash>.js` bundle, downloads it, and regexes the
-     * hash out. Result is cached for the process. Returns null if any step
-     * fails (caller keeps using the seed).
+     * The CURRENT persisted-query hash for [operationName] when it differs
+     * from [staleHash] (the one Spotify just answered with
+     * `PersistedQueryNotFound`), else null: the seeds in [SpotifyAuthConfig]
+     * rotate with every web-player build (#471: `home` rotated and Daily
+     * Mixes vanished from the sync). Fetches the open.spotify.com shell,
+     * finds the `web-player.<hash>.js` bundle, downloads it and reads every
+     * operation's hash in one pass, cached for the process; a hash that keeps
+     * failing re-reads the bundle at most every [RESCRAPE_MIN_INTERVAL_MS].
      *
-     * Deliberately lazy: only called on a rotation miss, not per-write — the
-     * bundle is multi-MB, so we never pay for it on the happy path.
+     * Deliberately lazy: only called on a rotation miss, never per query —
+     * the bundle is multi-MB, so the happy path never pays for it.
      */
-    fun scrapeLibraryMutationHash(): String? {
-        cachedLibraryMutationHash?.let { return it }
+    fun scrapePersistedQueryHash(operationName: String, staleHash: String): String? {
+        scrapedHashes?.get(operationName)?.takeIf { it != staleHash }?.let { return it }
+        if (scrapedHashes != null && System.currentTimeMillis() - scrapedAtMs < RESCRAPE_MIN_INTERVAL_MS) return null
+        val hashes = fetchPersistedQueryHashes() ?: return null
+        scrapedHashes = hashes
+        scrapedAtMs = System.currentTimeMillis()
+        return hashes[operationName]?.takeIf { it != staleHash }
+    }
+
+    private fun fetchPersistedQueryHashes(): Map<String, String>? {
         return try {
             val shell = okHttpClient.newCall(
                 Request.Builder().url("https://open.spotify.com")
                     .header("User-Agent", WEB_UA).get().build(),
             ).execute().use { it.body?.string() } ?: return null
-
             val bundleUrl = WEBPLAYER_BUNDLE_REGEX.find(shell)?.groupValues?.get(1) ?: run {
-                Log.w(TAG, "scrapeLibraryMutationHash: no web-player bundle in shell")
+                Log.w(TAG, "scrapePersistedQueryHash: no web-player bundle in shell")
                 return null
             }
-
             val bundle = okHttpClient.newCall(
                 Request.Builder().url(bundleUrl)
                     .header("User-Agent", WEB_UA).get().build(),
             ).execute().use { it.body?.string() } ?: return null
-
-            extractLibraryMutationHash(bundle)?.also {
-                cachedLibraryMutationHash = it
-                Log.i(TAG, "scrapeLibraryMutationHash: refreshed library-mutation hash")
-            } ?: run {
-                Log.w(TAG, "scrapeLibraryMutationHash: hash not found in bundle")
-                null
+            extractPersistedQueryHashes(bundle).also {
+                Log.i(TAG, "scrapePersistedQueryHash: ${it.size} hashes from ${bundleUrl.substringAfterLast('/')}")
             }
         } catch (e: Exception) {
-            Log.w(TAG, "scrapeLibraryMutationHash failed: ${e.message}")
+            Log.w(TAG, "scrapePersistedQueryHash failed: ${e.message}")
             null
         }
     }

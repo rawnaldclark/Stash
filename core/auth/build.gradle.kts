@@ -7,6 +7,13 @@ plugins {
 
 android {
     namespace = "com.stash.core.auth"
+
+    testOptions {
+        unitTests {
+            // android.util.Log inside the bundle scrape must not throw "not mocked" in JVM tests.
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
