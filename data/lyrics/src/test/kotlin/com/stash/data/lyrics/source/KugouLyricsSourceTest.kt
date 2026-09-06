@@ -128,4 +128,23 @@ class KugouLyricsSourceTest {
 
         assertThat(KugouLyricsSource.normalizeLrc(raw)).isEqualTo("[00:01.00]I been off the grid\n[00:05.20]Second line")
     }
+
+    /** Live KuGou (2026-09-06, Reckoner): candidate 1 was "第三方歌词" (third-party), candidate 2 "官方推荐歌词" (official). */
+    @Test
+    fun `an official recommendation outranks a third-party candidate`() = runTest {
+        server.enqueue(songSearch("H1" to 279))
+        server.enqueue(MockResponse().setBody(
+            """{"status":200,"info":"","errcode":0,"errmsg":"","expire":0,"candidates":[""" +
+                """{"id":5,"product_from":"第三方歌词","duration":279000,"accesskey":"KEY5"},""" +
+                """{"id":6,"product_from":"官方推荐歌词","duration":279000,"accesskey":"KEY6"}]}""",
+        ))
+        server.enqueue(download(lrc("[00:01.00]line")))
+
+        val result = source.resolve(query())
+
+        assertThat(result?.sourceLyricsId).isEqualTo("6")
+        server.takeRequest(); server.takeRequest()
+        assertThat(server.takeRequest().path).contains("id=6")
+    }
 }
+

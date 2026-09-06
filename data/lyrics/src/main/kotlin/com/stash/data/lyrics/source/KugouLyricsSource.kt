@@ -93,7 +93,7 @@ class KugouLyricsSource(
             if (durationSec != NO_DURATION) builder.addQueryParameter("duration", (durationSec * 1000L).toString())
             builder.addQueryParameter("keyword", requireNotNull(keyword).query)
         }
-        return get<LyricsSearchResponse>(builder.build()).candidates.orEmpty()
+        return get<LyricsSearchResponse>(builder.build()).candidates.orEmpty().sortedByDescending { it.isOfficial }
     }
 
     private fun downloadLyrics(candidate: Candidate): String {
@@ -136,7 +136,14 @@ class KugouLyricsSource(
     private data class LyricsSearchResponse(val candidates: List<Candidate> = emptyList())
 
     @Serializable
-    data class Candidate(val id: Long, val accesskey: String = "")
+    data class Candidate(
+        val id: Long,
+        val accesskey: String = "",
+        @kotlinx.serialization.SerialName("product_from") val productFrom: String = "",
+    ) {
+        /** KuGou marks its curated file; the rest are user uploads of varying quality. */
+        val isOfficial: Boolean get() = productFrom == OFFICIAL_PRODUCT
+    }
 
     @Serializable
     private data class DownloadResponse(val content: String? = null)
@@ -146,6 +153,7 @@ class KugouLyricsSource(
         private const val PAGE_SIZE = 8
         private const val DURATION_TOLERANCE_SEC = 8
         private const val NO_DURATION = -1
+        private const val OFFICIAL_PRODUCT = "官方推荐歌词"
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         /** Header/footer credit lines live within this many timed lines of either end. */
         private const val CREDIT_REGION_LINES = 30
