@@ -1406,10 +1406,22 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun playFromStream(item: TrackItem): StreamRoutingResult {
+        // A Search play takes the same identity road as a queue addition: ensureTrackPersisted
+        // dedupes by video id / Spotify URI / canonical identity and inserts otherwise, so the
+        // queue carries a LIBRARY id that every resume path (Resume shortcut, idle-resume,
+        // the #462 cold-start ghost) and every per-row bookkeeping (art upgrades, quality
+        // stamps, "now playing" markers) can find. It used to be a hash of the video id that
+        // lived only in memory: the persisted queue then held an id no row answered to.
+        val trackId = runCatching { musicRepository.ensureTrackPersisted(item.toSearchTrack()) }
+            .getOrElse { e ->
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(TAG, "playFromStream: could not persist '${item.title}' — playing under a transient id", e)
+                item.videoId.hashCode().toLong()
+            }
         // Idempotency guard #1 (already-playing): if the controller's
         // current MediaItem is THIS track and is in an active state,
         // skip. Mirrors the preview path's original guard.
-        val targetMediaId = item.videoId.hashCode().toLong().toString()
+        val targetMediaId = trackId.toString()
         val controller = controllerDeferred
         if (controller != null) {
             val currentId = controller.currentMediaItem?.mediaId
@@ -1434,7 +1446,7 @@ class PlayerRepositoryImpl @Inject constructor(
             inFlightStreamingTaps.add(item.videoId)
         }
         try {
-            return playFromStreamInner(item)
+            return playFromStreamInner(item, trackId)
         } finally {
             synchronized(inFlightStreamingTaps) {
                 inFlightStreamingTaps.remove(item.videoId)
@@ -1444,7 +1456,21 @@ class PlayerRepositoryImpl @Inject constructor(
 
     private val inFlightStreamingTaps = mutableSetOf<String>()
 
-    private suspend fun playFromStreamInner(item: TrackItem): StreamRoutingResult {
+    /** The library-shaped view of a Search result, id 0 until [MusicRepository.ensureTrackPersisted] answers. */
+    private fun TrackItem.toSearchTrack(): Track = Track(
+        id = 0L,
+        title = title,
+        artist = artist,
+        album = album ?: "",
+        durationMs = (durationSeconds * 1000).toLong(),
+        source = com.stash.core.model.MusicSource.YOUTUBE,
+        youtubeId = videoId,
+        albumArtUrl = thumbnailUrl,
+        isDownloaded = false,
+        isStreamable = true,
+    )
+
+    private suspend fun playFromStreamInner(item: TrackItem, trackId: Long): StreamRoutingResult {
 
         // Search-tab tap: no library row yet, so synthesize a transient
         // TrackEntity carrying only the fields buildMediaItemForTrack
@@ -1457,7 +1483,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // Media3 no-op'd setMediaItem on the matching mediaId. Repeat taps
         // of the same videoId still hit the cache (intended TTL behaviour).
         val transient = TrackEntity(
-            id = item.videoId.hashCode().toLong(),
+            id = trackId,
             title = item.title,
             artist = item.artist,
             album = item.album ?: "",
@@ -2389,7 +2415,10 @@ class PlayerRepositoryImpl @Inject constructor(
         // same list the saved currentIndex points into) — the raw timeline
         // is a sparse resolved-only subset during streaming and would
         // resume into a queue with most tracks missing.
-        val queueIds = newState.queue.map { it.id }
+        // #468 follow-up: with shuffle on, newState.queue is the shuffle WALK (what plays
+        // next), not the queue. Persist the timeline order, or a restart would adopt one
+        // shuffle as the unshuffled order and shuffle again on top of it.
+        val queueIds = if (shuffledDisplayIndices != null) cachedTimelineQueue.map { it.id } else newState.queue.map { it.id }
         if (queueIds != lastSavedQueueIds ||
             newState.isShuffleEnabled != lastSavedShuffle ||
             newState.repeatMode != lastSavedRepeatMode ||

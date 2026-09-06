@@ -20,6 +20,7 @@ import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.model.Track
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -155,6 +156,19 @@ class PlayerRepositoryShuffleQueueTest {
         repo.moveInQueue(0, 2)
 
         verify(exactly = 0) { controller.moveMediaItem(any(), any()) }
+    }
+
+    /**
+     * The persisted queue must stay the LOGICAL order under shuffle: the displayed
+     * walk is what plays next, not what the queue is. Persisting the walk would make a
+     * restart adopt one shuffle as the unshuffled order, and shuffling again on top of it.
+     */
+    @Test
+    fun `under shuffle the persisted queue keeps the logical order`() {
+        repo.updateState(controller)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        coVerify(exactly = 1) { playbackStateStore.saveQueue(listOf(1L, 2L, 3L, 4L), true, any(), any()) }
     }
 
     @Test
