@@ -41,7 +41,7 @@ import com.stash.feature.settings.components.SupportBanner
  * "spoke" screens (built in later tasks) via the `onOpen*` callbacks.
  *
  * Pure host: it owns no navigation itself — the caller wires every `onOpen*`,
- * [onDonate], and [onStar]. It shares the existing [SettingsViewModel] so the
+ * [onDonate], [onDonateCoDev], and [onStar]. It shares the existing [SettingsViewModel] so the
  * subtitles reflect live playback/quality/account/library/appearance/version
  * state.
  */
@@ -54,6 +54,7 @@ fun SettingsHubScreen(
     onOpenAppearance: () -> Unit,
     onOpenAbout: () -> Unit,
     onDonate: () -> Unit,
+    onDonateCoDev: () -> Unit,
     onStar: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -158,7 +159,7 @@ fun SettingsHubScreen(
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        SupportBanner(onDonate = onDonate, onStar = onStar)
+        SupportBanner(onDonate = onDonate, onDonateCoDev = onDonateCoDev, onStar = onStar)
         SettingsSearchField(
             value = searchQuery,
             onValueChange = { searchQuery = it },

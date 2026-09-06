@@ -220,6 +220,8 @@ That isn't a workaround. It's a principled choice: open-source tools that give u
 
 Bug reports and feature requests through [GitHub Issues](https://github.com/rawnaldclark/Stash/issues). For everything else — questions, requests, "is this thing on" — the [Stash Discord](https://discord.gg/vcbjEby5PC) is the place. Active dev there, fast answers.
 
+Want to help translate Stash into your language? Join the [Crowdin project](https://crowdin.com/project/stash-music-player) and [request translator access here](https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform?usp=sharing&ouid=101376898883134592146).
+
 ---
 
 ## Contributing
@@ -234,7 +236,11 @@ Stash is GPL-3.0. You can use, copy, modify, and redistribute it freely. If you 
 
 Stash is free, open source, and has no ads or telemetry. If it replaced a subscription for you and you want to throw a few bucks at the project:
 
+**rawnaldclark (rawn)** — Owner, main dev
 <a href="https://ko-fi.com/rawnald"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support on Ko-fi" height="36"></a>
+
+**Paraliyzed_evo** — Co-dev, makes the beta builds
+<a href="https://www.paypal.com/paypalme/Paraliyzedevo"><img src="https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal&logoColor=white" alt="Support on PayPal" height="36"></a>
 
 You can also [sponsor on GitHub](https://github.com/sponsors/rawnaldclark) for recurring support.
 
