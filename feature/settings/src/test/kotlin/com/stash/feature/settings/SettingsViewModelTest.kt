@@ -53,6 +53,7 @@ class SettingsViewModelTest {
         storagePreference = mockk(relaxed = true),
         downloadNetworkPreference = mockk(relaxed = true),
         moveLibraryCoordinator = mockk(relaxed = true),
+        reorganizeLibraryCoordinator = mockk(relaxed = true),
         youTubeCookieHelper = mockk(relaxed = true),
         lastFmApiClient = mockk(relaxed = true),
         lastFmSessionPreference = mockk(relaxed = true),

@@ -77,6 +77,9 @@ class TrackFinalizer @Inject constructor(
             album = track.album.takeIf { it.isNotBlank() },
             title = track.title,
             format = format.fileExtension.ifBlank { format.codec.ifBlank { "flac" } },
+            // Lets the Per-playlist layout (#198) file the track under its
+            // playlist folder; null/unknown ids fall back gracefully.
+            trackId = track.id.takeIf { it > 0 },
         )
         val meta: AudioMetadata? = audioExtractor.extract(committed.filePath)
         FinalizeResult.Success(committed, meta)

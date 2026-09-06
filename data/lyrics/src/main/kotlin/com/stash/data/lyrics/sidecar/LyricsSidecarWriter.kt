@@ -2,13 +2,15 @@ package com.stash.data.lyrics.sidecar
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.LyricsEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.prefs.LibraryLayout
 import com.stash.core.data.prefs.StoragePreference
-import com.stash.data.download.files.FileOrganizerSlugs
+import com.stash.data.download.files.LibraryLayoutResolver
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import java.io.File
@@ -25,16 +27,16 @@ import javax.inject.Singleton
  * integration. Two storage targets are supported:
  *
  *  - **Internal storage** — `track.filePath` is an absolute filesystem
- *    path; the sidecar is written via plain `java.io.File`.
+ *    path; the sidecar is written via plain `java.io.File` next to the
+ *    audio (correct under every folder structure).
  *  - **SAF tree** — `track.filePath` starts with `content://`; the
  *    sidecar location is derived from the user's persisted external
  *    tree URI (from [StoragePreference], NOT from the audio URI —
  *    DocumentFile.fromTreeUri requires the tree ROOT, not a child),
- *    and the slug-walked DocumentFile mirror of the download layout
- *    (`<artistSlug>/<albumSlug>/<titleSlug>.lrc`) is created on
- *    demand. Slug semantics come from
- *    [FileOrganizerSlugs.slugify] so the sidecar always lands in the
- *    same directory the download created.
+ *    walked down through the SAME [LibraryLayoutResolver] location the
+ *    download pipeline used (#198/#104: Artist/Album, Single folder,
+ *    Per playlist), so the `.lrc` always lands in the directory the
+ *    download created.
  *
  * Write failure is non-fatal for the Room state: [LyricsRepository]
  * wraps the throwing `write()` API in `runCatching`; only that path is best-effort
@@ -117,24 +119,78 @@ class LyricsSidecarWriter @Inject constructor(
             Log.w(TAG, "DocumentFile.fromTreeUri returned null for $treeUri; sidecar skipped")
             throw IOException("Invalid SAF tree $treeUri")
         }
-        val artistName = track.albumArtist.ifBlank { track.artist }
-        val artistDir = findOrCreateDir(tree, FileOrganizerSlugs.slugify(artistName))
-            ?: fail("Could not create artist directory")
-        val albumSlug = if (track.album.isNotBlank()) {
-            FileOrganizerSlugs.slugify(track.album)
+        // The sidecar contract is "next to the audio", so the audio's OWN
+        // directory wins over anything re-derived. A track downloaded under
+        // one layout stays put until Reorganize runs, and re-deriving from
+        // the CURRENT preference would drop the .lrc in an empty folder while
+        // the audio sat elsewhere — invisible to every external player.
+        // Falls back to the layout resolver when the provider's document ids
+        // don't follow the `<volume>:<path>` convention we can decode.
+        val beside = safLocationBesideAudio(treeUri, track.filePath)
+        val segments: List<String>
+        val baseName: String
+        if (beside != null) {
+            segments = beside.first
+            baseName = beside.second
         } else {
-            "singles"
+            // track.artist (not albumArtist) matches what commitDownload
+            // slugged into the directory names (#198/#104).
+            val layout = runCatching { storagePreference.libraryLayout.first() }
+                .getOrDefault(LibraryLayout.DEFAULT)
+            val playlistName =
+                if (layout == LibraryLayout.PLAYLIST) {
+                    runCatching { trackDao.getFirstPlaylistNameForTrack(track.id) }.getOrNull()
+                } else {
+                    null
+                }
+            val location = LibraryLayoutResolver.resolve(
+                layout,
+                artist = track.artist,
+                album = track.album.takeIf { it.isNotBlank() },
+                title = track.title,
+                playlistName = playlistName,
+            )
+            segments = location.segments
+            baseName = location.baseName
         }
-        val albumDir = findOrCreateDir(artistDir, albumSlug) ?: fail("Could not create album directory")
-        val filename = "${FileOrganizerSlugs.slugify(track.title)}.lrc"
-        val existing = albumDir.findFile(filename)
-        val target = existing ?: albumDir.createFile(LRC_MIME, filename) ?: run {
-            Log.w(TAG, "Could not create SAF sidecar '$filename' under ${albumDir.uri}")
+        var cursor = tree
+        for (segment in segments) {
+            cursor = findOrCreateDir(cursor, segment) ?: fail("Could not create directory '$segment'")
+        }
+        val filename = "$baseName.lrc"
+        val existing = cursor.findFile(filename)
+        val target = existing ?: cursor.createFile(LRC_MIME, filename) ?: run {
+            Log.w(TAG, "Could not create SAF sidecar '$filename' under ${cursor.uri}")
             throw IOException("Could not create SAF sidecar $filename")
         }
         context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
             out.write(body.toByteArray(Charsets.UTF_8))
         } ?: fail("Could not open SAF output stream for sidecar ${target.uri}")
+    }
+
+
+    /**
+     * Decode a SAF audio document uri into (directory segments relative to
+     * the picked tree, filename without extension) so the sidecar can be
+     * written in the audio's ACTUAL directory.
+     *
+     * Mirrors the `<volume>:<path>` decode used by the reorganize pass.
+     * Returns null whenever the ids don't parse or the document doesn't sit
+     * under the tree — the caller then falls back to the layout resolver.
+     */
+    private fun safLocationBesideAudio(treeUri: Uri, docUriString: String?): Pair<List<String>, String>? {
+        if (docUriString.isNullOrBlank() || !docUriString.startsWith("content://")) return null
+        return try {
+            val baseRel = DocumentsContract.getTreeDocumentId(treeUri).substringAfter(':', "")
+            val docRel = DocumentsContract.getDocumentId(Uri.parse(docUriString)).substringAfter(':', "")
+            if (!docRel.startsWith(baseRel, ignoreCase = true)) return null
+            val parts = docRel.substring(baseRel.length).split('/').filter { it.isNotBlank() }
+            if (parts.isEmpty()) null
+            else parts.dropLast(1) to parts.last().substringBeforeLast('.')
+        } catch (t: Throwable) {
+            Log.d(TAG, "Sidecar location undecodable for $docUriString: ${t.message}")
+            null
+        }
     }
 
     /**

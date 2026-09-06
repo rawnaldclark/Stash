@@ -346,6 +346,7 @@ class DownloadManager @Inject constructor(
             album = effectiveTrack.album.ifEmpty { null },
             title = effectiveTrack.title,
             format = downloadedFile.extension,
+            trackId = track.id,
         )
 
         // Clean up the previous file if the canonicalizer renamed the

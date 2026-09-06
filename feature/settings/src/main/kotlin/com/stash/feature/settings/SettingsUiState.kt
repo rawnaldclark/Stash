@@ -153,6 +153,19 @@ data class SettingsUiState(
      */
     val moveLibraryState: com.stash.data.download.files.MoveLibraryState =
         com.stash.data.download.files.MoveLibraryState.Idle,
+    /**
+     * Folder structure new downloads are filed under (#198/#104). Changing
+     * it does not move files; see [reorganizeLibraryState] for the explicit
+     * relocation pass.
+     */
+    val libraryLayout: com.stash.core.data.prefs.LibraryLayout =
+        com.stash.core.data.prefs.LibraryLayout.DEFAULT,
+    /**
+     * Live state of the one-shot "Reorganize library" pass that relocates
+     * already-downloaded tracks into [libraryLayout]'s structure.
+     */
+    val reorganizeLibraryState: com.stash.data.download.files.ReorganizeLibraryState =
+        com.stash.data.download.files.ReorganizeLibraryState.Idle,
     /** Last.fm connection state — drives the Settings → Last.fm section. */
     val lastFmState: LastFmAuthState = LastFmAuthState.NotConfigured,
     /** True while a manual scrobble-drain is in-flight. */

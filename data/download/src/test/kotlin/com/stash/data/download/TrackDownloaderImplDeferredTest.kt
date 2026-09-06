@@ -89,11 +89,10 @@ class TrackDownloaderImplDeferredTest {
 
         val outcome = newSubject().downloadTrack(stubTrack(id = 7L))
 
+        // Production translates Deferred via deferIfInProgress (atomic
+        // IN_PROGRESS → WAITING_FOR_LOSSLESS claim), not a bare updateStatus.
         coVerify {
-            downloadQueueDao.updateStatus(
-                id = 42L,
-                status = DownloadStatus.WAITING_FOR_LOSSLESS,
-            )
+            downloadQueueDao.deferIfInProgress(42L)
         }
         assertTrue(
             "expected TrackDownloadOutcome.Deferred, got $outcome",

@@ -137,6 +137,7 @@ class SwapCoordinator @Inject constructor(
                     album = null,
                     title = title,
                     format = result.file.extension,
+                    trackId = trackId,
                 )
                 // Validate before committing the swap: a "successful" yt-dlp run
                 // can still produce a tiny error body. If so, discard it and

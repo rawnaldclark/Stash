@@ -32,6 +32,7 @@ class StoragePreferencesManager @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : StoragePreference {
     private val externalTreeUriKey = stringPreferencesKey("external_tree_uri")
+    private val libraryLayoutKey = stringPreferencesKey("library_layout")
 
     override val externalTreeUri: Flow<Uri?> = context.storageDataStore.data.map { prefs ->
         prefs[externalTreeUriKey]?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
@@ -44,6 +45,16 @@ class StoragePreferencesManager @Inject constructor(
             } else {
                 prefs[externalTreeUriKey] = uri.toString()
             }
+        }
+    }
+
+    override val libraryLayout: Flow<LibraryLayout> = context.storageDataStore.data.map { prefs ->
+        LibraryLayout.fromKey(prefs[libraryLayoutKey])
+    }
+
+    override suspend fun setLibraryLayout(layout: LibraryLayout) {
+        context.storageDataStore.edit { prefs ->
+            prefs[libraryLayoutKey] = layout.key
         }
     }
 }
