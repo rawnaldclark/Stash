@@ -147,6 +147,9 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var innerTubeClient: com.stash.data.ytmusic.InnerTubeClient
 
+    @Inject
+    lateinit var playerRepository: com.stash.core.media.PlayerRepositoryImpl
+
     /**
      * v0.9.17: eager-bound observer that enqueues [LosslessRetryWorker]
      * on cookie change / lastKnownBadCookie clear / circuit-breaker
@@ -256,6 +259,11 @@ class StashApplication : Application(), Configuration.Provider {
                     // sources nothing consults. Uncomment on re-enable.
                     // squidCookieAutoRefresher.start()
                     // kennyyHealthProbe.start()
+                    // The playback service stops itself after five idle minutes and the
+                    // controller drops with it; the next tap then pays ~1 s of service
+                    // start (Pixel 6, 2026-09-06). Reconnect while the user is still
+                    // looking, so the first tap after coming back starts at once.
+                    playerRepository.warmUp()
                 }
 
                 override fun onStop(owner: LifecycleOwner) {

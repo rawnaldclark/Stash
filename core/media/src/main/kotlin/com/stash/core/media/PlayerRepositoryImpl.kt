@@ -1702,6 +1702,16 @@ class PlayerRepositoryImpl @Inject constructor(
      * process) alive forever. A cached-but-disconnected controller (service
      * stopped between builds) is released and rebuilt rather than returned.
      */
+    /**
+     * Reconnects the controller (and so starts the playback service) ahead of
+     * a tap: called when the app comes to the foreground. A no-op while
+     * connected; after the service's idle self-stop this is the ~1 s the
+     * first play would otherwise wait.
+     */
+    fun warmUp() {
+        scope.launch { ensureController() }
+    }
+
     private suspend fun ensureController(): MediaController? {
         controllerDeferred?.let { if (it.isConnected) return it }
 
