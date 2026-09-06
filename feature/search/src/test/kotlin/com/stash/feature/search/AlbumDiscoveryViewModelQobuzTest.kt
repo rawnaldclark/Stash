@@ -125,7 +125,7 @@ class AlbumDiscoveryViewModelQobuzTest {
         vm.playAlbum(0); advanceUntilIdle()
 
         val cap = argumentCaptor<List<Track>>()
-        verify(player).setQueue(cap.capture(), eq(0))
+        verify(player).setQueue(cap.capture(), eq(0), any())
         assertEquals(listOf(1001L, 1002L), cap.firstValue.map { it.id })
         assertTrue(cap.firstValue.all { it.youtubeId == null })
     }
@@ -146,7 +146,7 @@ class AlbumDiscoveryViewModelQobuzTest {
         vm.playAlbum(0); advanceUntilIdle()
 
         val cap = argumentCaptor<List<Track>>()
-        verify(player).setQueue(cap.capture(), eq(0))
+        verify(player).setQueue(cap.capture(), eq(0), any())
         assertEquals(listOf(2001L, 2002L), cap.firstValue.map { it.id })
         assertTrue(cap.firstValue.all { it.youtubeId == null })
     }

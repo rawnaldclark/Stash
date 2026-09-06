@@ -163,7 +163,7 @@ class HomeViewModelTest {
         runCurrent()
 
         val queueCaptor = argumentCaptor<List<Track>>()
-        verifyBlocking(playerRepo) { setQueue(queueCaptor.capture(), any()) }
+        verifyBlocking(playerRepo) { setQueue(queueCaptor.capture(), any(), any()) }
         assertThat(queueCaptor.firstValue.map { it.id }).containsExactly(1L)
     }
 
@@ -183,7 +183,7 @@ class HomeViewModelTest {
         runCurrent()
 
         val queueCaptor = argumentCaptor<List<Track>>()
-        verifyBlocking(playerRepo) { setQueue(queueCaptor.capture(), any()) }
+        verifyBlocking(playerRepo) { setQueue(queueCaptor.capture(), any(), any()) }
         assertThat(queueCaptor.firstValue.map { it.id }).containsExactly(1L, 42L)
     }
 

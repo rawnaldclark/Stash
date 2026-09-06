@@ -253,7 +253,7 @@ class ArtistProfileViewModelTest {
 
         val tracksCaptor = argumentCaptor<List<Track>>()
         val startCaptor = argumentCaptor<Int>()
-        verify(player).setQueue(tracksCaptor.capture(), startCaptor.capture())
+        verify(player).setQueue(tracksCaptor.capture(), startCaptor.capture(), any())
         assertEquals(listOf("v1", "v2", "v3"), tracksCaptor.firstValue.map { it.youtubeId })
         assertEquals(0, startCaptor.firstValue)
     }
@@ -304,7 +304,7 @@ class ArtistProfileViewModelTest {
 
         // First call: setQueue with the [x] popular track.
         val initialTracks = argumentCaptor<List<Track>>()
-        verify(player).setQueue(initialTracks.capture(), eq(0))
+        verify(player).setQueue(initialTracks.capture(), eq(0), any())
         assertEquals(listOf("x"), initialTracks.firstValue.map { it.youtubeId })
 
         // Second call: addToQueue with album tracks minus the dup ("x"), so [b, c].
@@ -337,7 +337,7 @@ class ArtistProfileViewModelTest {
             assertEquals("No tracks available for this artist", awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
-        verify(player, never()).setQueue(any(), any())
+        verify(player, never()).setQueue(any(), any(), any())
         verify(player, never()).addToQueue(any<List<Track>>())
     }
 
@@ -382,7 +382,7 @@ class ArtistProfileViewModelTest {
         // setQueue is called exactly twice (once per playArtist invocation),
         // but addToQueue must never fire because both album fetches are still
         // gated and the prior fill job was cancelled before it could append.
-        verify(player, org.mockito.kotlin.times(2)).setQueue(any(), eq(0))
+        verify(player, org.mockito.kotlin.times(2)).setQueue(any(), eq(0), any())
         verify(player, never()).addToQueue(any<List<Track>>())
     }
 
@@ -445,7 +445,7 @@ class ArtistProfileViewModelTest {
         // and queued with null youtubeId (they resolve lossless via qbdlx).
         verify(albumCache).get(eq("Q1"), eq(com.stash.data.ytmusic.model.AlbumSource.QOBUZ))
         val queued = argumentCaptor<List<Track>>()
-        verify(player).setQueue(queued.capture(), eq(0))
+        verify(player).setQueue(queued.capture(), eq(0), any())
         assertEquals(listOf(2001L, 2002L), queued.firstValue.map { it.id })
         assertTrue(queued.firstValue.all { it.youtubeId == null })
     }
