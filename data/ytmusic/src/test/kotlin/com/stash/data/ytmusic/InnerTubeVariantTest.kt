@@ -42,9 +42,9 @@ class InnerTubeVariantTest {
         assertFalse(vr.sendsApiKey)
     }
 
-    @Test fun audio_variant_order_tries_android_vr_then_ios() {
+    @Test fun audio_variant_order_tries_android_vr_then_ios_then_the_apple_fallbacks() {
         assertEquals(
-            listOf(InnerTubeVariant.ANDROID_VR, InnerTubeVariant.IOS),
+            listOf(InnerTubeVariant.ANDROID_VR, InnerTubeVariant.IOS, InnerTubeVariant.VISIONOS, InnerTubeVariant.IPADOS),
             InnerTubeClient.AUDIO_VARIANT_ORDER,
         )
     }

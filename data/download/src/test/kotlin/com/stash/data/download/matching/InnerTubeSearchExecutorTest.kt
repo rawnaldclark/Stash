@@ -98,7 +98,7 @@ class InnerTubeSearchExecutorTest {
         val playerResponse = Json.parseToJsonElement(
             loadFixture("innertube_player_smooth_criminal_omv.json"),
         ).jsonObject
-        runBlocking { whenever(inner.player(any(), any())).thenReturn(playerResponse) }
+        runBlocking { whenever(inner.player(any(), any(), anyOrNull())).thenReturn(playerResponse) }
         val executor = InnerTubeSearchExecutor(inner)
 
         val verification = executor.verifyVideo("h_D3VFfhvs4")
