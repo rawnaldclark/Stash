@@ -10,6 +10,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -53,26 +57,48 @@ class PreviewUrlExtractorTest {
     }
 
     @Test
-    fun `race cancels ytdlp when innertube wins`() = runTest {
-        val ytDlpCancelled = AtomicBoolean(false)
+    fun `yt-dlp never starts when innertube answers within the grace period`() = runTest {
+        val ytDlpStarted = AtomicBoolean(false)
         val hooks = TestableExtractor(
-            innertube = { "https://fast/$it" },
-            ytdlp = {
-                try {
-                    delay(2_000); "https://slow/$it"
-                } catch (ce: kotlinx.coroutines.CancellationException) {
-                    // Narrow to CancellationException so we don't flag
-                    // an unrelated throw as a cancellation signal.
-                    ytDlpCancelled.set(true); throw ce
-                }
-            },
+            innertube = { delay(500); "https://fast/$it" },
+            ytdlp = { ytDlpStarted.set(true); "https://slow/$it" },
         )
-        PreviewUrlExtractor.raceForTest(hooks, "abc")
-        // Drain pending tasks on the test scheduler so the cancellation
-        // propagates deterministically. runCurrent() is precise; delay()
-        // would advance virtual time arbitrarily.
-        runCurrent()
-        assertTrue(ytDlpCancelled.get())
+        val url = PreviewUrlExtractor.raceForTest(hooks, "abc", this)
+        advanceUntilIdle()
+        assertEquals("https://fast/abc", url)
+        // A Python process spawn for a track InnerTube already served is pure waste.
+        assertTrue("yt-dlp must not have started", !ytDlpStarted.get())
+    }
+
+    /**
+     * Pixel 6, 2026-09-06 16:53: InnerTube served 'Rock Your Body' in 1.1 s, yet
+     * the resolve returned after 14.2 s — the moment the yt-dlp process, started
+     * alongside and cancelled on the win, finally finished. A cancelled yt-dlp
+     * child cannot be interrupted mid-process, so the caller must not wait for it.
+     */
+    @Test
+    fun `an innertube win returns at once even while a yt-dlp process is still running`() = runTest {
+        val hooks = TestableExtractor(
+            innertube = { delay(2_000); "https://fast/$it" }, // past the grace period: yt-dlp is running
+            ytdlp = { withContext(NonCancellable) { delay(14_000) }; "https://slow/$it" }, // a JNI call cannot be interrupted
+        )
+        val started = currentTime
+        val url = PreviewUrlExtractor.raceForTest(hooks, "abc", this)
+        val elapsed = currentTime - started
+        assertEquals("https://fast/abc", url)
+        assertEquals("the caller must not wait for the yt-dlp process", 2_000L, elapsed)
+    }
+
+    @Test
+    fun `yt-dlp starts the moment innertube fails fast`() = runTest {
+        val ytDlpStartedAt = java.util.concurrent.atomic.AtomicLong(-1)
+        val hooks = TestableExtractor(
+            innertube = { delay(200); null },
+            ytdlp = { ytDlpStartedAt.set(currentTime); "https://slow/$it" },
+        )
+        val url = PreviewUrlExtractor.raceForTest(hooks, "abc", this)
+        assertEquals("https://slow/abc", url)
+        assertEquals("yt-dlp must start on the fast failure, not after the grace period", 200L, ytDlpStartedAt.get())
     }
 
     @Test

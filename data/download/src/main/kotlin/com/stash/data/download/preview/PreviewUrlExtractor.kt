@@ -19,6 +19,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentHashMap
@@ -216,6 +219,8 @@ class PreviewUrlExtractor @Inject constructor(
          * same videoId never reach the semaphore at all.
          */
         private const val INNERTUBE_CONCURRENCY = 8
+        /** How long InnerTube gets to answer before yt-dlp is started alongside it. */
+        internal const val YTDLP_GRACE_MS = 1_500L
         private const val YTDLP_CONCURRENCY = 1   // was 2 — see spec
 
         /** Upper bound on [observedCodecs] before it is dropped wholesale. */
@@ -321,13 +326,18 @@ class PreviewUrlExtractor @Inject constructor(
          * Test-only: exercises [race] directly without Android deps. Reuses
          * the shared semaphores so the tests also assert the real caps.
          */
-        internal suspend fun raceForTest(hooks: TestHooks, videoId: String): String =
+        internal suspend fun raceForTest(
+            hooks: TestHooks,
+            videoId: String,
+            scope: CoroutineScope? = null,
+        ): String =
             race(
                 videoId = videoId,
                 innerTubeExtract = hooks::innerTubeExtract,
                 ytDlpExtract = hooks::ytDlpExtract,
                 itSem = innerTubeSemaphore,
                 ytSem = ytDlpSemaphore,
+                scope = scope ?: CoroutineScope(currentCoroutineContext() + SupervisorJob()),
             )
 
         /**
@@ -352,32 +362,45 @@ class PreviewUrlExtractor @Inject constructor(
             ytDlpExtract: suspend (String) -> String,
             itSem: Semaphore,
             ytSem: Semaphore,
-        ): String = coroutineScope {
-            val inner = async {
-                itSem.acquire()
-                try {
-                    // Treat any non-cancellation failure as null so the
-                    // race falls back to yt-dlp. CancellationException MUST
-                    // propagate to preserve structured concurrency.
+            scope: CoroutineScope,
+            ytDlpGraceMs: Long = YTDLP_GRACE_MS,
+        ): String {
+            // Both lanes run in the extractor's own scope, not the caller's: when
+            // InnerTube wins, the caller returns at once and a yt-dlp process already
+            // running is left to finish on its own (a JNI call cannot be interrupted;
+            // its permit is released when it ends). Pixel 6, 2026-09-06: InnerTube served
+            // in 1.1 s, the old coroutineScope waited 14.2 s for the cancelled yt-dlp
+            // child, and the user heard the track 14 s after the tap.
+            val inner = scope.async {
+                itSem.withPermit {
+                    // Treat any non-cancellation failure as null so the race falls back
+                    // to yt-dlp. CancellationException MUST propagate.
                     runCatching { innerTubeExtract(videoId) }
-                        .getOrElse { t ->
-                            if (t is CancellationException) throw t
-                            null
-                        }
-                } finally {
-                    itSem.release()
+                        .getOrElse { t -> if (t is CancellationException) throw t; null }
                 }
             }
-            val yt = async {
-                ytSem.acquire()
-                try { ytDlpExtract(videoId) } finally { ytSem.release() }
+            // yt-dlp joins late: after the grace period without an InnerTube answer, or
+            // at once when InnerTube fails fast. A track InnerTube serves never spawns
+            // the Python process at all.
+            val yt = scope.async(start = CoroutineStart.LAZY) {
+                ytSem.withPermit { ytDlpExtract(videoId) }
             }
-            val itResult = inner.await()
-            if (itResult != null) {
-                yt.cancel(CancellationException("InnerTube won the race"))
-                itResult
-            } else {
-                yt.await()
+            val quick = withTimeoutOrNull(ytDlpGraceMs) { inner.await() }
+            if (quick != null) {
+                yt.cancel() // never started: complete it so the scope does not carry a lazy job forever
+                return quick
+            }
+            yt.start()
+            if (inner.isCompleted) return yt.await() // InnerTube failed fast: yt-dlp decides
+            // InnerTube still running past the grace period: first useful answer wins.
+            val fromInner = select<String?> {
+                inner.onAwait { it }
+                yt.onAwait { it }
+            }
+            return when {
+                inner.isCompleted && fromInner != null -> fromInner.also { yt.cancel(CancellationException("InnerTube won the race")) }
+                inner.isCompleted -> yt.await()   // InnerTube missed after all
+                else -> fromInner ?: yt.await()   // yt-dlp answered first
             }
         }
     }
@@ -518,6 +541,7 @@ class PreviewUrlExtractor @Inject constructor(
                 },
                 itSem = innerTubeSemaphore,
                 ytSem = ytDlpSemaphore,
+                scope = extractorScope,
             )
             Log.d("LATDIAG", "extract-end videoId=$videoId dt=${System.currentTimeMillis() - t0}ms")
             url
