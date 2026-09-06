@@ -3,8 +3,10 @@ package com.stash.data.ytmusic
 import android.util.Log
 import com.stash.core.model.SyncResult
 import com.stash.data.ytmusic.model.AlbumDetail
+import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistProfile
+import com.stash.data.ytmusic.model.PagedAlbums
 import com.stash.data.ytmusic.model.ArtistSummary
 import com.stash.data.ytmusic.model.MusicVideoType
 import com.stash.data.ytmusic.model.PagedPlaylists
@@ -58,6 +60,15 @@ class YTMusicApiClient @Inject constructor(
          * system, so [getPlaylistTracks] works without modification.
          */
         private const val BROWSE_LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
+
+        /**
+         * Library Albums tab — albums the user saved (heart/"Add to library"
+         * on an album page). Same `gridRenderer` shape as
+         * [BROWSE_LIBRARY_PLAYLISTS], but each tile's browseId is an
+         * `MPREb_…` album id rather than a `VL…` playlist id, so it must be
+         * fetched via [getAlbum], not [getPlaylistTracks].
+         */
+        private const val BROWSE_LIBRARY_ALBUMS = "FEmusic_liked_albums"
 
         /** Safety cap on continuation depth. ~10K items @ 100/page. */
         internal const val MAX_PAGES = 100
@@ -188,6 +199,205 @@ class YTMusicApiClient @Inject constructor(
                 partial = paginated.partial,
                 partialReason = paginated.partialReason,
             )
+        )
+    }
+
+    /**
+     * Fetches the authenticated user's Library → Albums tab — every album
+     * they saved. Each entry is a summary only (title/artist/cover); the
+     * caller must follow up with [getAlbum] per album to get its tracklist,
+     * since album browseIds don't resolve through [getPlaylistTracks].
+     *
+     * Requires a valid SAPISID cookie; an unauthenticated browse returns
+     * an empty library.
+     */
+    suspend fun getSavedAlbums(): SyncResult<PagedAlbums> {
+        val response = innerTubeClient.browse(BROWSE_LIBRARY_ALBUMS)
+            ?: return SyncResult.Error("InnerTube browse($BROWSE_LIBRARY_ALBUMS) returned null")
+
+        val paginated = paginateBrowse(response) { page ->
+            val isContinuation = page["continuationContents"] != null || page["onResponseReceivedActions"] != null
+            if (isContinuation) parseSavedAlbumsContinuationPage(page) else parseSavedAlbums(page)
+        }
+
+        // paginateBrowse's own partial/continuation detection is blind here:
+        // extractContinuationToken has no gridContinuation case, so it always
+        // reports "no more pages" for the Albums grid even when a second page
+        // exists. Detect that specific blind spot directly on the raw initial
+        // response rather than trusting paginated.partial, which would silently
+        // report SUCCESS on a truncated fetch. Only true when a real
+        // continuation was actually present and NOT followed — not a blanket
+        // assumption — so a single-page library (the common case) is reported
+        // complete, same as before this fetch existed.
+        val gridTruncated = gridHasUnhandledContinuation(response)
+        val partial = paginated.partial || gridTruncated
+        val partialReason = when {
+            paginated.partial -> paginated.partialReason
+            gridTruncated -> "saved-albums grid has a continuation token but grid pagination isn't implemented — fetched page 1 only"
+            else -> null
+        }
+
+        if (paginated.items.isEmpty()) {
+            return SyncResult.Empty("Library returned no albums")
+        }
+        return SyncResult.Success(
+            PagedAlbums(
+                albums = paginated.items,
+                partial = partial,
+                partialReason = partialReason,
+            )
+        )
+    }
+
+    /**
+     * Detects whether the saved-albums grid response carries a continuation
+     * token that [extractContinuationToken] doesn't know how to walk (no
+     * `gridContinuation` case exists yet). A false negative here just means
+     * an unverified-but-actually-single-page library reports complete, which
+     * is correct; a false positive costs one unnecessary "incomplete" flag
+     * for a run that was actually fine — the safer direction to be wrong in.
+     */
+    private fun gridHasUnhandledContinuation(response: JsonObject): Boolean {
+        val sections = response.navigatePath(
+            "contents", "singleColumnBrowseResultsRenderer", "tabs",
+        )?.firstArray()?.firstOrNull()?.asObject()
+            ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
+            ?.asArray() ?: return false
+
+        for (section in sections) {
+            val grid = section.asObject()?.get("gridRenderer")?.asObject() ?: continue
+            val items = grid["items"]?.asArray()
+            val trailingContinuationItem = items?.lastOrNull()?.asObject()
+                ?.containsKey("continuationItemRenderer") == true
+            val shelfLevelContinuation = grid["continuations"]?.asArray()?.isNotEmpty() == true
+            if (trailingContinuationItem || shelfLevelContinuation) return true
+        }
+        return false
+    }
+
+    /**
+     * Extracts saved albums from the `FEmusic_liked_albums` browse response.
+     * Mirrors [parseUserPlaylists]'s dual-shape walk (grid vs. shelf); the
+     * only structural difference is the tile's browseId prefix (`MPREb_`
+     * instead of `VL`) and its subtitle content (artist/year, not track count).
+     */
+    private fun parseSavedAlbums(response: JsonObject): List<AlbumSummary> {
+        val albums = mutableListOf<AlbumSummary>()
+        val seenIds = mutableSetOf<String>()
+
+        val tabs = response.navigatePath(
+            "contents", "singleColumnBrowseResultsRenderer", "tabs",
+        )?.asArray() ?: return emptyList()
+
+        for (tab in tabs) {
+            val sections = tab.asObject()
+                ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
+                ?.asArray()
+                ?: continue
+
+            for (section in sections) {
+                val sectionObj = section.asObject() ?: continue
+
+                val gridItems = sectionObj
+                    .get("gridRenderer")?.asObject()
+                    ?.get("items")?.asArray()
+                val itemSectionGridItems = sectionObj
+                    .get("itemSectionRenderer")?.asObject()
+                    ?.get("contents")?.asArray()
+                    ?.firstOrNull()?.asObject()
+                    ?.get("gridRenderer")?.asObject()
+                    ?.get("items")?.asArray()
+
+                val items = gridItems ?: itemSectionGridItems ?: continue
+
+                for (item in items) {
+                    val renderer = item.asObject()
+                        ?.get("musicTwoRowItemRenderer")?.asObject()
+                        ?: continue
+
+                    val album = parseSingleAlbumFromTwoRowRenderer(renderer) ?: continue
+                    if (!seenIds.add(album.id)) continue
+                    albums.add(album)
+                }
+            }
+        }
+
+        Log.d(TAG, "parseSavedAlbums: found ${albums.size} library albums")
+        return albums
+    }
+
+    /**
+     * Continuation-shape parser for the saved-albums grid. UNVERIFIED against
+     * a live paginated response — modeled on ytmusicapi's `gridContinuation`
+     * shape, the album-grid analogue of [parseUserPlaylistsContinuationPage]'s
+     * `musicShelfContinuation`. If a user's library is large enough to
+     * paginate and albums stop appearing past the first page, check this
+     * path first — [extractContinuationToken] may need a matching
+     * `gridContinuation` case added alongside its existing shapes.
+     */
+    private fun parseSavedAlbumsContinuationPage(response: JsonObject): List<AlbumSummary> {
+        val items = response.navigatePath(
+            "continuationContents", "gridContinuation", "items",
+        )?.asArray() ?: return emptyList()
+        val out = mutableListOf<AlbumSummary>()
+        for (item in items) {
+            val renderer = item.asObject()?.get("musicTwoRowItemRenderer")?.asObject() ?: continue
+            parseSingleAlbumFromTwoRowRenderer(renderer)?.let { out.add(it) }
+        }
+        return out
+    }
+
+    /**
+     * Parses one album tile from a `musicTwoRowItemRenderer`. Rejects
+     * anything whose browseId isn't album-shaped (`MPREb_`) — the Library
+     * Albums grid is expected to be album-only, but this guards against an
+     * unexpected tile type (e.g. a "Browse more" card) the same way
+     * [parseSinglePlaylistFromTwoRowRenderer] guards on `VL`.
+     *
+     * The subtitle for an album tile is typically "Album • <Artist> • <Year>"
+     * (no fixed run count observed live) — extracted defensively by
+     * excluding known type words and a bare 4-digit year rather than by
+     * fixed run index.
+     */
+    private fun parseSingleAlbumFromTwoRowRenderer(renderer: JsonObject): AlbumSummary? {
+        val browseId = renderer.navigatePath(
+            "navigationEndpoint", "browseEndpoint", "browseId",
+        )?.asString() ?: return null
+        if (!browseId.startsWith("MPREb")) return null
+
+        val title = renderer["title"]?.asObject()
+            ?.get("runs")?.asArray()
+            ?.firstOrNull()?.asObject()
+            ?.get("text")?.asString()
+            ?: return null
+
+        val thumbnailUrl = renderer.navigatePath(
+            "thumbnailRenderer", "musicThumbnailRenderer",
+            "thumbnail", "thumbnails",
+        )?.firstArray()?.lastOrNull()
+            ?.asObject()?.get("url")?.asString()
+            ?.let { com.stash.core.common.ArtUrlUpgrader.upgrade(it) }
+
+        val subtitleRuns = renderer["subtitle"]?.asObject()
+            ?.get("runs")?.asArray()
+            ?.mapNotNull { it.asObject()?.get("text")?.asString() }
+            ?: emptyList()
+        val yearRegex = Regex("""^\d{4}$""")
+        val year = subtitleRuns.firstOrNull { it.matches(yearRegex) }
+        val artist = subtitleRuns.firstOrNull { run ->
+            run.isNotBlank() &&
+                run != "Album" && run != "EP" && run != "Single" &&
+                run.trim() != "•" &&
+                !run.matches(yearRegex)
+        } ?: ""
+
+        return AlbumSummary(
+            id = browseId,
+            title = title,
+            artist = artist,
+            thumbnailUrl = thumbnailUrl,
+            year = year,
+            source = AlbumSource.YOUTUBE,
         )
     }
 

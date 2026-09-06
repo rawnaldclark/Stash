@@ -889,7 +889,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         markYoutubeIncomplete("getUserPlaylists: ${result.message}")
                     }
                 }
-            if (!likedDeferred.await()) markYoutubeIncomplete("getLikedSongs leg failed")
+                val albumsDeferred = async { fetchAndSnapshotSavedAlbums(sem, syncId, diagnostics) }
+
+                if (!likedDeferred.await()) markYoutubeIncomplete("getLikedSongs leg failed")
+                albumsDeferred.await()
             }
         } catch (e: Exception) {
             Log.e(TAG, "YouTube Music fetch failed, continuing with other services", e)
@@ -1072,6 +1075,126 @@ class PlaylistFetchWorker @AssistedInject constructor(
         }
         reportPlaylistFetched()
         return true
+    }
+
+        /**
+     * Fetches the user's saved-albums list, then fans out one [getAlbum]
+     * call per album to pull its tracklist and snapshot it — same pattern
+     * as the home-mix / user-playlist fan-outs above, gated by the same
+     * [sem] semaphore via the caller.
+     */
+    private suspend fun fetchAndSnapshotSavedAlbums(
+        sem: Semaphore,
+        syncId: Long,
+        diagnostics: MutableList<SyncStepResult>,
+    ) {
+        when (val result = ytMusicApiClient.getSavedAlbums()) {
+            is SyncResult.Success -> {
+                val paged = result.data
+                diagnostics.add(
+                    SyncStepResult(
+                        "YOUTUBE",
+                        "getSavedAlbums",
+                        StepStatus.SUCCESS,
+                        paged.albums.size,
+                        errorMessage = if (paged.partial) paged.partialReason else null,
+                    )
+                )
+                // Only flip the shared completeness flag on a REAL detected
+                // truncation (see gridHasUnhandledContinuation) — the flag
+                // gates deactivateMissingForSource for every YouTube-source
+                // playlist this run, saved albums included now that they're
+                // typed CUSTOM (#343/#348). A common, non-paginated library
+                // must never suppress that cleanup; a genuinely truncated one
+                // correctly should, exactly like a truncated playlist fetch
+                // already does.
+                if (paged.partial) markYoutubeIncomplete("getSavedAlbums partial: ${paged.partialReason}")
+                Log.d(TAG, "fetchAndSnapshotSavedAlbums: found ${paged.albums.size} saved albums")
+                coroutineScope {
+                    paged.albums.map { album ->
+                        async { sem.withPermit { fetchAndSnapshotSavedAlbum(album, syncId, diagnostics) } }
+                    }.awaitAll()
+                }
+            }
+            is SyncResult.Empty -> {
+                diagnostics.add(SyncStepResult("YOUTUBE", "getSavedAlbums", StepStatus.EMPTY, errorMessage = result.reason))
+                Log.d(TAG, "fetchAndSnapshotSavedAlbums: no saved albums: ${result.reason}")
+            }
+            is SyncResult.Error -> {
+                diagnostics.add(SyncStepResult("YOUTUBE", "getSavedAlbums", StepStatus.ERROR, errorMessage = result.message))
+                Log.e(TAG, "fetchAndSnapshotSavedAlbums: error: ${result.message}")
+                markYoutubeIncomplete("getSavedAlbums: ${result.message}")
+            }
+        }
+    }
+
+    /**
+     * Fetches one saved album's full tracklist via [YTMusicApiClient.getAlbum]
+     * (album browseIds don't route through [YTMusicApiClient.getPlaylistTracks])
+     * and writes snapshot rows. Own try/catch so one album failing doesn't
+     * abort the rest.
+     *
+     * [getAlbum] never returns null — per its kdoc, a failed/blocked fetch
+     * comes back with a blank title, which is treated as a per-album failure
+     * here (mirrors the playlist legs' `SyncResult.Error` handling).
+     */
+    private suspend fun fetchAndSnapshotSavedAlbum(
+        album: com.stash.data.ytmusic.model.AlbumSummary,
+        syncId: Long,
+        diagnostics: MutableList<SyncStepResult>,
+    ) {
+        try {
+            val detail = ytMusicApiClient.getAlbum(album.id)
+            if (detail.title.isBlank()) {
+                Log.w(TAG, "fetchAndSnapshotSavedAlbum: empty detail for '${album.title}' (${album.id})")
+                markYoutubeIncomplete("album '${album.title}' detail fetch failed")
+                reportPlaylistFetched()
+                return
+            }
+            val coverUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
+                detail.thumbnailUrl ?: album.thumbnailUrl,
+            )
+            val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
+                RemotePlaylistSnapshotEntity(
+                    syncId = syncId,
+                    source = MusicSource.YOUTUBE,
+                    sourcePlaylistId = album.id,
+                    playlistName = detail.title,
+                    // CUSTOM, not a dedicated ALBUM type — see PR discussion.
+                    // A saved album is diffed, toggled, and deactivated
+                    // through the exact same path as any synced playlist;
+                    // no code path needs to distinguish them yet, and adding
+                    // a type without a display/filter surface everywhere
+                    // PlaylistType is switched on is worse than not adding it.
+                    playlistType = PlaylistType.CUSTOM,
+                    trackCount = detail.tracks.size,
+                    artUrl = coverUrl,
+                )
+            )
+            val trackSnapshots = detail.tracks.mapIndexed { position, track ->
+                RemoteTrackSnapshotEntity(
+                    syncId = syncId,
+                    snapshotPlaylistId = playlistSnapshotId,
+                    title = track.title,
+                    artist = track.artist,
+                    album = track.album ?: detail.title,
+                    durationMs = (track.durationSeconds * 1000).toLong(),
+                    youtubeId = track.videoId,
+                    albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
+                        track.thumbnailUrl ?: detail.thumbnailUrl,
+                    ),
+                    position = position,
+                )
+            }
+            if (trackSnapshots.isNotEmpty()) {
+                remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.e(TAG, "fetchAndSnapshotSavedAlbum: exception for '${album.title}'", e)
+            markYoutubeIncomplete("album '${album.title}' exception: ${e.message}")
+        }
+        reportPlaylistFetched()
     }
 
     /**
