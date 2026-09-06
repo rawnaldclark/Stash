@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -70,4 +71,27 @@ class PreviewPrefetcherTest {
         verify(ex, never()).extractStreamUrl(eq("a"), any(), any())
         verify(ex).extractStreamUrl(eq("b"), any(), any())
     }
+
+    /**
+     * 2026-09-06 on the Pixel 6: five search results were prefetched with the
+     * yt-dlp lane allowed, the lane is a single slot, and the track the user
+     * actually tapped waited 27 s behind them. Speculative work takes the
+     * cheap InnerTube lane only; a miss there is recovered on the tap itself.
+     */
+    @Test
+    fun `prefetch never spends the yt-dlp lane`() = runTest {
+        val ex = mock<PreviewUrlExtractor> {
+            onBlocking { extractStreamUrl(any(), any(), any()) } doAnswer { "https://fast/" + it.getArgument<String>(0) }
+        }
+        val cache = mutableMapOf<String, String>()
+        val prefetcher = PreviewPrefetcher(ex, cache, this)
+
+        prefetcher.prefetch(listOf("a", "b"))
+        advanceUntilIdle()
+
+        verify(ex).extractStreamUrl(eq("a"), eq(false), any())
+        verify(ex).extractStreamUrl(eq("b"), eq(false), any())
+        verify(ex, never()).extractStreamUrl(any(), eq(true), any())
+    }
 }
+

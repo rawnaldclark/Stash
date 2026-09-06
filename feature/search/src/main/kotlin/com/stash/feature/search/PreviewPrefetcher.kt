@@ -68,7 +68,11 @@ class PreviewPrefetcher(
             .forEach { id ->
                 val job = scope.launch {
                     try {
-                        previewUrlCache[id] = extractor.extractStreamUrl(id)
+                        // Speculative work takes the cheap InnerTube lane only. The yt-dlp
+                        // lane is a single slot: with it allowed here, five prefetched
+                        // results made the tapped track wait 27 s (Pixel 6, 2026-09-06).
+                        // A miss here is recovered by the tap itself, which may use yt-dlp.
+                        previewUrlCache[id] = extractor.extractStreamUrl(id, allowYtDlp = false)
                     } catch (t: Throwable) {
                         if (t is CancellationException) throw t
                         Log.w(TAG, "prefetch fail $id: ${t.message}")
