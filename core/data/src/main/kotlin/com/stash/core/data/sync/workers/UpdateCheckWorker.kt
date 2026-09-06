@@ -311,10 +311,11 @@ class UpdateCheckWorker(
             PackageManager.MATCH_ALL,
         ).mapNotNull { it.activityInfo?.packageName }.toSet()
 
-        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD_URL)).apply {
-            addCategory(Intent.CATEGORY_BROWSABLE)
-        }
-        val resolved = packageManager.queryIntentActivities(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD_URL))
+        val resolved = packageManager.queryIntentActivities(
+            browserIntent,
+            PackageManager.MATCH_DEFAULT_ONLY,
+        )
 
         // Prefer a resolver that's a genuine browser; otherwise fall back to
         // whatever the system resolved. Then make the launch explicit by
