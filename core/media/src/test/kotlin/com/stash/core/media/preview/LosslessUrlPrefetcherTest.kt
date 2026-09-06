@@ -9,6 +9,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -54,17 +55,21 @@ class LosslessUrlPrefetcherTest {
         coVerify(timeout = 1000) { registry.resolve(any(), bypassRateLimit = false) }
     }
 
-    @Test fun `warmUp spends nothing when the user's own account is not live`() = runTest {
+    @Test fun `warmUp spends nothing when the user's own account is not live`() = runBlocking {
         coEvery { availability.ownAccountLiveNow() } returns false
         coEvery { registry.resolve(any(), any()) } returns null
 
         LosslessUrlPrefetcher(registry, availability, losslessPrefs).warmUp(item)
 
+        // runBlocking, not runTest: delay() must spend REAL time here, because
+        // warmUp runs on the prefetcher's own IO scope, outside any test scheduler.
+        // Under runTest the delay skips instantly and the race is decided by the
+        // runner's speed (the CI-only failures of this class).
         delay(300) // give the IO-dispatched warmUp every chance to (wrongly) resolve
         coVerify(exactly = 0) { registry.resolve(any(), any()) }
     }
 
-    @Test fun `a skipped warmUp does not poison the next tap`() = runTest {
+    @Test fun `a skipped warmUp does not poison the next tap`() = runBlocking {
         coEvery { availability.ownAccountLiveNow() } returns false
         coEvery { registry.resolve(any(), any()) } returns null
         val prefetcher = LosslessUrlPrefetcher(registry, availability, losslessPrefs)
