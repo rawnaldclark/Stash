@@ -36,6 +36,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -281,6 +282,13 @@ class SearchDownloadCoordinatorCompletionTest {
         firstCollector.cancelAndJoin()
 
         val secondCollector = async { subject.download(track()).toList() }
+        // Let the second collector reach the in-flight map BEFORE the producer is
+        // released: the release lets performDownload finish on the coordinator's
+        // own IO scope, and its completion removes the entry. If the second
+        // collector is still only queued at that point, it finds nothing, starts
+        // a fresh producer, and the resolver is called twice — a slow runner lost
+        // that race on CI (runs 34042699358, 34040230128, 34002425891).
+        runCurrent()
         releaseResolver.complete(Unit)
         val statuses = secondCollector.await()
 
