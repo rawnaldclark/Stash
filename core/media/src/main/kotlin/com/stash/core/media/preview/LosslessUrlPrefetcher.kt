@@ -9,6 +9,7 @@ import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,16 +36,25 @@ import javax.inject.Singleton
  * which `StashApplication` invokes every 60s.
  */
 @Singleton
-class LosslessUrlPrefetcher @Inject constructor(
+class LosslessUrlPrefetcher internal constructor(
     private val registry: LosslessSourceRegistry,
     private val availability: LosslessAvailability,
     private val losslessPrefs: LosslessSourcePreferences,
+    /** Where warm-ups and lookups run; tests pass Unconfined or a test dispatcher. */
+    dispatcher: kotlinx.coroutines.CoroutineDispatcher,
 ) {
+    @Inject
+    constructor(
+        registry: LosslessSourceRegistry,
+        availability: LosslessAvailability,
+        losslessPrefs: LosslessSourcePreferences,
+    ) : this(registry, availability, losslessPrefs, Dispatchers.IO)
+
     // App-lifetime scope. The class is @Singleton so this scope lives
     // for the entire process; no leaks. (No Hilt-provided
     // ApplicationScope qualifier exists in this codebase, so we
     // instantiate inline rather than depending on a missing binding.)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
     private val cache = ConcurrentHashMap<String, CachedDeferred>()
     private val concurrency = Semaphore(MAX_CONCURRENT)
@@ -64,8 +74,13 @@ class LosslessUrlPrefetcher @Inject constructor(
         // ran for the entire life of the process, waking every minute to
         // sweep a map that is empty unless the user is browsing.
         cancelStale()
-        cache[key] = CachedDeferred(
-            deferred = scope.async {
+        // Store the entry BEFORE its body can run (LAZY start): with an eager
+        // start, a fast dispatcher ran the skip path's remove-by-key before the
+        // entry was stored, and the entry then landed as a completed null that
+        // the next tap read instead of resolving (the CI-only flake).
+        lateinit var entry: CachedDeferred
+        entry = CachedDeferred(
+            deferred = scope.async(start = CoroutineStart.LAZY) {
                 // Speculative work may only spend the user's OWN account. Every other
                 // lossless path is a shared, capped budget — the relay's per-account
                 // caps, ARCOD's daily quota — and on launch day browsing alone drained
@@ -75,7 +90,7 @@ class LosslessUrlPrefetcher @Inject constructor(
                 // streaming and downloads alike; this is the one lossless entry that does not
                 // go through StreamSourceRegistry, so it checks the switch itself).
                 if (!losslessPrefs.enabledNow() || !availability.ownAccountLiveNow()) {
-                    cache.remove(key)
+                    cache.remove(key, entry) // only our own entry, never a newer lookup's
                     return@async null
                 }
                 concurrency.withPermit {
@@ -92,6 +107,8 @@ class LosslessUrlPrefetcher @Inject constructor(
             },
             createdAt = System.currentTimeMillis(),
         )
+        cache[key] = entry
+        entry.deferred.start()
     }
 
     /**

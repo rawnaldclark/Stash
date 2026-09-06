@@ -8,6 +8,7 @@ import com.stash.data.download.lossless.LosslessSourceRegistry
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -98,4 +99,23 @@ class LosslessUrlPrefetcherTest {
         delay(300)
         coVerify(exactly = 0) { registry.resolve(any(), any()) }
     }
+
+    /**
+     * The CI flake, made deterministic. Unconfined runs the warm-up body the
+     * moment it is launched, BEFORE warmUp has stored its cache entry: the skip
+     * path's remove-by-key finds nothing, the entry lands afterwards as a
+     * completed null, and the next tap reads it instead of resolving. That is
+     * the "poison" the real-time test only caught on a slow runner.
+     */
+    @Test fun `a warm-up that skips before its entry is stored still leaves the tap free`() = runTest {
+        coEvery { availability.ownAccountLiveNow() } returns false
+        coEvery { registry.resolve(any(), any()) } returns null
+        val prefetcher = LosslessUrlPrefetcher(registry, availability, losslessPrefs, Dispatchers.Unconfined)
+
+        prefetcher.warmUp(item)
+        prefetcher.lookup(item)
+
+        coVerify(exactly = 1) { registry.resolve(any(), bypassRateLimit = true) }
+    }
 }
+
