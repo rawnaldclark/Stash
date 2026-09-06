@@ -7,10 +7,13 @@ import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.TrackQuery
+import com.stash.data.download.lossless.searchTerms
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -157,4 +160,49 @@ class QbdlxQobuzSourceTest {
         assertThat(source().isEnabled()).isFalse()
         assertThat(source().isEnabledForStreaming()).isTrue()
     }
+
+    // ── Search terms are asked at once, read in priority order ──────────────
+    // 2026-09-06 (Pixel 6): a track the catalog lacks cost two SEQUENTIAL
+    // catalog searches, 1.1 s then 0.9 s, before the chain moved on.
+
+    private val twoTermQuery = TrackQuery(artist = "John Frusciante, Josh Klinghoffer", title = "Murderers", isrc = null, durationMs = 160_000)
+    private val twoTerms: List<String> = twoTermQuery.searchTerms()
+    private fun duo(id: Long) = candidate(id).copy(isrc = null, performer = QbdlxPerformer("John Frusciante, Josh Klinghoffer"))
+
+    @Test fun `a hit on the second term does not wait behind a sequential first search`() = runTest {
+        enabledAndAcquired()
+        coEvery { apiClient.search(twoTerms[0]) } coAnswers { delay(1_000); emptyList() }
+        coEvery { apiClient.search(twoTerms[1]) } coAnswers { delay(100); listOf(duo(2)) }
+        coEvery { router.getFileUrl(2, 27) } returns ok()
+        val started = currentTime
+
+        val r = source().resolve(twoTermQuery)
+
+        assertThat(r?.sourceTrackId).isEqualTo("2")
+        assertThat(currentTime - started).isEqualTo(1_000) // sequential would be 1_100
+    }
+
+    @Test fun `the first term outranks the second even when it answers later`() = runTest {
+        enabledAndAcquired()
+        coEvery { apiClient.search(twoTerms[0]) } coAnswers { delay(1_000); listOf(duo(1)) }
+        coEvery { apiClient.search(twoTerms[1]) } coAnswers { delay(100); listOf(duo(2)) }
+        coEvery { router.getFileUrl(1, 27) } returns ok()
+
+        val r = source().resolve(twoTermQuery)
+
+        assertThat(r?.sourceTrackId).isEqualTo("1")
+    }
+
+    @Test fun `a miss costs the slowest search, not the sum`() = runTest {
+        enabledAndAcquired()
+        coEvery { apiClient.search(twoTerms[0]) } coAnswers { delay(1_000); emptyList() }
+        coEvery { apiClient.search(twoTerms[1]) } coAnswers { delay(900); emptyList() }
+        val started = currentTime
+
+        val r = source().resolve(twoTermQuery)
+
+        assertThat(r).isNull()
+        assertThat(currentTime - started).isEqualTo(1_000) // sequential would be 1_900
+    }
 }
+

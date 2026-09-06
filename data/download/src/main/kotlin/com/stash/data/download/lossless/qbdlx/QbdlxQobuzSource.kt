@@ -14,6 +14,8 @@ import com.stash.data.download.lossless.searchTerms
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.async
 
 /**
  * [LosslessSource] backed by the Qobuz catalog through the DIRECT Qobuz API.
@@ -84,21 +86,29 @@ class QbdlxQobuzSource @Inject constructor(
     }
 
     /** Tokenless catalog search + match. Null when nothing crosses threshold or the catalog rejects us. */
-    private suspend fun search(query: TrackQuery, bypassRateLimit: Boolean): Pair<QbdlxTrack, Float>? {
+    private suspend fun search(query: TrackQuery, bypassRateLimit: Boolean): Pair<QbdlxTrack, Float>? = supervisorScope {
+        // Every term is asked at once; answers are read in priority order, so the
+        // first term still outranks the second. A miss costs the slowest search,
+        // not the sum (2026-09-06: 1.1 s + 0.9 s sequential on every catalog gap).
+        val answers = query.searchTerms().map { term ->
+            async { runCatching { callLimited(bypassRateLimit) { apiClient.search(term) } } }
+        }
         try {
-            for (term in query.searchTerms()) {
-                val candidates = callLimited(bypassRateLimit) { apiClient.search(term) } ?: continue
+            for (answer in answers) {
+                val candidates = answer.await().getOrThrow() ?: continue
                 val match = candidates
                     .map { it to confidence(query, it) }
                     .filter { it.second >= QobuzCandidateMatcher.MIN_CONFIDENCE }
                     .maxByOrNull { it.second }
-                if (match != null) return match
+                if (match != null) return@supervisorScope match
             }
-            return null
+            null
         } catch (e: QbdlxAuthException) {
             // Catalog 401 after the client's own self-heal: nothing to rotate to.
             Log.w(TAG, "catalog auth-failed (${e.status}) even under the web app_id")
-            return null
+            null
+        } finally {
+            answers.forEach { it.cancel() }
         }
     }
 
