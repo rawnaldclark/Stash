@@ -6,6 +6,10 @@ import com.stash.core.auth.youtube.YouTubeCookieHelper
 import com.stash.data.ytmusic.potoken.PoTokenMinter
 import com.stash.data.ytmusic.potoken.PoTokenPair
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -43,6 +47,22 @@ class InnerTubeClientVisitorTest {
 
     @After fun tearDown() { server.shutdown() }
 
+    /** The judge a real play uses: the first direct audio URL, as-is. */
+    private val firstDirectUrl: suspend (JsonObject, String?) -> String? = { response, _ ->
+        response["streamingData"]?.jsonObject?.get("adaptiveFormats")?.jsonArray
+            ?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.content
+    }
+
+    /** A judge that records the stream token it was offered. */
+    private class Recording : suspend (JsonObject, String?) -> String? {
+        var offeredPot: String? = "unset"
+        override suspend fun invoke(response: JsonObject, streamPot: String?): String? {
+            offeredPot = streamPot
+            return response["streamingData"]?.jsonObject?.get("adaptiveFormats")?.jsonArray
+                ?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.content
+        }
+    }
+
     private fun client(minter: PoTokenMinter = PoTokenMinter.None): InnerTubeClient =
         InnerTubeClient(OkHttpClient(), token, cookies, minter).also {
             it.apiBaseOverride = server.url("/youtubei/v1").toString().trimEnd('/')
@@ -75,10 +95,11 @@ class InnerTubeClientVisitorTest {
         client.visitorData = "CgtWSVNJVE9S"
         server.enqueue(MockResponse().setResponseCode(200).setBody(okResponse))
 
-        val result = client.playerForAudio("vid1")
+        val judge = Recording()
+        val result = client.playerForAudio("vid1", judge)
 
-        assertThat(result?.streamPot).isEqualTo("SESSION")
-        assertThat(result?.response?.get("playabilityStatus")).isNotNull()
+        assertThat(judge.offeredPot).isEqualTo("SESSION")
+        assertThat(result?.url).isEqualTo("https://rr1.googlevideo.com/videoplayback?id=1")
         assertThat(minted).containsExactly("vid1" to "CgtWSVNJVE9S")
         // A mobile client takes no player token in its body; only the URL gets the session token.
         assertThat(server.takeRequest().body.readUtf8()).doesNotContain("serviceIntegrityDimensions")
@@ -102,10 +123,11 @@ class InnerTubeClientVisitorTest {
         val client = client(minter)
         server.enqueue(MockResponse().setResponseCode(200).setBody(okResponse))
 
-        val result = client.playerForAudio("vid1")
+        val judge = Recording()
+        val result = client.playerForAudio("vid1", judge)
 
-        assertThat(result?.streamPot).isNull()
-        assertThat(result?.response).isNotNull()
+        assertThat(judge.offeredPot).isNull()
+        assertThat(result?.url).isNotNull()
     }
 
     @Test
@@ -115,9 +137,10 @@ class InnerTubeClientVisitorTest {
         client.visitorData = "CgtWSVNJVE9S"
         server.enqueue(MockResponse().setResponseCode(200).setBody(okResponse))
 
-        val result = client.playerForAudio("vid1")
+        val judge = Recording()
+        val result = client.playerForAudio("vid1", judge)
 
-        assertThat(result?.streamPot).isNull()
-        assertThat(result?.response).isNotNull()
+        assertThat(judge.offeredPot).isNull()
+        assertThat(result?.url).isNotNull()
     }
 }

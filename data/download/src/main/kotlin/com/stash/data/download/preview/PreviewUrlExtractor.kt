@@ -590,68 +590,61 @@ class PreviewUrlExtractor @Inject constructor(
     private suspend fun extractViaInnerTube(videoId: String, lowestQuality: Boolean = false): String? {
         return withTimeout(INNERTUBE_TIMEOUT_MS) {
             Log.d(TAG, "Trying InnerTube fast path for videoId=$videoId")
-
-            // Ordered client-variant attempt. ANDROID_VR / IOS frequently
-            // return unciphered adaptiveFormats urls, letting us skip the
-            // ~14 s yt-dlp + QuickJS cipher-solve path entirely. Falls
-            // back transparently to WEB_REMIX if neither yields a direct URL.
-            val audio = innerTubeClient.playerForAudio(videoId) ?: run {
-                Log.w(TAG, "InnerTube playerForAudio returned null for $videoId")
+            // The client walk (remembered winner first) hands every response with a
+            // direct URL to this judge: select, stamp the PO token, tail-probe. A
+            // gated URL (the 403 wall) moves the walk on to the next client instead
+            // of ending the fast lane here (2026-09-06: IOS 403'd, VISIONOS served).
+            val stream = innerTubeClient.playerForAudio(videoId) { response, streamPot ->
+                acceptPlayableUrl(videoId, response, streamPot, lowestQuality)
+            } ?: run {
+                Log.i(TAG, "InnerTube: no client served a playable URL for $videoId; deferring to yt-dlp")
                 return@withTimeout null
             }
-            val response = audio.response
-
-            // Check playability
-            val status = response["playabilityStatus"]
-                ?.jsonObject?.get("status")
-                ?.jsonPrimitive?.content
-            if (status != "OK") {
-                Log.w(TAG, "InnerTube: video $videoId status=$status")
-                return@withTimeout null
-            }
-
-            // Extract streamingData.adaptiveFormats
-            val streamingData = response["streamingData"]?.jsonObject ?: run {
-                Log.w(TAG, "InnerTube: no streamingData for $videoId")
-                return@withTimeout null
-            }
-
-            val adaptiveFormats = streamingData["adaptiveFormats"]?.jsonArray ?: run {
-                Log.w(TAG, "InnerTube: no adaptiveFormats for $videoId")
-                return@withTimeout null
-            }
-
-            // Find the best audio format with a direct URL (not signatureCipher).
-            // Prefers Opus 251/250 over AAC even at equal/lower bitrate.
-            val bestFormat = selectBestAudioFormat(adaptiveFormats.filterIsInstance<JsonObject>(), lowestQuality) ?: run {
-                Log.d(TAG, "InnerTube: no audio formats with direct URL for $videoId " +
-                    "(${adaptiveFormats.size} total formats, all may be ciphered)")
-                return@withTimeout null
-            }
-            val rawUrl = bestFormat["url"]?.jsonPrimitive?.content ?: return@withTimeout null
-            // The GVS wall: a direct URL serves ~1 MB and then 403s unless it carries the
-            // session PO token minted for this visitor. Stamp it BEFORE the probe judges.
-            val streamUrl = audio.streamPot?.let { withPoToken(rawUrl, it) } ?: rawUrl
-
-            // A PO-token-gated URL serves ~1MB then 403s. Handing one back is what
-            // killed playback on 2026-06-08 and cost us the fast lane; the probe is
-            // what makes this path safe for whole tracks rather than previews only.
-            // Rejection just defers to yt-dlp, exactly as a cipher miss does.
-            val contentLength = bestFormat["contentLength"]?.jsonPrimitive?.content?.toLongOrNull()
-            if (!tailProbe.servesFullFile(streamUrl, contentLength)) {
-                Log.i(TAG, "InnerTube: URL failed the tail probe for $videoId — deferring to yt-dlp")
-                return@withTimeout null
-            }
-
-            // Only recorded once the probe has passed — an unusable URL must
-            // not get to name the codec for a track it will never play.
-            recordCodec(
-                videoId,
-                bestFormat["mimeType"]?.jsonPrimitive?.content?.substringAfter("codecs=", ""),
-            )
-            Log.d(TAG, "InnerTube: SUCCESS videoId=$videoId urlLen=${streamUrl.length}")
-            streamUrl
+            Log.d(TAG, "InnerTube: SUCCESS videoId=$videoId via ${stream.variant} urlLen=${stream.url.length}")
+            stream.url
         }
+    }
+
+    /**
+     * Judges one player response: the best direct audio format, stamped with the
+     * session PO token, must pass the tail probe. Null means "nothing here plays
+     * whole", and the walk tries the next client.
+     */
+    private suspend fun acceptPlayableUrl(
+        videoId: String,
+        response: JsonObject,
+        streamPot: String?,
+        lowestQuality: Boolean,
+    ): String? {
+        val status = response["playabilityStatus"]?.jsonObject?.get("status")?.jsonPrimitive?.content
+        if (status != "OK") {
+            Log.w(TAG, "InnerTube: video $videoId status=$status")
+            return null
+        }
+        val adaptiveFormats = response["streamingData"]?.jsonObject?.get("adaptiveFormats")?.jsonArray ?: run {
+            Log.w(TAG, "InnerTube: no adaptiveFormats for $videoId")
+            return null
+        }
+        // Prefers Opus 251/250 over AAC even at equal/lower bitrate; direct URLs only.
+        val bestFormat = selectBestAudioFormat(adaptiveFormats.filterIsInstance<JsonObject>(), lowestQuality) ?: run {
+            Log.d(TAG, "InnerTube: no audio formats with direct URL for $videoId (${adaptiveFormats.size} total)")
+            return null
+        }
+        val rawUrl = bestFormat["url"]?.jsonPrimitive?.content ?: return null
+        // The GVS wall: a direct URL serves ~1 MB and then 403s unless it carries the
+        // session PO token minted for this visitor. Stamp it BEFORE the probe judges.
+        val streamUrl = streamPot?.let { withPoToken(rawUrl, it) } ?: rawUrl
+        // A gated URL serves ~1 MB then 403s. Handing one back is what killed playback
+        // on 2026-06-08; the probe is what makes this lane safe for whole tracks.
+        val contentLength = bestFormat["contentLength"]?.jsonPrimitive?.content?.toLongOrNull()
+        if (!tailProbe.servesFullFile(streamUrl, contentLength)) {
+            Log.i(TAG, "InnerTube: URL failed the tail probe for $videoId; next client")
+            return null
+        }
+        // Only recorded once the probe has passed: an unusable URL must not get to
+        // name the codec for a track it will never play.
+        recordCodec(videoId, bestFormat["mimeType"]?.jsonPrimitive?.content?.substringAfter("codecs=", ""))
+        return streamUrl
     }
 
     /**

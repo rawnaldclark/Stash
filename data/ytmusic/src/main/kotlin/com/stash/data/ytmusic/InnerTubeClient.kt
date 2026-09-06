@@ -190,10 +190,10 @@ enum class InnerTubeVariant(
 data class CanonicalMatch(val videoId: String, val thumbnailUrl: String?)
 
 /**
- * A player response usable for audio, plus the visitor-bound PO token its
- * stream URL must carry as `pot=` — null when none was minted this time.
+ * A stream the caller's judge accepted: the URL it found playable, the
+ * player response it came from, and the client that served it.
  */
-data class AudioPlayerResponse(val response: JsonObject, val streamPot: String?)
+data class AudioStream(val url: String, val response: JsonObject, val variant: InnerTubeVariant)
 
 @Singleton
 class InnerTubeClient @Inject constructor(
@@ -501,29 +501,44 @@ class InnerTubeClient @Inject constructor(
      * unciphered URLs that play natively, cutting extraction to ~200 ms. On a
      * miss the last response is returned, which downstream maps to the yt-dlp
      * fallback (~14 s with QuickJS) for the `signatureCipher` case.
+     *
+     * Walks the audio clients, remembered winner first, and hands every response
+     * with a direct URL to [accept], which answers with the URL it judged playable
+     * or null. The first accepted stream wins and its client is remembered.
      */
-    suspend fun playerForAudio(videoId: String): AudioPlayerResponse? {
+    suspend fun playerForAudio(
+        videoId: String,
+        accept: suspend (response: JsonObject, streamPot: String?) -> String?,
+    ): AudioStream? {
         val poTokens = mintPoTokens(videoId)
-        var lastResponse: JsonObject? = null
         // The client that last served goes first: YouTube blocks clients one policy
         // change at a time, and a working day should cost one request, not a hunt.
         val order = listOfNotNull(lastAudioWinner) + AUDIO_VARIANT_ORDER.filterNot { it == lastAudioWinner }
         for (variant in order) {
             val response = runCatching { player(videoId, variant, poTokens) }
                 .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
                     Log.w(TAG, "playerForAudio variant=$variant threw: ${it.message}")
                 }
                 .getOrNull()
                 ?: continue
-            lastResponse = response
-            if (hasDirectAudioUrl(response)) {
-                Log.d(TAG, "playerForAudio videoId=$videoId won with variant=$variant pot=${poTokens != null}")
-                lastAudioWinner = variant
-                return AudioPlayerResponse(response, poTokens?.sessionToken)
+            if (!hasDirectAudioUrl(response)) {
+                Log.d(TAG, "playerForAudio variant=$variant gave no direct URL for $videoId")
+                continue
             }
-            Log.d(TAG, "playerForAudio variant=$variant gave no direct URL for $videoId")
+            // The judge (select + stamp + tail probe) decides. A direct URL that is
+            // gated (2026-09-06: IOS served URLs that 403'd even with a web PO token)
+            // moves the walk on to the next client instead of ending it here.
+            val url = accept(response, poTokens?.sessionToken)
+            if (url == null) {
+                Log.d(TAG, "playerForAudio variant=$variant URL refused for $videoId; next client")
+                continue
+            }
+            Log.d(TAG, "playerForAudio videoId=$videoId won with variant=$variant pot=${poTokens != null}")
+            lastAudioWinner = variant
+            return AudioStream(url, response, variant)
         }
-        return lastResponse?.let { AudioPlayerResponse(it, poTokens?.sessionToken) }
+        return null
     }
 
     /**

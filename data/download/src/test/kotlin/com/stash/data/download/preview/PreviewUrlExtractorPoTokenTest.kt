@@ -4,13 +4,16 @@ import android.content.Context
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.auth.TokenManager
 import com.stash.data.download.ytdlp.YtDlpManager
-import com.stash.data.ytmusic.AudioPlayerResponse
+import com.stash.data.ytmusic.AudioStream
 import com.stash.data.ytmusic.InnerTubeClient
+import com.stash.data.ytmusic.InnerTubeVariant
+import io.mockk.coInvoke
 import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.Test
 
@@ -32,6 +35,14 @@ class PreviewUrlExtractorPoTokenTest {
     private val innerTube: InnerTubeClient = mockk()
     private val tailProbe: AudioUrlTailProbe = mockk()
 
+    /** One client (IOS) with a direct URL; the extractor's judge decides whether it plays. */
+    private fun stubWalk(streamPot: String?) {
+        coEvery { innerTube.playerForAudio("vid1", captureLambda()) } coAnswers {
+            lambda<suspend (JsonObject, String?) -> String?>().coInvoke(response, streamPot)
+                ?.let { AudioStream(it, response, InnerTubeVariant.IOS) }
+        }
+    }
+
     private fun extractor() = PreviewUrlExtractor(
         context = mockk<Context>(relaxed = true),
         ytDlpManager = mockk<YtDlpManager>(relaxed = true),
@@ -42,7 +53,7 @@ class PreviewUrlExtractorPoTokenTest {
 
     @Test
     fun `the session token is stamped on the url before the probe and in the result`() = runTest {
-        coEvery { innerTube.playerForAudio("vid1") } returns AudioPlayerResponse(response, streamPot = "SESSION")
+        stubWalk(streamPot = "SESSION")
         val probed = slot<String>()
         coEvery { tailProbe.servesFullFile(capture(probed), any()) } returns true
 
@@ -54,7 +65,7 @@ class PreviewUrlExtractorPoTokenTest {
 
     @Test
     fun `without a session token the url is probed as it came`() = runTest {
-        coEvery { innerTube.playerForAudio("vid1") } returns AudioPlayerResponse(response, streamPot = null)
+        stubWalk(streamPot = null)
         val probed = slot<String>()
         coEvery { tailProbe.servesFullFile(capture(probed), any()) } returns true
 
