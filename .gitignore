@@ -43,6 +43,7 @@ obj/
 # Keystore files
 *.jks
 *.keystore
+!debug.keystore
 keystore.properties
 keystore-password-SAVE-THEN-DELETE.txt
 keystore-base64-SAVE-THEN-DELETE.txt

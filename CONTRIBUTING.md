@@ -50,6 +50,24 @@ Run the unit tests:
 
 ---
 
+## Debug builds
+
+Debug builds are signed with a keystore committed to the repo
+(`debug.keystore`, repo root) so every contributor and CI produce
+identically-signed debug APKs — this avoids `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+when installing across machines or user profiles (e.g. Samsung Secure Folder).
+
+This is a standard debug key with the well-known AOSP password (`android`) —
+committing it is normal practice, not a credential leak. It only affects
+local/debug installs; release signing is unaffected and uses separate,
+non-committed credentials.
+
+**One-time migration:** if you have a debug build installed from before this
+change, you'll need to uninstall it once before installing a build signed
+with the new key. Uninstalling wipes app data — for Stash specifically,
+downloaded tracks live in app-internal storage (not covered by the in-app
+backup), so back up anything you don't want to lose before reinstalling.
+
 ## How the codebase is organized
 
 Stash is a multi-module Gradle project. Modules keep responsibilities isolated so a change in one place doesn't ripple everywhere. From the top:
