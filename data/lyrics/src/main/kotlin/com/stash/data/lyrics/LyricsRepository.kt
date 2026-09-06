@@ -19,7 +19,7 @@ import javax.inject.Singleton
  * and workers (post-download + backfill) go through this class.
  *
  * `resolveAndStore` walks the [sources] chain in priority order
- * (LRCLIB -> InnerTube; ordering enforced in `LyricsModule.provideLyricsSources`),
+ * (LRCLIB -> KuGou -> InnerTube; ordering enforced in `LyricsModule.provideLyricsSources`),
  * persists the first non-null result to the `lyrics` table, stamps
  * `tracks.lyrics_fetched_at` with the success epoch-millis, and
  * triggers a sidecar `.lrc` write for the non-instrumental case.

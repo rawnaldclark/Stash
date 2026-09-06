@@ -4,6 +4,7 @@ import com.stash.core.common.Clock
 import com.stash.core.common.SystemClock
 import com.stash.data.lyrics.source.InnerTubeLyricsGateway
 import com.stash.data.lyrics.source.InnerTubeLyricsGatewayImpl
+import com.stash.data.lyrics.source.KugouLyricsSource
 import com.stash.data.lyrics.source.LrclibLyricsSource
 import com.stash.data.lyrics.source.LyricsSource
 import com.stash.data.lyrics.source.YtMusicLyricsSource
@@ -14,6 +15,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Qualifier
 import javax.inject.Singleton
+import okhttp3.OkHttpClient
 
 /**
  * Qualifier for the LRCLIB base URL [String] consumed by
@@ -30,7 +32,7 @@ annotation class LrclibBaseUrl
  *
  * Three responsibilities:
  * 1. Binds the production [InnerTubeLyricsGateway] implementation.
- * 2. Provides an ordered `List<LyricsSource>` (LRCLIB first, then InnerTube)
+ * 2. Provides an ordered `List<LyricsSource>` (LRCLIB, then KuGou, then InnerTube)
  *    consumed by [com.stash.data.lyrics.LyricsRepository]. Ordering is
  *    semantic — LRCLIB wins because it can return synced LRC, InnerTube
  *    is plain-text fallback — so a multibinding `Set` is deliberately
@@ -67,8 +69,14 @@ abstract class LyricsModule {
         @Singleton
         fun provideLyricsSources(
             lrclib: LrclibLyricsSource,
+            kugou: KugouLyricsSource,
             ytmusic: YtMusicLyricsSource,
-        ): List<@JvmSuppressWildcards LyricsSource> = listOf(lrclib, ytmusic)
+        ): List<@JvmSuppressWildcards LyricsSource> = listOf(lrclib, kugou, ytmusic)
+
+        /** KuGou: synced LRC for most of what LRCLIB misses; between LRCLIB and the plain-text fallback. */
+        @Provides
+        @Singleton
+        fun provideKugouLyricsSource(okHttpClient: OkHttpClient): KugouLyricsSource = KugouLyricsSource(okHttpClient)
 
         @Provides
         @Singleton
