@@ -10,7 +10,15 @@ import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Test
 
 /**
@@ -57,9 +65,9 @@ class StreamSourceRegistryTest {
         coEvery { enabledNow() } returns true // the Lossless switch, on by default
     }
 
-    private fun registry() = StreamSourceRegistry(
+    private fun registry(dispatcher: CoroutineDispatcher = Dispatchers.IO) = StreamSourceRegistry(
         kennyy, qobuz, arcod, qbdlx, jiosaavn, youtube, streamingPreference,
-        LosslessSourceHealth(), losslessPrefs,
+        LosslessSourceHealth(), losslessPrefs, dispatcher,
     )
 
     private fun stubStreamUrl(origin: String) = StreamUrl(
@@ -147,7 +155,8 @@ class StreamSourceRegistryTest {
 
         assertThat(result?.origin).isEqualTo("qbdlx")
         coVerify { qbdlx.resolve(track) }
-        coVerify(exactly = 0) { youtube.resolve(any(), any()) }
+        // The hedged fast lane may have started alongside qbdlx; the yt-dlp-capable rung must not.
+        coVerify(exactly = 0) { youtube.resolve(any(), allowYtDlp = true) }
         coVerify(exactly = 0) { kennyy.resolve(any()) } // parked
         coVerify(exactly = 0) { qobuz.resolve(any()) } // parked
         coVerify(exactly = 0) { arcod.resolve(any()) } // qbdlx already served
@@ -302,7 +311,8 @@ class StreamSourceRegistryTest {
         val result = registry().resolve(track, allowYouTube = true, allowYtDlp = true)
 
         assertThat(result!!.origin).isEqualTo(JioSaavnStreamResolver.ORIGIN)
-        coVerify(exactly = 0) { youtube.resolve(any(), any()) }
+        // The fast lane may have run alongside (P3 hedge); the yt-dlp-capable rung must not.
+        coVerify(exactly = 0) { youtube.resolve(any(), allowYtDlp = true) }
     }
 
     @Test
@@ -375,7 +385,7 @@ class StreamSourceRegistryTest {
         assertThat(result?.origin).isEqualTo("youtube")
         coVerify(exactly = 0) { qbdlx.resolve(any()) }
         coVerify(exactly = 0) { arcod.resolve(any()) }
-        coVerify { youtube.resolve(track, allowYtDlp = true) }
+        coVerify { youtube.resolve(track, any()) }
     }
 
     /** A stale force-qbdlx test toggle must not override the user's Lossless switch. */
@@ -390,5 +400,94 @@ class StreamSourceRegistryTest {
 
         assertThat(result?.origin).isEqualTo("youtube")
         coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
+
+    // ── P3 hedge: the rungs ahead of YouTube no longer serialize its latency ──
+    //
+    // Measured 2026-09-06 (Pixel 6, lossless on, a YouTube-only video): the
+    // relay search missed in 2.0 s, JioSaavn missed in 1.3 s, and only THEN did
+    // the YouTube resolve start. The fast lane (one InnerTube round trip and a
+    // probe) is cheap enough to start at once and throw away on a lossless hit.
+
+    @Test
+    fun `a lossless miss uses the youtube fast lane that ran alongside it`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } coAnswers { delay(2_000); null }
+        coEvery { arcod.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), allowYtDlp = false) } coAnswers { delay(500); stubStreamUrl("youtube") }
+        val track = stubTrack()
+        val started = currentTime
+
+        val result = registry(StandardTestDispatcher(testScheduler)).resolve(track)
+
+        assertThat(result?.origin).isEqualTo("youtube")
+        // The fast lane's 500 ms hid inside the relay's 2 s; nothing was added after the miss.
+        assertThat(currentTime - started).isAtMost(2_000)
+        coVerify(exactly = 0) { youtube.resolve(any(), allowYtDlp = true) }
+    }
+
+    @Test
+    fun `a lossless hit cancels the fast lane`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        // 100 ms of relay work: enough for the fast lane to start and park in its 60 s wait.
+        coEvery { qbdlx.resolve(any()) } coAnswers { delay(100); stubStreamUrl("qbdlx") }
+        val cancelled = AtomicBoolean(false)
+        coEvery { youtube.resolve(any(), allowYtDlp = false) } coAnswers {
+            try {
+                delay(60_000); null
+            } catch (ce: CancellationException) {
+                cancelled.set(true); throw ce
+            }
+        }
+        val track = stubTrack()
+
+        val started = currentTime
+        val result = registry(StandardTestDispatcher(testScheduler)).resolve(track)
+        advanceUntilIdle()
+
+        assertThat(result?.origin).isEqualTo("qbdlx")
+        assertThat(cancelled.get()).isTrue()
+        // The hit never waited on the lane: 100 ms of relay time, not the lane's 60 s.
+        assertThat(currentTime - started).isAtMost(100)
+        coVerify(exactly = 0) { youtube.resolve(any(), allowYtDlp = true) }
+    }
+
+    @Test
+    fun `a fast lane miss still falls back to the full youtube rung`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { arcod.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), allowYtDlp = false) } returns null
+        coEvery { youtube.resolve(any(), allowYtDlp = true) } returns stubStreamUrl("youtube")
+        val track = stubTrack()
+
+        val result = registry(StandardTestDispatcher(testScheduler)).resolve(track)
+
+        assertThat(result?.origin).isEqualTo("youtube")
+        coVerifyOrder {
+            youtube.resolve(track, allowYtDlp = false)
+            youtube.resolve(track, allowYtDlp = true)
+        }
+    }
+
+    @Test
+    fun `jiosaavn keeps its rank over the fast lane when both answer`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { arcod.resolve(any()) } returns null
+        coEvery { jiosaavn.resolve(any()) } coAnswers {
+            delay(300)
+            StreamUrl(
+                url = "https://aac.saavncdn.com/song_320.mp4", expiresAtMs = Long.MAX_VALUE,
+                codec = "aac", bitrateKbps = 320, origin = JioSaavnStreamResolver.ORIGIN,
+            )
+        }
+        coEvery { youtube.resolve(any(), allowYtDlp = false) } returns stubStreamUrl("youtube")
+        val track = stubTrack()
+
+        val result = registry(StandardTestDispatcher(testScheduler)).resolve(track)
+
+        assertThat(result?.origin).isEqualTo(JioSaavnStreamResolver.ORIGIN)
+        coVerify(exactly = 0) { youtube.resolve(any(), allowYtDlp = true) }
     }
 }

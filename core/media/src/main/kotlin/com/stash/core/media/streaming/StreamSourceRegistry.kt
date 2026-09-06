@@ -5,12 +5,14 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.BuildConfig
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -63,7 +65,7 @@ import javax.inject.Singleton
  *    only — reproduces the lossless-down fallback path on demand.
  */
 @Singleton
-class StreamSourceRegistry @Inject constructor(
+class StreamSourceRegistry internal constructor(
     private val kennyy: KennyyStreamResolver,
     private val qobuz: QobuzStreamResolver,
     private val arcod: ArcodStreamResolver,
@@ -73,7 +75,24 @@ class StreamSourceRegistry @Inject constructor(
     private val streamingPreference: StreamingPreference,
     private val losslessSourceHealth: LosslessSourceHealth,
     private val losslessPrefs: LosslessSourcePreferences,
+    /** Where resolves run; tests pass a test dispatcher so the hedge is measured in virtual time. */
+    resolveDispatcher: CoroutineDispatcher,
 ) {
+    @Inject
+    constructor(
+        kennyy: KennyyStreamResolver,
+        qobuz: QobuzStreamResolver,
+        arcod: ArcodStreamResolver,
+        qbdlx: QbdlxStreamResolver,
+        jiosaavn: JioSaavnStreamResolver,
+        youtube: YouTubeStreamResolver,
+        streamingPreference: StreamingPreference,
+        losslessSourceHealth: LosslessSourceHealth,
+        losslessPrefs: LosslessSourcePreferences,
+    ) : this(
+        kennyy, qobuz, arcod, qbdlx, jiosaavn, youtube, streamingPreference,
+        losslessSourceHealth, losslessPrefs, Dispatchers.IO,
+    )
     /**
      * Try each resolver in priority order; return the first non-null
      * [StreamUrl]. Returns null when no source produced a match — caller
@@ -152,7 +171,7 @@ class StreamSourceRegistry @Inject constructor(
      * coalescing would be pointless — the whole value is that a second waiter on
      * the same track gets the in-flight result instead of restarting the chain.
      */
-    private val resolveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val resolveScope = CoroutineScope(SupervisorJob() + resolveDispatcher)
 
     /** In-flight resolves, keyed by [resolveKey]; entries self-remove on completion. */
     private val inFlightResolves = ConcurrentHashMap<String, Deferred<StreamUrl?>>()
@@ -278,39 +297,79 @@ class StreamSourceRegistry @Inject constructor(
                 "arcodConfigured=${BuildConfig.ARCOD_CONFIGURED}",
         )
 
-        for ((name, fn) in resolvers) {
-            val result = runCatching { fn(track) }
-                .onFailure { e ->
-                    // Preemption (user tapped another track) cancels this job;
-                    // the CE MUST propagate, not be swallowed and logged as a
-                    // resolver failure — otherwise resolve() returns null and
-                    // the caller fires a bogus "Couldn't find this track."
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    // Resolvers should never throw — they catch and return
-                    // null. Defensive log so an unexpected throw from one
-                    // source doesn't break the chain.
-                    Log.w(TAG, "$name threw on resolve for ${track.id} '${track.title}'", e)
+        // P3 (2026-09-06): the YouTube fast lane (one InnerTube round trip and a
+        // probe, never yt-dlp) and the JioSaavn search start NOW, alongside the
+        // rungs ahead of them, instead of after those rungs miss. Measured before
+        // this: a relay miss of 2.0 s plus a JioSaavn miss of 1.3 s before the
+        // YouTube resolve even started. A lossless hit cancels both lanes; a miss
+        // consults JioSaavn first (its rank is unchanged), then the fast lane, and
+        // only then the yt-dlp-capable rung. Foreground resolves only: the
+        // speculative background fill keeps its cheap sequential chain.
+        val hedged = allowYouTube && allowYtDlp && resolvers.size > 1 && resolvers.last().first == "youtube"
+        return coroutineScope {
+            val jioLane = if (hedged && resolvers.any { it.first == "jiosaavn" }) {
+                async { quietly("jiosaavn", track) { jiosaavn.resolve(track) } }
+            } else {
+                null
+            }
+            val fastLane = if (hedged) {
+                async { quietly("youtube-fast", track) { youtube.resolve(track, allowYtDlp = false) } }
+            } else {
+                null
+            }
+
+            for ((name, fn) in resolvers) {
+                if (hedged && (name == "jiosaavn" || name == "youtube")) continue // consulted below
+                val result = quietly(name, track) { fn(track) }
+                // Feed the Home lossless-offline banner signal: a qbdlx null here
+                // is a miss (dead credential OR catalog gap; the streak threshold
+                // tells them apart), a non-null is a serve that resets the streak.
+                if (name == "qbdlx") {
+                    if (result != null) losslessSourceHealth.recordQbdlxServed() else losslessSourceHealth.recordQbdlxMiss()
                 }
-                .getOrNull()
-            // Feed the Home lossless-offline banner signal: a qbdlx null here
-            // is a miss (dead credential OR catalog gap — the streak threshold
-            // tells them apart), a non-null is a serve that resets the streak.
-            if (name == "qbdlx") {
                 if (result != null) {
-                    losslessSourceHealth.recordQbdlxServed()
-                } else {
-                    losslessSourceHealth.recordQbdlxMiss()
+                    // Diagnostic: which source actually served the stream. Helps
+                    // explain "this track played but at lower quality" reports.
+                    Log.i(TAG, "$name served ${track.id} '${track.title}'")
+                    jioLane?.cancel()
+                    fastLane?.cancel()
+                    return@coroutineScope result
                 }
             }
-            if (result != null) {
-                // Diagnostic: which source actually served the stream. Helps
-                // explain "this track played but at lower quality" reports.
-                Log.i(TAG, "$name served ${track.id} '${track.title}'")
-                return result
+            jioLane?.await()?.let {
+                Log.i(TAG, "jiosaavn served ${track.id} '${track.title}' (hedged)")
+                fastLane?.cancel()
+                return@coroutineScope it
+            }
+            fastLane?.await()?.let {
+                Log.i(TAG, "youtube served ${track.id} '${track.title}' (fast lane, hedged)")
+                return@coroutineScope it
+            }
+            if (hedged) {
+                quietly("youtube", track) { youtube.resolve(track, allowYtDlp = true) }?.also {
+                    Log.i(TAG, "youtube served ${track.id} '${track.title}'")
+                }
+            } else {
+                null
             }
         }
-        return null
     }
+
+    /**
+     * Runs one rung. Preemption (the user tapped another track) cancels this job
+     * and the CancellationException MUST propagate, or resolve() would return
+     * null and the caller fire a bogus "Couldn't find this track". Any other
+     * throw is a resolver bug: logged, and read as a miss so the chain goes on.
+     */
+    private suspend fun quietly(name: String, track: TrackEntity, block: suspend () -> StreamUrl?): StreamUrl? =
+        try {
+            block()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "$name threw on resolve for ${track.id} '${track.title}'", e)
+            null
+        }
 
     private companion object {
         private const val TAG = "StreamSourceRegistry"
