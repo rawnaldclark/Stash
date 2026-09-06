@@ -5,7 +5,13 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.youtube.YouTubeCookieHelper
 import com.stash.data.ytmusic.model.MusicVideoType
 import kotlinx.coroutines.Dispatchers
+import com.stash.data.ytmusic.potoken.PoTokenMinter
+import com.stash.data.ytmusic.potoken.PoTokenPair
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -49,6 +55,8 @@ enum class InnerTubeVariant(
     val clientNameId: String = "",
     /** Whether unauthenticated requests should append the YT-Music API key. */
     val sendsApiKey: Boolean = false,
+    /** Web-family clients take a per-video PO token in `serviceIntegrityDimensions`. */
+    val acceptsPoToken: Boolean = false,
 ) {
     /**
      * Oculus Quest 3 VR browser. Returns direct, unciphered audio URLs with no PO
@@ -115,6 +123,7 @@ enum class InnerTubeVariant(
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         clientNameId = "67",
         sendsApiKey = true,
+        acceptsPoToken = true,
     );
 
     /** Resolves the reported client version, computing it fresh for [WEB_REMIX]. */
@@ -146,17 +155,39 @@ enum class InnerTubeVariant(
  */
 data class CanonicalMatch(val videoId: String, val thumbnailUrl: String?)
 
+/**
+ * A player response usable for audio, plus the visitor-bound PO token its
+ * stream URL must carry as `pot=` — null when none was minted this time.
+ */
+data class AudioPlayerResponse(val response: JsonObject, val streamPot: String?)
+
 @Singleton
 class InnerTubeClient @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val tokenManager: TokenManager,
     private val cookieHelper: YouTubeCookieHelper,
+    private val poTokenMinter: PoTokenMinter = PoTokenMinter.None,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val jsonMediaType = "application/json".toMediaType()
 
+    /**
+     * YouTube's anonymous visitor id (`responseContext.visitorData`), kept for the
+     * life of the process once any InnerTube response hands one out. Stream PO
+     * tokens are bound to it, so a player request must be made under the same id
+     * as the token later stamped on its URL.
+     */
+    @Volatile internal var visitorData: String? = null
+
+    /** Test seam: points [player] and [warmPoTokens] at a local server instead of `variant.apiBase`. */
+    internal var apiBaseOverride: String? = null
+
+    private val mintScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     companion object {
         private const val TAG = "StashYT"
+        /** A play waits this long for its PO tokens; a colder mint keeps going for the next play. */
+        private const val MINT_BUDGET_MS = 6_000L
         private const val BASE_URL = "https://music.youtube.com/youtubei/v1"
 
         /** Publicly-known API key used by the YouTube Music web app. */
@@ -360,15 +391,19 @@ class InnerTubeClient @Inject constructor(
     suspend fun player(
         videoId: String,
         variant: InnerTubeVariant = InnerTubeVariant.WEB_REMIX,
+        poTokens: PoTokenPair? = null,
     ): JsonObject? = withContext(Dispatchers.IO) {
         val cookie = tokenManager.getYouTubeCookie()
+        // Minting is the audio path's business (playerForAudio); metadata callers pass nothing and get nothing.
+        val playerToken = if (variant.acceptsPoToken) poTokens?.playerToken else null
         val body = buildJsonObject {
             put("context", buildContext(variant))
             put("videoId", videoId)
             put("contentCheckOk", true)
             put("racyCheckOk", true)
+            playerToken?.let { put("serviceIntegrityDimensions", buildJsonObject { put("poToken", it) }) }
         }
-        executeRequest("${variant.apiBase}/player", body, cookie, variant)
+        executeRequest("${apiBaseOverride ?: variant.apiBase}/player", body, cookie, variant)
     }
 
     /**
@@ -428,10 +463,11 @@ class InnerTubeClient @Inject constructor(
      * miss the last response is returned, which downstream maps to the yt-dlp
      * fallback (~14 s with QuickJS) for the `signatureCipher` case.
      */
-    suspend fun playerForAudio(videoId: String): JsonObject? {
+    suspend fun playerForAudio(videoId: String): AudioPlayerResponse? {
+        val poTokens = mintPoTokens(videoId)
         var lastResponse: JsonObject? = null
         for (variant in AUDIO_VARIANT_ORDER) {
-            val response = runCatching { player(videoId, variant) }
+            val response = runCatching { player(videoId, variant, poTokens) }
                 .onFailure {
                     Log.w(TAG, "playerForAudio variant=$variant threw: ${it.message}")
                 }
@@ -439,13 +475,41 @@ class InnerTubeClient @Inject constructor(
                 ?: continue
             lastResponse = response
             if (hasDirectAudioUrl(response)) {
-                Log.d(TAG, "playerForAudio videoId=$videoId won with variant=$variant")
-                return response
+                Log.d(TAG, "playerForAudio videoId=$videoId won with variant=$variant pot=${poTokens != null}")
+                return AudioPlayerResponse(response, poTokens?.sessionToken)
             }
             Log.d(TAG, "playerForAudio variant=$variant gave no direct URL for $videoId")
         }
-        return lastResponse
+        return lastResponse?.let { AudioPlayerResponse(it, poTokens?.sessionToken) }
     }
+
+    /**
+     * This video's PO tokens under the current visitor id, or null without one.
+     * Bounded so a cold BotGuard boot never stalls a play: past the budget the
+     * mint keeps running (the next play finds a warm engine) and this play goes
+     * without a token, exactly as before tokens existed.
+     */
+    private suspend fun mintPoTokens(videoId: String): PoTokenPair? {
+        val session = visitorData ?: return null
+        val minting = mintScope.async { runCatching { poTokenMinter.mint(videoId, session) }.getOrNull() }
+        return withTimeoutOrNull(MINT_BUDGET_MS) { minting.await() }
+    }
+
+    /**
+     * Boots the PO-token minter for the current visitor id, fetching one from
+     * `/visitor_id` first when no response has handed one out yet. App start.
+     */
+    suspend fun warmPoTokens() {
+        if (visitorData == null) {
+            val variant = InnerTubeVariant.WEB_REMIX
+            val body = buildJsonObject { put("context", buildContext(variant)) }
+            executeRequest("${apiBaseOverride ?: variant.apiBase}/visitor_id", body, null, variant)
+        }
+        visitorData?.let { poTokenMinter.preWarm(it) }
+    }
+
+    /** Frees the minter's WebView while the app is in the background. */
+    suspend fun releasePoTokens() = poTokenMinter.release()
 
     /**
      * Returns true when [response] contains at least one
@@ -634,10 +698,21 @@ class InnerTubeClient @Inject constructor(
      * The [variant]'s `client` fields are spread into the context so
      * YouTube recognises the impersonated client.
      */
+    /** The first visitor id any response hands out is the one this process keeps. */
+    private fun rememberVisitorData(response: JsonObject) {
+        if (visitorData != null) return
+        val id = response["responseContext"]?.jsonObject?.get("visitorData")?.jsonPrimitive?.content
+        if (!id.isNullOrBlank()) {
+            visitorData = id
+            Log.d(TAG, "visitor id learned (${id.length} chars)")
+        }
+    }
+
     private fun buildContext(variant: InnerTubeVariant): JsonObject = buildJsonObject {
         putJsonObject("client") {
             put("clientName", variant.clientName)
             put("clientVersion", variant.currentVersion())
+            visitorData?.let { put("visitorData", it) }
             put("hl", "en")
             put("gl", "US")
             variant.extraClientFields.forEach { (k, v) ->
@@ -688,6 +763,8 @@ class InnerTubeClient @Inject constructor(
             .header("X-YouTube-Client-Name", variant.clientNameId.ifBlank { variant.clientName })
             .header("X-YouTube-Client-Version", variant.currentVersion())
 
+        visitorData?.let { requestBuilder.header("X-Goog-Visitor-Id", it) }
+
         // Cookies + SAPISIDHASH auth only make sense against the WEB family;
         // sending them to IOS / ANDROID_VR clients either no-ops or in some
         // cases earns the request a server-side reject. Skip for non-WEB.
@@ -711,7 +788,9 @@ class InnerTubeClient @Inject constructor(
                 val responseBody = resp.body?.string()
                     ?: return@use RequestOutcome(body = null, statusCode = resp.code)
                 Log.d(TAG, "executeRequest: success, response length=${responseBody.length}")
-                RequestOutcome(json.parseToJsonElement(responseBody).jsonObject, resp.code)
+                val parsed = json.parseToJsonElement(responseBody).jsonObject
+                rememberVisitorData(parsed)
+                RequestOutcome(parsed, resp.code)
             }
         } catch (e: Exception) {
             Log.w(TAG, "executeRequest: threw ${e.javaClass.simpleName}: ${e.message}")

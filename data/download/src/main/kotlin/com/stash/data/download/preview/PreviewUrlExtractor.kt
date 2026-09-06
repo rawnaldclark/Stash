@@ -201,6 +201,10 @@ class PreviewUrlExtractor @Inject constructor(
          */
         internal val FAST_PLAYER_CLIENTS = listOf("web_embedded", "android_vr")
 
+        /** `pot=` (proof of origin) on a googlevideo URL; a URL that already carries one is left alone. */
+        internal fun withPoToken(url: String, pot: String): String =
+            if (url.contains("pot=")) url else url + (if ('?' in url) "&" else "?") + "pot=" + pot
+
         /**
          * Concurrency caps for the two extractors. Shared process-wide.
          *
@@ -591,10 +595,11 @@ class PreviewUrlExtractor @Inject constructor(
             // return unciphered adaptiveFormats urls, letting us skip the
             // ~14 s yt-dlp + QuickJS cipher-solve path entirely. Falls
             // back transparently to WEB_REMIX if neither yields a direct URL.
-            val response = innerTubeClient.playerForAudio(videoId) ?: run {
+            val audio = innerTubeClient.playerForAudio(videoId) ?: run {
                 Log.w(TAG, "InnerTube playerForAudio returned null for $videoId")
                 return@withTimeout null
             }
+            val response = audio.response
 
             // Check playability
             val status = response["playabilityStatus"]
@@ -623,7 +628,10 @@ class PreviewUrlExtractor @Inject constructor(
                     "(${adaptiveFormats.size} total formats, all may be ciphered)")
                 return@withTimeout null
             }
-            val streamUrl = bestFormat["url"]?.jsonPrimitive?.content ?: return@withTimeout null
+            val rawUrl = bestFormat["url"]?.jsonPrimitive?.content ?: return@withTimeout null
+            // The GVS wall: a direct URL serves ~1 MB and then 403s unless it carries the
+            // session PO token minted for this visitor. Stamp it BEFORE the probe judges.
+            val streamUrl = audio.streamPot?.let { withPoToken(rawUrl, it) } ?: rawUrl
 
             // A PO-token-gated URL serves ~1MB then 403s. Handing one back is what
             // killed playback on 2026-06-08 and cost us the fast lane; the probe is

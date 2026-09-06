@@ -144,6 +144,9 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var connectivityMonitor: com.stash.core.media.streaming.ConnectivityMonitor
 
+    @Inject
+    lateinit var innerTubeClient: com.stash.data.ytmusic.InnerTubeClient
+
     /**
      * v0.9.17: eager-bound observer that enqueues [LosslessRetryWorker]
      * on cookie change / lastKnownBadCookie clear / circuit-breaker
@@ -258,10 +261,17 @@ class StashApplication : Application(), Configuration.Provider {
                 override fun onStop(owner: LifecycleOwner) {
                     // squidCookieAutoRefresher.stop()
                     // kennyyHealthProbe.stop()
+                    // The BotGuard WebView is ~50 MB; drop it while backgrounded, it
+                    // rebuilds on the next play (or the next onStart pre-warm).
+                    applicationScope.launch { innerTubeClient.releasePoTokens() }
                 }
             },
         )
         losslessConfigFetcher.start(applicationScope)
+        // YouTube PO tokens: learn a visitor id and boot BotGuard now, so the
+        // first play's InnerTube URL passes the GVS wall instead of falling to
+        // yt-dlp (13.8 s measured 2026-09-06). Best-effort; failures log only.
+        applicationScope.launch { runCatching { innerTubeClient.warmPoTokens() } }
         applicationScope.launch {
             // Best-effort: a startup DB write that throws (e.g.
             // SQLiteFullException on a device the user filled with FLAC) must
