@@ -6,6 +6,7 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.common.matchesArtistCredits
 import com.stash.core.common.primaryArtist
+import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.FlacUpgradeEnqueuer
@@ -100,6 +101,7 @@ class LibraryViewModel @Inject constructor(
     private val flacUpgradeEnqueuer: FlacUpgradeEnqueuer,
     private val libraryPreferencesStore: LibraryPreferencesStore,
     private val libraryDeepLinkController: com.stash.core.data.navigation.LibraryDeepLinkController,
+    private val artistImageDao: ArtistImageDao,
 ) : ViewModel() {
 
     /** Live progress for "Import from device". Observed by LibraryScreen. */
@@ -220,7 +222,24 @@ class LibraryViewModel @Inject constructor(
         val query = controls.searchQuery.trim().lowercase()
 
         // -- Map DAO projections to UI models --
-        val artists = allArtists.map { ArtistInfo(it.artist, it.trackCount, it.totalDurationMs, it.artUrl) }
+        // Artists are regrouped by PRIMARY act so a track credit like
+        // "Aarne, Toxi$, Big Baby Tape" lands under a single "Aarne" card
+        // instead of fragmenting the artist across a wall of "Aarne …" rows.
+        val artists = allArtists
+            .map { ArtistInfo(it.artist, it.trackCount, it.totalDurationMs, it.artUrl) }
+            .groupBy { it.name.primaryArtist() }
+            .map { (primary, group) ->
+                ArtistInfo(
+                    name = primary,
+                    trackCount = group.sumOf { it.trackCount },
+                    totalDurationMs = group.sumOf { it.totalDurationMs },
+                    // Prefer art from a release credited to the primary act
+                    // alone (their own album), falling back to any collab art —
+                    // "Aarne" shows his own cover, not SLAANG's.
+                    artUrl = group.firstOrNull { it.name == primary }?.artUrl
+                        ?: group.firstNotNullOfOrNull { it.artUrl },
+                )
+            }
         val albums = mergeDuplicateAlbums(
             // Album card shows the lead act of a collaboration credit
             // ("Metro Boomin" for "Metro Boomin, Travis Scott"), so the card
@@ -327,6 +346,16 @@ class LibraryViewModel @Inject constructor(
         // Overlay the currently-playing track ID so the UI can highlight it.
         libraryState.copy(
             currentlyPlayingTrackId = playerState.currentTrack?.id,
+        )
+    }.combine(artistImageDao.observeAll()) { libraryState, images ->
+        // Overlay real artist photos (ArtistImageBackfillWorker output) keyed
+        // by the SAME primary-artist name the Artists tab groups by. Artists
+        // without a photo keep photoUrl = null → UI falls back to artUrl.
+        val photoByName = images.associate { it.artistName to it.imageUrl }
+        libraryState.copy(
+            artists = libraryState.artists.map { it.copy(photoUrl = photoByName[it.name]) },
+            singleTrackArtists = libraryState.singleTrackArtists
+                .map { it.copy(photoUrl = photoByName[it.name]) },
         )
     }
         // The whole filter+sort+lowercase pipeline above re-runs on every

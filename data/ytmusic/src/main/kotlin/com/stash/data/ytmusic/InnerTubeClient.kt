@@ -342,6 +342,28 @@ class InnerTubeClient @Inject constructor(
         executeRequest("$BASE_URL/search", body, cookie, variant)
     }
 
+    /**
+     * Calls the InnerTube `search` action, preserving the HTTP outcome.
+     *
+     * Unlike [search], which discards the status code and collapses every
+     * failure into `null`, this returns the [RequestOutcome] so a caller can
+     * tell "the API answered but found nothing" apart from "the API did not
+     * answer" (network failure, 4xx/5xx, rate limit) — the distinction the
+     * artist-photo backfill needs to decide between a permanent "no photo"
+     * sentinel and a transient retry.
+     */
+    internal suspend fun searchWithStatus(query: String, params: String? = null): RequestOutcome =
+        withContext(Dispatchers.IO) {
+            val cookie = tokenManager.getYouTubeCookie()
+            val variant = InnerTubeVariant.WEB_REMIX
+            val body = buildJsonObject {
+                put("context", buildContext(variant))
+                put("query", query)
+                if (params != null) put("params", params)
+            }
+            executeRequestWithStatus("$BASE_URL/search", body, cookie, variant)
+        }
+
     /** ytmusicapi-derived filter selector that constrains search results to the
      *  "Songs" shelf only. With this set, the response reverts to the legacy
      *  `musicShelfRenderer` shape that downstream parsers expect. */
