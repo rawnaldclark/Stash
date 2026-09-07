@@ -90,6 +90,25 @@ class SpotifyAuthManager @Inject constructor(
         /** Regex to extract clientVersion from the Spotify web player HTML/config. */
         private val CLIENT_VERSION_REGEX = Regex(""""clientVersion"\s*:\s*"([^"]+)"""")
 
+        /** `<script id="appServerConfig" type="text/plain">BASE64-JSON</script>`: the shell's config since 2026-09. */
+        private val APP_SERVER_CONFIG_REGEX =
+            Regex("""<script id="appServerConfig"[^>]*>([A-Za-z0-9+/=\s]+)</script>""")
+
+        /**
+         * The web player's client version from the open.spotify.com shell:
+         * plain `"clientVersion":"…"` when inlined, else decoded from the
+         * base64 `appServerConfig` block the shell ships since 2026-09 (the
+         * plain regex alone missed it on every install and the client-token
+         * request went out with a version from build 1.2.87). Pure + internal.
+         */
+        internal fun extractClientVersion(shellHtml: String): String? {
+            CLIENT_VERSION_REGEX.find(shellHtml)?.let { return it.groupValues[1] }
+            val encoded = APP_SERVER_CONFIG_REGEX.find(shellHtml)?.groupValues?.get(1)?.trim() ?: return null
+            val config = runCatching { String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_8) }
+                .getOrNull() ?: return null
+            return CLIENT_VERSION_REGEX.find(config)?.groupValues?.get(1)
+        }
+
         /** Web-player JS bundle URLs referenced by the open.spotify.com shell. */
         private val WEBPLAYER_BUNDLE_REGEX =
             Regex("""src="(https://[^"]*/web-player/web-player\.[a-f0-9]+\.js)"""")
@@ -204,8 +223,7 @@ class SpotifyAuthManager @Inject constructor(
             }
             response.close()
 
-            val match = CLIENT_VERSION_REGEX.find(body)
-            val version = match?.groupValues?.get(1)
+            val version = extractClientVersion(body)
 
             // Cache in BOTH branches — the miss branch too. Previously only a
             // successful scrape was cached, so a scrape MISS re-fetched the
