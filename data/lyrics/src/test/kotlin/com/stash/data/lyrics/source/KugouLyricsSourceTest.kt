@@ -129,6 +129,27 @@ class KugouLyricsSourceTest {
         assertThat(KugouLyricsSource.normalizeLrc(raw)).isEqualTo("[00:01.00]I been off the grid\n[00:05.20]Second line")
     }
 
+    /**
+     * ultrareview, 2026-09-07: the credit regex took ANY colon in a lyric for a credit
+     * marker, and the head/tail scan then cut everything up to that line — "She said:
+     * welcome home" in the first thirty lines silently dropped a song's whole opening.
+     */
+    @Test
+    fun `a lyric line with a colon is not a credit line`() {
+        val lines = (1..40).map { i -> "[%02d:%02d.00]Line %d".format(i / 6, (i % 6) * 10, i) }.toMutableList()
+        lines[0] = "[00:00.00]作词 : Kanye West"
+        lines[15] = "[02:30.00]She said: welcome home"
+        lines[36] = "[06:00.00]Chorus: sing it back"
+        lines[39] = "[06:30.00]混音 : KuGou"
+
+        val out = KugouLyricsSource.normalizeLrc(lines.joinToString("\n")).lines()
+
+        assertThat(out.first()).isEqualTo(lines[1])
+        assertThat(out).contains("[02:30.00]She said: welcome home")
+        assertThat(out).contains("[06:00.00]Chorus: sing it back")
+        assertThat(out.last()).isEqualTo(lines[38])
+    }
+
     /** Live KuGou (2026-09-06, Reckoner): candidate 1 was "第三方歌词" (third-party), candidate 2 "官方推荐歌词" (official). */
     @Test
     fun `an official recommendation outranks a third-party candidate`() = runTest {

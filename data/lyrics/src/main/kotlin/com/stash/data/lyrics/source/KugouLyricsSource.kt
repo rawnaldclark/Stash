@@ -163,8 +163,20 @@ class KugouLyricsSource(
             "\\(.*?\\)", "（.*?）", "「.*?」", "『.*?』", "<.*?>", "《.*?》", "〈.*?〉", "＜.*?＞", "\\[.*?\\]",
         ).map(::Regex)
         private val TIMED_LINE = Regex("\\[(\\d\\d):(\\d\\d)\\.(\\d{2,3})\\].*")
-        /** A timed line whose text carries a colon: 作词 : X, Lyrics by : Y, and friends. */
-        private val CREDIT_LINE = Regex(".+].+[:：].+")
+        /**
+         * A credit line: `[ts]label : value` where the label is a short Han/Hangul
+         * word (作词, 编曲, 混音…) or an English production credit, optionally "by".
+         * A colon INSIDE a lyric ("She said: hello", "Chorus: …") is not a credit:
+         * taking any colon for one cut a song's whole opening (ultrareview, 2026-09-07).
+         */
+        private val CREDIT_LINE = Regex(
+            "^\\[\\d\\d:\\d\\d\\.\\d{2,3}\\]\\s*(?:[\\p{IsHan}\\p{IsHangul}]{1,6}|(?:" +
+                "lyrics?|lyricist|words|music|composer|composed|written|producer|produced|arranger|arranged|" +
+                "arrangement|mix|mixed|mixing|master|mastered|mastering|vocals?|guitars?|bass|drums|keys|" +
+                "keyboards?|piano|strings|engineer|engineered|recorded|recording|artist|album|title|song|" +
+                "feat|ft|op|sp)(?:\\s+by)?)\\s*[:：].+",
+            RegexOption.IGNORE_CASE,
+        )
         private val TIMESTAMP = Regex("^\\[\\d\\d:\\d\\d\\.\\d{2,3}\\]")
 
         /** Strips bracketed tags from the title and joins artists the way KuGou lists them. */
