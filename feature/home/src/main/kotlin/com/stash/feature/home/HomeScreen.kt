@@ -500,7 +500,7 @@ fun HomeScreen(
                                         )
                                     }
                                 }
-                                items(uiState.yourPlaylists.take(HOME_RAIL_LIMIT), key = { it.id }) { p ->
+                                items(uiState.yourPlaylists.railCut(HOME_RAIL_LIMIT), key = { it.id }) { p ->
                                     MixRailCard(
                                         title = p.title, artUrl = p.artUrl, source = p.source,
                                         onClick = { onNavigateToPlaylist(p.id) },

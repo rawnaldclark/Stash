@@ -55,15 +55,44 @@ class PlaylistDaoHomeVisibilityTest {
         assertEquals(emptyList<Long>(), dao.getAllVisible(includeStreamable = false).first().map { it.id })
     }
 
-    private suspend fun insert(name: String, pinnedAt: Long?): Long = dao.insert(
+    private suspend fun insert(name: String, pinnedAt: Long?, type: PlaylistType = PlaylistType.DAILY_MIX): Long = dao.insert(
         PlaylistEntity(
             name = name,
             source = MusicSource.SPOTIFY,
             sourceId = name,
-            type = PlaylistType.DAILY_MIX,
+            type = type,
             isActive = true,
             syncEnabled = false,
             pinnedToHomeAt = pinnedAt,
         )
     )
+
+    // -- Sync on pins, sync off unpins (the Sync tab's switch decides Home) ----------
+
+    @Test fun `syncing a playlist pins it to Home and keeps an earlier pin stamp`() = runTest {
+        val fresh = insert("Euro trash", pinnedAt = null, type = PlaylistType.CUSTOM)
+        val pinnedBefore = insert("Road trip", pinnedAt = 5L, type = PlaylistType.CUSTOM)
+        dao.setSyncEnabledAndPin(fresh, enabled = true, now = 1_000L)
+        dao.setSyncEnabledAndPin(pinnedBefore, enabled = true, now = 1_000L)
+
+        assertEquals(1_000L, dao.getById(fresh)!!.pinnedToHomeAt)
+        assertEquals(5L, dao.getById(pinnedBefore)!!.pinnedToHomeAt)
+        assertEquals(true, dao.getById(fresh)!!.syncEnabled)
+    }
+
+    @Test fun `turning sync off unpins the playlist`() = runTest {
+        val id = insert("Euro trash", pinnedAt = 5L, type = PlaylistType.CUSTOM)
+        dao.setSyncEnabledAndPin(id, enabled = false, now = 1_000L)
+
+        assertEquals(null, dao.getById(id)!!.pinnedToHomeAt)
+        assertEquals(false, dao.getById(id)!!.syncEnabled)
+    }
+
+    @Test fun `Liked Songs is never auto-pinned, it has its own card`() = runTest {
+        val liked = insert("Liked Songs", pinnedAt = null, type = PlaylistType.LIKED_SONGS)
+        dao.setSyncEnabledAndPin(liked, enabled = true, now = 1_000L)
+
+        assertEquals(null, dao.getById(liked)!!.pinnedToHomeAt)
+        assertEquals(true, dao.getById(liked)!!.syncEnabled)
+    }
 }

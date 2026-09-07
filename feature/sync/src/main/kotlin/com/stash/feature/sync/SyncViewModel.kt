@@ -415,7 +415,9 @@ class SyncViewModel @Inject constructor(
     /** Toggle sync_enabled for a specific Spotify playlist. */
     fun onTogglePlaylistSync(playlistId: Long, enabled: Boolean) {
         viewModelScope.launch {
-            playlistDao.updateSyncEnabled(playlistId, enabled)
+            // The switch decides Home too: sync on pins the playlist to the Your
+            // playlists rail, sync off unpins it (the user's rule, 2026-09-07).
+            playlistDao.setSyncEnabledAndPin(playlistId, enabled, System.currentTimeMillis())
             // v0.9.21: when DISABLING, sweep pending download_queue rows
             // whose tracks no longer belong to any sync-enabled playlist.
             // Without this, deselecting a playlist leaves its in-flight

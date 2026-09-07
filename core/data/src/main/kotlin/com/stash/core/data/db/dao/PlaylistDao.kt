@@ -489,9 +489,25 @@ interface PlaylistDao {
 
     // ── Sync preference queries ─────────────────────────────────────────
 
-    /** Toggle sync_enabled for a specific playlist. */
-    @Query("UPDATE playlists SET sync_enabled = :enabled WHERE id = :playlistId")
-    suspend fun updateSyncEnabled(playlistId: Long, enabled: Boolean)
+    /**
+     * The Sync tab's switch decides Home (2026-09-07): syncing a playlist pins
+     * it there (`pinned_to_home_at`, an earlier pin stamp is kept so the rail
+     * order stays put), turning sync off unpins it. Liked Songs is exempt: it
+     * has its own Home card and never belongs on the Your playlists rail.
+     */
+    @Query(
+        """
+        UPDATE playlists SET
+            sync_enabled = :enabled,
+            pinned_to_home_at = CASE
+                WHEN :enabled = 0 THEN NULL
+                WHEN type IN ('LIKED_SONGS', 'STASH_LIKED') THEN pinned_to_home_at
+                ELSE COALESCE(pinned_to_home_at, :now)
+            END
+        WHERE id = :playlistId
+        """
+    )
+    suspend fun setSyncEnabledAndPin(playlistId: Long, enabled: Boolean, now: Long)
 
     /** Toggle whether a playlist is hidden from the Home rails. */
     @Query("UPDATE playlists SET hide_from_home = :hidden WHERE id = :playlistId")

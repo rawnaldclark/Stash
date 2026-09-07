@@ -171,4 +171,18 @@ class SyncViewModelTest {
         newVm().onToggleHideFromHome(7L, hidden = true)
         coVerify { playlistDao.setHomeVisibility(7L, true, null) }
     }
+
+    // -- The Sync tab's switch decides Home (2026-09-07): sync on pins, sync off unpins --
+
+    @Test
+    fun `syncing a playlist pins it to Home`() {
+        newVm().onTogglePlaylistSync(7L, enabled = true)
+        coVerify { playlistDao.setSyncEnabledAndPin(7L, true, match { it > 0L }) }
+    }
+
+    @Test
+    fun `turning sync off unpins it`() {
+        newVm().onTogglePlaylistSync(7L, enabled = false)
+        coVerify { playlistDao.setSyncEnabledAndPin(7L, false, any()) }
+    }
 }
