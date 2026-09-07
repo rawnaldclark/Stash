@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.data.db.BackupImportScope
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
@@ -44,6 +45,57 @@ import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsToggleRow
 import com.stash.feature.settings.components.SettingsValueRow
+
+/**
+ * One radio choice of the import dialog (issue #235).
+ *
+ * @property scope        What the backup restores — passed straight to the VM.
+ * @property label        Short option title.
+ * @property description  One-line consequence summary shown under the label.
+ * @property confirmLabel Verb on the confirm button ("Merge", "Overwrite All"…).
+ * @property destructive  True when the action REPLACES existing data; renders
+ *                        the row and the confirm button in the error color.
+ */
+private data class ImportScopeOption(
+    val scope: BackupImportScope,
+    val label: String,
+    val description: String,
+    val confirmLabel: String,
+    val destructive: Boolean,
+)
+
+private val importScopeOptions = listOf(
+    ImportScopeOption(
+        scope = BackupImportScope.LIBRARY_MERGE,
+        label = "Merge into library",
+        description = "Adds missing songs and playlists from the backup. " +
+            "Nothing is deleted or replaced; settings stay untouched.",
+        confirmLabel = "Merge",
+        destructive = false,
+    ),
+    ImportScopeOption(
+        scope = BackupImportScope.LIBRARY_REPLACE,
+        label = "Replace library only",
+        description = "Restores the backup's library. Your current settings are kept.",
+        confirmLabel = "Replace Library",
+        destructive = true,
+    ),
+    ImportScopeOption(
+        scope = BackupImportScope.SETTINGS_REPLACE,
+        label = "Restore settings only",
+        description = "Restores settings from the backup. Your current library is kept.",
+        confirmLabel = "Restore Settings",
+        destructive = true,
+    ),
+    ImportScopeOption(
+        scope = BackupImportScope.EVERYTHING_REPLACE,
+        label = "Replace everything",
+        description = "Full restore exactly as backed up — replaces your entire " +
+            "library AND all settings.",
+        confirmLabel = "Overwrite All",
+        destructive = true,
+    ),
+)
 
 /**
  * The Library & Storage spoke of the hub-and-spoke Settings redesign.
@@ -255,7 +307,7 @@ fun SettingsLibraryStorageScreen(
                     Text(
                         text = when (databaseBackupState) {
                             DatabaseBackupState.Exporting -> "Exporting Database"
-                            DatabaseBackupState.Importing -> "Importing Database"
+                            DatabaseBackupState.Importing -> "Importing Backup"
                             is DatabaseBackupState.Success -> "Success"
                             is DatabaseBackupState.Error -> "Error"
                         },
@@ -302,35 +354,94 @@ fun SettingsLibraryStorageScreen(
         }
 
         if (uiState.showImportConfirmation) {
+            // Issue #235: importing is no longer all-or-nothing. The user picks
+            // WHAT the backup restores — merge-into-library is the default
+            // because it can't destroy anything. Selection lives in composition
+            // on purpose: dismissing/reopening the dialog resets to Merge.
+            var selectedScope by remember { mutableStateOf(BackupImportScope.LIBRARY_MERGE) }
+            val option = importScopeOptions.first { it.scope == selectedScope }
+
             AlertDialog(
                 onDismissRequest = viewModel::onCancelImportDatabase,
                 containerColor = MaterialTheme.colorScheme.surface,
                 shape = MaterialTheme.shapes.large,
                 title = {
                     Text(
-                        text = "Overwrite Library & Settings?",
+                        text = "Import Backup",
                         style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.error,
                     )
                 },
                 text = {
-                    Text(
-                        text = "This will completely replace your existing library metadata, playlists, settings, and account connections. This action cannot be undone.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Column {
+                        Text(
+                            text = "Choose what this backup should restore:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Column(modifier = Modifier.selectableGroup()) {
+                            importScopeOptions.forEach { option ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .selectable(
+                                            selected = selectedScope == option.scope,
+                                            role = Role.RadioButton,
+                                            onClick = { selectedScope = option.scope },
+                                        )
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(
+                                        selected = selectedScope == option.scope,
+                                        onClick = null,
+                                    )
+                                    Column(modifier = Modifier.padding(start = 8.dp)) {
+                                        Text(
+                                            text = option.label,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = if (option.destructive) {
+                                                MaterialTheme.colorScheme.error
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
+                                        )
+                                        Text(
+                                            text = option.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (option.destructive) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "This cannot be undone.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            viewModel.onConfirmImportDatabase { restoredUri ->
+                            viewModel.onConfirmImportDatabase(selectedScope) { restoredUri ->
                                 pendingLibStoragePickerIntent = LibStoragePickerIntent.SetAndRestart
                                 treePicker.launch(restoredUri)
                             }
                         },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = if (option.destructive) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                        ),
                     ) {
-                        Text("Overwrite")
+                        Text(option.confirmLabel)
                     }
                 },
                 dismissButton = {

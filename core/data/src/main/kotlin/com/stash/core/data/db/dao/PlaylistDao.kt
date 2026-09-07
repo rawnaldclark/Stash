@@ -209,6 +209,32 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlist_tracks WHERE playlist_id = :playlistId")
     suspend fun getCrossRefsForPlaylist(playlistId: Long): List<PlaylistTrackCrossRef>
 
+    /**
+     * Chunked bulk counterpart to [getCrossRefsForPlaylist] — every cross-ref
+     * row (active AND soft-deleted) for the given playlists in one pass.
+     * Route through [com.stash.core.data.db.chunkedForBind]; a library-sized
+     * playlist id list overflows SQLite's bind cap unchunked.
+     */
+    @Query("SELECT * FROM playlist_tracks WHERE playlist_id IN (:playlistIds)")
+    suspend fun getCrossRefsForPlaylists(playlistIds: List<Long>): List<PlaylistTrackCrossRef>
+
+    // ── Backup merge snapshots (#235) ───────────────────────────────────
+
+    /**
+     * One-shot read of EVERY playlist row regardless of visibility or
+     * sync state. Used by DatabaseBackupManager's library-merge import,
+     * which must see hidden/inactive playlists too: a backup's mix may be
+     * currently rotated off in the live library, but its memberships still
+     * need somewhere to land. Not for UI consumers.
+     */
+    @Query("SELECT * FROM playlists")
+    suspend fun getAllForBackupMerge(): List<PlaylistEntity>
+
+    /** One-shot read of every cross-ref row, soft-deleted included.
+     *  Merge-import counterpart to [getAllForBackupMerge]. */
+    @Query("SELECT * FROM playlist_tracks")
+    suspend fun getAllCrossRefsForBackupMerge(): List<PlaylistTrackCrossRef>
+
     // ── Update / Delete ─────────────────────────────────────────────────
 
     /** Update an existing playlist entity. */
