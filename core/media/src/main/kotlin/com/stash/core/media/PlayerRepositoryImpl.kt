@@ -100,6 +100,9 @@ class PlayerRepositoryImpl @Inject constructor(
     private val radioGenerator: com.stash.core.data.radio.RadioStationGenerator,
     private val trackIdentityEvents: com.stash.core.data.sync.TrackIdentityEvents,
     private val playbackSessionBus: PlaybackSessionBus,
+    // Off unless Hilt binds the real store: existing tests build the repository by hand.
+    private val autoplayRadioPreference: com.stash.core.data.prefs.AutoplayRadioPreference =
+        com.stash.core.data.prefs.AutoplayRadioPreference.Off,
 ) : PlayerRepository {
 
     /**
@@ -235,6 +238,23 @@ class PlayerRepositoryImpl @Inject constructor(
                 if (remaining in 0 until RADIO_GROW_THRESHOLD) growRadio()
             }
         }
+        // Autoplay radio (user ask, 2026-09-07): with the setting on, the moment
+        // the LAST queued track starts, a song radio seeded from it is spliced
+        // behind it, so a one-off play never ends in silence. Tried once per
+        // track: a station that cannot be built is not retried on every tick.
+        scope.launch {
+            kotlinx.coroutines.flow.combine(playerState, autoplayRadioPreference.enabled) { state, on -> state to on }
+                .collect { (state, on) ->
+                    if (!shouldAutoplayRadio(on, radioActive, libraryShuffleActive, state, autoplayTriedTrackId)) return@collect
+                    val track = state.currentTrack ?: return@collect
+                    autoplayTriedTrackId = track.id
+                    val result = startRadio(
+                        com.stash.core.data.radio.RadioSeed.Song(track.title, track.artist, track.youtubeId),
+                        keepCurrent = true,
+                    )
+                    Log.i(TAG, "autoplay radio from '${track.title}' by ${track.artist}: $result")
+                }
+        }
 
         // Next-track prefetch watcher. Whenever the player advances (currentIndex
         // changes), eagerly resolve currentQueueTracks[currentIndex+1] so its URL
@@ -313,6 +333,9 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     @Volatile
     private var libraryShuffleActive: Boolean = false
+
+    /** The last track autoplay tried to seed a radio from, so a miss is not retried every tick. */
+    @Volatile private var autoplayTriedTrackId: Long? = null
 
     /**
      * v0.9.14: Cached snapshot of the user's downloaded library at the moment

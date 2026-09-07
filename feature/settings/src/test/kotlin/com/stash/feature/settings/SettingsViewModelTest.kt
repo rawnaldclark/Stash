@@ -43,6 +43,8 @@ class SettingsViewModelTest {
     private val librarySizeHolder = mockk<LibrarySizeHolder>(relaxed = true)
     private val relayClient = mockk<LosslessRelayClient>(relaxed = true)
 
+    private val autoplayRadioPreference = mockk<com.stash.core.data.prefs.AutoplayRadioPreference>(relaxed = true)
+
     private fun newVm(losslessConfigured: Boolean = true) = SettingsViewModel(
         appContext = mockk(relaxed = true),
         tokenManager = mockk(relaxed = true),
@@ -80,6 +82,7 @@ class SettingsViewModelTest {
         crashFileStore = mockk(relaxed = true),
         streamingPreference = mockk(relaxed = true),
         crossfadePreference = mockk(relaxed = true),
+        autoplayRadioPreference = autoplayRadioPreference,
         databaseBackupManager = mockk(relaxed = true),
         sleepTimerController = mockk(relaxed = true),
         homeDiscoveryPreference = mockk(relaxed = true),
@@ -227,5 +230,14 @@ class SettingsViewModelTest {
 
         assertThat(vm.customEndpointTest.value).isEqualTo(SettingsViewModel.EndpointTestState.IDLE)
         job.cancel()
+    }
+
+    // -- Autoplay radio toggle (2026-09-07) --------------------------------------------
+
+    @Test
+    fun `toggling autoplay radio persists the choice`() = runTest {
+        newVm().onAutoplayRadioToggle(true)
+        advanceUntilIdle()
+        coVerify { autoplayRadioPreference.setEnabled(true) }
     }
 }

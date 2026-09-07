@@ -117,6 +117,7 @@ class SettingsViewModel @Inject constructor(
     private val crashFileStore: CrashFileStore,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val crossfadePreference: com.stash.core.data.prefs.CrossfadePreference,
+    private val autoplayRadioPreference: com.stash.core.data.prefs.AutoplayRadioPreference,
     private val databaseBackupManager: DatabaseBackupManager,
     private val listenBrainzPreference: com.stash.core.data.listenbrainz.ListenBrainzPreference,
     private val listenBrainzApiClient: com.stash.core.data.listenbrainz.ListenBrainzApiClient,
@@ -359,6 +360,18 @@ class SettingsViewModel @Inject constructor(
     }
 
     /** Crossfade on/off — drives the Playback section toggle. Off by default. */
+    /** Autoplay radio: seed a song radio when the last queued track starts. Off by default. */
+    val autoplayRadioEnabled: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        autoplayRadioPreference.enabled.stateIn(
+            viewModelScope,
+            kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            false,
+        )
+
+    fun onAutoplayRadioToggle(enabled: Boolean) {
+        viewModelScope.launch { autoplayRadioPreference.setEnabled(enabled) }
+    }
+
     val crossfadeEnabled: kotlinx.coroutines.flow.StateFlow<Boolean> =
         crossfadePreference.enabled.stateIn(
             scope = viewModelScope,

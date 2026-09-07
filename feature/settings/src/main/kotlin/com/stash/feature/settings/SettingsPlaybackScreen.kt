@@ -56,6 +56,7 @@ fun SettingsPlaybackScreen(
     val isDebuggableBuild = remember(context) {
         context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
     }
+    val autoplayRadioEnabled by viewModel.autoplayRadioEnabled.collectAsStateWithLifecycle()
     val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsStateWithLifecycle()
     val crossfadeDurationMs by viewModel.crossfadeDurationMs.collectAsStateWithLifecycle()
 
@@ -126,6 +127,18 @@ fun SettingsPlaybackScreen(
             )
         }
 
+        // Autoplay: the queue's end seeds a song radio (streams, so it needs Online).
+        SettingsSectionLabel("Autoplay")
+        SettingsGroupCard(
+            rows = listOf {
+                SettingsToggleRow(
+                    title = "Autoplay radio",
+                    subtitle = "When the last song in the queue starts, keep the music going with a radio seeded from it. Needs Online mode.",
+                    checked = autoplayRadioEnabled,
+                    onCheckedChange = viewModel::onAutoplayRadioToggle,
+                )
+            },
+        )
         // Crossfade applies to both streamed and downloaded tracks, so it sits
         // outside the streaming-engine gate.
         SettingsSectionLabel("Crossfade")

@@ -81,8 +81,8 @@ fun SettingsHubScreen(
         listOf(
             SettingsSearchItem(
                 title = "Playback",
-                subtitle = "Sleep timer, crossfade, gapless",
-                keywords = listOf("sleep timer", "crossfade", "gapless", "playback"),
+                subtitle = "Sleep timer, autoplay radio, crossfade, gapless",
+                keywords = listOf("sleep timer", "autoplay", "radio", "crossfade", "gapless", "playback"),
                 icon = Icons.Rounded.PlayArrow,
                 onSelect = onOpenPlayback,
             ),
