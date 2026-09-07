@@ -509,6 +509,20 @@ interface PlaylistDao {
     )
     suspend fun setSyncEnabledAndPin(playlistId: Long, enabled: Boolean, now: Long)
 
+    /**
+     * One-time backfill for installs that synced playlists before the pin
+     * rule existed: every active, synced, unpinned playlist gets pinned now,
+     * Liked Songs excepted. Returns the number of rows pinned. Idempotent.
+     */
+    @Query(
+        """
+        UPDATE playlists SET pinned_to_home_at = :now
+        WHERE is_active = 1 AND sync_enabled = 1 AND pinned_to_home_at IS NULL
+          AND type NOT IN ('LIKED_SONGS', 'STASH_LIKED')
+        """
+    )
+    suspend fun pinSyncedPlaylists(now: Long): Int
+
     /** Toggle whether a playlist is hidden from the Home rails. */
     @Query("UPDATE playlists SET hide_from_home = :hidden WHERE id = :playlistId")
     suspend fun setHideFromHome(playlistId: Long, hidden: Boolean)

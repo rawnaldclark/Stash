@@ -55,14 +55,14 @@ class PlaylistDaoHomeVisibilityTest {
         assertEquals(emptyList<Long>(), dao.getAllVisible(includeStreamable = false).first().map { it.id })
     }
 
-    private suspend fun insert(name: String, pinnedAt: Long?, type: PlaylistType = PlaylistType.DAILY_MIX): Long = dao.insert(
+    private suspend fun insert(name: String, pinnedAt: Long?, type: PlaylistType = PlaylistType.DAILY_MIX, synced: Boolean = false): Long = dao.insert(
         PlaylistEntity(
             name = name,
             source = MusicSource.SPOTIFY,
             sourceId = name,
             type = type,
             isActive = true,
-            syncEnabled = false,
+            syncEnabled = synced,
             pinnedToHomeAt = pinnedAt,
         )
     )
@@ -94,5 +94,24 @@ class PlaylistDaoHomeVisibilityTest {
 
         assertEquals(null, dao.getById(liked)!!.pinnedToHomeAt)
         assertEquals(true, dao.getById(liked)!!.syncEnabled)
+    }
+
+    // -- One-time backfill: playlists synced before the pin rule get pinned once ------
+
+    @Test fun `the backfill pins every already-synced playlist and nothing else`() = runTest {
+        val synced = insert("Euro trash", pinnedAt = null, type = PlaylistType.CUSTOM, synced = true)
+        val syncedPinned = insert("Road trip", pinnedAt = 5L, type = PlaylistType.CUSTOM, synced = true)
+        val notSynced = insert("Old mixtape", pinnedAt = null, type = PlaylistType.CUSTOM, synced = false)
+        val liked = insert("Liked Songs", pinnedAt = null, type = PlaylistType.LIKED_SONGS, synced = true)
+        val syncedMix = insert("Daily Mix 1", pinnedAt = null, type = PlaylistType.DAILY_MIX, synced = true)
+
+        assertEquals(2, dao.pinSyncedPlaylists(now = 1_000L))
+
+        assertEquals(1_000L, dao.getById(synced)!!.pinnedToHomeAt)
+        assertEquals(5L, dao.getById(syncedPinned)!!.pinnedToHomeAt)
+        assertEquals(null, dao.getById(notSynced)!!.pinnedToHomeAt)
+        assertEquals(null, dao.getById(liked)!!.pinnedToHomeAt)
+        assertEquals(1_000L, dao.getById(syncedMix)!!.pinnedToHomeAt)
+        assertEquals(0, dao.pinSyncedPlaylists(now = 2_000L))
     }
 }

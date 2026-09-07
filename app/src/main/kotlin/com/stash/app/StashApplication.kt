@@ -443,7 +443,12 @@ class StashApplication : Application(), Configuration.Provider {
         // waiting up to 48 hours when Android Doze defers the fire.
         UpdateCheckWorker.enqueueOneTimeCheck(this)
         applicationScope.launch { maybeInvalidateArtistCache() }
-        applicationScope.launch { enforceDailyMixSyncDisabled() }
+        // The pin backfill runs after the mix-flag cleanup on purpose: a stale
+        // DAILY_MIX sync flag must be cleared before "synced" is read as intent.
+        applicationScope.launch {
+            enforceDailyMixSyncDisabled()
+            maybePinSyncedPlaylists()
+        }
         applicationScope.launch { maybeHideEmptyYouTubePlaylists() }
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
@@ -831,6 +836,24 @@ class StashApplication : Application(), Configuration.Provider {
      * idempotent rather than preference-gated: restoring an older database can
      * reintroduce stale mix flags while SharedPreferences survives the restore.
      */
+    /**
+     * v0.9.104: the Sync tab's switch decides Home — sync on pins the playlist
+     * to the Your playlists rail. Playlists synced before that rule existed
+     * were never pinned, so they'd need one off-and-on flip each; this pins
+     * them once per install instead (Liked Songs excepted, it has its own
+     * card). A sync switch that is on is always the user's own choice, unlike
+     * the mix switches, so this backfill carries no risk of pinning by default.
+     */
+    private suspend fun maybePinSyncedPlaylists() {
+        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
+        val stored = prefs.getInt("synced_playlists_pin_version", 0)
+        if (stored < SYNCED_PLAYLISTS_PIN_VERSION) {
+            val pinned = playlistDao.pinSyncedPlaylists(System.currentTimeMillis())
+            Log.i("StashMigration", "maybePinSyncedPlaylists: pinned $pinned already-synced playlist(s) to Home")
+            prefs.edit().putInt("synced_playlists_pin_version", SYNCED_PLAYLISTS_PIN_VERSION).apply()
+        }
+    }
+
     private suspend fun enforceDailyMixSyncDisabled() {
         val updated = playlistDao.disableLegacyDailyMixSync()
         if (updated > 0) {
@@ -930,6 +953,9 @@ class StashApplication : Application(), Configuration.Provider {
          * pool's cached third-party tokens and the retired amz toggle.
          */
         private const val ANTRA_PURGE_VERSION = 2
+
+        /** v0.9.104: pin every already-synced playlist to Home, once. */
+        private const val SYNCED_PLAYLISTS_PIN_VERSION = 1
 
         /**
          * Bump when [maybeHideEmptyYouTubePlaylists] needs to run again.
