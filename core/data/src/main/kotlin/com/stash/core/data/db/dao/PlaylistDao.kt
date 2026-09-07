@@ -293,6 +293,11 @@ interface PlaylistDao {
         WHERE p.is_active = 1
           AND (
               p.sync_enabled = 1
+              -- Pinned on Home from the manage screen: the user asked for it, so it
+              -- shows even before any of its tracks is downloaded or indexed. Mixes
+              -- never auto-download (#368), so without this arm a radio sharing no
+              -- track with the user's own playlists could never reach Home.
+              OR p.pinned_to_home_at IS NOT NULL
               OR EXISTS (
                   SELECT 1 FROM playlist_tracks pt
                   JOIN tracks t ON pt.track_id = t.id
@@ -491,6 +496,14 @@ interface PlaylistDao {
     /** Toggle whether a playlist is hidden from the Home rails. */
     @Query("UPDATE playlists SET hide_from_home = :hidden WHERE id = :playlistId")
     suspend fun setHideFromHome(playlistId: Long, hidden: Boolean)
+
+    /**
+     * Home visibility in one write: a hidden mix is never pinned, and a mix the
+     * user shows on Home is pinned there (`pinned_to_home_at`), so "Shown on
+     * Home" holds past the rail's freshness cut (2026-09-07, Cup Noodle Radio).
+     */
+    @Query("UPDATE playlists SET hide_from_home = :hidden, pinned_to_home_at = :pinnedAt WHERE id = :playlistId")
+    suspend fun setHomeVisibility(playlistId: Long, hidden: Boolean, pinnedAt: Long?)
 
     /** Toggle whether a playlist is pinned to the top of the Library grid. */
     @Query("UPDATE playlists SET pinned = :pinned WHERE id = :playlistId")

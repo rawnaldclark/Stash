@@ -99,6 +99,8 @@ data class HomeMix(
     val buildState: com.stash.core.data.mix.MixBuildState = com.stash.core.data.mix.MixBuildState.READY,
     /** Hero-pager subtitle ("N tracks") for the Your-mix pages. */
     val trackCount: Int = 0,
+    /** Set when the user showed this mix on Home from the manage screen; pinned mixes lead their rail. */
+    val pinnedToHomeAt: Long? = null,
 )
 
 /** Merged Liked Songs card on the "Your playlists" rail (null = toggle off). */

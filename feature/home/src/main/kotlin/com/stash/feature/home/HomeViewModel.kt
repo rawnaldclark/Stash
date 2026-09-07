@@ -275,9 +275,9 @@ class HomeViewModel @Inject constructor(
         val recencyById = recency.associate { it.playlistId to it.latestAddedAt }
         HomePlaylistData(
             hero = hero,
-            madeForYou = madeForYou.freshestFirst(recencyById),
-            radios = radios.freshestFirst(recencyById),
-            moodDecades = moodDecades.freshestFirst(recencyById),
+            madeForYou = madeForYou.pinnedThenFreshest(recencyById),
+            radios = radios.pinnedThenFreshest(recencyById),
+            moodDecades = moodDecades.pinnedThenFreshest(recencyById),
             yourMixes = yourMixes,
             customMixPlaylistIds = customMixPlaylistIds,
             // Reads the raw `playlists` param, not the !hideFromHome loop
@@ -289,7 +289,7 @@ class HomeViewModel @Inject constructor(
     private fun Playlist.toHomeMix(buildState: MixBuildState = MixBuildState.READY) =
         HomeMix(
             id = id, title = name, artUrl = artUrl, source = source,
-            buildState = buildState, trackCount = trackCount,
+            buildState = buildState, trackCount = trackCount, pinnedToHomeAt = pinnedToHomeAt,
         )
 
     /**
@@ -689,9 +689,14 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /** Hide (or unhide) a mix's playlist from the Home rails. */
+    /**
+     * Hide (or unhide) a mix's playlist from the Home rails. Hiding unpins it;
+     * showing pins it, so it leads its rail (see MixRail.pinnedThenFreshest).
+     */
     fun setHideFromHome(playlistId: Long, hidden: Boolean) {
-        viewModelScope.launch { playlistDao.setHideFromHome(playlistId, hidden) }
+        viewModelScope.launch {
+            playlistDao.setHomeVisibility(playlistId, hidden, if (hidden) null else System.currentTimeMillis())
+        }
     }
 
     /**

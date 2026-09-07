@@ -73,6 +73,7 @@ data class SpotifySyncPlaylist(
     val syncEnabled: Boolean,
     val artUrl: String? = null,
     val hideFromHome: Boolean = false,
+    val pinnedToHomeAt: Long? = null,
 )
 
 /**
@@ -89,6 +90,7 @@ data class YouTubeSyncPlaylist(
     val syncEnabled: Boolean,
     val artUrl: String? = null,
     val hideFromHome: Boolean = false,
+    val pinnedToHomeAt: Long? = null,
 )
 
 data class SyncUiState(
@@ -440,7 +442,12 @@ class SyncViewModel @Inject constructor(
      * with what's queued or synced.
      */
     fun onToggleHideFromHome(playlistId: Long, hidden: Boolean) {
-        viewModelScope.launch { playlistDao.setHideFromHome(playlistId, hidden) }
+        // Showing pins the mix so it leads its Home rail; hiding unpins it. The
+        // rail shows only its 12 freshest mixes otherwise, and "Shown on Home"
+        // was a promise it kept for none of the others (Cup Noodle Radio, 2026-09-07).
+        viewModelScope.launch {
+            playlistDao.setHomeVisibility(playlistId, hidden, if (hidden) null else System.currentTimeMillis())
+        }
     }
 
     /**
@@ -716,6 +723,7 @@ class SyncViewModel @Inject constructor(
                                 syncEnabled = e.syncEnabled,
                                 artUrl = e.artUrl,
                                 hideFromHome = e.hideFromHome,
+                                pinnedToHomeAt = e.pinnedToHomeAt,
                             )
                         }
                     )
@@ -738,6 +746,7 @@ class SyncViewModel @Inject constructor(
                                 syncEnabled = e.syncEnabled,
                                 artUrl = e.artUrl,
                                 hideFromHome = e.hideFromHome,
+                                pinnedToHomeAt = e.pinnedToHomeAt,
                             )
                         }
                     )

@@ -157,4 +157,18 @@ class SyncViewModelTest {
         vm.onRequestSpotifyRefresh()
         assertNull(vm.uiState.value.pendingRefreshSource)
     }
+
+    // -- "Shown on Home" pins the mix (2026-09-07) ---------------------------------
+
+    @Test
+    fun `showing a mix on Home pins it`() {
+        newVm().onToggleHideFromHome(7L, hidden = false)
+        coVerify { playlistDao.setHomeVisibility(7L, false, match { it != null }) }
+    }
+
+    @Test
+    fun `hiding a mix from Home unpins it`() {
+        newVm().onToggleHideFromHome(7L, hidden = true)
+        coVerify { playlistDao.setHomeVisibility(7L, true, null) }
+    }
 }

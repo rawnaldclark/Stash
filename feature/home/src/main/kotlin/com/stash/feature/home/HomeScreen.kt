@@ -572,7 +572,7 @@ fun HomeScreen(
                             actionText = "See all",
                             onActionClick = { onSeeAllMixes(MixRail.MADE_FOR_YOU) },
                         ) {
-                            items(uiState.madeForYou.take(HOME_RAIL_LIMIT), key = { it.id }) { m ->
+                            items(uiState.madeForYou.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
                                 MixRailCard(
                                     title = m.title, artUrl = m.artUrl, source = m.source,
                                     buildState = m.buildState, onClick = { openMix(m.id) },
@@ -589,7 +589,7 @@ fun HomeScreen(
                             actionText = "See all",
                             onActionClick = { onSeeAllMixes(MixRail.RADIOS) },
                         ) {
-                            items(uiState.radios.take(HOME_RAIL_LIMIT), key = { it.id }) { m ->
+                            items(uiState.radios.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
                                 MixRailCard(
                                     title = m.title, artUrl = m.artUrl, source = m.source,
                                     buildState = m.buildState, onClick = { openMix(m.id) },
@@ -606,7 +606,7 @@ fun HomeScreen(
                             actionText = "See all",
                             onActionClick = { onSeeAllMixes(MixRail.MOOD_DECADES) },
                         ) {
-                            items(uiState.moodDecades.take(HOME_RAIL_LIMIT), key = { it.id }) { m ->
+                            items(uiState.moodDecades.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
                                 MixRailCard(
                                     title = m.title, artUrl = m.artUrl, source = m.source,
                                     buildState = m.buildState, onClick = { openMix(m.id) },

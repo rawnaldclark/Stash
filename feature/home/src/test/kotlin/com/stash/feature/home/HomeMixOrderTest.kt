@@ -72,4 +72,56 @@ class HomeMixOrderTest {
             .containsExactly("Ambient Mix", "Focus Mix", "Soul Mix")
             .inOrder()
     }
+
+    // -- Pinned mixes (2026-09-07: "Shown on Home" must mean shown on Home) ----------
+
+    /**
+     * Cup Noodle Radio, Pixel 6, 2026-09-07: the user switched it to "Shown on
+     * Home" and never saw it — its tracks were last added on 2 August, so it sat
+     * 36th of 63 radios behind a 12-card cut. A mix the user pins leads the rail
+     * no matter how stale its tracks are.
+     */
+    @Test
+    fun `a pinned mix leads the rail regardless of freshness`() {
+        val rail = listOf(
+            mix(1, "Cup Noodle Radio").copy(pinnedToHomeAt = 100L), // stalest tracks, pinned
+            mix(2, "T. Rex Radio"),
+            mix(3, "The Doors Radio"),
+        )
+        val recency = mapOf(1L to 1_000L, 2L to 9_000L, 3L to 5_000L)
+        assertThat(rail.pinnedThenFreshest(recency).map { it.title })
+            .containsExactly("Cup Noodle Radio", "T. Rex Radio", "The Doors Radio")
+            .inOrder()
+    }
+
+    @Test
+    fun `pinned mixes keep their pin order, first pinned first, ahead of the fresh ones`() {
+        val rail = listOf(
+            mix(1, "Zach Top Radio").copy(pinnedToHomeAt = 200L),
+            mix(2, "Beck Radio").copy(pinnedToHomeAt = 100L),
+            mix(3, "The Cure Radio"),
+        )
+        val recency = mapOf(1L to 1L, 2L to 1L, 3L to 9_000L)
+        assertThat(rail.pinnedThenFreshest(recency).map { it.title })
+            .containsExactly("Beck Radio", "Zach Top Radio", "The Cure Radio")
+            .inOrder()
+    }
+
+    @Test
+    fun `the rail cut keeps every pinned mix even past the limit`() {
+        val pinned = (1L..13L).map { mix(it, "Pinned $it").copy(pinnedToHomeAt = it) }
+        val fresh = (14L..30L).map { mix(it, "Fresh $it") }
+        val cut = (pinned + fresh).railCut(limit = 12)
+        assertThat(cut).hasSize(13)
+        assertThat(cut.all { it.pinnedToHomeAt != null }).isTrue()
+    }
+
+    @Test
+    fun `the rail cut fills the limit with fresh mixes after the pinned ones`() {
+        val pinned = (1L..2L).map { mix(it, "Pinned $it").copy(pinnedToHomeAt = it) }
+        val fresh = (3L..30L).map { mix(it, "Fresh $it") }
+        val cut = (pinned + fresh).railCut(limit = 12)
+        assertThat(cut).hasSize(12)
+        assertThat(cut.take(2).map { it.title }).containsExactly("Pinned 1", "Pinned 2").inOrder()
+    }
 }

@@ -63,9 +63,9 @@ fun ManagePlaylistsScreen(
     // Both source playlist types share the same shape but are distinct classes;
     // map into one source-agnostic row so the rest of the screen ignores which.
     val rows: List<ManageRow> = if (source == SyncSource.SPOTIFY) {
-        uiState.spotifyPlaylists.map { ManageRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.hideFromHome) }
+        uiState.spotifyPlaylists.map { ManageRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.hideFromHome, it.pinnedToHomeAt) }
     } else {
-        uiState.youTubePlaylists.map { ManageRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.hideFromHome) }
+        uiState.youTubePlaylists.map { ManageRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.hideFromHome, it.pinnedToHomeAt) }
     }
 
     val accent = if (source == SyncSource.SPOTIFY) {
@@ -218,8 +218,10 @@ fun ManagePlaylistsScreen(
                         MixHideRow(
                             name = mix.name,
                             hideFromHome = mix.hideFromHome,
+                            pinned = mix.pinnedToHomeAt != null,
                             // Switch is inverted: ON = shown on Home → toggling
-                            // OFF hides it (hidden = !shown).
+                            // OFF hides it (hidden = !shown). Switching ON pins
+                            // the mix, so it leads its rail (SyncViewModel).
                             onToggleShown = { shown -> viewModel.onToggleHideFromHome(mix.id, !shown) },
                         )
                     }
@@ -276,6 +278,7 @@ private data class ManageRow(
     val type: PlaylistType,
     val syncEnabled: Boolean,
     val hideFromHome: Boolean,
+    val pinnedToHomeAt: Long? = null,
 )
 
 /** Segment filter over the custom "Your playlists" list. */
@@ -378,6 +381,7 @@ private fun DiscoverMixesRow(
 private fun MixHideRow(
     name: String,
     hideFromHome: Boolean,
+    pinned: Boolean,
     onToggleShown: (Boolean) -> Unit,
 ) {
     val shown = !hideFromHome
@@ -397,7 +401,7 @@ private fun MixHideRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = if (shown) "Shown on Home" else "Hidden from Home",
+                text = homeVisibilityLabel(hidden = hideFromHome, pinned = pinned),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -407,4 +411,15 @@ private fun MixHideRow(
             onCheckedChange = onToggleShown,
         )
     }
+}
+
+/**
+ * What Home will actually do with the mix, in words. The rails show their 12
+ * freshest mixes; an untouched mix surfaces when a sync adds to it, a pinned one
+ * always leads, a hidden one never appears.
+ */
+internal fun homeVisibilityLabel(hidden: Boolean, pinned: Boolean): String = when {
+    hidden -> "Hidden from Home"
+    pinned -> "Pinned on Home"
+    else -> "On Home when it updates"
 }

@@ -48,6 +48,25 @@ internal fun List<HomeMix>.freshestFirst(recency: Map<Long, Long>): List<HomeMix
     )
 
 /**
+ * Pinned first, then freshest. "Shown on Home" on the manage screen pins a mix
+ * (`pinnedToHomeAt`), and a pinned mix leads its rail no matter how stale its
+ * tracks are: Cup Noodle Radio (Pixel 6, 2026-09-07) sat 36th of 63 radios
+ * behind the 12-card cut with the switch on. Pins keep their order, first
+ * pinned first (the Your-playlists precedent); the rest stays [freshestFirst].
+ */
+internal fun List<HomeMix>.pinnedThenFreshest(recency: Map<Long, Long>): List<HomeMix> {
+    val (pinned, rest) = partition { it.pinnedToHomeAt != null }
+    return pinned.sortedBy { it.pinnedToHomeAt } + rest.freshestFirst(recency)
+}
+
+/**
+ * The rail's visible head: every pinned mix, then fresh ones up to [limit] cards
+ * in total. Expects [pinnedThenFreshest] order, so the pinned ones are the head.
+ */
+internal fun List<HomeMix>.railCut(limit: Int): List<HomeMix> =
+    take(maxOf(limit, count { it.pinnedToHomeAt != null }))
+
+/**
  * Home's "Your playlists" rail: playlists the user explicitly pinned
  * (`pinnedToHomeAt != null`), excluding anything that already lives on a
  * mix rail. Ordered by pin time — first pinned renders first; stable, no
