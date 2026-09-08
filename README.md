@@ -220,7 +220,7 @@ That isn't a workaround. It's a principled choice: open-source tools that give u
 
 Bug reports and feature requests through [GitHub Issues](https://github.com/rawnaldclark/Stash/issues). For everything else — questions, requests, "is this thing on" — the [Stash Discord](https://discord.gg/vcbjEby5PC) is the place. Active dev there, fast answers.
 
-Want to help translate Stash into your language? Join the [Crowdin project](https://crowdin.com/project/stash-music-player) and [request translator access here](https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform?usp=sharing&ouid=101376898883134592146).
+Want to help translate Stash into your language? Join the [Crowdin project](https://crowdin.com/project/stash-music-player) and [request translator access here](https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform).
 
 ---
 
