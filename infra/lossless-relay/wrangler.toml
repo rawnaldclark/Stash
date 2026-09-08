@@ -6,10 +6,10 @@ compatibility_flags = ["nodejs_compat"]
 
 # Caps (spec §5.4, §6.2, §7). Strings: TOML vars reach the Worker as strings.
 [vars]
-GLOBAL_DAILY_CAP = "7000"      # 7 live accounts x 1000
+GLOBAL_DAILY_CAP = "15000"     # 7 live accounts x 2000, rounded up (2026-09-08)
 INSTALL_DAILY_CAP = "300"      # was 100; browsing pre-resolve spent it in hours (client fix in 0.9.102)
 ACCOUNT_HOURLY_CAP = "100"     # ceiling, not a target: an account going dead is the signal to lower it
-ACCOUNT_DAILY_CAP = "1000"     # generous by policy (2026-09-05); 600 was hit by 15:00 UTC with no Qobuz pushback
+ACCOUNT_DAILY_CAP = "2000"     # doubled 2026-09-08: 1000 was hit by 13:17 UTC two days running (6945 + 6976 mints, 190-217 installs), no Qobuz pushback at 1000
 
 # Rotation state, mint cache, daily counters (spec §5.2: D1, not KV, because of KV's write limit).
 [[d1_databases]]
