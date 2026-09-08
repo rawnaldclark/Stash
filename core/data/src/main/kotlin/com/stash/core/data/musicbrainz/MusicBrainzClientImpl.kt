@@ -24,8 +24,13 @@ import javax.inject.Singleton
  */
 @Singleton
 class MusicBrainzClientImpl @Inject constructor(
-    private val http: OkHttpClient,
+    okHttpClient: OkHttpClient,
 ) : MusicBrainzClient {
+    // MusicBrainz answers in 1-7 s on a good day. A coroutine timeout cannot
+    // interrupt a blocking call, so the bound lives on the call itself.
+    private val http: OkHttpClient = okHttpClient.newBuilder()
+        .callTimeout(CALL_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
 
     private val json = Json { ignoreUnknownKeys = true }
     private val rateGate = Mutex()
@@ -70,6 +75,7 @@ class MusicBrainzClientImpl @Inject constructor(
 
     private companion object {
         const val BASE = "https://musicbrainz.org/ws/2/"
+        private const val CALL_TIMEOUT_SECONDS = 5L
         const val USER_AGENT = "Stash/1.0 ( https://github.com/rawnaldclark/Stash )"
         const val MIN_INTERVAL_MS = 1000L
     }

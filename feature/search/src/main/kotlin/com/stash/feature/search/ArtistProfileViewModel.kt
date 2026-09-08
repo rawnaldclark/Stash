@@ -191,6 +191,13 @@ class ArtistProfileViewModel @Inject constructor(
             }
             .collect { cached ->
                 when (cached) {
+                    // The YouTube profile alone, painted at once; the enriched
+                    // Fresh replaces it a moment later (About section, Qobuz albums).
+                    is CachedProfile.Partial -> apply(
+                        profile = cached.profile,
+                        status = ArtistProfileStatus.Fresh,
+                        t0 = t0,
+                    )
                     is CachedProfile.Fresh -> apply(
                         profile = cached.profile,
                         status = ArtistProfileStatus.Fresh,

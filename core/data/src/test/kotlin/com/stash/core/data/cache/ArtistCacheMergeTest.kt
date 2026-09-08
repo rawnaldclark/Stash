@@ -27,6 +27,8 @@ import org.mockito.kotlin.whenever
  * the pure-JVM [InMemoryDao] fake, and a fixed `now` clock. The supplement is a
  * hand-rolled fake driven by a lambda so each test picks its own behaviour.
  */
+// A cold miss paints the YouTube profile first (CachedProfile.Partial); the merged
+// profile is the Fresh emission that follows, so these read the Fresh item.
 class ArtistCacheMergeTest {
 
     private val loveless = AlbumSummary(
@@ -76,11 +78,12 @@ class ArtistCacheMergeTest {
         val cache = ArtistCache(dao, api, now = { 1_000L }, supplement = mergingSupplement())
 
         cache.get("UC1").test {
-            val first = awaitItem()
-            assertTrue(first is CachedProfile.Fresh)
+            assertTrue(awaitItem() is CachedProfile.Partial)   // the YouTube profile paints first
+            val fresh = awaitItem()
+            assertTrue(fresh is CachedProfile.Fresh)
             assertTrue(
                 "cold-miss Fresh must contain the Qobuz album",
-                (first as CachedProfile.Fresh).profile.albums.any { it.isLoveless() },
+                (fresh as CachedProfile.Fresh).profile.albums.any { it.isLoveless() },
             )
             cancelAndIgnoreRemainingEvents()
         }
@@ -118,7 +121,7 @@ class ArtistCacheMergeTest {
         val throwing = FakeSupplement { _, _ -> throw RuntimeException("qobuz down") }
         val cache = ArtistCache(dao, api, now = { 1_000L }, supplement = throwing)
 
-        val result = cache.get("UC1").first()
+        val result = cache.get("UC1").first { it is CachedProfile.Fresh }
         assertTrue(result is CachedProfile.Fresh)
         assertTrue(
             "supplement failure must degrade to YT-only (no Qobuz album)",
@@ -138,7 +141,7 @@ class ArtistCacheMergeTest {
         }
         val cache = ArtistCache(dao, api, now = { 1_000L }, supplement = slow)
 
-        val result = cache.get("UC1").first()
+        val result = cache.get("UC1").first { it is CachedProfile.Fresh }
         assertTrue(result is CachedProfile.Fresh)
         assertTrue(
             "supplement timeout must degrade to YT-only (no Qobuz album)",

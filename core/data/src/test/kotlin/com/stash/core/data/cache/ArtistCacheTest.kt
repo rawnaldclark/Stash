@@ -44,7 +44,7 @@ class ArtistCacheTest {
     )
 
     @Test
-    fun `miss emits Fresh after network fetch populates cache`() = runTest {
+    fun `miss emits the YouTube profile first, then Fresh once the cache is populated`() = runTest {
         val dao = InMemoryDao()
         val api = mock<YTMusicApiClient>()
         whenever(api.getArtist(eq("UC1"))).thenReturn(mkProfile("UC1", "A"))
@@ -52,8 +52,10 @@ class ArtistCacheTest {
 
         cache.get("UC1").test {
             val first = awaitItem()
-            assertTrue(first is CachedProfile.Fresh)
-            assertEquals("A", (first as CachedProfile.Fresh).profile.name)
+            assertTrue(first is CachedProfile.Partial)
+            val fresh = awaitItem()
+            assertTrue(fresh is CachedProfile.Fresh)
+            assertEquals("A", (fresh as CachedProfile.Fresh).profile.name)
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -149,7 +151,7 @@ class ArtistCacheTest {
             whenever(api.getArtist(eq("UC$i"))).thenReturn(mkProfile("UC$i"))
         }
         val cache = ArtistCache(dao, api, now = { 1L })
-        repeat(25) { i -> cache.get("UC$i").first() }
+        repeat(25) { i -> cache.get("UC$i").first { it is CachedProfile.Fresh } }
 
         assertTrue(cache.memoryContains("UC24"))
         assertFalse(cache.memoryContains("UC0"))

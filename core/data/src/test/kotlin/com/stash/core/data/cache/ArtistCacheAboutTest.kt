@@ -30,6 +30,8 @@ import org.mockito.kotlin.whenever
  * and `NoopDiscographySupplement` for the discography path. The enricher is a
  * hand-rolled fake driven by a lambda so each test picks its own behaviour.
  */
+// A cold miss paints the YouTube profile first (CachedProfile.Partial); the merged
+// profile is the Fresh emission that follows, so these read the Fresh item.
 class ArtistCacheAboutTest {
 
     /** Fake enricher: whatever the lambda returns (or throws) is the About result. */
@@ -67,7 +69,7 @@ class ArtistCacheAboutTest {
         val throwing = FakeEnricher { throw RuntimeException("last.fm down") }
         val cache = ArtistCache(dao, api, now = { 1_000L }, aboutEnricher = throwing)
 
-        val result = cache.get("UC1").first()
+        val result = cache.get("UC1").first { it is CachedProfile.Fresh }
         assertTrue(result is CachedProfile.Fresh)
         assertNull((result as CachedProfile.Fresh).profile.about)
     }
@@ -82,7 +84,7 @@ class ArtistCacheAboutTest {
         val hanging = FakeEnricher { delay(Long.MAX_VALUE); null }
         val cache = ArtistCache(dao, api, now = { 1_000L }, aboutEnricher = hanging)
 
-        val result = cache.get("UC1").first()
+        val result = cache.get("UC1").first { it is CachedProfile.Fresh }
         assertTrue(result is CachedProfile.Fresh)
         val profile = (result as CachedProfile.Fresh).profile
         assertNull(profile.about)
@@ -103,7 +105,7 @@ class ArtistCacheAboutTest {
         )
         val cache = ArtistCache(dao, api, now = { 1_000L }, aboutEnricher = FakeEnricher { about })
 
-        val result = cache.get("UC1").first()
+        val result = cache.get("UC1").first { it is CachedProfile.Fresh }
         assertTrue(result is CachedProfile.Fresh)
         assertEquals(about, (result as CachedProfile.Fresh).profile.about)
     }

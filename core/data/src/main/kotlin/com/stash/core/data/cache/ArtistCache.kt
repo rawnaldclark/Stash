@@ -36,6 +36,13 @@ sealed interface CachedProfile {
 
     data class Fresh(override val profile: ArtistProfile) : CachedProfile
 
+    /**
+     * A cache miss's first paint: the YouTube profile as fetched, before the
+     * discography supplement and the About enrichment have answered. A [Fresh]
+     * with the enriched profile follows. Never persisted.
+     */
+    data class Partial(override val profile: ArtistProfile) : CachedProfile
+
     data class Stale(
         override val profile: ArtistProfile,
         val refreshFailed: Boolean = false,
@@ -163,7 +170,13 @@ class ArtistCache(
         }
 
         // Cold miss: no memory or disk tier hit — network is the source of truth.
-        val profile = fetchAndMerge(artistId)
+        // Cold miss: paint the YouTube profile the moment it is in hand. The
+        // enrichments used to gate the first paint, and a slow MusicBrainz
+        // lookup made an uncached artist page take 13.8 s on a Pixel 6
+        // (2026-09-08); the YouTube data was ready at 3.4 s.
+        val yt = api.getArtist(artistId)
+        emit(CachedProfile.Partial(yt))
+        val profile = enrich(yt)
         persist(profile)
         emit(CachedProfile.Fresh(profile))
     }
@@ -178,8 +191,11 @@ class ArtistCache(
      * lists, never escaping. Bounded by [SUPPLEMENT_TIMEOUT_MS] because the qbdlx
      * call can hang and must not stall the artist page.
      */
-    private suspend fun fetchAndMerge(artistId: String): ArtistProfile = coroutineScope {
-        val yt = api.getArtist(artistId)   // REQUIRED — failure propagates
+    private suspend fun fetchAndMerge(artistId: String): ArtistProfile =
+        enrich(api.getArtist(artistId))   // REQUIRED — failure propagates
+
+    /** The two best-effort supplements, in parallel, each bounded; either may fall back to the YouTube data. */
+    private suspend fun enrich(yt: ArtistProfile): ArtistProfile = coroutineScope {
         val discographyDeferred = async {
             try {
                 withTimeout(SUPPLEMENT_TIMEOUT_MS) { supplement.mergeInto(yt.name, yt.albums, yt.singles) }
