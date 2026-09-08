@@ -95,6 +95,9 @@ fun SyncScreen(
     val authState by viewModel.authExpiry.collectAsStateWithLifecycle()
     val streamingMode by viewModel.streamingEnabled.collectAsStateWithLifecycle()
     val playbackOnline by viewModel.playbackOnline.collectAsStateWithLifecycle()
+    // Last.fm source card state (issue #255) — collected with the rest of
+    // the screen's state because LazyListScope isn't a composable context.
+    val lastFmState by viewModel.lastFmState.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier
@@ -322,6 +325,47 @@ fun SyncScreen(
             }
         }
 
+        // -- Last.fm source dashboard (issue #255) ----------------------------
+        // Last.fm can't import playlists (no public playlist API), so its
+        // source card is the app-managed "Recommended by Last.fm" mix: a
+        // rotating playlist of tracks Last.fm recommends from the user's
+        // listening, matched + downloaded through the discovery pipeline.
+        // Rendered only while a Last.fm session exists — the scrobble
+        // connection IS the source connection.
+        if (lastFmState.connected) {
+            item {
+                val hasTracks = (lastFmState.trackCount ?: 0) > 0
+                com.stash.feature.sync.components.SourcePreferencesCard(
+                    name = "Last.fm",
+                    brandColor = StashTheme.extendedColors.lastfmRed,
+                    connected = true,
+                    stats = {
+                        if (hasTracks) {
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                SourceStatCell(
+                                    number = "${lastFmState.trackCount}",
+                                    label = "RECOMMENDED",
+                                )
+                            }
+                        } else {
+                            SourceEmptyHint(
+                                "A playlist of tracks Last.fm recommends — seeded from " +
+                                    "what you listen to — will be built on the next sync. " +
+                                    "Tap Sync Now to start it.",
+                            )
+                        }
+                    },
+                    modeChips = {
+                        LastFmRecommendationsToggleRow(
+                            enabled = lastFmState.enabled,
+                            onChange = viewModel::onLastFmRecommendationsToggled,
+                        )
+                    },
+                    onManage = { onManageSource(SyncSource.LASTFM) },
+                )
+            }
+        }
+
         // -- Schedule section -------------------------------------------------
         item { SyncSectionLabel("Schedule") }
         item {
@@ -480,7 +524,16 @@ private fun DownloadManagementCard(onClick: () -> Unit) {
 }
 
 /** Which source a "Manage ›" tap targets. Consumed by the nav host (Task 5). */
-enum class SyncSource { SPOTIFY, YOUTUBE }
+enum class SyncSource { SPOTIFY, YOUTUBE,
+
+    /**
+     * Last.fm as a recommendation SOURCE (issue #255). Unlike SPOTIFY/
+     * YOUTUBE there are no remote playlists to import — Last.fm has no
+     * public playlist API — so its manage surface toggles the app-managed
+     * "Recommended by Last.fm" mix instead.
+     */
+    LASTFM,
+}
 
 // -- Source dashboard: numbers row ───────────────────────────────────────────
 
@@ -972,6 +1025,48 @@ private fun SyncModeChipRow(
 }
 
 // ── Spotify sync toggle row ─────────────────────────────────────────────────
+
+/**
+ * Recommendations toggle for the Last.fm source card (issue #255). Lives in
+ * the [com.stash.feature.sync.components.SourcePreferencesCard] modeChips
+ * slot — where Spotify/YouTube put their Refresh/Accumulate chips — because
+ * rotation is the only mode a recommendation playlist has; the only choice
+ * worth offering is whether it exists.
+ */
+@Composable
+private fun LastFmRecommendationsToggleRow(
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(!enabled) }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Recommended tracks",
+                style = MaterialTheme.typography.labelMedium,
+                color = StashTheme.extendedColors.lastfmRed,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = if (enabled)
+                    "A rotating playlist of Last.fm recommendations is kept up to date"
+                else
+                    "Off — no recommendations are generated",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        com.stash.core.ui.components.StashSwitch(
+            checked = enabled,
+            onCheckedChange = onChange,
+        )
+    }
+}
 
 @Composable
 internal fun SpotifySyncToggleRow(

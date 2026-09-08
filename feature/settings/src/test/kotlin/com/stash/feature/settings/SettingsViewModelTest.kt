@@ -93,6 +93,7 @@ class SettingsViewModelTest {
         listenSinkCoordinator = mockk(relaxed = true),
         listenSubmissionDao = mockk(relaxed = true),
         relayClient = relayClient,
+        lastFmRecommendationSource = mockk(relaxed = true),
     )
 
     @Test fun `refreshStorageUsage requests a fresh filesystem calculation`() {

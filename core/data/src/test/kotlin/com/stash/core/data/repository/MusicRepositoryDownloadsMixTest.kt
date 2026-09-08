@@ -98,6 +98,7 @@ class MusicRepositoryDownloadsMixTest {
         localFileOps = mockk(relaxed = true),
         syncPreferencesManager = syncPreferencesManager,
         singleTrackDownloadEnqueuer = singleTrackDownloadEnqueuer,
+        lastFmRecommendationSource = mockk(relaxed = true),
     )
 
     private fun downloadedTrack(id: Long, filePath: String = "/music/$id.flac") = TrackEntity(

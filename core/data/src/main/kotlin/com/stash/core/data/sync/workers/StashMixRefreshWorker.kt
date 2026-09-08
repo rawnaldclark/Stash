@@ -31,6 +31,7 @@ import com.stash.core.data.lastfm.LastFmTopTrack
 import com.stash.core.data.mix.MixGenerator
 import com.stash.core.data.mix.MixSeedGenerator
 import com.stash.core.data.mix.MixSeedStrategy
+import com.stash.core.data.mix.LastFmRecommendationSource
 import com.stash.core.data.mix.RecipeTagResolver
 import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.data.mix.TagPoolBuilder
@@ -477,6 +478,9 @@ class StashMixRefreshWorker @AssistedInject constructor(
      *
      *  - First Listen (1.0 discovery, library-blind) — has no opinion on
      *    the library pool; claims TAG_GRAPH survivors first.
+     *  - Recommended by Last.fm (1.0 discovery, library-blind; issue #255)
+     *    — same reasoning as First Listen: a pure-discovery recipe claims
+     *    its TRACK_SIMILAR survivors before library-mixed recipes see them.
      *  - Deep Cuts (0.85 discovery) — claims TRACK_SIMILAR survivors and
      *    a sparse library slice next.
      *  - Daily Discover (0.85 discovery) — most permissive on the
@@ -488,8 +492,9 @@ class StashMixRefreshWorker @AssistedInject constructor(
      */
     private fun recipeDedupPriority(recipe: StashMixRecipeEntity): Int = when (recipe.name) {
         "First Listen" -> 1
-        "Deep Cuts" -> 2
-        "Daily Discover" -> 3
+        LastFmRecommendationSource.RECIPE_NAME -> 2
+        "Deep Cuts" -> 3
+        "Daily Discover" -> 4
         else -> 99
     }
 

@@ -50,6 +50,7 @@ These sources are somebody else's infrastructure, mostly run solo and mostly fre
 - **Spotify + YouTube Music in one unified library** — liked songs, playlists, daily mixes, every Spotify mix worth syncing
 - **Bulletproof matching** — finds the right version of a track 99% of the time
 - **Last.fm scrobbling**, optional, off by default
+- **Last.fm recommendations** — connect Last.fm and it appears under Sync → Sources, keeping a rotating "Recommended by Last.fm" playlist of tracks it suggests from your listening
 - **Wrong-match flag** — if Stash picked the wrong version, tap once from Now Playing and it queues a re-search
 - **Likes and History mirroring** — When enabled, each track you like & stream in Stash lands in your Spotify & YouTube accounts.
 
