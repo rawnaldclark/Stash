@@ -3,6 +3,7 @@ package com.stash.feature.settings.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,11 +18,17 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -38,6 +45,7 @@ import com.stash.core.ui.theme.StashPurpleLight
 @Composable
 fun SupportBanner(
     onDonate: () -> Unit,
+    onDonateCoDev: () -> Unit,
     onStar: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -74,20 +82,56 @@ fun SupportBanner(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Button(
-                onClick = onDonate,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                ),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.FavoriteBorder,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "Donate", style = MaterialTheme.typography.labelMedium)
+            var showDonateMenu by remember { mutableStateOf(false) }
+
+            Box(modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = { showDonateMenu = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.FavoriteBorder,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = "Donate", style = MaterialTheme.typography.labelMedium)
+                }
+                DropdownMenu(
+                    expanded = showDonateMenu,
+                    onDismissRequest = { showDonateMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(text = "rawnaldclark (rawn)", style = MaterialTheme.typography.bodyMedium)
+                                Text(text = "Owner, main dev", style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        onClick = {
+                            showDonateMenu = false
+                            onDonate()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(text = "Paraliyzed_evo", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    text = "Co-dev — makes the beta builds",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        },
+                        onClick = {
+                            showDonateMenu = false
+                            onDonateCoDev()
+                        },
+                    )
+                }
             }
             OutlinedButton(
                 onClick = onStar,

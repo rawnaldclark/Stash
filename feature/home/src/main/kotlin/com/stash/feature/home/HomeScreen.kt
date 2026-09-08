@@ -68,7 +68,11 @@ import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -267,16 +271,99 @@ fun HomeScreen(
                     )
                 }
 
-                androidx.compose.material3.IconButton(
-                    onClick = { socialUriHandler.openUri(STASH_ISSUE_URL) },
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    androidx.compose.material3.Icon(
-                        imageVector = Icons.Filled.Build,
-                        contentDescription = "Report an issue on GitHub",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
+                var showHelpMenu by remember { mutableStateOf(false) }
+                Box {
+                    androidx.compose.material3.IconButton(
+                        onClick = { showHelpMenu = true },
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        androidx.compose.material3.Icon(
+                            imageVector = Icons.Filled.Build,
+                            contentDescription = "Report an issue or help translate",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showHelpMenu,
+                        onDismissRequest = { showHelpMenu = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = "Report an issue",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = "Open a bug or feature request on GitHub",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Build,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            onClick = {
+                                showHelpMenu = false
+                                runCatching { socialUriHandler.openUri(STASH_ISSUE_URL) }
+                            },
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = "Help us translate",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = "Join on Crowdin, then request access",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Language,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            onClick = {
+                                showHelpMenu = false
+                                runCatching { socialUriHandler.openUri(STASH_CROWDIN_URL) }
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Request translator access",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.OpenInNew,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            onClick = {
+                                showHelpMenu = false
+                                runCatching { socialUriHandler.openUri(STASH_TRANSLATE_ACCESS_FORM_URL) }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -1029,6 +1116,13 @@ private const val STASH_ISSUE_URL = "https://github.com/rawnaldclark/Stash/issue
 // to the left of the wrench. Tap → opens the invite in the default
 // browser. Edit when the invite rotates.
 private const val STASH_DISCORD_URL = "https://discord.gg/vcbjEby5PC"
+
+// Translation project on Crowdin. Tap → Crowdin project page.
+private const val STASH_CROWDIN_URL = "https://crowdin.com/project/stash-music-player"
+
+// Form to request translator access on Crowdin.
+private const val STASH_TRANSLATE_ACCESS_FORM_URL =
+    "https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform"
 
 private val LEGACY_SUPPORTERS = listOf(
     Supporter(
