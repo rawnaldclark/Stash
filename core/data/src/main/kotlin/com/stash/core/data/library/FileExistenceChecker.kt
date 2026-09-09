@@ -11,6 +11,9 @@ package com.stash.core.data.library
  * is present — the real implementation re-derives the file's location
  * from the current SAF tree grant using the same slug convention used
  * to write it, instead of trusting the old URI. See FileOrganizer.
+ * [FileExistenceChecker.exists]'s trackId lets the Per-playlist library
+ * layout (#198) re-derive the owning playlist exactly like the download
+ * path did.
  *
  * suspend because the SAF-tree lookup needs the current tree URI from
  * DataStore.
@@ -40,6 +43,7 @@ fun interface FileAdopter {
 
 fun interface FileExistenceChecker {
     suspend fun exists(
+        trackId: Long,
         artist: String,
         album: String?,
         title: String,

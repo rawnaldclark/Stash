@@ -50,7 +50,7 @@ class TrackFinalizerTest {
             firstArg()
         }
         coEvery {
-            fileOrganizer.commitDownload(any(), any(), any(), any(), any())
+            fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any())
         } returns FileOrganizer.CommittedTrack("/library/Drake/x.flac", 100)
         coEvery { audioExtractor.extract(any()) } returns null
 
@@ -76,7 +76,7 @@ class TrackFinalizerTest {
             firstArg()
         }
         coEvery {
-            fileOrganizer.commitDownload(any(), any(), any(), any(), any())
+            fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any())
         } returns FileOrganizer.CommittedTrack("/library/Drake/x.flac", 100)
         coEvery { audioExtractor.extract(any()) } returns null
 
@@ -93,7 +93,7 @@ class TrackFinalizerTest {
 
     @Test fun `finalizeFile propagates cancellation from commit`() = runTest {
         coEvery {
-            fileOrganizer.commitDownload(any(), any(), any(), any(), any())
+            fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any())
         } throws CancellationException("cancelled")
 
         var cancellationPropagated = false

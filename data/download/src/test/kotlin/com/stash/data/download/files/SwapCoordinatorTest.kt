@@ -100,7 +100,7 @@ class SwapCoordinatorTest {
             downloadExecutor.download(any(), any(), any(), any(), any())
         } returns DownloadResult.Success(newTemp)
         coEvery {
-            fileOrganizer.commitDownload(any(), any(), any(), any(), any())
+            fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any())
         } returns FileOrganizer.CommittedTrack(committedPath, 123L)
 
         coordinator.performSwap(

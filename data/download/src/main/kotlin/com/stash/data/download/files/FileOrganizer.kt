@@ -3,6 +3,8 @@ package com.stash.data.download.files
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.prefs.LibraryLayout
 import com.stash.core.data.prefs.StoragePreference
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
@@ -15,7 +17,7 @@ import javax.inject.Singleton
  * Manages file paths for downloaded music.
  *
  * Supports two storage destinations:
- *  - **Internal** (default): tracks live under `context.filesDir/music/<artist>/<album>/`.
+ *  - **Internal** (default): tracks live under `context.filesDir/music/…`.
  *    Pure `java.io.File` API. Tracks are deleted when the app is uninstalled
  *    and are not visible to other apps.
  *  - **External** (user-chosen via SAF): when the user picks an SD card or
@@ -23,6 +25,12 @@ import javax.inject.Singleton
  *    written to that location via `ContentResolver` / `DocumentFile`. These
  *    files survive app uninstall and are accessible to other apps + over
  *    USB/PC — users can take their library anywhere.
+ *
+ * Within either destination, the folder structure follows the user's
+ * [LibraryLayout] preference (#198/#104): Artist/Album (classic default),
+ * Single folder, or Per playlist. ALL path computation goes through
+ * [LibraryLayoutResolver]; this class never slugs artist/album by hand so
+ * writers and readers cannot drift.
  *
  * yt-dlp always writes to the internal cache (`getTempDir()`); the
  * destination switch happens in [commitDownload] after the download
@@ -32,31 +40,77 @@ import javax.inject.Singleton
 class FileOrganizer @Inject constructor(
     @ApplicationContext private val context: Context,
     private val storagePreference: StoragePreference,
+    private val trackDao: TrackDao,
 ) {
     /** Root directory for all internally-stored downloaded music files. */
     private val musicDir: File get() = File(context.filesDir, "music").also { it.mkdirs() }
 
     /**
-     * Returns the internal directory for a specific artist/album combination.
-     * Only used for internal-storage downloads; SAF downloads compute their
-     * own path inside [commitDownload].
+     * The absolute internal music root, exposed so bulk coordinators
+     * (reorganize / move-library gating) can classify stored paths as
+     * internal vs SAF without duplicating the `filesDir/music` convention.
      */
-    fun getTrackDir(artist: String, album: String?): File {
-        val artistSlug = FileOrganizerSlugs.slugify(artist)
-        val albumSlug = if (!album.isNullOrBlank()) FileOrganizerSlugs.slugify(album) else "singles"
-        return File(musicDir, "$artistSlug/$albumSlug").also { it.mkdirs() }
+    fun internalMusicRoot(): File = musicDir
+
+    /**
+     * The persisted library layout, defaulting safely when DataStore read
+     * fails. One-call convenience for bulk passes that want a consistent
+     * layout for their whole duration (adoption, reorganize).
+     */
+    suspend fun currentLayout(): LibraryLayout =
+        runCatching { storagePreference.libraryLayout.first() }.getOrDefault(LibraryLayout.DEFAULT)
+
+    /**
+     * Resolves a track's destination under the CURRENT library layout,
+     * including the owning-playlist lookup when the layout is
+     * [LibraryLayout.PLAYLIST] and a [trackId] is known. Every writer
+     * (downloads, moves, reorganize, sidecars) resolves through here.
+     */
+    suspend fun resolveLocation(
+        artist: String,
+        album: String?,
+        title: String,
+        trackId: Long? = null,
+        layout: LibraryLayout? = null,
+    ): LibraryLayoutResolver.ResolvedLocation {
+        val effectiveLayout = layout ?: currentLayout()
+        val playlistName = if (effectiveLayout == LibraryLayout.PLAYLIST && trackId != null) {
+            runCatching { trackDao.getFirstPlaylistNameForTrack(trackId) }.getOrNull()
+        } else {
+            null
+        }
+        return LibraryLayoutResolver.resolve(effectiveLayout, artist, album, title, playlistName)
     }
 
     /**
-     * Returns the internal file path for a downloaded track. Prefer
-     * [commitDownload] which automatically handles both internal and SAF
-     * destinations; this getter is retained for callers that only need the
-     * target path (e.g. existence checks before download).
+     * Returns the internal directory for a specific artist/album combination
+     * under [layout]. Only meaningful for internal-storage destinations;
+     * SAF downloads compute their own path inside [commitDownload].
+     * Defaults to the classic Artist/Album shape — live downloads should go
+     * through [commitDownload]/[resolveLocation], which honor the pref.
      */
-    fun getTrackFile(artist: String, album: String?, title: String, format: String = "opus"): File {
-        val dir = getTrackDir(artist, album)
-        val titleSlug = FileOrganizerSlugs.slugify(title)
-        return File(dir, "$titleSlug.$format")
+    fun getTrackDir(artist: String, album: String?, layout: LibraryLayout = LibraryLayout.DEFAULT): File {
+        val location = LibraryLayoutResolver.resolve(layout, artist, album, title = "", playlistName = null)
+        val dir = if (location.segments.isEmpty()) musicDir else File(musicDir, location.segments.joinToString("/"))
+        return dir.also { it.mkdirs() }
+    }
+
+    /**
+     * Returns the internal file path for a downloaded track under [layout].
+     * Prefer [commitDownload] which automatically handles both internal and
+     * SAF destinations plus the live layout preference; this getter is
+     * retained for callers that only need the classic target path.
+     */
+    fun getTrackFile(
+        artist: String,
+        album: String?,
+        title: String,
+        format: String = "opus",
+        layout: LibraryLayout = LibraryLayout.DEFAULT,
+    ): File {
+        val location =
+            LibraryLayoutResolver.resolve(layout, artist, album, title, playlistName = null)
+        return File(getTrackDir(artist, album, layout), "${location.baseName}.$format")
     }
 
     /** Temporary download directory inside the cache. Cleaned by the OS as needed. */
@@ -67,10 +121,10 @@ class FileOrganizer @Inject constructor(
      * (for SAF) a fresh URI to persist if the stored one was stale.
      * [FileExistenceChecker.exists]'s `filePath` is only consulted for the
      * internal-storage fast path; for SAF paths the location is re-derived
-     * from artist/album/title against a [buildSafIndex] built lazily ONCE
-     * per session — per-track findFile walks were the "stuck on Checking
-     * library" hang (#429). A missing tree grant fails SAFE (files reported
-     * present) so it can never mass-reset the library.
+     * via [LibraryLayoutResolver.lookupCandidates] against a [buildSafIndex]
+     * built lazily ONCE per session — per-track findFile walks were the
+     * "stuck on Checking library" hang (#429). A missing tree grant fails
+     * SAFE (files reported present) so it can never mass-reset the library.
      *
      * Used by library reconciliation (missing-file detection) via
      * [com.stash.core.data.library.FileExistenceSessionFactory]. Open a
@@ -80,9 +134,10 @@ class FileOrganizer @Inject constructor(
         object : com.stash.core.data.library.FileExistenceChecker {
             private val lock = kotlinx.coroutines.sync.Mutex()
             private var built = false
-            private var index: SafIndex? = null
+            private var snapshot: IndexSnapshot? = null
 
             override suspend fun exists(
+                trackId: Long,
                 artist: String,
                 album: String?,
                 title: String,
@@ -91,10 +146,11 @@ class FileOrganizer @Inject constructor(
                 if (!filePath.startsWith("content://")) {
                     return com.stash.core.data.library.FileExistenceResult(exists = File(filePath).exists())
                 }
-                val idx = lock.withLock {
+                val snap = lock.withLock {
                     if (!built) {
-                        index = buildSafIndex()
-                        built = true
+                        val layout = runCatching { storagePreference.libraryLayout.first() }
+                            .getOrNull() ?: LibraryLayout.DEFAULT
+                        val index = buildSafIndex()
                         if (index == null) {
                             android.util.Log.w(
                                 "FileOrganizer",
@@ -103,14 +159,28 @@ class FileOrganizer @Inject constructor(
                                     "would reset the whole library to undownloaded)",
                             )
                         }
+                        // Fail SAFE on a missing/revoked tree grant: report the file as
+                        // existing rather than triggering a library-wide reset + redownload
+                        // storm the first sync after a re-grant lapse.
+                        snapshot = index?.let { IndexSnapshot(it, layout) }
+                        built = true
                     }
-                    index
-                    // Fail SAFE on a missing/revoked tree grant: report the file as
-                    // existing rather than triggering a library-wide reset + redownload
-                    // storm the first sync after a re-grant lapse.
+                    snapshot
                 } ?: return com.stash.core.data.library.FileExistenceResult(exists = true)
-                val match = resolveInIndex(idx, artist, album, title)
-                    ?: return com.stash.core.data.library.FileExistenceResult(exists = false)
+
+                val playlistName = if (snap.layout == LibraryLayout.PLAYLIST) {
+                    runCatching { trackDao.getFirstPlaylistNameForTrack(trackId) }.getOrNull()
+                } else {
+                    null
+                }
+                val match = resolveInIndex(
+                    index = snap.index,
+                    layout = snap.layout,
+                    artist = artist,
+                    album = album,
+                    title = title,
+                    playlistName = playlistName,
+                ) ?: return com.stash.core.data.library.FileExistenceResult(exists = false)
                 val freshUri = match.uri.toString()
                 return com.stash.core.data.library.FileExistenceResult(
                     exists = true,
@@ -121,80 +191,125 @@ class FileOrganizer @Inject constructor(
             }
         }
 
+    /** Index + the layout it was built under, frozen for one bulk pass. */
+    private data class IndexSnapshot(val index: SafIndex, val layout: LibraryLayout)
+
     /**
     * Pre-built index of the current SAF tree, so a bulk pass (like
     * [com.stash.core.data.library.AdoptExistingFilesUseCase]) can look up
-    * album directories in O(1) instead of re-walking `root -> artist -> album`
-    * via [DocumentFile.findFile] for every single candidate.
+    * any track in O(1) instead of re-walking directories via
+    * [DocumentFile.findFile] for every single candidate.
     *
     * [DocumentFile.findFile] is not a direct lookup: internally it calls
     * `listFiles()` on the parent and linearly scans for a name match. Doing
     * that per-candidate against thousands of tracks means re-listing the same
-    * artist/album directories over and over via ContentResolver IPC — the
-    * actual cost that was making adoption slower than downloading the same
-    * tracks over the network. Building this index means the tree is walked
-    * exactly once regardless of candidate count.
+    * directories over and over via ContentResolver IPC — the actual cost that
+    * was making adoption slower than downloading the same tracks over the
+    * network. Building this index means the tree is walked exactly once
+    * regardless of candidate count.
     *
-    * Filenames are also pre-listed per album dir (see [AlbumIndex]) so a
-    * lookup for a specific title never has to hit the provider again.
+    * Since #198/#104 the tree is NOT guaranteed to be a strict two-level
+    * `<artist>/<album>` hierarchy anymore (flat single-folder libraries,
+    * per-playlist folders, mixed layouts mid-reorganize), so the walk is
+    * fully recursive and keyed by slash-joined relative directory paths
+    * ([SafIndex.byDirKey]). A whole-tree filename index ([SafIndex.byFileName])
+    * backs the last-resort unique-name match for locations whose owning
+    * playlist can't be re-derived.
     */
     suspend fun buildSafIndex(): SafIndex? {
         val treeUri = storagePreference.externalTreeUri.first() ?: return null
         val root = DocumentFile.fromTreeUri(context, treeUri) ?: return null
-    
-        val index = HashMap<Pair<String, String>, AlbumIndex>()
-        root.listFiles().forEach { artistDir ->
-            if (!artistDir.isDirectory) return@forEach
-            val artistName = artistDir.name ?: return@forEach
-            artistDir.listFiles().forEach { albumDir ->
-                if (!albumDir.isDirectory) return@forEach
-                val albumName = albumDir.name ?: return@forEach
-                // List each album dir's files exactly once, up front, and
-                // index by name for O(1) lookup instead of a per-candidate
-                // listFiles().firstOrNull { ... } scan.
-                val filesByName = albumDir.listFiles()
-                    .filter { it.isFile }
-                    .associateBy { it.name.orEmpty() }
-                index[artistName to albumName] = AlbumIndex(albumDir, filesByName)
+
+        val byDirKey = LinkedHashMap<String, AlbumIndex>(256)
+        val byFileName = HashMap<String, MutableList<DocumentFile>>(512)
+        indexTree(root, "", byDirKey, byFileName)
+        return SafIndex(byDirKey, byFileName)
+    }
+
+    /** Recursive worker behind [buildSafIndex]. Depth is directory nesting (≤4 in practice). */
+    private fun indexTree(
+        dir: DocumentFile,
+        dirKey: String,
+        byDirKey: MutableMap<String, AlbumIndex>,
+        byFileName: MutableMap<String, MutableList<DocumentFile>>,
+    ) {
+        val subDirs = ArrayList<DocumentFile>()
+        val filesByName = LinkedHashMap<String, DocumentFile>()
+        for (child in dir.listFiles()) {
+            if (child.isDirectory) {
+                subDirs += child
+            } else if (child.isFile) {
+                val name = child.name ?: continue
+                filesByName[name] = child
+                byFileName.getOrPut(name) { ArrayList(1) }.add(child)
             }
         }
-        return SafIndex(index)
+        byDirKey[dirKey] = AlbumIndex(dir, filesByName)
+        for (sub in subDirs) {
+            val subName = sub.name ?: continue
+            indexTree(sub, if (dirKey.isEmpty()) subName else "$dirKey/$subName", byDirKey, byFileName)
+        }
     }
-    
+
     /**
-    * O(1) lookup against a pre-built [SafIndex]. Same slug convention and
-    * extension-probing behaviour the per-track slug walk used to have, but with no
-    * SAF IPC calls at all once the index is built — everything after
-    * [buildSafIndex] is in-memory map lookups.
+    * O(1) lookup against a pre-built [SafIndex]. Probes every location
+    * [LibraryLayoutResolver.lookupCandidates] derives for the track — the
+    * current-layout spot first, then the legacy/nested and flat spots for
+    * files downloaded before a layout switch — with zero further SAF IPC
+    * once the index is built. A final whole-tree unique-filename match
+    * covers playlist-owned directories when the owning playlist couldn't be
+    * re-derived (deterministic: ambiguous duplicates match nothing rather
+    * than guessing wrong).
     */
     fun resolveInIndex(
         index: SafIndex,
+        layout: LibraryLayout,
         artist: String,
         album: String?,
         title: String,
+        playlistName: String? = null,
         knownFormat: String? = null,
     ): DocumentFile? {
-        val artistSlug = FileOrganizerSlugs.slugify(artist)
-        val albumSlug = if (!album.isNullOrBlank()) FileOrganizerSlugs.slugify(album) else "singles"
-        val titleSlug = FileOrganizerSlugs.slugify(title)
-    
-        val albumIndex = index.byArtistAlbum[artistSlug to albumSlug] ?: return null
-    
-        val candidateNames = if (knownFormat != null) {
-            setOf("$titleSlug.$knownFormat")
-        } else {
-            KNOWN_AUDIO_FORMATS.map { "$titleSlug.$it" }
+        val formats = knownFormat?.let { listOf(it) } ?: KNOWN_AUDIO_FORMATS
+        val candidates = LibraryLayoutResolver.lookupCandidates(
+            layout, artist, album, title, playlistName, formats,
+        )
+        for (candidate in candidates) {
+            val filesByName = index.byDirKey[candidate.dirKey]?.filesByName ?: continue
+            for (name in candidate.candidateFileNames) {
+                filesByName[name]?.let { return it }
+            }
         }
-        for (name in candidateNames) {
-            albumIndex.filesByName[name]?.let { return it }
+        // Last resort: exactly one file somewhere in the tree carries a
+        // candidate name. Restricted to ARTIST-QUALIFIED names
+        // (`<artist>-<title>.<ext>`): the legacy Artist/Album candidate's
+        // filename is a bare `<title>.<ext>`, which is not an identity once
+        // it leaves its `<artist>/<album>` directory. A different artist's
+        // song that slugs to the same title would be matched here and have
+        // this track's file_path healed onto it. Uniqueness of a FILENAME is
+        // not uniqueness of a TRACK, so only names that still carry the
+        // artist may be matched tree-wide; multiple hits stay unmatched
+        // (reporting "missing" for a genuinely ambiguous pair is safer than
+        // adopting the wrong song's file).
+        val artistQualifiedPrefix = FileOrganizerSlugs.slugify(artist) + "-"
+        for (candidate in candidates) {
+            for (name in candidate.candidateFileNames) {
+                if (!name.startsWith(artistQualifiedPrefix)) continue
+                index.byFileName[name]?.singleOrNull()?.let { return it }
+            }
         }
         return null
     }
-    
+
     /** In-memory index built once per bulk pass by [buildSafIndex]. */
-    class SafIndex(val byArtistAlbum: Map<Pair<String, String>, AlbumIndex>)
-    
-    /** Pre-listed contents of a single album directory. */
+    class SafIndex(
+        /** Relative slash-joined dir key ("" = tree root) → its listing. */
+        val byDirKey: Map<String, AlbumIndex>,
+        /** Whole-tree filename → every document carrying it (usually 1). */
+        val byFileName: Map<String, List<DocumentFile>>,
+    )
+
+    /** Pre-listed contents of a single directory. */
     class AlbumIndex(val dir: DocumentFile, val filesByName: Map<String, DocumentFile>)
 
     /** Directory for cached album artwork files. */
@@ -305,6 +420,10 @@ class FileOrganizer @Inject constructor(
      * all accept content URIs natively so playback works without further
      * changes. Otherwise the file is moved into internal storage and the
      * returned path is the absolute File path (existing behaviour).
+     *
+     * The sub-destination inside the root follows the current [LibraryLayout]
+     * (#198/#104); when the layout is Per-playlist and [trackId] is known,
+     * the owning playlist is looked up so the file lands in its folder.
      */
     suspend fun commitDownload(
         tempFile: File,
@@ -312,47 +431,53 @@ class FileOrganizer @Inject constructor(
         album: String?,
         title: String,
         format: String,
+        trackId: Long? = null,
     ): CommittedTrack {
         val size = tempFile.length()
         val externalTree = storagePreference.externalTreeUri.first()
         return if (externalTree == null) {
-            val finalFile = getTrackFile(artist, album, title, format)
+            val location = resolveLocation(artist, album, title, trackId)
+            val dir = if (location.segments.isEmpty()) {
+                musicDir
+            } else {
+                File(musicDir, location.segments.joinToString("/")).also { it.mkdirs() }
+            }
+            val finalFile = File(dir, "${location.baseName}.$format")
             tempFile.copyTo(finalFile, overwrite = true)
             tempFile.delete()
             CommittedTrack(finalFile.absolutePath, size)
         } else {
-            val safUriString = writeToSafTree(tempFile, externalTree, artist, album, title, format)
+            val location = resolveLocation(artist, album, title, trackId)
+            val safUriString = writeToSafTree(tempFile, externalTree, location, format)
             tempFile.delete()
             CommittedTrack(safUriString, size)
         }
     }
 
     /**
-     * Writes [tempFile] to the user's SAF tree under `artist/album/title.ext`.
-     * Returns the created document's URI as a string. Throws if the tree
-     * URI is stale (permission revoked) or I/O fails — caller should log
-     * and leave the temp file in place for retry.
+     * Writes [tempFile] into the user's SAF tree at [location]'s relative
+     * path, creating intermediate directories on demand. Returns the created
+     * document's URI as a string. Throws if the tree URI is stale (permission
+     * revoked) or I/O fails — caller should log and leave the temp file in
+     * place for retry.
      */
     private fun writeToSafTree(
         tempFile: File,
         treeUri: Uri,
-        artist: String,
-        album: String?,
-        title: String,
+        location: LibraryLayoutResolver.ResolvedLocation,
         format: String,
     ): String {
         val root = DocumentFile.fromTreeUri(context, treeUri)
             ?: error("Could not open SAF tree; permission may have been revoked: $treeUri")
-        val artistSlug = FileOrganizerSlugs.slugify(artist)
-        val albumSlug = if (!album.isNullOrBlank()) FileOrganizerSlugs.slugify(album) else "singles"
-        val artistDir = root.findOrCreateDir(artistSlug)
-        val albumDir = artistDir.findOrCreateDir(albumSlug)
-        val titleSlug = FileOrganizerSlugs.slugify(title)
-        val filename = "$titleSlug.$format"
+        var cursor = root
+        for (segment in location.segments) {
+            cursor = cursor.findOrCreateDir(segment)
+        }
+        val filename = "${location.baseName}.$format"
         // Overwrite: delete any existing file with the same name before creating.
-        albumDir.findFile(filename)?.delete()
-        val target = albumDir.createFile(mimeTypeFor(format), filename)
-            ?: error("Could not create SAF file '$filename' under ${albumDir.uri}")
+        cursor.findFile(filename)?.delete()
+        val target = cursor.createFile(mimeTypeFor(format), filename)
+            ?: error("Could not create SAF file '$filename' under ${cursor.uri}")
         tempFile.inputStream().use { input ->
             context.contentResolver.openOutputStream(target.uri)?.use { output ->
                 input.copyTo(output)

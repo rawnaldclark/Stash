@@ -68,8 +68,8 @@ class LibraryReconciliationUseCase @Inject constructor(
     suspend fun reconcile(
         syncId: Long? = null,
         onProgress: (step: Int, total: Int) -> Unit = { _, _ -> },
-        checkFileExists: suspend (artist: String, album: String?, title: String, filePath: String) -> com.stash.core.data.library.FileExistenceResult =
-            { _, _, _, _ -> com.stash.core.data.library.FileExistenceResult(exists = true) },
+        checkFileExists: suspend (trackId: Long, artist: String, album: String?, title: String, filePath: String) -> com.stash.core.data.library.FileExistenceResult =
+            { _, _, _, _, _ -> com.stash.core.data.library.FileExistenceResult(exists = true) },
         adoptExistingFiles: suspend () -> Int = { 0 },
     ): ReconciliationResult {
         onProgress(0, TOTAL_STEPS)
@@ -99,7 +99,7 @@ class LibraryReconciliationUseCase @Inject constructor(
         val downloadedTracks = trackDao.getDownloadedTrackRefs()
         val missingIds = mutableListOf<Long>()
         for (t in downloadedTracks) {
-            val result = checkFileExists(t.artist, t.album, t.title, t.filePath)
+            val result = checkFileExists(t.id, t.artist, t.album, t.title, t.filePath)
             when {
                 !result.exists -> missingIds.add(t.id)
                 result.resolvedFilePath != null -> trackDao.healFilePath(t.id, result.resolvedFilePath)

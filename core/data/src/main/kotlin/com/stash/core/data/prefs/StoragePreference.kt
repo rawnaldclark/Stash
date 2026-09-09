@@ -32,4 +32,14 @@ interface StoragePreference {
      * to internal storage.
      */
     suspend fun setExternalTreeUri(uri: Uri?)
+
+    /**
+     * Emits the folder structure new downloads are filed under inside
+     * whichever destination is active (issue #198 / #104). Defaults to
+     * [LibraryLayout.DEFAULT]; changing it does not move existing files.
+     */
+    val libraryLayout: Flow<LibraryLayout>
+
+    /** Persists the folder-structure choice for future downloads. */
+    suspend fun setLibraryLayout(layout: LibraryLayout)
 }
