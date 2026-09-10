@@ -59,9 +59,17 @@ object ArtUrlUpgrader {
     // 300px PNG it replaces — probed over 200 covers of a real library on
     // 2026-09-09: 300x300.png median 152 KB, 770x0.png median 739 KB,
     // 770x0.jpg median 91 KB. So this is 2.5x the pixels for 60% of the
-    // bytes. The 770 variants are generated on demand and about 3% of
+    // bytes. The 770 variants are rendered on demand and a few percent of
     // hashes miss one of the two formats (never both), which is what
     // `LastFmArtFallbackInterceptor` exists to catch.
+    //
+    // Re-probing this: Fastly varies these on Accept-Encoding. The SAME url
+    // 404s without `Accept-Encoding: gzip` and serves 200 with it, so a
+    // curl/urllib probe invents misses the app never sees — OkHttp always
+    // sends gzip. Measured with the app's own headers, all 191 covers
+    // reachable in a real library's playlists serve the 770 JPEG, and a
+    // miss can also be transient: one that 404'd three times from a PC
+    // served 200 to the phone a minute later.
     private const val LASTFM_TARGET_EXT = "jpg"
 
     // What the API itself hands back, and therefore the last rung of the
