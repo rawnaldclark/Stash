@@ -77,28 +77,33 @@ object ArtUrlUpgrader {
     private const val LASTFM_SOURCE_SIZE = "300x300"
     private const val LASTFM_SOURCE_EXT = "png"
 
-    // i.ytimg.com filenames in increasing order of quality.
+    // i.ytimg.com filenames in increasing order of quality:
     //   `default`      → 120x90
-    //   `mqdefault`    → 320x180
-    //   `hqdefault`    → 480x360   ← the ONLY one every video has
-    //   `sddefault`    → 640x480   (generated for some uploads only)
-    //   `maxresdefault`→ 1280x720  (generated for some uploads only)
+    //   `mqdefault`    → 320x180   (16:9, no bars)
+    //   `hqdefault`    → 480x360   the only one EVERY video has
+    //   `sddefault`    → 640x480   present for 89% of a real library
+    //   `maxresdefault`→ 1280x720  present for 82%
     //
-    // This used to "upgrade" everything to `sddefault` on the belief that
-    // ~99% of videos have it. Probed against a real library on 2026-09-05:
-    // 1 in 12 stored `sddefault` URLs 404 (every one of them has
-    // `hqdefault`), and Coil draws NOTHING for a 404 — so the upgrade was
-    // black album art, on Now Playing and every cover built from track
-    // art, for whichever videos happened to lack the variant. The stored
-    // URL is what Media3 fetches for the notification too, so the fix has
-    // to be in the URL, not in one loader: every variant now normalises
-    // to `hqdefault` (MIGRATION_42_43 repairs rows written before).
+    // This aimed at `hqdefault` because bigger variants 404 for some videos
+    // and a 404 draws nothing — black album art at random (MIGRATION_42_43
+    // repaired the rows an earlier `sddefault` guess had broken).
+    // `ArtFallbackInterceptor` removes that constraint: a miss now walks
+    // back down instead of rendering nothing, so the stored URL can aim at
+    // the best variant.
+    //
+    // And it should, because `hqdefault` is not just small, it is the wrong
+    // SHAPE. YouTube pads the 16:9 frame into 4:3, which on a measured
+    // thumbnail is 45 black rows top and bottom — 24% of the square this
+    // app crops to is black. `maxresdefault` is a clean 1280x720. Probed
+    // over 150 covers on 2026-09-10 it was never a stock placeholder
+    // either: every hit was a real 1280x720 frame, 24 KB at the smallest,
+    // no repeated images. Videos without one simply 404.
     //
     // We ALSO strip `?sqp=…&rs=…` query parameters: those are Google's
-    // server-side downscale tokens that shrink the served image even
-    // when the URL points at a high-res `*default.jpg`. Without
-    // stripping, an `hqdefault.jpg?sqp=…` URL arrives at ~320px wide.
-    private const val YTIMG_TARGET = "hqdefault"
+    // server-side downscale tokens that shrink the served image even when
+    // the URL points at a high-res `*default.jpg`. Without stripping, an
+    // `hqdefault.jpg?sqp=…` URL arrives at ~320px wide.
+    private const val YTIMG_TARGET = "maxresdefault"
     private val YTIMG_PATH_REGEX = Regex(
         """(/vi[a-z_]*/[^/]+/)(?:default|mqdefault|hqdefault|sddefault|maxresdefault)(\.(?:jpg|webp))""",
     )
@@ -124,7 +129,11 @@ object ArtUrlUpgrader {
 
     /**
      * The next URL to try when [url] came back 404, or null when there is
-     * nothing left to try.
+     * nothing left to try. Both upgraded hosts aim high and step down.
+     *
+     * **YouTube (`i.ytimg.com`):** `maxresdefault` -> `sddefault` ->
+     * `hqdefault`, which every video has. Each step gives up resolution
+     * rather than showing nothing.
      *
      * Last.fm renders the `770x0` variants on demand and a small share of
      * hashes are missing one of the two formats — measured over 200 covers of
@@ -136,8 +145,17 @@ object ArtUrlUpgrader {
      * consumer of the shared client: Coil for the in-app surfaces and
      * media3's bitmap loader for the notification and lock screen.
      */
-    fun lastFmFallback(url: String?): String? {
-        if (url == null || LASTFM_HOST !in url) return null
+    fun artFallback(url: String?): String? {
+        if (url == null) return null
+        if ("i.ytimg.com" in url) {
+            val next = when {
+                "/$YTIMG_TARGET." in url -> url.replace("/$YTIMG_TARGET.", "/sddefault.")
+                "/sddefault." in url -> url.replace("/sddefault.", "/hqdefault.")
+                else -> return null
+            }
+            return next
+        }
+        if (LASTFM_HOST !in url) return null
         val match = LASTFM_PATH_REGEX.find(url) ?: return null
         val (prefix, hash) = match.groupValues[1] to match.groupValues[2]
         val next = when {

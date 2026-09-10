@@ -28,8 +28,9 @@ import kotlinx.coroutines.delay
  *   - Last.fm `track.getInfo(artist, title)` — album art keyed to the
  *     canonical track identity; preferred because the result is real
  *     album art, not a video still.
- *   - Fallback `https://i.ytimg.com/vi/<id>/hqdefault.jpg` when the row
- *     has a `youtube_id` and Last.fm had nothing.
+ *   - Fallback `https://i.ytimg.com/vi/<id>/maxresdefault.jpg` when the row
+ *     has a `youtube_id` and Last.fm had nothing. A video without that
+ *     variant is walked down to sd/hq by `ArtFallbackInterceptor`.
  *   - Skip when neither source yields anything — leave for a future pass.
  * Rate-limited to one Last.fm call every 220ms.
  *
@@ -255,7 +256,7 @@ class ArtBackfillWorker @AssistedInject constructor(
 
     /**
      * Fallback chain for a single candidate. Returns the first non-null
-     * result from Last.fm → YT hqdefault, or null if neither yielded a URL.
+     * result from Last.fm → YT maxresdefault, or null if neither yielded a URL.
      */
     private suspend fun resolveArt(
         row: com.stash.core.data.db.dao.ArtBackfillRow,
@@ -269,7 +270,7 @@ class ArtBackfillWorker @AssistedInject constructor(
         }
         val vid = row.youtubeId
         if (!vid.isNullOrBlank()) {
-            return "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
+            return "https://i.ytimg.com/vi/$vid/maxresdefault.jpg"
         }
         return null
     }

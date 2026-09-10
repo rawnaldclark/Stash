@@ -922,11 +922,14 @@ class DownloadManager @Inject constructor(
         //      Last.fm has the track, this is typically higher quality than
         //      any YouTube thumbnail because it's actual album art, not a
         //      video still. Skipped when credentials aren't configured.
-        //   3. i.ytimg.com/vi/<id>/hqdefault.jpg  — deterministic per video
-        //      id. hqdefault (480×360) is guaranteed to exist for every YT
-        //      video; maxresdefault would be higher res but returns a stock
-        //      placeholder on non-HD uploads. Only usable when best.videoId
-        //      is non-blank.
+        //   3. i.ytimg.com/vi/<id>/maxresdefault.jpg — deterministic per
+        //      video id. maxresdefault (1280x720) is a clean 16:9 frame,
+        //      where hqdefault (480x360) pads 16:9 into 4:3 and wastes 24%
+        //      of the cropped square on black bars. It is NOT a stock
+        //      placeholder on non-HD uploads (150 probed 2026-09-10: every
+        //      hit a real 1280x720 frame; videos without one 404), and a
+        //      404 is walked down by ArtFallbackInterceptor. Only usable
+        //      when best.videoId is non-blank.
         val resolvedArtUrl: String? = best.thumbnailUrl
             ?: (if (lastFmCredentials.isConfigured) {
                 runCatching {
@@ -934,7 +937,7 @@ class DownloadManager @Inject constructor(
                 }.getOrNull()
             } else null)
             ?: best.videoId.takeIf { it.isNotBlank() }?.let { vid ->
-                "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
+                "https://i.ytimg.com/vi/$vid/maxresdefault.jpg"
             }
 
         runCatching {

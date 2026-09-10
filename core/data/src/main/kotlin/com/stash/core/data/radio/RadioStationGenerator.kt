@@ -192,11 +192,13 @@ class RadioStationGenerator @Inject constructor(
     )
 
     /** YouTube thumbnail for a videoId, used only when a track has no richer
-     *  cover. `mqdefault` (320x180) is the full 16:9 frame with NO black
+     *  cover. `maxresdefault` (1280x720) is the full 16:9 frame with NO black
      *  letterbox bars (unlike `hqdefault`/`sddefault`, which pad 16:9 into a 4:3
-     *  frame), so it center-crops cleanly to a square without black space. The
-     *  player upgrades this to the square Qobuz cover once qbdlx resolves. */
-    private fun ytThumbnail(videoId: String) = "https://i.ytimg.com/vi/$videoId/mqdefault.jpg"
+     *  frame), so it center-crops cleanly to a square without black space —
+     *  same reason this used to ask for `mqdefault`, but four times the width.
+     *  Videos without one are walked back down by `ArtFallbackInterceptor`.
+     *  The player upgrades this to the square Qobuz cover once qbdlx resolves. */
+    private fun ytThumbnail(videoId: String) = "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg"
 
     private suspend fun startSong(seed: RadioSeed.Song): Pair<RadioSession, List<Track>> {
         val similar = lastFm.getSimilarTracks(seed.artist, seed.title, limit = NEIGHBOR_LIMIT)

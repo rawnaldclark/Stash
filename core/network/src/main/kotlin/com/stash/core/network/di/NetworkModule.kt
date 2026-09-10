@@ -74,14 +74,14 @@ object NetworkModule {
 @InstallIn(SingletonComponent::class)
 interface NetworkInterceptorsModule {
     /**
-     * Walks a 404'd Last.fm cover down to a variant that exists. Bound here
+     * Walks a 404'd cover down to a variant that exists. Bound here
      * rather than at a call site because the client is shared: Coil and
      * media3's bitmap loader both need it, and neither knows about the other.
      */
     @Binds
     @IntoSet
-    fun lastFmArtFallback(
-        interceptor: com.stash.core.network.art.LastFmArtFallbackInterceptor,
+    fun artFallback(
+        interceptor: com.stash.core.network.art.ArtFallbackInterceptor,
     ): Interceptor
 
     /**

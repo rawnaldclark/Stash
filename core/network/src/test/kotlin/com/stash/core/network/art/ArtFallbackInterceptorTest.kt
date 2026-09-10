@@ -15,9 +15,9 @@ import org.junit.Test
 /**
  * The rung-walk itself: which URLs get tried, in what order, and that a
  * non-404 is handed back untouched. The URL arithmetic lives in
- * `ArtUrlUpgrader.lastFmFallback` and is tested there.
+ * `ArtUrlUpgrader.artFallback` and is tested there.
  */
-class LastFmArtFallbackInterceptorTest {
+class ArtFallbackInterceptorTest {
     /** Answers each request with the code [codes] gives for its URL. */
     private class FakeChain(
         private val start: Request,
@@ -67,7 +67,7 @@ class LastFmArtFallbackInterceptorTest {
 
     private fun run(codes: (String) -> Int): FakeChain {
         val chain = FakeChain(Request.Builder().url(jpg).build(), codes)
-        LastFmArtFallbackInterceptor().intercept(chain).close()
+        ArtFallbackInterceptor().intercept(chain).close()
         return chain
     }
 
@@ -91,12 +91,25 @@ class LastFmArtFallbackInterceptorTest {
     }
 
     @Test
-    fun `a 404 that is not lastfm art is returned as-is`() {
+    fun `a 404 on the last rung is returned as-is`() {
         val yt = "https://i.ytimg.com/vi/abc/hqdefault.jpg"
         val chain = FakeChain(Request.Builder().url(yt).build()) { 404 }
-        val response = LastFmArtFallbackInterceptor().intercept(chain)
+        val response = ArtFallbackInterceptor().intercept(chain)
         assertEquals(listOf(yt), chain.tried)
         assertEquals(404, response.code)
         response.close()
+    }
+
+    @Test
+    fun `a youtube thumbnail walks maxres to sd to hq`() {
+        val max = "https://i.ytimg.com/vi/abc/maxresdefault.jpg"
+        val chain = FakeChain(Request.Builder().url(max).build()) {
+            if (it.endsWith("hqdefault.jpg")) 200 else 404
+        }
+        ArtFallbackInterceptor().intercept(chain).close()
+        assertEquals(
+            listOf(max, "https://i.ytimg.com/vi/abc/sddefault.jpg", "https://i.ytimg.com/vi/abc/hqdefault.jpg"),
+            chain.tried,
+        )
     }
 }

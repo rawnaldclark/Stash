@@ -1924,7 +1924,7 @@ interface TrackDao {
      * art is still missing. Returns the minimum fields needed to attempt
      * a backfill: the track id for the final UPDATE, artist + title for
      * the Last.fm `track.getInfo` lookup, and `youtube_id` as the last-
-     * resort fallback (synthetic `https://i.ytimg.com/vi/<id>/hqdefault.jpg`).
+     * resort fallback (synthetic `https://i.ytimg.com/vi/<id>/maxresdefault.jpg`).
      * Only rows where the backfill has any chance of succeeding are
      * returned — tracks with a blank artist or title can't match anything
      * upstream, so we skip them entirely.

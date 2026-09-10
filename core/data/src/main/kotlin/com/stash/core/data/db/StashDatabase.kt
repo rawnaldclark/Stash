@@ -92,7 +92,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoPlaylistEntity::class,
         SyncUndoMembershipEntity::class,
     ],
-    version = 44,
+    version = 45,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1047,6 +1047,43 @@ abstract class StashDatabase : RoomDatabase() {
          * then to this exact 300x300 URL, so no row can render worse than it
          * did before this migration.
          */
+        /**
+         * v44 -> v45: every stored YouTube thumbnail becomes `maxresdefault`.
+         *
+         * `hqdefault` (480x360) is not merely small, it is the wrong shape:
+         * YouTube pads the 16:9 frame into 4:3, which measured on a real
+         * thumbnail is 45 black rows top and bottom — 24% of the square this
+         * app crops to. `maxresdefault` is a clean 1280x720 with no bars, and
+         * it is never a stock placeholder (150 covers probed 2026-09-10: every
+         * hit a real 1280x720 frame, 24 KB at the smallest, no repeats).
+         *
+         * It is present for 82% of a library's videos and `sddefault` for 89%,
+         * which is exactly why MIGRATION_42_43 once forced everything DOWN to
+         * `hqdefault` — a 404 draws nothing. `ArtFallbackInterceptor` now walks
+         * a miss back down to `sddefault` and then `hqdefault`, so aiming high
+         * costs a redirect on the unlucky ones instead of a black tile.
+         *
+         * Replacing the variant name is safe on the pipe-joined playlist
+         * mosaics: the token only appears in i.ytimg.com paths, and the WHERE
+         * scopes each UPDATE to rows that contain one.
+         */
+        val MIGRATION_44_45 = object : Migration(44, 45) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (variant in listOf("default", "mqdefault", "hqdefault", "sddefault")) {
+                    db.execSQL(
+                        "UPDATE tracks SET album_art_url = " +
+                            "REPLACE(album_art_url, '/$variant.', '/maxresdefault.') " +
+                            "WHERE album_art_url LIKE '%i.ytimg.com/%/$variant.%'",
+                    )
+                    db.execSQL(
+                        "UPDATE playlists SET art_url = " +
+                            "REPLACE(art_url, '/$variant.', '/maxresdefault.') " +
+                            "WHERE art_url LIKE '%i.ytimg.com/%/$variant.%'",
+                    )
+                }
+            }
+        }
+
         val MIGRATION_43_44 = object : Migration(43, 44) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -1234,6 +1271,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_41_42,
                 MIGRATION_42_43,
                 MIGRATION_43_44,
+                MIGRATION_44_45,
             )
         }
     }

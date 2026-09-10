@@ -5,46 +5,54 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * YouTube generates `hqdefault.jpg` for every video, but `sddefault.jpg` and
- * `maxresdefault.jpg` only for some (about 1 in 12 library rows 404'd on
- * `sddefault` when probed on 2026-09-05, and the loader draws nothing for a
- * 404 — black art). The upgrader must therefore only ever emit the variant
- * that exists for every video.
+ * YouTube generates `hqdefault.jpg` for every video and the bigger variants
+ * only for some — probed over 150 covers of a real library on 2026-09-10,
+ * `sddefault` is there for 89% and `maxresdefault` for 82%. That used to
+ * force the upgrader down to `hqdefault`, because a 404 draws nothing.
+ *
+ * `ArtFallbackInterceptor` removes that constraint: the upgrader can aim at
+ * the best variant and a miss walks back down. So aim high, because
+ * `hqdefault` is not merely small, it is the WRONG SHAPE — YouTube pads the
+ * 16:9 frame into 4:3, and measured on a real thumbnail that is 45 black
+ * rows top and bottom, 24% of the square the UI crops. `maxresdefault` is a
+ * clean 1280x720 with no bars, and it is never a stock placeholder: across
+ * 150 covers every one was a real 1280x720 frame, 24 KB at the smallest,
+ * with no repeated images. Videos without it simply 404.
  */
 class ArtUrlUpgraderTest {
 
     @Test
-    fun `sddefault is rewritten to the always-available hqdefault`() {
+    fun `sddefault is rewritten up to maxresdefault`() {
         assertEquals(
-            "https://i.ytimg.com/vi/_uofQD-N6UI/hqdefault.jpg",
+            "https://i.ytimg.com/vi/_uofQD-N6UI/maxresdefault.jpg",
             ArtUrlUpgrader.upgrade("https://i.ytimg.com/vi/_uofQD-N6UI/sddefault.jpg"),
         )
     }
 
     @Test
-    fun `maxresdefault is rewritten to hqdefault too`() {
+    fun `maxresdefault is already the target and passes through`() {
         assertEquals(
-            "https://i.ytimg.com/vi/abc123/hqdefault.jpg",
+            "https://i.ytimg.com/vi/abc123/maxresdefault.jpg",
             ArtUrlUpgrader.upgrade("https://i.ytimg.com/vi/abc123/maxresdefault.jpg"),
         )
     }
 
     @Test
-    fun `small variants still upgrade, now to hqdefault, and the downscale query is stripped`() {
+    fun `small variants still upgrade, now to maxresdefault, and the downscale query is stripped`() {
         assertEquals(
-            "https://i.ytimg.com/vi/abc123/hqdefault.jpg",
+            "https://i.ytimg.com/vi/abc123/maxresdefault.jpg",
             ArtUrlUpgrader.upgrade("https://i.ytimg.com/vi/abc123/default.jpg?sqp=xyz&rs=abc"),
         )
         assertEquals(
-            "https://i.ytimg.com/vi_webp/abc123/hqdefault.webp",
+            "https://i.ytimg.com/vi_webp/abc123/maxresdefault.webp",
             ArtUrlUpgrader.upgrade("https://i.ytimg.com/vi_webp/abc123/mqdefault.webp"),
         )
     }
 
     @Test
-    fun `hqdefault passes through unchanged apart from the query strip`() {
+    fun `hqdefault is upgraded and the downscale query is stripped`() {
         assertEquals(
-            "https://i.ytimg.com/vi/abc123/hqdefault.jpg",
+            "https://i.ytimg.com/vi/abc123/maxresdefault.jpg",
             ArtUrlUpgrader.upgrade("https://i.ytimg.com/vi/abc123/hqdefault.jpg?sqp=x"),
         )
     }
@@ -95,7 +103,7 @@ class ArtUrlUpgraderTest {
     fun `a missing lastfm jpeg falls back to the png of the same size`() {
         assertEquals(
             "https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.png",
-            ArtUrlUpgrader.lastFmFallback("https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.jpg"),
+            ArtUrlUpgrader.artFallback("https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.jpg"),
         )
     }
 
@@ -103,14 +111,39 @@ class ArtUrlUpgraderTest {
     fun `a missing 770 png falls back to the size the api actually advertises`() {
         assertEquals(
             "https://lastfm.freetls.fastly.net/i/u/300x300/abc.png",
-            ArtUrlUpgrader.lastFmFallback("https://lastfm.freetls.fastly.net/i/u/770x0/abc.png"),
+            ArtUrlUpgrader.artFallback("https://lastfm.freetls.fastly.net/i/u/770x0/abc.png"),
         )
     }
 
     @Test
     fun `the last rung and every non-lastfm url have no fallback`() {
-        assertNull(ArtUrlUpgrader.lastFmFallback("https://lastfm.freetls.fastly.net/i/u/300x300/abc.png"))
-        assertNull(ArtUrlUpgrader.lastFmFallback("https://i.ytimg.com/vi/abc/hqdefault.jpg"))
-        assertNull(ArtUrlUpgrader.lastFmFallback(null))
+        assertNull(ArtUrlUpgrader.artFallback("https://lastfm.freetls.fastly.net/i/u/300x300/abc.png"))
+        assertNull(ArtUrlUpgrader.artFallback("https://i.ytimg.com/vi/abc/hqdefault.jpg"))
+        assertNull(ArtUrlUpgrader.artFallback(null))
+    }
+
+    // 82% of a real library's thumbnails have maxresdefault, 89% have
+    // sddefault, and hqdefault is the only one every video is guaranteed.
+    // So the walk gives up resolution one step at a time and always lands
+    // on something rather than an empty tile.
+    @Test
+    fun `a missing maxres steps to sddefault, then to the guaranteed hqdefault`() {
+        assertEquals(
+            "https://i.ytimg.com/vi/abc123/sddefault.jpg",
+            ArtUrlUpgrader.artFallback("https://i.ytimg.com/vi/abc123/maxresdefault.jpg"),
+        )
+        assertEquals(
+            "https://i.ytimg.com/vi/abc123/hqdefault.jpg",
+            ArtUrlUpgrader.artFallback("https://i.ytimg.com/vi/abc123/sddefault.jpg"),
+        )
+        assertNull(ArtUrlUpgrader.artFallback("https://i.ytimg.com/vi/abc123/hqdefault.jpg"))
+    }
+
+    @Test
+    fun `the webp thumbnail path walks too`() {
+        assertEquals(
+            "https://i.ytimg.com/vi_webp/abc123/sddefault.webp",
+            ArtUrlUpgrader.artFallback("https://i.ytimg.com/vi_webp/abc123/maxresdefault.webp"),
+        )
     }
 }
