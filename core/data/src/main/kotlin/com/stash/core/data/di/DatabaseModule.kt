@@ -68,6 +68,10 @@ object DatabaseModule {
         db.artistProfileCacheDao()
 
     @Provides
+    fun provideArtistImageDao(db: StashDatabase): com.stash.core.data.db.dao.ArtistImageDao =
+        db.artistImageDao()
+
+    @Provides
     fun provideListeningEventDao(db: StashDatabase): com.stash.core.data.db.dao.ListeningEventDao =
         db.listeningEventDao()
 

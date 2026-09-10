@@ -1,5 +1,6 @@
 package com.stash.data.ytmusic
 
+import com.stash.data.ytmusic.model.ArtistPhotoResolution
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -7,6 +8,7 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
@@ -22,7 +24,15 @@ class ResolveArtistTest {
     private fun fakeInner(responseJson: String?): InnerTubeClient {
         val inner = mock<InnerTubeClient>()
         val parsed = responseJson?.let { Json.parseToJsonElement(it).jsonObject }
-        runBlocking { whenever(inner.search(any(), any())).thenReturn(parsed) }
+        runBlocking {
+            whenever(inner.search(any(), any())).thenReturn(parsed)
+            whenever(inner.searchWithStatus(any(), any())).thenReturn(
+                InnerTubeClient.RequestOutcome(
+                    body = parsed,
+                    statusCode = if (parsed != null) 200 else InnerTubeClient.RequestOutcome.STATUS_NETWORK_ERROR,
+                ),
+            )
+        }
         return inner
     }
 
@@ -55,5 +65,29 @@ class ResolveArtistTest {
         val client = YTMusicApiClient(inner)
         assertNull(client.resolveArtist("   "))
         verifyBlocking(inner, never()) { search(any(), any()) }
+    }
+
+    @Test fun `resolveArtistPhoto resolves an avatar when an artist shelf exists`() = runTest {
+        val client = fakeClient(loadFixture("search_artists_filter.json"))
+        val result = client.resolveArtistPhoto("my bloody valentine")
+        assertTrue(result is ArtistPhotoResolution.Resolved)
+        assertNotNull((result as ArtistPhotoResolution.Resolved).avatarUrl)
+    }
+
+    @Test fun `resolveArtistPhoto is NoAvatar when the API answered without an artist`() = runTest {
+        val client = fakeClient("""{"contents":{}}""")
+        assertEquals(ArtistPhotoResolution.NoAvatar, client.resolveArtistPhoto("nobody"))
+    }
+
+    @Test fun `resolveArtistPhoto is Failed when the API did not answer`() = runTest {
+        val client = fakeClient(null)
+        assertEquals(ArtistPhotoResolution.Failed, client.resolveArtistPhoto("nobody"))
+    }
+
+    @Test fun `resolveArtistPhoto is NoAvatar for a blank name without hitting the network`() = runTest {
+        val inner = fakeInner(loadFixture("search_artists_filter.json"))
+        val client = YTMusicApiClient(inner)
+        assertEquals(ArtistPhotoResolution.NoAvatar, client.resolveArtistPhoto("   "))
+        verifyBlocking(inner, never()) { searchWithStatus(any(), any()) }
     }
 }

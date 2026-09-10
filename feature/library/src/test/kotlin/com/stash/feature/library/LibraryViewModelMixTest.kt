@@ -3,6 +3,7 @@ package com.stash.feature.library
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
+import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
@@ -140,6 +141,7 @@ class LibraryViewModelMixTest {
         },
         streamingPreference: StreamingPreference = mock { on { enabled } doReturn flowOf(false) },
         libraryPreferencesStore: LibraryPreferencesStore = libraryPreferencesStoreMock(),
+        artistImageDao: ArtistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
     ): LibraryViewModel = LibraryViewModel(
         musicRepository = musicRepository,
         playerRepository = playerRepository,
@@ -151,5 +153,6 @@ class LibraryViewModelMixTest {
         ytMusicApiClient = org.mockito.kotlin.mock(),
         libraryPreferencesStore = libraryPreferencesStore,
         libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
+        artistImageDao = artistImageDao,
     )
 }

@@ -70,6 +70,7 @@ data class ArtistInfo(
     val trackCount: Int,
     val totalDurationMs: Long,
     val artUrl: String? = null,
+    val photoUrl: String? = null,
 )
 
 /**
