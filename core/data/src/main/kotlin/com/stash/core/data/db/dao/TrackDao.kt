@@ -1352,6 +1352,14 @@ interface TrackDao {
      * playlist. Called by [StashLikedPlaylistRepository.add] after the
      * cross-ref is in place.
      */
+    /**
+     * Sets the like only on a row that has none — used when merging a backup,
+     * where a like is additive: it may arrive from the archive, but an import
+     * must never quietly un-like something the live library already has.
+     */
+    @Query("UPDATE tracks SET stash_liked_at = :ts WHERE id = :trackId AND stash_liked_at IS NULL")
+    suspend fun likeIfNotAlreadyLiked(trackId: Long, ts: Long): Int
+
     @Query("UPDATE tracks SET stash_liked_at = :ts WHERE id = :trackId")
     suspend fun markStashLiked(trackId: Long, ts: Long)
 

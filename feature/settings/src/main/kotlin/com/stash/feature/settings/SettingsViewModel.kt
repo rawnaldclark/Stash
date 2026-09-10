@@ -821,14 +821,23 @@ class SettingsViewModel @Inject constructor(
     /**
      * Triggers a database export to the chosen URI.
      */
-    fun onExportDatabase(uri: Uri) {
+    fun onExportDatabase(
+        uri: Uri,
+        scope: com.stash.core.data.db.BackupExportScope = com.stash.core.data.db.BackupExportScope.EVERYTHING,
+    ) {
         viewModelScope.launch {
             _localState.update { it.copy(databaseBackupState = DatabaseBackupState.Exporting) }
-            val result = databaseBackupManager.exportDatabase(uri)
+            val result = databaseBackupManager.exportDatabase(uri, scope)
+            val what = when (scope) {
+                com.stash.core.data.db.BackupExportScope.EVERYTHING -> "Library and settings exported"
+                com.stash.core.data.db.BackupExportScope.LIBRARY_ONLY -> "Library exported"
+                com.stash.core.data.db.BackupExportScope.LIKES_ONLY -> "Liked songs exported"
+                com.stash.core.data.db.BackupExportScope.SETTINGS_ONLY -> "Settings exported"
+            }
             _localState.update {
                 it.copy(
                     databaseBackupState = result.fold(
-                        onSuccess = { DatabaseBackupState.Success("Database exported successfully") },
+                        onSuccess = { DatabaseBackupState.Success(what) },
                         onFailure = { t -> DatabaseBackupState.Error(t.message ?: "Export failed") }
                     )
                 )

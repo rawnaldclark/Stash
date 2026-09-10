@@ -87,6 +87,45 @@ enum class BackupImportScope(
 }
 
 /**
+ * What an export should carry.
+ *
+ * The archive used to be all-or-nothing: the whole database plus every
+ * settings file, which on a real library is 12.7 MB and mostly machinery the
+ * user has no interest in moving — sync undo history, remote snapshots,
+ * response caches, listening events. These scopes let the export say what it
+ * is for.
+ *
+ * @property includesDatabase  True when `stash.db` is written at all.
+ * @property includesSettings  True when the `datastore/` files are written.
+ *   Those hold the encrypted tokens, which cannot survive a reinstall anyway
+ *   (their keyset is sealed by an Android Keystore key that uninstalling
+ *   destroys), so a settings-bearing archive restores preferences, not logins.
+ * @property likesOnly         True when the database is pruned to the liked
+ *   tracks and the playlists that hold them before it is written.
+ */
+enum class BackupExportScope(
+    val includesDatabase: Boolean,
+    val includesSettings: Boolean,
+    val likesOnly: Boolean = false,
+) {
+    /** Everything: library and settings. What export always did. */
+    EVERYTHING(includesDatabase = true, includesSettings = true),
+
+    /** The library, without preferences. */
+    LIBRARY_ONLY(includesDatabase = true, includesSettings = false),
+
+    /**
+     * Only what the user marked: tracks with a Stash like, plus every track
+     * in a Liked Songs playlist, plus those playlists. Nothing else — no
+     * mixes, no history, no queue, no caches.
+     */
+    LIKES_ONLY(includesDatabase = true, includesSettings = false, likesOnly = true),
+
+    /** Preferences only; the current library is left out entirely. */
+    SETTINGS_ONLY(includesDatabase = false, includesSettings = true),
+}
+
+/**
  * Outcome of a successful [DatabaseBackupManager.importDatabase].
  *
  * @property restoredTreeUri  External storage tree URI found in restored
@@ -108,6 +147,8 @@ data class BackupImportResult(
     val addedTracks: Int = 0,
     val addedPlaylists: Int = 0,
     val mergedMemberships: Int = 0,
+    /** Songs already in the library that the backup's likes were applied to. */
+    val likedTracks: Int = 0,
 )
 
 /** Internal tally of what one merge pass inserted. */
@@ -115,6 +156,8 @@ private data class MergeCounts(
     val addedTracks: Int,
     val addedPlaylists: Int,
     val mergedMemberships: Int,
+    /** Songs the library already had, which the backup marked as liked. */
+    val likedTracks: Int = 0,
 )
 
 /**
@@ -139,13 +182,24 @@ class DatabaseBackupManager @Inject constructor(
     private data class BackupManifest(
         val dbSchemaVersion: Int,
         val exportTimestamp: Long,
-        val appVersionName: String? = null
+        val appVersionName: String? = null,
+        /** Absent in archives written before export scopes existed. */
+        val scope: String = BackupExportScope.EVERYTHING.name,
     )
 
     /**
-     * Exports the database and settings to the provided [targetUri] as a ZIP.
+     * Writes a backup ZIP to [targetUri], carrying whatever [scope] says.
+     *
+     * [BackupExportScope.LIKES_ONLY] stages a copy of the checkpointed
+     * database, deletes everything that is not a liked track or a liked
+     * playlist, and vacuums it — so the archive is small and holds nothing
+     * the user did not ask to move. The copy is what gets pruned; the live
+     * database is never written to.
      */
-    suspend fun exportDatabase(targetUri: Uri): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun exportDatabase(
+        targetUri: Uri,
+        scope: BackupExportScope = BackupExportScope.EVERYTHING,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             // 1. Force a checkpoint to ensure the .db file is up to date
             database.openHelper.writableDatabase.query(
@@ -164,19 +218,33 @@ class DatabaseBackupManager @Inject constructor(
                     val manifest = BackupManifest(
                         dbSchemaVersion = database.openHelper.readableDatabase.version,
                         exportTimestamp = System.currentTimeMillis(),
-                        appVersionName = appVersionName
+                        appVersionName = appVersionName,
+                        scope = scope.name,
                     )
                     zipOut.putNextEntry(ZipEntry("manifest.json"))
                     zipOut.write(json.encodeToString(manifest).toByteArray())
                     zipOut.closeEntry()
 
-                    // 3. Add DB
-                    if (dbFile.exists()) {
-                        addToZip(zipOut, dbFile, "stash.db")
+                    // 3. Add DB — pruned first when the scope asks for it.
+                    if (scope.includesDatabase && dbFile.exists()) {
+                        if (scope.likesOnly) {
+                            val pruned = File(context.cacheDir, "export-likes-${System.nanoTime()}.db")
+                            try {
+                                dbFile.copyTo(pruned, overwrite = true)
+                                pruneToLikes(pruned)
+                                addToZip(zipOut, pruned, "stash.db")
+                            } finally {
+                                pruned.delete()
+                                File(pruned.path + "-wal").delete()
+                                File(pruned.path + "-shm").delete()
+                            }
+                        } else {
+                            addToZip(zipOut, dbFile, "stash.db")
+                        }
                     }
 
                     // 4. Add all DataStore files (settings, tokens, etc.)
-                    if (datastoreDir.exists()) {
+                    if (scope.includesSettings && datastoreDir.exists()) {
                         datastoreDir.listFiles()?.forEach { file ->
                             if (file.isFile) {
                                 addToZip(zipOut, file, "datastore/${file.name}")
@@ -185,6 +253,63 @@ class DatabaseBackupManager @Inject constructor(
                     }
                 }
             } ?: throw IllegalStateException("Could not open output stream for URI: $targetUri")
+        }
+    }
+
+    /**
+     * Strips a staged copy down to the user's likes.
+     *
+     * "Liked" is both things the word means in this app: a track the user
+     * marked with Stash's own like (`stash_liked_at`), and a track sitting in
+     * a Liked Songs playlist mirrored from Spotify or YouTube. Everything
+     * else goes — other playlists and their memberships, and every auxiliary
+     * table, which is where the bulk lives: on a real 41 MB library that is
+     * 65k sync-undo rows, 28k remote snapshots, 5k cached responses and 900
+     * listening events, none of which anyone wants to carry to a new phone.
+     *
+     * Full-text-search shadow tables are left alone: they belong to the FTS
+     * module and are maintained by the triggers on `tracks`.
+     */
+    internal fun pruneToLikes(staged: File) {
+        val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+            staged.absolutePath,
+            null,
+            android.database.sqlite.SQLiteDatabase.OPEN_READWRITE,
+        )
+        try {
+            val keepers = setOf("tracks", "playlists", "playlist_tracks")
+            val clearable = mutableListOf<String>()
+            db.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table'", null).use { c ->
+                while (c.moveToNext()) {
+                    val name = c.getString(0)
+                    val internal = name.startsWith("sqlite_") || name.startsWith("room_") ||
+                        name.contains("_fts") || name == "android_metadata"
+                    if (!internal && name !in keepers) clearable += name
+                }
+            }
+            db.beginTransaction()
+            try {
+                clearable.forEach { db.execSQL("DELETE FROM `" + it + "`") }
+                db.execSQL(
+                    "DELETE FROM tracks WHERE id NOT IN (" +
+                        "SELECT id FROM tracks WHERE stash_liked_at IS NOT NULL " +
+                        "UNION " +
+                        "SELECT pt.track_id FROM playlist_tracks pt " +
+                        "JOIN playlists p ON p.id = pt.playlist_id " +
+                        "WHERE p.type IN ('LIKED_SONGS', 'STASH_LIKED'))",
+                )
+                db.execSQL("DELETE FROM playlists WHERE type NOT IN ('LIKED_SONGS', 'STASH_LIKED')")
+                db.execSQL(
+                    "DELETE FROM playlist_tracks WHERE track_id NOT IN (SELECT id FROM tracks) " +
+                        "OR playlist_id NOT IN (SELECT id FROM playlists)",
+                )
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            db.execSQL("VACUUM")
+        } finally {
+            db.close()
         }
     }
 
@@ -425,6 +550,7 @@ class DatabaseBackupManager @Inject constructor(
                         addedTracks = counts.addedTracks,
                         addedPlaylists = counts.addedPlaylists,
                         mergedMemberships = counts.mergedMemberships,
+                        likedTracks = counts.likedTracks,
                     )
                 } catch (e: Exception) {
                     // The merge itself is one transaction — on any failure it
@@ -568,6 +694,7 @@ class DatabaseBackupManager @Inject constructor(
             val backupRefs = backupDb.playlistDao().getAllCrossRefsForBackupMerge()
 
             var addedTracks = 0
+            var likedTracks = 0
             var addedPlaylists = 0
             var mergedMemberships = 0
 
@@ -602,6 +729,15 @@ class DatabaseBackupManager @Inject constructor(
                         } else null
                     if (existing != null) {
                         trackIdMap[track.id] = existing
+                        // A like is the one thing worth carrying onto a song
+                        // the library already has: "restore my likes" onto a
+                        // library that already synced those tracks would
+                        // otherwise do visibly nothing. Additive only — the
+                        // query skips rows that are already liked, so an
+                        // import can never un-like anything.
+                        track.stashLikedAt?.let { likedAt ->
+                            if (trackDao.likeIfNotAlreadyLiked(existing, likedAt) > 0) likedTracks++
+                        }
                         continue
                     }
 
@@ -764,7 +900,7 @@ class DatabaseBackupManager @Inject constructor(
                 }
             }
 
-            return MergeCounts(addedTracks, addedPlaylists, mergedMemberships)
+            return MergeCounts(addedTracks, addedPlaylists, mergedMemberships, likedTracks)
         } finally {
             backupDb.close()
         }

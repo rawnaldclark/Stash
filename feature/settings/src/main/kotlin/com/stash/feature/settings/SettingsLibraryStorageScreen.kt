@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +36,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.data.db.BackupExportScope
 import com.stash.core.data.db.BackupImportScope
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.ui.components.GlassCard
@@ -56,6 +58,46 @@ import com.stash.feature.settings.components.SettingsValueRow
  * @property destructive  True when the action REPLACES existing data; renders
  *                        the row and the confirm button in the error color.
  */
+/** One choice in the export dialog: what to carry, and what to call the file. */
+private data class ExportScopeOption(
+    val scope: BackupExportScope,
+    val label: String,
+    val description: String,
+    val fileName: String,
+)
+
+/**
+ * Export was all-or-nothing: the whole database plus every settings file,
+ * 12.7 MB on a real library and mostly machinery nobody wants to move. Likes
+ * first, because it is the one most people actually want to carry.
+ */
+private val exportScopeOptions = listOf(
+    ExportScopeOption(
+        scope = BackupExportScope.LIKES_ONLY,
+        label = "Liked songs only",
+        description = "Everything you liked, and nothing else. Small file.",
+        fileName = "stash-likes.zip",
+    ),
+    ExportScopeOption(
+        scope = BackupExportScope.EVERYTHING,
+        label = "Everything",
+        description = "Library and settings. Logins can't be restored either way.",
+        fileName = "stash-backup.zip",
+    ),
+    ExportScopeOption(
+        scope = BackupExportScope.LIBRARY_ONLY,
+        label = "Library only",
+        description = "Songs, playlists and history. Settings are left out.",
+        fileName = "stash-library.zip",
+    ),
+    ExportScopeOption(
+        scope = BackupExportScope.SETTINGS_ONLY,
+        label = "Settings only",
+        description = "Preferences with no library attached.",
+        fileName = "stash-settings.zip",
+    ),
+)
+
 private data class ImportScopeOption(
     val scope: BackupImportScope,
     val label: String,
@@ -167,9 +209,15 @@ fun SettingsLibraryStorageScreen(
             }
             pendingLibStoragePickerIntent = LibStoragePickerIntent.SetOnly
         }
+        // Survives the file picker (and process death behind it), which is why
+        // it is saveable rather than a plain remember.
+        var exportScopeName by rememberSaveable { mutableStateOf(BackupExportScope.LIKES_ONLY.name) }
+        var showExportScopeDialog by rememberSaveable { mutableStateOf(false) }
         val exportLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("application/zip"),
-        ) { uri -> if (uri != null) viewModel.onExportDatabase(uri) }
+        ) { uri ->
+            if (uri != null) viewModel.onExportDatabase(uri, BackupExportScope.valueOf(exportScopeName))
+        }
         val importLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocument(),
         ) { uri -> if (uri != null) viewModel.onImportDatabase(uri) }
@@ -353,6 +401,68 @@ fun SettingsLibraryStorageScreen(
             )
         }
 
+        if (showExportScopeDialog) {
+            var selected by remember { mutableStateOf(BackupExportScope.valueOf(exportScopeName)) }
+            val chosen = exportScopeOptions.first { it.scope == selected }
+            AlertDialog(
+                onDismissRequest = { showExportScopeDialog = false },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = MaterialTheme.shapes.large,
+                title = { Text(text = "Export Backup", style = MaterialTheme.typography.titleLarge) },
+                text = {
+                    Column {
+                        Text(
+                            text = "Choose what this backup should contain:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Column(modifier = Modifier.selectableGroup()) {
+                            exportScopeOptions.forEach { option ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .selectable(
+                                            selected = selected == option.scope,
+                                            role = Role.RadioButton,
+                                            onClick = { selected = option.scope },
+                                        )
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(selected = selected == option.scope, onClick = null)
+                                    Column(modifier = Modifier.padding(start = 8.dp)) {
+                                        Text(
+                                            text = option.label,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        Text(
+                                            text = option.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            exportScopeName = selected.name
+                            showExportScopeDialog = false
+                            exportLauncher.launch(chosen.fileName)
+                        },
+                    ) { Text("Choose file") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showExportScopeDialog = false }) { Text("Cancel") }
+                },
+            )
+        }
+
         if (uiState.showImportConfirmation) {
             // Issue #235: importing is no longer all-or-nothing. The user picks
             // WHAT the backup restores — merge-into-library is the default
@@ -473,7 +583,7 @@ fun SettingsLibraryStorageScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     OutlinedButton(
-                        onClick = { exportLauncher.launch("stash-backup.zip") },
+                        onClick = { showExportScopeDialog = true },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.primary,
