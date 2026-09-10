@@ -64,9 +64,20 @@ non-committed credentials.
 
 **One-time migration:** if you have a debug build installed from before this
 change, you'll need to uninstall it once before installing a build signed
-with the new key. Uninstalling wipes app data — for Stash specifically,
-downloaded tracks live in app-internal storage (not covered by the in-app
-backup), so back up anything you don't want to lose before reinstalling.
+with the new key. Uninstalling wipes app data, so do this first:
+
+1. **Settings → Library & Storage → Export Backup.** Pick *Everything* (or
+   *Liked songs only* if that is all you care about). The file lands wherever
+   you save it and survives the uninstall.
+2. Uninstall, install the new build, then **Import Backup** and choose
+   *Merge into library* — it cannot delete anything.
+3. **Reconnect your accounts.** Logins are the one thing a backup cannot
+   restore: the token keyset is wrapped by an Android Keystore key that
+   uninstalling destroys, so the restored blobs decrypt to nothing.
+4. Downloaded audio is not in the archive — it is tens of gigabytes and lives
+   in app-internal storage. The library remembers what it had, so
+   **Settings → Library & Storage → Library Health → Missing downloads**
+   offers to fetch them all back once the accounts are connected.
 
 ## How the codebase is organized
 
