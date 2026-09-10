@@ -26,6 +26,7 @@ import com.stash.feature.settings.components.SquidCaptchaStatus
 data class SettingsUiState(
     val spotifyAuthState: AuthState = AuthState.NotConnected,
     val youTubeAuthState: AuthState = AuthState.NotConnected,
+    val discordAuthState: AuthState = AuthState.NotConnected,
     val audioQuality: QualityTier = QualityTier.MAX,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     /** Pure-black (AMOLED) backgrounds whenever the effective theme is dark. */
@@ -139,6 +140,10 @@ data class SettingsUiState(
     val youTubeCookieError: String? = null,
     val isYouTubeCookieValidating: Boolean = false,
     val youTubeError: String? = null,
+    val showDiscordWebLogin: Boolean = false,
+    val showDiscordTokenDialog: Boolean = false,
+    val discordTokenError: String? = null,
+    val isDiscordTokenValidating: Boolean = false,
     /**
      * User-selected SAF tree URI for external storage (SD card / USB-OTG /
      * any folder). Null = using the app's internal music directory. When

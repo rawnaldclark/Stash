@@ -92,6 +92,9 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var lastFmScrobbler: LastFmScrobbler
 
     @Inject
+    lateinit var discordRpcCoordinator: com.stash.core.data.discord.DiscordRpcCoordinator
+
+    @Inject
     lateinit var youTubeHistoryScrobbler: YouTubeHistoryScrobbler
 
     @Inject
@@ -500,6 +503,7 @@ class StashApplication : Application(), Configuration.Provider {
         lastFmScrobbler.start()
         youTubeHistoryScrobbler.start()
         autoSaveScrobbler.start()
+        discordRpcCoordinator.start()
         // Generic listen sinks (ListenBrainz). No-ops until connected.
         listenSinkCoordinator.start()
 

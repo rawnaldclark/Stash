@@ -74,6 +74,22 @@ interface TokenManager {
      */
     suspend fun getYouTubeCookie(): String?
 
+    /** Current authentication state for Discord Rich Presence. */
+    val discordAuthState: StateFlow<AuthState>
+
+    /**
+     * Returns the stored Discord account token used to authenticate
+     * headless-session Rich Presence requests, or null if not connected.
+     */
+    suspend fun getDiscordUserToken(): String?
+
+    /**
+     * Validates a Discord account token (scraped from the account's own web
+     * session via DiscordLoginWebView — NOT a bot token) against the profile
+     * endpoint and persists it + the profile on success.
+     */
+    suspend fun connectDiscordWithToken(token: String): Boolean
+
     /** Persists Spotify credentials and user profile information. */
     suspend fun saveSpotifyAuth(token: ServiceToken, user: UserInfo)
 

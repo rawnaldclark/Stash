@@ -96,6 +96,7 @@ class SettingsViewModel @Inject constructor(
     private val moveLibraryCoordinator: MoveLibraryCoordinator,
     private val reorganizeLibraryCoordinator: ReorganizeLibraryCoordinator,
     private val youTubeCookieHelper: YouTubeCookieHelper,
+    private val discordRpcCoordinator: com.stash.core.data.discord.DiscordRpcCoordinator,
     private val lastFmApiClient: LastFmApiClient,
     private val lastFmSessionPreference: LastFmSessionPreference,
     private val lastFmCredentials: LastFmCredentials,
@@ -579,6 +580,7 @@ class SettingsViewModel @Inject constructor(
     val uiState: StateFlow<SettingsUiState> = combine(
         tokenManager.spotifyAuthState,
         tokenManager.youTubeAuthState,
+        tokenManager.discordAuthState,
         musicRepository.getTrackCount(),
         librarySizeHolder.size,
         qualityPreference.qualityTier,
@@ -626,6 +628,7 @@ class SettingsViewModel @Inject constructor(
         val v = Values(values)
         val spotifyAuth = v.next<AuthState>()
         val youTubeAuth = v.next<AuthState>()
+        val discordAuth = v.next<AuthState>()
         val trackCount = v.next<Int>()
         val storageBytes = (v.next<LibrarySizeBreakdown>()).totalBytes
         val quality = v.next<QualityTier>()
@@ -682,6 +685,7 @@ class SettingsViewModel @Inject constructor(
         SettingsUiState(
             spotifyAuthState = spotifyAuth,
             youTubeAuthState = youTubeAuth,
+            discordAuthState = discordAuth,
             audioQuality = quality,
             themeMode = theme,
             amoledDark = amoledDark,
@@ -697,6 +701,10 @@ class SettingsViewModel @Inject constructor(
             youTubeCookieError = local.youTubeCookieError,
             isYouTubeCookieValidating = local.isYouTubeCookieValidating,
             youTubeError = local.youTubeError,
+            showDiscordWebLogin = local.showDiscordWebLogin,
+            showDiscordTokenDialog = local.showDiscordTokenDialog,
+            discordTokenError = local.discordTokenError,
+            isDiscordTokenValidating = local.isDiscordTokenValidating,
             externalTreeUri = externalTree,
             moveLibraryState = moveState,
             libraryLayout = libraryLayout,
@@ -1324,6 +1332,83 @@ class SettingsViewModel @Inject constructor(
         _localState.update { it.copy(youTubeError = null) }
     }
 
+    // -- Discord actions --------------------------------------------------
+
+    fun onConnectDiscord() {
+        _localState.update { it.copy(showDiscordWebLogin = true) }
+    }
+
+    fun onConnectDiscordManual() {
+        _localState.update {
+            it.copy(
+                showDiscordWebLogin = false,
+                showDiscordTokenDialog = true,
+                discordTokenError = null,
+                isDiscordTokenValidating = false,
+            )
+        }
+    }
+
+    fun onDismissDiscordWebLogin() {
+        _localState.update { it.copy(showDiscordWebLogin = false) }
+    }
+
+    fun onDiscordWebLoginTokenExtracted(token: String) {
+        _localState.update { it.copy(showDiscordWebLogin = false) }
+        onConnectDiscordWithToken(token)
+    }
+
+    fun onConnectDiscordWithToken(token: String) {
+        if (token.isBlank()) {
+            _localState.update { it.copy(discordTokenError = "Token cannot be empty") }
+            return
+        }
+        viewModelScope.launch {
+            _localState.update { it.copy(isDiscordTokenValidating = true, discordTokenError = null) }
+            val success = tokenManager.connectDiscordWithToken(token)
+            if (success) {
+                _localState.update {
+                    it.copy(
+                        showDiscordTokenDialog = false,
+                        discordTokenError = null,
+                        isDiscordTokenValidating = false,
+                    )
+                }
+            } else {
+                _localState.update {
+                    it.copy(
+                        discordTokenError = "Invalid or expired token. Please try again.",
+                        isDiscordTokenValidating = false,
+                    )
+                }
+            }
+        }
+    }
+
+    fun onDismissDiscordTokenDialog() {
+        _localState.update {
+            it.copy(
+                showDiscordTokenDialog = false,
+                discordTokenError = null,
+                isDiscordTokenValidating = false,
+            )
+        }
+    }
+
+    fun onDisconnectDiscord() {
+        viewModelScope.launch {
+            discordRpcCoordinator.updateNowPlaying("", "", "", null, 0L, 0L, isPlaying = false)
+            tokenManager.clearAuth(AuthService.DISCORD)
+        }
+    }
+
+    val discordNeedsPresenceConsent: StateFlow<Boolean> = discordRpcCoordinator.needsPresenceConsent
+
+    fun onDiscordFinishConnecting(openUrl: (String) -> Unit) {
+        openUrl(com.stash.core.data.discord.DiscordRpcConfig.consentUrl())
+        discordRpcCoordinator.consentHandled()
+    }
+
     // -- Quality --------------------------------------------------------------
 
     /**
@@ -1664,6 +1749,10 @@ class SettingsViewModel @Inject constructor(
         val youTubeCookieError: String? = null,
         val isYouTubeCookieValidating: Boolean = false,
         val youTubeError: String? = null,
+        val showDiscordWebLogin: Boolean = false,
+        val showDiscordTokenDialog: Boolean = false,
+        val discordTokenError: String? = null,
+        val isDiscordTokenValidating: Boolean = false,
         /**
          * Transient Last.fm auth state used to override the session-flow-
          * derived default. Non-null while we're mid-flow (AwaitingAuth

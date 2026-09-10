@@ -5,6 +5,7 @@ import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
+import com.stash.core.data.discord.DiscordRpcCoordinator
 import com.stash.data.download.lossless.relay.LosslessRelayClient
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -95,6 +96,7 @@ class SettingsViewModelTest {
         listenSubmissionDao = mockk(relaxed = true),
         relayClient = relayClient,
         lastFmRecommendationSource = mockk(relaxed = true),
+        discordRpcCoordinator = mockk(relaxed = true),
     )
 
     @Test fun `refreshStorageUsage requests a fresh filesystem calculation`() {

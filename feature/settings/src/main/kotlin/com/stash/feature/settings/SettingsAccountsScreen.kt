@@ -6,10 +6,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -80,6 +84,26 @@ fun SettingsAccountsScreen(
             onConnect = viewModel::onConnectYouTubeWithCookie,
             onDismiss = viewModel::onDismissYouTubeCookieDialog,
         )
+    }
+
+    // Discord token paste dialog (manual fallback).
+    if (uiState.showDiscordTokenDialog) {
+        com.stash.feature.settings.components.DiscordTokenDialog(
+            isValidating = uiState.isDiscordTokenValidating,
+            errorMessage = uiState.discordTokenError,
+            onConnect = viewModel::onConnectDiscordWithToken,
+            onDismiss = viewModel::onDismissDiscordTokenDialog,
+        )
+    }
+
+    // Discord WebView login (full-screen overlay).
+    if (uiState.showDiscordWebLogin) {
+        com.stash.feature.settings.components.DiscordLoginWebView(
+            onTokenExtracted = viewModel::onDiscordWebLoginTokenExtracted,
+            onDismiss = viewModel::onDismissDiscordWebLogin,
+            onManualFallback = viewModel::onConnectDiscordManual,
+        )
+        return
     }
 
     // YouTube error dialog (missing credentials, network failure, etc.).
@@ -161,6 +185,64 @@ fun SettingsAccountsScreen(
                     onRetry = viewModel::onRetryYouTubeHistory,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
+            },
+        )
+
+        val discordUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+        val discordNeedsConsent by viewModel.discordNeedsPresenceConsent.collectAsStateWithLifecycle()
+
+        // Discord is the one account where connecting carries a risk to the
+        // USER's account rather than just their privacy, so it is the one
+        // account that asks first. Discord has no sanctioned way for a phone
+        // app to set Rich Presence, so this drives the account's own session —
+        // what their Platform Manipulation Policy names as a self-bot, and
+        // what their support article says can end in account termination.
+        // Enforcement in practice targets spam, so the real-world risk is low;
+        // it is still not ours to take on someone else's behalf silently.
+        var showDiscordRisk by rememberSaveable { mutableStateOf(false) }
+        if (showDiscordRisk) {
+            AlertDialog(
+                onDismissRequest = { showDiscordRisk = false },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = MaterialTheme.shapes.large,
+                title = { Text("Before you connect Discord") },
+                text = {
+                    Text(
+                        "Discord has no official way for a phone app to set your status, " +
+                            "so Stash signs in as you and uses your account's own session. " +
+                            "Discord's rules call that a self-bot and allow them to action " +
+                            "the account.\n\nEnforcement goes after spam rather than status " +
+                            "updates, so this is unlikely — but it is your account, so it is " +
+                            "your call.\n\nDisconnecting clears your status and deletes the " +
+                            "token from this phone.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDiscordRisk = false
+                        viewModel.onConnectDiscord()
+                    }) { Text("Connect anyway") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDiscordRisk = false }) { Text("Cancel") }
+                },
+            )
+        }
+        AccountConnectionCard(
+            serviceName = "Discord",
+            icon = Icons.Rounded.Forum,
+            accentColor = androidx.compose.ui.graphics.Color(0xFF5865F2), // Discord blurple
+            authState = uiState.discordAuthState,
+            onConnect = { showDiscordRisk = true },
+            onDisconnect = viewModel::onDisconnectDiscord,
+            needsAction = discordNeedsConsent,
+            needsActionLabel = "Finish connecting",
+            onNeedsAction = {
+                viewModel.onDiscordFinishConnecting { url ->
+                    runCatching { discordUriHandler.openUri(url) }
+                }
             },
         )
 

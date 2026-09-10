@@ -39,7 +39,7 @@ data class UserInfo(
 )
 
 /** Streaming services supported by Stash. */
-enum class AuthService { SPOTIFY, YOUTUBE_MUSIC }
+enum class AuthService { SPOTIFY, YOUTUBE_MUSIC, DISCORD }
 
 /** Represents the authentication lifecycle for a given [AuthService]. */
 sealed class AuthState {

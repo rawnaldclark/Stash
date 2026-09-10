@@ -47,9 +47,15 @@ class TokenManagerImpl @Inject constructor(
     private val _youTubeAuthState = MutableStateFlow<AuthState>(AuthState.NotConnected)
     override val youTubeAuthState: StateFlow<AuthState> = _youTubeAuthState.asStateFlow()
 
+    // -- Discord state ----------------------------------------------------
+
+    private val _discordAuthState = MutableStateFlow<AuthState>(AuthState.NotConnected)
+    override val discordAuthState: StateFlow<AuthState> = _discordAuthState.asStateFlow()
+
     init {
         observeSpotify()
         observeYouTube()
+        observeDiscord()
     }
 
     // -- Access-token getters -------------------------------------------------
@@ -181,6 +187,7 @@ class TokenManagerImpl @Inject constructor(
         when (service) {
             AuthService.SPOTIFY -> tokenStore.clearSpotify()
             AuthService.YOUTUBE_MUSIC -> tokenStore.clearYouTube()
+            AuthService.DISCORD -> tokenStore.clearDiscord()
         }
     }
 
@@ -192,6 +199,67 @@ class TokenManagerImpl @Inject constructor(
             AuthService.YOUTUBE_MUSIC -> tokenStore.youTubeToken.first()?.let {
                 it.refreshToken.isNotEmpty()
             } ?: false
+            AuthService.DISCORD -> tokenStore.discordToken.first()?.let {
+                it.accessToken.isNotEmpty()
+            } ?: false
+        }
+    }
+
+    // -- Discord ------------------------------------------------------------
+
+    /**
+     * Discord has no client-side refresh flow worth persisting — the account
+     * token itself IS the long-lived credential.
+     * [com.stash.core.data.discord.DiscordRpcClient] exchanges it for
+     * short-lived OAuth access tokens in-memory per app session. Stored as
+     * the ServiceToken's accessToken; expiresAtEpoch is set far out since
+     * there's nothing to expire client-side.
+     */
+    override suspend fun getDiscordUserToken(): String? {
+        val token = tokenStore.discordToken.first() ?: return null
+        return token.accessToken.takeIf { it.isNotEmpty() }
+    }
+
+    override suspend fun connectDiscordWithToken(token: String): Boolean {
+        if (token.isBlank()) return false
+        val result = runCatching {
+            com.stash.core.auth.discord.DiscordProfileValidator.validateAndFetchProfile(token)
+        }
+        result.exceptionOrNull()?.let {
+            Log.w("StashSync", "connectDiscordWithToken: profile validation failed", it)
+        }
+        val profile = result.getOrNull() ?: return false
+
+        val username = (profile["username"] as? kotlinx.serialization.json.JsonPrimitive)
+            ?.content ?: "Discord User"
+        val avatarHash = (profile["avatar"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+        val userId = (profile["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+        val avatarUrl = if (avatarHash != null && userId.isNotEmpty()) {
+            "https://cdn.discordapp.com/avatars/$userId/$avatarHash.png"
+        } else null
+
+        val serviceToken = ServiceToken(
+            accessToken = token,
+            refreshToken = token, // decryptToken() treats an empty refreshToken as "not stored" — Discord has no separate refresh token, so duplicate it here rather than special-casing the shared decrypt path.
+            expiresAtEpoch = java.time.Instant.now().epochSecond + 365L * 24 * 3600,
+        )
+        tokenStore.saveDiscordToken(
+            serviceToken,
+            UserInfo(id = userId, displayName = username, imageUrl = avatarUrl),
+        )
+        return true
+    }
+
+    private fun observeDiscord() {
+        scope.launch {
+            tokenStore.discordToken
+                .combine(tokenStore.discordUser) { token, user -> token to user }
+                .collect { (token, user) ->
+                    _discordAuthState.value = when {
+                        token != null && user != null -> AuthState.Connected(user)
+                        else -> AuthState.NotConnected
+                    }
+                }
         }
     }
 

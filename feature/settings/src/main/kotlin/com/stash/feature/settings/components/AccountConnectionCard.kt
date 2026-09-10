@@ -63,6 +63,9 @@ fun AccountConnectionCard(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
+    needsAction: Boolean = false,
+    needsActionLabel: String = "Finish connecting",
+    onNeedsAction: (() -> Unit)? = null,
     extraContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -134,14 +137,26 @@ fun AccountConnectionCard(
             ) {
                 when (authState) {
                     is AuthState.Connected -> {
-                        OutlinedButton(
-                            onClick = onDisconnect,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error,
-                            ),
-                        ) {
-                            Text("Disconnect")
+                        if (needsAction && onNeedsAction != null) {
+                            Button(
+                                onClick = onNeedsAction,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = accentColor,
+                                    contentColor = Color.White,
+                                ),
+                            ) {
+                                Text(needsActionLabel)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = onDisconnect,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error,
+                                ),
+                            ) {
+                                Text("Disconnect")
+                            }
                         }
                     }
                     else -> {

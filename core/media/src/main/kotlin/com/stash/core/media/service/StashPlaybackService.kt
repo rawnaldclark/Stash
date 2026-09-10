@@ -102,6 +102,7 @@ class StashPlaybackService : MediaLibraryService() {
      * [androidx.media3.datasource.okhttp.OkHttpDataSource].
      */
     @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
+    @Inject lateinit var discordRpcCoordinator: com.stash.core.data.discord.DiscordRpcCoordinator
 
     companion object {
         /** Custom command action for toggling shuffle mode. */
@@ -312,6 +313,7 @@ class StashPlaybackService : MediaLibraryService() {
             onTrackTransitionForLoudness(mediaItem)
             prefetchOrchestrator.resetSession()
             val master = crossfadeEngine?.masterPlayer
+            updateDiscordPresence(mediaItem, master?.isPlaying == true)
             if (master?.isPlaying == true) {
                 startPrefetchPoll(master)
                 startCrossfadePoll(master)
@@ -323,6 +325,7 @@ class StashPlaybackService : MediaLibraryService() {
             // (pauseAtEndOfMediaItems, the spare) — ignore the churn it makes.
             if (crossfadeEngine?.isTransitioning() == true) return
             val master = crossfadeEngine?.masterPlayer
+            updateDiscordPresence(master?.currentMediaItem, isPlaying)
             if (isPlaying && master != null) {
                 startPrefetchPoll(master)
                 startCrossfadePoll(master)
@@ -343,6 +346,17 @@ class StashPlaybackService : MediaLibraryService() {
         override fun onPlayerError(error: PlaybackException) {
             crossfadeEngine?.cancelTransition()
             crossfadePreparedId = null
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                val master = crossfadeEngine?.masterPlayer
+                updateDiscordPresence(master?.currentMediaItem, master?.isPlaying == true)
+            }
         }
 
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
@@ -723,6 +737,7 @@ class StashPlaybackService : MediaLibraryService() {
         listenedPlayer = newMaster
         crossfadePreparedId = null
         onTrackTransitionForLoudness(newMaster.currentMediaItem)
+        updateDiscordPresence(newMaster.currentMediaItem, newMaster.isPlaying)
         updateCustomLayout()
         prefetchOrchestrator.resetSession()
         // Re-read idleness from the NEW master directly: the fade's
@@ -872,6 +887,30 @@ class StashPlaybackService : MediaLibraryService() {
                 delay(PREFETCH_POLL_INTERVAL_MS)
             }
         }
+    }
+
+    /**
+     * Pushes now-playing state to Discord (no-op if not connected). Only
+     * uses artwork already served over http(s) — Stash has no local-art
+     * upload path to Discord (unlike downloaded/offline covers, which stay
+     * as file:// and just fall back to the app icon).
+     */
+    private fun updateDiscordPresence(mediaItem: MediaItem?, isPlaying: Boolean) {
+        val metadata = mediaItem?.mediaMetadata
+        val title = metadata?.title?.toString().orEmpty()
+        if (title.isBlank()) {
+            discordRpcCoordinator.updateNowPlaying("", "", "", null, 0L, 0L, isPlaying = false)
+            return
+        }
+        val artist = metadata?.artist?.toString().orEmpty()
+        val album = metadata?.albumTitle?.toString().orEmpty()
+        val artScheme = metadata?.artworkUri?.scheme?.lowercase()
+        val artUrl = metadata?.artworkUri?.toString()
+            ?.takeIf { artScheme == "http" || artScheme == "https" }
+        val master = crossfadeEngine?.masterPlayer
+        val positionMs = master?.currentPosition ?: 0L
+        val durationMs = master?.duration?.takeIf { it > 0 } ?: 0L
+        discordRpcCoordinator.updateNowPlaying(title, artist, album, artUrl, positionMs, durationMs, isPlaying)
     }
 
     /**

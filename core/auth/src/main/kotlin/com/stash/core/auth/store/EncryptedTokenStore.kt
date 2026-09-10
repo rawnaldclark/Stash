@@ -56,6 +56,7 @@ class EncryptedTokenStore @Inject constructor(
     private object Keys {
         val SPOTIFY = stringPreferencesKey("spotify_token")
         val YOUTUBE = stringPreferencesKey("youtube_token")
+        val DISCORD = stringPreferencesKey("discord_token")
     }
 
     // ── Spotify ──────────────────────────────────────────────────────────
@@ -102,6 +103,29 @@ class EncryptedTokenStore @Inject constructor(
     /** Removes the stored YouTube Music credentials. */
     suspend fun clearYouTube() {
         context.authDataStore.edit { it.remove(Keys.YOUTUBE) }
+    }
+
+    // ── Discord ──────────────────────────────────────────────────────────
+
+    /** Emits the current Discord [ServiceToken], or null if not stored / decryption fails. */
+    val discordToken: Flow<ServiceToken?> = context.authDataStore.data.map { prefs ->
+        prefs[Keys.DISCORD]?.let { decryptToken(it) }
+    }
+
+    /** Emits the current Discord [UserInfo], or null if not stored / decryption fails. */
+    val discordUser: Flow<UserInfo?> = context.authDataStore.data.map { prefs ->
+        prefs[Keys.DISCORD]?.let { decryptUser(it) }
+    }
+
+    /** Persists the Discord token (and optionally user profile) as an encrypted blob. */
+    suspend fun saveDiscordToken(token: ServiceToken, user: UserInfo? = null) {
+        val stored = token.toStoredToken(user)
+        context.authDataStore.edit { it[Keys.DISCORD] = encryptStored(stored) }
+    }
+
+    /** Removes the stored Discord credentials. */
+    suspend fun clearDiscord() {
+        context.authDataStore.edit { it.remove(Keys.DISCORD) }
     }
 
     // ── Encryption helpers ───────────────────────────────────────────────

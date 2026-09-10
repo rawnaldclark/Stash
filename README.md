@@ -9,7 +9,7 @@
 
 Stash mirrors your Spotify and YouTube Music libraries to your Android phone. You connect each service, pick the playlists and mixes you want, and Stash either downloads them for offline playback — as real FLAC files once you've connected a lossless source — or surfaces them as a streaming index so you can stream tracks without filling up your storage. Same library, two modes, one tap to switch.
 
-There's no Stash account. No subscription. No ads. No analytics. Your credentials live on your phone — the Spotify and YouTube cookies encrypted, the rest in app-private storage — and each one is only ever sent back to the service it came from. Spotify and YouTube aren't the only hosts Stash talks to, though — lyrics, scrobbling, artist metadata and lossless all have their own. [The full list is below](#what-stash-talks-to).
+There's no Stash account. No subscription. No ads. No analytics. Your credentials live on your phone — the Spotify, YouTube, and Discord tokens encrypted, the rest in app-private storage — and each one is only ever sent back to the service it came from. Spotify and YouTube aren't the only hosts Stash talks to, though — lyrics, scrobbling, artist metadata, Discord presence, and lossless all have their own. [The full list is below](#what-stash-talks-to).
 
 <p align="center">
   <img src="docs/screenshots/home.png" width="280" alt="Home screen — Daily Mixes, sync stats, supporter pill">
@@ -61,11 +61,15 @@ These sources are somebody else's infrastructure, mostly run solo and mostly fre
 - Normalizer
 - Synced lyrics, pulled from LRCLIB and scrolled with the track
 
+### Discord
+
+- **Rich Presence** — show what you're listening to as your Discord status, art and all. Optional, off by default, and disconnecting clears it immediately.
+
 ### Privacy
 
 - No Stash account server, no login, no analytics, no third-party crash reporters. A handful of hosts the project runs are fetched from; none of them ever sees a credential.
 - Cookies stored on-device, encrypted with AES-256-GCM via Google's [Tink](https://developers.google.com/tink)
-- Your Spotify and YouTube credentials are sent to Spotify and YouTube and nowhere else — no host in the list below ever sees them
+- Your Spotify, YouTube, and Discord credentials are sent to Spotify, YouTube, and Discord respectively and nowhere else — no host in the list below ever sees them
 - GPL-3.0, every line of code is open source
 
 ---
@@ -92,6 +96,7 @@ Stash has no account server, but it isn't a two-service app either. Everything t
 - **LRCLIB** (`lrclib.net`) — synced lyrics
 - **Last.fm** (`ws.audioscrobbler.com`) — optional scrobbling, plus artist bios and images. In official release builds the read lookups route through `stash-lastfm-proxy.rawnaldclark.workers.dev`, a caching Worker the project runs: it sees the artist or track being looked up, never your account.
 - **ListenBrainz** (`api.listenbrainz.org`) — optional scrobbling, only if you connect it
+- **Discord** (`discord.com`, `cdn.discordapp.com`) — optional Rich Presence, only if you connect your account. Unlike everything else on this list, this isn't an official API integration — see the callout in [First-time setup](#first-time-setup) for exactly how it works and what that means.
 - **MusicBrainz** (`musicbrainz.org`) — artist metadata
 - **GitHub** (`api.github.com`) — the update check
 - **`stash-tipjar.rawnaldclark.workers.dev`** — the public supporters list behind the Home supporter pill. Fetch only; it's told nothing about you.
@@ -189,6 +194,32 @@ Stash will start pulling your YouTube Music daily mixes, discover mix, replay mi
 > **Tip:** same incognito caveat as Spotify — use a regular browser window.
 
 > **Why the whole cookie header?** YouTube authenticates with multiple cookies together (`SAPISID`, `__Secure-3PAPISID`, `LOGIN_INFO`). Grabbing all of them at once is easier than finding each one individually.
+
+</details>
+
+<details>
+<summary><b>🎮 Connect Discord (Rich Presence)</b></summary>
+
+Discord Rich Presence works differently from Spotify/YouTube, and it's worth reading before you connect it.
+
+### How it works
+
+Discord doesn't give third-party apps an official way to set another app's "Playing X" status from a phone — that's normally a desktop-only feature (Discord's Game SDK, talking to the desktop client over a local socket). Stash instead uses the same technique a few well-known Rich Presence tools (PreMiD, and others in that space) use on the web: it signs in as *you*, the same way the in-app Spotify/YouTube login does, then uses your account's own session — not a bot, not an API key — to post your Now Playing status to Discord's private (undocumented) headless-session endpoint.
+
+> **Read this first.** Discord has no sanctioned way for a phone app to set Rich Presence, so Stash drives your account's own session. Discord's [Platform Manipulation Policy](https://discord.com/safety/platform-manipulation-policy-explainer) names that pattern a *self-bot*, and their [support article](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) says it can end in account termination. Enforcement in practice goes after spam rather than status updates, so the real-world risk is low — but it is your account, and the app asks before connecting for that reason.
+
+This is genuinely different from the Spotify/YouTube cookie approach in one important way: reusing your own session cookie to read your library is indistinguishable from you just... using a browser. Posting to an undocumented endpoint as your own account is something Discord's Terms of Service is more likely to call automation of a user account, even though nothing here is a bot, nothing acts on your behalf beyond showing a status, and it's the exact mechanism a number of long-running open-source RPC tools already use. Stash does its best to make these requests look like they came from Discord's own client (matching headers, backing off on rate limits) so this doesn't trip automated-abuse detection — but "does its best" isn't "guaranteed," and connecting this feature is a judgment call you're making about your own account, not something Stash can de-risk for you. If that trade-off isn't one you want to make, skip this section entirely — the rest of Stash works exactly the same without it.
+
+### Setup
+
+1. Open Stash → **Settings** → tap **Discord** under Accounts → **Connect**.
+2. Discord's login page opens inside the app.
+3. Sign in the way you normally would.
+4. Stash extracts your session token automatically once login succeeds.
+
+If the in-app login fails, tap **Paste token** and provide it manually: sign in at [discord.com/login](https://discord.com/login) on a computer, open DevTools (F12) → **Application** → **Local Storage** → `https://discord.com`, find the `token` key, and copy its value.
+
+Disconnecting (Settings → Discord → Disconnect) clears your presence immediately and deletes the stored token from your phone.
 
 </details>
 
