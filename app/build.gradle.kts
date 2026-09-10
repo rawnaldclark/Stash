@@ -122,6 +122,12 @@ android {
                 keyPassword = releaseKeyPassword
             }
         }
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -152,6 +158,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
