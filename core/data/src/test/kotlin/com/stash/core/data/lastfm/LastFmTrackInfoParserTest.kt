@@ -82,4 +82,21 @@ class LastFmTrackInfoParserTest {
         val info = LastFmTrackInfo.parse(Json.parseToJsonElement(onlyPlaceholder))
         assertNull(info.bestImageUrl)
     }
+
+    @Test
+    fun `best image comes out already upgraded so cached responses never re-store 300px png art`() {
+        val real = """
+            {"track":{"name":"More and More","artist":{"name":"Captain Hollywood Project"},
+                "listeners":"1","playcount":"1",
+                "album":{"image":[
+                    {"size":"small","#text":"https://lastfm-img.freetls.fastly.net/i/u/34s/a1e2a5b1e851d66bc10112a4dbceb750.png"},
+                    {"size":"extralarge","#text":"https://lastfm-img.freetls.fastly.net/i/u/300x300/a1e2a5b1e851d66bc10112a4dbceb750.png"}
+                ]},"toptags":{"tag":[]}}}
+        """
+        val info = LastFmTrackInfo.parse(Json.parseToJsonElement(real))
+        assertEquals(
+            "https://lastfm-img.freetls.fastly.net/i/u/770x0/a1e2a5b1e851d66bc10112a4dbceb750.jpg",
+            info.bestImageUrl,
+        )
+    }
 }

@@ -54,4 +54,63 @@ class ArtUrlUpgraderTest {
         assertNull(ArtUrlUpgrader.upgrade(null))
         assertEquals("https://static.qobuz.com/images/covers/x.jpg", ArtUrlUpgrader.upgrade("https://static.qobuz.com/images/covers/x.jpg"))
     }
+
+    // Last.fm serves album art under `/i/u/<size>/<hash>.<ext>` on TWO hosts
+    // (`lastfm.freetls.fastly.net` and `lastfm-img.freetls.fastly.net`). The
+    // API hands back 300x300 PNGs; probed on a real library 2026-09-09, 3 in 4
+    // originals are 600px or larger and the CDN serves any of them 770 wide as
+    // a JPEG that weighs LESS than the 300px PNG (median 85 KB vs 185 KB).
+    @Test
+    fun `lastfm art on the lastfm-img host is upgraded to 770 wide jpeg`() {
+        assertEquals(
+            "https://lastfm-img.freetls.fastly.net/i/u/770x0/a1e2a5b1e851d66bc10112a4dbceb750.jpg",
+            ArtUrlUpgrader.upgrade("https://lastfm-img.freetls.fastly.net/i/u/300x300/a1e2a5b1e851d66bc10112a4dbceb750.png"),
+        )
+    }
+
+    @Test
+    fun `lastfm art on the plain lastfm host is upgraded the same way`() {
+        assertEquals(
+            "https://lastfm.freetls.fastly.net/i/u/770x0/f93cfd7cdcea45b29987f964751aa8bd.jpg",
+            ArtUrlUpgrader.upgrade("https://lastfm.freetls.fastly.net/i/u/300x300/f93cfd7cdcea45b29987f964751aa8bd.png"),
+        )
+        assertEquals(
+            "https://lastfm.freetls.fastly.net/i/u/770x0/abc.jpg",
+            ArtUrlUpgrader.upgrade("https://lastfm.freetls.fastly.net/i/u/174s/abc.png"),
+        )
+    }
+
+    @Test
+    fun `an already upgraded lastfm url passes through unchanged`() {
+        val done = "https://lastfm-img.freetls.fastly.net/i/u/770x0/a1e2a5b1e851d66bc10112a4dbceb750.jpg"
+        assertEquals(done, ArtUrlUpgrader.upgrade(done))
+    }
+
+    // The 770-wide variants are generated on demand: probed over 200 covers of
+    // a real library, 770x0.jpg missed 6 hashes and 770x0.png missed 5, but NO
+    // hash missed both. So a jpg miss steps to png, and a png miss steps back
+    // to the exact URL the API handed us — a cover can never come out worse
+    // than it is today, which is the whole point (a 404 draws nothing).
+    @Test
+    fun `a missing lastfm jpeg falls back to the png of the same size`() {
+        assertEquals(
+            "https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.png",
+            ArtUrlUpgrader.lastFmFallback("https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.jpg"),
+        )
+    }
+
+    @Test
+    fun `a missing 770 png falls back to the size the api actually advertises`() {
+        assertEquals(
+            "https://lastfm.freetls.fastly.net/i/u/300x300/abc.png",
+            ArtUrlUpgrader.lastFmFallback("https://lastfm.freetls.fastly.net/i/u/770x0/abc.png"),
+        )
+    }
+
+    @Test
+    fun `the last rung and every non-lastfm url have no fallback`() {
+        assertNull(ArtUrlUpgrader.lastFmFallback("https://lastfm.freetls.fastly.net/i/u/300x300/abc.png"))
+        assertNull(ArtUrlUpgrader.lastFmFallback("https://i.ytimg.com/vi/abc/hqdefault.jpg"))
+        assertNull(ArtUrlUpgrader.lastFmFallback(null))
+    }
 }

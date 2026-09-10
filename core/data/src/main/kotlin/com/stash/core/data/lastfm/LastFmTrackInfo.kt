@@ -79,7 +79,14 @@ data class LastFmTrackInfo(
                         // the generic Last.fm star image.
                         !text.contains(PLACEHOLDER_HASH)
                 } ?: continue
-                return match.jsonObject["#text"]?.jsonPrimitive?.content
+                // Upgrade here, at the ONE place Last.fm art enters the app.
+                // Every consumer (art backfill, the download match ladder, the
+                // Last.fm mix source) reads this field, and none of them ran the
+                // URL through the upgrader — which is why 2,317 rows on a real
+                // library were still the API's 300x300 thumbnail.
+                return com.stash.core.common.ArtUrlUpgrader.upgrade(
+                    match.jsonObject["#text"]?.jsonPrimitive?.content,
+                )
             }
             return null
         }

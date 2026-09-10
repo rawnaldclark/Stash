@@ -1,9 +1,11 @@
 package com.stash.core.network.di
 
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import dagger.multibindings.IntoSet
 import dagger.multibindings.Multibinds
 import okhttp3.ConnectionSpec
 import okhttp3.Interceptor
@@ -71,6 +73,17 @@ object NetworkModule {
 @Module
 @InstallIn(SingletonComponent::class)
 interface NetworkInterceptorsModule {
+    /**
+     * Walks a 404'd Last.fm cover down to a variant that exists. Bound here
+     * rather than at a call site because the client is shared: Coil and
+     * media3's bitmap loader both need it, and neither knows about the other.
+     */
+    @Binds
+    @IntoSet
+    fun lastFmArtFallback(
+        interceptor: com.stash.core.network.art.LastFmArtFallbackInterceptor,
+    ): Interceptor
+
     /**
      * App-contributed OkHttp interceptors installed on the shared client.
      * Resolves to an empty set when nothing contributes.

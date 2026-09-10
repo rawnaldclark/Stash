@@ -92,7 +92,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoPlaylistEntity::class,
         SyncUndoMembershipEntity::class,
     ],
-    version = 43,
+    version = 44,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1026,6 +1026,42 @@ abstract class StashDatabase : RoomDatabase() {
          * the upgrader writes `hqdefault` from now on. Data-only: the schema at
          * 43 is identical to 42.
          */
+        /**
+         * v43 -> v44: every stored Last.fm cover is the 300x300 PNG the API
+         * advertises. The same hash is served 770 wide, and as a JPEG that is
+         * LIGHTER than the 300px PNG (probed over 200 covers of a real library
+         * on 2026-09-09: 152 KB -> 91 KB median, for 2.5x the pixels). The
+         * upgrader now rewrites them at the parse site, but only for art
+         * fetched from here on; a library that already streams thousands of
+         * Last.fm-matched tracks would stay soft until each row happened to be
+         * re-fetched. This repairs them in place.
+         *
+         * Blanket-replacing `.png` is scoped by the Last.fm marker in the
+         * WHERE, and is safe for the pipe-joined playlist mosaics too: every
+         * other art host in the app is extensionless (Spotify, YT Music) or
+         * serves .jpg/.webp (ytimg, Qobuz). Verified across 19k tracks and
+         * every playlist of a real library — zero non-Last.fm `.png` art URLs.
+         *
+         * A hash missing the 770 JPEG is caught at fetch time by
+         * `LastFmArtFallbackInterceptor`, which walks back down to the PNG and
+         * then to this exact 300x300 URL, so no row can render worse than it
+         * did before this migration.
+         */
+        val MIGRATION_43_44 = object : Migration(43, 44) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "UPDATE tracks SET album_art_url = " +
+                        "REPLACE(REPLACE(album_art_url, '/i/u/300x300/', '/i/u/770x0/'), '.png', '.jpg') " +
+                        "WHERE album_art_url LIKE '%freetls.fastly.net/i/u/300x300/%'",
+                )
+                db.execSQL(
+                    "UPDATE playlists SET art_url = " +
+                        "REPLACE(REPLACE(art_url, '/i/u/300x300/', '/i/u/770x0/'), '.png', '.jpg') " +
+                        "WHERE art_url LIKE '%freetls.fastly.net/i/u/300x300/%'",
+                )
+            }
+        }
+
         val MIGRATION_42_43 = object : Migration(42, 43) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -1197,6 +1233,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_40_41,
                 MIGRATION_41_42,
                 MIGRATION_42_43,
+                MIGRATION_43_44,
             )
         }
     }

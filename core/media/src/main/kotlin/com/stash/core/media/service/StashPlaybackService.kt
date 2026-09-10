@@ -446,7 +446,17 @@ class StashPlaybackService : MediaLibraryService() {
             .setBitmapLoader(
                 SafeBitmapLoader(
                     androidx.media3.session.CacheBitmapLoader(
-                        androidx.media3.datasource.DataSourceBitmapLoader(this),
+                        // Fetch notification / lock-screen artwork over the SHARED
+                        // OkHttp client rather than media3's own default HTTP stack.
+                        // The app's interceptors then apply here too — specifically
+                        // the Last.fm art fallback, without which a cover whose
+                        // upgraded variant 404s would show art in the app (Coil
+                        // walks the rungs) but none on the lock screen. Also buys
+                        // the resilient DNS and connection reuse.
+                        androidx.media3.datasource.DataSourceBitmapLoader(
+                            androidx.media3.datasource.DataSourceBitmapLoader.DEFAULT_EXECUTOR_SERVICE.get(),
+                            androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient),
+                        ),
                     ),
                 ),
             )
