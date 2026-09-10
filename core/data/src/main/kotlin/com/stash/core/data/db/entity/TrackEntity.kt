@@ -215,6 +215,16 @@ data class TrackEntity(
      * the local Stash "Liked Songs" playlist via the heart button.
      * NULL = not yet. Forward-only.
      */
+    /**
+     * When the integrity sweep last found this track's file gone while the row
+     * still said downloaded — i.e. "the user had this and it vanished", which
+     * is what a restored backup looks like on a fresh install. Cleared the
+     * moment the track is downloaded again, and never set by a deliberate
+     * delete, so it only ever means "lost, not discarded".
+     */
+    @ColumnInfo(name = "download_missing_at")
+    val downloadMissingAt: Long? = null,
+
     @ColumnInfo(name = "stash_liked_at")
     val stashLikedAt: Long? = null,
 

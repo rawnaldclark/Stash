@@ -133,10 +133,17 @@ interface DownloadQueueDao {
             OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
             OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
         WHERE dq.status = 'PENDING'
-          AND dq.sync_id IS NOT NULL
           AND t.source IN (:sources)
           AND bl.canonical_key IS NULL
-          AND EXISTS (
+          -- A track the user asked for by hand (Library & Storage ->
+          -- "Re-download missing") carries no sync run and need not sit in a
+          -- synced playlist: the ask IS the authorisation. Every other row
+          -- still needs both, so the automatic requeue can never widen.
+          AND (
+            dq.user_requested = 1
+            OR (
+              dq.sync_id IS NOT NULL
+              AND EXISTS (
               SELECT 1 FROM playlist_tracks pt
               INNER JOIN playlists p ON p.id = pt.playlist_id
               WHERE pt.track_id = t.id
@@ -162,6 +169,8 @@ interface DownloadQueueDao {
                 -- TrackDownloadWorker pulled them — thousands of tracks the user
                 -- never toggled on, refreshed every time the mixes rotated.
                 AND p.type NOT IN ('STASH_MIX', 'DAILY_MIX')
+              )
+            )
           )
         ORDER BY (CASE WHEN dq.youtube_url IS NULL THEN 0 ELSE 1 END) ASC, dq.created_at ASC
     """)
@@ -183,10 +192,17 @@ interface DownloadQueueDao {
             OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
             OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
         WHERE dq.status = 'FAILED' AND dq.retry_count < 3
-          AND dq.sync_id IS NOT NULL
           AND t.source IN (:sources)
           AND bl.canonical_key IS NULL
-          AND EXISTS (
+          -- A track the user asked for by hand (Library & Storage ->
+          -- "Re-download missing") carries no sync run and need not sit in a
+          -- synced playlist: the ask IS the authorisation. Every other row
+          -- still needs both, so the automatic requeue can never widen.
+          AND (
+            dq.user_requested = 1
+            OR (
+              dq.sync_id IS NOT NULL
+              AND EXISTS (
               SELECT 1 FROM playlist_tracks pt
               INNER JOIN playlists p ON p.id = pt.playlist_id
               WHERE pt.track_id = t.id
@@ -212,6 +228,8 @@ interface DownloadQueueDao {
                 -- TrackDownloadWorker pulled them — thousands of tracks the user
                 -- never toggled on, refreshed every time the mixes rotated.
                 AND p.type NOT IN ('STASH_MIX', 'DAILY_MIX')
+              )
+            )
           )
         ORDER BY (CASE WHEN dq.youtube_url IS NULL THEN 0 ELSE 1 END) ASC, dq.created_at ASC
     """)

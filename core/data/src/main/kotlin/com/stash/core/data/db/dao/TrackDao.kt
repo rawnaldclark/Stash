@@ -367,13 +367,34 @@ interface TrackDao {
     *  size so LibrarySizeHolder's next walk doesn't count phantom bytes. */
     @Query("""
         UPDATE tracks
-        SET is_downloaded = 0, file_path = NULL, file_size_bytes = 0
+        SET is_downloaded = 0, file_path = NULL, file_size_bytes = 0,
+            download_missing_at = :now
         WHERE id IN (:ids)
     """)
-    suspend fun resetMissingFilesRaw(ids: List<Long>)
+    suspend fun resetMissingFilesRaw(ids: List<Long>, now: Long)
 
-    suspend fun resetMissingFiles(ids: List<Long>) =
-        ids.chunkedForBindWrite { resetMissingFilesRaw(it) }
+    suspend fun resetMissingFiles(ids: List<Long>, now: Long = System.currentTimeMillis()) =
+        ids.chunkedForBindWrite { resetMissingFilesRaw(it, now) }
+
+    /**
+     * How many tracks the library had downloaded and no longer has on disk.
+     * On a restored backup this is the whole download collection: the rows
+     * survive in the database, the audio does not.
+     */
+    @Query("SELECT COUNT(*) FROM tracks WHERE download_missing_at IS NOT NULL AND is_downloaded = 0")
+    suspend fun countRestorableDownloads(): Int
+
+    /** Live count for the Library & Storage card. */
+    @Query("SELECT COUNT(*) FROM tracks WHERE download_missing_at IS NOT NULL AND is_downloaded = 0")
+    fun observeRestorableDownloads(): kotlinx.coroutines.flow.Flow<Int>
+
+    /** The tracks behind [countRestorableDownloads], oldest loss first. */
+    @Query("""
+        SELECT id FROM tracks
+        WHERE download_missing_at IS NOT NULL AND is_downloaded = 0
+        ORDER BY download_missing_at ASC, id ASC
+    """)
+    suspend fun restorableDownloadIds(): List<Long>
 
     /** Update an existing track entity. */
     @Update
@@ -732,6 +753,7 @@ interface TrackDao {
             file_path = :filePath,
             file_size_bytes = :fileSizeBytes,
             date_added = :downloadedAt,
+            download_missing_at = NULL,
             sample_rate_hz = COALESCE(:sampleRateHz, sample_rate_hz),
             bits_per_sample = COALESCE(:bitsPerSample, bits_per_sample)
         WHERE id = :trackId
@@ -1874,7 +1896,8 @@ interface TrackDao {
         UPDATE tracks
         SET is_downloaded = 0,
             file_path = NULL,
-            file_size_bytes = 0
+            file_size_bytes = 0,
+            download_missing_at = NULL
         WHERE id = :trackId
         """
     )
@@ -2015,11 +2038,12 @@ interface TrackDao {
         UPDATE tracks
         SET is_downloaded = 0,
             file_path = NULL,
-            file_size_bytes = 0
+            file_size_bytes = 0,
+            download_missing_at = :now
         WHERE id IN (:trackIds)
         """
     )
-    suspend fun bulkResetForReDownloadRaw(trackIds: List<Long>)
+    suspend fun bulkResetForReDownloadRaw(trackIds: List<Long>, now: Long)
 
     /**
      * Chunked wrapper for [bulkResetForReDownloadRaw]: the startup integrity
@@ -2027,8 +2051,8 @@ interface TrackDao {
      * reset must chunk under the bind cap (#337). Chunks are separate
      * statements — wrap in a transaction if all-or-nothing is required.
      */
-    suspend fun bulkResetForReDownload(trackIds: List<Long>) =
-        trackIds.chunkedForBindWrite { bulkResetForReDownloadRaw(it) }
+    suspend fun bulkResetForReDownload(trackIds: List<Long>, now: Long = System.currentTimeMillis()) =
+        trackIds.chunkedForBindWrite { bulkResetForReDownloadRaw(it, now) }
 
     /**
      * YT-source tracks the Quick-scan backfill should verify. Two routes

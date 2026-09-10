@@ -64,6 +64,16 @@ data class DownloadQueueEntity(
     @ColumnInfo(name = "rejected_video_id")
     val rejectedVideoId: String? = null,
 
+    /**
+     * True when the user explicitly asked for this download (Library &
+     * Storage -> "Re-download"). The automatic requeue only takes tracks
+     * inside a sync-enabled, non-mix playlist, on purpose (#368). A track the
+     * user pointed at has no such requirement, so the pickup queries let this
+     * flag stand in for that membership.
+     */
+    @ColumnInfo(name = "user_requested", defaultValue = "0")
+    val userRequested: Boolean = false,
+
     @ColumnInfo(name = "created_at")
     val createdAt: Instant = Instant.now(),
 

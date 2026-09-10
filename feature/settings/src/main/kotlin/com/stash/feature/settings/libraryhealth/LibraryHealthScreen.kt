@@ -97,6 +97,16 @@ fun LibraryHealthScreen(
 
         Spacer(Modifier.height(20.dp))
 
+        if (state.restorableDownloads > 0 || state.restoreQueued != null) {
+            RestoreDownloadsSection(
+                missing = state.restorableDownloads,
+                queued = state.restoreQueued,
+                onRestore = viewModel::restoreMissingDownloads,
+                onDismiss = viewModel::dismissRestoreResult,
+            )
+            Spacer(Modifier.height(20.dp))
+        }
+
         VerifyLibrarySection(
             status = state.verification,
             onRunVerification = viewModel::runVerification,
@@ -305,6 +315,49 @@ private fun BackfillSection(
                             Text("Retry scan")
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Offered only when the library remembers downloads this device no longer
+ * has — restoring a backup onto a fresh install is the case that produces
+ * them in bulk, since the archive carries the library and not the audio.
+ */
+@Composable
+private fun RestoreDownloadsSection(
+    missing: Int,
+    queued: Int?,
+    onRestore: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    SectionHeader(title = "Missing downloads")
+
+    GlassCard {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            if (queued != null) {
+                Text(
+                    text = "Queued $queued ${if (queued == 1) "track" else "tracks"}. " +
+                        "They download in the background — the Sync tab shows progress.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onDismiss) { Text("Done") }
+            } else {
+                Text(
+                    text = "$missing ${if (missing == 1) "track was" else "tracks were"} " +
+                        "downloaded before but the ${if (missing == 1) "file is" else "files are"} " +
+                        "not on this device. Connect the accounts they came from first, " +
+                        "then download them again.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onRestore) {
+                    Text("Download $missing again")
                 }
             }
         }

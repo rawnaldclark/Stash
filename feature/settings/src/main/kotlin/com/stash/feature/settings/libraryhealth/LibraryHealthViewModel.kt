@@ -37,6 +37,7 @@ import kotlinx.coroutines.withContext
 class LibraryHealthViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val trackDao: TrackDao,
+    private val downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao,
     private val metadataExtractor: AudioDurationExtractor,
     private val fileExistenceSessionFactory: com.stash.core.data.library.FileExistenceSessionFactory,
     private val reconciliationUseCase: com.stash.core.data.library.LibraryReconciliationUseCase,
@@ -57,9 +58,58 @@ class LibraryHealthViewModel @Inject constructor(
                     .onFailure { Log.w(TAG, "getLibraryHealthBuckets failed", it) }
                     .getOrDefault(emptyList())
             }
-            _state.update { it.copy(buckets = buckets) }
+            val restorable = withContext(Dispatchers.IO) {
+                runCatching { trackDao.countRestorableDownloads() }
+                    .onFailure { Log.w(TAG, "countRestorableDownloads failed", it) }
+                    .getOrDefault(0)
+            }
+            _state.update { it.copy(buckets = buckets, restorableDownloads = restorable) }
         }
     }
+
+    /**
+     * Queues every download this device lost so they come back.
+     *
+     * Rows are marked `user_requested`, which is what lets the download
+     * worker pick up a track that is not inside a sync-enabled playlist. The
+     * automatic requeue deliberately will not touch those (#368), and on a
+     * restored 861-track library that left 825 of them unreachable — known,
+     * listed, and with no way to ask for them.
+     *
+     * Requires the source services to be connected: a restored backup cannot
+     * carry logins, because the token keyset is sealed by an Android Keystore
+     * key that uninstalling destroys. Reconnect first, then run this.
+     */
+    fun restoreMissingDownloads() {
+        viewModelScope.launch {
+            val queued = withContext(Dispatchers.IO) {
+                runCatching {
+                    val ids = trackDao.restorableDownloadIds()
+                    if (ids.isEmpty()) return@runCatching 0
+                    downloadQueueDao.insertAll(
+                        ids.map { id ->
+                            com.stash.core.data.db.entity.DownloadQueueEntity(
+                                trackId = id,
+                                userRequested = true,
+                            )
+                        },
+                    )
+                    ids.size
+                }.onFailure { Log.w(TAG, "restoreMissingDownloads failed", it) }.getOrDefault(0)
+            }
+            if (queued > 0) {
+                WorkManager.getInstance(appContext).enqueue(
+                    androidx.work.OneTimeWorkRequestBuilder<
+                        com.stash.core.data.sync.workers.TrackDownloadWorker,
+                        >().build(),
+                )
+            }
+            _state.update { it.copy(restoreQueued = queued) }
+            refresh()
+        }
+    }
+
+    fun dismissRestoreResult() = _state.update { it.copy(restoreQueued = null) }
 
     /**
      * Walks every downloaded track that's still at default format/kbps,
@@ -264,6 +314,13 @@ data class LibraryHealthState(
     val buckets: List<LibraryHealthBucket> = emptyList(),
     val backfill: BackfillStatus = BackfillStatus.Idle,
     val verification: LibraryVerificationStatus = LibraryVerificationStatus.Idle,
+    /**
+     * Tracks this library had downloaded whose files are gone — what a backup
+     * restored onto a fresh install looks like once the sweep has run. Zero on
+     * a healthy device.
+     */
+    val restorableDownloads: Int = 0,
+    val restoreQueued: Int? = null,
 )
 
 /**

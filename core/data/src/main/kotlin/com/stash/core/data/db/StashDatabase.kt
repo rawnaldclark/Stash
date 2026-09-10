@@ -92,7 +92,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoPlaylistEntity::class,
         SyncUndoMembershipEntity::class,
     ],
-    version = 45,
+    version = 46,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1067,6 +1067,37 @@ abstract class StashDatabase : RoomDatabase() {
          * mosaics: the token only appears in i.ytimg.com paths, and the WHERE
          * scopes each UPDATE to rows that contain one.
          */
+        /**
+         * v45 -> v46: remember downloads the device lost, and let the user ask
+         * for them back.
+         *
+         * Restoring a backup onto a fresh install hands back the whole library
+         * with none of the audio, so the integrity sweep resets every
+         * downloaded row. Getting the music back then depended on the
+         * automatic requeue, which only takes tracks inside a sync-enabled,
+         * non-mix playlist — measured on a real 861-track library, that was
+         * 36 of them. The rest sat there known and unreachable.
+         *
+         * `tracks.download_missing_at` records "this was downloaded and the
+         * file is gone", set by the sweep and cleared the moment the track is
+         * downloaded again. A deliberate delete clears it too, so it never
+         * means "discarded". `download_queue.user_requested` marks a row the
+         * user asked for by hand; the pickup queries accept it in place of the
+         * playlist membership an automatic requeue still requires.
+         *
+         * Existing rows start unstamped: nothing recorded what was lost before
+         * this migration, and inventing it would offer downloads the user may
+         * have deleted on purpose.
+         */
+        val MIGRATION_45_46 = object : Migration(45, 46) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN download_missing_at INTEGER")
+                db.execSQL(
+                    "ALTER TABLE download_queue ADD COLUMN user_requested INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         val MIGRATION_44_45 = object : Migration(44, 45) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 for (variant in listOf("default", "mqdefault", "hqdefault", "sddefault")) {
@@ -1272,6 +1303,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_42_43,
                 MIGRATION_43_44,
                 MIGRATION_44_45,
+                MIGRATION_45_46,
             )
         }
     }
