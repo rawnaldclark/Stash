@@ -38,15 +38,30 @@ interface ArtistImageDao {
     suspend fun observedNames(): List<String>
 
     /**
-     * Every distinct track artist credit the Library Artists tab shows, in
-     * the same scope as `TrackDao.getAllArtists` (downloads only — the tab
-     * is the offline-first surface).
+     * Every distinct track artist credit the Library Artists tab can show, in
+     * the same scope as `TrackDao.getAllArtists`: downloads in every mode, plus
+     * stream-only rows when streaming is on. The playlist-membership arm also
+     * keeps still-unchecked streamable stubs (`is_streamable_checked_at` null)
+     * in the set — a freshly-synced playlist's artists get photos before the
+     * availability worker has probed them, matching how the tab renders
+     * playlists in Online mode (membership is the source of truth).
      */
     @Query(
         """
         SELECT DISTINCT artist FROM tracks
         WHERE artist != ''
-          AND is_downloaded = 1
+          AND (
+              is_downloaded = 1
+              OR is_streamable = 1
+              OR EXISTS (
+                  SELECT 1
+                  FROM playlist_tracks pt
+                  JOIN playlists p ON p.id = pt.playlist_id
+                  WHERE pt.track_id = tracks.id
+                    AND pt.removed_at IS NULL
+                    AND p.is_active = 1
+              )
+          )
         """,
     )
     suspend fun distinctArtistNames(): List<String>

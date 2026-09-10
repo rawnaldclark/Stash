@@ -45,11 +45,15 @@ import java.util.concurrent.TimeUnit
  *
  * ## Scheduling & throttling
  * Enqueued once per install from [StashApplication] (`KEEP`) and re-fired
- * after each sync (`REPLACE`), so newly-synced artists are picked up. Each
- * run handles [BATCH_SIZE] names at ~[REQUEST_INTERVAL_MS]ms apart to stay
- * well under InnerTube's rate limits; a fresh sync (or app relaunch) drains
- * the remainder. Network is gated to UNMETERED so a full library walk
- * (~hundreds of small searches) never burns cellular data.
+ * after each sync (`KEEP`), so newly-synced artists are picked up. A `KEEP`
+ * re-fire never pre-empts a running pass: a sync that finishes mid-backfill
+ * lets the current pass drain instead of restarting from the top. Each run
+ * handles [BATCH_SIZE] names at ~[REQUEST_INTERVAL_MS]ms apart to stay well
+ * under InnerTube's rate limits. A large library fills over several syncs —
+ * at 150 artists per pass an 860-artist library takes ~6 runs — so a
+ * half-filled grid on first launch is expected, not a bug. Network is gated
+ * to UNMETERED so a full library walk (~hundreds of small searches) never
+ * burns cellular data.
  */
 @HiltWorker
 class ArtistImageBackfillWorker @AssistedInject constructor(
@@ -85,9 +89,10 @@ class ArtistImageBackfillWorker @AssistedInject constructor(
         }
 
         /**
-         * Post-sync re-fire. `REPLACE` so a freshly-finished sync immediately
-         * re-runs the backfill for any artists the sync just added, instead of
-         * waiting for the next app launch's `KEEP` request to be a no-op.
+         * Post-sync re-fire. `KEEP` so a sync finishing mid-backfill lets the
+         * running pass complete instead of restarting it from the top; newly-
+         * synced artists are drained by this and later passes. (Same policy as
+         * [enqueueOneTime] — the two share [WORK_NAME].)
          */
         fun enqueueAfterSync(context: Context) {
             val constraints = Constraints.Builder()
@@ -99,7 +104,7 @@ class ArtistImageBackfillWorker @AssistedInject constructor(
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                ExistingWorkPolicy.KEEP,
                 work,
             )
         }

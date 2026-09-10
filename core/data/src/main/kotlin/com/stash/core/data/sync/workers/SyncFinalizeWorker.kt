@@ -80,9 +80,10 @@ class SyncFinalizeWorker @AssistedInject constructor(
             syncStateManager.onCompleted()
 
             // A finished sync may have added artists to the library — re-run
-            // the artist-photo backfill so new acts get a photo. REPLACE policy
-            // lets this supersede any queued first-run pass; it is a cheap
-            // dedupe (observed-names set) when nothing is new.
+            // the artist-photo backfill so new acts get a photo. KEEP policy
+            // lets a pass that was already running finish instead of being
+            // restarted from the top; it is a cheap dedupe (observed-names
+            // set) when nothing is new.
             ArtistImageBackfillWorker.enqueueAfterSync(applicationContext)
 
             Log.i(
