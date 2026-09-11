@@ -230,6 +230,31 @@ data class DownloadedFileRef(
 )
 
 /**
+ * A download this device lost and that is not already on its way back.
+ *
+ * Without the queue check, "Download N again" queued tracks the sync's requeue
+ * had already queued, and the worker's pickup takes every PENDING row, so
+ * those tracks downloaded twice. The count also stayed on screen after the
+ * tap, and a second tap queued the whole library again.
+ *
+ * "On its way" = running, or a row the worker will pick up: user-requested or
+ * sync-queued, and pending, waiting for lossless, or failed with retries left.
+ * A legacy manual row (neither flag) is never picked up, so it must not hide
+ * the track.
+ */
+// ponytail: a stale sync row for a track that left its synced playlist hides that track until the next download run's orphan sweep deletes the row.
+private const val RESTORABLE_DOWNLOAD = """
+    download_missing_at IS NOT NULL AND is_downloaded = 0
+    AND id NOT IN (
+        SELECT track_id FROM download_queue
+        WHERE status = 'IN_PROGRESS'
+           OR ((user_requested = 1 OR sync_id IS NOT NULL)
+               AND (status IN ('PENDING', 'WAITING_FOR_LOSSLESS')
+                    OR (status = 'FAILED' AND retry_count < 3)))
+    )
+"""
+
+/**
  * Data-access object for [TrackEntity].
  *
  * Provides CRUD operations, various sorted/filtered queries, full-text
@@ -381,19 +406,15 @@ interface TrackDao {
      * On a restored backup this is the whole download collection: the rows
      * survive in the database, the audio does not.
      */
-    @Query("SELECT COUNT(*) FROM tracks WHERE download_missing_at IS NOT NULL AND is_downloaded = 0")
+    @Query("SELECT COUNT(*) FROM tracks WHERE " + RESTORABLE_DOWNLOAD)
     suspend fun countRestorableDownloads(): Int
 
     /** Live count for the Library & Storage card. */
-    @Query("SELECT COUNT(*) FROM tracks WHERE download_missing_at IS NOT NULL AND is_downloaded = 0")
+    @Query("SELECT COUNT(*) FROM tracks WHERE " + RESTORABLE_DOWNLOAD)
     fun observeRestorableDownloads(): kotlinx.coroutines.flow.Flow<Int>
 
     /** The tracks behind [countRestorableDownloads], oldest loss first. */
-    @Query("""
-        SELECT id FROM tracks
-        WHERE download_missing_at IS NOT NULL AND is_downloaded = 0
-        ORDER BY download_missing_at ASC, id ASC
-    """)
+    @Query("SELECT id FROM tracks WHERE " + RESTORABLE_DOWNLOAD + " ORDER BY download_missing_at ASC, id ASC")
     suspend fun restorableDownloadIds(): List<Long>
 
     /** Update an existing track entity. */

@@ -1404,9 +1404,11 @@ class SettingsViewModel @Inject constructor(
 
     val discordNeedsPresenceConsent: StateFlow<Boolean> = discordRpcCoordinator.needsPresenceConsent
 
-    fun onDiscordFinishConnecting(openUrl: (String) -> Unit) {
-        openUrl(com.stash.core.data.discord.DiscordRpcConfig.consentUrl())
-        discordRpcCoordinator.consentHandled()
+    /** [openUrl] returns whether a browser actually opened; if none did, the button stays so the user can retry. */
+    fun onDiscordFinishConnecting(openUrl: (String) -> Boolean) {
+        if (openUrl(com.stash.core.data.discord.DiscordRpcConfig.consentUrl())) {
+            discordRpcCoordinator.consentHandled()
+        }
     }
 
     // -- Quality --------------------------------------------------------------

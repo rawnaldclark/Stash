@@ -6,6 +6,7 @@ import com.stash.core.auth.discord.DiscordRateLimiter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -82,9 +83,16 @@ class DiscordRpcClient(
         pending.value = PendingUpdate(activity, nonceCounter++)
     }
 
-    /** Fire-and-forget clear, e.g. on disconnect/logout. */
-    fun clearNow() {
-        scope.launch { runCatching { sendNow(null) } }
+    /**
+     * Clears the status, then stops this client for good (disconnect, logout,
+     * revoked token). The clear runs first: cancelling straight away would
+     * leave "Listening to…" on the profile.
+     */
+    fun close() {
+        scope.launch {
+            runCatching { sendNow(null) }
+            scope.cancel()
+        }
     }
 
     /**
@@ -122,12 +130,13 @@ class DiscordRpcClient(
                 .toString().toRequestBody("application/json".toMediaType()),
         )
         rateLimiter.awaitReady()
-        val res = http.newCall(authorizeReq.build()).await()
-        rateLimiter.observe(res)
-        if (res.code == 401) { onUnauthorized?.invoke(); throw IllegalStateException("Discord token revoked") }
-        if (!res.isSuccessful) throw IllegalStateException("authorize failed: ${res.code}")
-        val location = Json.decodeFromString<JsonObject>(res.body?.string() ?: throw IllegalStateException("Empty response body"))["location"]!!.jsonPrimitive.content
-        Log.d("DiscordRpc", "authorize location: $location")
+        // Every response is closed, error paths included, or OkHttp can't reuse the connection.
+        val location = http.newCall(authorizeReq.build()).await().use { res ->
+            rateLimiter.observe(res)
+            if (res.code == 401) { onUnauthorized?.invoke(); throw IllegalStateException("Discord token revoked") }
+            if (!res.isSuccessful) throw IllegalStateException("authorize failed: ${res.code}")
+            Json.decodeFromString<JsonObject>(res.body?.string() ?: throw IllegalStateException("Empty response body"))["location"]!!.jsonPrimitive.content
+        }
         val code = location.substringAfter("code=").substringBefore("&")
 
         val tokenReq = Request.Builder().url("https://discord.com/api/v9/oauth2/token")
@@ -142,14 +151,15 @@ class DiscordRpcClient(
                 .build(),
         )
         rateLimiter.awaitReady()
-        val tokenRes = http.newCall(tokenReq.build()).await()
-        rateLimiter.observe(tokenRes)
-        if (!tokenRes.isSuccessful) {
-            val body = runCatching { tokenRes.body?.string() }.getOrNull()
-            if (body?.contains("invalid_grant") == true) onNeedsConsent?.invoke()
-            throw IllegalStateException("token exchange failed: ${tokenRes.code} — body: $body")
+        val newAccess = http.newCall(tokenReq.build()).await().use { tokenRes ->
+            rateLimiter.observe(tokenRes)
+            if (!tokenRes.isSuccessful) {
+                val body = runCatching { tokenRes.body?.string() }.getOrNull()
+                if (body?.contains("invalid_grant") == true) onNeedsConsent?.invoke()
+                throw IllegalStateException("token exchange failed: ${tokenRes.code} — body: $body")
+            }
+            Json.decodeFromString<JsonObject>(tokenRes.body?.string() ?: throw IllegalStateException("Empty response body"))["access_token"]!!.jsonPrimitive.content
         }
-        val newAccess = Json.decodeFromString<JsonObject>(tokenRes.body?.string() ?: throw IllegalStateException("Empty response body"))["access_token"]!!.jsonPrimitive.content
         accessToken = newAccess
         return newAccess
     }
@@ -161,18 +171,19 @@ class DiscordRpcClient(
         req.post(Json.encodeToString(DiscordSession.serializer(), session).toRequestBody("application/json".toMediaType()))
 
         rateLimiter.awaitReady()
-        val res = http.newCall(req.build()).await()
-        rateLimiter.observe(res)
-        if (res.code == 401) {
-            Log.w("DiscordRpc", "headless-sessions POST got 401 — clearing auth")
-            accessToken = null; onUnauthorized?.invoke(); return
+        http.newCall(req.build()).await().use { res ->
+            rateLimiter.observe(res)
+            if (res.code == 401) {
+                Log.w("DiscordRpc", "headless-sessions POST got 401 — clearing auth")
+                accessToken = null; onUnauthorized?.invoke(); return
+            }
+            if (!res.isSuccessful) {
+                val body = runCatching { res.body?.string() }.getOrNull()
+                Log.w("DiscordRpc", "headless-sessions POST failed: ${res.code} ${res.message} — body: $body")
+                return // presence is best-effort — never crash playback over it
+            }
+            activityToken = Json.decodeFromString<JsonObject>(res.body?.string() ?: throw IllegalStateException("Empty response body"))["token"]!!.jsonPrimitive.content
         }
-        if (!res.isSuccessful) {
-            val body = runCatching { res.body?.string() }.getOrNull()
-            Log.w("DiscordRpc", "headless-sessions POST failed: ${res.code} ${res.message} — body: $body")
-            return // presence is best-effort — never crash playback over it
-        }
-        activityToken = Json.decodeFromString<JsonObject>(res.body?.string() ?: throw IllegalStateException("Empty response body"))["token"]!!.jsonPrimitive.content
         Log.i("DiscordRpc", "Presence posted successfully")
     }
 
@@ -186,9 +197,11 @@ class DiscordRpcClient(
                 .toString().toRequestBody("application/json".toMediaType()),
         )
         rateLimiter.awaitReady()
-        val res = http.newCall(req.build()).await()
-        rateLimiter.observe(res)
-        if (res.isSuccessful) activityToken = null
+        // Runs on every pause, so an unclosed body here leaked a connection per pause.
+        http.newCall(req.build()).await().use { res ->
+            rateLimiter.observe(res)
+            if (res.isSuccessful) activityToken = null
+        }
     }
 
     companion object {

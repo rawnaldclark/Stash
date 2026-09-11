@@ -60,12 +60,18 @@ class DiscordRpcCoordinator @Inject constructor(
                                     Log.w(TAG, "Presence needs one-time browser consent")
                                     _needsPresenceConsent.value = true
                                 },
-                            )
+                            ).also {
+                                // Right after linking, "Finish connecting" shows while the user is still on
+                                // Accounts instead of after the first song. ponytail: also runs at app start
+                                // (one OAuth exchange per process, which the first song would do anyway);
+                                // gate on a link signal from Settings if that ever matters.
+                                it.connect()
+                            }
                         }
                     }
                     else -> {
                         if (client != null) Log.i(TAG, "Discord disconnected — clearing presence")
-                        client?.clearNow()
+                        client?.close()
                         client = null
                     }
                 }
@@ -107,7 +113,7 @@ class DiscordRpcCoordinator @Inject constructor(
         Log.d(TAG, "Requesting activity: '$title' by '$artist'")
         active.requestActivity(
             DiscordActivity(
-                applicationId = APPLICATION_ID,
+                applicationId = DiscordRpcConfig.CLIENT_ID,
                 name = "Stash",
                 platform = "android",
                 type = DiscordActivityType.Listening.value,
@@ -131,8 +137,6 @@ class DiscordRpcCoordinator @Inject constructor(
     }
 
     companion object {
-        private const val APPLICATION_ID = "934292861724270632"
-
         private const val FALLBACK_ICON_URL =
             "https://raw.githubusercontent.com/rawnaldclark/Stash/refs/heads/master/app/src/main/res/drawable/ic_launcher_foreground.png"
     }

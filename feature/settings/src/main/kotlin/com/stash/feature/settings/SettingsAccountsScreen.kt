@@ -241,7 +241,7 @@ fun SettingsAccountsScreen(
             needsActionLabel = "Finish connecting",
             onNeedsAction = {
                 viewModel.onDiscordFinishConnecting { url ->
-                    runCatching { discordUriHandler.openUri(url) }
+                    runCatching { discordUriHandler.openUri(url) }.isSuccess
                 }
             },
         )

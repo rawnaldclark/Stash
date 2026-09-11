@@ -28,11 +28,13 @@ object DiscordProfileValidator {
         val client = OkHttpClient()
         val req = Request.Builder().url("https://discord.com/api/v9/oauth2/authorize?client_id=$CLIENT_ID")
         DiscordHeaders.apply(req, token = userToken, bearer = false)
-        val res = client.newCall(req.build()).await()
-        if (!res.isSuccessful) throw IllegalStateException("Invalid Discord token")
-        val bodyString = res.body?.string() ?: throw IllegalStateException("Empty response body")
-        val body = Json.decodeFromString<JsonObject>(bodyString)
-        return body["user"] as? JsonObject ?: throw IllegalStateException("No user in authorize response")
+        // Closed on the rejected-token path too, or each bad paste leaks a connection.
+        return client.newCall(req.build()).await().use { res ->
+            if (!res.isSuccessful) throw IllegalStateException("Invalid Discord token")
+            val bodyString = res.body?.string() ?: throw IllegalStateException("Empty response body")
+            val body = Json.decodeFromString<JsonObject>(bodyString)
+            body["user"] as? JsonObject ?: throw IllegalStateException("No user in authorize response")
+        }
     }
 
     private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
