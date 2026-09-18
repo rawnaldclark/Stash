@@ -3,6 +3,8 @@ package com.stash.feature.library
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.common.primaryArtist
+import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.media.PlayerRepository
@@ -32,6 +34,9 @@ import javax.inject.Inject
  *                                   to highlight the active row.
  * @property searchQuery            The active search/filter string.
  * @property showSearch             Whether the search bar is currently visible.
+ * @property photoUrl               The artist's cached official photo
+ *                                  (`artist_images`), or null to fall back to
+ *                                  the gradient initial header.
  */
 data class ArtistDetailUiState(
     val artistName: String = "",
@@ -40,6 +45,7 @@ data class ArtistDetailUiState(
     val currentlyPlayingTrackId: Long? = null,
     val searchQuery: String = "",
     val showSearch: Boolean = false,
+    val photoUrl: String? = null,
 )
 
 /**
@@ -57,6 +63,7 @@ class ArtistDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val artistImageDao: ArtistImageDao,
 ) : ViewModel() {
 
     /** The artist name extracted from the navigation route arguments. */
@@ -100,7 +107,8 @@ class ArtistDetailViewModel @Inject constructor(
         playerRepository.playerState,
         _searchQuery,
         _showSearch,
-    ) { tracks, playerState, query, showSearch ->
+        artistImageDao.observeByName(artistName.primaryArtist()),
+    ) { tracks, playerState, query, showSearch, photo ->
         ArtistDetailUiState(
             artistName = artistName,
             tracks = tracks,
@@ -108,6 +116,11 @@ class ArtistDetailViewModel @Inject constructor(
             currentlyPlayingTrackId = playerState.currentTrack?.id,
             searchQuery = query,
             showSearch = showSearch,
+            // Photo cache is keyed by the SAME primary-artist name the Library
+            // Artists tab groups by, and the lookup is COLLATE NOCASE — a case
+            // variant of the name still lines up, whichever entry point (grid,
+            // album hero, Now Playing) navigated here.
+            photoUrl = photo?.imageUrl,
         )
     }.stateIn(
         scope = viewModelScope,

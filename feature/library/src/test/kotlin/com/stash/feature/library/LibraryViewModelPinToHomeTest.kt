@@ -2,6 +2,7 @@ package com.stash.feature.library
 
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
+import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.MusicSource
@@ -102,6 +103,7 @@ class LibraryViewModelPinToHomeTest {
                 onBlocking { getSourceFilter() } doReturn SourceFilter.ALL
             },
             libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
+            artistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
         )
     }
 }

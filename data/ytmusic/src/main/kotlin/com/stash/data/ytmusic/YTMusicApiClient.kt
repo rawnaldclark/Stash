@@ -5,6 +5,7 @@ import com.stash.core.model.SyncResult
 import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.ArtistPhotoResolution
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.PagedAlbums
 import com.stash.data.ytmusic.model.ArtistSummary
@@ -626,6 +627,30 @@ class YTMusicApiClient @Inject constructor(
     suspend fun resolveArtist(name: String): ArtistSummary? {
         if (name.isBlank()) return null
         val response = innerTubeClient.search(name, params = ARTISTS_FILTER) ?: return null
+        return firstArtistOnShelf(response)
+    }
+
+    /**
+     * Resolve an artist name to its official photo for the artist-photo
+     * backfill. Same artists-filtered search as [resolveArtist], but returns a
+     * tri-state [ArtistPhotoResolution] so the worker can distinguish a
+     * GENUINE "no avatar" answer (stamp the permanent sentinel) from a request
+     * that never got an answer (retry on the next pass, like `ArtBackfillWorker`).
+     */
+    suspend fun resolveArtistPhoto(name: String): ArtistPhotoResolution {
+        if (name.isBlank()) return ArtistPhotoResolution.NoAvatar
+        val outcome = innerTubeClient.searchWithStatus(name, params = ARTISTS_FILTER)
+        if (outcome.body == null) return ArtistPhotoResolution.Failed
+        val artist = firstArtistOnShelf(outcome.body)
+        return if (artist != null) {
+            ArtistPhotoResolution.Resolved(avatarUrl = artist.avatarUrl)
+        } else {
+            ArtistPhotoResolution.NoAvatar
+        }
+    }
+
+    /** Top [ArtistSummary] from an artists-filtered search response, or null. */
+    private fun firstArtistOnShelf(response: JsonObject): ArtistSummary? {
         val shelves = response.navigatePath(
             "contents", "tabbedSearchResultsRenderer", "tabs",
         )?.firstArray()?.firstOrNull()?.asObject()

@@ -2,6 +2,7 @@ package com.stash.feature.library
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,11 +57,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImagePainter
+import coil3.compose.rememberAsyncImagePainter
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.model.Track
 import com.stash.core.ui.components.DetailTrackRow
@@ -395,7 +400,12 @@ private fun ArtistDetailHeader(
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Circular artist icon placeholder
+            // Circular artist icon — real photo from the artist_images cache
+            // (ArtistImageBackfillWorker output), else the gradient placeholder.
+            // The painter state is collected in composition so the circle
+            // upgrades to the photo the moment the request succeeds and never
+            // renders blank when the URL fails (Coil draws nothing outside a
+            // Success state, so everything else keeps the placeholder).
             Box(
                 modifier = Modifier
                     .size(96.dp)
@@ -410,12 +420,23 @@ private fun ArtistDetailHeader(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                )
+                val photoUrl = state.photoUrl
+                if (photoUrl != null) {
+                    val painter = rememberAsyncImagePainter(model = photoUrl)
+                    val painterState by painter.state.collectAsState()
+                    if (painterState is AsyncImagePainter.State.Success) {
+                        Image(
+                            painter = painter,
+                            contentDescription = state.artistName,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        ArtistHeaderPlaceholder()
+                    }
+                } else {
+                    ArtistHeaderPlaceholder()
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -506,4 +527,15 @@ private fun ArtistDetailHeader(
 
         Spacer(modifier = Modifier.height(16.dp))
     }
+}
+
+/** The no-photo fallback for the artist header — a soft Person icon. */
+@Composable
+private fun ArtistHeaderPlaceholder() {
+    Icon(
+        imageVector = Icons.Default.Person,
+        contentDescription = null,
+        modifier = Modifier.size(48.dp),
+        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+    )
 }

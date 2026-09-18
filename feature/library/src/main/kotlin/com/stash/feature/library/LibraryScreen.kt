@@ -92,6 +92,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -99,6 +100,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -1669,36 +1671,12 @@ private fun ArtistsGrid(
                             onLongClick = { selectedArtist = artist },
                         ),
                 ) {
-                    // Album art proxy or gradient circle fallback
-                    if (artist.artUrl != null) {
-                        coil3.compose.AsyncImage(
-                            model = artist.artUrl,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        )
-                    } else {
-                        val gradientColors = remember(artist.name) {
-                            artistGradient(artist.name)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(Brush.linearGradient(gradientColors)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = artist.name.firstOrNull()
-                                    ?.uppercaseChar()?.toString() ?: "?",
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                            )
-                        }
-                    }
+                    ArtistAvatar(
+                        name = artist.name,
+                        photoUrl = artist.photoUrl,
+                        artUrl = artist.artUrl,
+                        size = 72.dp,
+                    )
                     Text(
                         text = artist.name,
                         style = MaterialTheme.typography.bodyMedium,
@@ -2114,6 +2092,66 @@ private val artistGradientPalette = listOf(
 private fun artistGradient(name: String): List<Color> {
     val index = name.hashCode().absoluteValue % artistGradientPalette.size
     return artistGradientPalette[index]
+}
+
+/**
+ * Artist circular avatar for the Artists grid: the cached official photo
+ * ([ArtistInfo.photoUrl]) when available, else the album-art proxy
+ * ([ArtistInfo.artUrl]), else a gradient-initial circle. Coil draws the photo;
+ * while it loads (or if it errors) the gradient initial is shown so a failed
+ * fetch never leaves an empty ring.
+ */
+@Composable
+private fun ArtistAvatar(
+    name: String,
+    photoUrl: String?,
+    artUrl: String?,
+    size: Dp,
+) {
+    val model = photoUrl ?: artUrl
+    if (model != null) {
+        val painter = rememberAsyncImagePainter(model = model)
+        val state by painter.state.collectAsState()
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (state is AsyncImagePainter.State.Success) {
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                ArtistInitialFallback(name, size)
+            }
+        }
+    } else {
+        ArtistInitialFallback(name, size)
+    }
+}
+
+/** Gradient circle with the artist's first letter — the no-photo fallback. */
+@Composable
+private fun ArtistInitialFallback(name: String, size: Dp) {
+    val gradientColors = remember(name) { artistGradient(name) }
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(gradientColors)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+        )
+    }
 }
 
 // ── Empty state placeholder ──────────────────────────────────────────────────
