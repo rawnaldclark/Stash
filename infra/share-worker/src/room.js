@@ -252,4 +252,44 @@ const MESSAGES = {
             : { positionMs, atRoomMs: now, playing: false });
         return true;
     },
+
+    queue(ctx) {
+        ctx.s.queue = cleanQueue(ctx.msg.queue);
+        ctx.s.rev++;
+        return true;
+    },
+
+    suggest(ctx) {
+        const { s, msg, event } = ctx;
+        const track = cleanTrack(msg.track);
+        if (!track || !event.newId || s.host === event.from) return false;
+        if (s.suggestions.filter((x) => x.from === event.from).length >= MAX_PENDING_SUGGESTIONS) return false;
+        s.suggestions.push({ id: event.newId, from: event.from, track });
+        s.rev++;
+        ctx.out.push(suggestionsMsg(s));
+        return true;
+    },
+
+    suggestion(ctx) {
+        const { s, msg } = ctx;
+        const i = s.suggestions.findIndex((x) => x.id === msg.id);
+        if (i < 0 || (msg.action !== "add" && msg.action !== "dismiss")) return false;
+        const [picked] = s.suggestions.splice(i, 1);
+        if (msg.action === "add" && s.queue.length < MAX_QUEUE) s.queue.push(picked.track);
+        s.rev++;
+        ctx.out.push(suggestionsMsg(s));
+        // The host's app mirrors the room's queue, so it gets the new one straight away.
+        if (msg.action === "add") ctx.out.push(stateMsg(s, s.host));
+        return true;
+    },
+
+    react(ctx) {
+        const { s, msg, event, now } = ctx;
+        if (!EMOJI.includes(msg.emoji)) return false;
+        const last = s.reactAt[event.from];
+        if (last !== undefined && now - last < REACT_GAP_MS) return false;
+        s.reactAt[event.from] = now;
+        ctx.out.push({ to: "all", msg: { t: "reaction", from: event.from, emoji: msg.emoji } });
+        return true;
+    },
 };

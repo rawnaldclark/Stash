@@ -171,3 +171,40 @@ test("a seek while paused only moves the position; transport during the handshak
     assert.equal(send(preparing, "h", { t: "seek", positionMs: 1 }).state, preparing);
     assert.equal(send(playing(), "h", { t: "seek", positionMs: -5 }).out.length, 0);
 });
+
+// ── Task 4: queue, suggestions, reactions ─────────────────────────────────────
+
+test("the host replaces the queue; bad songs are dropped and it is capped at 200", () => {
+    const long = Array.from({ length: 250 }, (_, i) => ({ t: `T${i}`, a: "A" }));
+    const r = send(party(), "h", { t: "queue", queue: [{ t: "", a: "x" }, ...long] });
+    assert.equal(r.state.queue.length, 200);
+    assert.equal(r.state.queue[0].t, "T0");
+});
+
+test("a listener may have 3 suggestions waiting; the host's own are ignored", () => {
+    let s = party();
+    for (let i = 0; i < 4; i++) s = send(s, "a", { t: "suggest", track: { t: `S${i}`, a: "A" } }, T0, { newId: `s${i}` }).state;
+    assert.deepEqual(s.suggestions.map((x) => x.id), ["s0", "s1", "s2"]);
+    assert.equal(send(s, "h", { t: "suggest", track: NEXT }, T0, { newId: "s9" }).state, s);
+});
+
+test("adding a suggestion queues it and tells the host; dismissing just removes it", () => {
+    let s = send(party(), "a", { t: "suggest", track: NEXT }, T0, { newId: "s1" }).state;
+    s = send(s, "b", { t: "suggest", track: TRACK }, T0, { newId: "s2" }).state;
+    const r = send(s, "h", { t: "suggestion", id: "s1", action: "add" });
+    assert.deepEqual(r.state.queue, [NEXT]);
+    assert.deepEqual(sent(r, "suggestions")[0].msg.suggestions.map((x) => x.id), ["s2"]);
+    assert.equal(sent(r, "state")[0].to, "h");
+    const d = send(r.state, "h", { t: "suggestion", id: "s2", action: "dismiss" });
+    assert.deepEqual(d.state.queue, [NEXT]);
+    assert.equal(d.state.suggestions.length, 0);
+});
+
+test("reactions: one of the six, at most one per second per member", () => {
+    const s = party();
+    const r = send(s, "a", { t: "react", emoji: EMOJI[1] }, T0);
+    assert.deepEqual(sent(r, "reaction")[0], { to: "all", msg: { t: "reaction", from: "a", emoji: EMOJI[1] } });
+    assert.equal(send(r.state, "a", { t: "react", emoji: EMOJI[0] }, T0 + 999).out.length, 0);
+    assert.equal(send(r.state, "a", { t: "react", emoji: EMOJI[0] }, T0 + 1_000).out.length, 1);
+    assert.equal(send(s, "a", { t: "react", emoji: "x" }).out.length, 0);
+});
