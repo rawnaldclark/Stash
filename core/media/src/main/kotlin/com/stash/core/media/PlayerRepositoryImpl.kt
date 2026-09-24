@@ -103,6 +103,9 @@ class PlayerRepositoryImpl @Inject constructor(
     // Off unless Hilt binds the real store: existing tests build the repository by hand.
     private val autoplayRadioPreference: com.stash.core.data.prefs.AutoplayRadioPreference =
         com.stash.core.data.prefs.AutoplayRadioPreference.Off,
+    // Listen Together (spec 2026-09-24 §4): while a session owns the player, this class's own
+    // automation and persistence stand aside. Null in hand-built tests.
+    private val listenTogether: com.stash.core.media.listen.ListenTogetherController? = null,
 ) : PlayerRepository {
 
     /**
@@ -143,6 +146,17 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    /** True while a Listen Together session owns the player; the transport and error gates below read it. */
+    private val inListenTogether: Boolean get() = listenTogether?.active?.value == true
+
+    /**
+     * True while the player holds anything but the user's own queue: a session, and after it until
+     * [resumeQueue] has put the queue back. The saves and the queue watchers read this one, so the
+     * session's song can't be saved over the user's queue in the gap (spec §4).
+     */
+    private val listenTogetherOwnsQueue: Boolean
+        get() = listenTogether?.let { it.active.value || it.restorePending } == true
 
     /**
      * Last-known queue/timeline sizes, mirrored out of [updateState] for
@@ -204,6 +218,12 @@ class PlayerRepositoryImpl @Inject constructor(
             }
         }
 
+        // Listen Together ended: put the user's own queue back, paused (spec §6). sessionEnds fires
+        // once per session, even one that fails too fast for `active` to be observed as true.
+        listenTogether?.let { together ->
+            scope.launch { together.sessionEnds.collect { resumeQueue(play = false) } }
+        }
+
         // A track's youtubeId was swapped (resync approval, wrong-match
         // swap, OMV→ATV canonicalization) — any StreamUrl cached under
         // this id was resolved against the OLD identity and must not be
@@ -221,7 +241,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // finite and predictable.
         scope.launch {
             playerState.collect { state ->
-                if (!libraryShuffleActive) return@collect
+                if (!libraryShuffleActive || listenTogetherOwnsQueue) return@collect
                 val remaining = state.queue.size - state.currentIndex - 1
                 if (remaining in 0 until LIBRARY_SHUFFLE_GROW_THRESHOLD) {
                     growLibraryShuffle()
@@ -233,7 +253,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // station is armed and the queue nears the tail, append the next batch.
         scope.launch {
             playerState.collect { state ->
-                if (!radioActive) return@collect
+                if (!radioActive || listenTogetherOwnsQueue) return@collect
                 val remaining = state.queue.size - state.currentIndex - 1
                 if (remaining in 0 until RADIO_GROW_THRESHOLD) growRadio()
             }
@@ -245,6 +265,7 @@ class PlayerRepositoryImpl @Inject constructor(
         scope.launch {
             kotlinx.coroutines.flow.combine(playerState, autoplayRadioPreference.enabled) { state, on -> state to on }
                 .collect { (state, on) ->
+                    if (listenTogetherOwnsQueue) return@collect
                     if (!shouldAutoplayRadio(on, radioActive, libraryShuffleActive, state, autoplayTriedTrackId)) return@collect
                     val track = state.currentTrack ?: return@collect
                     autoplayTriedTrackId = track.id
@@ -464,7 +485,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // an empty player is a silent no-op, i.e. a dead play button; rebuild
         // from the persisted queue instead. resumeLastQueue ends in
         // prepare() + play(), so playback still starts.
-        if (controller.mediaItemCount == 0) {
+        if (controller.mediaItemCount == 0 && !inListenTogether) {
             resumeLastQueue()
             return
         }
@@ -490,6 +511,7 @@ class PlayerRepositoryImpl @Inject constructor(
     override suspend fun skipNext() {
         cascadeGuard.onUserTransport()
         val controller = ensureController() ?: return
+        if (inListenTogether) { controller.seekToNext(); return }
         // Full timeline: ExoPlayer sees the whole queue, so the native seek is
         // always correct (shuffle order, repeat-all wraparound included).
         // hasNextMediaItem() is false only at the true end with repeat off —
@@ -509,6 +531,7 @@ class PlayerRepositoryImpl @Inject constructor(
     override suspend fun skipPrevious() {
         cascadeGuard.onUserTransport()
         val controller = ensureController() ?: return
+        if (inListenTogether) { controller.seekToPrevious(); return }
         if (!controller.hasPreviousMediaItem()) return
 
         // Do not enter a stale offline item and rely on forward-only error
@@ -573,6 +596,7 @@ class PlayerRepositoryImpl @Inject constructor(
         startIndex: Int,
         startPositionMs: Long,
         source: com.stash.core.model.PlaybackSource = com.stash.core.model.PlaybackSource.Unknown,
+        play: Boolean = true,
     ) {
         // Any explicit setQueue (playlist tap, single-song play, etc.) leaves
         // library-shuffle mode behind. Snapshot is cleared so a stale Track
@@ -627,8 +651,12 @@ class PlayerRepositoryImpl @Inject constructor(
 
         currentQueueTracks = playable
         controller.setMediaItems(items, startInPlayable, startPositionMs)
-        controller.prepare()
-        controller.play()
+        // After Listen Together the user's queue comes back paused and unprepared, like the cold-start
+        // ghost: nothing resolves until they press play (Media3 prepares an idle player on play).
+        if (play) {
+            controller.prepare()
+            controller.play()
+        }
 
         Log.i(TAG, "setQueue: full timeline, ${items.size} items, start=$startInPlayable")
 
@@ -677,16 +705,22 @@ class PlayerRepositoryImpl @Inject constructor(
         // activity can finish immediately while resolution + playback
         // continue. Reuses setQueue, so offline and online queues both work
         // with the same proven resolution + background-fill path.
-        scope.launch {
+        scope.launch { resumeQueue(play = true) }
+    }
+
+    /** Restores the persisted queue: playing ([resumeLastQueue]) or paused and unprepared (after Listen Together). */
+    private suspend fun resumeQueue(play: Boolean) {
+        try {
             val plan = playbackResumer.buildResumePlan()
             if (plan != null) {
                 val tracks = plan.tracks.map { it.toDomain() }
                 val controller = ensureController()
                 controller?.shuffleModeEnabled = plan.isShuffled
                 controller?.repeatMode = plan.repeatMode.toPlayerRepeatMode()
-                setQueueInternal(tracks, plan.startIndex, plan.positionMs, plan.source)
-                return@launch
+                setQueueInternal(tracks, plan.startIndex, plan.positionMs, plan.source, play)
+                return
             }
+            if (!play) return // after a session with nothing saved, there is nothing to put back
             // No persisted queue yet — fall back to the most recently played
             // (or most recently added) single track, matching the service's
             // onPlaybackResumption fallback.
@@ -697,6 +731,9 @@ class PlayerRepositoryImpl @Inject constructor(
             } else {
                 Log.i(TAG, "resumeLastQueue: nothing to resume")
             }
+        } finally {
+            // The user's queue is back (or there was none): saving may resume. On every exit, so a throw can't jam the gate.
+            if (!play) listenTogether?.restorePending = false
         }
     }
 
@@ -715,6 +752,7 @@ class PlayerRepositoryImpl @Inject constructor(
      * any 403 at playback time, exactly as before this prefetch existed.
      */
     internal suspend fun prefetchNextTrack() {
+        if (inListenTogether) return
         val controller = controllerDeferred ?: return
         val tracks = currentQueueTracks
         val nextTimelineIndex = controller.nextMediaItemIndex
@@ -1863,6 +1901,7 @@ class PlayerRepositoryImpl @Inject constructor(
          * the queue we stop gracefully rather than loop on errors.
          */
         override fun onPlayerError(error: PlaybackException) {
+            if (inListenTogether) return // the session reports "unavailable" and stays silent (spec §6)
             val controller = controllerDeferred
             val current = controller?.currentMediaItem
             val failingTitle = current?.mediaMetadata?.title?.toString()
@@ -2050,6 +2089,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     private fun MediaController.recoverOrStop() {
+        if (inListenTogether) return
         if (hasNextMediaItem()) {
             seekToNextMediaItem()
             prepare()
@@ -2107,6 +2147,7 @@ class PlayerRepositoryImpl @Inject constructor(
      * [_userMessages] so the user understands why the music stopped.
      */
     private fun maybeSkipOfflineStreamOnly(controller: MediaController, item: MediaItem) {
+        if (inListenTogether) return
         if (connectivity.isConnected()) return
         val isStreamable = item.mediaMetadata.extras?.getBoolean(EXTRA_TRACK_IS_STREAMABLE, false) == true
         if (!isStreamable) return
@@ -2377,6 +2418,8 @@ class PlayerRepositoryImpl @Inject constructor(
         _playerState.value = newState
         lastKnownQueueSize = newState.queue.size
         lastKnownTimelineSize = timelineQueue.size
+
+        if (listenTogetherOwnsQueue) return // the user's queue waits in PlaybackStateStore; never save the session's one song over it
 
         // Persist position for resume-on-restart (fire and forget). Gated:
         // updateState fires on EVERY player event, and each DataStore edit is
