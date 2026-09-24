@@ -62,3 +62,11 @@ const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefin
 
 /** base64url of 32 random bytes = 43 chars. */
 export const validEditKey = (k) => typeof k === "string" && /^[A-Za-z0-9_-]{43}$/.test(k);
+
+/** One song descriptor (the same fields and limits as a mix track), cleaned; null when invalid. Used by Listen Together. */
+export function cleanTrack(t) {
+    if (!t || typeof t !== "object" || !str(t.t, 1, 500) || !str(t.a, 1, 500)) return null;
+    if (!optStr(t.al, 500) || !optStr(t.isrc, 20) || !optStr(t.sp, 40) || !optStr(t.yt, 20)) return null;
+    if (t.d !== undefined && t.d !== null && !(Number.isInteger(t.d) && t.d > 0)) return null;
+    return pick(t, ["t", "a", "al", "d", "isrc", "sp", "yt"]);
+}
