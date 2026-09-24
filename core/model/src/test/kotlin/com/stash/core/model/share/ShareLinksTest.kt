@@ -55,4 +55,18 @@ class ShareLinksTest {
         assertThat(ShareConfig.isAllowedCover("not a url")).isFalse()
         assertThat(ShareConfig.isAllowedCover(null)).isFalse()
     }
+
+    @Test fun `room url and parse round-trip, lower case and a trailing slash accepted`() {
+        assertThat(ShareLinks.roomUrl("K7QA2PXM")).isEqualTo("$base/l/K7QA2PXM")
+        assertThat(ShareLinks.parse("$base/l/K7QA2PXM")).isEqualTo(ShareLinks.Parsed.Room("K7QA2PXM"))
+        assertThat(ShareLinks.parse("$base/l/k7qa2pxm/")).isEqualTo(ShareLinks.Parsed.Room("K7QA2PXM"))
+    }
+
+    @Test fun `room codes that are the wrong length, use ambiguous characters or come from another host are rejected`() {
+        assertThat(ShareLinks.parse("$base/l/K7QA2PX")).isNull()
+        assertThat(ShareLinks.parse("$base/l/K7QA2P")).isNull() // the old 6-character length
+        assertThat(ShareLinks.parse("$base/l/K7QA2PXO")).isNull() // no O in the alphabet
+        assertThat(ShareLinks.parse("$base/l/K7QA2PX1")).isNull() // no 1 either
+        assertThat(ShareLinks.parse("https://evil.example/l/K7QA2PXM")).isNull()
+    }
 }

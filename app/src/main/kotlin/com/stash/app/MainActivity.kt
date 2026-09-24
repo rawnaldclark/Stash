@@ -31,6 +31,9 @@ class MainActivity : ComponentActivity() {
 
         /** [pendingDeepLink] prefix for a shared-mix link; the share id follows. */
         const val DEEP_LINK_SHARED_MIX_PREFIX = "shared_mix:"
+
+        /** [pendingDeepLink] prefix for a Listen Together invite; the room code follows. */
+        const val DEEP_LINK_LISTEN_PREFIX = "listen:"
     }
 
     @Inject
@@ -107,6 +110,10 @@ class MainActivity : ComponentActivity() {
                 }
                 is ShareLinks.Parsed.Track -> {
                     pendingDeepLink.value = DEEP_LINK_SHARED_TRACK_PREFIX + ShareLinks.trackUrl(parsed.track) // bounded, normalised
+                    true
+                }
+                is ShareLinks.Parsed.Room -> {
+                    pendingDeepLink.value = DEEP_LINK_LISTEN_PREFIX + parsed.code
                     true
                 }
                 null -> false
