@@ -848,6 +848,8 @@ Expected: FAIL on `makeHost` and `end`. The alarm tests already pass: that is Ta
 Run: `cd infra/share-worker && npm test`
 Expected: `ℹ pass 52`, `ℹ fail 0`.
 
+> **Done, then hardened.** Tasks 1–5 are committed. The hardening commit `6c5ec7e5` then changed `room.js` beyond the code above: `cleanPosition` (clamped to the song or 24 h) replaces `nonNegInt`, a `hostless` flag hands a room whose host lapsed with nobody around to the first member back, `MAX_SUGGESTIONS` = 20 caps the tray, and lookups are prototype-safe. It added 9 tests, so **the suite is at `ℹ pass 61` after Task 5**. The counts from Task 6 on start there. The code in this file for Tasks 1–5 is the original, not the current `room.js`: read the file, not this plan, for those.
+
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -1013,6 +1015,27 @@ test("the alarm hands a vanished host's room to the next member", async () => {
     await room.alarm();
     assert.equal(guest.sent.filter((m) => m.t === "state").at(-1).state.host, guestId);
 });
+
+test("an alarm that changes nothing re-arms, so an idle room still closes", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    ctx.alarm = null; // alarms are one-shot: this one has just fired
+    clock.t = 5_000;
+    await room.alarm();
+    assert.equal(ctx.alarm, 1_000 + 5 * 60_000, "re-armed for the empty-room close");
+    clock.t = ctx.alarm;
+    await room.alarm();
+    assert.equal(ctx.store.size, 0);
+});
+
+test("the socket route refuses an upgrade once 20 sockets are open, resume or not", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    // Sockets that never send hello hold no member slot, so only this cap stops them piling up.
+    for (let i = 0; i < 20; i++) ctx.acceptWebSocket(fakeSocket());
+    const r = await room.fetch(new Request("https://room/ws?r=1", { headers: { Upgrade: "websocket" } }));
+    assert.equal(r.status, 409);
+});
 ```
 
 - [ ] **Step 3: Run it and check it fails**
@@ -1035,7 +1058,8 @@ import { sameHex, sha256Hex } from "./store.js";
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const MSG_PER_SECOND = 20;
 
-export function randomCode(length = 6) {
+/** Room codes are 8 symbols (32^8 ≈ 10^12) so they can't be found by guessing; JOIN_RL caps the guessing too. */
+export function randomCode(length = 8) {
     return Array.from(crypto.getRandomValues(new Uint8Array(length)), (b) => ALPHABET[b & 31]).join("");
 }
 
@@ -1069,6 +1093,8 @@ export class ListenRoom {
             if (request.headers.get("Upgrade") !== "websocket") return new Response(null, { status: 426 });
             // `r=1` = "I have a resume token": a returning member may rejoin a full room; hello checks the token.
             if (state.members.length >= MAX_MEMBERS && url.searchParams.get("r") !== "1") return new Response(null, { status: 409 });
+            // Sockets that never send hello hold no member slot; this cap stops `?r=1` ones piling up.
+            if (this.ctx.getWebSockets().length >= MAX_MEMBERS * 2) return new Response(null, { status: 409 });
             const pair = new WebSocketPair();
             this.ctx.acceptWebSocket(pair[1]);
             return new Response(null, { status: 101, webSocket: pair[0] });
@@ -1141,10 +1167,9 @@ export class ListenRoom {
             await this.ctx.storage.deleteAll();
             return r;
         }
-        if (r.state && r.state !== state) {
-            await this.ctx.storage.put("room", r.state);
-            await this.ctx.storage.setAlarm(r.alarmAt);
-        }
+        if (r.state && r.state !== state) await this.ctx.storage.put("room", r.state);
+        // Alarms are one-shot: re-arm after every alarm, even one that changed nothing, or an idle room never closes.
+        if (r.state && (r.state !== state || event.type === "alarm")) await this.ctx.storage.setAlarm(r.alarmAt);
         return r;
     }
 
@@ -1161,7 +1186,7 @@ export class ListenRoom {
 - [ ] **Step 5: Run the tests and check they pass**
 
 Run: `cd infra/share-worker && npm test`
-Expected: `ℹ pass 58`, `ℹ fail 0`.
+Expected: `ℹ pass 69`, `ℹ fail 0` (61 after Task 5 + 8 new).
 
 - [ ] **Step 6: Commit**
 
@@ -1186,6 +1211,7 @@ and inside `env()`, after `WRITE_RL`:
 
 ```js
         ROOM_RL: { limit: async () => ({ success: true }) },
+        JOIN_RL: { limit: async () => ({ success: true }) },
         ROOMS: roomsNamespace(),
 ```
 
@@ -1208,7 +1234,7 @@ test("creating a room returns a code, a host key and the invite link; only the k
     const r = await create(e);
     assert.equal(r.status, 201);
     const { code, hostKey, url } = await r.json();
-    assert.match(code, /^[A-HJ-NP-Z2-9]{6}$/);
+    assert.match(code, /^[A-HJ-NP-Z2-9]{8}$/);
     assert.match(hostKey, /^[A-Za-z0-9_-]{43}$/);
     assert.equal(url, `${BASE}/l/${code}`);
     const stored = await e.ROOMS.rooms.get(code).ctx.storage.get("room");
@@ -1229,14 +1255,15 @@ test("the preview shows the host, the count and whether it is full; unknown room
     const r = await handle(new Request(`${BASE}/v1/rooms/${code}`), e);
     assert.equal(r.status, 200);
     assert.deepEqual(await r.json(), { hostName: "Rawn", memberCount: 0, full: false });
-    assert.equal((await handle(new Request(`${BASE}/v1/rooms/ZZZZZZ`), e)).status, 404);
+    assert.equal((await handle(new Request(`${BASE}/v1/rooms/ZZZZZZZZ`), e)).status, 404);
     assert.equal((await handle(new Request(`${BASE}/v1/rooms/abc`), e)).status, 404, "not a room code");
+    assert.equal((await handle(new Request(`${BASE}/v1/rooms/ZZZZZZ`), e)).status, 404, "6 characters is not a room code any more");
 });
 
 test("the socket route: 404 for a closed room, 426 without an upgrade, 409 when full", async () => {
     const e = env();
     const ws = (code, query = "") => handle(new Request(`${BASE}/v1/rooms/${code}/ws${query}`, { headers: { Upgrade: "websocket" } }), e);
-    assert.equal((await ws("ZZZZZZ")).status, 404);
+    assert.equal((await ws("ZZZZZZZZ")).status, 404);
     const { code } = await (await create(e)).json();
     assert.equal((await handle(new Request(`${BASE}/v1/rooms/${code}/ws`), e)).status, 426);
     const room = e.ROOMS.rooms.get(code);
@@ -1252,9 +1279,28 @@ test("the invite page names the host (escaped) and 404s once the room is gone", 
     const html = await r.text();
     assert.ok(html.includes("Join &lt;b&gt;Rawn&lt;/b&gt;&#39;s session in Stash"));
     assert.ok(html.includes("intent://") && html.includes("releases/latest"));
-    const gone = await handle(new Request(`${BASE}/l/ZZZZZZ`), e);
+    const gone = await handle(new Request(`${BASE}/l/ZZZZZZZZ`), e);
     assert.equal(gone.status, 404);
     assert.match(await gone.text(), /has ended/);
+});
+
+test("looking a room up has its own rate limit, checked before any room is touched", async () => {
+    const e = env({ JOIN_RL: { limit: async () => ({ success: false }) } });
+    const touched = [];
+    const get = e.ROOMS.get;
+    e.ROOMS.get = (id) => { touched.push(id); return get(id); };
+    const code = "K7QA2PXM";
+    const api = await handle(new Request(`${BASE}/v1/rooms/${code}`), e);
+    assert.equal(api.status, 429);
+    assert.equal(api.headers.get("Retry-After"), "60");
+    assert.deepEqual(await api.json(), { error: "rate_limited" });
+    const ws = await handle(new Request(`${BASE}/v1/rooms/${code}/ws`, { headers: { Upgrade: "websocket" } }), e);
+    assert.equal(ws.status, 429);
+    assert.equal(ws.headers.get("Retry-After"), "60");
+    const page = await handle(new Request(`${BASE}/l/${code}`), e);
+    assert.equal(page.status, 429);
+    assert.match(page.headers.get("content-type"), /^text\/html/);
+    assert.deepEqual(touched, [], "no Durable Object was reached");
 });
 ```
 
@@ -1294,9 +1340,9 @@ export { ListenRoom } from "./listen-room.js";
 Under `const MIX_API = …`, add:
 
 ```js
-/** Room codes: 6 of the 32 unambiguous symbols in listen-room.js (no 0/O, 1/I). */
-const ROOM_API = /^\/v1\/rooms\/([A-HJ-NP-Z2-9]{6})(\/ws)?$/;
-const ROOM_PAGE = /^\/l\/([A-HJ-NP-Z2-9]{6})$/;
+/** Room codes: 8 of the 32 unambiguous symbols in listen-room.js (no 0/O, 1/I). */
+const ROOM_API = /^\/v1\/rooms\/([A-HJ-NP-Z2-9]{8})(\/ws)?$/;
+const ROOM_PAGE = /^\/l\/([A-HJ-NP-Z2-9]{8})$/;
 ```
 
 In `handle`, directly before `if (method === "GET" && path === "/.well-known/assetlinks.json")`, add:
@@ -1306,6 +1352,8 @@ In `handle`, directly before `if (method === "GET" && path === "/.well-known/ass
     const room = ROOM_API.exec(path);
     if (room) {
         if (method !== "GET") return methodNotAllowed();
+        // Before the Durable Object: a code-guessing walk never wakes a room (spec §2).
+        if (!(await joinAllowed(request, env))) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
         const stub = env.ROOMS.get(env.ROOMS.idFromName(room[1]));
         if (room[2]) return stub.fetch(new Request(`https://room/ws${url.search}`, request));
         const pv = await roomPreview(stub);
@@ -1318,6 +1366,7 @@ and directly before the final `return json({ error: "not_found" }, 404);` of `ha
 ```js
     const invite = ROOM_PAGE.exec(path);
     if (method === "GET" && invite) {
+        if (!(await joinAllowed(request, env))) return html(messagePage("Slow down", "Too many requests. Try again in a minute."), 429);
         const pv = await roomPreview(env.ROOMS.get(env.ROOMS.idFromName(invite[1])));
         return pv ? html(roomPage(pv, url.href)) : html(messagePage("Session ended", "This listening session has ended."), 404);
     }
@@ -1326,6 +1375,9 @@ and directly before the final `return json({ error: "not_found" }, 404);` of `ha
 At the end of the file, add:
 
 ```js
+/** JOIN_RL: 60 room lookups (preview, socket, invite page) a minute per IP, so live codes can't be found by walking. */
+const joinAllowed = async (request, env) => (await env.JOIN_RL.limit({ key: ip(request) })).success;
+
 async function roomPreview(stub) {
     const r = await stub.fetch(new Request("https://room/preview"));
     return r.status === 200 ? r.json() : null;
@@ -1349,7 +1401,7 @@ async function createRoom(request, env, url) {
 }
 ```
 
-- [ ] **Step 6: Add the bindings to `wrangler.toml`** (at the end). The `ROOM_RL` budget is separate from the shared-mix `CREATE_RL` (spec §2).
+- [ ] **Step 6: Add the bindings to `wrangler.toml`** (at the end). The `ROOM_RL` budget is separate from the shared-mix `CREATE_RL` (spec §2); `JOIN_RL` caps room lookups. Namespace ids `2001`/`2002` are the mix limits and `1001` is the lossless relay's, so `2003`/`2004` are free.
 
 ```toml
 # Listen Together (spec 2026-09-24 §2): one Durable Object per room, reached over WebSockets.
@@ -1365,12 +1417,18 @@ new_sqlite_classes = ["ListenRoom"]
 name = "ROOM_RL"
 namespace_id = "2003"
 simple = { limit = 5, period = 60 }
+
+# GET /v1/rooms/{code}, /v1/rooms/{code}/ws and /l/{code}, checked before any Durable Object (spec §2).
+[[ratelimits]]
+name = "JOIN_RL"
+namespace_id = "2004"
+simple = { limit = 60, period = 60 }
 ```
 
 - [ ] **Step 7: Run the tests and check they pass**
 
 Run: `cd infra/share-worker && npm test`
-Expected: `ℹ pass 63`, `ℹ fail 0`.
+Expected: `ℹ pass 75`, `ℹ fail 0` (69 after Task 6 + 6 new).
 
 - [ ] **Step 8: Check the config parses** (no deploy, no login needed):
 
@@ -1381,7 +1439,7 @@ Expected: ends with `--dry-run: exiting now.` and no binding errors.
 
 ```bash
 git add infra/share-worker/src/index.js infra/share-worker/src/pages.js infra/share-worker/test/fake-kv.js infra/share-worker/test/rooms.test.js infra/share-worker/wrangler.toml
-git commit -m "feat(listen): room routes — POST /v1/rooms, preview, /ws upgrade, /l/{code} invite page"
+git commit -m "feat(listen): room routes — POST /v1/rooms, preview, /ws upgrade, /l/{code} invite page, JOIN_RL"
 ```
 
 ### Task 8: Worker README
@@ -1392,7 +1450,7 @@ git commit -m "feat(listen): room routes — POST /v1/rooms, preview, /ws upgrad
 - [ ] **Step 1: Document the rooms.** After the `- Routes: …` line, add:
 
 ```markdown
-- Listen Together rooms (spec `docs/superpowers/specs/2026-09-24-listen-together-design.md`): Durable Object `ListenRoom`, bound as `ROOMS`, one per room code (`idFromName(code)`). `src/room.js` is the pure logic; `src/listen-room.js` wraps it (storage key `room`, one alarm, WebSocket Hibernation). Routes: `POST /v1/rooms` (`ROOM_RL`, 5/min per IP), `GET /v1/rooms/{code}`, `GET /v1/rooms/{code}/ws` (`?r=1` = rejoining with a resume token), `GET /l/{code}`. A room keeps display names, song descriptors and the host key's SHA-256; everything is deleted when it closes (5 min after the last member leaves, or 12 h after creation).
+- Listen Together rooms (spec `docs/superpowers/specs/2026-09-24-listen-together-design.md`): Durable Object `ListenRoom`, bound as `ROOMS`, one per room code (`idFromName(code)`). `src/room.js` is the pure logic; `src/listen-room.js` wraps it (storage key `room`, one alarm, WebSocket Hibernation). Routes: `POST /v1/rooms` (`ROOM_RL`, 5/min per IP), `GET /v1/rooms/{code}`, `GET /v1/rooms/{code}/ws` (`?r=1` = rejoining with a resume token), `GET /l/{code}`. Codes are 8 characters, and the three `{code}` routes share `JOIN_RL` (60/min per IP, checked before the Durable Object is reached) so live rooms can't be found by guessing codes. A room keeps display names, song descriptors and the host key's SHA-256; everything is deleted when it closes (5 min after the last member leaves, or 12 h after creation).
 ```
 
 and under `## Deploy`, after the code block:
@@ -1421,16 +1479,17 @@ git commit -m "docs(listen): Worker README — rooms, routes, migration note"
 
 ```kotlin
     @Test fun `room url and parse round-trip, lower case and a trailing slash accepted`() {
-        assertThat(ShareLinks.roomUrl("K7QA2P")).isEqualTo("$base/l/K7QA2P")
-        assertThat(ShareLinks.parse("$base/l/K7QA2P")).isEqualTo(ShareLinks.Parsed.Room("K7QA2P"))
-        assertThat(ShareLinks.parse("$base/l/k7qa2p/")).isEqualTo(ShareLinks.Parsed.Room("K7QA2P"))
+        assertThat(ShareLinks.roomUrl("K7QA2PXM")).isEqualTo("$base/l/K7QA2PXM")
+        assertThat(ShareLinks.parse("$base/l/K7QA2PXM")).isEqualTo(ShareLinks.Parsed.Room("K7QA2PXM"))
+        assertThat(ShareLinks.parse("$base/l/k7qa2pxm/")).isEqualTo(ShareLinks.Parsed.Room("K7QA2PXM"))
     }
 
     @Test fun `room codes that are the wrong length, use ambiguous characters or come from another host are rejected`() {
-        assertThat(ShareLinks.parse("$base/l/K7QA2")).isNull()
-        assertThat(ShareLinks.parse("$base/l/K7QA2O")).isNull() // no O in the alphabet
-        assertThat(ShareLinks.parse("$base/l/K7QA21")).isNull() // no 1 either
-        assertThat(ShareLinks.parse("https://evil.example/l/K7QA2P")).isNull()
+        assertThat(ShareLinks.parse("$base/l/K7QA2PX")).isNull()
+        assertThat(ShareLinks.parse("$base/l/K7QA2P")).isNull() // the old 6-character length
+        assertThat(ShareLinks.parse("$base/l/K7QA2PXO")).isNull() // no O in the alphabet
+        assertThat(ShareLinks.parse("$base/l/K7QA2PX1")).isNull() // no 1 either
+        assertThat(ShareLinks.parse("https://evil.example/l/K7QA2PXM")).isNull()
     }
 ```
 
@@ -1451,8 +1510,8 @@ Add to `sealed interface Parsed`:
 Next to `private val ID`:
 
 ```kotlin
-    /** 6 of the Worker's 32 room-code symbols (no 0/O, 1/I). Keep in sync with ROOM_API in infra/share-worker/src/index.js. */
-    private val ROOM_CODE = Regex("^[A-HJ-NP-Z2-9]{6}$")
+    /** 8 of the Worker's 32 room-code symbols (no 0/O, 1/I). Keep in sync with ROOM_API in infra/share-worker/src/index.js. */
+    private val ROOM_CODE = Regex("^[A-HJ-NP-Z2-9]{8}$")
 ```
 
 Next to `mixUrl`:
@@ -2117,8 +2176,8 @@ class RoomApiClientTest {
     @After fun tearDown() { server.shutdown() }
 
     @Test fun `create posts the display name and returns the code, host key and link`() = runBlocking {
-        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"code":"K7QA2P","hostKey":"KEY","url":"https://x/l/K7QA2P"}"""))
-        assertThat(client.create("Rawn")).isEqualTo(ShareResult.Ok(RoomApiClient.Created("K7QA2P", "KEY", "https://x/l/K7QA2P")))
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"code":"K7QA2PXM","hostKey":"KEY","url":"https://x/l/K7QA2PXM"}"""))
+        assertThat(client.create("Rawn")).isEqualTo(ShareResult.Ok(RoomApiClient.Created("K7QA2PXM", "KEY", "https://x/l/K7QA2PXM")))
         val req = server.takeRequest()
         assertThat(req.method).isEqualTo("POST")
         assertThat(req.path).isEqualTo("/v1/rooms")
@@ -2134,10 +2193,10 @@ class RoomApiClientTest {
     @Test fun `preview maps 200 and 404`() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"hostName":"Rawn","memberCount":3,"full":false,"track":{"t":"Xtal","a":"Aphex Twin"}}"""))
         server.enqueue(MockResponse().setResponseCode(404))
-        assertThat(client.preview("K7QA2P"))
+        assertThat(client.preview("K7QA2PXM"))
             .isEqualTo(ShareResult.Ok(RoomApiClient.Preview("Rawn", 3, false, SharedTrack("Xtal", "Aphex Twin"))))
-        assertThat(server.takeRequest().path).isEqualTo("/v1/rooms/K7QA2P")
-        assertThat(client.preview("K7QA2P")).isEqualTo(ShareResult.NotFound)
+        assertThat(server.takeRequest().path).isEqualTo("/v1/rooms/K7QA2PXM")
+        assertThat(client.preview("K7QA2PXM")).isEqualTo(ShareResult.NotFound)
     }
 }
 ```
@@ -2292,7 +2351,7 @@ class RoomClientTest {
     private fun client(scope: CoroutineScope, now: () -> Long = { System.currentTimeMillis() }, hello: () -> ClientMessage.Hello) =
         RoomClient(
             http = OkHttpClient(),
-            url = { resume -> server.url("/v1/rooms/K7QA2P/ws").toString() + if (resume) "?r=1" else "" },
+            url = { resume -> server.url("/v1/rooms/K7QA2PXM/ws").toString() + if (resume) "?r=1" else "" },
             scope = scope,
             hello = hello,
             now = now,
@@ -2323,7 +2382,7 @@ class RoomClientTest {
         server.enqueue(upgrade())
         val c = client(this) { ClientMessage.Hello(resumeToken = "TOK") }
         withTimeout(5_000) { c.events.take(1).toList() }
-        assertThat(server.takeRequest().path).isEqualTo("/v1/rooms/K7QA2P/ws?r=1")
+        assertThat(server.takeRequest().path).isEqualTo("/v1/rooms/K7QA2PXM/ws?r=1")
         c.close()
     }
 
@@ -2573,9 +2632,9 @@ class ListenTogetherControllerTest {
 
     @Test fun `a command sent while no service is running starts the service and waits in line`() {
         val controller = ListenTogetherController(context)
-        controller.send(Command.Join("K7QA2P"))
+        controller.send(Command.Join("K7QA2PXM"))
         verify(exactly = 1) { context.startService(any()) }
-        assertThat(controller.commands.tryReceive().getOrNull()).isEqualTo(Command.Join("K7QA2P"))
+        assertThat(controller.commands.tryReceive().getOrNull()).isEqualTo(Command.Join("K7QA2PXM"))
         controller.serviceAttached = true
         controller.send(Command.Leave)
         verify(exactly = 1) { context.startService(any()) }
@@ -2589,6 +2648,19 @@ class ListenTogetherControllerTest {
         controller.setActive(false) // too fast for a StateFlow collector to have seen `true`
         controller.setActive(false)
         assertThat(ends).hasSize(1)
+        assertThat(controller.restorePending).isTrue() // until PlayerRepositoryImpl has the user's queue back
+        job.cancel()
+    }
+
+    @Test fun `a quiet end (the service shutting down) neither announces nor waits for a restore`() = runTest {
+        val controller = ListenTogetherController(context)
+        val ends = mutableListOf<Unit>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { controller.sessionEnds.collect { ends += it } }
+        controller.setActive(true)
+        controller.setActive(false, restore = false)
+        assertThat(controller.active.value).isFalse()
+        assertThat(ends).isEmpty()
+        assertThat(controller.restorePending).isFalse()
         job.cancel()
     }
 }
@@ -2691,10 +2763,24 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         if (!serviceAttached) runCatching { context.startService(Intent(context, StashPlaybackService::class.java)) }
     }
 
-    internal fun setActive(on: Boolean) {
+    /**
+     * True from a session's end until PlayerRepositoryImpl has put the user's queue back ([sessionEnds]).
+     * Until then the player may still hold the session's song, so the repository saves nothing.
+     * ponytail: relies on PlayerRepositoryImpl (a singleton the UI creates before any session can start)
+     * already collecting [sessionEnds]; an emit with no collector would leave this set until the process dies.
+     */
+    @Volatile internal var restorePending = false
+
+    /**
+     * [restore] = false is the service shutting down: end quietly, with no [sessionEnds]. A restore then
+     * would drive the dying service's player; the next launch's cold-start restore brings the queue back.
+     */
+    internal fun setActive(on: Boolean, restore: Boolean = true) {
         val was = _active.value
+        val ending = was && !on && restore
+        if (ending) restorePending = true // before `active` drops, so the save gate never opens in between
         _active.value = on
-        if (was && !on) _sessionEnds.tryEmit(Unit)
+        if (ending) _sessionEnds.tryEmit(Unit)
     }
 
     internal fun publish(state: ListenTogetherState) { _state.value = state }
@@ -2731,7 +2817,7 @@ interface SessionPlayer {
      */
     fun enterSession(isHost: Boolean, interceptor: SessionInterceptor)
 
-    /** Undoes [enterSession] and empties the player. PlayerRepositoryImpl then restores the user's queue. */
+    /** Stops and empties the player, then undoes [enterSession]. PlayerRepositoryImpl then restores the user's queue. */
     fun exitSession()
 
     /** prepareAt: one item at [positionMs], prepared and held with playWhenReady = false. */
@@ -2836,6 +2922,7 @@ import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_I
 import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.RepeatMode
+import com.google.common.truth.Truth.assertThat
 import io.mockk.clearMocks
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -2965,6 +3052,38 @@ class PlayerRepositoryListenTogetherTest {
         verify { controller.setMediaItems(any<List<MediaItem>>(), 1, 44_000L) }
         verify(exactly = 0) { controller.prepare() }
         verify(exactly = 0) { controller.play() }
+        assertThat(together.restorePending).isFalse()
+    }
+
+    @Test fun `between the end of a session and the restore, the session's song is never saved`() {
+        val repo = build()
+        coEvery { playbackResumer.buildResumePlan() } returns null
+        sessionPlayer()
+        together.setActive(true)
+        together.setActive(false) // the restore is queued on the main looper, not run yet
+        assertThat(together.restorePending).isTrue()
+        repo.updateState(controller)
+        shadowOf(Looper.getMainLooper()).idle()
+        coVerify(exactly = 0) { playbackStateStore.saveQueue(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { playbackStateStore.savePosition(any(), any(), any()) }
+        assertThat(together.restorePending).isFalse() // cleared even when nothing was saved to put back
+        repo.updateState(controller)
+        shadowOf(Looper.getMainLooper()).idle()
+        coVerify { playbackStateStore.saveQueue(listOf(99L), any(), any(), any()) }
+    }
+
+    @Test fun `during a session the host's Next and Previous reach the session, even on a one-song player`() = runTest {
+        val repo = build()
+        sessionPlayer()
+        every { controller.hasNextMediaItem() } returns false
+        every { controller.hasPreviousMediaItem() } returns false
+        together.setActive(true)
+        repo.skipNext()
+        repo.skipPrevious()
+        // ListenTogetherPlayer turns these into onNext/onPrevious for the room (Task 17).
+        verify(exactly = 1) { controller.seekToNext() }
+        verify(exactly = 1) { controller.seekToPrevious() }
+        verify(exactly = 0) { controller.seekToNextMediaItem() }
     }
 }
 ```
@@ -2985,8 +3104,16 @@ Expected: FAIL to compile: no `listenTogether` parameter.
 and after `private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)`:
 
 ```kotlin
-    /** True while a Listen Together session owns the player; every session gate below reads it. */
+    /** True while a Listen Together session owns the player; the transport and error gates below read it. */
     private val inListenTogether: Boolean get() = listenTogether?.active?.value == true
+
+    /**
+     * True while the player holds anything but the user's own queue: a session, and after it until
+     * [resumeQueue] has put the queue back. The saves and the queue watchers read this one, so the
+     * session's song can't be saved over the user's queue in the gap (spec §4).
+     */
+    private val listenTogetherOwnsQueue: Boolean
+        get() = listenTogether?.let { it.active.value || it.restorePending } == true
 ```
 
 - [ ] **Step 4: Restore the user's queue when a session ends.** In `init`, after the `musicRepository.trackDeletions` collector:
@@ -3012,25 +3139,30 @@ Replace the whole of `override fun resumeLastQueue()` with:
 
     /** Restores the persisted queue: playing ([resumeLastQueue]) or paused and unprepared (after Listen Together). */
     private suspend fun resumeQueue(play: Boolean) {
-        val plan = playbackResumer.buildResumePlan()
-        if (plan != null) {
-            val tracks = plan.tracks.map { it.toDomain() }
-            val controller = ensureController()
-            controller?.shuffleModeEnabled = plan.isShuffled
-            controller?.repeatMode = plan.repeatMode.toPlayerRepeatMode()
-            setQueueInternal(tracks, plan.startIndex, plan.positionMs, plan.source, play)
-            return
-        }
-        if (!play) return // after a session with nothing saved, there is nothing to put back
-        // No persisted queue yet — fall back to the most recently played
-        // (or most recently added) single track, matching the service's
-        // onPlaybackResumption fallback.
-        val fallback = trackDao.getLastPlayedTrack()
-            ?: trackDao.getRecentlyAdded(1).first().firstOrNull()
-        if (fallback != null) {
-            setQueueInternal(listOf(fallback.toDomain()), startIndex = 0, startPositionMs = 0L)
-        } else {
-            Log.i(TAG, "resumeLastQueue: nothing to resume")
+        try {
+            val plan = playbackResumer.buildResumePlan()
+            if (plan != null) {
+                val tracks = plan.tracks.map { it.toDomain() }
+                val controller = ensureController()
+                controller?.shuffleModeEnabled = plan.isShuffled
+                controller?.repeatMode = plan.repeatMode.toPlayerRepeatMode()
+                setQueueInternal(tracks, plan.startIndex, plan.positionMs, plan.source, play)
+                return
+            }
+            if (!play) return // after a session with nothing saved, there is nothing to put back
+            // No persisted queue yet — fall back to the most recently played
+            // (or most recently added) single track, matching the service's
+            // onPlaybackResumption fallback.
+            val fallback = trackDao.getLastPlayedTrack()
+                ?: trackDao.getRecentlyAdded(1).first().firstOrNull()
+            if (fallback != null) {
+                setQueueInternal(listOf(fallback.toDomain()), startIndex = 0, startPositionMs = 0L)
+            } else {
+                Log.i(TAG, "resumeLastQueue: nothing to resume")
+            }
+        } finally {
+            // The user's queue is back (or there was none): saving may resume. On every exit, so a throw can't jam the gate.
+            if (!play) listenTogether?.restorePending = false
         }
     }
 ```
@@ -3059,17 +3191,23 @@ with
 
 | Where | Change |
 |---|---|
-| library-shuffle watcher in `init` | `if (!libraryShuffleActive) return@collect` → `if (!libraryShuffleActive \|\| inListenTogether) return@collect` |
-| radio watcher in `init` | `if (!radioActive) return@collect` → `if (!radioActive \|\| inListenTogether) return@collect` |
-| autoplay watcher in `init` | first line inside `.collect { (state, on) ->`: `if (inListenTogether) return@collect` |
+| library-shuffle watcher in `init` | `if (!libraryShuffleActive) return@collect` → `if (!libraryShuffleActive \|\| listenTogetherOwnsQueue) return@collect` |
+| radio watcher in `init` | `if (!radioActive) return@collect` → `if (!radioActive \|\| listenTogetherOwnsQueue) return@collect` |
+| autoplay watcher in `init` | first line inside `.collect { (state, on) ->`: `if (listenTogetherOwnsQueue) return@collect` |
 | `prefetchNextTrack()` | first line: `if (inListenTogether) return` |
 | `onPlayerError(...)` in the controller listener | first line: `if (inListenTogether) return // the session reports "unavailable" and stays silent (spec §6)` |
 | `MediaController.recoverOrStop()` | first line: `if (inListenTogether) return` |
 | `maybeSkipOfflineStreamOnly(...)` | first line: `if (inListenTogether) return` |
-| `updateState(...)`, directly above the `// Persist position for resume-on-restart` comment | `if (inListenTogether) return // the user's queue waits in PlaybackStateStore; never save the session's one song over it` |
+| `updateState(...)`, directly above the `// Persist position for resume-on-restart` comment | `if (listenTogetherOwnsQueue) return // the user's queue waits in PlaybackStateStore; never save the session's one song over it` |
 | `play()` | `if (controller.mediaItemCount == 0) {` → `if (controller.mediaItemCount == 0 && !inListenTogether) {` |
+| `skipNext()`, the line after `val controller = ensureController() ?: return` | `if (inListenTogether) { controller.seekToNext(); return }` |
+| `skipPrevious()`, the line after `val controller = ensureController() ?: return` | `if (inListenTogether) { controller.seekToPrevious(); return }` |
 
-The last one matters for the host: an empty session player plus the old "rebuild from the saved queue" fallback would turn the host's play button into "replace the room's music with my own queue".
+The `play()` row matters for the host: an empty session player plus the old "rebuild from the saved queue" fallback would turn the host's play button into "replace the room's music with my own queue".
+
+The two skip rows matter for the host too. The session player holds one song, so the `hasNextMediaItem()` / `hasPreviousMediaItem()` early returns would swallow Now Playing's Next and Previous. `seekToNext()` / `seekToPrevious()` reach `ListenTogetherPlayer.handleSeek` as `COMMAND_SEEK_TO_NEXT` / `COMMAND_SEEK_TO_PREVIOUS`, which become the room's next and previous (Task 17). A listener's player doesn't advertise those commands, so `MediaController` drops them.
+
+The saves and the three queue watchers read `listenTogetherOwnsQueue`, not `inListenTogether`. `setActive(false)` sets `restorePending` before `active` drops, and only `resumeQueue(play = false)` clears it, so nothing can save the player's leftovers over the user's queue between the end of a session and the restore.
 
 - [ ] **Step 6: Bind it in Hilt.** Nothing to add: `ListenTogetherController` has an `@Inject` constructor and `MediaModule` binds `PlayerRepositoryImpl`, so Hilt passes the singleton. Check that the other repository tests still build with the default `null`:
 
@@ -3501,7 +3639,7 @@ This task writes the whole class. Its tests cover joining and listening; Task 20
 - **Timeline:** start at `atRoomMs` if it's still ahead. Otherwise (a mid-song join or a late ready) pick the next whole room second at least 1 s ahead and seek to where the song will be then (spec §4). A timeline identical to the one already applied changes nothing, so a reconnect or a `state` doesn't restart the song.
 - **Drift:** one tick a second through `DriftController`; report `drifting` and recover.
 - **Host:** transport becomes room messages; song boundaries come from the host's queue, then from autoplay radio once per song; see Task 20.
-- **Leave, end, ended, give up:** `exitSession` → `setActive(false)`, and the repository restores the queue.
+- **Leave, end, ended, give up:** `exitSession` (stops and empties the player) → `setActive(false)` (sets `restorePending`, then fires `sessionEnds`), and the repository restores the queue, saving nothing until it has. **Service shutdown** (`shutdown()`) is the exception: `setActive(false, restore = false)`, no restore; the next launch's cold-start restore handles it.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3621,7 +3759,7 @@ class ListenTogetherSessionTest {
 
     fun TestScope.join() {
         session()
-        controller.send(Command.Join("K7QA2P")); runCurrent()
+        controller.send(Command.Join("K7QA2PXM")); runCurrent()
         connection.incoming.trySend(RoomEvent.Connected); runCurrent()
     }
 
@@ -3726,7 +3864,22 @@ class ListenTogetherSessionTest {
         assertThat(player.calls.last()).isEqualTo("exit")
         assertThat(connection.closed).isTrue()
         assertThat(controller.active.value).isFalse()
+        assertThat(controller.restorePending).isTrue() // PlayerRepositoryImpl clears it once the queue is back
         assertThat(controller.state.value).isEqualTo(ListenTogetherState.Idle)
+    }
+
+    @Test fun `the service shutting down leaves quietly, with no restore`() = runTest {
+        val ends = mutableListOf<Unit>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.sessionEnds.collect { ends += it } }
+        val s = session()
+        controller.send(Command.Join("K7QA2PXM")); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        s.shutdown()
+        assertThat(player.calls.last()).isEqualTo("exit")
+        assertThat(connection.closed).isTrue()
+        assertThat(controller.active.value).isFalse()
+        assertThat(controller.restorePending).isFalse()
+        assertThat(ends).isEmpty()
     }
 
     @Test fun `when the room ends everyone gets their own music back and a notice`() = runTest {
@@ -3820,8 +3973,12 @@ class ListenTogetherSession(
 
     fun start(): Job = scope.launch { for (command in controller.commands) handle(command) }
 
-    /** The service is going away: leave quietly. */
-    fun shutdown() = teardown(message = null)
+    /**
+     * The service is going away: leave quietly, with no restore. A restore on sessionEnds would drive the
+     * dying service's player and could start it again; the next launch's cold-start restore puts the
+     * user's queue back instead (it was never saved over).
+     */
+    fun shutdown() = teardown(message = null, restore = false)
 
     private suspend fun handle(command: Command) {
         when (command) {
@@ -4176,7 +4333,7 @@ class ListenTogetherSession(
         teardown("Session ended")
     }
 
-    private fun teardown(message: String?) {
+    private fun teardown(message: String?, restore: Boolean = true) {
         if (code == null) return
         Log.i(TAG, "leaving the room${message?.let { " ($it)" }.orEmpty()}")
         eventsJob?.cancel()
@@ -4191,7 +4348,9 @@ class ListenTogetherSession(
         timeline = null; applied = null; loadedKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
         clockSync.reset()
-        controller.setActive(false) // PlayerRepositoryImpl puts the user's queue back, paused
+        // exitSession has already stopped and emptied the player. With restore, PlayerRepositoryImpl puts the
+        // user's queue back, paused, and saves nothing until then (restorePending).
+        controller.setActive(false, restore)
         controller.publish(ListenTogetherState.Idle)
         message?.let(controller::message)
     }
@@ -4248,7 +4407,7 @@ class ListenTogetherSession(
 - [ ] **Step 4: Run the tests and check they pass**
 
 Run: `./gradlew :core:media:testDebugUnitTest --tests 'com.stash.core.media.listen.ListenTogetherSessionTest' -q`
-Expected: PASS (11 tests).
+Expected: PASS (12 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -4273,7 +4432,7 @@ import io.mockk.coEvery
 
 ```kotlin
     fun TestScope.host(upcoming: List<MediaItem> = listOf(item("2"))) {
-        coEvery { api.create("Rawn") } returns ShareResult.Ok(RoomApiClient.Created("K7QA2P", "KEY", "https://x/l/K7QA2P"))
+        coEvery { api.create("Rawn") } returns ShareResult.Ok(RoomApiClient.Created("K7QA2PXM", "KEY", "https://x/l/K7QA2PXM"))
         player.queue = UserQueue(current = item("1"), upcoming = upcoming, positionMs = 42_000)
         session()
         controller.send(Command.Host); runCurrent()
@@ -4287,7 +4446,7 @@ import io.mockk.coEvery
         assertThat(player.calls.take(3)).containsExactly("save", "enter:host", "pause").inOrder()
         assertThat(connection.sent.filterIsInstance<ClientMessage.Load>()).containsExactly(ClientMessage.Load(track, 42_000, listOf(next)))
         assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", resumeToken = "tok"))
-        assertThat((controller.state.value as ListenTogetherState.InRoom).url).isEqualTo("https://x/l/K7QA2P")
+        assertThat((controller.state.value as ListenTogetherState.InRoom).url).isEqualTo("https://x/l/K7QA2PXM")
     }
 
     @Test fun `a room that can't be created leaves everything alone`() = runTest {
@@ -4388,7 +4547,7 @@ import io.mockk.coEvery
 - [ ] **Step 2: Run the tests and check they pass**
 
 Run: `./gradlew :core:media:testDebugUnitTest --tests 'com.stash.core.media.listen.ListenTogetherSessionTest' -q`
-Expected: PASS (23 tests). These pin code written in Task 19, so a failure here is a bug in that code. Fix it there.
+Expected: PASS (24 tests). These pin code written in Task 19, so a failure here is a bug in that code. Fix it there.
 
 - [ ] **Step 3: Commit**
 
@@ -4605,10 +4764,12 @@ Run the Step 1 test now: it should pass.
             togetherListener?.let { m.removeListener(it) }
             togetherListener = null
             togetherPlayer?.configure(isHost = false, interceptor = null)
-            mediaSession?.player = m
+            // Empty the player BEFORE the MediaSession gets the bare ExoPlayer back: controllers must never
+            // see the session's song as the user's queue (PlayerRepositoryImpl would save it over theirs).
             m.setPlaybackSpeed(1f)
             m.stop()
             m.clearMediaItems() // PlayerRepositoryImpl puts the user's own queue back on sessionEnds
+            mediaSession?.player = m
             setCrossfadeSuspended(false)
             setShowNotificationForIdlePlayer(androidx.media3.session.MediaSessionService.SHOW_NOTIFICATION_FOR_IDLE_PLAYER_AFTER_STOP_OR_ERROR)
             updateCustomLayout()
@@ -4633,6 +4794,8 @@ Run the Step 1 test now: it should pass.
         override val durationMs: Long? get() = master.duration.takeIf { it != C.TIME_UNSET && it > 0 }
     }
 ```
+
+`autoplayRadioPreference.enabled.first()` needs `import kotlinx.coroutines.flow.first` in `StashPlaybackService.kt` (already imported there; keep it).
 
 `SHOW_NOTIFICATION_FOR_IDLE_PLAYER_AFTER_STOP_OR_ERROR` is Media3 1.9.2's default (checked in the jar: the manager initialises the mode to 3), so exiting restores exactly what was there.
 
@@ -4659,7 +4822,7 @@ and directly before the final `updateCustomLayout()` of `onCreate`:
             catalog = listenTogetherCatalog,
             api = roomApiClient,
             connector = roomConnector,
-            autoplayRadio = { autoplayRadioPreference.enabled.first() },
+            autoplayRadio = { autoplayRadioPreference.enabled.first() }, // kotlinx.coroutines.flow.first
             displayName = { sharePreference.displayName() },
             clock = { android.os.SystemClock.elapsedRealtime() },
         ).also { it.start() }
@@ -4695,6 +4858,9 @@ At the top of `onTaskRemoved(...)`:
 At the top of `onDestroy()`, before `playbackSessionBus.onServiceStopping()`, while the session and players still exist:
 
 ```kotlin
+        // Quiet exit: shutdown() ends the session WITHOUT sessionEnds, so PlayerRepositoryImpl doesn't restore
+        // the queue into (and possibly restart) this dying service. The next launch's cold-start restore
+        // brings the user's queue back; it was never saved over during the session.
         listenTogetherSession?.shutdown()
         listenTogetherSession = null
         if (::listenTogetherController.isInitialized) listenTogetherController.serviceAttached = false
@@ -4842,7 +5008,7 @@ In `setContent`, wrap the `StashScaffold(...)` call inside `StashTheme { … }`:
             }
 ```
 
-with the imports `androidx.compose.runtime.CompositionLocalProvider`, `com.stash.core.ui.components.ListenTogetherRole` and `com.stash.core.ui.components.LocalListenTogetherRole`.
+with the imports `androidx.compose.runtime.CompositionLocalProvider`, `androidx.compose.runtime.collectAsState`, `androidx.compose.runtime.getValue` (`by … collectAsState()` needs both; `MainActivity` already imports them, so keep them), `com.stash.core.ui.components.ListenTogetherRole` and `com.stash.core.ui.components.LocalListenTogetherRole`.
 
 - [ ] **Step 5: Build**
 
@@ -5469,10 +5635,10 @@ class JoinSessionViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun vm() = JoinSessionViewModel(SavedStateHandle(mapOf("code" to "K7QA2P")), api, controller, sharePreference)
+    private fun vm() = JoinSessionViewModel(SavedStateHandle(mapOf("code" to "K7QA2PXM")), api, controller, sharePreference)
 
     @Test fun `an open room shows the host, the count and the song`() {
-        coEvery { api.preview("K7QA2P") } returns ShareResult.Ok(RoomApiClient.Preview("Rawn", 3, false, SharedTrack("Xtal", "Aphex Twin")))
+        coEvery { api.preview("K7QA2PXM") } returns ShareResult.Ok(RoomApiClient.Preview("Rawn", 3, false, SharedTrack("Xtal", "Aphex Twin")))
         assertEquals(JoinSessionViewModel.UiState.Ready("Rawn", 3, SharedTrack("Xtal", "Aphex Twin")), vm().state.value)
     }
 
@@ -5493,7 +5659,7 @@ class JoinSessionViewModelTest {
         vm.join { joined = true }
         coVerifyOrder {
             sharePreference.setDisplayName("Sam")
-            controller.send(ListenTogetherController.Command.Join("K7QA2P"))
+            controller.send(ListenTogetherController.Command.Join("K7QA2PXM"))
         }
         assertTrue(joined)
     }
@@ -5719,7 +5885,7 @@ git commit -m "feat(listen): Join screen and /l/{code} App Links"
 - [ ] **Step 1: Add one sentence** to the end of that entry (spec §7):
 
 ```markdown
-Listen Together uses the same host: starting or joining a session opens a connection to a short-lived room that sees each member's display name (if they set one), the songs played in it (the same descriptors as a shared mix), and play, pause, seek, suggestion and reaction messages. Your IP address is used only for rate limiting and isn't stored, and nothing is kept once the room closes (5 minutes after the last person leaves, or 12 hours after it started).
+Listen Together uses the same host: starting or joining a session opens a connection to a short-lived room that sees each member's display name (if they set one), the songs played in it (the same descriptors as a shared mix), and play, pause, seek, suggestion and reaction messages. Room codes are 8 characters, and looking a room up is rate-limited (60 a minute per IP), so a live session can't be found by guessing codes. Your IP address is used only for rate limiting and isn't stored, and nothing is kept once the room closes (5 minutes after the last person leaves, or 12 hours after it started).
 ```
 
 - [ ] **Step 2: Commit**
@@ -5750,7 +5916,7 @@ npx wrangler whoami                        # the right Cloudflare account (Worke
 npx wrangler deploy
 ```
 
-Expected: the output lists the `ROOMS (ListenRoom)` Durable Object binding, the `ROOM_RL` rate limit, and the applied migration `v1`.
+Expected: the output lists the `ROOMS (ListenRoom)` Durable Object binding, the `ROOM_RL` and `JOIN_RL` rate limits, and the applied migration `v1`.
 
 - [ ] **Step 3: Smoke test production.** Shared mixes first, since they must not regress:
 
@@ -5759,7 +5925,7 @@ BASE=https://stash-share.rawnaldclark.workers.dev
 curl -s -o /dev/null -w '%{http_code}\n' $BASE/.well-known/assetlinks.json      # 200
 curl -s -o /dev/null -w '%{http_code}\n' $BASE/v1/mixes/zzzzzzzz               # 404 (routing alive)
 CREATED=$(curl -s -X POST $BASE/v1/rooms -H 'content-type: application/json' -d '{"hostName":"Smoke"}')
-echo "$CREATED"                                                                 # {"code":"XXXXXX","hostKey":"…","url":"…/l/XXXXXX"}
+echo "$CREATED"                                                                 # {"code":"XXXXXXXX","hostKey":"…","url":"…/l/XXXXXXXX"}
 CODE=$(echo "$CREATED" | python -c "import json,sys;print(json.load(sys.stdin)['code'])")
 curl -s $BASE/v1/rooms/$CODE                                                    # {"hostName":"Smoke","memberCount":0,"full":false}
 curl -s -o /dev/null -w '%{http_code}\n' $BASE/l/$CODE                          # 200

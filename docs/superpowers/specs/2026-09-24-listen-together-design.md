@@ -44,10 +44,12 @@ The Worker is on the Workers Paid plan, which includes Durable Objects. The room
 
 | Route | Behaviour |
 |---|---|
-| `POST /v1/rooms` | Body: `{ hostName? }`. Creates a room with a random code of 6 base32 characters (no ambiguous characters, retries on collision) and a host key of 32 random bytes in base64url. The room stores only the SHA-256 of the key. Returns `{ code, hostKey, url }`. Rate-limited by a new `ROOM_RL` binding (`[[ratelimits]]`, 5 per minute per IP), kept separate from the shared-mix `CREATE_RL` budget. |
+| `POST /v1/rooms` | Body: `{ hostName? }`. Creates a room with a random code of 8 base32 characters (no ambiguous characters, retries on collision; 32^8 ≈ 10^12 codes, too many to find a live room by guessing) and a host key of 32 random bytes in base64url. The room stores only the SHA-256 of the key. Returns `{ code, hostKey, url }`. Rate-limited by a new `ROOM_RL` binding (`[[ratelimits]]`, 5 per minute per IP), kept separate from the shared-mix `CREATE_RL` budget. |
 | `GET /v1/rooms/{code}` | A public preview for the Join screen: `{ hostName, memberCount, full, track? }`. Returns 404 if the room doesn't exist or has closed. |
-| `GET /v1/rooms/{code}/ws` | WebSocket upgrade. The first message must be `hello`. Returns 404 for a closed room and 409 when the room is full. |
+| `GET /v1/rooms/{code}/ws` | WebSocket upgrade. The first message must be `hello`. Returns 404 for a closed room and 409 when the room is full, or when it already holds 20 sockets (so sockets that never send `hello` can't pile up). |
 | `GET /l/{code}` | HTML preview page ("Join <host>'s session in Stash"), built the same way as `/m/{id}`, with "Open in Stash" and "Get Stash" buttons. |
+
+**Join rate limit:** the three `{code}` routes share a `JOIN_RL` binding (`[[ratelimits]]`, 60 per minute per IP), checked before any Durable Object is touched, so nobody can walk the code space looking for live rooms. Over the limit, the API routes answer a JSON 429 with `Retry-After: 60` and the page an HTML 429.
 
 ### Room state
 
