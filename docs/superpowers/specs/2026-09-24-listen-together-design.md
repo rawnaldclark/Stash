@@ -26,7 +26,19 @@
 
 The room lives in the existing `stash-share` Worker, under the same host. It adds a Durable Object class `ListenRoom`, bound as `ROOMS`.
 
+The class must also be exported from `src/index.js`, and `wrangler.toml` needs two new entries:
+- `[[durable_objects.bindings]]`, with `name = "ROOMS"` and `class_name = "ListenRoom"`;
+- `[[migrations]]`, with `tag = "v1"` and `new_sqlite_classes = ["ListenRoom"]`.
+
 The Worker is on the Workers Paid plan, which includes Durable Objects. The room uses the WebSocket Hibernation API, so an idle room costs nothing while its connections stay open.
+
+**Hibernation rules:**
+- A hibernating room loses anything held in memory, so the room state lives in DO storage.
+- Per-connection data (`memberId`, `token`) lives in `ws.serializeAttachment`.
+- The in-memory rate counters may reset after hibernation, which is acceptable.
+- A Durable Object has only **one** alarm, and it serves three timers: the room-close timer, the 60-second host handover and the 8-second prepare deadline. Always schedule the earliest pending one, and on wake work out which timers are due.
+
+**Testable core:** the room logic lives in a pure module, `src/room.js`, which takes state plus an event and returns a new state plus the messages to send. It has an injectable clock. The `ListenRoom` DO class is a thin wrapper around it: storage, sockets and the alarm. This lets `node --test` cover the logic without the Workers runtime.
 
 ### Routes
 
@@ -73,13 +85,13 @@ All messages are JSON with a `t` field giving the message type.
 
 | `t` | Sent by | Payload |
 |---|---|---|
-| `hello` | anyone | `{ name?, hostKey?, resumeId? }`. `resumeId` rejoins as the same member after a drop. |
+| `hello` | anyone | `{ name?, hostKey?, resumeToken? }`. `resumeToken` is the private per-connection `token` from `welcome`, and it rejoins as the same member after a drop. A `memberId` alone is never enough, because every member can see everyone else's. |
 | `ping` | anyone | `{ c }`, the client clock in ms |
 | `load` | host | `{ track, positionMs, queue }`. Starts the ready handshake (§4). |
 | `play`, `pause` | host | `{}` |
 | `seek` | host | `{ positionMs }` |
 | `queue` | host | `{ queue }` |
-| `status` | anyone | `{ status }`: `ready`, `buffering`, `unavailable` or `drifting` |
+| `status` | anyone | `{ status }`: `ready`, `buffering`, `unavailable` or `drifting`. `ready` is stored as the member status `ok`. |
 | `suggest` | listener | `{ track }` |
 | `suggestion` | host | `{ id, action: add \| dismiss }` |
 | `react` | anyone | `{ emoji }`, one of six fixed emoji |
@@ -116,6 +128,19 @@ This fixes YumaPlayer's reversed-sign bug, and the logic is unit-tested with fix
 4. When every connected member is ready, or the deadline passes, the room sets `timeline` to `{ positionMs, atRoomMs: roomNow + 500, playing: true }` and broadcasts it.
 5. A phone that isn't ready yet joins late by seeking to the computed position.
 
+### Play, pause and seek timing
+
+- **`play`, and `seek` while playing:** the room sets `atRoomMs = roomNow + 400` with the target `positionMs`. Each phone seeks to the target straight away while held paused, then starts at `atRoomMs`, so nobody arrives late while buffering.
+- **`pause`:** the room freezes `positionMs` at the position computed for `roomNow`, sets `atRoomMs = roomNow` and `playing = false`. Every phone pauses and seeks to that position.
+- **`seek` while paused:** only updates `positionMs`.
+
+### Song boundaries: nobody's player advances on its own
+
+During a session, every phone's player, the host's included, holds **only the current song**. That means Media3 never moves on to a next item by itself. Song changes happen only through the room:
+- **The song ends on its own:** the host's app sends `load` for the next song in its queue.
+- **The host taps skip or previous:** the host's app sends `load`. The host's own player does not start the song early; it waits for the ready handshake and starts at `atRoomMs`, like everyone else.
+- **The queue runs out:** if the host has autoplay radio on, the host's app asks `AutoplayRadio` for more songs and sends them to the room with `queue`, then `load`s the first one. If autoplay radio is off, the session idles, paused at the end of the last song.
+
 ### Drift correction
 
 Once a second while playing, each phone works out the expected position, `expected = positionMs + (roomNow − atRoomMs)`, and the error, `e = actual − expected`. Then:
@@ -127,25 +152,46 @@ After a correction, the phone reports `drifting` if `|e|` stays above 250 ms for
 
 ### Which recording is played
 
-A listener persists the host's descriptor with `ensureTrackPersisted`, the same way shared mixes do. It then plays that track through the existing resolver: lossless looks it up by ISRC first, and YouTube uses the `yt` id when it's present. The host's descriptor includes `isrc`, `sp` and `yt` when the app knows them.
+A listener must not use `ensureTrackPersisted`. Its fuzzy title-and-artist match can return the listener's own row: a different edit, possibly their downloaded file, and it drops the host's ISRC.
+
+Instead, the session uses an **exact persist**. It matches an existing row only by `yt` id, then Spotify URI, then an exact `isrc`. With no exact match it inserts a new stream-only row that carries the descriptor's `isrc`, `sp` and `yt`.
+
+The row is then played through the existing resolver. Lossless looks it up by ISRC first, and YouTube uses the `yt` id when it's present. Both paths are confirmed in the resolvers. A downloaded local file is used only when the row was matched exactly, because then it is the same recording.
+
+Every phone's auto-skip and recovery paths are switched off during a session: the `PlayerRepositoryImpl` stream-error auto-skip, `maybeSkipOfflineStreamOnly` and `recoverOrStop`. A failed stream therefore leads to `unavailable` and silence (§6). It never lets the phone drift off into its own next song.
 
 If the listener's resolved duration differs from the descriptor's `d` by more than 2 seconds, their Now Playing shows "Your version may be a few seconds off". No time-stretch alignment is attempted.
 
 ### Crossfade
 
-Crossfade is suspended while a session is active, on every member's phone, and restored afterwards.
+Crossfade is suspended while a session is active, on every member's phone, and restored afterwards. This is an **in-memory, session-scoped override** inside the playback service. It never writes the user's crossfade preference, so a crash can't leave crossfade switched off for good.
 
 ## 5. The app
 
-A new `core/data/.../together/` package (or a `feature/together` module, whichever fits the module graph):
+**Layering:**
+- The session engine lives in `core/media`, inside `StashPlaybackService`, and drives the service's own `ExoPlayer` directly.
+- The UI (in `feature/nowplaying`, plus a small `feature/together` or `feature/library` screen for joining) talks to the session only through a `ListenTogetherController`, a Hilt singleton that exposes a `StateFlow` and command functions. The service binds it.
+- `PlayerRepository` is **not** used to drive session playback.
+
+**New player abilities,** used only by the session engine:
+- `prepareAt(track, positionMs)`: load a single item, seek, prepare, and hold with `playWhenReady = false`;
+- `startAt(roomMs)`: start playing at a given room time;
+- `setSpeed(x)`: speed change via Media3 `PlaybackParameters`, with pitch preserved. Sonic is already at the end of the `StashRenderersFactory` audio chain.
+- snapshot and restore of the user's own queue and position;
+- the crossfade override;
+- switching off the auto-skip and recovery paths.
+
+**Staying alive:** while a session is active, the service keeps an ongoing "Listening together" foreground notification, even while the music is paused. It also suppresses `performIdleStop` and the `onTaskRemoved` stop. Otherwise Android could kill a paused listener, or a host in a long pause, and drop them from the session.
+
+**Pieces:**
 
 | Piece | Responsibility |
 |---|---|
 | `RoomClient` | The OkHttp WebSocket: connect, send `hello`, reconnect with backoff (1, 2, 4, 8 and 15 s, for 2 minutes in total, then give up), and parse messages. |
 | `ClockSync` | Pure logic: turns ping samples into an offset. |
 | `DriftController` | Pure logic: turns an error into an action (none, a speed change, or a seek). |
-| `ListenTogetherSession` | Owned by the playback service so it keeps running with the screen off. Wires `RoomClient` to `PlayerRepository`, hands out session state as a `StateFlow`, and sets the listener's own queue aside and restores it when they leave. |
-| Host adapter | While hosting, the host's play, pause, seek and skip actions and queue changes are sent to the room as commands. The host's player also follows the room timeline, which normally means no corrections are needed. |
+| `ListenTogetherSession` | Lives in `core/media`, inside the playback service. Wires `RoomClient` to the service's `ExoPlayer` through the new player abilities above. Publishes session state through `ListenTogetherController`, and sets the member's own queue aside and restores it when they leave. |
+| Host adapter | While hosting, the host's play, pause, seek and skip actions and queue changes are sent to the room as commands. The local player changes only when the room's reply arrives, so the host follows the room timeline too. Song-boundary rules are in §4. |
 | UI | A **Listen Together** entry in the Now Playing menu (start, or "Invite" when already hosting). A Join screen for `/l/{code}` links, reusing the shared-mixes App Link filter with a new `pathPrefix="/l/"`. A who's-listening bar in Now Playing. A suggestions tray for the host. A **Suggest** item in the track menus while in a session. A reaction button, with emoji that float up. A **Leave** or **End session** button. |
 | Links | `ShareLinks` gains `Parsed.Room(code)` for `https://…/l/{code}`. |
 
@@ -155,7 +201,7 @@ While a listener is in a session, their Now Playing hides play, pause, skip and 
 
 | Situation | Behaviour |
 |---|---|
-| Connection drops | Keep playing from the last known timeline and show "Reconnecting…". Reconnect with `resumeId`, then apply the latest `state`. |
+| Connection drops | Keep playing from the last known timeline and show "Reconnecting…". Reconnect with `resumeToken`, then apply the latest `state`. |
 | A listener can't resolve the song | Report `unavailable`, stay silent for that song, and show "This song isn't available to you". The next `prepare` brings them back in. |
 | The room is full or closed | The Join screen shows "This session is full" or "This session has ended". |
 | The host's app is killed | The 60-second handover described in §2. |
@@ -170,7 +216,7 @@ While a listener is in a session, their Now Playing hides play, pause, skip and 
 
 ## 8. Testing
 
-**Worker**, using `node --test` with a fake Durable Object: fake WebSocket pairs and an injectable clock. The tests cover:
+**Worker**, using `node --test` against the pure `src/room.js` module, with an injectable clock and fake sockets. The tests cover:
 - create and join;
 - the host key check;
 - limits (10 members, reaction and suggestion caps);
@@ -179,7 +225,7 @@ While a listener is in a session, their Now Playing hides play, pause, skip and 
 - `makeHost`;
 - `end`;
 - the alarm closing the room;
-- `resumeId` rejoin.
+- `resumeToken` rejoin, including a check that someone else's `memberId` can't take over their slot.
 
 **App:**
 - unit tests for `ClockSync` and `DriftController` with fixed numbers;
