@@ -139,7 +139,8 @@ This fixes YumaPlayer's reversed-sign bug, and the logic is unit-tested with fix
 During a session, every phone's player, the host's included, holds **only the current song**. That means Media3 never moves on to a next item by itself. Song changes happen only through the room:
 - **The song ends on its own:** the host's app sends `load` for the next song in its queue.
 - **The host taps skip or previous:** the host's app sends `load`. The host's own player does not start the song early; it waits for the ready handshake and starts at `atRoomMs`, like everyone else.
-- **The queue runs out:** if the host has autoplay radio on, the host's app asks `AutoplayRadio` for more songs and sends them to the room with `queue`, then `load`s the first one. If autoplay radio is off, the session idles, paused at the end of the last song.
+- **The queue runs out:** if the host has autoplay radio on, checked with `shouldAutoplayRadio`, the host's session code builds a station with `RadioStationGenerator.start(RadioSeed.Song(...))`. That lives in `core/data/radio`, the same source `PlayerRepositoryImpl.startRadio` uses. The host's code turns the station's songs into `SharedTrack`s, sends them with `queue`, then `load`s the first one. If autoplay radio is off, the session idles, paused at the end of the last song.
+- **Joining mid-song:** a phone that joins, or reconnects, while a song is playing prepares that song at the `expected` position computed from `state`, then starts at the next whole second of room time.
 
 ### Drift correction
 
@@ -158,7 +159,9 @@ Instead, the session uses an **exact persist**. It matches an existing row only 
 
 The row is then played through the existing resolver. Lossless looks it up by ISRC first, and YouTube uses the `yt` id when it's present. Both paths are confirmed in the resolvers. A downloaded local file is used only when the row was matched exactly, because then it is the same recording.
 
-Every phone's auto-skip and recovery paths are switched off during a session: the `PlayerRepositoryImpl` stream-error auto-skip, `maybeSkipOfflineStreamOnly` and `recoverOrStop`. A failed stream therefore leads to `unavailable` and silence (§6). It never lets the phone drift off into its own next song.
+**One session-active flag gates everything else that reacts to the player.** `ListenTogetherController.active` is a `StateFlow<Boolean>` readable from both the service and `PlayerRepositoryImpl`, which runs on the controller side. While it's true:
+- These are switched off: the stream-error auto-skip (`onPlayerError`), `maybeSkipOfflineStreamOnly`, `recoverOrStop`, the autoplay-radio watcher, the radio and library-shuffle growers, and `prefetchNextTrack`. A failed stream therefore leads to `unavailable` and silence (§6). The phone never drifts off into its own next song, and it never adds radio songs to the one-song player.
+- `playbackStateStore.saveQueue` and `savePosition` are skipped. The user's own queue is snapshotted to storage when the session starts, restored when it ends, and still restored at the next app start if the app was killed mid-session.
 
 If the listener's resolved duration differs from the descriptor's `d` by more than 2 seconds, their Now Playing shows "Your version may be a few seconds off". No time-stretch alignment is attempted.
 
@@ -170,7 +173,7 @@ Crossfade is suspended while a session is active, on every member's phone, and r
 
 **Layering:**
 - The session engine lives in `core/media`, inside `StashPlaybackService`, and drives the service's own `ExoPlayer` directly.
-- The UI (in `feature/nowplaying`, plus a small `feature/together` or `feature/library` screen for joining) talks to the session only through a `ListenTogetherController`, a Hilt singleton that exposes a `StateFlow` and command functions. The service binds it.
+- The UI lives in `feature/nowplaying`, and the Join screen goes there too, beside Now Playing. It talks to the session only through a `ListenTogetherController`, a Hilt singleton that exposes a `StateFlow` and command functions. The service binds it.
 - `PlayerRepository` is **not** used to drive session playback.
 
 **New player abilities,** used only by the session engine:
@@ -179,7 +182,11 @@ Crossfade is suspended while a session is active, on every member's phone, and r
 - `setSpeed(x)`: speed change via Media3 `PlaybackParameters`, with pitch preserved. Sonic is already at the end of the `StashRenderersFactory` audio chain.
 - snapshot and restore of the user's own queue and position;
 - the crossfade override;
-- switching off the auto-skip and recovery paths.
+- honouring the session-active flag. The auto-skip, radio and saving gates themselves live in `PlayerRepositoryImpl` and read the same flag.
+
+**One place catches every playback command.** While a session is active, the service wraps its session player in a `ForwardingPlayer`, and that wrapper is what the `MediaSession` exposes. It catches play, pause, seek and skip from every source: Now Playing, the notification, the lock screen, headphone and Bluetooth buttons, and Android Auto.
+- **On the host,** each command becomes a room command. The local player only changes when the room replies.
+- **On a listener,** each command is ignored. The media notification shows only a **Leave** action.
 
 **Staying alive:** while a session is active, the service keeps an ongoing "Listening together" foreground notification, even while the music is paused. It also suppresses `performIdleStop` and the `onTaskRemoved` stop. Otherwise Android could kill a paused listener, or a host in a long pause, and drop them from the session.
 
@@ -230,7 +237,7 @@ While a listener is in a session, their Now Playing hides play, pause, skip and 
 **App:**
 - unit tests for `ClockSync` and `DriftController` with fixed numbers;
 - a round-trip test of the message format;
-- tests for `ListenTogetherSession` with a fake `RoomClient` and a fake player: queue set aside and restored, listener controls locked, crossfade suspended.
+- tests for `ListenTogetherSession` with a fake `RoomClient` and a fake player: queue set aside and restored (including after a simulated process death), listener commands ignored when they come through the `ForwardingPlayer` (the headphone and notification path), host commands sent to the room, crossfade suspended, and the autoplay and saving gates off while the session is active.
 
 **Device:** the Pixel 6 Pro and the Pixel 5 test rig in one session. Check, against a high-speed camera or a stopwatch app, that they stay within about 50 ms of each other, including after a seek, a pause and resume, and a song change.
 
