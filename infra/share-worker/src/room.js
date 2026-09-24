@@ -292,4 +292,19 @@ const MESSAGES = {
         ctx.out.push({ to: "all", msg: { t: "reaction", from: event.from, emoji: msg.emoji } });
         return true;
     },
+
+    makeHost(ctx) {
+        const { s, msg } = ctx;
+        if (msg.memberId === s.host || !findConnected(s, msg.memberId)) return false;
+        s.host = msg.memberId;
+        s.rev++;
+        ctx.out.push(stateMsg(s));
+        return true;
+    },
+
+    end(ctx) {
+        ctx.out.push({ to: "all", msg: { t: "ended", reason: "host_ended" } });
+        ctx.closed = true;
+        return true;
+    },
 };

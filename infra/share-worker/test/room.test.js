@@ -208,3 +208,49 @@ test("reactions: one of the six, at most one per second per member", () => {
     assert.equal(send(r.state, "a", { t: "react", emoji: EMOJI[0] }, T0 + 1_000).out.length, 1);
     assert.equal(send(s, "a", { t: "react", emoji: "x" }).out.length, 0);
 });
+
+// ── Task 5: host handover, makeHost, end, closing ─────────────────────────────
+
+test("makeHost hands control to a connected member and tells everyone", () => {
+    const r = send(party(), "h", { t: "makeHost", memberId: "b" });
+    assert.equal(r.state.host, "b");
+    assert.equal(sent(r, "state")[0].msg.state.host, "b");
+    assert.equal(send(r.state, "h", { t: "play" }).state, r.state, "the old host is a listener now");
+    assert.equal(send(party(), "h", { t: "makeHost", memberId: "ghost" }).out.length, 0);
+});
+
+test("a host gone for 60 s is replaced by the longest-joined member", () => {
+    const s = step(party(), { type: "close", from: "h" }, T0 + 1_000).state;
+    assert.equal(step(s, { type: "alarm" }, T0 + 60_999).state.host, "h");
+    const r = step(s, { type: "alarm" }, T0 + 61_000);
+    assert.equal(r.state.host, "a");
+    assert.deepEqual(r.state.members.map((m) => m.id), ["a", "b"]);
+    assert.equal(sent(r, "state")[0].msg.state.host, "a");
+});
+
+test("a host back within 60 s on its resume token stays host", () => {
+    let s = step(party(), { type: "close", from: "h" }, T0 + 1_000).state;
+    s = hello(s, "h2", { resumeToken: "tok-h", at: T0 + 30_000 }).state;
+    assert.equal(step(s, { type: "alarm" }, T0 + 61_000).state.host, "h");
+});
+
+test("end tells everyone and closes the room", () => {
+    const r = send(party(), "h", { t: "end" });
+    assert.equal(r.closed, true);
+    assert.equal(r.state, null);
+    assert.deepEqual(sent(r, "ended")[0], { to: "all", msg: { t: "ended", reason: "host_ended" } });
+});
+
+test("an empty room closes 5 minutes after the last member leaves; any room closes after 12 hours", () => {
+    let s = party();
+    for (const id of ["h", "a", "b"]) s = step(s, { type: "close", from: id }, T0 + 1_000).state;
+    s = step(s, { type: "alarm" }, T0 + 61_000).state; // grace over: the slots are pruned
+    assert.equal(s.members.length, 0);
+    assert.equal(step(s, { type: "alarm" }, T0 + 1_000 + 5 * 60_000).closed, true);
+    assert.equal(step(party(), { type: "alarm" }, T0 + 12 * 3_600_000).closed, true);
+});
+
+test("the alarm is always the earliest pending timer", () => {
+    const s = step(loaded().state, { type: "close", from: "a" }, T0 + 150).state;
+    assert.equal(step(s, { type: "msg", from: "b", msg: { t: "ping", c: 1 } }, T0 + 160).alarmAt, T0 + 100 + 8_000);
+});
