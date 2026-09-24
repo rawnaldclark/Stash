@@ -1,0 +1,196 @@
+# Listen Together: design
+
+**Status:** approved in brainstorming on 2026-09-24. Next step: the implementation plan.
+
+**Scope:** friends in different places listen to the same music at the same moment. One host controls playback and can hand control to someone else. Listeners can suggest songs, send emoji reactions and see who's listening.
+
+**Builds on:** shared mixes (`docs/superpowers/specs/2026-09-23-shared-mixes-design.md`), specifically:
+- the portable track descriptor, `SharedTrack`;
+- the `stash-share` Worker and its host;
+- App Links;
+- the "Show my name as" preference.
+
+## 1. Decisions
+
+| Decision | Choice | Why |
+|---|---|---|
+| Situation | Friends in different places, over the internet | The case nobody else serves well. The same design also covers people in one room. |
+| Control | One host controls play, pause, seek, skip and the queue. The host can hand control to anyone. | Predictable, and nobody fights over the skip button. |
+| Size | Up to 10 people per room | A friend group. One Durable Object can hold every connection cheaply. |
+| Which recording each listener hears | The same recording as the host (matched by ISRC and IDs), at each listener's best available quality. If a listener can't get it, they get the closest match plus a note. | Keeps timing tight without dragging everyone down to the lowest-quality source. |
+| Extras in v1 | Who's listening, song suggestions, emoji reactions. No typed chat. | Social features that need no moderation. |
+| Architecture | A server-side room with its own clock: one Cloudflare Durable Object per session, reached over WebSockets | See §9 for the rejected alternatives. |
+| Accounts | None. Only an optional display name. | Same as shared mixes. |
+
+## 2. Server: the Listen Together room (in `infra/share-worker`)
+
+The room lives in the existing `stash-share` Worker, under the same host. It adds a Durable Object class `ListenRoom`, bound as `ROOMS`.
+
+The Worker is on the Workers Paid plan, which includes Durable Objects. The room uses the WebSocket Hibernation API, so an idle room costs nothing while its connections stay open.
+
+### Routes
+
+| Route | Behaviour |
+|---|---|
+| `POST /v1/rooms` | Body: `{ hostName? }`. Creates a room with a random code of 6 base32 characters (no ambiguous characters, retries on collision) and a host key of 32 random bytes in base64url. The room stores only the SHA-256 of the key. Returns `{ code, hostKey, url }`. Rate-limited with the existing `CREATE_RL`. |
+| `GET /v1/rooms/{code}` | A public preview for the Join screen: `{ hostName, memberCount, full, track? }`. Returns 404 if the room doesn't exist or has closed. |
+| `GET /v1/rooms/{code}/ws` | WebSocket upgrade. The first message must be `hello`. Returns 404 for a closed room and 409 when the room is full. |
+| `GET /l/{code}` | HTML preview page ("Join <host>'s session in Stash"), built the same way as `/m/{id}`, with "Open in Stash" and "Get Stash" buttons. |
+
+### Room state
+
+The room is the single source of truth. Every change increments `rev`.
+
+```
+{
+  rev,
+  host: memberId,
+  track: SharedTrack?,
+  trackKey,                        // bumps on every song change
+  timeline: { positionMs, atRoomMs, playing },
+  queue: [SharedTrack],            // the host's upcoming songs, so a new host can continue
+  members: [{ id, name, joinedAt, status: ok | buffering | unavailable | drifting }],
+  suggestions: [{ id, from, track }],
+  phase: playing | preparing(trackKey, deadlineMs)
+}
+```
+
+### Limits and lifetime
+
+- **Room size:** at most 10 members.
+- **Closing:** the room closes 5 minutes after the last member leaves, or 12 hours after it was created, whichever comes first. It uses a DO alarm, and all state is dropped when it closes.
+- **Host handover:** if the host is disconnected for 60 seconds, the longest-joined connected member becomes host. The host key only proves the original host; after a handover, host rights are tied to the new host's connection (`memberId` plus a per-connection token issued in `welcome`).
+- **Rate limits:**
+  - a reaction at most once per second per member (extras are dropped);
+  - at most 3 pending suggestions per member;
+  - at most 20 messages per second per connection, after which the connection is closed.
+
+## 3. The message protocol
+
+All messages are JSON with a `t` field giving the message type.
+
+### Phone → room
+
+| `t` | Sent by | Payload |
+|---|---|---|
+| `hello` | anyone | `{ name?, hostKey?, resumeId? }`. `resumeId` rejoins as the same member after a drop. |
+| `ping` | anyone | `{ c }`, the client clock in ms |
+| `load` | host | `{ track, positionMs, queue }`. Starts the ready handshake (§4). |
+| `play`, `pause` | host | `{}` |
+| `seek` | host | `{ positionMs }` |
+| `queue` | host | `{ queue }` |
+| `status` | anyone | `{ status }`: `ready`, `buffering`, `unavailable` or `drifting` |
+| `suggest` | listener | `{ track }` |
+| `suggestion` | host | `{ id, action: add \| dismiss }` |
+| `react` | anyone | `{ emoji }`, one of six fixed emoji |
+| `makeHost` | host | `{ memberId }` |
+| `end` | host | `{}` |
+
+### Room → phone
+
+| `t` | Payload |
+|---|---|
+| `welcome` | `{ memberId, token, state }` |
+| `pong` | `{ c, r }`: `c` is echoed back, `r` is the room clock |
+| `state` | `{ state }`: the full state. Sent on join, on host change, and whenever the phone's `rev` has fallen behind. |
+| `timeline` | `{ rev, trackKey, positionMs, atRoomMs, playing }`: the frequent, small update |
+| `prepare` | `{ trackKey, track, deadlineMs }` |
+| `members` | `{ members }` |
+| `suggestions` | `{ suggestions }` |
+| `reaction` | `{ from, emoji }` |
+| `ended` | `{ reason }` |
+
+## 4. Keeping playback in sync
+
+### Clock offset
+
+A phone sends 5 pings on connect and 1 ping every 30 seconds after that. For each reply it records the round trip `rtt = now − c` and the clock offset `offset = r − (c + rtt / 2)`. It uses the offset from the sample with the smallest round trip seen in the last 5 minutes. Room time on the phone is `now + offset`.
+
+This fixes YumaPlayer's reversed-sign bug, and the logic is unit-tested with fixed numbers.
+
+### Starting a new song (the ready handshake)
+
+1. The host sends `load`.
+2. The room broadcasts `prepare` with a deadline 8 seconds away.
+3. Each phone resolves the descriptor through the normal stream chain, buffers the song at the start position, then reports `status: ready`.
+4. When every connected member is ready, or the deadline passes, the room sets `timeline` to `{ positionMs, atRoomMs: roomNow + 500, playing: true }` and broadcasts it.
+5. A phone that isn't ready yet joins late by seeking to the computed position.
+
+### Drift correction
+
+Once a second while playing, each phone works out the expected position, `expected = positionMs + (roomNow − atRoomMs)`, and the error, `e = actual − expected`. Then:
+- **`|e|` under 40 ms:** do nothing, at speed 1.0.
+- **40 ms to 1 s:** set the playback speed to `1 − clamp(e / 2000, −0.03, 0.03)`, a speed change that keeps pitch, until `|e|` drops below 20 ms. Then go back to speed 1.0.
+- **Over 1 s:** seek to `expected`.
+
+After a correction, the phone reports `drifting` if `|e|` stays above 250 ms for 10 seconds.
+
+### Which recording is played
+
+A listener persists the host's descriptor with `ensureTrackPersisted`, the same way shared mixes do. It then plays that track through the existing resolver: lossless looks it up by ISRC first, and YouTube uses the `yt` id when it's present. The host's descriptor includes `isrc`, `sp` and `yt` when the app knows them.
+
+If the listener's resolved duration differs from the descriptor's `d` by more than 2 seconds, their Now Playing shows "Your version may be a few seconds off". No time-stretch alignment is attempted.
+
+### Crossfade
+
+Crossfade is suspended while a session is active, on every member's phone, and restored afterwards.
+
+## 5. The app
+
+A new `core/data/.../together/` package (or a `feature/together` module, whichever fits the module graph):
+
+| Piece | Responsibility |
+|---|---|
+| `RoomClient` | The OkHttp WebSocket: connect, send `hello`, reconnect with backoff (1, 2, 4, 8 and 15 s, for 2 minutes in total, then give up), and parse messages. |
+| `ClockSync` | Pure logic: turns ping samples into an offset. |
+| `DriftController` | Pure logic: turns an error into an action (none, a speed change, or a seek). |
+| `ListenTogetherSession` | Owned by the playback service so it keeps running with the screen off. Wires `RoomClient` to `PlayerRepository`, hands out session state as a `StateFlow`, and sets the listener's own queue aside and restores it when they leave. |
+| Host adapter | While hosting, the host's play, pause, seek and skip actions and queue changes are sent to the room as commands. The host's player also follows the room timeline, which normally means no corrections are needed. |
+| UI | A **Listen Together** entry in the Now Playing menu (start, or "Invite" when already hosting). A Join screen for `/l/{code}` links, reusing the shared-mixes App Link filter with a new `pathPrefix="/l/"`. A who's-listening bar in Now Playing. A suggestions tray for the host. A **Suggest** item in the track menus while in a session. A reaction button, with emoji that float up. A **Leave** or **End session** button. |
+| Links | `ShareLinks` gains `Parsed.Room(code)` for `https://…/l/{code}`. |
+
+While a listener is in a session, their Now Playing hides play, pause, skip and seek and shows **Leave** instead. Volume stays their own.
+
+## 6. When things go wrong
+
+| Situation | Behaviour |
+|---|---|
+| Connection drops | Keep playing from the last known timeline and show "Reconnecting…". Reconnect with `resumeId`, then apply the latest `state`. |
+| A listener can't resolve the song | Report `unavailable`, stay silent for that song, and show "This song isn't available to you". The next `prepare` brings them back in. |
+| The room is full or closed | The Join screen shows "This session is full" or "This session has ended". |
+| The host's app is killed | The 60-second handover described in §2. |
+| The host taps **End session** | Every phone gets `ended`, sees "Session ended", and gets its own queue back, paused. |
+| A message is malformed or too frequent | It's ignored. Repeated abuse closes the connection. |
+
+## 7. Privacy
+
+- The room sees display names, song descriptors, room codes and IP addresses (the IPs are used only for rate limiting and are not stored).
+- Nothing is kept once the room closes.
+- The README's "What Stash talks to" entry for `stash-share` gets a sentence about Listen Together.
+
+## 8. Testing
+
+**Worker**, using `node --test` with a fake Durable Object: fake WebSocket pairs and an injectable clock. The tests cover:
+- create and join;
+- the host key check;
+- limits (10 members, reaction and suggestion caps);
+- the ready handshake, both when everyone is ready and when the deadline passes;
+- host handover after 60 seconds;
+- `makeHost`;
+- `end`;
+- the alarm closing the room;
+- `resumeId` rejoin.
+
+**App:**
+- unit tests for `ClockSync` and `DriftController` with fixed numbers;
+- a round-trip test of the message format;
+- tests for `ListenTogetherSession` with a fake `RoomClient` and a fake player: queue set aside and restored, listener controls locked, crossfade suspended.
+
+**Device:** the Pixel 6 Pro and the Pixel 5 test rig in one session. Check, against a high-speed camera or a stopwatch app, that they stay within about 50 ms of each other, including after a seek, a pause and resume, and a song change.
+
+## 9. Rejected alternatives
+
+- **The room only relays the host's messages**, as YumaPlayer does. Timing would depend on the host's connection, and the session would suffer or die when the host drops.
+- **Phones connect to each other directly (WebRTC).** It needs NAT traversal and a relay fallback anyway, which is heavy for the tiny amount of data involved.
+- **Local-network mode.** It isn't needed for the main situation (friends in different places), and it would double the testing.
+- **Each phone picks its own best match.** Different edits and intros could put listeners seconds apart.
