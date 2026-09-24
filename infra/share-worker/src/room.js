@@ -196,4 +196,35 @@ const EVENTS = {
 
 const MESSAGES = {
     // Tasks 2–5 add the host and member messages here.
+
+    load(ctx) {
+        const { s, now, msg } = ctx;
+        const track = cleanTrack(msg.track);
+        if (!track) return false;
+        s.track = track;
+        s.trackKey++;
+        s.queue = cleanQueue(msg.queue);
+        s.timeline = { positionMs: nonNegInt(msg.positionMs) ?? 0, atRoomMs: now, playing: false };
+        s.phase = { kind: "preparing", trackKey: s.trackKey, deadlineMs: now + PREPARE_MS };
+        for (const m of connected(s)) m.status = "buffering";
+        s.rev++;
+        ctx.out.push({ to: "all", msg: {
+            t: "prepare", trackKey: s.trackKey, track, positionMs: s.timeline.positionMs, deadlineMs: s.phase.deadlineMs,
+        } });
+        ctx.out.push(membersMsg(s));
+        return true;
+    },
+
+    status(ctx) {
+        const { s, msg, event } = ctx;
+        const value = STATUSES[msg.status];
+        if (!value) return false;
+        // A report for an earlier song must not count toward this song's handshake.
+        if (msg.trackKey !== undefined && msg.trackKey !== s.trackKey) return false;
+        findConnected(s, event.from).status = value;
+        s.rev++;
+        ctx.out.push(membersMsg(s));
+        if (s.phase.kind === "preparing" && allSettled(s)) startPlayback(ctx);
+        return true;
+    },
 };

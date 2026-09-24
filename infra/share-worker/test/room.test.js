@@ -93,3 +93,48 @@ test("a closed socket leaves the member list; the last one out starts the 5 minu
     assert.equal(r.state.lastLeftAt, T0 + 30);
     assert.equal(r.alarmAt, T0 + 10 + 60_000, "the earliest timer is a's 60 s grace");
 });
+
+// ── Task 2: the ready handshake ───────────────────────────────────────────────
+
+const loaded = (s = party(), at = T0 + 100) => send(s, "h", { t: "load", track: TRACK, positionMs: 30_000, queue: [NEXT] }, at);
+const ready = (s, from, at = T0 + 200, trackKey = 1) => send(s, from, { t: "status", status: "ready", trackKey }, at);
+
+test("load broadcasts prepare with an 8 s deadline, marks everyone buffering and sets the alarm", () => {
+    const r = loaded();
+    const [prep] = sent(r, "prepare");
+    assert.equal(prep.to, "all");
+    assert.deepEqual(prep.msg, { t: "prepare", trackKey: 1, track: TRACK, positionMs: 30_000, deadlineMs: T0 + 100 + 8_000 });
+    assert.ok(r.state.members.every((m) => m.status === "buffering"));
+    assert.deepEqual(r.state.queue, [NEXT]);
+    assert.equal(r.alarmAt, T0 + 100 + 8_000);
+});
+
+test("when every connected phone is ready, playback starts 500 ms later for everyone", () => {
+    let s = loaded().state;
+    s = ready(s, "h").state;
+    s = ready(s, "a").state;
+    const r = ready(s, "b", T0 + 300);
+    const [tl] = sent(r, "timeline");
+    assert.deepEqual({ ...tl.msg, rev: 0 }, { t: "timeline", rev: 0, trackKey: 1, positionMs: 30_000, atRoomMs: T0 + 800, playing: true });
+    assert.equal(r.state.phase.kind, "playing");
+    assert.equal(r.state.members.find((m) => m.id === "b").status, "ok");
+});
+
+test("a ready for an earlier song doesn't count, and an unavailable phone isn't waited for", () => {
+    let s = loaded().state;
+    s = ready(s, "h").state;
+    s = ready(s, "a").state;
+    assert.equal(ready(s, "b", T0 + 300, 0).state, s, "stale trackKey ignored");
+    const r = send(s, "b", { t: "status", status: "unavailable", trackKey: 1 }, T0 + 300);
+    assert.equal(sent(r, "timeline").length, 1);
+});
+
+test("the deadline alarm starts playback without the slow phone", () => {
+    const s = ready(loaded().state, "h").state;
+    const early = step(s, { type: "alarm" }, T0 + 5_000);
+    assert.equal(early.state, s);
+    const r = step(s, { type: "alarm" }, T0 + 100 + 8_000);
+    const [tl] = sent(r, "timeline");
+    assert.equal(tl.msg.atRoomMs, T0 + 8_100 + 500);
+    assert.equal(tl.msg.playing, true);
+});
