@@ -187,6 +187,14 @@ interface MusicRepository {
     suspend fun ensureTrackPersisted(track: Track): Long
 
     /**
+     * Listen Together's exact persist (spec 2026-09-24 §4). Matches an existing row ONLY by YouTube
+     * id, then Spotify URI, then exact ISRC — never by fuzzy title and artist, which could pick the
+     * listener's own different edit and lose the host's ISRC. With no exact match, inserts a
+     * stream-only row carrying the descriptor's ISRC, Spotify and YouTube ids. Returns the row id.
+     */
+    suspend fun ensureExactTrackPersisted(track: com.stash.core.model.share.SharedTrack): Long
+
+    /**
      * Delete a track from the database and remove its audio file from disk.
      *
      * @param track The track to delete. Its [Track.filePath] is used to locate the file on disk.

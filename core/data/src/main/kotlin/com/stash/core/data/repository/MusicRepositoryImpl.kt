@@ -15,6 +15,7 @@ import com.stash.core.data.mapper.toEntity
 import com.stash.core.data.mix.LastFmRecommendationSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
+import com.stash.core.model.share.toTrack
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -488,6 +489,25 @@ class MusicRepositoryImpl @Inject constructor(
                 canonicalArtist = cArtist,
                 isStreamable = true,
             )
+        )
+    }
+
+    override suspend fun ensureExactTrackPersisted(track: com.stash.core.model.share.SharedTrack): Long {
+        val incoming = track.toTrack()
+        val existing = incoming.youtubeId?.takeIf { it.isNotBlank() }?.let { trackDao.findByYoutubeId(it) }
+            ?: incoming.spotifyUri?.let { trackDao.findBySpotifyUri(it) }
+            ?: incoming.isrc?.takeIf { it.isNotBlank() }?.let { trackDao.findByIsrc(it) }
+        if (existing != null) {
+            backfillFrom(existing, incoming) // an exact match is the same recording, so its ISRC is trusted
+            return existing.id
+        }
+        return trackDao.insert(
+            incoming.toEntity().copy(
+                id = 0L,
+                canonicalTitle = canonicalizeIdentity(incoming.title),
+                canonicalArtist = canonicalizeIdentity(incoming.artist),
+                isStreamable = true,
+            ),
         )
     }
 
