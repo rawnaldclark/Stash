@@ -44,7 +44,7 @@ The Worker is on the Workers Paid plan, which includes Durable Objects. The room
 
 | Route | Behaviour |
 |---|---|
-| `POST /v1/rooms` | Body: `{ hostName? }`. Creates a room with a random code of 6 base32 characters (no ambiguous characters, retries on collision) and a host key of 32 random bytes in base64url. The room stores only the SHA-256 of the key. Returns `{ code, hostKey, url }`. Rate-limited with the existing `CREATE_RL`. |
+| `POST /v1/rooms` | Body: `{ hostName? }`. Creates a room with a random code of 6 base32 characters (no ambiguous characters, retries on collision) and a host key of 32 random bytes in base64url. The room stores only the SHA-256 of the key. Returns `{ code, hostKey, url }`. Rate-limited by a new `ROOM_RL` binding (`[[ratelimits]]`, 5 per minute per IP), kept separate from the shared-mix `CREATE_RL` budget. |
 | `GET /v1/rooms/{code}` | A public preview for the Join screen: `{ hostName, memberCount, full, track? }`. Returns 404 if the room doesn't exist or has closed. |
 | `GET /v1/rooms/{code}/ws` | WebSocket upgrade. The first message must be `hello`. Returns 404 for a closed room and 409 when the room is full. |
 | `GET /l/{code}` | HTML preview page ("Join <host>'s session in Stash"), built the same way as `/m/{id}`, with "Open in Stash" and "Get Stash" buttons. |
