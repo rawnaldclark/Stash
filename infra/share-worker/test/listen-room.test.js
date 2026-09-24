@@ -114,3 +114,57 @@ test("the socket route refuses an upgrade once 20 sockets are open, resume or no
     const r = await room.fetch(new Request("https://room/ws?r=1", { headers: { Upgrade: "websocket" } }));
     assert.equal(r.status, 409);
 });
+
+test("an oversized frame closes with 1009 before it is parsed", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    const ws = fakeSocket();
+    ctx.acceptWebSocket(ws);
+    await room.webSocketMessage(ws, JSON.stringify({ t: "hello", name: "x".repeat(262_144) }));
+    assert.equal(ws.closeCode, 1009);
+    assert.equal(ws.sent.length, 0);
+    const bin = fakeSocket();
+    ctx.acceptWebSocket(bin);
+    await room.webSocketMessage(bin, new ArrayBuffer(262_145));
+    assert.equal(bin.closeCode, 1009);
+});
+
+test("a host key over 64 characters is never accepted, even when it is the right one", async () => {
+    const clock = { t: 1_000 };
+    const ctx = fakeCtx();
+    const room = new ListenRoom(ctx, {}, () => clock.t);
+    const longKey = "K".repeat(65);
+    await room.apply({ type: "create", code: "ABCDEF", hostName: "Rawn", keyHash: await sha256Hex(longKey) });
+    const ws = await connect(ctx, room, { hostKey: longKey });
+    const welcome = ws.sent.find((m) => m.t === "welcome");
+    assert.notEqual(welcome.state.host, welcome.memberId);
+});
+
+test("a full socket cap evicts unbound sockets idle over 10 s, then accepts", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    const saved = { Pair: globalThis.WebSocketPair, Response: globalThis.Response };
+    globalThis.WebSocketPair = function () { return [fakeSocket(), fakeSocket()]; };
+    globalThis.Response = function (body, init) { return { status: init.status }; };
+    try {
+        const upgrade = () => room.fetch(new Request("https://room/ws?r=1", { headers: { Upgrade: "websocket" } }));
+        for (let i = 0; i < 20; i++) assert.equal((await upgrade()).status, 101);
+        const idle = ctx.getWebSockets();
+        assert.equal((await upgrade()).status, 409, "fresh unbound sockets are not evicted");
+        clock.t += 11_000;
+        assert.equal((await upgrade()).status, 101);
+        assert.ok(idle.every((ws) => ws.closed), "the stale ones were closed");
+    } finally {
+        globalThis.WebSocketPair = saved.Pair;
+        globalThis.Response = saved.Response;
+    }
+});
+
+test("setAlarm is only written when the alarm time moves", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    await connect(ctx, room, { hostKey: "KEY" });
+    const writes = ctx.alarmWrites;
+    await connect(ctx, room, {}); // state changes, the 12 h expiry doesn't
+    assert.equal(ctx.alarmWrites, writes);
+});

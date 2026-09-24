@@ -9,6 +9,10 @@ import { sameHex, sha256Hex } from "./store.js";
 /** 32 symbols with no 0/O or 1/I, so `byte & 31` is unbiased and codes read aloud cleanly. */
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const MSG_PER_SECOND = 20;
+/** Largest frame read; anything bigger closes with 1009 before it is decoded or parsed. */
+export const MAX_FRAME = 262_144;
+/** A socket that hasn't said hello this long is fair game when the socket cap is reached. */
+const UNBOUND_IDLE_MS = 10_000;
 
 /** Room codes are 8 symbols (32^8 ≈ 10^12) so they can't be found by guessing; JOIN_RL caps the guessing too. */
 export function randomCode(length = 8) {
@@ -46,16 +50,24 @@ export class ListenRoom {
             // `r=1` = "I have a resume token": a returning member may rejoin a full room; hello checks the token.
             if (state.members.length >= MAX_MEMBERS && url.searchParams.get("r") !== "1") return new Response(null, { status: 409 });
             // Sockets that never send hello hold no member slot; this cap stops `?r=1` ones piling up.
-            if (this.ctx.getWebSockets().length >= MAX_MEMBERS * 2) return new Response(null, { status: 409 });
+            if (this.ctx.getWebSockets().length >= MAX_MEMBERS * 2) {
+                this.evictIdleUnbound();
+                if (this.ctx.getWebSockets().length >= MAX_MEMBERS * 2) return new Response(null, { status: 409 });
+            }
             const pair = new WebSocketPair();
             this.ctx.acceptWebSocket(pair[1]);
+            pair[1].serializeAttachment({ memberId: null, at: this.now() });
             return new Response(null, { status: 101, webSocket: pair[0] });
         }
         return new Response(null, { status: 404 });
     }
 
     async webSocketMessage(ws, data) {
-        if (this.overLimit(ws)) { ws.close(1008, "too many messages"); return; }
+        if (this.overLimit(ws)) { try { ws.close(1008, "too many messages"); } catch { /* gone */ } return; }
+        if ((typeof data === "string" ? data.length : data.byteLength) > MAX_FRAME) {
+            try { ws.close(1009, "too big"); } catch { /* gone */ }
+            return;
+        }
         let msg;
         try { msg = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)); } catch { return; }
         if (!msg || typeof msg !== "object" || typeof msg.t !== "string") return;
@@ -63,7 +75,7 @@ export class ListenRoom {
         if (!from) {
             if (msg.t !== "hello") return; // the first message must be hello (spec §2)
             const state = (await this.ctx.storage.get("room")) ?? null;
-            const hostKeyOk = !!state && typeof msg.hostKey === "string" && sameHex(await sha256Hex(msg.hostKey), state.keyHash);
+            const hostKeyOk = !!state && typeof msg.hostKey === "string" && msg.hostKey.length <= 64 && sameHex(await sha256Hex(msg.hostKey), state.keyHash);
             const r = await this.apply(
                 { type: "hello", msg, hostKeyOk, newId: randomCode(8), newToken: base64url(crypto.getRandomValues(new Uint8Array(16))) },
                 (r) => { if (r.bind) this.bind(ws, r.bind); },
@@ -87,6 +99,7 @@ export class ListenRoom {
     }
 
     async alarm() {
+        this.alarmAt = undefined; // the alarm that just fired is consumed, so the next apply sets it again
         await this.apply({ type: "alarm" });
     }
 
@@ -94,11 +107,20 @@ export class ListenRoom {
     bind(ws, memberId) {
         for (const other of this.ctx.getWebSockets()) {
             if (other !== ws && memberOf(other) === memberId) {
-                other.serializeAttachment({ memberId: null });
+                other.serializeAttachment({ memberId: null, at: 0 });
                 try { other.close(1000, "replaced"); } catch { /* gone */ }
             }
         }
-        ws.serializeAttachment({ memberId });
+        ws.serializeAttachment({ memberId, at: this.now() });
+    }
+
+    /** Closes sockets that never said hello within UNBOUND_IDLE_MS, freeing the socket cap. */
+    evictIdleUnbound() {
+        const now = this.now();
+        for (const ws of this.ctx.getWebSockets()) {
+            const a = ws.deserializeAttachment();
+            if (a && a.memberId == null && now - a.at > UNBOUND_IDLE_MS) { try { ws.close(4408, "no hello"); } catch { /* gone */ } }
+        }
     }
 
     overLimit(ws) {
@@ -116,12 +138,18 @@ export class ListenRoom {
         if (r.closed) {
             for (const ws of this.ctx.getWebSockets()) { try { ws.close(4000, "ended"); } catch { /* gone */ } }
             await this.ctx.storage.deleteAlarm();
+            this.alarmAt = null;
             await this.ctx.storage.deleteAll();
             return r;
         }
         if (r.state && r.state !== state) await this.ctx.storage.put("room", r.state);
-        // Alarms are one-shot: re-arm after every alarm, even one that changed nothing, or an idle room never closes.
-        if (r.state && (r.state !== state || event.type === "alarm")) await this.ctx.storage.setAlarm(r.alarmAt);
+        // Write the alarm only when it moves. alarm() clears alarmAt first (alarms are one-shot), so an alarm
+        // that changed nothing still re-arms, or an idle room would never close.
+        // ponytail: alarmAt lives in memory; after hibernation the first apply rewrites it once.
+        if (r.state && r.alarmAt !== this.alarmAt) {
+            await this.ctx.storage.setAlarm(r.alarmAt);
+            this.alarmAt = r.alarmAt;
+        }
         return r;
     }
 

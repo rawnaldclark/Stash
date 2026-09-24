@@ -8,11 +8,12 @@ export function fakeCtx() {
         store,
         sockets,
         alarm: null,
+        alarmWrites: 0,
         storage: {
             async get(key) { return store.has(key) ? structuredClone(store.get(key)) : undefined; },
             async put(key, value) { store.set(key, structuredClone(value)); },
             async deleteAll() { store.clear(); },
-            async setAlarm(at) { ctx.alarm = at; },
+            async setAlarm(at) { ctx.alarm = at; ctx.alarmWrites++; },
             async deleteAlarm() { ctx.alarm = null; },
         },
         acceptWebSocket(ws) { sockets.push(ws); },

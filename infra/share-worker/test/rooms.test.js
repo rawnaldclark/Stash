@@ -82,3 +82,18 @@ test("looking a room up has its own rate limit, checked before any room is touch
     assert.match(page.headers.get("content-type"), /^text\/html/);
     assert.deepEqual(touched, [], "no Durable Object was reached");
 });
+
+test("a hand-typed lowercase code finds the room", async () => {
+    const e = env();
+    const { code } = await (await create(e)).json();
+    assert.equal((await handle(new Request(`${BASE}/v1/rooms/${code.toLowerCase()}`), e)).status, 200);
+    assert.equal((await handle(new Request(`${BASE}/l/${code.toLowerCase()}`), e)).status, 200);
+});
+
+test("a socket request without an upgrade is 426 before any room is touched", async () => {
+    const e = env();
+    const touched = [];
+    e.ROOMS.get = (id) => { touched.push(id); return {}; };
+    assert.equal((await handle(new Request(`${BASE}/v1/rooms/K7QA2PXM/ws`), e)).status, 426);
+    assert.deepEqual(touched, []);
+});

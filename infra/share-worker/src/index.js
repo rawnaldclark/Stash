@@ -15,6 +15,8 @@ const MIX_API = /^\/v1\/mixes\/([A-Za-z0-9]{8})(\/version)?$/;
 /** Room codes: 8 of the 32 unambiguous symbols in listen-room.js (no 0/O, 1/I). */
 const ROOM_API = /^\/v1\/rooms\/([A-HJ-NP-Z2-9]{8})(\/ws)?$/;
 const ROOM_PAGE = /^\/l\/([A-HJ-NP-Z2-9]{8})$/;
+/** Uppercases the code segment only, so hand-typed lowercase links work and `/ws` stays as is. */
+const upperCode = (path) => path.replace(/^(\/v1\/rooms\/|\/l\/)([^/]+)/, (_, head, code) => head + code.toUpperCase());
 
 export default {
     /** Any throw (a KV write 429, freeId giving up) becomes a retryable 503, not a bare 500. */
@@ -44,9 +46,10 @@ export async function handle(request, env) {
         return methodNotAllowed();
     }
     if (path === "/v1/rooms") return method === "POST" ? createRoom(request, env, url) : methodNotAllowed();
-    const room = ROOM_API.exec(path);
+    const room = ROOM_API.exec(upperCode(path));
     if (room) {
         if (method !== "GET") return methodNotAllowed();
+        if (room[2] && request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response(null, { status: 426 });
         // Before the Durable Object: a code-guessing walk never wakes a room (spec §2).
         if (!(await joinAllowed(request, env))) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
         const stub = env.ROOMS.get(env.ROOMS.idFromName(room[1]));
@@ -63,7 +66,7 @@ export async function handle(request, env) {
         if (record.deleted) return html(messagePage("No longer shared", "This mix is no longer shared."), 410);
         return html(mixPage(record.doc, url.href));
     }
-    const invite = ROOM_PAGE.exec(path);
+    const invite = ROOM_PAGE.exec(upperCode(path));
     if (method === "GET" && invite) {
         if (!(await joinAllowed(request, env))) return html(messagePage("Slow down", "Too many requests. Try again in a minute."), 429);
         const pv = await roomPreview(env.ROOMS.get(env.ROOMS.idFromName(invite[1])));
