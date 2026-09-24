@@ -1,3 +1,5 @@
+import { roomsNamespace } from "./fake-room.js";
+
 /** Just enough of Workers KV for src/store.js: get(key, "json"), put(key, value, opts), delete(key). */
 export function fakeKV() {
     const map = new Map();
@@ -17,6 +19,9 @@ export function env(over = {}) {
         SHARE_KV: fakeKV(),
         CREATE_RL: { limit: async () => ({ success: true }) },
         WRITE_RL: { limit: async () => ({ success: true }) },
+        ROOM_RL: { limit: async () => ({ success: true }) },
+        JOIN_RL: { limit: async () => ({ success: true }) },
+        ROOMS: roomsNamespace(),
         ...over,
     };
 }

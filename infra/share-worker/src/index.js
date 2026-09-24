@@ -5,9 +5,16 @@
  */
 import { cleanDoc, validateDoc, validEditKey, MAX_BODY_BYTES } from "./validate.js";
 import { freeId, readMix, sameHex, sha256Hex, writeMix, writeTombstone } from "./store.js";
-import { assetLinks, messagePage, mixPage, trackPage } from "./pages.js";
+import { assetLinks, messagePage, mixPage, roomPage, trackPage } from "./pages.js";
+import { base64url, randomCode } from "./listen-room.js";
+
+export { ListenRoom } from "./listen-room.js";
 
 const MIX_API = /^\/v1\/mixes\/([A-Za-z0-9]{8})(\/version)?$/;
+
+/** Room codes: 8 of the 32 unambiguous symbols in listen-room.js (no 0/O, 1/I). */
+const ROOM_API = /^\/v1\/rooms\/([A-HJ-NP-Z2-9]{8})(\/ws)?$/;
+const ROOM_PAGE = /^\/l\/([A-HJ-NP-Z2-9]{8})$/;
 
 export default {
     /** Any throw (a KV write 429, freeId giving up) becomes a retryable 503, not a bare 500. */
@@ -36,6 +43,17 @@ export async function handle(request, env) {
         if (method === "DELETE") return deleteMix(request, env, id);
         return methodNotAllowed();
     }
+    if (path === "/v1/rooms") return method === "POST" ? createRoom(request, env, url) : methodNotAllowed();
+    const room = ROOM_API.exec(path);
+    if (room) {
+        if (method !== "GET") return methodNotAllowed();
+        // Before the Durable Object: a code-guessing walk never wakes a room (spec §2).
+        if (!(await joinAllowed(request, env))) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+        const stub = env.ROOMS.get(env.ROOMS.idFromName(room[1]));
+        if (room[2]) return stub.fetch(new Request(`https://room/ws${url.search}`, request));
+        const pv = await roomPreview(stub);
+        return pv ? json(pv, 200, { "cache-control": "no-store" }) : json({ error: "not_found" }, 404);
+    }
     if (method === "GET" && path === "/.well-known/assetlinks.json") return json(assetLinks(), 200, { "cache-control": "public, max-age=3600" });
     if (method === "GET" && path === "/t") return html(trackPage(url.searchParams, url.href));
     const page = /^\/m\/([A-Za-z0-9]{8})$/.exec(path);
@@ -44,6 +62,12 @@ export async function handle(request, env) {
         if (record === null) return html(messagePage("Mix not found", "This link doesn't point to a mix."), 404);
         if (record.deleted) return html(messagePage("No longer shared", "This mix is no longer shared."), 410);
         return html(mixPage(record.doc, url.href));
+    }
+    const invite = ROOM_PAGE.exec(path);
+    if (method === "GET" && invite) {
+        if (!(await joinAllowed(request, env))) return html(messagePage("Slow down", "Too many requests. Try again in a minute."), 429);
+        const pv = await roomPreview(env.ROOMS.get(env.ROOMS.idFromName(invite[1])));
+        return pv ? html(roomPage(pv, url.href)) : html(messagePage("Session ended", "This listening session has ended."), 404);
     }
     return json({ error: "not_found" }, 404);
 }
@@ -141,4 +165,29 @@ async function deleteMix(request, env, id) {
     if (!(await authorised(request, record))) return json({ error: "forbidden" }, 403);
     await writeTombstone(env.SHARE_KV, id);
     return new Response(null, { status: 204 });
+}
+
+/** JOIN_RL: 60 room lookups (preview, socket, invite page) a minute per IP, so live codes can't be found by walking. */
+const joinAllowed = async (request, env) => (await env.JOIN_RL.limit({ key: ip(request) })).success;
+
+async function roomPreview(stub) {
+    const r = await stub.fetch(new Request("https://room/preview"));
+    return r.status === 200 ? r.json() : null;
+}
+
+/** POST /v1/rooms (spec 2026-09-24 §2): a fresh room, its code and the host key (only its SHA-256 is kept). */
+async function createRoom(request, env, url) {
+    if (!(await env.ROOM_RL.limit({ key: ip(request) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+    const { body, tooBig } = await readBody(request);
+    if (tooBig) return json({ error: "too_large" }, 413);
+    const hostName = typeof body?.hostName === "string" ? body.hostName.trim().slice(0, 40) || undefined : undefined;
+    const hostKey = base64url(crypto.getRandomValues(new Uint8Array(32)));
+    const keyHash = await sha256Hex(hostKey);
+    for (let i = 0; i < 5; i++) {
+        const code = randomCode();
+        const stub = env.ROOMS.get(env.ROOMS.idFromName(code));
+        const r = await stub.fetch(new Request("https://room/init", { method: "POST", body: JSON.stringify({ code, hostName, keyHash }) }));
+        if (r.status === 201) return json({ code, hostKey, url: `${url.origin}/l/${code}` }, 201);
+    }
+    return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
 }
