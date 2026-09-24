@@ -138,3 +138,36 @@ test("the deadline alarm starts playback without the slow phone", () => {
     assert.equal(tl.msg.atRoomMs, T0 + 8_100 + 500);
     assert.equal(tl.msg.playing, true);
 });
+
+// ── Task 3: play, pause, seek ─────────────────────────────────────────────────
+
+/** Loaded, everyone ready at T0 + 300: playing from 30 s in since T0 + 800. */
+function playing() {
+    let s = loaded().state;
+    for (const id of ["h", "a", "b"]) s = ready(s, id, T0 + 300).state;
+    return s;
+}
+
+test("pause freezes the position the song has reached", () => {
+    const r = send(playing(), "h", { t: "pause" }, T0 + 10_800);
+    assert.deepEqual(r.state.timeline, { positionMs: 40_000, atRoomMs: T0 + 10_800, playing: false });
+    assert.equal(sent(r, "timeline")[0].msg.playing, false);
+});
+
+test("play and a seek while playing start 400 ms ahead so nobody arrives late", () => {
+    const s = send(playing(), "h", { t: "pause" }, T0 + 10_800).state;
+    let r = send(s, "h", { t: "play" }, T0 + 20_000);
+    assert.deepEqual(r.state.timeline, { positionMs: 40_000, atRoomMs: T0 + 20_400, playing: true });
+    r = send(r.state, "h", { t: "seek", positionMs: 90_000 }, T0 + 30_000);
+    assert.deepEqual(r.state.timeline, { positionMs: 90_000, atRoomMs: T0 + 30_400, playing: true });
+});
+
+test("a seek while paused only moves the position; transport during the handshake is ignored", () => {
+    const paused = send(playing(), "h", { t: "pause" }, T0 + 10_800).state;
+    const r = send(paused, "h", { t: "seek", positionMs: 5_000 }, T0 + 11_000);
+    assert.deepEqual(r.state.timeline, { positionMs: 5_000, atRoomMs: T0 + 11_000, playing: false });
+    const preparing = loaded().state;
+    assert.equal(send(preparing, "h", { t: "play" }).state, preparing);
+    assert.equal(send(preparing, "h", { t: "seek", positionMs: 1 }).state, preparing);
+    assert.equal(send(playing(), "h", { t: "seek", positionMs: -5 }).out.length, 0);
+});

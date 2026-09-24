@@ -227,4 +227,29 @@ const MESSAGES = {
         if (s.phase.kind === "preparing" && allSettled(s)) startPlayback(ctx);
         return true;
     },
+
+    // ponytail: play/pause/seek during the ≤8 s ready handshake are dropped; the handshake starts playback anyway.
+    play(ctx) {
+        const { s, now } = ctx;
+        if (s.phase.kind !== "playing" || s.timeline.playing || !s.track) return false;
+        setTimeline(ctx, { positionMs: s.timeline.positionMs, atRoomMs: now + COMMAND_LEAD_MS, playing: true });
+        return true;
+    },
+
+    pause(ctx) {
+        const { s, now } = ctx;
+        if (s.phase.kind !== "playing" || !s.timeline.playing) return false;
+        setTimeline(ctx, { positionMs: positionAt(s.timeline, now), atRoomMs: now, playing: false });
+        return true;
+    },
+
+    seek(ctx) {
+        const { s, now, msg } = ctx;
+        const positionMs = nonNegInt(msg.positionMs);
+        if (s.phase.kind !== "playing" || positionMs === null || !s.track) return false;
+        setTimeline(ctx, s.timeline.playing
+            ? { positionMs, atRoomMs: now + COMMAND_LEAD_MS, playing: true }
+            : { positionMs, atRoomMs: now, playing: false });
+        return true;
+    },
 };
