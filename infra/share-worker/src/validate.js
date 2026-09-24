@@ -67,6 +67,8 @@ export const validEditKey = (k) => typeof k === "string" && /^[A-Za-z0-9_-]{43}$
 export function cleanTrack(t) {
     if (!t || typeof t !== "object" || !str(t.t, 1, 500) || !str(t.a, 1, 500)) return null;
     if (!optStr(t.al, 500) || !optStr(t.isrc, 20) || !optStr(t.sp, 40) || !optStr(t.yt, 20)) return null;
-    if (t.d !== undefined && t.d !== null && !(Number.isInteger(t.d) && t.d > 0)) return null;
-    return pick(t, ["t", "a", "al", "d", "isrc", "sp", "yt"]);
+    const clean = pick(t, ["t", "a", "al", "d", "isrc", "sp", "yt"]);
+    // A duration outside 1 ms..24 h is dropped, not fatal: positions are clamped to it.
+    if (!(Number.isSafeInteger(clean.d) && clean.d >= 1 && clean.d <= 86_400_000)) delete clean.d;
+    return clean;
 }

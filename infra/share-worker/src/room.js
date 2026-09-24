@@ -23,6 +23,9 @@ export const HANDOVER_MS = 60_000;
 export const EMPTY_CLOSE_MS = 5 * 60_000;
 export const MAX_AGE_MS = 12 * 60 * 60_000;
 export const MAX_PENDING_SUGGESTIONS = 3;
+export const MAX_SUGGESTIONS = 20;
+/** Longest position accepted for a song without a known duration. */
+export const MAX_POSITION_MS = 86_400_000;
 export const MAX_QUEUE = 200;
 export const REACT_GAP_MS = 1_000;
 /** The six reactions. Keep in sync with RoomProtocol.EMOJI in core/model. */
@@ -33,7 +36,9 @@ const HOST_ONLY = new Set(["load", "play", "pause", "seek", "queue", "suggestion
 const STATUSES = { ready: "ok", buffering: "buffering", unavailable: "unavailable", drifting: "drifting" };
 
 const cleanName = (n) => (typeof n === "string" && n.trim() ? n.trim().slice(0, 40) : null);
-const nonNegInt = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
+/** A client position as a safe non-negative integer, clamped to the song (or 24 h); null when unusable. */
+const cleanPosition = (v, track) =>
+    (Number.isSafeInteger(v) && v >= 0 ? Math.min(v, track?.d ?? MAX_POSITION_MS) : null);
 const connected = (s) => s.members.filter((m) => m.leftAt === null);
 const findConnected = (s, id) => s.members.find((m) => m.id === id && m.leftAt === null);
 const cleanQueue = (q) => (Array.isArray(q) ? q.map(cleanTrack).filter(Boolean).slice(0, MAX_QUEUE) : []);
@@ -49,7 +54,7 @@ export function createRoom({ code, hostName, keyHash }, now) {
         rev: 0, host: null, track: null, trackKey: 0,
         timeline: { positionMs: 0, atRoomMs: now, playing: false },
         queue: [], members: [], suggestions: [], phase: { kind: "playing" },
-        reactAt: {}, lastLeftAt: now,
+        reactAt: {}, lastLeftAt: now, hostless: false,
     };
 }
 
@@ -141,9 +146,14 @@ const EVENTS = {
         } else {
             m.leftAt = null;
             if (name) m.name = name;
+            // Back mid-handshake: its old "ok" was for another song, so wait for this one.
+            if (s.phase.kind === "preparing") m.status = "buffering";
         }
         // The host key proves only the original host, and only while nobody holds the room (spec §2).
         if (event.hostKeyOk && s.host === null) s.host = m.id;
+        // A room whose host lapsed with nobody around goes to the longest-joined member back.
+        if (s.host === null && s.hostless) s.host = connected(s).sort((a, b) => a.joinedAt - b.joinedAt)[0].id;
+        if (s.host !== null) s.hostless = false;
         s.rev++;
         ctx.bind = m.id;
         ctx.out.push({ to: m.id, msg: { t: "welcome", memberId: m.id, token: m.token, state: publicState(s) } });
@@ -174,15 +184,21 @@ const EVENTS = {
         let changed = false;
         const expired = s.members.filter((m) => m.leftAt !== null && now >= m.leftAt + HANDOVER_MS);
         if (expired.length) {
-            s.members = s.members.filter((m) => !expired.includes(m));
+            const gone = new Set(expired.map((m) => m.id));
+            s.members = s.members.filter((m) => !gone.has(m.id));
+            const pending = s.suggestions.length;
+            s.suggestions = s.suggestions.filter((x) => !gone.has(x.from));
+            for (const id of gone) delete s.reactAt[id];
             s.rev++;
-            if (expired.some((m) => m.id === s.host)) {
+            if (gone.has(s.host)) {
                 // Host gone for 60 s: the longest-joined connected member takes over (spec §2).
                 const heir = connected(s).sort((a, b) => a.joinedAt - b.joinedAt)[0];
                 s.host = heir ? heir.id : null;
+                s.hostless = !heir;
                 ctx.out.push(stateMsg(s));
             } else {
                 ctx.out.push(membersMsg(s));
+                if (s.suggestions.length !== pending) ctx.out.push(suggestionsMsg(s));
             }
             changed = true;
         }
@@ -195,8 +211,6 @@ const EVENTS = {
 };
 
 const MESSAGES = {
-    // Tasks 2–5 add the host and member messages here.
-
     load(ctx) {
         const { s, now, msg } = ctx;
         const track = cleanTrack(msg.track);
@@ -204,7 +218,7 @@ const MESSAGES = {
         s.track = track;
         s.trackKey++;
         s.queue = cleanQueue(msg.queue);
-        s.timeline = { positionMs: nonNegInt(msg.positionMs) ?? 0, atRoomMs: now, playing: false };
+        s.timeline = { positionMs: cleanPosition(msg.positionMs, track) ?? 0, atRoomMs: now, playing: false };
         s.phase = { kind: "preparing", trackKey: s.trackKey, deadlineMs: now + PREPARE_MS };
         for (const m of connected(s)) m.status = "buffering";
         s.rev++;
@@ -217,7 +231,7 @@ const MESSAGES = {
 
     status(ctx) {
         const { s, msg, event } = ctx;
-        const value = STATUSES[msg.status];
+        const value = Object.hasOwn(STATUSES, msg.status) ? STATUSES[msg.status] : null;
         if (!value) return false;
         // A report for an earlier song must not count toward this song's handshake.
         if (msg.trackKey !== undefined && msg.trackKey !== s.trackKey) return false;
@@ -245,7 +259,7 @@ const MESSAGES = {
 
     seek(ctx) {
         const { s, now, msg } = ctx;
-        const positionMs = nonNegInt(msg.positionMs);
+        const positionMs = cleanPosition(msg.positionMs, s.track);
         if (s.phase.kind !== "playing" || positionMs === null || !s.track) return false;
         setTimeline(ctx, s.timeline.playing
             ? { positionMs, atRoomMs: now + COMMAND_LEAD_MS, playing: true }
@@ -254,6 +268,7 @@ const MESSAGES = {
     },
 
     queue(ctx) {
+        if (!Array.isArray(ctx.msg.queue)) return false;
         ctx.s.queue = cleanQueue(ctx.msg.queue);
         ctx.s.rev++;
         return true;
@@ -262,7 +277,7 @@ const MESSAGES = {
     suggest(ctx) {
         const { s, msg, event } = ctx;
         const track = cleanTrack(msg.track);
-        if (!track || !event.newId || s.host === event.from) return false;
+        if (!track || !event.newId || s.host === event.from || s.suggestions.length >= MAX_SUGGESTIONS) return false;
         if (s.suggestions.filter((x) => x.from === event.from).length >= MAX_PENDING_SUGGESTIONS) return false;
         s.suggestions.push({ id: event.newId, from: event.from, track });
         s.rev++;

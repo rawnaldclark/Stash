@@ -254,3 +254,112 @@ test("the alarm is always the earliest pending timer", () => {
     const s = step(loaded().state, { type: "close", from: "a" }, T0 + 150).state;
     assert.equal(step(s, { type: "msg", from: "b", msg: { t: "ping", c: 1 } }, T0 + 160).alarmAt, T0 + 100 + 8_000);
 });
+
+// ── Hardening (review fixes) ──────────────────────────────────────────────────
+
+test("prototype keys in status and emoji change nothing and never throw", () => {
+    const s = loaded().state;
+    for (const status of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+        const r = send(s, "a", { t: "status", status, trackKey: 1 });
+        assert.equal(r.state, s, status);
+        assert.doesNotThrow(() => send(r.state, "a", { t: "ping", c: 1 }));
+        assert.doesNotThrow(() => structuredClone(r.state));
+    }
+    for (const emoji of ["constructor", "__proto__", "toString"]) {
+        assert.equal(send(s, "a", { t: "react", emoji }).state, s, emoji);
+    }
+});
+
+test("pruned members take their suggestions and reaction clocks with them; the room holds at most 20", () => {
+    let s = party();
+    let at = T0;
+    for (let i = 0; i < 50; i++) {
+        const id = `x${i}`;
+        s = hello(s, id, { at }).state;
+        for (let k = 0; k < 3; k++) s = send(s, id, { t: "suggest", track: { t: `S${i}-${k}`, a: "A" } }, at, { newId: `${id}-${k}` }).state;
+        s = send(s, id, { t: "react", emoji: EMOJI[0] }, at).state;
+        s = step(s, { type: "close", from: id }, at).state;
+        at += 60_000;
+        s = step(s, { type: "alarm" }, at).state;
+        assert.ok(s.suggestions.length <= 20);
+        assert.equal(s.reactAt[id], undefined);
+    }
+    assert.equal(s.suggestions.length, 0);
+    // Seven listeners at three each would be 21: the 21st is ignored.
+    s = party();
+    for (let i = 0; i < 7; i++) {
+        s = hello(s, `y${i}`).state;
+        for (let k = 0; k < 3; k++) s = send(s, `y${i}`, { t: "suggest", track: NEXT }, T0, { newId: `y${i}-${k}` }).state;
+    }
+    assert.equal(s.suggestions.length, 20);
+});
+
+test("positions are bounded: absurd seeks are refused, huge loads clamp to the song or 24 h", () => {
+    const p = playing();
+    assert.equal(send(p, "h", { t: "seek", positionMs: 1e300 }).state, p);
+    assert.equal(send(p, "h", { t: "seek", positionMs: 1.5 }).state, p);
+    assert.equal(send(p, "h", { t: "seek", positionMs: 999_999_999 }, T0 + 20_000).state.timeline.positionMs, TRACK.d);
+    assert.equal(loaded(party(), T0).state.timeline.positionMs, 30_000);
+    const big = send(party(), "h", { t: "load", track: TRACK, positionMs: 1e12, queue: [] });
+    assert.equal(big.state.timeline.positionMs, TRACK.d);
+    const noD = send(party(), "h", { t: "load", track: NEXT, positionMs: 1e12, queue: [] });
+    assert.equal(noD.state.timeline.positionMs, 86_400_000);
+    const badD = send(party(), "h", { t: "load", track: { ...NEXT, d: 1e300 }, positionMs: 0, queue: [] });
+    assert.deepEqual(badD.state.track, NEXT, "an out-of-range duration is dropped, the song kept");
+    assert.equal(send(party(), "h", { t: "load", track: { ...NEXT, d: 0 } }).state.track.d, undefined);
+});
+
+test("a member who rejoins during the handshake is waited for", () => {
+    // b was ready for the last song (status ok) when it dropped; the host loads the next one.
+    let s = step(playing(), { type: "close", from: "b" }, T0 + 1_000).state;
+    s = loaded(s, T0 + 2_000).state;
+    s = ready(s, "h", T0 + 2_100, 2).state;
+    s = hello(s, "b2", { resumeToken: "tok-b", at: T0 + 2_200 }).state;
+    assert.equal(s.members.find((m) => m.id === "b").status, "buffering");
+    const r = ready(s, "a", T0 + 2_300, 2);
+    assert.equal(r.state.phase.kind, "preparing", "still waiting for b");
+    assert.equal(sent(ready(r.state, "b", T0 + 2_400, 2), "timeline").length, 1);
+});
+
+test("a member leaving during the handshake lets it start", () => {
+    let s = loaded().state;
+    s = ready(s, "h").state;
+    s = ready(s, "a").state;
+    const r = step(s, { type: "close", from: "b" }, T0 + 300);
+    assert.equal(r.state.phase.kind, "playing");
+    assert.equal(sent(r, "timeline")[0].msg.playing, true);
+});
+
+test("a room left hostless gives the host to the first member back", () => {
+    let s = party();
+    for (const id of ["h", "a", "b"]) s = step(s, { type: "close", from: id }, T0 + 1_000).state;
+    s = step(s, { type: "alarm" }, T0 + 61_000).state;
+    assert.equal(s.host, null);
+    const r = hello(s, "n", { at: T0 + 62_000 });
+    assert.equal(r.state.host, "n");
+    assert.equal(sent(r, "welcome")[0].msg.state.host, "n");
+});
+
+test("a queue message without an array changes nothing", () => {
+    const s = loaded().state;
+    assert.equal(send(s, "h", { t: "queue" }).state, s);
+    assert.equal(send(s, "h", { t: "queue", queue: "x" }).state, s);
+});
+
+test("listeners can't makeHost, end or answer suggestions", () => {
+    const s = send(party(), "a", { t: "suggest", track: NEXT }, T0, { newId: "s1" }).state;
+    assert.equal(send(s, "a", { t: "makeHost", memberId: "a" }).state, s);
+    const e = send(s, "b", { t: "end" });
+    assert.equal(e.state, s);
+    assert.notEqual(e.closed, true);
+    assert.equal(send(s, "b", { t: "suggestion", id: "s1", action: "add" }).state, s);
+});
+
+test("a ping with a non-numeric clock is ignored safely", () => {
+    const s = party();
+    for (const c of ["42", null, {}, NaN, Infinity, undefined]) {
+        const r = send(s, "a", { t: "ping", c });
+        assert.equal(r.state, s);
+        assert.equal(r.out.length, 0);
+    }
+});
