@@ -4197,6 +4197,7 @@ class ListenTogetherSession(
                 delay(DRIFT_TICK_MS)
                 val t = timeline ?: return@launch
                 if (!t.playing || t.trackKey != readyKey) return@launch
+                if (clock() < seekHoldUntil) continue // let a seek finish rebuffering before judging drift again
                 val roomNow = clockSync.roomNow(clock()) ?: continue
                 val expected = t.positionMs + (roomNow - t.atRoomMs)
                 val duration = player.durationMs
@@ -4205,12 +4206,20 @@ class ListenTogetherSession(
                 when (val action = result.action) {
                     DriftAction.None -> Unit
                     is DriftAction.Speed -> player.setSpeed(action.speed)
-                    DriftAction.Seek -> player.seekTo(expected)
+                    DriftAction.Seek -> {
+                        // A seek ends any speed nudge: without this the player stays at e.g. 0.97x and oscillates.
+                        player.setSpeed(1f)
+                        player.seekTo(expected)
+                        seekHoldUntil = clock() + SEEK_HOLD_MS
+                    }
                 }
                 if (result.drifting) report(DRIFTING) else if (lastStatus == DRIFTING) report(READY)
             }
         }
     }
+
+    /** Review fix (Tasks 9–11 review): after a drift seek, skip drift ticks for [SEEK_HOLD_MS] while the player rebuffers. */
+    private var seekHoldUntil = 0L
 
     private fun stopDrift() {
         driftJob?.cancel()
@@ -4389,6 +4398,7 @@ class ListenTogetherSession(
         const val MAX_HISTORY = 50
         const val JOIN_LEAD_MS = 1_000L
         const val DRIFT_TICK_MS = 1_000L
+        const val SEEK_HOLD_MS = 2_000L
         const val FIRST_PINGS = 5
         const val FIRST_PING_GAP_MS = 200L
         const val PING_EVERY_MS = 30_000L
