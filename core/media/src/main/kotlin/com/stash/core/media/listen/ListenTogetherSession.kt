@@ -62,6 +62,8 @@ class ListenTogetherSession(
      * was down. Built on the flush, so the first Load reads where the song is then, not before the handshake.
      */
     private var pendingLoad: (() -> ClientMessage.Load)? = null
+    /** [clock] when this session began: pings carry time since then, never device uptime. */
+    private var sessionStartClock = 0L
 
     private val clockSync = ClockSync()
     private val drift = DriftController()
@@ -141,6 +143,7 @@ class ListenTogetherSession(
         this.code = code
         this.url = url
         isHost = asHost
+        sessionStartClock = clock()
         controller.setActive(true) // gates PlayerRepositoryImpl's saves before anything moves
         player.saveUserPosition()
         player.events = playerEvents
@@ -195,7 +198,7 @@ class ListenTogetherSession(
             is ServerMessage.StateSync -> applyState(m.state)
             is ServerMessage.Pong -> {
                 val first = clockSync.offsetMs == null
-                clockSync.onPong(m.c, m.r, receivedAt)
+                clockSync.onPong(m.c + sessionStartClock, m.r, receivedAt) // back on the local clock, like receivedAt
                 if (first) applyTimeline()
             }
             is ServerMessage.TimelineUpdate -> onTimeline(m)
@@ -409,10 +412,12 @@ class ListenTogetherSession(
     private fun startPings() {
         pingJob?.cancel()
         pingJob = sessionScope?.launch {
-            repeat(FIRST_PINGS) { send(ClientMessage.Ping(clock())); delay(FIRST_PING_GAP_MS) }
-            while (true) { delay(PING_EVERY_MS); send(ClientMessage.Ping(clock())) }
+            repeat(FIRST_PINGS) { send(ping()); delay(FIRST_PING_GAP_MS) }
+            while (true) { delay(PING_EVERY_MS); send(ping()) }
         }
     }
+
+    private fun ping() = ClientMessage.Ping(clock() - sessionStartClock)
 
     private fun report(status: String, force: Boolean = false) {
         if (!force && status == lastStatus) return

@@ -235,7 +235,9 @@ const MESSAGES = {
         if (!value) return false;
         // A report for an earlier song must not count toward this song's handshake.
         if (msg.trackKey !== undefined && msg.trackKey !== s.trackKey) return false;
-        findConnected(s, event.from).status = value;
+        const member = findConnected(s, event.from);
+        if (member.status === value) return false; // a repeat (e.g. ready after a reconnect): no write, no broadcast
+        member.status = value;
         s.rev++;
         ctx.out.push(membersMsg(s));
         if (s.phase.kind === "preparing" && allSettled(s)) startPlayback(ctx);

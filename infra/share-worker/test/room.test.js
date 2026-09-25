@@ -129,6 +129,13 @@ test("a ready for an earlier song doesn't count, and an unavailable phone isn't 
     assert.equal(sent(r, "timeline").length, 1);
 });
 
+test("a status that changes nothing writes nothing and broadcasts nothing", () => {
+    const s = ready(loaded().state, "h").state;
+    const again = ready(s, "h", T0 + 300);
+    assert.equal(again.state, s);
+    assert.deepEqual(again.out, []);
+});
+
 test("the deadline alarm starts playback without the slow phone", () => {
     const s = ready(loaded().state, "h").state;
     const early = step(s, { type: "alarm" }, T0 + 5_000);

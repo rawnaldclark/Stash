@@ -738,4 +738,20 @@ class ListenTogetherSessionTest {
         advanceTimeBy(5_000); runCurrent()
         assertThat(player.calls).doesNotContain("play")
     }
+
+    @Test fun `pings carry time since the session started, not device uptime, and still sync the clock`() = runTest {
+        advanceTimeBy(3_600_000); runCurrent() // the phone has been up an hour
+        join()
+        val ping = connection.sent.filterIsInstance<ClientMessage.Ping>().first()
+        assertThat(ping.c).isEqualTo(0)
+        advanceTimeBy(100); runCurrent()
+        // a 100 ms round trip: halfway was local 3 600 050, and the room said 3 610 050 then (room = local + 10 s)
+        receive(ServerMessage.Pong(c = ping.c, r = 3_610_050))
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, timeline = RoomTimeline(0, 3_610_600, true))))
+        player.events!!.onReady()
+        advanceTimeBy(499); runCurrent()
+        assertThat(player.calls).doesNotContain("play")
+        advanceTimeBy(1); runCurrent()
+        assertThat(player.calls.last()).isEqualTo("play")
+    }
 }
