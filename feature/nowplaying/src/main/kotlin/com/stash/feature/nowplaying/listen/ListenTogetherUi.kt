@@ -10,13 +10,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -49,8 +51,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -125,26 +129,29 @@ fun WhosListeningBar(
 @Composable
 private fun MemberPill(member: RoomMember, isHost: Boolean, isMe: Boolean, accent: Color, onMakeHost: (() -> Unit)?) {
     var menu by remember { mutableStateOf(false) }
-    val dot = when (member.status) {
-        "ok" -> accent
-        "unavailable" -> MaterialTheme.colorScheme.error
-        else -> Color(0xFFFFB300) // buffering or drifting
+    val (dot, status) = when (member.status) {
+        "ok" -> accent to "in sync"
+        "unavailable" -> MaterialTheme.colorScheme.error to "can't play this song"
+        else -> StashTheme.extendedColors.warning to "catching up" // buffering or drifting
+    }
+    val label = buildString {
+        append(member.name ?: "Someone")
+        if (isMe) append(" (you)")
+        if (isHost) append(" · host")
     }
     Box {
         Surface(
             shape = RoundedCornerShape(50),
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-            modifier = Modifier.clickable(enabled = onMakeHost != null) { menu = true },
+            modifier = Modifier
+                .clickable(enabled = onMakeHost != null, onClickLabel = "Make host") { menu = true }
+                .clearAndSetSemantics { contentDescription = "$label, $status" },
         ) {
             Row(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(7.dp).background(dot, CircleShape))
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = buildString {
-                        append(member.name ?: "Someone")
-                        if (isMe) append(" (you)")
-                        if (isHost) append(" · host")
-                    },
+                    text = label,
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
                 )
@@ -186,12 +193,15 @@ fun ListenerControls(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        if (pausedLocally) {
-            AssistChip(
-                onClick = onRejoin,
-                label = { Text("Paused — tap to rejoin") },
-                leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            )
+        // The chip's height is always reserved, so the controls don't jump when a call or an unplug pauses this phone.
+        Box(Modifier.heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
+            if (pausedLocally) {
+                AssistChip(
+                    onClick = onRejoin,
+                    label = { Text("Paused — tap to rejoin") },
+                    leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                )
+            }
         }
         Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(onClick = onLeave) { Text("Leave") }
@@ -218,13 +228,18 @@ fun ReactionButton(onReact: (String) -> Unit) {
 
 private data class Floater(val id: Long, val emoji: String, val lane: Float)
 
+private const val MAX_FLOATERS = 12
+
 /** Reactions float up and fade (spec §5). */
 @Composable
 fun FloatingReactions(reactions: SharedFlow<ServerMessage.Reaction>, modifier: Modifier = Modifier) {
     val live = remember { mutableStateListOf<Floater>() }
     LaunchedEffect(reactions) {
         var next = 0L
-        reactions.collect { r -> live += Floater(next++, r.emoji, Random.nextFloat()) }
+        reactions.collect { r ->
+            if (live.size >= MAX_FLOATERS) live.removeAt(0)
+            live += Floater(next++, r.emoji, Random.nextFloat())
+        }
     }
     Box(modifier) {
         live.forEach { f ->
@@ -239,8 +254,12 @@ fun FloatingReactions(reactions: SharedFlow<ServerMessage.Reaction>, modifier: M
                     fontSize = 32.sp,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .offset(x = (24 + f.lane * 240).dp, y = (-(120 + 320 * progress.value)).dp)
-                        .alpha(1f - progress.value),
+                        // Read in the draw phase: a frame of the float doesn't recompose the screen.
+                        .graphicsLayer {
+                            translationX = (24 + f.lane * 240).dp.toPx()
+                            translationY = -(120 + 320 * progress.value).dp.toPx()
+                            alpha = 1f - progress.value
+                        },
                 )
             }
         }
@@ -252,12 +271,12 @@ fun FloatingReactions(reactions: SharedFlow<ServerMessage.Reaction>, modifier: M
 @Composable
 fun SuggestionsSheet(room: ListenTogetherState.InRoom, onAnswer: (id: String, add: Boolean) -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = StashTheme.extendedColors.elevatedSurface) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 36.dp)) {
-            Text("Suggestions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 12.dp))
+        LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 36.dp)) {
+            item { Text("Suggestions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 12.dp)) }
             if (room.suggestions.isEmpty()) {
-                Text("Nothing waiting", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                item { Text("Nothing waiting", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            room.suggestions.forEach { s ->
+            items(room.suggestions, key = { it.id }) { s ->
                 val from = room.members.firstOrNull { it.id == s.from }?.name ?: "Someone"
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

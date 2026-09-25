@@ -7,7 +7,9 @@ import com.stash.core.data.share.ShareResult
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.model.share.SharedTrack
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.coVerifyOrder
+import kotlinx.coroutines.CompletableDeferred
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -41,8 +43,33 @@ class JoinSessionViewModelTest {
         assertEquals(JoinSessionViewModel.UiState.Full, vm().state.value)
         coEvery { api.preview(any()) } returns ShareResult.NotFound
         assertEquals(JoinSessionViewModel.UiState.Ended, vm().state.value)
+        coEvery { api.preview(any()) } returns ShareResult.Gone
+        assertEquals(JoinSessionViewModel.UiState.Ended, vm().state.value)
         coEvery { api.preview(any()) } returns ShareResult.Failed("offline")
         assertEquals(JoinSessionViewModel.UiState.Failed, vm().state.value)
+        coEvery { api.preview(any()) } returns ShareResult.Failed(ShareResult.Failed.RATE_LIMITED)
+        assertEquals(JoinSessionViewModel.UiState.RateLimited, vm().state.value)
+    }
+
+    @Test fun `a second Join tap does nothing while the first is under way`() {
+        coEvery { api.preview(any()) } returns ShareResult.Ok(RoomApiClient.Preview("Rawn", 1, false))
+        val vm = vm()
+        var joined = 0
+        vm.join { joined++ }
+        vm.join { joined++ }
+        assertTrue(vm.joining)
+        assertEquals(1, joined)
+        coVerify(exactly = 1) { controller.send(ListenTogetherController.Command.Join("K7QA2PXM")) }
+    }
+
+    @Test fun `a saved name never overwrites one already typed`() {
+        val saved = CompletableDeferred<String?>()
+        coEvery { sharePreference.displayName() } coAnswers { saved.await() }
+        coEvery { api.preview(any()) } returns ShareResult.Ok(RoomApiClient.Preview("Rawn", 1, false))
+        val vm = vm()
+        vm.onNameChange("Sam")
+        saved.complete("Old name")
+        assertEquals("Sam", vm.name)
     }
 
     @Test fun `join saves the name, asks the session to join, then moves on`() {

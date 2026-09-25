@@ -24,14 +24,16 @@ class ListenTogetherViewModel @Inject constructor(
 ) : ViewModel() {
     val state: StateFlow<ListenTogetherState> = controller.state
     val reactions: SharedFlow<ServerMessage.Reaction> = controller.reactions
-    val messages: SharedFlow<String> = controller.messages
 
     /** The "Show my name as" field. Compose state, so the TextField reads it synchronously. */
     var name by mutableStateOf("")
         private set
 
     init {
-        viewModelScope.launch { name = sharePreference.displayName().orEmpty() }
+        viewModelScope.launch {
+            val saved = sharePreference.displayName().orEmpty()
+            if (name.isEmpty()) name = saved // never overwrite what the user already typed
+        }
     }
 
     fun onNameChange(value: String) { name = value.take(40) }

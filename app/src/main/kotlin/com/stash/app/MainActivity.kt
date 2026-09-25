@@ -3,15 +3,21 @@ package com.stash.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.IntentCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.stash.app.navigation.StashScaffold
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.model.ThemeMode
@@ -78,6 +84,14 @@ class MainActivity : ComponentActivity() {
             val role = (together as? ListenTogetherState.InRoom)
                 ?.let { if (it.isHost) ListenTogetherRole.HOST else ListenTogetherRole.LISTENER }
                 ?: ListenTogetherRole.NONE
+            // Session notices ("Suggested to the host", …) toast on whichever screen is showing.
+            val lifecycleOwner = LocalLifecycleOwner.current
+            val context = LocalContext.current
+            LaunchedEffect(lifecycleOwner) {
+                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    listenTogether.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                }
+            }
             StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
                 CompositionLocalProvider(LocalListenTogetherRole provides role) {
                     StashScaffold(

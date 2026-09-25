@@ -25,10 +25,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.media.listen.ListenTogetherState
 
 @Composable
 fun JoinSessionScreen(onBack: () -> Unit, onJoined: () -> Unit, viewModel: JoinSessionViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val current by viewModel.current.collectAsStateWithLifecycle()
     Column(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().padding(horizontal = 24.dp),
     ) {
@@ -52,7 +54,19 @@ fun JoinSessionScreen(onBack: () -> Unit, onJoined: () -> Unit, viewModel: JoinS
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = { viewModel.join(onJoined) }, modifier = Modifier.fillMaxWidth()) { Text("Join") }
+                Button(
+                    onClick = { viewModel.join(onJoined) },
+                    enabled = !viewModel.joining,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Join") }
+                if (current !is ListenTogetherState.Idle && !viewModel.joining) {
+                    Text(
+                        "You'll leave your current session.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = muted,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
                 Text(
                     "Your own queue is set aside and comes back when you leave.",
                     style = MaterialTheme.typography.bodySmall,
@@ -62,6 +76,10 @@ fun JoinSessionScreen(onBack: () -> Unit, onJoined: () -> Unit, viewModel: JoinS
             }
             JoinSessionViewModel.UiState.Full -> Text("This session is full", style = MaterialTheme.typography.titleMedium)
             JoinSessionViewModel.UiState.Ended -> Text("This session has ended", style = MaterialTheme.typography.titleMedium)
+            JoinSessionViewModel.UiState.RateLimited -> {
+                Text("Too many tries — wait a minute and try again", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = viewModel::retry) { Text("Try again") }
+            }
             JoinSessionViewModel.UiState.Failed -> {
                 Text("Couldn't reach the session", style = MaterialTheme.typography.titleMedium)
                 TextButton(onClick = viewModel::retry) { Text("Try again") }

@@ -221,10 +221,12 @@ fun ArtistDetailScreen(
 
         // Artist detail has exactly four actions (no Delete) — all fit inline,
         // so none collapse into the ⋮ overflow.
-        val selectionActions = listOf(
+        // In a Listen Together session "Add to queue" hides; Play next says what it does there (as in TrackOptionsSheet).
+        val listenRole = com.stash.core.ui.components.LocalListenTogetherRole.current
+        val selectionActions = listOfNotNull(
             SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
                 viewModel.addSelectedToQueue(selectedTracks); selection.clear()
-            },
+            }.takeIf { listenRole == com.stash.core.ui.components.ListenTogetherRole.NONE },
             SelectionAction("add_playlist", "Add to playlist", Icons.Default.PlaylistAddCheck) {
                 showBatchSave = true
             },
@@ -237,7 +239,7 @@ fun ArtistDetailScreen(
                     viewModel.downloadSelected(selectedIds); selection.clear()
                 }
             },
-            SelectionAction("play_next", "Play next", Icons.Default.PlaylistPlay) {
+            SelectionAction("play_next", com.stash.core.ui.components.playNextLabel(listenRole, "Play next"), Icons.Default.PlaylistPlay) {
                 viewModel.playSelectedNext(selectedTracks); selection.clear()
             },
         )

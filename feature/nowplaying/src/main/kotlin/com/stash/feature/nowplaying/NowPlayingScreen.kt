@@ -179,6 +179,7 @@ fun NowPlayingScreen(
     // A listener follows the room: Leave instead of play, pause, skip and seek (spec §5).
     val isListener = room != null && !room.isHost
     var showSuggestions by remember { mutableStateOf(false) }
+    var confirmEndTogether by remember { mutableStateOf(false) }
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
     // the action (find a replacement / delete / delete + block).
@@ -196,11 +197,6 @@ fun NowPlayingScreen(
     val toastContext = LocalContext.current
     LaunchedEffect(Unit) {
         viewModel.userMessages.collect { msg ->
-            android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
-        }
-    }
-    LaunchedEffect(Unit) {
-        together.messages.collect { msg ->
             android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
         }
     }
@@ -324,6 +320,20 @@ fun NowPlayingScreen(
             onNameChange = together::onNameChange,
             onStart = { together.start(); showStartTogether = false },
             onDismiss = { showStartTogether = false },
+        )
+    }
+
+    if (confirmEndTogether) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmEndTogether = false },
+            title = { Text("End the session for everyone?") },
+            text = { Text("Everyone listening is dropped from the session.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { together.end(); confirmEndTogether = false }) { Text("End") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmEndTogether = false }) { Text("Cancel") }
+            },
         )
     }
 
@@ -707,8 +717,9 @@ fun NowPlayingScreen(
                         onSkipPrevious = viewModel::onSkipPrevious,
                         onToggleShuffle = viewModel::onToggleShuffle,
                         onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                        // A host in a session: shuffle and repeat do nothing there, so React takes their place.
+                        onReact = if (room != null) together::react else null,
                     )
-                    if (room != null) com.stash.feature.nowplaying.listen.ReactionButton(onReact = together::react)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -742,7 +753,7 @@ fun NowPlayingScreen(
             onStartTogether = { showStartTogether = true },
             onInvite = { room?.let { com.stash.feature.nowplaying.listen.shareInvite(toastContext, it.url) } },
             onLeaveTogether = together::leave,
-            onEndTogether = together::end,
+            onEndTogether = { confirmEndTogether = true },
             onDismiss = { showOptionsSheet = false },
             sheetState = optionsSheetState,
         )
@@ -953,14 +964,17 @@ private fun PlaybackControls(
     onSkipPrevious: () -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeatMode: () -> Unit,
+    onReact: ((String) -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Shuffle
-        IconButton(onClick = onToggleShuffle) {
+        // Shuffle; in a session, an empty slot that keeps Play centred.
+        if (onReact != null) {
+            Spacer(Modifier.size(48.dp))
+        } else IconButton(onClick = onToggleShuffle) {
             Icon(
                 imageVector = Icons.Default.Shuffle,
                 contentDescription = "Shuffle",
@@ -1023,8 +1037,10 @@ private fun PlaybackControls(
             )
         }
 
-        // Repeat
-        IconButton(onClick = onCycleRepeatMode) {
+        // Repeat; in a session, React.
+        if (onReact != null) {
+            com.stash.feature.nowplaying.listen.ReactionButton(onReact = onReact)
+        } else IconButton(onClick = onCycleRepeatMode) {
             Icon(
                 imageVector = when (repeatMode) {
                     RepeatMode.ONE -> Icons.Default.RepeatOne
