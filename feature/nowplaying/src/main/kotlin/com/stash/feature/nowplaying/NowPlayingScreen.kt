@@ -42,6 +42,11 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.automirrored.filled.Logout
+import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.common.primaryArtist
 import com.stash.core.media.SleepTimerController
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -166,6 +171,11 @@ fun NowPlayingScreen(
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var queueSaveTrack by remember { mutableStateOf<com.stash.core.model.Track?>(null) }
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
+    // Listen Together (spec 2026-09-24 §5).
+    val together: com.stash.feature.nowplaying.listen.ListenTogetherViewModel = hiltViewModel()
+    val togetherState by together.state.collectAsStateWithLifecycle()
+    val room = togetherState as? ListenTogetherState.InRoom
+    var showStartTogether by remember { mutableStateOf(false) }
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
     // the action (find a replacement / delete / delete + block).
@@ -183,6 +193,11 @@ fun NowPlayingScreen(
     val toastContext = LocalContext.current
     LaunchedEffect(Unit) {
         viewModel.userMessages.collect { msg ->
+            android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    LaunchedEffect(Unit) {
+        together.messages.collect { msg ->
             android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
         }
     }
@@ -297,6 +312,15 @@ fun NowPlayingScreen(
                 viewModel.createPlaylistAndAddTrack(name, track.id)
             },
             onDismiss = { showSaveSheet = false },
+        )
+    }
+
+    if (showStartTogether) {
+        com.stash.feature.nowplaying.listen.ListenTogetherStartDialog(
+            name = together.name,
+            onNameChange = together::onNameChange,
+            onStart = { together.start(); showStartTogether = false },
+            onDismiss = { showStartTogether = false },
         )
     }
 
@@ -679,6 +703,11 @@ fun NowPlayingScreen(
             onShareClick = viewModel::onShareCurrent,
             onFlagWrongMatch = { showWrongMatchDialog = true },
             onViewAlbum = viewModel::onViewAlbumTapped,
+            together = togetherState,
+            onStartTogether = { showStartTogether = true },
+            onInvite = { room?.let { com.stash.feature.nowplaying.listen.shareInvite(toastContext, it.url) } },
+            onLeaveTogether = together::leave,
+            onEndTogether = together::end,
             onDismiss = { showOptionsSheet = false },
             sheetState = optionsSheetState,
         )
@@ -1093,6 +1122,11 @@ private fun NowPlayingOptionsSheet(
     onShareClick: () -> Unit,
     onFlagWrongMatch: () -> Unit,
     onViewAlbum: () -> Unit,
+    together: ListenTogetherState,
+    onStartTogether: () -> Unit,
+    onInvite: () -> Unit,
+    onLeaveTogether: () -> Unit,
+    onEndTogether: () -> Unit,
     onDismiss: () -> Unit,
     sheetState: androidx.compose.material3.SheetState,
     modifier: Modifier = Modifier,
@@ -1118,6 +1152,22 @@ private fun NowPlayingOptionsSheet(
                     .padding(bottom = 20.dp)
                     .align(Alignment.CenterHorizontally)
             )
+
+            // Listen Together: Start, or Invite / End / Leave once in a room.
+            when (together) {
+                is ListenTogetherState.InRoom -> {
+                    if (together.isHost) {
+                        SheetOptionRow(icon = Icons.Default.PersonAdd, label = "Invite friends", onClick = { onInvite(); onDismiss() })
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SheetOptionRow(icon = Icons.Default.StopCircle, label = "End session for everyone", onClick = { onEndTogether(); onDismiss() })
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    SheetOptionRow(icon = Icons.AutoMirrored.Filled.Logout, label = "Leave session", onClick = { onLeaveTogether(); onDismiss() })
+                }
+                is ListenTogetherState.Connecting -> SheetOptionRow(icon = Icons.Default.Groups, label = "Connecting…", onClick = onDismiss)
+                ListenTogetherState.Idle -> SheetOptionRow(icon = Icons.Default.Groups, label = "Listen together", onClick = { onStartTogether(); onDismiss() })
+            }
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Save to Playlist
             SheetOptionRow(
