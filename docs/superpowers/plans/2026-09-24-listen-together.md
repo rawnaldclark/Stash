@@ -4779,6 +4779,7 @@ Run the Step 1 test now: it should pass.
             // Empty the player BEFORE the MediaSession gets the bare ExoPlayer back: controllers must never
             // see the session's song as the user's queue (PlayerRepositoryImpl would save it over theirs).
             m.setPlaybackSpeed(1f)
+            m.playWhenReady = false // review: the restored queue must come back paused, never auto-playing
             m.stop()
             m.clearMediaItems() // PlayerRepositoryImpl puts the user's own queue back on sessionEnds
             mediaSession?.player = m
