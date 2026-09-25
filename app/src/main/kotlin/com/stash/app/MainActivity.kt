@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,6 +16,10 @@ import com.stash.app.navigation.StashScaffold
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.model.ThemeMode
 import com.stash.core.model.share.ShareLinks
+import com.stash.core.media.listen.ListenTogetherController
+import com.stash.core.media.listen.ListenTogetherState
+import com.stash.core.ui.components.ListenTogetherRole
+import com.stash.core.ui.components.LocalListenTogetherRole
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
@@ -42,6 +47,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var localImportCoordinator: LocalImportCoordinator
 
+    @Inject
+    lateinit var listenTogether: ListenTogetherController
+
     /**
      * Pending deep-link target read from the launch / new-intent extras.
      * Compose observes this via [StashScaffold]'s `pendingDeepLink`
@@ -66,11 +74,17 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.SYSTEM -> systemDark
             }
 
+            val together by listenTogether.state.collectAsState()
+            val role = (together as? ListenTogetherState.InRoom)
+                ?.let { if (it.isHost) ListenTogetherRole.HOST else ListenTogetherRole.LISTENER }
+                ?: ListenTogetherRole.NONE
             StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
-                StashScaffold(
-                    pendingDeepLink = pendingDeepLink.value,
-                    onDeepLinkConsumed = { pendingDeepLink.value = null },
-                )
+                CompositionLocalProvider(LocalListenTogetherRole provides role) {
+                    StashScaffold(
+                        pendingDeepLink = pendingDeepLink.value,
+                        onDeepLinkConsumed = { pendingDeepLink.value = null },
+                    )
+                }
             }
         }
 

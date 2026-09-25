@@ -75,6 +75,7 @@ fun TrackOptionsSheet(
     onDelete: ((Track) -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
+    val role = LocalListenTogetherRole.current
 
     Column(
         modifier = Modifier
@@ -143,12 +144,12 @@ fun TrackOptionsSheet(
         // -- Play Next option --
         SheetOptionRow(
             icon = Icons.Default.PlaylistPlay,
-            label = "Play Next",
+            label = playNextLabel(role, "Play Next"),
             onClick = { onPlayNext(track) },
         )
 
         // -- Add to Queue option --
-        if (onAddToQueue != null) {
+        if (onAddToQueue != null && role == ListenTogetherRole.NONE) {
             SheetOptionRow(
                 icon = Icons.Default.PlaylistAdd,
                 label = "Add to Queue",
@@ -157,7 +158,7 @@ fun TrackOptionsSheet(
         }
 
         // -- Start Radio option --
-        if (onStartRadio != null) {
+        if (onStartRadio != null && role == ListenTogetherRole.NONE) {
             SheetOptionRow(
                 icon = Icons.Default.Radio,
                 label = "Start radio",
