@@ -1189,7 +1189,12 @@ class StashPlaybackService : MediaLibraryService() {
         return mediaSession
     }
 
-    /** During a session the notification stays in the foreground even while paused, so Android can't drop us (spec §5). */
+    /**
+     * During a session the notification stays in the foreground even while paused (spec §5). The ceiling: Android 16
+     * still demotes a media service paused for 10 minutes (system `setFgsInactiveLocked`; device test 2026-09-25)
+     * and Media3 can't restart it from the background, so a long pause holds only while the process lives. Play from
+     * the notification or a media button is exempt and brings the foreground back.
+     */
     @OptIn(UnstableApi::class)
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         val inSession = ::listenTogetherController.isInitialized && listenTogetherController.active.value
