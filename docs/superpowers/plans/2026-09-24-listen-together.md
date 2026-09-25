@@ -3752,7 +3752,7 @@ class ListenTogetherSessionTest {
         members = listOf(RoomMember("h", "Host", 1, "ok"), RoomMember("me", "Me", 2, "ok")), phase = RoomPhase(),
     )
 
-    fun TestScope.receive(m: ServerMessage) { connection.incoming.trySend(RoomEvent.Message(m)); runCurrent() }
+    fun TestScope.receive(m: ServerMessage) { connection.incoming.trySend(RoomEvent.Message(m, receivedAt = testScheduler.currentTime)); runCurrent() }
 
     /** A pong with no round trip: room time = local time + 10 s from here on. */
     fun TestScope.syncClock() = receive(ServerMessage.Pong(c = testScheduler.currentTime, r = testScheduler.currentTime + 10_000))
@@ -4047,13 +4047,15 @@ class ListenTogetherSession(
                     CloseReason.ENDED -> "Session ended"
                     CloseReason.FULL -> "This session is full"
                     CloseReason.GAVE_UP -> "Lost connection to the session"
+                    CloseReason.REPLACED -> "You rejoined this session somewhere else"
                 },
             )
-            is RoomEvent.Message -> onMessage(event.message)
+            is RoomEvent.Message -> onMessage(event.message, event.receivedAt)
         }
     }
 
-    private suspend fun onMessage(m: ServerMessage) {
+    /** [receivedAt] is when RoomClient got the frame (same clock as [clock]), so a pong's RTT excludes our queueing. */
+    private suspend fun onMessage(m: ServerMessage, receivedAt: Long) {
         when (m) {
             is ServerMessage.Welcome -> {
                 myId = m.memberId
@@ -4065,7 +4067,7 @@ class ListenTogetherSession(
             is ServerMessage.StateSync -> applyState(m.state)
             is ServerMessage.Pong -> {
                 val first = clockSync.offsetMs == null
-                clockSync.onPong(m.c, m.r, clock())
+                clockSync.onPong(m.c, m.r, receivedAt)
                 if (first) applyTimeline()
             }
             is ServerMessage.TimelineUpdate -> onTimeline(m)
