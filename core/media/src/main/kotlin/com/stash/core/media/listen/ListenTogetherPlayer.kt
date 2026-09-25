@@ -47,7 +47,8 @@ class ListenTogetherPlayer(player: Player) : ForwardingSimpleBasePlayer(player) 
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
         val target = interceptor ?: return super.handleSetPlayWhenReady(playWhenReady)
-        if (isHost) if (playWhenReady) target.onPlay() else target.onPause()
+        // Both roles: a listener's play means "rejoin the room", their pause pauses only their phone.
+        if (playWhenReady) target.onPlay() else target.onPause()
         return DONE
     }
 
@@ -112,11 +113,13 @@ class ListenTogetherPlayer(player: Player) : ForwardingSimpleBasePlayer(player) 
         )
 
         /**
-         * Everything but volume, metadata, COMMAND_CHANGE_MEDIA_ITEMS (a listener's "Suggest" rides
-         * on add) and COMMAND_SET_MEDIA_ITEM (a single-song tap reaches onSet, which explains the refusal).
+         * Everything but volume, metadata, COMMAND_PLAY_PAUSE (play rejoins, pause is local; without it
+         * SimpleBasePlayer drops a headset or lock-screen play before it reaches us),
+         * COMMAND_CHANGE_MEDIA_ITEMS (a listener's "Suggest" rides on add) and COMMAND_SET_MEDIA_ITEM
+         * (a single-song tap reaches onSet, which explains the refusal).
          */
         val LISTENER_REMOVES = intArrayOf(
-            Player.COMMAND_PLAY_PAUSE, Player.COMMAND_STOP, Player.COMMAND_SEEK_TO_DEFAULT_POSITION,
+            Player.COMMAND_STOP, Player.COMMAND_SEEK_TO_DEFAULT_POSITION,
             Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
             Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_NEXT,
             Player.COMMAND_SEEK_TO_MEDIA_ITEM, Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD,

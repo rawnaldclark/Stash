@@ -405,11 +405,15 @@ class ListenTogetherSession(
 
     private val interceptor = object : SessionInterceptor {
         override fun onPlay() {
-            if (!isHost) return
+            if (!isHost) return rejoin() // a listener's headset, notification or lock-screen play
             pausedLocally = false // the host chose to play: don't pause the room again
             send(ClientMessage.Play)
         }
-        override fun onPause() { if (isHost) send(ClientMessage.Pause) }
+        override fun onPause() {
+            if (isHost) return send(ClientMessage.Pause)
+            player.pause() // a listener pauses only their own phone, like an unplug
+            playerEvents.onExternalPause()
+        }
         override fun onSeek(positionMs: Long) { if (isHost) send(ClientMessage.Seek(positionMs)) }
         override fun onNext() { if (isHost) sessionScope?.launch { advance() } }
         override fun onPrevious() { if (isHost) previous() }

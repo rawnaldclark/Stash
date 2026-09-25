@@ -210,13 +210,13 @@ class ListenTogetherSessionTest {
         assertThat((controller.state.value as ListenTogetherState.InRoom).reconnecting).isFalse()
     }
 
-    @Test fun `a listener's transport commands reach neither the room nor the player`() = runTest {
+    @Test fun `a listener's seek, skip and set reach neither the room nor the player`() = runTest {
         join()
         receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
         val before = player.calls.toList()
         connection.sent.clear()
         player.interceptor!!.run {
-            onPlay(); onPause(); onSeek(5_000); onNext(); onPrevious(); onSet(listOf(item("2")), 0)
+            onSeek(5_000); onNext(); onPrevious(); onSet(listOf(item("2")), 0)
         }
         runCurrent()
         assertThat(connection.sent).isEmpty()
@@ -479,6 +479,28 @@ class ListenTogetherSessionTest {
         assertThat(pausedLocally()).isFalse()
         advanceTimeBy(1_000); runCurrent()
         assertThat(player.calls.last()).isEqualTo("play")
+    }
+
+    @Test fun `a listener's play from a headset or the notification rejoins the room`() = runTest {
+        playThenPauseExternally()
+        player.interceptor!!.onPlay(); runCurrent()
+        assertThat(player.calls).contains("seek:5000")
+        assertThat(pausedLocally()).isFalse()
+        advanceTimeBy(1_000); runCurrent()
+        assertThat(player.calls.last()).isEqualTo("play")
+        assertThat(connection.sent).containsNoneOf(ClientMessage.Play, ClientMessage.Pause)
+    }
+
+    @Test fun `a listener's pause pauses only their own player`() = runTest {
+        join(); syncClock()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, timeline = RoomTimeline(0, 10_000, true))))
+        player.events!!.onReady()
+        advanceTimeBy(1_000); runCurrent()
+        connection.sent.clear(); player.calls.clear()
+        player.interceptor!!.onPause(); runCurrent()
+        assertThat(player.calls).containsExactly("pause")
+        assertThat(pausedLocally()).isTrue()
+        assertThat(connection.sent.filterNot { it is ClientMessage.Ping }).isEmpty()
     }
 
     @Test fun `the next prepare clears pausedLocally`() = runTest {

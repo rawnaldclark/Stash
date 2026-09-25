@@ -40,14 +40,15 @@ class ListenTogetherPlayerTest {
         override fun onSet(items: List<MediaItem>, startIndex: Int) { calls += "set:$startIndex" }
     }
 
-    @Test fun `a listener's headset, notification and lock-screen commands go nowhere`() {
+    @Test fun `a listener's seek, skip and stop go nowhere, play and pause go to the session`() {
         val stub = StubPlayer()
         val recorder = Recorder()
         val player = ListenTogetherPlayer(stub).apply { configure(isHost = false, interceptor = recorder) }
-        player.play(); player.pause(); player.seekTo(5_000); player.seekToNext(); player.seekToPrevious(); player.stop()
-        assertThat(recorder.calls).isEmpty()
+        player.seekTo(5_000); player.seekToNext(); player.seekToPrevious(); player.stop()
+        player.play(); player.pause()
+        assertThat(recorder.calls).containsExactly("play", "pause").inOrder()
         assertThat(stub.calls).isEmpty()
-        assertThat(player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)).isFalse()
+        assertThat(player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)).isTrue()
         assertThat(player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT)).isFalse()
     }
 
