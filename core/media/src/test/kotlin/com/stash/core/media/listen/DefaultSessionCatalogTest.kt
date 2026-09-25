@@ -50,6 +50,50 @@ class DefaultSessionCatalogTest {
         assertThat(item.localConfiguration!!.uri.scheme).isEqualTo("stash-resolve")
     }
 
+    @Test fun `a download of a different edit streams the host's recording, not this phone's`() = runTest {
+        val file = File.createTempFile("edit", ".flac").apply { writeBytes(ByteArray(16)); deleteOnExit() }
+        val timed = descriptor.copy(durationMs = 260_000, isrc = "HOSTISRC")
+        coEvery { musicRepository.ensureExactTrackPersisted(timed) } returns 7
+        coEvery { trackDao.getById(7) } returns TrackEntity(
+            id = 7, title = "Avril 14th", artist = "Aphex Twin", youtubeId = "mine", isrc = "MYISRC",
+            durationMs = 200_000, isDownloaded = true, filePath = file.absolutePath,
+        )
+        val uri = catalog.mediaItemFor(timed)!!.localConfiguration!!.uri
+        assertThat(uri.getQueryParameter("yt")).isEqualTo("yt1")
+        assertThat(uri.getQueryParameter("isrc")).isEqualTo("HOSTISRC")
+        assertThat(uri.getQueryParameter("d")).isEqualTo("260000")
+    }
+
+    @Test fun `a download plays locally when the host's length is unknown`() = runTest {
+        val file = File.createTempFile("any", ".flac").apply { writeBytes(ByteArray(16)); deleteOnExit() }
+        coEvery { musicRepository.ensureExactTrackPersisted(descriptor) } returns 7
+        coEvery { trackDao.getById(7) } returns TrackEntity(
+            id = 7, title = "Avril 14th", artist = "Aphex Twin", youtubeId = "yt1",
+            durationMs = 200_000, isDownloaded = true, filePath = file.absolutePath,
+        )
+        assertThat(catalog.mediaItemFor(descriptor)!!.localConfiguration!!.uri.scheme).isNotEqualTo("stash-resolve")
+    }
+
+    @Test fun `a descriptor with no ids inserts its row once`() = runTest {
+        val bare = SharedTrack("Untitled", "Nobody")
+        coEvery { musicRepository.ensureExactTrackPersisted(bare) } returns 11
+        coEvery { trackDao.getById(11) } returns TrackEntity(id = 11, title = "Untitled", artist = "Nobody")
+        catalog.mediaItemFor(bare); catalog.mediaItemFor(bare)
+        coVerify(exactly = 1) { musicRepository.ensureExactTrackPersisted(bare) }
+    }
+
+    @Test fun `an item with a synthetic id is described by its metadata`() = runTest {
+        coEvery { trackDao.getById(any()) } returns null
+        val item = MediaItem.Builder().setMediaId("-42").setMediaMetadata(
+            androidx.media3.common.MediaMetadata.Builder().setTitle("Xtal").setArtist("Aphex Twin")
+                .setExtras(android.os.Bundle().apply {
+                    putLong(com.stash.core.media.service.StashPlaybackService.EXTRA_TRACK_DURATION_MS, 290_000)
+                    putString(com.stash.core.media.service.StashPlaybackService.EXTRA_TRACK_YOUTUBE_ID, "yt2")
+                }).build(),
+        ).build()
+        assertThat(catalog.sharedTrackFor(item)).isEqualTo(SharedTrack("Xtal", "Aphex Twin", durationMs = 290_000, youtubeId = "yt2"))
+    }
+
     @Test fun `a download within 2 s of the host's length plays the local file`() = runTest {
         val file = File.createTempFile("same", ".flac").apply { writeBytes(ByteArray(16)); deleteOnExit() }
         val timed = descriptor.copy(durationMs = 201_500)

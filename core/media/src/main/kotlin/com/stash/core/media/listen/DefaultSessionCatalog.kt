@@ -11,6 +11,7 @@ import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_D
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_YOUTUBE_ID
 import com.stash.core.media.service.toAutoMediaItem
+import com.stash.core.media.trackIdentity
 import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.share.toSharedTrack
 import java.io.File
@@ -35,9 +36,10 @@ class DefaultSessionCatalog @Inject constructor(
 ) : SessionCatalog {
 
     /**
-     * Descriptors this phone built from its own rows. Such a descriptor IS that row, so it plays
-     * the row directly. This matters for the host's local-only files, which carry no id the exact
-     * persist could match.
+     * Descriptor → row id. Holds descriptors this phone built from its own rows (such a descriptor
+     * IS that row, which matters for the host's local-only files: no id the exact persist could
+     * match) and every descriptor already persisted here, so one with no yt/sp/isrc, which never
+     * matches exactly, inserts its row once rather than on every play.
      * ponytail: an in-memory LRU of 500; a miss just falls back to the exact persist.
      */
     private val own: MutableMap<SharedTrack, Long> = Collections.synchronizedMap(
@@ -48,18 +50,25 @@ class DefaultSessionCatalog @Inject constructor(
 
     override suspend fun mediaItemFor(track: SharedTrack): MediaItem? = withContext(Dispatchers.IO) {
         try {
-            val id = own[track] ?: musicRepository.ensureExactTrackPersisted(track)
+            val id = own[track] ?: musicRepository.ensureExactTrackPersisted(track).also { own[track] = it }
             val row = trackDao.getById(id) ?: return@withContext null
             // An exact match may be this phone's download: the same recording, so play the file.
             // A download whose file has gone streams instead of failing, and so does one whose
             // length is more than 2 s off the host's (likely a different edit), so the listener
-            // hears the host's recording.
+            // hears the host's recording: the stream takes the descriptor's ids and length (the
+            // copy is never persisted).
             val path = row.filePath
             val hostMs = track.durationMs?.takeIf { it > 0 }
             val sameLength = hostMs == null || row.durationMs <= 0 || abs(row.durationMs - hostMs) <= MAX_LENGTH_GAP_MS
             val fileOk = row.isDownloaded && sameLength && !path.isNullOrBlank() &&
                 (path.startsWith("content://") || File(path.removePrefix("file://")).length() > 0)
-            (if (fileOk) row else row.copy(isDownloaded = false)).toAutoMediaItem()
+            val playable = if (fileOk) row else row.copy(
+                isDownloaded = false,
+                youtubeId = track.youtubeId ?: row.youtubeId,
+                isrc = track.isrc ?: row.isrc,
+                durationMs = hostMs ?: row.durationMs,
+            )
+            playable.toAutoMediaItem()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -88,18 +97,13 @@ class DefaultSessionCatalog @Inject constructor(
     override suspend fun radioAfter(track: SharedTrack): List<SharedTrack> = try {
         val (_, batch) = radioGenerator.start(RadioSeed.Song(track.title, track.artist, track.youtubeId))
         // Drop the seed itself, matched by title and artist like PlayerRepositoryImpl.startRadio's keepCurrent.
-        val seed = identity(track.title, track.artist)
-        batch.filter { identity(it.title, it.artist) != seed }.map { it.toSharedTrack() }.take(MAX_STATION)
+        val seed = trackIdentity(track.title, track.artist)
+        batch.filter { trackIdentity(it.title, it.artist) != seed }.map { it.toSharedTrack() }.take(MAX_STATION)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         Log.w(TAG, "radio for '${track.title}' failed", e)
         emptyList()
-    }
-
-    private fun identity(title: String, artist: String): String {
-        fun norm(s: String) = s.trim().lowercase().replace(Regex("\\s+"), " ")
-        return norm(title) + "|" + norm(artist)
     }
 
     private companion object {

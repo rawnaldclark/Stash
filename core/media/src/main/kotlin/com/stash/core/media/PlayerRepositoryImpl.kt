@@ -990,8 +990,8 @@ class PlayerRepositoryImpl @Inject constructor(
         if (keepCurrent && songSeed != null && controller.currentMediaItem != null &&
             controller.mediaItemCount > 0
         ) {
-            val seedKey = radioIdentity(songSeed.artist, songSeed.title)
-            val seedTrack = firstBatch.firstOrNull { radioIdentity(it.artist, it.title) == seedKey }
+            val seedKey = trackIdentity(songSeed.title, songSeed.artist)
+            val seedTrack = firstBatch.firstOrNull { trackIdentity(it.title, it.artist) == seedKey }
             val discoveries = firstBatch.filter { it !== seedTrack }
             currentQueueTracks = listOfNotNull(seedTrack) + discoveries
             val curIdx = controller.currentMediaItemIndex
@@ -2733,4 +2733,12 @@ internal fun RepeatMode.toPlayerRepeatMode(): Int = when (this) {
     RepeatMode.OFF -> Player.REPEAT_MODE_OFF
     RepeatMode.ONE -> Player.REPEAT_MODE_ONE
     RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+}
+
+/** Normalized track identity for matching a radio seed against its batch —
+ *  lowercase, trimmed, whitespace-collapsed `title|artist`. Robust across the
+ *  different resolution paths that produce the same song. */
+internal fun trackIdentity(title: String, artist: String): String {
+    fun norm(s: String) = s.trim().lowercase().replace(Regex("\\s+"), " ")
+    return norm(title) + "|" + norm(artist)
 }

@@ -1,6 +1,7 @@
 package com.stash.core.media.listen
 
 import android.os.Looper
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
@@ -24,6 +25,8 @@ class ListenTogetherPlayerTest {
             .build()
         override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> { calls += "playWhenReady=$playWhenReady"; return Futures.immediateVoidFuture() }
         override fun handleSeek(mediaItemIndex: Int, positionMs: Long, seekCommand: Int): ListenableFuture<*> { calls += "seek"; return Futures.immediateVoidFuture() }
+        override fun handlePrepare(): ListenableFuture<*> { calls += "prepare"; return Futures.immediateVoidFuture() }
+        override fun handleStop(): ListenableFuture<*> { calls += "stop"; return Futures.immediateVoidFuture() }
     }
 
     private class Recorder : SessionInterceptor {
@@ -65,5 +68,46 @@ class ListenTogetherPlayerTest {
         assertThat(recorder.calls).containsExactly("play", "pause", "seek:90000", "next", "previous", "set:0").inOrder()
         assertThat(stub.calls).isEmpty()
         assertThat(player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT)).isTrue()
+    }
+
+    @Test fun `prepare in a session never reaches the wrapped player`() {
+        val stub = StubPlayer()
+        ListenTogetherPlayer(stub).apply { configure(isHost = true, interceptor = Recorder()) }.prepare()
+        ListenTogetherPlayer(stub).apply { configure(isHost = false, interceptor = Recorder()) }.prepare()
+        assertThat(stub.calls).isEmpty()
+    }
+
+    @Test fun `a listener's single-song tap reaches onSet`() {
+        val recorder = Recorder()
+        val player = ListenTogetherPlayer(StubPlayer()).apply { configure(isHost = false, interceptor = recorder) }
+        assertThat(player.isCommandAvailable(Player.COMMAND_SET_MEDIA_ITEM)).isTrue()
+        player.setMediaItem(MediaItem.Builder().setMediaId("9").build())
+        // setMediaItem(item) resets the position: Media3 passes startIndex = C.INDEX_UNSET, not 0.
+        assertThat(recorder.calls).containsExactly("set:${C.INDEX_UNSET}")
+    }
+
+    @Test fun `a role flip from host to listener withdraws skip`() {
+        val recorder = Recorder()
+        val player = ListenTogetherPlayer(StubPlayer()).apply { configure(isHost = true, interceptor = recorder) }
+        assertThat(player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT)).isTrue()
+        player.configure(isHost = false, interceptor = recorder)
+        assertThat(player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT)).isFalse()
+    }
+
+    @Test fun `outside a session every call passes straight through`() {
+        val stub = StubPlayer()
+        val player = ListenTogetherPlayer(stub).apply { configure(isHost = false, interceptor = null) }
+        assertThat(player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)).isTrue()
+        player.prepare(); player.play(); player.seekTo(5_000); player.stop()
+        assertThat(stub.calls).containsExactly("prepare", "playWhenReady=true", "seek", "stop").inOrder()
+    }
+
+    @Test fun `the host's seek to the default position is a seek to 0 and stop is a pause`() {
+        val stub = StubPlayer()
+        val recorder = Recorder()
+        val player = ListenTogetherPlayer(stub).apply { configure(isHost = true, interceptor = recorder) }
+        player.seekToDefaultPosition(); player.stop()
+        assertThat(recorder.calls).containsExactly("seek:0", "pause").inOrder()
+        assertThat(stub.calls).isEmpty()
     }
 }
