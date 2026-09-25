@@ -147,13 +147,14 @@ class PlayerRepositoryImpl @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    /** True while a Listen Together session owns the player; the transport and error gates below read it. */
+    /** True while a Listen Together session owns the player; the transport gates (Next, Previous, play) read it. */
     private val inListenTogether: Boolean get() = listenTogether?.active?.value == true
 
     /**
      * True while the player holds anything but the user's own queue: a session, and after it until
      * [resumeQueue] has put the queue back. The saves and the queue watchers read this one, so the
-     * session's song can't be saved over the user's queue in the gap (spec §4).
+     * session's song can't be saved over the user's queue in the gap (spec §4). The error auto-skip and
+     * prefetch gates read it too: in the gap the player still holds the session's song, not a queue to skip.
      */
     private val listenTogetherOwnsQueue: Boolean
         get() = listenTogether?.let { it.active.value || it.restorePending } == true
@@ -221,7 +222,18 @@ class PlayerRepositoryImpl @Inject constructor(
         // Listen Together ended: put the user's own queue back, paused (spec §6). sessionEnds fires
         // once per session, even one that fails too fast for `active` to be observed as true.
         listenTogether?.let { together ->
-            scope.launch { together.sessionEnds.collect { resumeQueue(play = false) } }
+            scope.launch {
+                together.sessionEnds.collect {
+                    // One failed restore must not end the collector: every later session would then never restore.
+                    try {
+                        resumeQueue(play = false)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Listen Together: restoring the queue failed", e)
+                    }
+                }
+            }
         }
 
         // A track's youtubeId was swapped (resync approval, wrong-match
@@ -649,7 +661,11 @@ class PlayerRepositoryImpl @Inject constructor(
             return
         }
 
+        if (!play && listenTogether?.active?.value == true) return // a session started while the items were built
         currentQueueTracks = playable
+        // A paused restore must not inherit the session's playWhenReady = true: a later prepare (the
+        // defensive one in onMediaItemTransition, a media button) would then start the music.
+        if (!play) controller.playWhenReady = false
         controller.setMediaItems(items, startInPlayable, startPositionMs)
         // After Listen Together the user's queue comes back paused and unprepared, like the cold-start
         // ghost: nothing resolves until they press play (Media3 prepares an idle player on play).
@@ -662,7 +678,8 @@ class PlayerRepositoryImpl @Inject constructor(
 
         // Warm the next-up URL so auto-advance never waits on a cold resolve
         // (the placeholder path is the cold-jump fallback, not the happy path).
-        scope.launch { prefetchNextTrack() }
+        // Not for a paused restore: nothing resolves until the user presses play.
+        if (play) scope.launch { prefetchNextTrack() }
     }
 
     /**
@@ -713,6 +730,9 @@ class PlayerRepositoryImpl @Inject constructor(
         try {
             val plan = playbackResumer.buildResumePlan()
             if (plan != null) {
+                // A new session started while the plan was being built: it owns the player now. Its own
+                // end restores again; the finally below still clears this restore's flag (`active` covers the gap).
+                if (!play && listenTogether?.active?.value == true) return
                 val tracks = plan.tracks.map { it.toDomain() }
                 val controller = ensureController()
                 controller?.shuffleModeEnabled = plan.isShuffled
@@ -752,7 +772,7 @@ class PlayerRepositoryImpl @Inject constructor(
      * any 403 at playback time, exactly as before this prefetch existed.
      */
     internal suspend fun prefetchNextTrack() {
-        if (inListenTogether) return
+        if (listenTogetherOwnsQueue) return
         val controller = controllerDeferred ?: return
         val tracks = currentQueueTracks
         val nextTimelineIndex = controller.nextMediaItemIndex
@@ -1785,7 +1805,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     /** Listener that forwards Media3 player events into [_playerState]. */
-    private val playerListener = object : Player.Listener {
+    internal val playerListener = object : Player.Listener { // internal: test seam
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val controller = controllerDeferred ?: return
@@ -1797,7 +1817,10 @@ class PlayerRepositoryImpl @Inject constructor(
             // is "next song appears, play button does nothing." A single
             // prepare() call is a no-op when the player is already READY and
             // rescues the IDLE case automatically.
-            if (controller.playbackState == Player.STATE_IDLE && controller.currentMediaItem != null) {
+            // Only when it should be playing: a paused, unprepared restore (after Listen Together) is IDLE on purpose.
+            if (controller.playbackState == Player.STATE_IDLE && controller.currentMediaItem != null &&
+                controller.playWhenReady
+            ) {
                 Log.w(TAG, "onMediaItemTransition landed in STATE_IDLE — defensive prepare()")
                 controller.prepare()
             }
@@ -1901,7 +1924,7 @@ class PlayerRepositoryImpl @Inject constructor(
          * the queue we stop gracefully rather than loop on errors.
          */
         override fun onPlayerError(error: PlaybackException) {
-            if (inListenTogether) return // the session reports "unavailable" and stays silent (spec §6)
+            if (listenTogetherOwnsQueue) return // the session reports "unavailable" and stays silent (spec §6)
             val controller = controllerDeferred
             val current = controller?.currentMediaItem
             val failingTitle = current?.mediaMetadata?.title?.toString()
@@ -2089,7 +2112,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     private fun MediaController.recoverOrStop() {
-        if (inListenTogether) return
+        if (listenTogetherOwnsQueue) return
         if (hasNextMediaItem()) {
             seekToNextMediaItem()
             prepare()
@@ -2147,7 +2170,7 @@ class PlayerRepositoryImpl @Inject constructor(
      * [_userMessages] so the user understands why the music stopped.
      */
     private fun maybeSkipOfflineStreamOnly(controller: MediaController, item: MediaItem) {
-        if (inListenTogether) return
+        if (listenTogetherOwnsQueue) return
         if (connectivity.isConnected()) return
         val isStreamable = item.mediaMetadata.extras?.getBoolean(EXTRA_TRACK_IS_STREAMABLE, false) == true
         if (!isStreamable) return

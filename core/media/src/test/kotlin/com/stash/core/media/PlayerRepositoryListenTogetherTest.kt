@@ -4,9 +4,12 @@ import android.os.Bundle
 import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.prefs.AutoplayRadioPreference
 import com.stash.core.data.radio.RadioSession
 import com.stash.core.data.radio.RadioStationGenerator
@@ -24,6 +27,8 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -184,5 +189,102 @@ class PlayerRepositoryListenTogetherTest {
         verify(exactly = 1) { controller.seekToNext() }
         verify(exactly = 1) { controller.seekToPrevious() }
         verify(exactly = 0) { controller.seekToNextMediaItem() }
+    }
+
+    private val plan = PlaybackResumer.ResumePlan(
+        tracks = listOf(TrackEntity(id = 1, title = "15 Step", artist = "Radiohead"), TrackEntity(id = 2, title = "Reckoner", artist = "Radiohead")),
+        startIndex = 1, positionMs = 44_000L, isShuffled = false, repeatMode = RepeatMode.OFF, source = PlaybackSource.Unknown,
+    )
+
+    /** Ends a session and waits out the restore (setQueueInternal builds its items on Dispatchers.IO). */
+    private fun endSessionAndRestore() {
+        together.setActive(true)
+        together.setActive(false)
+        val deadline = System.currentTimeMillis() + 5_000
+        while (together.restorePending && System.currentTimeMillis() < deadline) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(10)
+        }
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    @Test fun `a paused restore is never prepared or played, even by the defensive prepare on a transition`() {
+        val repo = build()
+        coEvery { playbackResumer.buildResumePlan() } returns plan
+        every { controller.mediaItemCount } returns 0
+        var playWhenReady = true // what the session left behind
+        every { controller.playWhenReady } answers { playWhenReady }
+        every { controller.playWhenReady = any() } answers { playWhenReady = firstArg() }
+        endSessionAndRestore()
+        verifyOrder {
+            controller.playWhenReady = false
+            controller.setMediaItems(any<List<MediaItem>>(), 1, 44_000L)
+        }
+        // setMediaItems on an IDLE player fires a PLAYLIST_CHANGED transition.
+        every { controller.playbackState } returns Player.STATE_IDLE
+        every { controller.currentMediaItem } returns item(2)
+        repo.playerListener.onMediaItemTransition(item(2), Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
+        verify(exactly = 0) { controller.prepare() }
+        verify(exactly = 0) { controller.play() }
+        verify(exactly = 0) { controller.nextMediaItemIndex } // and no prefetch resolved the next song
+    }
+
+    @Test fun `a restore that throws does not stop the next session's restore`() {
+        build()
+        coEvery { playbackResumer.buildResumePlan() } throws IllegalStateException("db gone") andThen plan
+        every { controller.mediaItemCount } returns 0
+        endSessionAndRestore()
+        assertThat(together.restorePending).isFalse()
+        endSessionAndRestore()
+        verify { controller.setMediaItems(any<List<MediaItem>>(), 1, 44_000L) }
+    }
+
+    @Test fun `a restore still building when a new session starts leaves the new session alone`() {
+        build()
+        val gate = CompletableDeferred<PlaybackResumer.ResumePlan?>()
+        coEvery { playbackResumer.buildResumePlan() } coAnswers { gate.await() }
+        together.setActive(true)
+        together.setActive(false)
+        shadowOf(Looper.getMainLooper()).idle() // the restore is now waiting on the plan
+        together.setActive(true) // a new session starts
+        gate.complete(plan)
+        shadowOf(Looper.getMainLooper()).idle()
+        verify(exactly = 0) { controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>()) }
+        verify(exactly = 0) { controller.shuffleModeEnabled = any() }
+        assertThat(together.restorePending).isFalse() // not stuck: `active` guards the saves now
+        assertThat(together.active.value).isTrue()
+    }
+
+    @Test fun `during a session a playback error does not auto-skip or retry`() {
+        val repo = build()
+        sessionPlayer()
+        val error = PlaybackException("boom", null, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        together.setActive(true)
+        repo.playerListener.onPlayerError(error)
+        shadowOf(Looper.getMainLooper()).idle()
+        verify(exactly = 0) { controller.prepare() }
+        verify(exactly = 0) { controller.seekToNextMediaItem() }
+        // Once the session is gone (quiet end, no restore) the same error is retried.
+        together.setActive(false, restore = false)
+        repo.playerListener.onPlayerError(error)
+        shadowOf(Looper.getMainLooper()).idle()
+        verify(atLeast = 1) { controller.prepare() }
+    }
+
+    @Test fun `during a session the radio grower adds nothing`() = runTest {
+        val repo = build()
+        val station = listOf(plan.tracks[0].toDomain())
+        coEvery { radioGenerator.start(any()) } returns (mockk<RadioSession>() to station)
+        coEvery { radioGenerator.nextBatch(any()) } returns station
+        repo.startRadio(com.stash.core.data.radio.RadioSeed.Artist("Radiohead"), keepCurrent = false)
+        together.setActive(true)
+        sessionPlayer() // one song left: the grower would fire
+        repo.updateState(controller)
+        shadowOf(Looper.getMainLooper()).idle()
+        coVerify(exactly = 0) { radioGenerator.nextBatch(any()) }
+        together.setActive(false, restore = false)
+        repo.updateState(controller)
+        shadowOf(Looper.getMainLooper()).idle()
+        coVerify(atLeast = 1) { radioGenerator.nextBatch(any()) }
     }
 }
