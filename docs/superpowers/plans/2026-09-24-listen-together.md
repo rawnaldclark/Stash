@@ -4762,6 +4762,16 @@ Run the Step 1 test now: it should pass.
                     override fun onPlayerError(error: PlaybackException) {
                         events?.onError()
                     }
+
+                    // Pauses that bypass ListenTogetherPlayer: ExoPlayer's own "audio becoming noisy"
+                    // (headphones unplugged, setHandleAudioBecomingNoisy) and the crossfade engine's
+                    // audio-focus loss (a phone call). See "External pauses" below.
+                    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        if (!playWhenReady && (
+                                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY ||
+                                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS)
+                        ) events?.onExternalPause()
+                    }
                 }.also { m.addListener(it) }
             }
             mediaSession?.player = wrapper
@@ -4956,6 +4966,25 @@ git commit -m "feat(listen): service runs the session — forwarding player, cro
 # Part D: UI
 
 Follow the existing Now Playing look: `SheetOptionRow` rows, `StashTheme.extendedColors.elevatedSurface` sheets, and `npAccent(...)` for the accent. Don't restyle anything that exists.
+
+#### External pauses (added after the Tasks 17–18 review)
+
+Unplugging headphones and losing audio focus (a phone call) pause the ExoPlayer directly. That bypasses the `ListenTogetherPlayer` interception point. The session handles them like this:
+
+- **The engine's events interface** (Task 15's `SessionPlayer` events, whatever the committed name is) gains `fun onExternalPause()`. The Step above fires it from the service listener.
+- **Host:** `ListenTogetherSession` turns `onExternalPause()` into the same path as the host pressing pause: it sends `pause` to the room. The whole room pauses, so the host never drifts silently.
+- **Listener:**
+  - It stays paused locally, which keeps them safe when the headphones come out.
+  - The session sets `pausedLocally = true` in its published state, and drift correction skips while that flag is set.
+  - A new controller command, `rejoin()` on `ListenTogetherController` (routed to `ListenTogetherSession.rejoin()`), clears the flag. If the room is playing, it seeks to `expected(roomNow)` and plays. If the room is paused, it just clears the flag.
+  - Any new `prepare` or `timeline` from the room also clears the flag, and the listener rejoins at the next song automatically.
+- **Tests,** in `ListenTogetherSessionTest`:
+  - A host's external pause sends `ClientMessage.Pause`.
+  - A listener's external pause sets `pausedLocally` and sends nothing.
+  - `rejoin()` seeks to the expected position and plays.
+  - The next `prepare` clears `pausedLocally`.
+
+Implement the session part together with Task 21, as a separate commit: `feat(listen): external pauses — a host's unplug pauses the room, a listener can tap to rejoin`. Task 24 shows the listener a **Paused — tap to rejoin** chip while `pausedLocally` is true, which calls `rejoin()`.
 
 ### Task 22: "Suggest" in every track menu
 
