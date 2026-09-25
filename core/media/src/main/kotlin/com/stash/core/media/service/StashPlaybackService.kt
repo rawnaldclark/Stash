@@ -54,6 +54,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.guava.future
@@ -402,10 +403,41 @@ class StashPlaybackService : MediaLibraryService() {
         super.onCreate()
 
         // Listen Together: "Listening together · <artist>" while a session runs. Otherwise the stock provider.
-        setMediaNotificationProvider(object : androidx.media3.session.DefaultMediaNotificationProvider(this) {
+        val baseProvider = object : androidx.media3.session.DefaultMediaNotificationProvider(this) {
             override fun getNotificationContentText(metadata: MediaMetadata): CharSequence? {
                 val base = super.getNotificationContentText(metadata)
                 return if (listenTogetherController.active.value) listOfNotNull("Listening together", base).joinToString(" · ") else base
+            }
+        }
+        // Listen Together keeps the service in the foreground while paused (onUpdateNotification below), but
+        // Media3's MediaNotificationManager.onNotificationUpdated, which runs when artwork finishes loading in the
+        // background, calls shouldRunInForeground(false) past that override. After Media3's 10-minute pause
+        // timeout that drops a paused listener to background, and on Android 12+ the cached process freezes and
+        // loses the room's WebSocket. So during a session the artwork callback asks for a full update instead,
+        // which goes through onUpdateNotification.
+        // Recursion: triggerNotificationUpdate runs createNotification inline on main (Util.postOrRun), and the
+        // artwork callback is always posted (Futures.addCallback on the session's handler). The round we start
+        // ourselves normally finds the artwork cached (no callback); if one still arrives it is dropped, so the
+        // redirect happens at most once per artwork load.
+        var redirectingArtwork = false
+        setMediaNotificationProvider(object : androidx.media3.session.MediaNotification.Provider by baseProvider {
+            override fun createNotification(
+                mediaSession: MediaSession,
+                mediaButtonPreferences: ImmutableList<CommandButton>,
+                actionFactory: androidx.media3.session.MediaNotification.ActionFactory,
+                onNotificationChangedCallback: androidx.media3.session.MediaNotification.Provider.Callback,
+            ): androidx.media3.session.MediaNotification {
+                val fromRedirect = redirectingArtwork
+                return baseProvider.createNotification(mediaSession, mediaButtonPreferences, actionFactory) { n ->
+                    when {
+                        !listenTogetherController.active.value -> onNotificationChangedCallback.onNotificationChanged(n)
+                        fromRedirect -> Unit
+                        else -> {
+                            redirectingArtwork = true
+                            try { triggerNotificationUpdate() } finally { redirectingArtwork = false }
+                        }
+                    }
+                }
             }
         })
 
@@ -568,7 +600,13 @@ class StashPlaybackService : MediaLibraryService() {
         ).also { it.start() }
         listenTogetherController.serviceAttached = true
         android.util.Log.i("StashPlayback", "listen-together engine attached")
-        serviceScope.launch { listenTogetherController.state.collect { updateCustomLayout() } }
+        // The layout only differs by role, so rebuild it on a role change, not on every member or reaction update.
+        serviceScope.launch {
+            listenTogetherController.state
+                .map { (it as? com.stash.core.media.listen.ListenTogetherState.InRoom)?.isHost }
+                .distinctUntilChanged()
+                .collect { updateCustomLayout() }
+        }
 
         updateCustomLayout()
     }
@@ -1300,7 +1338,10 @@ class StashPlaybackService : MediaLibraryService() {
             val wrapper = togetherPlayer?.also { it.rewrap(m) }
                 ?: com.stash.core.media.listen.ListenTogetherPlayer(m).also { togetherPlayer = it }
             wrapper.configure(isHost, interceptor)
-            if (togetherListener == null) {
+            if (togetherListener == null) { // entering the session, not a role change
+                // A listener waits for the room's first load: never show the user's own song meanwhile.
+                // The session has already saved its position, and saves are gated while active.
+                if (!isHost) { m.stop(); m.clearMediaItems() }
                 togetherListener = object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         when (playbackState) {

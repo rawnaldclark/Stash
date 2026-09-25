@@ -503,13 +503,55 @@ class ListenTogetherSessionTest {
         assertThat(connection.sent.filterNot { it is ClientMessage.Ping }).isEmpty()
     }
 
-    @Test fun `the next prepare clears pausedLocally`() = runTest {
-        join()
-        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+    @Test fun `a locally paused listener loads the next song but doesn't play it, and rejoin plays it`() = runTest {
+        join(); syncClock()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, timeline = RoomTimeline(0, 10_000, true))))
         player.events!!.onReady()
-        player.events!!.onExternalPause()
-        assertThat(pausedLocally()).isTrue()
+        advanceTimeBy(1_000); runCurrent() // playing
+        player.events!!.onExternalPause() // a call
+        player.calls.clear()
         receive(ServerMessage.Prepare(2, next, 0, 8_000))
+        player.events!!.onReady()
+        receive(ServerMessage.TimelineUpdate(rev = 3, trackKey = 2, positionMs = 0, atRoomMs = 12_000, playing = true))
+        assertThat(player.calls).contains("load:2@0")
+        advanceTimeBy(5_000); runCurrent() // local 6 000 = room 16 000
+        assertThat(player.calls).doesNotContain("play")
+        assertThat(pausedLocally()).isTrue()
+        controller.rejoin(); runCurrent()
+        // next whole room second at least 1 s ahead of 16 000 is 17 000, where the song is at 5 000
+        assertThat(player.calls).contains("seek:5000")
+        assertThat(pausedLocally()).isFalse()
+        advanceTimeBy(1_000); runCurrent()
+        assertThat(player.calls.last()).isEqualTo("play")
+    }
+
+    @Test fun `a paused host's new song keeps the room paused`() = runTest {
+        host(); syncClock()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        player.events!!.onReady()
+        player.events!!.onExternalPause() // a call, just as the song changes
+        receive(ServerMessage.Prepare(2, next, 0, 8_000))
+        player.events!!.onReady()
+        connection.sent.clear(); player.calls.clear()
+        receive(ServerMessage.TimelineUpdate(rev = 2, trackKey = 2, positionMs = 0, atRoomMs = 11_000, playing = true))
+        assertThat(connection.sent).containsExactly(ClientMessage.Pause)
+        advanceTimeBy(5_000); runCurrent()
+        assertThat(player.calls).doesNotContain("play")
+        assertThat(pausedLocally()).isTrue()
+    }
+
+    @Test fun `after a call, the host's external resume sends Play`() = runTest {
+        host(); syncClock()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        player.events!!.onReady()
+        receive(ServerMessage.TimelineUpdate(rev = 2, trackKey = 1, positionMs = 42_000, atRoomMs = 11_000, playing = true))
+        advanceTimeBy(2_000); runCurrent()
+        player.events!!.onExternalPause()
+        receive(ServerMessage.TimelineUpdate(rev = 3, trackKey = 1, positionMs = 43_000, atRoomMs = 12_000, playing = false))
+        connection.sent.clear(); player.calls.clear()
+        player.events!!.onExternalResume(); runCurrent()
+        assertThat(player.calls).containsExactly("pause") // the room's reply starts it
+        assertThat(connection.sent.filterNot { it is ClientMessage.Ping }).containsExactly(ClientMessage.Play)
         assertThat(pausedLocally()).isFalse()
     }
 

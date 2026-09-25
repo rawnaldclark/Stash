@@ -74,9 +74,11 @@ class ListenTogetherSession(
     private val history = ArrayDeque<SharedTrack>()
     private var radioTriedKey = NONE
     /**
-     * ExoPlayer paused itself (unplug, a call). A listener stays paused until [rejoin] or the room's
-     * next song or timeline. A host has sent pause: until the room's paused timeline arrives, a playing
-     * one (the room ignores transport while preparing) gets the pause again.
+     * This phone was paused locally (unplug, a call, a listener's own Pause). It stays paused until the user
+     * acts: a listener follows the room silently (new songs load but don't play) until [rejoin], Play or a
+     * focus-regain resume. A host has sent pause: until the room's paused timeline arrives, a playing one
+     * (the room ignores transport while preparing, or a new song started) gets the pause again; the host's
+     * Play or focus-regain resume clears it.
      */
     private var pausedLocally = false
 
@@ -219,7 +221,6 @@ class ListenTogetherSession(
     private suspend fun prepare(key: Int, track: SharedTrack, positionMs: Long) {
         if (key == loadedKey) return
         timeline = null
-        pausedLocally = false // a new song: everyone starts it together
         loadedKey = key
         readyKey = NONE
         unavailableKey = NONE
@@ -279,7 +280,14 @@ class ListenTogetherSession(
             publish()
         }
 
-        override fun onExternalResume() = rejoin()
+        override fun onExternalResume() {
+            if (!isHost) return rejoin()
+            // After a call a host resumes the room, like a normal player resumes. The room's reply starts us.
+            player.pause()
+            pausedLocally = false
+            publish()
+            send(ClientMessage.Play)
+        }
     }
 
     /** Catch up with the room: start where it is now, or sit at its paused position. */
@@ -322,7 +330,11 @@ class ListenTogetherSession(
         }
         if (t.trackKey != readyKey || t.trackKey == unavailableKey) return // the ready handler comes back here
         if (applied?.sameAs(t) == true) return // e.g. a state after a reconnect: keep playing
-        if (pausedLocally) { pausedLocally = false; publish() } // a listener: the room moved, so rejoin it
+        if (pausedLocally) { // paused on this phone: follow the room silently; rejoin() starts it
+            applied = null; startJob?.cancel(); stopDrift(); player.pause()
+            if (!t.playing) player.seekTo(t.positionMs)
+            return
+        }
         val roomNow = clockSync.roomNow(clock())
         if (t.playing && roomNow == null) return // the first pong comes back here
         applied = t
