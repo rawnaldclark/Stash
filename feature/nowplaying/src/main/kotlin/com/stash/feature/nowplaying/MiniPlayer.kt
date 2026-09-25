@@ -160,14 +160,16 @@ fun MiniPlayer(
                         }
                     }
 
-                    // Skip next button.
-                    IconButton(onClick = viewModel::onSkipNext) {
-                        Icon(
-                            imageVector = Icons.Default.SkipNext,
-                            contentDescription = "Next",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(24.dp),
-                        )
+                    // Skip next button. A Listen Together listener can't skip the room's song, so it gets none.
+                    if (com.stash.core.ui.components.LocalListenTogetherRole.current != com.stash.core.ui.components.ListenTogetherRole.LISTENER) {
+                        IconButton(onClick = viewModel::onSkipNext) {
+                            Icon(
+                                imageVector = Icons.Default.SkipNext,
+                                contentDescription = "Next",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
                     }
                 }
             }
