@@ -76,7 +76,7 @@
                 <data android:scheme="stash" android:host="track" />
             </intent-filter>
             <!--
-                Shared mix and track links (spec 2026-09-23 shared mixes §6). Verified App Links:
+                Shared mix, track and Listen Together links (spec 2026-09-23 shared mixes §6, 2026-09-24 listen together). Verified App Links:
                 the host serves /.well-known/assetlinks.json for com.stash.app and .debug.
                 Adding a custom domain later = one more <data android:host=…/> pair.
             -->
@@ -86,6 +86,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/m/" />
                 <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:path="/t" />
+                <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/l/" />
             </intent-filter>
             <!-- Static app shortcuts (e.g. "Resume playback"). Must live on
                  the launcher activity. -->

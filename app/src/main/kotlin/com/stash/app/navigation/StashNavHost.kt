@@ -351,6 +351,14 @@ fun StashNavHost(
             com.stash.feature.library.share.SharedTrackScreen(onBack = { navController.popBackStack() })
         }
 
+        composable<ListenJoinRoute> {
+            com.stash.feature.nowplaying.listen.JoinSessionScreen(
+                onBack = { navController.popBackStack() },
+                // After joining, Now Playing is the session; Back from it skips the Join screen.
+                onJoined = { navController.navigate(NowPlayingRoute) { popUpTo<ListenJoinRoute> { inclusive = true } } },
+            )
+        }
+
         composable<ArtistDetailRoute> {
             ArtistDetailScreen(
                 onBack = { navController.popBackStack() },
