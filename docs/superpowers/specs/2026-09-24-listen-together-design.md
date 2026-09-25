@@ -188,7 +188,7 @@ Crossfade is suspended while a session is active, on every member's phone, and r
 
 **One place catches every playback command.** While a session is active, the service wraps its session player in a `ForwardingPlayer`, and that wrapper is what the `MediaSession` exposes. It catches play, pause, seek and skip from every source: Now Playing, the notification, the lock screen, headphone and Bluetooth buttons, and Android Auto.
 - **On the host,** each command becomes a room command. The local player only changes when the room replies.
-- **On a listener,** each command is ignored. The media notification shows only a **Leave** action.
+- **On a listener,** seek, skip and queue changes are ignored. Pause pauses only their own phone, and Play rejoins the room where it is now. A phone paused locally (Pause, an unplug, a call) stays paused until the user acts: new songs load but don't play until Play, **Paused — tap to rejoin**, or the end of a transient focus loss. The media notification shows only a **Leave** action.
 
 **Staying alive:** while a session is active, the service keeps an ongoing "Listening together" foreground notification, even while the music is paused. It also suppresses `performIdleStop` and the `onTaskRemoved` stop. Otherwise Android could kill a paused listener, or a host in a long pause, and drop them from the session.
 

@@ -4977,12 +4977,15 @@ Unplugging headphones and losing audio focus (a phone call) pause the ExoPlayer 
   - It stays paused locally, which keeps them safe when the headphones come out.
   - The session sets `pausedLocally = true` in its published state, and drift correction skips while that flag is set.
   - A new controller command, `rejoin()` on `ListenTogetherController` (routed to `ListenTogetherSession.rejoin()`), clears the flag. If the room is playing, it seeks to `expected(roomNow)` and plays. If the room is paused, it just clears the flag.
-  - Any new `prepare` or `timeline` from the room also clears the flag, and the listener rejoins at the next song automatically.
+  - Only the user clears the flag: their Play or `rejoin()`, or the resume when a transient focus loss ends. A new `prepare` or `timeline` does NOT clear it: the listener follows the room silently (the next song loads but doesn't play, a paused timeline is seeked to), so a phone paused by a call or an unplug never starts on its own over the call or out of the speaker.
+- **Host resume after a call:** when a transient focus loss ends, the host's `onExternalResume()` pauses the local player, clears `pausedLocally` and sends `ClientMessage.Play`, so the room resumes like a normal player would. The local player starts on the room's reply. Until then, a host's `pausedLocally` clears only when the room's paused timeline arrives or the host presses Play; a playing timeline, including a new song's, gets `pause` sent again.
 - **Tests,** in `ListenTogetherSessionTest`:
   - A host's external pause sends `ClientMessage.Pause`.
   - A listener's external pause sets `pausedLocally` and sends nothing.
   - `rejoin()` seeks to the expected position and plays.
-  - The next `prepare` clears `pausedLocally`.
+  - A locally paused listener loads the next song but doesn't play it, and `rejoin()` plays it.
+  - A paused host's new song keeps the room paused.
+  - After a call, the host's external resume sends `ClientMessage.Play`.
 
 Implement the session part together with Task 21, as a separate commit: `feat(listen): external pauses — a host's unplug pauses the room, a listener can tap to rejoin`. Task 24 shows the listener a **Paused — tap to rejoin** chip while `pausedLocally` is true, which calls `rejoin()`.
 
@@ -6017,14 +6020,15 @@ You should see:
 1. **Start** (Pixel 5): play a song, then Now Playing → ⋮ → Listen together → Start. Then ⋮ → Invite friends → copy the link.
 2. **Join** (Pixel 6): `adb -s <pixel6> shell am start -a android.intent.action.VIEW -d "<link>" com.stash.app.debug`. The Join screen opens (not a browser) and shows the host's name and song. Tap Join. Within about 8 s both phones play the same song. The Pixel 6's Now Playing has Leave + React instead of the transport controls, and its notification shows only Leave.
 3. **In sync:** put the phones side by side and film them, or run a stopwatch app, through a pause and resume, a seek, and a skip. They stay within about 50 ms. Logcat shows no seek-storm of drift corrections.
-4. **Listener lock:** the Pixel 6's headset button, lock-screen play/pause and notification do nothing. Its volume still works.
+4. **Listener lock:** the Pixel 6's skip and seek do nothing. Its pause pauses only the Pixel 6, which then stays paused through the host's next song; play rejoins the room. Its volume still works.
 5. **Suggest:** on the Pixel 6, open any song's ⋮ → "Suggest to the host". The Pixel 5 shows "Suggestions (1)"; tap Add. The song plays after the current one.
 6. **React:** a reaction from either phone floats up on both.
 7. **Song end, then radio:** with autoplay radio on and the host's queue empty, let the last song end. A station starts on both.
 8. **Drop:** turn the Pixel 6's Wi-Fi off for 10 s and back on. It keeps playing, shows "Reconnecting…", and comes back in time.
 9. **End:** host → ⋮ → End session for everyone. Both phones show "Session ended" and their own queue returns, paused, at the right song and position. Crossfade is back to how it was.
 10. **Process death mid-session:** start a new session, then `adb -s <pixel6> shell am force-stop com.stash.app.debug` (the listener) and relaunch it. Its own queue is back (the cold-start ghost), not the session's song.
-11. **Host killed** (last, because it leaves the host phone stopped): start a new session with the Pixel 6 joined, then `adb -s <pixel5> shell am force-stop com.stash.app.debug`. After about 60 s the Pixel 6 becomes host: its transport controls come back, and its skip moves the room on.
+11. **Paused listener keeps its foreground:** pause the Pixel 6 (listener), send the app to the background for more than 10 minutes, then have the host change songs. `adb -s <pixel6> shell dumpsys activity services com.stash` shows `isForeground=true` for the playback service, and the Pixel 6 is still in the room.
+12. **Host killed** (last, because it leaves the host phone stopped): start a new session with the Pixel 6 joined, then `adb -s <pixel5> shell am force-stop com.stash.app.debug`. After about 60 s the Pixel 6 becomes host: its transport controls come back, and its skip moves the room on.
 
 - [ ] **Step 4: Open the PR**
 
