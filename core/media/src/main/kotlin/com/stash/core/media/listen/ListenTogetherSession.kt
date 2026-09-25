@@ -18,6 +18,8 @@ import com.stash.core.model.share.SharedTrack
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -40,7 +42,11 @@ class ListenTogetherSession(
     private val clock: () -> Long,
 ) {
     private var connection: RoomConnection? = null
-    private var eventsJob: Job? = null
+    /**
+     * Everything one session launches runs here, and teardown cancels it: work still pending from a
+     * session (an advance waiting on radio, a scheduled start) must never reach the next one.
+     */
+    private var sessionScope: CoroutineScope? = null
     private var pingJob: Job? = null
     private var startJob: Job? = null
     private var driftJob: Job? = null
@@ -58,6 +64,8 @@ class ListenTogetherSession(
     private var timeline: ServerMessage.TimelineUpdate? = null
     private var applied: ServerMessage.TimelineUpdate? = null
     private var loadedKey = NONE
+    /** The song whose item is in the player, set once it's loaded. Player events for any other song are stale. */
+    private var itemKey = NONE
     private var readyKey = NONE
     private var unavailableKey = NONE
     private var lastStatus: String? = null
@@ -106,7 +114,8 @@ class ListenTogetherSession(
         val mine = player.userQueue()
         val first = mine.current?.let { catalog.sharedTrackFor(it) }
         val upcoming = mine.upcoming.take(MAX_QUEUE).mapNotNull { catalog.sharedTrackFor(it) }
-        pendingLoad = first?.let { ClientMessage.Load(it, mine.positionMs, upcoming) }
+        // The song kept playing through the create call and the lookups: read where it is now.
+        pendingLoad = first?.let { ClientMessage.Load(it, player.positionMs, upcoming) }
         enter(created.code, created.url, name, hostKey = created.hostKey, asHost = true)
     }
 
@@ -126,9 +135,11 @@ class ListenTogetherSession(
         player.pause()
         Log.i(TAG, "entering room ${code.take(2)}… as ${if (asHost) "host" else "listener"}")
         // The host key goes out only until the room hands back a token (spec §2–§3).
-        val conn = connector.connect(code, scope) { ClientMessage.Hello(name, hostKey.takeIf { token == null }, token) }
+        val session = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
+        sessionScope = session
+        val conn = connector.connect(code, session) { ClientMessage.Hello(name, hostKey.takeIf { token == null }, token) }
         connection = conn
-        eventsJob = scope.launch { conn.events.collect { onEvent(it) } }
+        session.launch { conn.events.collect { onEvent(it) } }
     }
 
     // ── The room ──────────────────────────────────────────────────────────────
@@ -139,7 +150,8 @@ class ListenTogetherSession(
             RoomEvent.Reconnecting -> { reconnecting = true; publish() } // keep playing from the last timeline (§6)
             is RoomEvent.Closed -> teardown(
                 when (event.reason) {
-                    CloseReason.ENDED -> "Session ended"
+                    // No welcome yet: the room was already closed when we joined (spec §6).
+                    CloseReason.ENDED -> if (myId == null) "This session has ended" else "Session ended"
                     CloseReason.FULL -> "This session is full"
                     CloseReason.GAVE_UP -> "Lost connection to the session"
                     CloseReason.REPLACED -> "You rejoined this session somewhere else"
@@ -155,7 +167,14 @@ class ListenTogetherSession(
             is ServerMessage.Welcome -> {
                 myId = m.memberId
                 token = m.token
+                val before = loadedKey
                 applyState(m.state)
+                // A reconnect: the room forgot our status with the old socket, so say it again,
+                // unless applyState just started a new song (that reports for itself).
+                if (loadedKey == before && loadedKey != NONE) when (loadedKey) {
+                    unavailableKey -> report(UNAVAILABLE, force = true)
+                    readyKey -> report(READY, force = true)
+                }
                 if (isHost) pendingLoad?.let { load(it.track, it.positionMs, it.queue) }
                 pendingLoad = null
             }
@@ -168,7 +187,6 @@ class ListenTogetherSession(
             is ServerMessage.TimelineUpdate -> onTimeline(m)
             is ServerMessage.Prepare -> {
                 room = room?.copy(track = m.track, trackKey = m.trackKey)
-                timeline = null
                 prepare(m.trackKey, m.track, m.positionMs)
             }
             is ServerMessage.Members -> { room = room?.copy(members = m.members); publish() }
@@ -193,6 +211,7 @@ class ListenTogetherSession(
 
     private suspend fun prepare(key: Int, track: SharedTrack, positionMs: Long) {
         if (key == loadedKey) return
+        timeline = null
         loadedKey = key
         readyKey = NONE
         unavailableKey = NONE
@@ -204,16 +223,19 @@ class ListenTogetherSession(
         player.pause()
         publish()
         Log.i(TAG, "prepare #$key '${track.title}'")
+        // Inline in the event collector, so every later message waits for it: keep it a DB lookup,
+        // never make it a network call.
         val item = catalog.mediaItemFor(track)
         if (key != loadedKey) return // a newer song arrived while this one was being looked up
         if (item == null) { markUnavailable(key, "no playable item for '${track.title}'"); return }
         player.load(item, positionMs)
+        itemKey = key
     }
 
     private val playerEvents = object : SessionPlayerEvents {
         override fun onReady() {
             val key = loadedKey
-            if (key == NONE || key == unavailableKey) return
+            if (itemKey != key || key == NONE || key == unavailableKey) return
             if (readyKey != key) {
                 readyKey = key
                 val want = room?.track?.durationMs
@@ -228,14 +250,17 @@ class ListenTogetherSession(
         }
 
         override fun onBuffering() {
+            if (itemKey != loadedKey) return
             if (readyKey != NONE && readyKey == loadedKey && timeline?.playing == true) report(BUFFERING)
         }
 
         override fun onEnded() {
-            if (isHost) scope.launch { advance() }
+            if (itemKey != loadedKey) return
+            if (isHost) sessionScope?.launch { advance() }
         }
 
         override fun onError() {
+            if (itemKey != loadedKey) return
             if (loadedKey != NONE) markUnavailable(loadedKey, "the player failed")
         }
     }
@@ -250,6 +275,7 @@ class ListenTogetherSession(
         player.pause()
         report(UNAVAILABLE, force = true)
         publish()
+        if (isHost) sessionScope?.launch { advance() } // the host can't play it: move the room on, don't stall it
     }
 
     private fun onTimeline(t: ServerMessage.TimelineUpdate) {
@@ -279,7 +305,7 @@ class ListenTogetherSession(
         // be at that moment, not where it was when we arrived (spec §4).
         val startAt = if (t.atRoomMs > roomNow!!) t.atRoomMs else nextWholeSecond(roomNow + JOIN_LEAD_MS)
         player.seekTo(t.positionMs + (startAt - t.atRoomMs))
-        startJob = scope.launch {
+        startJob = sessionScope?.launch {
             val wait = startAt - (clockSync.roomNow(clock()) ?: startAt)
             if (wait > 0) delay(wait)
             player.play()
@@ -290,7 +316,7 @@ class ListenTogetherSession(
 
     private fun startDrift() {
         driftJob?.cancel()
-        driftJob = scope.launch {
+        driftJob = sessionScope?.launch {
             while (true) {
                 delay(DRIFT_TICK_MS)
                 val t = timeline ?: return@launch
@@ -329,7 +355,7 @@ class ListenTogetherSession(
 
     private fun startPings() {
         pingJob?.cancel()
-        pingJob = scope.launch {
+        pingJob = sessionScope?.launch {
             repeat(FIRST_PINGS) { send(ClientMessage.Ping(clock())); delay(FIRST_PING_GAP_MS) }
             while (true) { delay(PING_EVERY_MS); send(ClientMessage.Ping(clock())) }
         }
@@ -347,15 +373,15 @@ class ListenTogetherSession(
         override fun onPlay() { if (isHost) send(ClientMessage.Play) }
         override fun onPause() { if (isHost) send(ClientMessage.Pause) }
         override fun onSeek(positionMs: Long) { if (isHost) send(ClientMessage.Seek(positionMs)) }
-        override fun onNext() { if (isHost) scope.launch { advance() } }
+        override fun onNext() { if (isHost) sessionScope?.launch { advance() } }
         override fun onPrevious() { if (isHost) previous() }
-        override fun onAdd(items: List<MediaItem>) { scope.launch { add(items) } }
+        override fun onAdd(items: List<MediaItem>) { sessionScope?.launch { add(items) } }
         override fun onSet(items: List<MediaItem>, startIndex: Int) {
             if (!isHost) {
                 controller.message("Leave the session to play something else")
                 return
             }
-            scope.launch { replace(items, startIndex) }
+            sessionScope?.launch { replace(items, startIndex) }
         }
     }
 
@@ -388,7 +414,7 @@ class ListenTogetherSession(
             send(ClientMessage.Seek(0))
             return
         }
-        load(history.removeLast(), 0, listOfNotNull(r.track) + r.queue)
+        load(history.removeLast(), 0, (listOfNotNull(r.track) + r.queue).take(MAX_QUEUE))
     }
 
     private suspend fun add(items: List<MediaItem>) {
@@ -421,6 +447,7 @@ class ListenTogetherSession(
     }
 
     private fun remember(track: SharedTrack) {
+        if (history.lastOrNull() == track) return
         history.addLast(track)
         if (history.size > MAX_HISTORY) history.removeFirst()
     }
@@ -444,16 +471,15 @@ class ListenTogetherSession(
     private fun teardown(message: String?, restore: Boolean = true) {
         if (code == null) return
         Log.i(TAG, "leaving the room${message?.let { " ($it)" }.orEmpty()}")
-        eventsJob?.cancel()
-        pingJob?.cancel()
-        startJob?.cancel()
+        sessionScope?.cancel() // events, pings, start, drift and any advance, add or replace still running
+        sessionScope = null
         stopDrift()
         connection?.close()
         connection = null
         player.events = null
         player.exitSession()
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null
-        timeline = null; applied = null; loadedKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
+        timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
         clockSync.reset()
         // exitSession has already stopped and emptied the player. With restore, PlayerRepositoryImpl puts the

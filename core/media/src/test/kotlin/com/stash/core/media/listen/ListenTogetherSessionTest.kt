@@ -3,6 +3,7 @@ package com.stash.core.media.listen
 import android.util.Log
 import androidx.media3.common.MediaItem
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.listen.CloseReason
 import com.stash.core.data.listen.RoomApiClient
 import com.stash.core.data.listen.RoomConnection
 import com.stash.core.data.listen.RoomEvent
@@ -17,6 +18,7 @@ import com.stash.core.model.listen.ServerMessage
 import com.stash.core.model.share.SharedTrack
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -81,9 +83,12 @@ class ListenTogetherSessionTest {
         val items = mutableMapOf(track to item("1"), next to item("2"), third to item("3"))
         var radio: List<SharedTrack> = emptyList()
         var radioCalls = 0
-        override suspend fun mediaItemFor(track: SharedTrack) = items[track]
+        /** When set, lookups and radio wait on it: a slow DB or network. */
+        var itemGate: CompletableDeferred<Unit>? = null
+        var radioGate: CompletableDeferred<Unit>? = null
+        override suspend fun mediaItemFor(track: SharedTrack): MediaItem? { itemGate?.await(); return items[track] }
         override suspend fun sharedTrackFor(item: MediaItem) = items.entries.firstOrNull { it.value.mediaId == item.mediaId }?.key
-        override suspend fun radioAfter(track: SharedTrack): List<SharedTrack> { radioCalls++; return radio }
+        override suspend fun radioAfter(track: SharedTrack): List<SharedTrack> { radioCalls++; radioGate?.await(); return radio }
     }
 
     val player = FakePlayer()
@@ -267,6 +272,148 @@ class ListenTogetherSessionTest {
         assertThat(ends).isEmpty()
     }
 
+    fun TestScope.notices(): List<String> {
+        val notices = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.messages.collect { notices += it } }
+        return notices
+    }
+
+    fun statuses() = connection.sent.filterIsInstance<ClientMessage.Status>()
+
+    @Test fun `an old song's ready before the new song loads is ignored`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+        player.events!!.onReady()
+        connection.sent.clear()
+        catalog.itemGate = CompletableDeferred()
+        receive(ServerMessage.Prepare(trackKey = 2, track = next, positionMs = 0, deadlineMs = 8_000))
+        player.events!!.onReady() // still song 1 in the player
+        player.events!!.onEnded()
+        player.events!!.onError()
+        assertThat(connection.sent).isEmpty()
+        catalog.itemGate!!.complete(Unit); runCurrent()
+        assertThat(player.calls.last()).isEqualTo("load:2@0")
+        player.events!!.onReady()
+        assertThat(statuses()).containsExactly(ClientMessage.Status("ready", 2))
+    }
+
+    @Test fun `a reconnect mid-handshake re-reports ready`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+        player.events!!.onReady()
+        connection.sent.clear()
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+        assertThat(statuses()).containsExactly(ClientMessage.Status("ready", 1))
+    }
+
+    @Test fun `a reconnect re-reports unavailable`() = runTest {
+        catalog.items.remove(track)
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+        connection.sent.clear()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+        assertThat(statuses()).containsExactly(ClientMessage.Status("unavailable", 1))
+    }
+
+    @Test fun `a host whose song is unavailable moves the room on`() = runTest {
+        host()
+        catalog.items.remove(track)
+        connection.sent.clear()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        assertThat(connection.sent).containsExactly(ClientMessage.Status("unavailable", 1), ClientMessage.Load(next, 0, emptyList())).inOrder()
+    }
+
+    @Test fun `a pending advance after leaving doesn't reach the next session`() = runTest {
+        autoplay = true
+        catalog.radio = listOf(next)
+        catalog.radioGate = CompletableDeferred()
+        host(upcoming = emptyList())
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        player.events!!.onEnded(); runCurrent() // waiting on the station
+        controller.send(Command.Leave); runCurrent()
+        controller.send(Command.Join("ZZ22ZZ22")); runCurrent()
+        connection.sent.clear()
+        catalog.radioGate!!.complete(Unit); runCurrent()
+        assertThat(connection.sent.filterIsInstance<ClientMessage.Load>()).isEmpty()
+    }
+
+    @Test fun `a paused timeline pauses then seeks and doesn't start`() = runTest {
+        join(); syncClock()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, timeline = RoomTimeline(0, 10_000, true))))
+        player.events!!.onReady()
+        advanceTimeBy(1_000); runCurrent()
+        assertThat(player.calls.last()).isEqualTo("play")
+        player.calls.clear()
+        receive(ServerMessage.TimelineUpdate(rev = 2, trackKey = 1, positionMs = 20_000, atRoomMs = 11_000, playing = false))
+        assertThat(player.calls).containsExactly("pause", "seek:20000").inOrder()
+        advanceTimeBy(5_000); runCurrent()
+        assertThat(player.calls).containsExactly("pause", "seek:20000").inOrder()
+    }
+
+    @Test fun `10 s off by over 250 ms reports drifting and back in sync reports ready`() = runTest {
+        join(); syncClock()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, timeline = RoomTimeline(0, 10_500, true))))
+        player.events!!.onReady()
+        advanceTimeBy(500); runCurrent() // plays at local 500, drift ticks at 1 500, 2 500 and on
+        var tick = 1_500L
+        repeat(11) { player.positionMs = tick; advanceTimeBy(1_000); runCurrent(); tick += 1_000 } // 500 ms ahead
+        assertThat(statuses().map { it.status }).containsExactly("ready", "drifting").inOrder()
+        player.positionMs = tick - 500 // exactly where the room is
+        advanceTimeBy(1_000); runCurrent()
+        assertThat(statuses().map { it.status }).containsExactly("ready", "drifting", "ready").inOrder()
+    }
+
+    @Test fun `make host, suggestion and reaction commands go to the room`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+        connection.sent.clear()
+        controller.send(Command.MakeHost("h"))
+        controller.send(Command.Suggestion("s1", add = true))
+        controller.send(Command.Suggestion("s2", add = false))
+        controller.send(Command.React("heart"))
+        runCurrent()
+        assertThat(connection.sent).containsExactly(
+            ClientMessage.MakeHost("h"),
+            ClientMessage.SuggestionAction("s1", "add"),
+            ClientMessage.SuggestionAction("s2", "dismiss"),
+            ClientMessage.React("heart"),
+        ).inOrder()
+    }
+
+    @Test fun `joining a room that has already ended says so`() = runTest {
+        val notices = notices()
+        join()
+        connection.incoming.trySend(RoomEvent.Closed(CloseReason.ENDED)); runCurrent()
+        assertThat(notices).containsExactly("This session has ended")
+        assertThat(controller.active.value).isFalse()
+    }
+
+    @Test fun `a room that ends mid-session says session ended`() = runTest {
+        val notices = notices()
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+        connection.incoming.trySend(RoomEvent.Closed(CloseReason.ENDED)); runCurrent()
+        assertThat(notices).containsExactly("Session ended")
+    }
+
+    @Test fun `a full room says so`() = runTest {
+        val notices = notices()
+        join()
+        connection.incoming.trySend(RoomEvent.Closed(CloseReason.FULL)); runCurrent()
+        assertThat(notices).containsExactly("This session is full")
+        assertThat(player.calls.last()).isEqualTo("exit")
+    }
+
+    @Test fun `rejoining from another device says so here`() = runTest {
+        val notices = notices()
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+        connection.incoming.trySend(RoomEvent.Closed(CloseReason.REPLACED)); runCurrent()
+        assertThat(notices).containsExactly("You rejoined this session somewhere else")
+    }
+
     @Test fun `when the room ends everyone gets their own music back and a notice`() = runTest {
         val notices = mutableListOf<String>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.messages.collect { notices += it } }
@@ -280,7 +427,8 @@ class ListenTogetherSessionTest {
 
     fun TestScope.host(upcoming: List<MediaItem> = listOf(item("2"))) {
         coEvery { api.create("Rawn") } returns ShareResult.Ok(RoomApiClient.Created("K7QA2PXM", "KEY", "https://x/l/K7QA2PXM"))
-        player.queue = UserQueue(current = item("1"), upcoming = upcoming, positionMs = 42_000)
+        player.queue = UserQueue(current = item("1"), upcoming = upcoming, positionMs = 40_000)
+        player.positionMs = 42_000 // the song played on while the room was being created
         session()
         controller.send(Command.Host); runCurrent()
         assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", hostKey = "KEY"))
