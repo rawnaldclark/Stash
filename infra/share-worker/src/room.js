@@ -54,7 +54,7 @@ export function createRoom({ code, hostName, keyHash }, now) {
         rev: 0, host: null, track: null, trackKey: 0,
         timeline: { positionMs: 0, atRoomMs: now, playing: false },
         queue: [], members: [], suggestions: [], phase: { kind: "playing" },
-        reactAt: {}, lastLeftAt: now, hostless: false,
+        reactAt: {}, lastLeftAt: now, hostless: false, accepted: [],
     };
 }
 
@@ -92,6 +92,8 @@ export function nextAlarm(s) {
 const unchanged = (state, out = []) => ({ state, out, alarmAt: nextAlarm(state) });
 const membersMsg = (s) => ({ to: "all", msg: { t: "members", members: publicMembers(s) } });
 const suggestionsMsg = (s) => ({ to: "all", msg: { t: "suggestions", suggestions: s.suggestions } });
+/** A queued song's identity, to find accepted suggestions again after the host's app resends the queue. */
+const songKey = (t) => JSON.stringify([t.t, t.a, t.yt ?? null, t.isrc ?? null]);
 const stateMsg = (s, to = "all") => ({ to, msg: { t: "state", state: publicState(s) } });
 /** Every connected phone has either buffered the song or can't get it, so nobody is worth waiting for. */
 const allSettled = (s) => connected(s).every((m) => m.status === "ok" || m.status === "unavailable");
@@ -292,7 +294,15 @@ const MESSAGES = {
         const i = s.suggestions.findIndex((x) => x.id === msg.id);
         if (i < 0 || (msg.action !== "add" && msg.action !== "dismiss")) return false;
         const [picked] = s.suggestions.splice(i, 1);
-        if (msg.action === "add" && s.queue.length < MAX_QUEUE) s.queue.push(picked.track);
+        if (msg.action === "add" && s.queue.length < MAX_QUEUE) {
+            // Accepted suggestions play next, in the order accepted: behind any still waiting at the front.
+            const accepted = new Set(s.accepted ?? []);
+            let at = 0;
+            while (at < s.queue.length && accepted.has(songKey(s.queue[at]))) at++;
+            s.queue.splice(at, 0, picked.track);
+            const queued = new Set(s.queue.map(songKey)); // keys no longer queued are dropped, which bounds the list
+            s.accepted = [...accepted, songKey(picked.track)].filter((k) => queued.has(k));
+        }
         s.rev++;
         ctx.out.push(suggestionsMsg(s));
         // The host's app mirrors the room's queue, so it gets the new one straight away.

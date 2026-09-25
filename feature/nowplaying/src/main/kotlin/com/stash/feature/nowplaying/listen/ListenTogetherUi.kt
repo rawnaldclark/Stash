@@ -290,7 +290,7 @@ fun SuggestionsSheet(room: ListenTogetherState.InRoom, onAnswer: (id: String, ad
                         )
                     }
                     TextButton(onClick = { onAnswer(s.id, false) }) { Text("Dismiss") }
-                    Button(onClick = { onAnswer(s.id, true) }) { Text("Add") }
+                    Button(onClick = { onAnswer(s.id, true) }) { Text("Play next") }
                 }
             }
         }

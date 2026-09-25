@@ -207,6 +207,21 @@ test("adding a suggestion queues it and tells the host; dismissing just removes 
     assert.equal(d.state.suggestions.length, 0);
 });
 
+test("accepted suggestions play next, in the order the host accepted them", () => {
+    const [A, B, C] = ["A1", "B2", "C3"].map((t) => ({ t, a: "Friend" }));
+    let s = send(party(), "h", { t: "queue", queue: [NEXT, TRACK] }).state;
+    s = send(s, "a", { t: "suggest", track: A }, T0, { newId: "sa" }).state;
+    s = send(s, "a", { t: "suggest", track: B }, T0, { newId: "sb" }).state;
+    s = send(s, "h", { t: "suggestion", id: "sa", action: "add" }).state;
+    s = send(s, "h", { t: "suggestion", id: "sb", action: "add" }).state;
+    assert.deepEqual(s.queue, [A, B, NEXT, TRACK]);
+    // A plays and the host's app resends the rest of the queue; C, accepted now, still waits behind B.
+    s = send(s, "h", { t: "load", track: A, positionMs: 0, queue: [B, NEXT, TRACK] }).state;
+    s = send(s, "b", { t: "suggest", track: C }, T0, { newId: "sc" }).state;
+    s = send(s, "h", { t: "suggestion", id: "sc", action: "add" }).state;
+    assert.deepEqual(s.queue, [B, C, NEXT, TRACK]);
+});
+
 test("reactions: one of the six, at most one per second per member", () => {
     const s = party();
     const r = send(s, "a", { t: "react", emoji: EMOJI[1] }, T0);
