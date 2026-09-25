@@ -493,10 +493,17 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun ensureExactTrackPersisted(track: com.stash.core.model.share.SharedTrack): Long {
-        val incoming = track.toTrack()
-        val existing = incoming.youtubeId?.takeIf { it.isNotBlank() }?.let { trackDao.findByYoutubeId(it) }
+        // Blank ids from a peer become null, so no row gets youtube_id = "" or "spotify:track:".
+        val incoming = track.toTrack().let { t ->
+            t.copy(
+                youtubeId = t.youtubeId?.ifBlank { null },
+                spotifyUri = track.spotifyId?.takeIf { it.isNotBlank() }?.let { "spotify:track:$it" },
+                isrc = t.isrc?.ifBlank { null },
+            )
+        }
+        val existing = incoming.youtubeId?.let { trackDao.findByYoutubeId(it) }
             ?: incoming.spotifyUri?.let { trackDao.findBySpotifyUri(it) }
-            ?: incoming.isrc?.takeIf { it.isNotBlank() }?.let { trackDao.findByIsrc(it) }
+            ?: incoming.isrc?.let { trackDao.findByIsrc(it) }
         if (existing != null) {
             backfillFrom(existing, incoming) // an exact match is the same recording, so its ISRC is trusted
             return existing.id

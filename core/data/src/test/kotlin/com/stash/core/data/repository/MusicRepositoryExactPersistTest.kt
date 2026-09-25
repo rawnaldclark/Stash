@@ -70,4 +70,19 @@ class MusicRepositoryExactPersistTest {
         }
         coVerify(exactly = 0) { trackDao.findByCanonicalIdentity(any(), any()) }
     }
+
+    @Test fun `blank ids are neither looked up nor stored`() = runTest {
+        coEvery { trackDao.findByIsrc(any()) } returns null
+        val inserted = slot<TrackEntity>()
+        coEvery { trackDao.insert(capture(inserted)) } returns 43
+        repo().ensureExactTrackPersisted(descriptor.copy(youtubeId = " ", spotifyId = "", isrc = ""))
+        coVerify(exactly = 0) { trackDao.findByYoutubeId(any()) }
+        coVerify(exactly = 0) { trackDao.findBySpotifyUri(any()) }
+        coVerify(exactly = 0) { trackDao.findByIsrc(any()) }
+        with(inserted.captured) {
+            assertThat(youtubeId).isNull()
+            assertThat(spotifyUri).isNull()
+            assertThat(isrc).isNull()
+        }
+    }
 }

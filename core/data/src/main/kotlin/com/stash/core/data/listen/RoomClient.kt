@@ -1,12 +1,14 @@
 package com.stash.core.data.listen
 
 import android.os.SystemClock
+import android.util.Log
 import com.stash.core.model.listen.ClientMessage
 import com.stash.core.model.listen.RoomProtocol
 import com.stash.core.model.share.ShareConfig
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.random.Random
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -17,6 +19,8 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -26,14 +30,16 @@ import okhttp3.WebSocketListener
 sealed interface RoomEvent {
     /** The socket is open and `hello` has gone out. */
     data object Connected : RoomEvent
-    data class Message(val message: com.stash.core.model.listen.ServerMessage) : RoomEvent
+    /** [receivedAt] is [RoomClient]'s clock (elapsedRealtime) when the frame arrived, so a pong's round trip excludes queueing. */
+    data class Message(val message: com.stash.core.model.listen.ServerMessage, val receivedAt: Long) : RoomEvent
     /** The socket dropped; a reconnect is scheduled (spec §5: 1, 2, 4, 8, 15 s). */
     data object Reconnecting : RoomEvent
     /** Final: no more reconnects. */
     data class Closed(val reason: CloseReason) : RoomEvent
 }
 
-enum class CloseReason { ENDED, FULL, GAVE_UP }
+/** [REPLACED]: the room closed us 1000 "replaced" because a newer connection resumed this membership. */
+enum class CloseReason { ENDED, FULL, GAVE_UP, REPLACED }
 
 /** One room connection. The session only sees this, so tests can fake it. */
 interface RoomConnection {
@@ -65,8 +71,10 @@ class OkHttpRoomConnector @Inject constructor(okHttpClient: OkHttpClient) : Room
 /**
  * The Listen Together WebSocket (spec §5): sends `hello` first on every connect, parses room
  * messages, and reconnects with backoff (1, 2, 4, 8, 15, 15… s) until two minutes have passed
- * since the connection was last up. Rejections (404 closed, 409 full, a 4xxx close from the room)
- * are final.
+ * since the connection was last up (±20% jitter). Final: 404 at the upgrade, 409 on a first join
+ * (full), closes 4000/4404 (ended) and 4409 (full), and 1000 "replaced". A 409 on a resume is the
+ * room's socket cap, so it retries. Other closes (4408 no hello, 1008/1009 misbehaving, network)
+ * reconnect; a drop only resets the backoff if the socket had been up at least 5 s.
  */
 internal class RoomClient(
     private val http: OkHttpClient,
@@ -76,24 +84,28 @@ internal class RoomClient(
     private val now: () -> Long = { SystemClock.elapsedRealtime() },
     private val backoffMs: List<Long> = BACKOFF_MS,
     private val giveUpMs: Long = GIVE_UP_MS,
+    private val random: Random = Random.Default,
 ) : RoomConnection {
     private val channel = Channel<RoomEvent>(Channel.UNLIMITED)
     override val events: Flow<RoomEvent> = channel.receiveAsFlow()
 
     @Volatile private var socket: WebSocket? = null
+    /** The socket [close] is shutting down gracefully, which cancellation must not abort. */
+    @Volatile private var leaving: WebSocket? = null
     private val job = scope.launch { loop() }
 
     override fun send(message: ClientMessage): Boolean = socket?.send(RoomProtocol.encode(message)) ?: false
 
     override fun close() {
+        // Say goodbye first: cancelling the job would otherwise cancel the socket before the frame goes out.
+        leaving = socket?.also { it.close(1000, "leave") }
         job.cancel()
-        socket?.close(1000, "leave")
         socket = null
         channel.close()
     }
 
     private sealed interface End {
-        /** [healthy] = the socket opened and wasn't thrown out for misbehaving, so the backoff restarts. */
+        /** [healthy] = the socket was up at least 5 s and wasn't thrown out for misbehaving, so the backoff restarts. */
         data class Dropped(val healthy: Boolean) : End
         data class Final(val reason: CloseReason) : End
     }
@@ -109,7 +121,7 @@ internal class RoomClient(
                     val since = downSince ?: now().also { downSince = it }
                     if (now() - since >= giveUpMs) { channel.trySend(RoomEvent.Closed(CloseReason.GAVE_UP)); return }
                     channel.trySend(RoomEvent.Reconnecting)
-                    delay(backoffMs[minOf(attempt, backoffMs.lastIndex)])
+                    delay(jittered(backoffMs[minOf(attempt, backoffMs.lastIndex)], random))
                     attempt++
                 }
             }
@@ -118,23 +130,33 @@ internal class RoomClient(
 
     private suspend fun connectOnce(): End = suspendCancellableCoroutine { cont ->
         val greeting = hello()
-        var opened = false
+        val resume = greeting.resumeToken != null
+        var openedAt: Long? = null
+        fun healthy() = openedAt?.let { now() - it >= HEALTHY_AFTER_MS } ?: false
         fun finish(end: End) {
             socket = null
             if (cont.isActive) cont.resume(end)
         }
         val ws = http.newWebSocket(
-            Request.Builder().url(url(greeting.resumeToken != null)).build(),
+            Request.Builder().url(url(resume)).build(),
             object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
-                    opened = true
+                    Log.i(TAG, "open (resume=$resume)")
+                    openedAt = now()
+                    webSocket.send(RoomProtocol.encode(greeting)) // hello before anyone else can send
                     socket = webSocket
-                    webSocket.send(RoomProtocol.encode(greeting))
                     channel.trySend(RoomEvent.Connected)
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    RoomProtocol.decode(text)?.let { channel.trySend(RoomEvent.Message(it)) }
+                    val receivedAt = now()
+                    val message = RoomProtocol.decode(text)
+                    if (message == null) {
+                        val t = runCatching { RoomProtocol.json.parseToJsonElement(text).jsonObject["t"]?.jsonPrimitive?.content }.getOrNull()
+                        Log.w(TAG, "undecodable room message t=$t")
+                        return
+                    }
+                    channel.trySend(RoomEvent.Message(message, receivedAt))
                 }
 
                 override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -142,6 +164,7 @@ internal class RoomClient(
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    Log.i(TAG, "closed $code $reason")
                     finish(
                         when (code) {
                             4000, 4404 -> End.Final(CloseReason.ENDED)
@@ -149,27 +172,36 @@ internal class RoomClient(
                             // Rate-limited or oversized frame: the room threw us out, so keep the
                             // backoff growing and the give-up clock running rather than retrying at 1 s forever.
                             1008, 1009 -> End.Dropped(healthy = false)
-                            else -> End.Dropped(healthy = opened)
+                            // A newer connection resumed our membership; reconnecting would just fight it.
+                            1000 if reason == "replaced" -> End.Final(CloseReason.REPLACED)
+                            else -> End.Dropped(healthy())
                         },
                     )
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    Log.i(TAG, "failure ${response?.code} ${t.message}")
                     finish(
                         when (response?.code) {
                             404 -> End.Final(CloseReason.ENDED)
-                            409 -> End.Final(CloseReason.FULL)
-                            else -> End.Dropped(healthy = opened) // 429 at the upgrade never opened, so it backs off
+                            // On a resume, 409 is the room's temporary socket cap, not "full".
+                            409 -> if (resume) End.Dropped(healthy = false) else End.Final(CloseReason.FULL)
+                            else -> End.Dropped(healthy()) // 429 at the upgrade never opened, so it backs off
                         },
                     )
                 }
             },
         )
-        cont.invokeOnCancellation { ws.cancel() }
+        cont.invokeOnCancellation { if (ws !== leaving) ws.cancel() }
     }
 
-    private companion object {
-        val BACKOFF_MS = listOf(1_000L, 2_000L, 4_000L, 8_000L, 15_000L)
-        const val GIVE_UP_MS = 120_000L
+    internal companion object {
+        private const val TAG = "RoomClient"
+        private val BACKOFF_MS = listOf(1_000L, 2_000L, 4_000L, 8_000L, 15_000L)
+        private const val GIVE_UP_MS = 120_000L
+        private const val HEALTHY_AFTER_MS = 5_000L
+
+        /** [base] ±20%, so phones dropped together don't all reconnect in the same instant. */
+        fun jittered(base: Long, random: Random): Long = (base * (0.8 + 0.4 * random.nextDouble())).toLong()
     }
 }
