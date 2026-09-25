@@ -6,6 +6,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.listen.RoomApiClient
 import com.stash.core.data.listen.RoomConnection
 import com.stash.core.data.listen.RoomEvent
+import com.stash.core.data.share.ShareResult
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.model.listen.ClientMessage
 import com.stash.core.model.listen.RoomMember
@@ -14,6 +15,7 @@ import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
 import com.stash.core.model.share.SharedTrack
+import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -274,5 +276,117 @@ class ListenTogetherSessionTest {
         assertThat(player.calls.last()).isEqualTo("exit")
         assertThat(controller.active.value).isFalse()
         assertThat(notices).containsExactly("Session ended")
+    }
+
+    fun TestScope.host(upcoming: List<MediaItem> = listOf(item("2"))) {
+        coEvery { api.create("Rawn") } returns ShareResult.Ok(RoomApiClient.Created("K7QA2PXM", "KEY", "https://x/l/K7QA2PXM"))
+        player.queue = UserQueue(current = item("1"), upcoming = upcoming, positionMs = 42_000)
+        session()
+        controller.send(Command.Host); runCurrent()
+        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", hostKey = "KEY"))
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("h", "tok", state(host = "h", track = null, key = 0)))
+    }
+
+    @Test fun `hosting sets the queue aside and sends the user's song and queue to the new room`() = runTest {
+        host()
+        assertThat(player.calls.take(3)).containsExactly("save", "enter:host", "pause").inOrder()
+        assertThat(connection.sent.filterIsInstance<ClientMessage.Load>()).containsExactly(ClientMessage.Load(track, 42_000, listOf(next)))
+        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", resumeToken = "tok"))
+        assertThat((controller.state.value as ListenTogetherState.InRoom).url).isEqualTo("https://x/l/K7QA2PXM")
+    }
+
+    @Test fun `a room that can't be created leaves everything alone`() = runTest {
+        coEvery { api.create(any()) } returns ShareResult.Failed("offline")
+        session()
+        controller.send(Command.Host); runCurrent()
+        assertThat(player.calls).isEmpty()
+        assertThat(controller.active.value).isFalse()
+        assertThat(controller.state.value).isEqualTo(ListenTogetherState.Idle)
+    }
+
+    @Test fun `the host's own controls go to the room and its player waits for the reply`() = runTest {
+        host()
+        player.calls.clear(); connection.sent.clear()
+        player.interceptor!!.run { onPause(); onPlay(); onSeek(90_000) }
+        assertThat(connection.sent).containsExactly(ClientMessage.Pause, ClientMessage.Play, ClientMessage.Seek(90_000)).inOrder()
+        assertThat(player.calls).isEmpty()
+    }
+
+    @Test fun `when a song ends the host loads the next one from its queue`() = runTest {
+        host()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        connection.sent.clear()
+        player.events!!.onEnded(); runCurrent()
+        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, emptyList()))
+    }
+
+    @Test fun `with the queue empty and autoplay radio on the host starts a station`() = runTest {
+        autoplay = true
+        catalog.radio = listOf(next, third)
+        host(upcoming = emptyList())
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        connection.sent.clear()
+        player.events!!.onEnded(); runCurrent()
+        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, listOf(third)))
+    }
+
+    @Test fun `a station that can't be built isn't retried for the same song, and the room pauses`() = runTest {
+        autoplay = true
+        host(upcoming = emptyList())
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        receive(ServerMessage.TimelineUpdate(2, 1, 42_000, 0, true))
+        connection.sent.clear()
+        player.events!!.onEnded(); runCurrent()
+        player.events!!.onEnded(); runCurrent()
+        assertThat(catalog.radioCalls).isEqualTo(1)
+        assertThat(connection.sent.filterIsInstance<ClientMessage.Pause>()).isNotEmpty()
+    }
+
+    @Test fun `previous restarts the song once it is more than 3 s in`() = runTest {
+        host()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        connection.sent.clear()
+        player.positionMs = 10_000
+        player.interceptor!!.onPrevious()
+        assertThat(connection.sent).containsExactly(ClientMessage.Seek(0))
+    }
+
+    @Test fun `the host's add from a track menu joins the room's queue`() = runTest {
+        host()
+        connection.sent.clear()
+        player.interceptor!!.onAdd(listOf(item("3"))); runCurrent()
+        assertThat(connection.sent).containsExactly(ClientMessage.Queue(listOf(next, third)))
+    }
+
+    @Test fun `tapping a playlist while hosting plays it for everyone`() = runTest {
+        host()
+        connection.sent.clear()
+        player.interceptor!!.onSet(listOf(item("2"), item("3")), 0); runCurrent()
+        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, listOf(third)))
+    }
+
+    @Test fun `a host who leaves hands the room to the longest-joined listener`() = runTest {
+        host()
+        receive(ServerMessage.Members(listOf(RoomMember("h", "Host", 1), RoomMember("a", "A", 5), RoomMember("b", "B", 3))))
+        controller.send(Command.Leave); runCurrent()
+        assertThat(connection.sent).contains(ClientMessage.MakeHost("b"))
+        assertThat(connection.closed).isTrue()
+    }
+
+    @Test fun `end session tells the room and restores the host's own music`() = runTest {
+        host()
+        controller.send(Command.End); runCurrent()
+        assertThat(connection.sent).contains(ClientMessage.End)
+        assertThat(player.calls.last()).isEqualTo("exit")
+        assertThat(controller.active.value).isFalse()
+    }
+
+    @Test fun `becoming host through a state message switches the player to the host role`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+        receive(ServerMessage.StateSync(state(host = "me", key = 1)))
+        assertThat(player.calls).contains("enter:host")
+        assertThat((controller.state.value as ListenTogetherState.InRoom).isHost).isTrue()
     }
 }
