@@ -40,6 +40,9 @@ interface SessionPlayer {
     /** The loaded item's duration, or null while unknown. */
     val durationMs: Long?
 
+    /** The loaded song played to its end (STATE_ENDED): a new host's Play must move the room on, not replay it. */
+    val ended: Boolean
+
     var events: SessionPlayerEvents?
 }
 

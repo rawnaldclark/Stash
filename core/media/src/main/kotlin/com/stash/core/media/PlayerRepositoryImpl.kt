@@ -1025,14 +1025,6 @@ class PlayerRepositoryImpl @Inject constructor(
         currentSource = com.stash.core.model.PlaybackSource.Unknown
     }
 
-    /** Normalized track identity for matching the radio seed against the batch —
-     *  lowercase, trimmed, whitespace-collapsed `title|artist`. Robust across the
-     *  different resolution paths that produce the same song. */
-    private fun radioIdentity(artist: String, title: String): String {
-        fun norm(s: String) = s.trim().lowercase().replace(Regex("\\s+"), " ")
-        return norm(title) + "|" + norm(artist)
-    }
-
     /** Append the next generated batch to the station queue. Single-flight via
      *  [radioGrowMutex] so a flurry of state emissions can't fan out into
      *  concurrent grows. Internal as a test seam (the watcher that fires it is
@@ -2402,7 +2394,8 @@ class PlayerRepositoryImpl @Inject constructor(
         val display = QueueDisplay.compute(
             timelineQueue = timelineQueue,
             timelineIndex = controller.currentMediaItemIndex,
-            logicalQueue = currentQueueTracks,
+            // In a session the player holds the room's one song: the user's queue, set aside, isn't "up next".
+            logicalQueue = if (listenTogetherOwnsQueue) emptyList() else currentQueueTracks,
             currentTrackId = currentTrackId,
             shuffledTimelineIndices = shuffledIndices,
         )

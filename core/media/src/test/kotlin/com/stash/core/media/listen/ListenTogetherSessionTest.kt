@@ -49,6 +49,7 @@ class ListenTogetherSessionTest {
         var currentSpeed = 1f
         override var positionMs = 0L
         override var durationMs: Long? = 125_000L
+        override var ended = false
         override var events: SessionPlayerEvents? = null
         override fun userQueue() = queue
         override suspend fun saveUserPosition() { calls += "save" }
@@ -73,9 +74,11 @@ class ListenTogetherSessionTest {
         val sent = mutableListOf<ClientMessage>()
         val incoming = Channel<RoomEvent>(Channel.UNLIMITED)
         var closed = false
+        /** False while the socket is down: send() drops the frame and says so. */
+        var up = true
         var hello: (() -> ClientMessage.Hello)? = null
         override val events: Flow<RoomEvent> = incoming.receiveAsFlow()
-        override fun send(message: ClientMessage): Boolean { sent += message; return true }
+        override fun send(message: ClientMessage): Boolean { if (up) sent += message; return up }
         override fun close() { closed = true }
     }
 
@@ -677,5 +680,62 @@ class ListenTogetherSessionTest {
         receive(ServerMessage.StateSync(state(host = "me", key = 1)))
         assertThat(player.calls).contains("enter:host")
         assertThat((controller.state.value as ListenTogetherState.InRoom).isHost).isTrue()
+    }
+
+    fun loads() = connection.sent.filterIsInstance<ClientMessage.Load>()
+
+    @Test fun `a host's load while the socket is down is sent once the room welcomes it back`() = runTest {
+        host()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        connection.up = false
+        player.events!!.onEnded(); runCurrent() // the Load is dropped with the socket
+        connection.up = true
+        connection.sent.clear()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("h", "tok", state(host = "h", key = 1)))
+        assertThat(loads()).containsExactly(ClientMessage.Load(next, 0, emptyList()))
+    }
+
+    @Test fun `the first load carries where the song is when the room welcomes the host`() = runTest {
+        coEvery { api.create("Rawn") } returns ShareResult.Ok(RoomApiClient.Created("K7QA2PXM", "KEY", "https://x/l/K7QA2PXM"))
+        player.queue = UserQueue(current = item("1"), upcoming = listOf(item("2")), positionMs = 40_000)
+        player.positionMs = 42_000
+        session()
+        controller.send(Command.Host); runCurrent()
+        player.positionMs = 43_500 // the handshake took a moment
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("h", "tok", state(host = "h", track = null, key = 0)))
+        assertThat(loads()).containsExactly(ClientMessage.Load(track, 43_500, listOf(next)))
+    }
+
+    @Test fun `a listener promoted to host after the song ended moves the room on`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, queue = listOf(next))))
+        player.ended = true
+        connection.sent.clear()
+        receive(ServerMessage.StateSync(state(host = "me", key = 1, queue = listOf(next))))
+        assertThat(loads()).containsExactly(ClientMessage.Load(next, 0, emptyList()))
+    }
+
+    @Test fun `the host's play on an ended song moves the room on instead of sending play`() = runTest {
+        host()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        player.ended = true
+        connection.sent.clear()
+        player.interceptor!!.onPlay(); runCurrent()
+        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, emptyList()))
+    }
+
+    @Test fun `a host's pause during preparing is sent again when the start arrives`() = runTest {
+        host(); syncClock()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        player.events!!.onReady()
+        player.interceptor!!.onPause() // the room ignores this pause while it is preparing
+        connection.sent.clear(); player.calls.clear()
+        receive(ServerMessage.TimelineUpdate(rev = 2, trackKey = 1, positionMs = 42_000, atRoomMs = 11_000, playing = true))
+        assertThat(connection.sent).containsExactly(ClientMessage.Pause)
+        advanceTimeBy(5_000); runCurrent()
+        assertThat(player.calls).doesNotContain("play")
     }
 }

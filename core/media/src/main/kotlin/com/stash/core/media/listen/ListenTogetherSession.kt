@@ -57,7 +57,11 @@ class ListenTogetherSession(
     private var token: String? = null
     private var room: RoomState? = null
     private var isHost = false
-    private var pendingLoad: ClientMessage.Load? = null
+    /**
+     * A host Load the room hasn't got yet: the first one (sent on the welcome) or one dropped while the socket
+     * was down. Built on the flush, so the first Load reads where the song is then, not before the handshake.
+     */
+    private var pendingLoad: (() -> ClientMessage.Load)? = null
 
     private val clockSync = ClockSync()
     private val drift = DriftController()
@@ -124,7 +128,7 @@ class ListenTogetherSession(
         val first = mine.current?.let { catalog.sharedTrackFor(it) }
         val upcoming = mine.upcoming.take(MAX_QUEUE).mapNotNull { catalog.sharedTrackFor(it) }
         // The song kept playing through the create call and the lookups: read where it is now.
-        pendingLoad = first?.let { ClientMessage.Load(it, player.positionMs, upcoming) }
+        pendingLoad = first?.let { f -> { ClientMessage.Load(f, player.positionMs, upcoming) } }
         enter(created.code, created.url, name, hostKey = created.hostKey, asHost = true)
     }
 
@@ -184,8 +188,9 @@ class ListenTogetherSession(
                     unavailableKey -> report(UNAVAILABLE, force = true)
                     readyKey -> report(READY, force = true)
                 }
-                if (isHost) pendingLoad?.let { load(it.track, it.positionMs, it.queue) }
+                val pending = pendingLoad?.invoke()
                 pendingLoad = null
+                if (isHost) pending?.let { load(it.track, it.positionMs, it.queue) } // may set pendingLoad again
             }
             is ServerMessage.StateSync -> applyState(m.state)
             is ServerMessage.Pong -> {
@@ -210,6 +215,8 @@ class ListenTogetherSession(
         room = s
         isHost = s.host != null && s.host == myId
         if (isHost != wasHost) player.enterSession(isHost, interceptor) // makeHost or a 60 s handover
+        // The song ended while nobody could move the room on (the old host left): the new host does.
+        if (isHost && !wasHost && player.ended) sessionScope?.launch { advance() }
         publish()
         val track = s.track ?: return
         if (s.trackKey != loadedKey) prepare(s.trackKey, track, s.timeline.positionMs)
@@ -419,10 +426,15 @@ class ListenTogetherSession(
         override fun onPlay() {
             if (!isHost) return rejoin() // a listener's headset, notification or lock-screen play
             pausedLocally = false // the host chose to play: don't pause the room again
-            send(ClientMessage.Play)
+            // Play on a song that has ended would replay nothing: move the room on instead.
+            if (player.ended) sessionScope?.launch { advance() } else send(ClientMessage.Play)
         }
         override fun onPause() {
-            if (isHost) return send(ClientMessage.Pause)
+            if (isHost) {
+                // Kept until the room's paused timeline arrives: a pause it ignores mid-handshake is sent again.
+                pausedLocally = true
+                return send(ClientMessage.Pause)
+            }
             player.pause() // a listener pauses only their own phone, like an unplug
             playerEvents.onExternalPause()
         }
@@ -472,12 +484,12 @@ class ListenTogetherSession(
     }
 
     private suspend fun add(items: List<MediaItem>) {
-        val tracks = items.take(MAX_QUEUE).mapNotNull { catalog.sharedTrackFor(it) }
+        val tracks = items.take(if (isHost) MAX_QUEUE else MAX_SUGGESTIONS).mapNotNull { catalog.sharedTrackFor(it) }
         if (tracks.isEmpty()) return
         if (isHost) {
             setQueue((room?.queue.orEmpty() + tracks).take(MAX_QUEUE))
         } else {
-            tracks.take(MAX_SUGGESTIONS).forEach { send(ClientMessage.Suggest(it)) }
+            tracks.forEach { send(ClientMessage.Suggest(it)) }
             controller.message("Suggested to the host")
         }
     }
@@ -492,7 +504,8 @@ class ListenTogetherSession(
 
     private fun load(track: SharedTrack, positionMs: Long, queue: List<SharedTrack>) {
         room = room?.copy(queue = queue)
-        send(ClientMessage.Load(track, positionMs, queue))
+        val msg = ClientMessage.Load(track, positionMs, queue)
+        if (connection?.send(msg) != true) pendingLoad = { msg } // the socket is down: the next welcome sends it
     }
 
     private fun setQueue(queue: List<SharedTrack>) {

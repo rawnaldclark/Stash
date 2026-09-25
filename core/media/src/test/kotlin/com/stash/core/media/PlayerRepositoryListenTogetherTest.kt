@@ -287,4 +287,18 @@ class PlayerRepositoryListenTogetherTest {
         shadowOf(Looper.getMainLooper()).idle()
         coVerify(atLeast = 1) { radioGenerator.nextBatch(any()) }
     }
+
+    @Test fun `during a session the queue sheet shows the session's song, not the user's own queue`() {
+        val repo = build()
+        repo.currentQueueTracks = listOf(
+            TrackEntity(id = 99, title = "T99", artist = "A").toDomain(),
+            TrackEntity(id = 100, title = "T100", artist = "A").toDomain(),
+        )
+        sessionPlayer()
+        repo.updateState(controller)
+        assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(99L, 100L).inOrder() // outside a session
+        together.setActive(true)
+        repo.updateState(controller)
+        assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(99L)
+    }
 }

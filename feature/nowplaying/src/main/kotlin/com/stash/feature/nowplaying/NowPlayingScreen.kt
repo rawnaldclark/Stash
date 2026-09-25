@@ -509,6 +509,8 @@ fun NowPlayingScreen(
                     onStopRadio = viewModel::stopRadio,
                     // No radio in a session, for host or listener: the room owns the queue.
                     showRadio = room == null,
+                    // Nor the queue: the sheet would show the user's own queue, which the room set aside.
+                    showQueueButton = room == null,
                     accentColor = npAccent(uiState.vibrantColor),
                 )
                 if (room != null) {
@@ -787,6 +789,7 @@ private fun TopBar(
     onStartRadio: () -> Unit,
     onStopRadio: () -> Unit,
     showRadio: Boolean,
+    showQueueButton: Boolean,
     accentColor: Color,
 ) {
     Row(
@@ -869,13 +872,15 @@ private fun TopBar(
             // Queue — a permanent, dedicated control at the far-right edge
             // (not buried in the options sheet); it's the one action users
             // reach for constantly while a song is playing.
-            IconButton(onClick = onQueueClick) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                    contentDescription = "Queue",
-                    tint = npInk(),
-                    modifier = Modifier.size(24.dp),
-                )
+            if (showQueueButton) {
+                IconButton(onClick = onQueueClick) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Queue",
+                        tint = npInk(),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
         }
     }

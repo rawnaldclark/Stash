@@ -1411,6 +1411,7 @@ class StashPlaybackService : MediaLibraryService() {
 
         override val positionMs: Long get() = master.currentPosition
         override val durationMs: Long? get() = master.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+        override val ended: Boolean get() = master.playbackState == Player.STATE_ENDED
     }
 
     // ---- MediaLibrarySession.Callback ----
