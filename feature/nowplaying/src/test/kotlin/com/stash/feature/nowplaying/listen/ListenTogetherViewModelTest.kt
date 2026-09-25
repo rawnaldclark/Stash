@@ -44,13 +44,14 @@ class ListenTogetherViewModelTest {
         }
     }
 
-    @Test fun `leave, end, react and make host go straight to the controller`() {
+    @Test fun `leave, end, react, make host and rejoin go straight to the controller`() {
         val vm = ListenTogetherViewModel(controller, sharePreference)
-        vm.leave(); vm.end(); vm.react("x"); vm.makeHost("m2"); vm.answerSuggestion("s1", add = true)
+        vm.leave(); vm.end(); vm.react("x"); vm.makeHost("m2"); vm.answerSuggestion("s1", add = true); vm.rejoin()
         verify { controller.send(Command.Leave) }
         verify { controller.send(Command.End) }
         verify { controller.send(Command.React("x")) }
         verify { controller.send(Command.MakeHost("m2")) }
         verify { controller.send(Command.Suggestion("s1", true)) }
+        verify { controller.rejoin() }
     }
 }

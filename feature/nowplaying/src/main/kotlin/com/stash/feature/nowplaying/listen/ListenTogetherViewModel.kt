@@ -45,6 +45,7 @@ class ListenTogetherViewModel @Inject constructor(
 
     fun leave() = controller.send(Command.Leave)
     fun end() = controller.send(Command.End)
+    fun rejoin() = controller.rejoin()
     fun react(emoji: String) = controller.send(Command.React(emoji))
     fun makeHost(memberId: String) = controller.send(Command.MakeHost(memberId))
     fun answerSuggestion(id: String, add: Boolean) = controller.send(Command.Suggestion(id, add))

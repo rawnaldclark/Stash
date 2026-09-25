@@ -176,6 +176,9 @@ fun NowPlayingScreen(
     val togetherState by together.state.collectAsStateWithLifecycle()
     val room = togetherState as? ListenTogetherState.InRoom
     var showStartTogether by remember { mutableStateOf(false) }
+    // A listener follows the room: Leave instead of play, pause, skip and seek (spec §5).
+    val isListener = room != null && !room.isHost
+    var showSuggestions by remember { mutableStateOf(false) }
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
     // the action (find a replacement / delete / delete + block).
@@ -290,7 +293,7 @@ fun NowPlayingScreen(
             liveLyricsEnabled = liveLyricsEnabled,
             onLiveLyricsToggle = viewModel::setLiveLyricsBarEnabled,
             isPlaying = uiState.isPlaying && !uiState.isBuffering,
-            onSeek = viewModel::onLyricsLineSeek,
+            onSeek = { if (!isListener) viewModel.onLyricsLineSeek(it) }, // a listener follows the room
             canSaveToFile = track?.isDownloaded == true,
             savingToFile = exportingLyricsTrackId != null,
             onSaveToFile = viewModel::exportLyricsForCurrentTrack,
@@ -321,6 +324,14 @@ fun NowPlayingScreen(
             onNameChange = together::onNameChange,
             onStart = { together.start(); showStartTogether = false },
             onDismiss = { showStartTogether = false },
+        )
+    }
+
+    if (showSuggestions && room != null && room.isHost) {
+        com.stash.feature.nowplaying.listen.SuggestionsSheet(
+            room = room,
+            onAnswer = together::answerSuggestion,
+            onDismiss = { showSuggestions = false },
         )
     }
 
@@ -486,8 +497,20 @@ fun NowPlayingScreen(
                     radioLock = radioLock,
                     onStartRadio = viewModel::startRadioFromCurrent,
                     onStopRadio = viewModel::stopRadio,
+                    // No radio in a session, for host or listener: the room owns the queue.
+                    showRadio = room == null,
                     accentColor = npAccent(uiState.vibrantColor),
                 )
+                if (room != null) {
+                    com.stash.feature.nowplaying.listen.WhosListeningBar(
+                        room = room,
+                        accent = npAccent(uiState.vibrantColor),
+                        onMakeHost = together::makeHost,
+                        onOpenSuggestions = { showSuggestions = true },
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    com.stash.feature.nowplaying.listen.ListenTogetherNotice(room)
+                }
 
                 // -- Album art slot: absorbs all flexible height --
                 BoxWithConstraints(
@@ -658,24 +681,35 @@ fun NowPlayingScreen(
                     elapsedMs = uiState.currentPositionMs,
                     totalMs = uiState.durationMs,
                     onSeek = viewModel::onSeekTo,
+                    seekable = !isListener,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // -- Playback controls --
-                PlaybackControls(
-                    isPlaying = uiState.isPlaying,
-                    isBuffering = uiState.isBuffering,
-                    shuffleEnabled = uiState.shuffleEnabled,
-                    repeatMode = uiState.repeatMode,
-                    accentColor = npAccent(uiState.vibrantColor),
-                    onPlayPauseClick = viewModel::onPlayPauseClick,
-                    onSkipNext = viewModel::onSkipNext,
-                    onSkipPrevious = viewModel::onSkipPrevious,
-                    onToggleShuffle = viewModel::onToggleShuffle,
-                    onCycleRepeatMode = viewModel::onCycleRepeatMode,
-                )
+                if (isListener) {
+                    com.stash.feature.nowplaying.listen.ListenerControls(
+                        pausedLocally = room?.pausedLocally == true,
+                        onRejoin = together::rejoin,
+                        onLeave = together::leave,
+                        onReact = together::react,
+                    )
+                } else {
+                    PlaybackControls(
+                        isPlaying = uiState.isPlaying,
+                        isBuffering = uiState.isBuffering,
+                        shuffleEnabled = uiState.shuffleEnabled,
+                        repeatMode = uiState.repeatMode,
+                        accentColor = npAccent(uiState.vibrantColor),
+                        onPlayPauseClick = viewModel::onPlayPauseClick,
+                        onSkipNext = viewModel::onSkipNext,
+                        onSkipPrevious = viewModel::onSkipPrevious,
+                        onToggleShuffle = viewModel::onToggleShuffle,
+                        onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                    )
+                    if (room != null) com.stash.feature.nowplaying.listen.ReactionButton(onReact = together::react)
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -693,6 +727,7 @@ fun NowPlayingScreen(
                 isPlaying = uiState.isPlaying && !uiState.isBuffering,
             )
         }
+        if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, Modifier.fillMaxSize())
     }
 
     if (showOptionsSheet && track != null) {
@@ -740,6 +775,7 @@ private fun TopBar(
     radioLock: Boolean,
     onStartRadio: () -> Unit,
     onStopRadio: () -> Unit,
+    showRadio: Boolean,
     accentColor: Color,
 ) {
     Row(
@@ -762,7 +798,7 @@ private fun TopBar(
         // Radio toggle — start a station from the current song, or stop the
         // running one. Accent tint signals an active station; the radar sweep
         // spins around the icon while the station is being built.
-        if (hasTrack) {
+        if (hasTrack && showRadio) {
             Box(contentAlignment = Alignment.Center) {
                 com.stash.feature.nowplaying.ui.RadarSweep(
                     tuning = radioTuning,
