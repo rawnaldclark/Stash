@@ -414,6 +414,83 @@ class ListenTogetherSessionTest {
         assertThat(notices).containsExactly("You rejoined this session somewhere else")
     }
 
+    fun pausedLocally() = (controller.state.value as ListenTogetherState.InRoom).pausedLocally
+
+    @Test fun `a host's external pause pauses the room`() = runTest {
+        host()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        connection.sent.clear()
+        player.events!!.onExternalPause()
+        assertThat(connection.sent).containsExactly(ClientMessage.Pause)
+    }
+
+    @Test fun `a host's external pause during preparing keeps it paused when the start arrives`() = runTest {
+        host(); syncClock()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        player.events!!.onReady()
+        player.events!!.onExternalPause() // the room ignores this pause: it is still preparing
+        connection.sent.clear(); player.calls.clear()
+        receive(ServerMessage.TimelineUpdate(rev = 2, trackKey = 1, positionMs = 42_000, atRoomMs = 11_000, playing = true))
+        assertThat(connection.sent).containsExactly(ClientMessage.Pause)
+        advanceTimeBy(5_000); runCurrent()
+        assertThat(player.calls).doesNotContain("play")
+        receive(ServerMessage.TimelineUpdate(rev = 3, trackKey = 1, positionMs = 42_000, atRoomMs = 15_000, playing = false))
+        assertThat(pausedLocally()).isFalse()
+    }
+
+    @Test fun `a listener's external pause sets pausedLocally, sends nothing and cancels the start`() = runTest {
+        join(); syncClock()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, timeline = RoomTimeline(0, 10_500, true))))
+        player.events!!.onReady() // starts at local 500
+        connection.sent.clear()
+        player.events!!.onExternalPause()
+        assertThat(connection.sent).isEmpty()
+        assertThat(pausedLocally()).isTrue()
+        advanceTimeBy(3_000); runCurrent()
+        assertThat(player.calls).doesNotContain("play")
+    }
+
+    fun TestScope.playThenPauseExternally() {
+        join(); syncClock()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, timeline = RoomTimeline(0, 10_000, true))))
+        player.events!!.onReady()
+        advanceTimeBy(1_000); runCurrent() // playing from local 1 000
+        player.events!!.onExternalPause()
+        player.calls.clear()
+        player.positionMs = 50_000 // far off, but drift leaves a locally paused player alone
+        advanceTimeBy(3_000); runCurrent() // local 4 000 = room 14 000
+        assertThat(player.calls).isEmpty()
+    }
+
+    @Test fun `rejoin seeks to where the room is and plays`() = runTest {
+        playThenPauseExternally()
+        controller.rejoin(); runCurrent()
+        // next whole room second at least 1 s ahead of 14 000 is 15 000, where the song is at 5 000
+        assertThat(player.calls).contains("seek:5000")
+        assertThat(pausedLocally()).isFalse()
+        advanceTimeBy(1_000); runCurrent()
+        assertThat(player.calls.last()).isEqualTo("play")
+    }
+
+    @Test fun `an external resume rejoins the room`() = runTest {
+        playThenPauseExternally()
+        player.events!!.onExternalResume(); runCurrent()
+        assertThat(player.calls).contains("seek:5000")
+        assertThat(pausedLocally()).isFalse()
+        advanceTimeBy(1_000); runCurrent()
+        assertThat(player.calls.last()).isEqualTo("play")
+    }
+
+    @Test fun `the next prepare clears pausedLocally`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1)))
+        player.events!!.onReady()
+        player.events!!.onExternalPause()
+        assertThat(pausedLocally()).isTrue()
+        receive(ServerMessage.Prepare(2, next, 0, 8_000))
+        assertThat(pausedLocally()).isFalse()
+    }
+
     @Test fun `when the room ends everyone gets their own music back and a notice`() = runTest {
         val notices = mutableListOf<String>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.messages.collect { notices += it } }

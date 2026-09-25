@@ -35,6 +35,8 @@ sealed interface ListenTogetherState {
         val unavailable: Boolean = false,
         /** "Your version may be a few seconds off": duration differs from the host's by over 2 s (spec §4). */
         val versionMismatch: Boolean = false,
+        /** Paused on this phone by an unplug or a call while the room plays on: "Paused — tap to rejoin". */
+        val pausedLocally: Boolean = false,
     ) : ListenTogetherState
 }
 
@@ -55,6 +57,8 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         data class React(val emoji: String) : Command
         data class Suggestion(val id: String, val add: Boolean) : Command
         data class MakeHost(val memberId: String) : Command
+        /** Catch up with the room after a local pause (see [ListenTogetherState.InRoom.pausedLocally]). */
+        data object Rejoin : Command
     }
 
     private val _active = MutableStateFlow(false)
@@ -86,6 +90,8 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         // The user is looking at the app when they tap Start or Join, so a plain start is allowed.
         if (!serviceAttached) runCatching { context.startService(Intent(context, StashPlaybackService::class.java)) }
     }
+
+    fun rejoin() = send(Command.Rejoin)
 
     /**
      * True from a session's end until PlayerRepositoryImpl has put the user's queue back ([sessionEnds]).

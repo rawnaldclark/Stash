@@ -73,6 +73,12 @@ class ListenTogetherSession(
     private var versionMismatch = false
     private val history = ArrayDeque<SharedTrack>()
     private var radioTriedKey = NONE
+    /**
+     * ExoPlayer paused itself (unplug, a call). A listener stays paused until [rejoin] or the room's
+     * next song or timeline. A host has sent pause: until the room's paused timeline arrives, a playing
+     * one (the room ignores transport while preparing) gets the pause again.
+     */
+    private var pausedLocally = false
 
     fun start(): Job = scope.launch { for (command in controller.commands) handle(command) }
 
@@ -96,6 +102,7 @@ class ListenTogetherSession(
             is Command.React -> send(ClientMessage.React(command.emoji))
             is Command.Suggestion -> send(ClientMessage.SuggestionAction(command.id, if (command.add) "add" else "dismiss"))
             is Command.MakeHost -> send(ClientMessage.MakeHost(command.memberId))
+            Command.Rejoin -> rejoin()
         }
     }
 
@@ -212,6 +219,7 @@ class ListenTogetherSession(
     private suspend fun prepare(key: Int, track: SharedTrack, positionMs: Long) {
         if (key == loadedKey) return
         timeline = null
+        pausedLocally = false // a new song: everyone starts it together
         loadedKey = key
         readyKey = NONE
         unavailableKey = NONE
@@ -263,6 +271,25 @@ class ListenTogetherSession(
             if (itemKey != loadedKey) return
             if (loadedKey != NONE) markUnavailable(loadedKey, "the player failed")
         }
+
+        override fun onExternalPause() {
+            pausedLocally = true
+            startJob?.cancel()
+            if (isHost) send(ClientMessage.Pause) // the whole room pauses with the host
+            publish()
+        }
+
+        override fun onExternalResume() = rejoin()
+    }
+
+    /** Catch up with the room: start where it is now, or sit at its paused position. */
+    private fun rejoin() {
+        if (code == null) return
+        pausedLocally = false
+        applied = null
+        player.pause() // an external resume may have started the player on its own
+        publish()
+        applyTimeline()
     }
 
     /** "This song isn't available to you": report it, stay silent, wait for the next prepare (spec §6). */
@@ -288,8 +315,14 @@ class ListenTogetherSession(
 
     private fun applyTimeline() {
         val t = timeline ?: return
+        if (pausedLocally && isHost) {
+            if (t.playing) { send(ClientMessage.Pause); return } // the room ignored our pause while preparing
+            pausedLocally = false
+            publish()
+        }
         if (t.trackKey != readyKey || t.trackKey == unavailableKey) return // the ready handler comes back here
         if (applied?.sameAs(t) == true) return // e.g. a state after a reconnect: keep playing
+        if (pausedLocally) { pausedLocally = false; publish() } // a listener: the room moved, so rejoin it
         val roomNow = clockSync.roomNow(clock())
         if (t.playing && roomNow == null) return // the first pong comes back here
         applied = t
@@ -319,6 +352,7 @@ class ListenTogetherSession(
         driftJob = sessionScope?.launch {
             while (true) {
                 delay(DRIFT_TICK_MS)
+                if (pausedLocally) continue
                 val t = timeline ?: return@launch
                 if (!t.playing || t.trackKey != readyKey) return@launch
                 if (clock() < seekHoldUntil) continue // let a seek finish rebuffering before judging drift again
@@ -370,7 +404,11 @@ class ListenTogetherSession(
     // ── Hosting ───────────────────────────────────────────────────────────────
 
     private val interceptor = object : SessionInterceptor {
-        override fun onPlay() { if (isHost) send(ClientMessage.Play) }
+        override fun onPlay() {
+            if (!isHost) return
+            pausedLocally = false // the host chose to play: don't pause the room again
+            send(ClientMessage.Play)
+        }
         override fun onPause() { if (isHost) send(ClientMessage.Pause) }
         override fun onSeek(positionMs: Long) { if (isHost) send(ClientMessage.Seek(positionMs)) }
         override fun onNext() { if (isHost) sessionScope?.launch { advance() } }
@@ -481,6 +519,7 @@ class ListenTogetherSession(
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
+        pausedLocally = false
         clockSync.reset()
         // exitSession has already stopped and emptied the player. With restore, PlayerRepositoryImpl puts the
         // user's queue back, paused, and saves nothing until then (restorePending).
@@ -508,6 +547,7 @@ class ListenTogetherSession(
                 members = r.members, suggestions = r.suggestions, reconnecting = reconnecting,
                 unavailable = unavailableKey != NONE && unavailableKey == loadedKey,
                 versionMismatch = versionMismatch,
+                pausedLocally = pausedLocally,
             ),
         )
     }

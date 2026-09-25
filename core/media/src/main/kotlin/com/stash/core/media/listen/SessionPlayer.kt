@@ -48,6 +48,12 @@ interface SessionPlayerEvents {
     fun onBuffering()
     fun onEnded()
     fun onError()
+
+    /** Headphones unplugged or audio focus lost: ExoPlayer paused itself, past ListenTogetherPlayer. */
+    fun onExternalPause()
+
+    /** A transient focus loss ended and ExoPlayer resumed itself. */
+    fun onExternalResume()
 }
 
 /** Transport and queue commands from every MediaSession client (spec §5 "One place catches every playback command"). */
