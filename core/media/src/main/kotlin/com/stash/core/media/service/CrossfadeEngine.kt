@@ -60,6 +60,15 @@ class CrossfadeEngine(
     private var focusRequest: AudioFocusRequest? = null
     private var pausedForFocusLoss = false
 
+    /**
+     * Listen Together: focus paused the master (a call, another app, a denied request), or a transient
+     * loss ended and the master resumed itself. Needed because these pauses set playWhenReady directly,
+     * so the player reports them as PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST, indistinguishable from a
+     * tap. Main thread (the focus listener has no handler, so it runs on the main looper).
+     */
+    var onFocusPause: (() -> Unit)? = null
+    var onFocusResume: (() -> Unit)? = null
+
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS -> {
@@ -67,11 +76,13 @@ class CrossfadeEngine(
                 playerA.playWhenReady = false
                 playerB.playWhenReady = false
                 abandonFocus()
+                onFocusPause?.invoke()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 pausedForFocusLoss = true
                 playerA.playWhenReady = false
                 playerB.playWhenReady = false
+                onFocusPause?.invoke()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 // Duck the audible master; the spare is silent unless mid-fade.
@@ -87,6 +98,7 @@ class CrossfadeEngine(
                     // it paused promotes a dead player at the swap (car nav
                     // prompt during a fade → silence at the seam, #251).
                     if (transitioning) playerB.playWhenReady = true
+                    onFocusResume?.invoke()
                 }
             }
         }
@@ -125,6 +137,7 @@ class CrossfadeEngine(
             focusRequest = req
         } else {
             playerA.playWhenReady = false
+            onFocusPause?.invoke()
         }
     }
 
