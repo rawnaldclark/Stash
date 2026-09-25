@@ -19,10 +19,12 @@ import com.stash.core.model.share.SharedTrack
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -77,9 +79,12 @@ class ListenTogetherSessionTest {
         /** False while the socket is down: send() drops the frame and says so. */
         var up = true
         var hello: (() -> ClientMessage.Hello)? = null
+        var scope: CoroutineScope? = null
+        /** RoomClient aborts its socket when its scope is cancelled before close(), losing a frame sent just before. */
+        var closedAfterScopeCancelled = false
         override val events: Flow<RoomEvent> = incoming.receiveAsFlow()
         override fun send(message: ClientMessage): Boolean { if (up) sent += message; return up }
-        override fun close() { closed = true }
+        override fun close() { closed = true; if (scope?.isActive == false) closedAfterScopeCancelled = true }
     }
 
     inner class FakeCatalog : SessionCatalog {
@@ -107,7 +112,7 @@ class ListenTogetherSessionTest {
         player = player,
         catalog = catalog,
         api = api,
-        connector = { _, _, hello -> connection.hello = hello; connection },
+        connector = { _, scope, hello -> connection.hello = hello; connection.scope = scope; connection },
         autoplayRadio = { autoplay },
         displayName = { "Rawn" },
         clock = { testScheduler.currentTime },
@@ -646,9 +651,13 @@ class ListenTogetherSessionTest {
 
     @Test fun `the host's add from a track menu joins the room's queue`() = runTest {
         host()
+        val notices = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.messages.collect { notices += it } }
         connection.sent.clear()
         player.interceptor!!.onAdd(listOf(item("3"))); runCurrent()
         assertThat(connection.sent).containsExactly(ClientMessage.Queue(listOf(next, third)))
+        // The track menu stays quiet in a session, so the session confirms the add (device test 2026-09-25).
+        assertThat(notices).containsExactly("Added to the session queue")
     }
 
     @Test fun `tapping a playlist while hosting plays it for everyone`() = runTest {
@@ -664,12 +673,15 @@ class ListenTogetherSessionTest {
         controller.send(Command.Leave); runCurrent()
         assertThat(connection.sent).contains(ClientMessage.MakeHost("b"))
         assertThat(connection.closed).isTrue()
+        assertThat(connection.closedAfterScopeCancelled).isFalse()
     }
 
     @Test fun `end session tells the room and restores the host's own music`() = runTest {
         host()
         controller.send(Command.End); runCurrent()
         assertThat(connection.sent).contains(ClientMessage.End)
+        // Device test 2026-09-25: cancelling first aborted the socket, so End never left and listeners played on.
+        assertThat(connection.closedAfterScopeCancelled).isFalse()
         assertThat(player.calls.last()).isEqualTo("exit")
         assertThat(controller.active.value).isFalse()
     }

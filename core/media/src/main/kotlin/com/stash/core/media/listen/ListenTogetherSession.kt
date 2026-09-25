@@ -493,6 +493,7 @@ class ListenTogetherSession(
         if (tracks.isEmpty()) return
         if (isHost) {
             setQueue((room?.queue.orEmpty() + tracks).take(MAX_QUEUE))
+            controller.message("Added to the session queue")
         } else {
             tracks.forEach { send(ClientMessage.Suggest(it)) }
             controller.message("Suggested to the host")
@@ -543,11 +544,13 @@ class ListenTogetherSession(
     private fun teardown(message: String?, restore: Boolean = true) {
         if (code == null) return
         Log.i(TAG, "leaving the room${message?.let { " ($it)" }.orEmpty()}")
+        // Close before cancelling: RoomClient runs in sessionScope and aborts its socket when that is cancelled,
+        // which would drop the End or MakeHost frame queued a moment ago.
+        connection?.close()
+        connection = null
         sessionScope?.cancel() // events, pings, start, drift and any advance, add or replace still running
         sessionScope = null
         stopDrift()
-        connection?.close()
-        connection = null
         player.events = null
         player.exitSession()
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null
