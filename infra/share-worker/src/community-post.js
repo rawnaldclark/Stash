@@ -22,26 +22,28 @@ function track(t) {
 export function cleanPost(input) {
     if (!input || typeof input !== "object" || !KINDS.has(input.kind)) return null;
     const name = text(input.name, 40);
-    const title = text(input.title, 100);
-    if (!name || !title) return null;
+    if (!name) return null;
     if (input.kind === "song") {
         const t = track(input.body?.track);
         if (!t) return null;
-        return { kind: "song", name, title, body: { track: t }, summary: { ...(t.art ? { art: t.art } : {}), artist: t.a }, count: 1 };
+        // Titled by its own song, not by the request, so the list can't show one song and play another.
+        return { kind: "song", name, title: t.t.trim().slice(0, 100), body: { track: t }, summary: { ...(t.art ? { art: t.art } : {}), artist: t.a }, count: 1 };
     }
+    const title = text(input.title, 100);
+    if (!title) return null;
     const raw = input.body?.tracks;
     if (!Array.isArray(raw) || raw.length < 1 || raw.length > MAX_POST_TRACKS) return null;
     const tracks = raw.map(track);
     if (tracks.includes(null)) return null;
-    const covers = (Array.isArray(input.body.covers) ? input.body.covers : [])
-        .filter((c) => typeof c === "string" && c.length <= 1000 && allowedCover(c))
-        .slice(0, 4);
+    // Cut to 4 first: each check parses a URL, and a body can hold thousands of covers.
+    const covers = (Array.isArray(input.body.covers) ? input.body.covers.slice(0, 4) : [])
+        .filter((c) => typeof c === "string" && c.length <= 1000 && allowedCover(c));
     return { kind: input.kind, name, title, body: { covers, tracks }, summary: { covers }, count: tracks.length };
 }
 
 /**
  * A `posts` row (with `my_vote` from the voter join) → the public PostSummary. [me] is the caller's poster
- * id, or null without a key: only then do `myVote` and `mine` appear. The poster id itself never leaves.
+ * id, or null without a key. `myVote` and `mine` appear only when [me] is set. The poster id itself never leaves.
  */
 export function summaryOf(row, me) {
     const s = JSON.parse(row.summary);

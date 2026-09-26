@@ -15,6 +15,12 @@ test("a song post keeps the cleaned track without its Listen Together adder", ()
     assert.deepEqual(p.summary, { art: song.art, artist: "Death Plus" });
 });
 
+test("a song post is titled by its song, not the request, cut to 100 characters", () => {
+    const post = (track) => cleanPost({ kind: "song", name: "Sam", title: "something else", body: { track } });
+    assert.equal(post(song).title, "garden");
+    assert.equal(post({ ...song, t: "x".repeat(100) + "y" }).title, "x".repeat(100));
+});
+
 test("a playlist post keeps allowed covers and cleaned tracks, and summarises the covers", () => {
     const p = cleanPost(playlist([song, { t: "heart", a: "Lil Tracy", art: "https://evil.example/x.jpg" }], [
         "https://i.scdn.co/image/a", "https://evil.example/log.gif", "https://lh3.googleusercontent.com/b",
@@ -26,6 +32,7 @@ test("a playlist post keeps allowed covers and cleaned tracks, and summarises th
     assert.equal(p.body.tracks[1].art, undefined, "an art link off COVER_HOSTS is dropped");
     assert.ok(p.body.tracks.every((t) => t.by === undefined));
     assert.equal(cleanPost(playlist([song], Array(5).fill("https://i.scdn.co/image/a"))).body.covers.length, 4);
+    assert.deepEqual(cleanPost(playlist([song], ["", "", "", "", "https://i.scdn.co/image/a"])).body.covers, []);
 });
 
 test("bad requests are null", () => {
