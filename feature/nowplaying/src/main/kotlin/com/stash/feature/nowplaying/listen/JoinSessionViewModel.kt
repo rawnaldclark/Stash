@@ -17,7 +17,9 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** The Join screen for a `/l/{code}` link (spec §5–§6): preview first, so a full or ended room says so before connecting. */
 @HiltViewModel
@@ -76,13 +78,36 @@ class JoinSessionViewModel @Inject constructor(
         }
     }
 
+    /** Already in this very room (a second tap on the same invite): Join just opens it. */
+    val alreadyHere: Boolean get() = (controller.state.value as? ListenTogetherState.InRoom)?.code == code
+
     fun join(onJoined: () -> Unit) {
         if (joining) return
+        if (alreadyHere) return onJoined()
         joining = true
         viewModelScope.launch {
             sharePreference.setDisplayName(name)
             controller.send(ListenTogetherController.Command.Join(code))
-            onJoined()
+            // Stay here, the button showing progress, until the room lets us in. A join that fails ends
+            // in Idle after Connecting (an Idle before that is just the old room closing): check the room
+            // again so this screen says why (ended, full) instead of opening an empty Now Playing.
+            var connecting = false
+            val outcome = withTimeoutOrNull(JOIN_TIMEOUT_MS) {
+                controller.state.first { s ->
+                    if (s is ListenTogetherState.Connecting) connecting = true
+                    (s is ListenTogetherState.InRoom && s.code == code) || (s is ListenTogetherState.Idle && connecting)
+                }
+            }
+            if (outcome is ListenTogetherState.InRoom) {
+                onJoined()
+            } else {
+                joining = false
+                load()
+            }
         }
+    }
+
+    private companion object {
+        const val JOIN_TIMEOUT_MS = 20_000L
     }
 }
