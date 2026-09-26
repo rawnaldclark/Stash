@@ -1,6 +1,10 @@
 package com.stash.core.media
 
+import android.os.Bundle
 import android.os.Looper
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -9,6 +13,7 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.TrackIdentityEvents
+import com.stash.core.media.service.StashPlaybackService
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrlCache
@@ -150,6 +155,27 @@ class PlayerRepositoryColdStartTest {
         repo.updateState(controller) // what the player listener does on an idle empty player
 
         assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(2L)
+    }
+
+    @Test
+    fun `an item the player hasn't prepared shows its own length, not zero`() = runTest {
+        coEvery { playbackResumer.buildResumePlan() } returns null
+        val repo = build()
+        val extras = Bundle().apply { putLong(StashPlaybackService.EXTRA_TRACK_DURATION_MS, 290_000L) }
+        val item = MediaItem.Builder()
+            .setMediaId("2")
+            .setMediaMetadata(MediaMetadata.Builder().setTitle("Reckoner").setExtras(extras).build())
+            .build()
+        every { controller.mediaItemCount } returns 1
+        every { controller.currentMediaItem } returns item
+        every { controller.getMediaItemAt(0) } returns item
+        every { controller.duration } returns C.TIME_UNSET // queued back paused after a session, never prepared
+        every { controller.currentPosition } returns 13_000L
+
+        repo.updateState(controller)
+
+        assertThat(repo.playerState.value.durationMs).isEqualTo(290_000L)
+        assertThat(repo.playerState.value.positionMs).isEqualTo(13_000L)
     }
 
     @Test
