@@ -34,6 +34,12 @@ test("batch runs in one transaction and returns each statement's rows", async ()
     await assert.rejects(() => d.batch([
         d.prepare("UPDATE posts SET up = 9 WHERE id = ?1").bind("AAAAAAAA"),
         d.prepare("INSERT INTO votes (post_id) VALUES (?1)").bind("AAAAAAAA"), // NOT NULL violation
-    ]));
+    ]), /NOT NULL constraint failed: votes\.voter/);
     assert.equal(await d.prepare("SELECT up FROM posts").first("up"), 3, "the failed batch rolled back");
+});
+
+test("two batches at once both land, as on D1", async () => {
+    const d = fakeD1();
+    await Promise.all(["a", "b"].map((p) => d.batch([d.prepare("INSERT INTO blocked (poster, at) VALUES (?1, 1)").bind(p)])));
+    assert.equal(await d.prepare("SELECT COUNT(*) AS n FROM blocked").first("n"), 2);
 });

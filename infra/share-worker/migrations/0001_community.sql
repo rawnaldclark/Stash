@@ -1,20 +1,20 @@
 -- Stash Community (spec docs/superpowers/specs/2026-09-26-stash-community-design.md §2).
 
 CREATE TABLE posts (
-  id           TEXT PRIMARY KEY,
+  id           TEXT PRIMARY KEY,               -- 8 chars [A-Za-z0-9], like a mix id
   kind         TEXT NOT NULL CHECK (kind IN ('playlist', 'mix', 'song')),
-  title        TEXT NOT NULL,
-  poster_name  TEXT NOT NULL,
-  poster       TEXT NOT NULL,
-  ip_hash      TEXT NOT NULL,
-  summary      TEXT NOT NULL,
-  body         TEXT NOT NULL,
+  title        TEXT NOT NULL,                  -- playlist/mix name, or the song title
+  poster_name  TEXT NOT NULL,                  -- "Show my name as" at posting time
+  poster       TEXT NOT NULL,                  -- sha256(key), hex
+  ip_hash      TEXT NOT NULL,                  -- the network, hex
+  summary      TEXT NOT NULL,                  -- small JSON for the list: {covers} or {art, artist}
+  body         TEXT NOT NULL,                  -- JSON: {covers, tracks} or {track}
   track_count  INTEGER NOT NULL,
-  created_at   INTEGER NOT NULL,
-  expires_at   INTEGER NOT NULL,
-  up           INTEGER NOT NULL DEFAULT 0,
+  created_at   INTEGER NOT NULL,               -- ms
+  expires_at   INTEGER NOT NULL,               -- created_at + 30 days
+  up           INTEGER NOT NULL DEFAULT 0,     -- counted votes (per-network cap applied)
   down         INTEGER NOT NULL DEFAULT 0,
-  removed_at   INTEGER
+  removed_at   INTEGER                         -- taken down by the poster or removed by the owner
 );
 CREATE INDEX posts_live   ON posts (expires_at) WHERE removed_at IS NULL;
 CREATE INDEX posts_poster ON posts (poster, created_at);
@@ -22,8 +22,8 @@ CREATE INDEX posts_ip     ON posts (ip_hash, created_at);
 
 CREATE TABLE votes (
   post_id  TEXT NOT NULL,
-  voter    TEXT NOT NULL,
-  ip_hash  TEXT NOT NULL,
+  voter    TEXT NOT NULL,                      -- sha256(key), hex
+  ip_hash  TEXT NOT NULL,                      -- the voter's network, for the per-network cap
   value    INTEGER NOT NULL CHECK (value IN (-1, 1)),
   at       INTEGER NOT NULL,
   PRIMARY KEY (post_id, voter)
