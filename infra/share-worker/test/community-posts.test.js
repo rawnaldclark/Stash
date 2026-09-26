@@ -128,13 +128,12 @@ test("posts at the same moment can't both slip under a limit", async () => {
 test("an id that's already taken is retried with a new one", async (t) => {
     const e = env();
     await seed(e, { id: "AAAAAAAA" });
-    // All-zero bytes make newId's first id AAAAAAAA; the retry gets real random bytes.
-    const random = t.mock.method(crypto, "getRandomValues");
+    // newId's first id is AAAAAAAA (all-zero bytes), which is taken; its next is BBBBBBBB.
+    const random = t.mock.method(crypto, "getRandomValues", (bytes) => bytes.fill(1));
     random.mock.mockImplementationOnce((bytes) => bytes.fill(0));
     const r = await call(e, "POST", "/v1/community/posts", { key: KEY_A, body: songPost() });
     assert.equal(r.status, 201);
-    assert.notEqual((await r.json()).id, "AAAAAAAA");
-    assert.equal(random.mock.callCount(), 2);
+    assert.deepEqual(await r.json(), { id: "BBBBBBBB" });
     // The taken post is left as it was.
     assert.equal(await e.COMMUNITY_DB.prepare("SELECT poster_name FROM posts WHERE id = ?1").bind("AAAAAAAA").first("poster_name"), "Seed");
 });
