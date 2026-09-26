@@ -3,6 +3,7 @@ package com.stash.feature.nowplaying.listen
 import com.stash.core.media.listen.SessionEvent
 import com.stash.core.model.share.SharedTrack
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -59,6 +60,15 @@ class SessionUiTest {
         assertEquals(-1, listOf(avril, xtal).indexOfEntry(nudeKey)) // already gone
         assertEquals(listOf(nude, xtal, avril), queue.moved(0, 2))
         assertEquals(listOf(xtal, avril, nude), queue.moved(2, 0))
+    }
+
+    @Test
+    fun `a song's thumbnail comes only from a real-looking YouTube id`() {
+        assertEquals("https://i.ytimg.com/vi/D5Y11hwjMNs/mqdefault.jpg", thumbnailUrl(nude.copy(youtubeId = "D5Y11hwjMNs")))
+        assertNull(thumbnailUrl(nude))
+        // The id comes from whoever added the song, and the room only limits its length.
+        assertNull(thumbnailUrl(nude.copy(youtubeId = "../x?y=1#zz")))
+        assertNull(thumbnailUrl(nude.copy(youtubeId = "D5Y11hwjMNsX")))
     }
 
     @Test

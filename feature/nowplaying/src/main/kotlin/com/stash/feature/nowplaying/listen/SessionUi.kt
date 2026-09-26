@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -52,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -69,6 +71,7 @@ import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.media.listen.SessionEvent
 import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.share.SharedTrack
+import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
@@ -502,7 +505,17 @@ private fun Person(m: RoomMember, room: ListenTogetherState.InRoom, onMakeHost: 
     }
 }
 
-/** A song in the sheet. Songs carry no artwork, so the tile takes a colour from the title. */
+private val YOUTUBE_ID = Regex("[A-Za-z0-9_-]{11}")
+
+/**
+ * The song's YouTube thumbnail. `mqdefault` is 320x180 with no letterbox bars, so the square crop is the
+ * picture itself (for YouTube Music uploads, the album cover); `hqdefault` pads with black. The id comes
+ * from whoever added the song, so it must look like a real one.
+ */
+internal fun thumbnailUrl(track: SharedTrack): String? =
+    track.youtubeId?.takeIf { YOUTUBE_ID.matches(it) }?.let { "https://i.ytimg.com/vi/$it/mqdefault.jpg" }
+
+/** A song in the sheet: its YouTube thumbnail over a tile coloured from the title, which shows until it loads or when there's none. */
 @Composable
 internal fun SongRow(
     track: SharedTrack,
@@ -517,7 +530,10 @@ internal fun SongRow(
             Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))
                 .background(Brush.linearGradient(listOf(c.copy(alpha = 0.85f), c.copy(alpha = 0.35f)))),
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Default.MusicNote, contentDescription = null, tint = FACE_INK.copy(alpha = 0.6f), modifier = Modifier.size(18.dp)) }
+        ) {
+            Icon(Icons.Default.MusicNote, contentDescription = null, tint = FACE_INK.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+            thumbnailUrl(track)?.let { AsyncImage(it, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(track.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
