@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Stores shared Stash mixes (one JSON document per mix in KV) and serves their preview pages.",
   "engines": {
-    "node": ">=24"
+    "node": ">=24.2"
   },
   "scripts": {
     "dev": "wrangler dev",

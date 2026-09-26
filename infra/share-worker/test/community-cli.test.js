@@ -4,8 +4,11 @@ import { commandSql } from "../scripts/community.mjs";
 import { env } from "./fake-kv.js";
 import { seed, DAY } from "./community-helpers.js";
 
+/** Runs each statement in turn, as `d1 execute` does, and returns each one's rows. */
 const run = async (e, sql) => {
-    for (const s of sql.split(";\n")) await e.COMMUNITY_DB.prepare(s).all();
+    const rows = [];
+    for (const s of sql.split(";\n")) rows.push((await e.COMMUNITY_DB.prepare(s).all()).results);
+    return rows;
 };
 
 test("remove and restore: restore clears the removal, drops the downvotes and recounts", async () => {
@@ -33,14 +36,42 @@ test("block records the poster and removes all their live posts; unblock matches
     assert.equal(await e.COMMUNITY_DB.prepare("SELECT COUNT(*) AS n FROM blocked").first("n"), 0);
 });
 
+test("remove, block and unblock show what they hit, and nothing for an unknown id or prefix", async () => {
+    const e = env();
+    await seed(e, { id: "POST0001", poster: "ab".repeat(32) });
+    assert.deepEqual(await run(e, commandSql("remove", "NOPE0001")), [[]]);
+    assert.deepEqual(await run(e, commandSql("block", "NOPE0001")), [[], [], []]);
+    assert.deepEqual(await run(e, commandSql("block", "POST0001", 7)),
+        [[], [{ id: "POST0001", title: "T" }], [{ poster: "abababab", at: 7, note: "post POST0001" }]]);
+    assert.deepEqual(await run(e, commandSql("unblock", "0123abcd")), [[]]);
+    assert.deepEqual(await run(e, commandSql("unblock", "abababab")), [[{ poster: "abababab", note: "post POST0001" }]]);
+    assert.deepEqual(await run(e, commandSql("remove", "POST0001", 8)), [[{ id: "POST0001", title: "T", poster_name: "Seed" }]]);
+});
+
 test("list shows the newest and the top posts, with hidden and removed flags", async () => {
     const e = env();
     await seed(e, { id: "POST0001", down: 3, created: Date.now() - DAY });
     const sql = commandSql("list", "10");
-    assert.ok(!sql.includes('"'), "no double quotes: the SQL rides in a quoted shell argument");
     const [newest] = (await e.COMMUNITY_DB.prepare(sql.split(";\n")[0]).all()).results;
     assert.equal(newest.id, "POST0001");
     assert.equal(newest.hidden, 1);
+});
+
+test("list: the top statement skips removed posts, newest flags them, and the third shows blocked phones", async () => {
+    const e = env();
+    await seed(e, { id: "LIVE0001", up: 5 });
+    await seed(e, { id: "GONE0001", up: 9, removed: 1 });
+    await seed(e, { id: "SPAM0001", poster: "cd".repeat(32) });
+    await run(e, commandSql("block", "SPAM0001", 5));
+    const [newest, top, blocked] = await run(e, commandSql("list", "10"));
+    assert.deepEqual(top.map((r) => r.id), ["LIVE0001"]);
+    assert.equal(newest.find((r) => r.id === "GONE0001").removed, 1);
+    assert.deepEqual(blocked, [{ poster: "cdcdcdcd", at: 5, note: "post SPAM0001" }]);
+});
+
+test("every command's SQL fits one quoted --command line, with nothing left to bind", () => {
+    for (const [c, a] of [["list", "20"], ["remove", "POST0001"], ["restore", "POST0001"], ["block", "POST0001"], ["unblock", "abcdef12"]])
+        assert.ok(!/--|["%]|\?\d/.test(commandSql(c, a)), c);
 });
 
 test("bad arguments never reach the SQL", () => {
@@ -48,6 +79,11 @@ test("bad arguments never reach the SQL", () => {
     assert.throws(() => commandSql("block", "short"));
     assert.throws(() => commandSql("unblock", "zz"));
     assert.throws(() => commandSql("unblock", "abc")); // under 8 characters
+    assert.throws(() => commandSql("unblock", "ABCDEF12")); // upper case
     assert.throws(() => commandSql("list", "0"));
+    assert.throws(() => commandSql("list", "201"));
+    assert.throws(() => commandSql("list", "10abc"));
+    assert.throws(() => commandSql("list", "1e3"));
     assert.throws(() => commandSql("wipe", "POST0001"));
+    assert.throws(() => commandSql("block", "POST0001", "POST0002")); // a second argument
 });
