@@ -66,8 +66,9 @@ export const validEditKey = (k) => typeof k === "string" && /^[A-Za-z0-9_-]{43}$
 /** One song descriptor (the same fields and limits as a mix track), cleaned; null when invalid. Used by Listen Together. */
 export function cleanTrack(t) {
     if (!t || typeof t !== "object" || !str(t.t, 1, 500) || !str(t.a, 1, 500)) return null;
-    if (!optStr(t.al, 500) || !optStr(t.isrc, 20) || !optStr(t.sp, 40) || !optStr(t.yt, 20)) return null;
-    const clean = pick(t, ["t", "a", "al", "d", "isrc", "sp", "yt"]);
+    if (!optStr(t.al, 500) || !optStr(t.isrc, 20) || !optStr(t.sp, 40) || !optStr(t.yt, 20) || !optStr(t.by, 16)) return null;
+    // by: the member id of whoever added the song (Listen Together); the room stamps or overrides it.
+    const clean = pick(t, ["t", "a", "al", "d", "isrc", "sp", "yt", "by"]);
     // A duration outside 1 ms..24 h is dropped, not fatal: positions are clamped to it.
     if (!(Number.isSafeInteger(clean.d) && clean.d >= 1 && clean.d <= 86_400_000)) delete clean.d;
     return clean;

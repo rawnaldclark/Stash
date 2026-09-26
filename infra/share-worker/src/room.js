@@ -98,11 +98,17 @@ const stateMsg = (s, to = "all") => ({ to, msg: { t: "state", state: publicState
 /** Every connected phone has either buffered the song or can't get it, so nobody is worth waiting for. */
 const allSettled = (s) => connected(s).every((m) => m.status === "ok" || m.status === "unavailable");
 
-function setTimeline(ctx, timeline) {
+/** [by] names the member who caused the change (play, pause, seek); the room's own start has none. */
+function setTimeline(ctx, timeline, by) {
     ctx.s.timeline = timeline;
     ctx.s.rev++;
-    ctx.out.push({ to: "all", msg: { t: "timeline", rev: ctx.s.rev, trackKey: ctx.s.trackKey, ...timeline } });
+    ctx.out.push({ to: "all", msg: { t: "timeline", rev: ctx.s.rev, trackKey: ctx.s.trackKey, ...timeline, ...(by ? { by } : {}) } });
 }
+
+/** Why the host loaded a song, passed through to phones so they can say "Rawn skipped" (and stay quiet on a natural end). */
+const WHYS = new Set(["skip", "back", "end", "pick", "radio"]);
+/** Songs without an adder are the sender's. */
+const stamped = (tracks, by) => tracks.map((t) => (t.by ? t : { ...t, by }));
 
 function startPlayback(ctx) {
     ctx.s.phase = { kind: "playing" };
@@ -214,18 +220,19 @@ const EVENTS = {
 
 const MESSAGES = {
     load(ctx) {
-        const { s, now, msg } = ctx;
+        const { s, now, msg, event } = ctx;
         const track = cleanTrack(msg.track);
         if (!track) return false;
-        s.track = track;
+        s.track = track.by ? track : { ...track, by: event.from };
         s.trackKey++;
-        s.queue = cleanQueue(msg.queue);
+        s.queue = stamped(cleanQueue(msg.queue), event.from);
         s.timeline = { positionMs: cleanPosition(msg.positionMs, track) ?? 0, atRoomMs: now, playing: false };
         s.phase = { kind: "preparing", trackKey: s.trackKey, deadlineMs: now + PREPARE_MS };
         for (const m of connected(s)) m.status = "buffering";
         s.rev++;
         ctx.out.push({ to: "all", msg: {
-            t: "prepare", trackKey: s.trackKey, track, positionMs: s.timeline.positionMs, deadlineMs: s.phase.deadlineMs,
+            t: "prepare", trackKey: s.trackKey, track: s.track, positionMs: s.timeline.positionMs, deadlineMs: s.phase.deadlineMs,
+            by: event.from, ...(WHYS.has(msg.why) ? { why: msg.why } : {}),
         } });
         ctx.out.push(membersMsg(s));
         return true;
@@ -250,14 +257,14 @@ const MESSAGES = {
     play(ctx) {
         const { s, now } = ctx;
         if (s.phase.kind !== "playing" || s.timeline.playing || !s.track) return false;
-        setTimeline(ctx, { positionMs: s.timeline.positionMs, atRoomMs: now + COMMAND_LEAD_MS, playing: true });
+        setTimeline(ctx, { positionMs: s.timeline.positionMs, atRoomMs: now + COMMAND_LEAD_MS, playing: true }, ctx.event.from);
         return true;
     },
 
     pause(ctx) {
         const { s, now } = ctx;
         if (s.phase.kind !== "playing" || !s.timeline.playing) return false;
-        setTimeline(ctx, { positionMs: positionAt(s.timeline, now), atRoomMs: now, playing: false });
+        setTimeline(ctx, { positionMs: positionAt(s.timeline, now), atRoomMs: now, playing: false }, ctx.event.from);
         return true;
     },
 
@@ -267,13 +274,13 @@ const MESSAGES = {
         if (s.phase.kind !== "playing" || positionMs === null || !s.track) return false;
         setTimeline(ctx, s.timeline.playing
             ? { positionMs, atRoomMs: now + COMMAND_LEAD_MS, playing: true }
-            : { positionMs, atRoomMs: now, playing: false });
+            : { positionMs, atRoomMs: now, playing: false }, ctx.event.from);
         return true;
     },
 
     queue(ctx) {
         if (!Array.isArray(ctx.msg.queue)) return false;
-        ctx.s.queue = cleanQueue(ctx.msg.queue);
+        ctx.s.queue = stamped(cleanQueue(ctx.msg.queue), ctx.event.from);
         ctx.s.rev++;
         return true;
     },
@@ -299,7 +306,7 @@ const MESSAGES = {
             const accepted = new Set(s.accepted ?? []);
             let at = 0;
             while (at < s.queue.length && accepted.has(songKey(s.queue[at]))) at++;
-            s.queue.splice(at, 0, picked.track);
+            s.queue.splice(at, 0, { ...picked.track, by: picked.from }); // whoever suggested it, whatever they claimed
             const queued = new Set(s.queue.map(songKey)); // keys no longer queued are dropped, which bounds the list
             s.accepted = [...accepted, songKey(picked.track)].filter((k) => queued.has(k));
         }

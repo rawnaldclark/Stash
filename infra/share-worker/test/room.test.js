@@ -103,9 +103,9 @@ test("load broadcasts prepare with an 8 s deadline, marks everyone buffering and
     const r = loaded();
     const [prep] = sent(r, "prepare");
     assert.equal(prep.to, "all");
-    assert.deepEqual(prep.msg, { t: "prepare", trackKey: 1, track: TRACK, positionMs: 30_000, deadlineMs: T0 + 100 + 8_000 });
+    assert.deepEqual(prep.msg, { t: "prepare", trackKey: 1, track: { ...TRACK, by: "h" }, positionMs: 30_000, deadlineMs: T0 + 100 + 8_000, by: "h" });
     assert.ok(r.state.members.every((m) => m.status === "buffering"));
-    assert.deepEqual(r.state.queue, [NEXT]);
+    assert.deepEqual(r.state.queue, [{ ...NEXT, by: "h" }]);
     assert.equal(r.alarmAt, T0 + 100 + 8_000);
 });
 
@@ -199,11 +199,11 @@ test("adding a suggestion queues it and tells the host; dismissing just removes 
     let s = send(party(), "a", { t: "suggest", track: NEXT }, T0, { newId: "s1" }).state;
     s = send(s, "b", { t: "suggest", track: TRACK }, T0, { newId: "s2" }).state;
     const r = send(s, "h", { t: "suggestion", id: "s1", action: "add" });
-    assert.deepEqual(r.state.queue, [NEXT]);
+    assert.deepEqual(r.state.queue, [{ ...NEXT, by: "a" }]);
     assert.deepEqual(sent(r, "suggestions")[0].msg.suggestions.map((x) => x.id), ["s2"]);
     assert.equal(sent(r, "state")[0].to, "h");
     const d = send(r.state, "h", { t: "suggestion", id: "s2", action: "dismiss" });
-    assert.deepEqual(d.state.queue, [NEXT]);
+    assert.deepEqual(d.state.queue, [{ ...NEXT, by: "a" }]);
     assert.equal(d.state.suggestions.length, 0);
 });
 
@@ -214,12 +214,37 @@ test("accepted suggestions play next, in the order the host accepted them", () =
     s = send(s, "a", { t: "suggest", track: B }, T0, { newId: "sb" }).state;
     s = send(s, "h", { t: "suggestion", id: "sa", action: "add" }).state;
     s = send(s, "h", { t: "suggestion", id: "sb", action: "add" }).state;
-    assert.deepEqual(s.queue, [A, B, NEXT, TRACK]);
+    assert.deepEqual(s.queue, [{ ...A, by: "a" }, { ...B, by: "a" }, { ...NEXT, by: "h" }, { ...TRACK, by: "h" }]);
     // A plays and the host's app resends the rest of the queue; C, accepted now, still waits behind B.
-    s = send(s, "h", { t: "load", track: A, positionMs: 0, queue: [B, NEXT, TRACK] }).state;
+    s = send(s, "h", { t: "load", track: A, positionMs: 0, queue: s.queue.slice(1) }).state;
     s = send(s, "b", { t: "suggest", track: C }, T0, { newId: "sc" }).state;
     s = send(s, "h", { t: "suggestion", id: "sc", action: "add" }).state;
-    assert.deepEqual(s.queue, [B, C, NEXT, TRACK]);
+    assert.deepEqual(s.queue, [{ ...B, by: "a" }, { ...C, by: "b" }, { ...NEXT, by: "h" }, { ...TRACK, by: "h" }]);
+});
+
+test("songs carry who added them; a listener can't claim someone else's pick", () => {
+    let s = send(party(), "h", { t: "load", track: TRACK, positionMs: 0, queue: [NEXT] }).state;
+    assert.equal(s.track.by, "h");
+    assert.equal(s.queue[0].by, "h");
+    s = send(s, "h", { t: "queue", queue: [NEXT, { ...TRACK, by: "a" }] }).state;
+    assert.deepEqual(s.queue.map((x) => x.by), ["h", "a"]); // kept when the host's app sends it back
+    s = send(s, "a", { t: "suggest", track: { t: "S", a: "A", by: "h" } }, T0, { newId: "s1" }).state;
+    s = send(s, "h", { t: "suggestion", id: "s1", action: "add" }).state;
+    assert.equal(s.queue[0].by, "a");
+    assert.equal(send(party(), "h", { t: "queue", queue: [{ ...NEXT, by: "x".repeat(17) }] }).state.queue.length, 0);
+});
+
+test("prepare says who loaded and why; timelines say who played, paused or seeked", () => {
+    const r = send(party(), "h", { t: "load", track: TRACK, positionMs: 0, queue: [], why: "skip" });
+    assert.equal(sent(r, "prepare")[0].msg.by, "h");
+    assert.equal(sent(r, "prepare")[0].msg.why, "skip");
+    assert.equal("why" in sent(send(party(), "h", { t: "load", track: TRACK, positionMs: 0, queue: [], why: "x" }), "prepare")[0].msg, false);
+    let s = r.state;
+    for (const m of ["h", "a", "b"]) s = ready(s, m).state;
+    const p = send(s, "h", { t: "pause" }, T0 + 1_000);
+    assert.equal(sent(p, "timeline")[0].msg.by, "h");
+    assert.equal(sent(send(p.state, "h", { t: "play" }, T0 + 2_000), "timeline")[0].msg.by, "h");
+    assert.equal(sent(send(s, "h", { t: "seek", positionMs: 5_000 }, T0 + 1_000), "timeline")[0].msg.by, "h");
 });
 
 test("reactions: one of the six, at most one per second per member", () => {
@@ -327,7 +352,7 @@ test("positions are bounded: absurd seeks are refused, huge loads clamp to the s
     const noD = send(party(), "h", { t: "load", track: NEXT, positionMs: 1e12, queue: [] });
     assert.equal(noD.state.timeline.positionMs, 86_400_000);
     const badD = send(party(), "h", { t: "load", track: { ...NEXT, d: 1e300 }, positionMs: 0, queue: [] });
-    assert.deepEqual(badD.state.track, NEXT, "an out-of-range duration is dropped, the song kept");
+    assert.deepEqual(badD.state.track, { ...NEXT, by: "h" }, "an out-of-range duration is dropped, the song kept");
     assert.equal(send(party(), "h", { t: "load", track: { ...NEXT, d: 0 } }).state.track.d, undefined);
 });
 
