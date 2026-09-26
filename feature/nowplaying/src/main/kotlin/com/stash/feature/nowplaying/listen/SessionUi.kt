@@ -113,20 +113,20 @@ fun PersonAvatar(memberId: String, name: String?, size: Dp, modifier: Modifier =
     }
 }
 
-/** Up to four faces overlapping, host first, then "+n". */
+/** Up to [max] faces overlapping, host first, then "+n". */
 @Composable
-private fun FaceStack(members: List<RoomMember>, hostId: String?, faceSize: Dp = 28.dp) {
+private fun FaceStack(members: List<RoomMember>, hostId: String?, faceSize: Dp = 28.dp, max: Int = 4) {
     val ordered = members.sortedBy { if (it.id == hostId) 0 else 1 }
-    val shown = ordered.take(4)
+    val shown = ordered.take(max)
     val step = faceSize * 0.7f
     Box(Modifier.width(faceSize + step * (shown.size - 1).coerceAtLeast(0)).height(faceSize)) {
         shown.forEachIndexed { i, m ->
             PersonAvatar(m.id, m.name, faceSize, Modifier.offset(x = step * i), isHost = m.id == hostId)
         }
     }
-    if (ordered.size > 4) {
+    if (ordered.size > max) {
         Text(
-            "+${ordered.size - 4}",
+            "+${ordered.size - max}",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp),
@@ -136,12 +136,16 @@ private fun FaceStack(members: List<RoomMember>, hostId: String?, faceSize: Dp =
 
 // ── The bar on Now Playing ────────────────────────────────────────────────────
 
+internal fun sessionTitle(room: ListenTogetherState.InRoom): String {
+    val others = room.members.filter { it.id != room.myId }
+    return if (others.isEmpty()) "Waiting for friends to join" else "Listening with ${nameList(others.map { it.name ?: "Someone" })}"
+}
+
 /** "Listening with Maya, Sam": who's here, who hosts. Tapping it opens the Session sheet. */
 @Composable
 fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val others = room.members.filter { it.id != room.myId }
     val host = room.members.firstOrNull { it.id == room.hostId }
-    val title = if (others.isEmpty()) "Waiting for friends to join" else "Listening with ${nameList(others.map { it.name ?: "Someone" })}"
+    val title = sessionTitle(room)
     val waiting = if (room.isHost) room.suggestions.size else 0
     val subtitle = when {
         room.reconnecting -> "Reconnecting…"
@@ -176,6 +180,25 @@ fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: 
             )
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** The mini player's sign of a session, on every screen: the room's faces, and a dot while a suggestion waits for the host. */
+@Composable
+internal fun MiniSessionFaces(room: ListenTogetherState.InRoom) {
+    val waiting = room.isHost && room.suggestions.isNotEmpty()
+    val label = sessionTitle(room) + if (waiting) ", a suggestion is waiting" else ""
+    Box(Modifier.clearAndSetSemantics { contentDescription = label }) {
+        Row(verticalAlignment = Alignment.CenterVertically) { FaceStack(room.members, room.hostId, faceSize = 22.dp, max = 3) }
+        if (waiting) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .size(9.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape),
+            )
+        }
     }
 }
 

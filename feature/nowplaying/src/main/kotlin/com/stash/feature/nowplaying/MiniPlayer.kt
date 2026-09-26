@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -41,6 +42,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import com.stash.core.common.primaryArtist
+import com.stash.core.media.listen.ListenTogetherState
+import com.stash.feature.nowplaying.listen.ListenTogetherViewModel
+import com.stash.feature.nowplaying.listen.MiniSessionFaces
 
 /**
  * Compact mini player bar that sits above the bottom navigation.
@@ -59,8 +63,10 @@ fun MiniPlayer(
     onExpand: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: NowPlayingViewModel = hiltViewModel(),
+    listen: ListenTogetherViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val together by listen.state.collectAsStateWithLifecycle()
 
     AnimatedVisibility(
         visible = uiState.hasTrack,
@@ -141,6 +147,8 @@ fun MiniPlayer(
                         )
                     }
 
+                    (together as? ListenTogetherState.InRoom)?.let { MiniSessionFaces(it) }
+
                     // Play / Pause button — spinner while the track is still
                     // resolving/buffering (e.g. a slow YouTube-fallback resolve).
                     IconButton(onClick = viewModel::onPlayPauseClick, enabled = !uiState.isBuffering) {
@@ -160,8 +168,11 @@ fun MiniPlayer(
                         }
                     }
 
-                    // Skip next button. A Listen Together listener can't skip the room's song, so it gets none.
-                    if (com.stash.core.ui.components.LocalListenTogetherRole.current != com.stash.core.ui.components.ListenTogetherRole.LISTENER) {
+                    // Skip next button. A Listen Together listener can't skip the room's song: the slot stays, empty,
+                    // so play/pause doesn't move when the host role changes hands.
+                    if (com.stash.core.ui.components.LocalListenTogetherRole.current == com.stash.core.ui.components.ListenTogetherRole.LISTENER) {
+                        Spacer(Modifier.size(48.dp))
+                    } else {
                         IconButton(onClick = viewModel::onSkipNext) {
                             Icon(
                                 imageVector = Icons.Default.SkipNext,
