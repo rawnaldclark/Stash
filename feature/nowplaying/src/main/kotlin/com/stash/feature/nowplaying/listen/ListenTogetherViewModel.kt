@@ -9,6 +9,7 @@ import com.stash.core.data.share.SharePreference
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.media.listen.ListenTogetherState
+import com.stash.core.media.listen.SessionEvent
 import com.stash.core.model.listen.ServerMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -24,6 +25,8 @@ class ListenTogetherViewModel @Inject constructor(
 ) : ViewModel() {
     val state: StateFlow<ListenTogetherState> = controller.state
     val reactions: SharedFlow<ServerMessage.Reaction> = controller.reactions
+    /** "Maya joined", "Rawn skipped": named room events for the notice on Now Playing. */
+    val events: SharedFlow<SessionEvent> = controller.events
 
     /** The "Show my name as" field. Compose state, so the TextField reads it synchronously. */
     var name by mutableStateOf("")

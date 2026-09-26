@@ -176,10 +176,27 @@ fun NowPlayingScreen(
     val togetherState by together.state.collectAsStateWithLifecycle()
     val room = togetherState as? ListenTogetherState.InRoom
     var showStartTogether by remember { mutableStateOf(false) }
-    // A listener follows the room: Leave instead of play, pause, skip and seek (spec §5).
+    // A listener follows the room: no skip or seek; their play/pause is their own (spec §5).
     val isListener = room != null && !room.isHost
-    var showSuggestions by remember { mutableStateOf(false) }
+    // The Session sheet: people, Up next, suggestions, invite, leave (design 2026-09-25).
+    var showSession by remember { mutableStateOf(false) }
     var confirmEndTogether by remember { mutableStateOf(false) }
+    var confirmLeaveTogether by remember { mutableStateOf(false) }
+    // Haptics at the moments that matter: you're in (start or join), and you became host.
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var wasInRoom by remember { mutableStateOf(room != null) }
+    LaunchedEffect(room != null) {
+        if (room != null && !wasInRoom) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm)
+        wasInRoom = room != null
+    }
+    LaunchedEffect(Unit) {
+        together.events.collect { e ->
+            val me = (together.state.value as? ListenTogetherState.InRoom)?.myId
+            if (e.kind == com.stash.core.media.listen.SessionEvent.Kind.HOSTING && e.memberId == me) {
+                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm)
+            }
+        }
+    }
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
     // the action (find a replacement / delete / delete + block).
@@ -318,7 +335,7 @@ fun NowPlayingScreen(
         com.stash.feature.nowplaying.listen.ListenTogetherStartDialog(
             name = together.name,
             onNameChange = together::onNameChange,
-            onStart = { together.start(); showStartTogether = false },
+            onStart = { together.start(); showStartTogether = false; showSession = true },
             onDismiss = { showStartTogether = false },
         )
     }
@@ -327,9 +344,15 @@ fun NowPlayingScreen(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmEndTogether = false },
             title = { Text("End the session for everyone?") },
-            text = { Text("Everyone listening is dropped from the session.") },
+            text = {
+                val others = (room?.members?.size ?: 1) - 1
+                Text(if (others == 1) "The person listening with you will be dropped." else "The $others people listening with you will be dropped.")
+            },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { together.end(); confirmEndTogether = false }) { Text("End") }
+                androidx.compose.material3.TextButton(
+                    onClick = { together.end(); confirmEndTogether = false },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("End") }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { confirmEndTogether = false }) { Text("Cancel") }
@@ -337,11 +360,39 @@ fun NowPlayingScreen(
         )
     }
 
-    if (showSuggestions && room != null && room.isHost) {
-        com.stash.feature.nowplaying.listen.SuggestionsSheet(
-            room = room,
+    if (confirmLeaveTogether) {
+        val nextHost = room?.members?.filter { it.id != room.myId }?.minByOrNull { it.joinedAt }?.name ?: "Someone"
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmLeaveTogether = false },
+            title = { Text("Leave the session?") },
+            text = { Text("$nextHost will host, and the music keeps playing for everyone else.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { together.leave(); confirmLeaveTogether = false }) { Text("Leave") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmLeaveTogether = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showSession) {
+        com.stash.feature.nowplaying.listen.SessionSheet(
+            state = togetherState,
+            onDismiss = { showSession = false },
             onAnswer = together::answerSuggestion,
-            onDismiss = { showSuggestions = false },
+            onMakeHost = together::makeHost,
+            onCopyLink = { com.stash.feature.nowplaying.listen.copyInvite(toastContext, it) },
+            onShare = { com.stash.feature.nowplaying.listen.shareInvite(toastContext, it) },
+            onLeave = {
+                val r = room
+                when {
+                    r == null -> together.leave()
+                    !r.isHost -> { together.leave(); showSession = false }
+                    r.members.size <= 1 -> { together.end(); showSession = false } // alone: leaving is ending
+                    else -> confirmLeaveTogether = true
+                }
+            },
+            onEnd = { confirmEndTogether = true },
         )
     }
 
@@ -514,11 +565,9 @@ fun NowPlayingScreen(
                     accentColor = npAccent(uiState.vibrantColor),
                 )
                 if (room != null) {
-                    com.stash.feature.nowplaying.listen.WhosListeningBar(
+                    com.stash.feature.nowplaying.listen.SessionBar(
                         room = room,
-                        accent = npAccent(uiState.vibrantColor),
-                        onMakeHost = together::makeHost,
-                        onOpenSuggestions = { showSuggestions = true },
+                        onClick = { showSession = true },
                         modifier = Modifier.padding(top = 4.dp),
                     )
                     com.stash.feature.nowplaying.listen.ListenTogetherNotice(room)
@@ -540,6 +589,10 @@ fun NowPlayingScreen(
                         artSize = artSize,
                         onBitmapLoaded = viewModel::onAlbumArtLoaded,
                     )
+                    if (room != null) {
+                        // "Maya joined", "Rawn skipped": over the art, so the layout never shifts.
+                        com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
+                    }
                 }
 
                 // -- Track info -- (tap the title/artist to open the artist
@@ -684,6 +737,8 @@ fun NowPlayingScreen(
                     }
                 }
 
+                if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
+
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // -- Progress bar --
@@ -699,15 +754,18 @@ fun NowPlayingScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // -- Playback controls --
+                // -- Playback controls -- the same row for host and listener, so a role change
+                // doesn't move anything; a listener's skip slots are simply empty.
                 if (isListener) {
-                    com.stash.feature.nowplaying.listen.ListenerControls(
-                        pausedLocally = room?.pausedLocally == true,
+                    com.stash.feature.nowplaying.listen.LivePill(
+                        pausedLocally = room.pausedLocally,
+                        accent = npAccent(uiState.vibrantColor),
                         onRejoin = together::rejoin,
-                        onLeave = together::leave,
-                        onReact = together::react,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
-                } else {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                run {
                     PlaybackControls(
                         isPlaying = uiState.isPlaying,
                         isBuffering = uiState.isBuffering,
@@ -719,8 +777,9 @@ fun NowPlayingScreen(
                         onSkipPrevious = viewModel::onSkipPrevious,
                         onToggleShuffle = viewModel::onToggleShuffle,
                         onCycleRepeatMode = viewModel::onCycleRepeatMode,
-                        // A host in a session: shuffle and repeat do nothing there, so React takes their place.
+                        // In a session: shuffle and repeat do nothing there, so React takes their place.
                         onReact = if (room != null) together::react else null,
+                        canSkip = !isListener,
                     )
                 }
 
@@ -740,7 +799,7 @@ fun NowPlayingScreen(
                 isPlaying = uiState.isPlaying && !uiState.isBuffering,
             )
         }
-        if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, Modifier.fillMaxSize())
+        if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize())
     }
 
     if (showOptionsSheet && track != null) {
@@ -753,9 +812,7 @@ fun NowPlayingScreen(
             onViewAlbum = viewModel::onViewAlbumTapped,
             together = togetherState,
             onStartTogether = { showStartTogether = true },
-            onInvite = { room?.let { com.stash.feature.nowplaying.listen.shareInvite(toastContext, it.url) } },
-            onLeaveTogether = together::leave,
-            onEndTogether = { confirmEndTogether = true },
+            onOpenSession = { showSession = true },
             onDismiss = { showOptionsSheet = false },
             sheetState = optionsSheetState,
         )
@@ -970,6 +1027,8 @@ private fun PlaybackControls(
     onToggleShuffle: () -> Unit,
     onCycleRepeatMode: () -> Unit,
     onReact: ((String) -> Unit)? = null,
+    /** False for a Listen Together listener: the room skips, so the slots stay empty rather than dead. */
+    canSkip: Boolean = true,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -989,7 +1048,7 @@ private fun PlaybackControls(
         }
 
         // Previous
-        IconButton(onClick = onSkipPrevious) {
+        if (!canSkip) Spacer(Modifier.size(48.dp)) else IconButton(onClick = onSkipPrevious) {
             Icon(
                 imageVector = Icons.Default.SkipPrevious,
                 contentDescription = "Previous",
@@ -1033,7 +1092,7 @@ private fun PlaybackControls(
         }
 
         // Next
-        IconButton(onClick = onSkipNext) {
+        if (!canSkip) Spacer(Modifier.size(48.dp)) else IconButton(onClick = onSkipNext) {
             Icon(
                 imageVector = Icons.Default.SkipNext,
                 contentDescription = "Next",
@@ -1181,9 +1240,7 @@ private fun NowPlayingOptionsSheet(
     onViewAlbum: () -> Unit,
     together: ListenTogetherState,
     onStartTogether: () -> Unit,
-    onInvite: () -> Unit,
-    onLeaveTogether: () -> Unit,
-    onEndTogether: () -> Unit,
+    onOpenSession: () -> Unit,
     onDismiss: () -> Unit,
     sheetState: androidx.compose.material3.SheetState,
     modifier: Modifier = Modifier,
@@ -1210,17 +1267,10 @@ private fun NowPlayingOptionsSheet(
                     .align(Alignment.CenterHorizontally)
             )
 
-            // Listen Together: Start, or Invite / End / Leave once in a room.
+            // Listen Together: Start, or the Session sheet (invite, leave, end) once in a room.
             when (together) {
-                is ListenTogetherState.InRoom -> {
-                    if (together.isHost) {
-                        SheetOptionRow(icon = Icons.Default.PersonAdd, label = "Invite friends", onClick = { onInvite(); onDismiss() })
-                        Spacer(modifier = Modifier.height(8.dp))
-                        SheetOptionRow(icon = Icons.Default.StopCircle, label = "End session for everyone", onClick = { onEndTogether(); onDismiss() })
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                    SheetOptionRow(icon = Icons.AutoMirrored.Filled.Logout, label = "Leave session", onClick = { onLeaveTogether(); onDismiss() })
-                }
+                is ListenTogetherState.InRoom ->
+                    SheetOptionRow(icon = Icons.Default.Groups, label = "Listening together", onClick = { onOpenSession(); onDismiss() })
                 is ListenTogetherState.Connecting -> SheetOptionRow(icon = Icons.Default.Groups, label = "Connecting…", onClick = onDismiss)
                 ListenTogetherState.Idle -> SheetOptionRow(icon = Icons.Default.Groups, label = "Listen together", onClick = { onStartTogether(); onDismiss() })
             }
