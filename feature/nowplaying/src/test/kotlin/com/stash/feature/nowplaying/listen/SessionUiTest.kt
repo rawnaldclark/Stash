@@ -1,6 +1,7 @@
 package com.stash.feature.nowplaying.listen
 
 import com.stash.core.media.listen.SessionEvent
+import com.stash.core.model.share.SharedTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,6 +24,41 @@ class SessionUiTest {
         assertEquals("Maya, Sam", nameList(listOf("Maya", "Sam")))
         assertEquals("Maya, Sam +2", nameList(listOf("Maya", "Sam", "Jo", "Ana")))
         assertEquals("R2YH-WS55", formatCode("R2YHWS55"))
+    }
+
+    private val avril = SharedTrack("Avril 14th", "Aphex Twin")
+    private val nude = SharedTrack("Nude", "Radiohead")
+    private val xtal = SharedTrack("Xtal", "Aphex Twin")
+
+    @Test
+    fun `Up next rows keep their keys through moves and the room's by stamps, and a song queued twice gets two`() {
+        val keys = upNextEntries(listOf(avril, nude, avril)).map { it.uid }
+        assertEquals(3, keys.toSet().size)
+        // The room stamps who added a song after the host's own add: the row must stay the same row.
+        assertEquals(keys, upNextEntries(listOf(avril.copy(addedBy = "m"), nude, avril)).map { it.uid })
+        assertEquals(listOf(keys[1], keys[0], keys[2]), upNextEntries(listOf(nude, avril, avril)).map { it.uid })
+    }
+
+    @Test
+    fun `two different songs that read the same still get their own rows`() {
+        // Crafted suggestions whose descriptions are the same text: a repeated key would crash every phone's list.
+        val a = SharedTrack("A, artist=B", "C")
+        val b = SharedTrack("A", "B, artist=C")
+        assertEquals(a.toString(), b.toString()) // the collision is real
+        val keys = upNextEntries(listOf(a, b)).map { it.uid }
+        assertEquals(2, keys.toSet().size)
+        assertEquals(1, listOf(a, b).indexOfEntry(keys[1]))
+    }
+
+    @Test
+    fun `an edit finds its song where it is now, and moves only that song`() {
+        val queue = listOf(avril, nude, xtal)
+        val nudeKey = upNextEntries(queue)[1].uid
+        assertEquals(1, queue.indexOfEntry(nudeKey))
+        assertEquals(0, queue.drop(1).indexOfEntry(nudeKey)) // the song before it started playing
+        assertEquals(-1, listOf(avril, xtal).indexOfEntry(nudeKey)) // already gone
+        assertEquals(listOf(nude, xtal, avril), queue.moved(0, 2))
+        assertEquals(listOf(xtal, avril, nude), queue.moved(2, 0))
     }
 
     @Test

@@ -739,6 +739,23 @@ class ListenTogetherSessionTest {
         assertThat(notices).containsExactly("Added to the session queue")
     }
 
+    @Test fun `the host's Up next edit replaces the room's queue and shows at once`() = runTest {
+        host()
+        connection.sent.clear()
+        controller.send(Command.SetQueue(listOf(third, next))); runCurrent()
+        assertThat(connection.sent).containsExactly(ClientMessage.Queue(listOf(third, next)))
+        assertThat((controller.state.value as ListenTogetherState.InRoom).queue).containsExactly(third, next).inOrder()
+    }
+
+    @Test fun `a listener's Up next edit goes nowhere`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(queue = listOf(next))))
+        connection.sent.clear()
+        controller.send(Command.SetQueue(emptyList())); runCurrent()
+        assertThat(connection.sent).isEmpty()
+        assertThat((controller.state.value as ListenTogetherState.InRoom).queue).containsExactly(next)
+    }
+
     @Test fun `tapping a playlist while hosting plays it for everyone`() = runTest {
         host()
         connection.sent.clear()

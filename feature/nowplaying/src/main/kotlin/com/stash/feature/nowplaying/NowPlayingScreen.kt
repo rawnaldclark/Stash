@@ -381,6 +381,7 @@ fun NowPlayingScreen(
             onDismiss = { showSession = false },
             onAnswer = together::answerSuggestion,
             onMakeHost = together::makeHost,
+            onEditQueue = together::editQueue,
             onCopyLink = { com.stash.feature.nowplaying.listen.copyInvite(toastContext, it) },
             onShare = { com.stash.feature.nowplaying.listen.shareInvite(toastContext, it) },
             onLeave = {

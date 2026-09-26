@@ -117,6 +117,8 @@ class ListenTogetherSession(
             is Command.React -> send(ClientMessage.React(command.emoji))
             is Command.Suggestion -> send(ClientMessage.SuggestionAction(command.id, if (command.add) "add" else "dismiss"))
             is Command.MakeHost -> send(ClientMessage.MakeHost(command.memberId))
+            // Shown at once, so a swiped or dragged row doesn't flick back while the room's echo is on its way.
+            is Command.SetQueue -> if (isHost && room != null) { setQueue(command.queue.take(MAX_QUEUE)); publish() }
             Command.Rejoin -> rejoin()
         }
     }

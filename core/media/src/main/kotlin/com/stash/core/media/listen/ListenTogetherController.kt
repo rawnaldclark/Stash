@@ -70,6 +70,8 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         data class React(val emoji: String) : Command
         data class Suggestion(val id: String, val add: Boolean) : Command
         data class MakeHost(val memberId: String) : Command
+        /** Host only: Up next after the host removed or moved songs. Replaces the room's queue. */
+        data class SetQueue(val queue: List<SharedTrack>) : Command
         /** Catch up with the room after a local pause (see [ListenTogetherState.InRoom.pausedLocally]). */
         data object Rejoin : Command
     }

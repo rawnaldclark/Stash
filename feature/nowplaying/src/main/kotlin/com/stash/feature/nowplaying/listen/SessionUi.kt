@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -320,6 +321,7 @@ fun SessionSheet(
     onDismiss: () -> Unit,
     onAnswer: (id: String, add: Boolean) -> Unit,
     onMakeHost: (String) -> Unit,
+    onEditQueue: (List<SharedTrack>) -> Unit,
     onCopyLink: (String) -> Unit,
     onShare: (String) -> Unit,
     onLeave: () -> Unit,
@@ -339,7 +341,7 @@ fun SessionSheet(
     }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = StashTheme.extendedColors.elevatedSurface) {
         when (state) {
-            is ListenTogetherState.InRoom -> RoomContent(state, onAnswer, onMakeHost, onCopyLink, onShare, onLeave, onEnd)
+            is ListenTogetherState.InRoom -> RoomContent(state, onAnswer, onMakeHost, onEditQueue, onCopyLink, onShare, onLeave, onEnd)
             else -> Column(
                 Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 48.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -358,6 +360,7 @@ private fun RoomContent(
     room: ListenTogetherState.InRoom,
     onAnswer: (id: String, add: Boolean) -> Unit,
     onMakeHost: (String) -> Unit,
+    onEditQueue: (List<SharedTrack>) -> Unit,
     onCopyLink: (String) -> Unit,
     onShare: (String) -> Unit,
     onLeave: () -> Unit,
@@ -366,7 +369,14 @@ private fun RoomContent(
     val host = room.members.firstOrNull { it.id == room.hostId }
     val nameOf = { id: String -> room.nameOf(id) }
     val count = room.members.size
-    LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 32.dp)) {
+    val listState = rememberLazyListState()
+    val upNext = rememberUpNextState(listState, room.queue, onEditQueue)
+    LazyColumn(
+        Modifier.fillMaxWidth(),
+        state = listState,
+        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 32.dp),
+        userScrollEnabled = upNext.draggedIdx < 0,
+    ) {
         item {
             Text("Listening together", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
@@ -401,16 +411,7 @@ private fun RoomContent(
             }
         }
 
-        item { SectionLabel("UP NEXT") }
-        if (room.queue.isEmpty()) {
-            item { Text("Nothing queued yet", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
-        items(room.queue.take(MAX_UP_NEXT)) { t ->
-            SongRow(t) { t.addedBy?.let { PersonAvatar(it, nameOf(it), 22.dp) } }
-        }
-        if (room.queue.size > MAX_UP_NEXT) {
-            item { Text("+${room.queue.size - MAX_UP_NEXT} more", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
+        upNextItems(room, upNext)
 
         item {
             Spacer(Modifier.height(16.dp))
@@ -453,10 +454,8 @@ private fun RoomContent(
     }
 }
 
-private const val MAX_UP_NEXT = 20
-
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelMedium,
@@ -497,13 +496,14 @@ private fun Person(m: RoomMember, room: ListenTogetherState.InRoom, onMakeHost: 
 
 /** A song in the sheet. Songs carry no artwork, so the tile takes a colour from the title. */
 @Composable
-private fun SongRow(
+internal fun SongRow(
     track: SharedTrack,
+    modifier: Modifier = Modifier,
     detail: String? = null,
     detailColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     trailing: @Composable () -> Unit = {},
 ) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         val c = personColor(track.title + track.artist)
         Box(
             Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))

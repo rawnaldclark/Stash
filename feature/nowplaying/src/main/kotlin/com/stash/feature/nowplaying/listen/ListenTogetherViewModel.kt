@@ -12,6 +12,7 @@ import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.media.listen.SessionEvent
 import com.stash.core.model.listen.ServerMessage
+import com.stash.core.model.share.SharedTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharedFlow
@@ -58,4 +59,5 @@ class ListenTogetherViewModel @Inject constructor(
     fun react(emoji: String) = controller.send(Command.React(emoji))
     fun makeHost(memberId: String) = controller.send(Command.MakeHost(memberId))
     fun answerSuggestion(id: String, add: Boolean) = controller.send(Command.Suggestion(id, add))
+    fun editQueue(queue: List<SharedTrack>) = controller.send(Command.SetQueue(queue))
 }

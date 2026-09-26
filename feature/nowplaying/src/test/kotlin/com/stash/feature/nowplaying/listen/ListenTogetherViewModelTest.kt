@@ -5,6 +5,7 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.media.listen.ListenTogetherState
+import com.stash.core.model.share.SharedTrack
 import io.mockk.coEvery
 import io.mockk.coVerifyOrder
 import io.mockk.every
@@ -48,14 +49,16 @@ class ListenTogetherViewModelTest {
         }
     }
 
-    @Test fun `leave, end, react, make host and rejoin go straight to the controller`() {
+    @Test fun `leave, end, react, make host, queue edits and rejoin go straight to the controller`() {
         val vm = ListenTogetherViewModel(controller, sharePreference, playerRepository)
-        vm.leave(); vm.end(); vm.react("x"); vm.makeHost("m2"); vm.answerSuggestion("s1", add = true); vm.rejoin()
+        val song = SharedTrack("Nude", "Radiohead")
+        vm.leave(); vm.end(); vm.react("x"); vm.makeHost("m2"); vm.answerSuggestion("s1", add = true); vm.editQueue(listOf(song)); vm.rejoin()
         verify { controller.send(Command.Leave) }
         verify { controller.send(Command.End) }
         verify { controller.send(Command.React("x")) }
         verify { controller.send(Command.MakeHost("m2")) }
         verify { controller.send(Command.Suggestion("s1", true)) }
+        verify { controller.send(Command.SetQueue(listOf(song))) }
         verify { controller.rejoin() }
     }
 }
