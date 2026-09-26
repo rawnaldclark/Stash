@@ -27,7 +27,9 @@ export function cleanPost(input) {
         const t = track(input.body?.track);
         if (!t) return null;
         // Titled by its own song, not by the request, so the list can't show one song and play another.
-        return { kind: "song", name, title: t.t.trim().slice(0, 100), body: { track: t }, summary: { ...(t.art ? { art: t.art } : {}), artist: t.a }, count: 1 };
+        // The replace drops the half of an emoji that the cut can leave at the end.
+        const songTitle = t.t.trim().slice(0, 100).replace(/[\uD800-\uDBFF]$/, "");
+        return { kind: "song", name, title: songTitle, body: { track: t }, summary: { ...(t.art ? { art: t.art } : {}), artist: t.a }, count: 1 };
     }
     const title = text(input.title, 100);
     if (!title) return null;

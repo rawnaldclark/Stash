@@ -80,9 +80,9 @@ CREATE TABLE blocked (
 ### What a post holds
 
 - **Playlist or mix:** `body` is `{covers, tracks}`. `covers` is up to 4 https links on `COVER_HOSTS` (the mix rule). `tracks` is 1–500 songs, each passed through `cleanTrack` (so each keeps an allowed `art` link, as in Listen Together) with its `by` removed (that's a Listen Together member id). `summary` is `{covers}`.
-- **Song:** `body` is `{track}`, one song through `cleanTrack`, `by` removed. `summary` is `{art, artist}`, from that track.
+- **Song:** `body` is `{track}`, one song through `cleanTrack`, `by` removed. `summary` is `{art, artist}`, from that track. The title is the song's own title, trimmed and cut to 100 characters. A title sent with a song post is ignored.
 - **Which kind:** the app sends `mix` for `DAILY_MIX` and `STASH_MIX` playlists, and `playlist` for every other type.
-- Title 1–100 characters, poster name 1–40. Anything else is 400 `{error: "bad_request"}`. A request body over 256 KB is 413 `{error: "too_large"}`, like the mix routes' size check.
+- Title 1–100 characters (playlist or mix), poster name 1–40. Anything else is 400 `{error: "bad_request"}`. A request body over 256 KB is 413 `{error: "too_large"}`, like the mix routes' size check.
 
 The server writes `summary` itself from the cleaned body, so it can't disagree with the body.
 
