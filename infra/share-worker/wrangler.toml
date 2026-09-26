@@ -37,3 +37,28 @@ simple = { limit = 5, period = 60 }
 name = "JOIN_RL"
 namespace_id = "2004"
 simple = { limit = 60, period = 60 }
+
+# Stash Community (spec docs/superpowers/specs/2026-09-26-stash-community-design.md §2).
+[[d1_databases]]
+binding = "COMMUNITY_DB"
+database_name = "stash-community"
+database_id = "SET-BY-TASK-24" # `npx wrangler d1 create stash-community` prints it
+migrations_dir = "migrations"
+
+[[ratelimits]]
+name = "COMMUNITY_WRITE_RL"
+namespace_id = "2005"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "COMMUNITY_VOTE_RL"
+namespace_id = "2006"
+simple = { limit = 60, period = 60 }
+
+[[ratelimits]]
+name = "COMMUNITY_READ_RL"
+namespace_id = "2007"
+simple = { limit = 120, period = 60 }
+
+[triggers]
+crons = ["17 4 * * *"]

@@ -223,3 +223,16 @@ async function takeDown(request, env, id, now) {
     await env.COMMUNITY_DB.prepare("UPDATE posts SET removed_at = ?2 WHERE id = ?1").bind(id, now).run();
     return new Response(null, { status: 204 });
 }
+
+/**
+ * The daily cron (spec §2 Cleanup): expired posts, and posts removed more than a day ago that were also
+ * created more than a day ago, with their votes. A removed post stays restorable for a day, and every post
+ * of the last 24 hours stays for the daily limit.
+ */
+export async function cleanup(env, now) {
+    const doomed = "SELECT id FROM posts WHERE expires_at <= ?1 OR (removed_at IS NOT NULL AND removed_at < ?2 AND created_at < ?2)";
+    await env.COMMUNITY_DB.batch([
+        env.COMMUNITY_DB.prepare(`DELETE FROM votes WHERE post_id IN (${doomed})`).bind(now, now - DAY),
+        env.COMMUNITY_DB.prepare(`DELETE FROM posts WHERE id IN (${doomed})`).bind(now, now - DAY),
+    ]);
+}

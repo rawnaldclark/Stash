@@ -8,7 +8,7 @@ import { freeId, readMix, sameHex, sha256Hex, writeMix, writeTombstone } from ".
 import { assetLinks, messagePage, mixPage, roomPage, trackPage } from "./pages.js";
 import { base64url, randomCode } from "./listen-room.js";
 import { ip, json, limitKey } from "./http.js";
-import { communityRoute } from "./community.js";
+import { cleanup, communityRoute } from "./community.js";
 export { limitKey }; // test/hardening.test.js imports it from here
 
 export { ListenRoom } from "./listen-room.js";
@@ -30,6 +30,10 @@ export default {
             console.error(e); // visible in `wrangler tail`
             return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
         }
+    },
+    /** The daily cron in wrangler.toml: expired and long-removed Community posts go (spec 2026-09-26 §2). */
+    async scheduled(_controller, env, ctx) {
+        ctx.waitUntil(cleanup(env, Date.now()));
     },
 };
 
