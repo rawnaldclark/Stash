@@ -29,6 +29,8 @@ const KEY_HEADER = "X-Stash-Community-Key";
 const rateLimited = () => json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
 const notAllowed = () => json({ error: "method_not_allowed" }, 405);
 const gone = () => json({ error: "gone" }, 404);
+/** A post that's missing, taken down or removed, or expired. Hidden is checked separately: its poster still sees it. */
+const isGone = (post, now) => !post || post.removed_at !== null || post.expires_at <= now;
 
 /** Routes every /v1/community/* request. [method] has HEAD folded into GET. */
 export async function communityRoute(request, env, path, method) {
@@ -42,6 +44,7 @@ export async function communityRoute(request, env, path, method) {
     if (m) {
         if (m[2]) return method === "PUT" ? vote(request, env, m[1], now) : notAllowed();
         if (method === "GET") return getPost(request, env, m[1], now);
+        if (method === "DELETE") return takeDown(request, env, m[1], now);
         return notAllowed();
     }
     return json({ error: "not_found" }, 404);
@@ -166,7 +169,7 @@ async function getPost(request, env, id, now) {
          LEFT JOIN votes v ON v.post_id = p.id AND v.voter = ?2
          WHERE p.id = ?1`,
     ).bind(id, who.id ?? "").first();
-    if (!r || r.removed_at !== null || r.expires_at <= now) return gone();
+    if (isGone(r, now)) return gone();
     if (r.up - r.down <= HIDE_AT && r.poster !== who.id) return gone(); // hidden: only its poster sees it
     const body = JSON.parse(r.body);
     const songs = body.track ? { track: body.track } : { tracks: body.tracks };
@@ -192,7 +195,7 @@ async function vote(request, env, id, now) {
     const post = await env.COMMUNITY_DB.prepare(
         "SELECT poster, up, down, removed_at, expires_at, EXISTS (SELECT 1 FROM blocked WHERE poster = ?2) AS blocked FROM posts WHERE id = ?1",
     ).bind(id, who.id).first();
-    if (!post || post.removed_at !== null || post.expires_at <= now || post.up - post.down <= HIDE_AT) return gone();
+    if (isGone(post, now) || post.up - post.down <= HIDE_AT) return gone();
     if (post.poster === who.id) return json({ error: "own_post" }, 403);
     if (post.blocked) return json({ error: "blocked" }, 403);
     const net = await networkHash(request, env);
@@ -208,4 +211,15 @@ async function vote(request, env, id, now) {
     if (!counted.results[0]) return gone();
     const { up, down } = counted.results[0];
     return json({ up, down, myVote: value });
+}
+
+async function takeDown(request, env, id, now) {
+    if (!(await env.COMMUNITY_WRITE_RL.limit({ key: network(request) })).success) return rateLimited();
+    const who = await identity(request);
+    if (!who.id) return json({ error: "bad_key" }, 401);
+    const post = await env.COMMUNITY_DB.prepare("SELECT poster, removed_at, expires_at FROM posts WHERE id = ?1").bind(id).first();
+    if (isGone(post, now)) return gone();
+    if (post.poster !== who.id) return json({ error: "not_yours" }, 403);
+    await env.COMMUNITY_DB.prepare("UPDATE posts SET removed_at = ?2 WHERE id = ?1").bind(id, now).run();
+    return new Response(null, { status: 204 });
 }
