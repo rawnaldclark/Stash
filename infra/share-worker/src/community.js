@@ -230,6 +230,8 @@ async function takeDown(request, env, id, now) {
  * of the last 24 hours stays for the daily limit.
  */
 export async function cleanup(env, now) {
+    // ponytail: one DELETE per table; D1 needs batching past ~hundreds of MB (~1,000 max-size posts in a day).
+    // Upgrade: ORDER BY id LIMIT n in `doomed` (both statements then pick the same ids) and loop until a run deletes nothing.
     const doomed = "SELECT id FROM posts WHERE expires_at <= ?1 OR (removed_at IS NOT NULL AND removed_at < ?2 AND created_at < ?2)";
     await env.COMMUNITY_DB.batch([
         env.COMMUNITY_DB.prepare(`DELETE FROM votes WHERE post_id IN (${doomed})`).bind(now, now - DAY),
