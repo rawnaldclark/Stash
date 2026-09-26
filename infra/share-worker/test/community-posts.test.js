@@ -56,8 +56,7 @@ test("a content-length over 256 KB is 413 before the body is read", async () => 
 test("2 posts a day per phone, and a taken-down post still counts", async () => {
     const e = env();
     const first = await (await call(e, "POST", "/v1/community/posts", { key: KEY_A, body: songPost() })).json();
-    // Taken down (Task 7 adds the route; here the row is marked directly).
-    await e.COMMUNITY_DB.prepare("UPDATE posts SET removed_at = ?2 WHERE id = ?1").bind(first.id, Date.now()).run();
+    assert.equal((await call(e, "DELETE", `/v1/community/posts/${first.id}`, { key: KEY_A })).status, 204);
     assert.equal((await call(e, "POST", "/v1/community/posts", { key: KEY_A, body: songPost() })).status, 201);
     const third = await call(e, "POST", "/v1/community/posts", { key: KEY_A, body: songPost() });
     assert.equal(third.status, 429);
@@ -117,7 +116,8 @@ test("the per-minute limits count by network, an IPv6 address by its /56", async
     assert.equal((await call(e, "GET", "/v1/community/feed", { from })).status, 429);
     assert.equal((await call(e, "POST", "/v1/community/posts", { key: KEY_A, body: songPost(), from })).status, 429);
     assert.equal((await call(e, "PUT", "/v1/community/posts/POST0001/vote", { key: KEY_B, body: { value: 1 }, from })).status, 429);
-    assert.deepEqual(seen, ["read 2001:db8:aa:bb/56", "write 2001:db8:aa:bb/56", "vote 2001:db8:aa:bb/56"]);
+    assert.equal((await call(e, "DELETE", "/v1/community/posts/POST0001", { key: KEY_A, from })).status, 429);
+    assert.deepEqual(seen, ["read 2001:db8:aa:bb/56", "write 2001:db8:aa:bb/56", "vote 2001:db8:aa:bb/56", "write 2001:db8:aa:bb/56"]);
 });
 
 test("posts at the same moment can't both slip under a limit", async () => {

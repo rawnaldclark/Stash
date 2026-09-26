@@ -22,4 +22,27 @@ test("only the poster can take a post down", async () => {
     assert.equal(r.status, 403);
     assert.deepEqual(await r.json(), { error: "not_yours" });
     assert.equal((await call(e, "DELETE", "/v1/community/posts/POST0001")).status, 401);
+    assert.equal((await call(e, "GET", "/v1/community/posts/POST0001")).status, 200);
+});
+
+test("a missing, expired or removed post is 404 gone, to its poster and to anyone else", async () => {
+    const e = env();
+    await seed(e, { id: "EXPIRED0", key: KEY_A, expires: Date.now() - 1 });
+    await seed(e, { id: "REMOVED0", key: KEY_A, removed: Date.now() });
+    for (const id of ["NOSUCHID", "EXPIRED0", "REMOVED0"]) {
+        for (const key of [KEY_A, KEY_B]) {
+            const r = await call(e, "DELETE", `/v1/community/posts/${id}`, { key });
+            assert.equal(r.status, 404, `${id} ${key[0]}`);
+            assert.deepEqual(await r.json(), { error: "gone" });
+        }
+    }
+});
+
+test("the poster can take down a post hidden by votes; to anyone else it's gone", async () => {
+    const e = env();
+    await seed(e, { id: "HIDDEN00", key: KEY_A, down: 3 });
+    const other = await call(e, "DELETE", "/v1/community/posts/HIDDEN00", { key: KEY_B });
+    assert.equal(other.status, 404);
+    assert.deepEqual(await other.json(), { error: "gone" });
+    assert.equal((await call(e, "DELETE", "/v1/community/posts/HIDDEN00", { key: KEY_A })).status, 204);
 });
