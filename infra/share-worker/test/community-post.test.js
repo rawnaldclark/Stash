@@ -20,6 +20,7 @@ test("a song post is titled by its song, not the request, cut to 100 characters"
     assert.equal(post(song).title, "garden");
     assert.equal(post({ ...song, t: "x".repeat(100) + "y" }).title, "x".repeat(100));
     assert.equal(post({ ...song, t: "a".repeat(99) + "😀" }).title, "a".repeat(99), "the cut doesn't leave half an emoji");
+    assert.equal(post({ ...song, t: "\ud83d" }), null, "a title is never empty");
 });
 
 test("a playlist post keeps allowed covers and cleaned tracks, and summarises the covers", () => {
