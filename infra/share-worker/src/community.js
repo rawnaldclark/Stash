@@ -17,7 +17,11 @@ export const NETWORK_DAILY_POSTS = 10;
 export const HIDE_AT = -3; // up - down at or below this hides a post
 export const VOTES_PER_NETWORK = 2; // counted votes per network per post, in each direction
 export const MAX_REQUEST_BYTES = 256 * 1024;
-/** 3.6 h per net vote: 10 more votes keep a post above a newer one for 36 h (spec §2 Ordering). */
+/**
+ * 3.6 h per net vote: 10 more votes keep a post above a newer one for 36 h (spec §2 Ordering).
+ * The posts_hot index holds this number: changing it needs a migration that rebuilds posts_hot,
+ * or the list silently goes back to a full scan and sort.
+ */
 export const MS_PER_VOTE = 12_960_000;
 
 const POST_API = /^\/v1\/community\/posts\/([A-Za-z0-9]{8})(\/vote)?$/;
@@ -144,6 +148,7 @@ async function mine(request, env, now) {
 async function me(request, env, now) {
     const who = await identity(request);
     if (!who.id) return json({ error: "bad_key" }, 401);
+    // ?4 (the network) is unused: /me reports the per-phone limits only.
     const c = await env.COMMUNITY_DB.prepare(LIMITS_SQL).bind(who.id, now - DAY, now, "").first();
     return json({
         postsLeftToday: Math.max(0, DAILY_POSTS - c.today),

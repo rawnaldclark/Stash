@@ -8,15 +8,17 @@ CREATE TABLE posts (
   poster       TEXT NOT NULL,                  -- sha256(key), hex
   ip_hash      TEXT NOT NULL,                  -- the network, hex
   summary      TEXT NOT NULL,                  -- small JSON for the list: {covers} or {art, artist}
-  body         TEXT NOT NULL,                  -- JSON: {covers, tracks} or {track}
   track_count  INTEGER NOT NULL,
   created_at   INTEGER NOT NULL,               -- ms
   expires_at   INTEGER NOT NULL,               -- created_at + 30 days
   up           INTEGER NOT NULL DEFAULT 0,     -- counted votes (per-network cap applied)
   down         INTEGER NOT NULL DEFAULT 0,
-  removed_at   INTEGER                         -- taken down by the poster or removed by the owner
+  removed_at   INTEGER,                        -- taken down by the poster or removed by the owner
+  body         TEXT NOT NULL                   -- JSON: {covers, tracks} or {track}. Last, so reading the other columns never walks past it
 );
-CREATE INDEX posts_live   ON posts (expires_at) WHERE removed_at IS NULL;
+-- Must match the feed's ORDER BY exactly (12960000.0 is MS_PER_VOTE), or the list goes back to sorting every live post.
+-- No index on expires_at: D1's planner then picks it and sorts again. node:sqlite doesn't, so no test would notice.
+CREATE INDEX posts_hot    ON posts ((up - down) + created_at / 12960000.0, created_at) WHERE removed_at IS NULL;
 CREATE INDEX posts_poster ON posts (poster, created_at);
 CREATE INDEX posts_ip     ON posts (ip_hash, created_at);
 

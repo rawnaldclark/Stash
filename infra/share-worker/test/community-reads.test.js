@@ -32,6 +32,14 @@ test("hidden (-3), removed and expired posts stay off the list; limit is 5 by de
     assert.equal((await feed(e, {}, "?limit=500")).length, 7);
 });
 
+test("limit is clamped to 1..100 (SQL's LIMIT -1 means no limit at all)", async () => {
+    const e = env();
+    for (let i = 0; i < 101; i++) await seed(e, { id: `P${String(i).padStart(7, "0")}` });
+    assert.equal((await feed(e, {}, "?limit=101")).length, 100);
+    assert.equal((await feed(e, {}, "?limit=-1")).length, 1);
+    assert.equal((await feed(e, {}, "?limit=0")).length, 1);
+});
+
 test("the list never carries the poster id, the network or the songs; myVote and mine need a key", async () => {
     const e = env();
     await seed(e, { id: "MINE0000", key: KEY_A, kind: "playlist", summary: { covers: ["https://i.scdn.co/image/a"] }, body: { covers: [], tracks: [{ t: "T", a: "A" }] } });
@@ -69,6 +77,17 @@ test("the list and mine never read song lists: no query of theirs selects body",
     for (const sql of sqls) assert.doesNotMatch(sql, /\bbody\b|\.\*|SELECT\s+\*/i); // by name, or by a wildcard
 });
 
+test("the list walks the hot index: no sort over every live post", async () => {
+    const e = env();
+    const sqls = [];
+    const prepare = e.COMMUNITY_DB.prepare;
+    e.COMMUNITY_DB.prepare = (sql) => (sqls.push(sql), prepare(sql));
+    await feed(e);
+    const plan = e.COMMUNITY_DB.db.prepare(`EXPLAIN QUERY PLAN ${sqls[0]}`).all("", 0, 5).map((r) => r.detail).join(" | ");
+    assert.match(plan, /USING INDEX posts_hot/);
+    assert.doesNotMatch(plan, /TEMP B-TREE/);
+});
+
 test("me says how many posts are left today and how many spots are free", async () => {
     const e = env();
     await seed(e, { id: "TODAY000", key: KEY_A });
@@ -93,4 +112,16 @@ test("a post opens with its songs; gone ones are 404, and a hidden one only open
         assert.deepEqual(await r.json(), { error: "gone" });
     }
     assert.equal((await call(e, "GET", "/v1/community/posts/HIDDEN00", { key: KEY_A })).status, 200);
+});
+
+test("a removed post is 404 even for its poster, a hidden one 404 without a key; mine drops expired posts; a bad or missing key is 401", async () => {
+    const e = env();
+    await seed(e, { id: "HIDDEN00", key: KEY_A, down: 3 });
+    await seed(e, { id: "REMOVED0", key: KEY_A, removed: Date.now() });
+    await seed(e, { id: "MINEEXPD", key: KEY_A, created: Date.now() - 31 * DAY });
+    assert.equal((await call(e, "GET", "/v1/community/posts/REMOVED0", { key: KEY_A })).status, 404);
+    assert.equal((await call(e, "GET", "/v1/community/posts/HIDDEN00")).status, 404);
+    assert.equal((await call(e, "GET", "/v1/community/posts/HIDDEN00", { key: "short" })).status, 401);
+    assert.deepEqual((await (await call(e, "GET", "/v1/community/mine", { key: KEY_A })).json()).posts.map((p) => p.id), ["HIDDEN00"]);
+    assert.equal((await call(e, "GET", "/v1/community/me")).status, 401);
 });
