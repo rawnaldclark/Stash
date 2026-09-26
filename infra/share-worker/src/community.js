@@ -40,6 +40,7 @@ export async function communityRoute(request, env, path, method) {
     if (path === "/v1/community/posts") return method === "POST" ? createPost(request, env, now) : notAllowed();
     const m = POST_API.exec(path);
     if (m) {
+        if (m[2]) return method === "PUT" ? vote(request, env, m[1], now) : notAllowed();
         if (method === "GET" && !m[2]) return getPost(request, env, m[1], now);
         return notAllowed();
     }
@@ -170,4 +171,38 @@ async function getPost(request, env, id, now) {
     const body = JSON.parse(r.body);
     const songs = body.track ? { track: body.track } : { tracks: body.tracks };
     return json({ post: { ...summaryOf(r, who.id ?? null), ...songs } }, 200, NO_STORE);
+}
+
+/**
+ * After every vote: each direction is the sum, over networks, of min(that network's votes, 2). A script
+ * making keys behind one connection moves a post by 2 at most (spec §2 Votes). Exported for the CLI.
+ */
+export const RECOUNT_SQL = `UPDATE posts SET
+    up = (SELECT COALESCE(SUM(MIN(n, ${VOTES_PER_NETWORK})), 0) FROM (SELECT COUNT(*) AS n FROM votes WHERE post_id = ?1 AND value = 1 GROUP BY ip_hash)),
+    down = (SELECT COALESCE(SUM(MIN(n, ${VOTES_PER_NETWORK})), 0) FROM (SELECT COUNT(*) AS n FROM votes WHERE post_id = ?1 AND value = -1 GROUP BY ip_hash))
+    WHERE id = ?1 RETURNING up, down`;
+
+async function vote(request, env, id, now) {
+    if (!(await env.COMMUNITY_VOTE_RL.limit({ key: network(request) })).success) return rateLimited();
+    const who = await identity(request);
+    if (!who.id) return json({ error: "bad_key" }, 401);
+    const { body, tooBig } = await readJson(request);
+    const value = body?.value;
+    if (tooBig || ![-1, 0, 1].includes(value)) return json({ error: "bad_request" }, 400);
+    const post = await env.COMMUNITY_DB.prepare("SELECT poster, up, down, removed_at, expires_at FROM posts WHERE id = ?1").bind(id).first();
+    if (!post || post.removed_at !== null || post.expires_at <= now || post.up - post.down <= HIDE_AT) return gone();
+    if (post.poster === who.id) return json({ error: "own_post" }, 403);
+    if (await env.COMMUNITY_DB.prepare("SELECT 1 AS b FROM blocked WHERE poster = ?1").bind(who.id).first()) {
+        return json({ error: "blocked" }, 403);
+    }
+    const net = await networkHash(request, env);
+    const write = value === 0
+        ? env.COMMUNITY_DB.prepare("DELETE FROM votes WHERE post_id = ?1 AND voter = ?2").bind(id, who.id)
+        : env.COMMUNITY_DB.prepare(
+            `INSERT INTO votes (post_id, voter, ip_hash, value, at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (post_id, voter) DO UPDATE SET value = excluded.value, ip_hash = excluded.ip_hash, at = excluded.at`,
+        ).bind(id, who.id, net, value, now);
+    const [, counted] = await env.COMMUNITY_DB.batch([write, env.COMMUNITY_DB.prepare(RECOUNT_SQL).bind(id)]);
+    const { up, down } = counted.results[0];
+    return json({ up, down, myVote: value });
 }
