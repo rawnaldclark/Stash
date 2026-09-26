@@ -112,11 +112,12 @@ test("the reason is the first limit hit: blocked, then daily, then live", async 
 test("the per-minute limits count by network, an IPv6 address by its /56", async () => {
     const seen = [];
     const rl = (name) => ({ limit: async ({ key }) => (seen.push(`${name} ${key}`), { success: false }) });
-    const e = env({ COMMUNITY_READ_RL: rl("read"), COMMUNITY_WRITE_RL: rl("write") });
+    const e = env({ COMMUNITY_READ_RL: rl("read"), COMMUNITY_WRITE_RL: rl("write"), COMMUNITY_VOTE_RL: rl("vote") });
     const from = "2001:db8:aa:bb01::1";
     assert.equal((await call(e, "GET", "/v1/community/feed", { from })).status, 429);
     assert.equal((await call(e, "POST", "/v1/community/posts", { key: KEY_A, body: songPost(), from })).status, 429);
-    assert.deepEqual(seen, ["read 2001:db8:aa:bb/56", "write 2001:db8:aa:bb/56"]);
+    assert.equal((await call(e, "PUT", "/v1/community/posts/POST0001/vote", { key: KEY_B, body: { value: 1 }, from })).status, 429);
+    assert.deepEqual(seen, ["read 2001:db8:aa:bb/56", "write 2001:db8:aa:bb/56", "vote 2001:db8:aa:bb/56"]);
 });
 
 test("posts at the same moment can't both slip under a limit", async () => {

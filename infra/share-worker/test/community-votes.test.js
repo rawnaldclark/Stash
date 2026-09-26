@@ -38,6 +38,27 @@ test("votes at the same moment from different networks all count", async () => {
     assert.equal(p.up, 3);
 });
 
+test("a vote is stored only together with its recount", async () => {
+    const e = env();
+    await seed(e, { id: "POST0001", key: KEY_A });
+    // D1 rolls a whole batch back when one statement fails: make the recount fail.
+    await e.COMMUNITY_DB.prepare("CREATE TRIGGER no_recount BEFORE UPDATE OF up, down ON posts BEGIN SELECT RAISE(ABORT, 'recount failed'); END").run();
+    await assert.rejects(vote(e, "POST0001", 1, KEY_B), /recount failed/);
+    assert.equal(await e.COMMUNITY_DB.prepare("SELECT COUNT(*) AS n FROM votes").first("n"), 0);
+});
+
+test("a post the cleanup deletes mid-vote is gone, and no vote row is left behind", async () => {
+    const e = env();
+    await seed(e, { id: "POST0001", key: KEY_A });
+    const d1 = e.COMMUNITY_DB;
+    // The daily cleanup deletes the post after the vote's checks, just before its batch.
+    e.COMMUNITY_DB = { ...d1, batch: async (s) => { d1.db.exec("DELETE FROM posts WHERE id = 'POST0001'"); return d1.batch(s); } };
+    const r = await vote(e, "POST0001", 1, KEY_B);
+    assert.equal(r.status, 404);
+    assert.deepEqual(await r.json(), { error: "gone" });
+    assert.equal(await d1.prepare("SELECT COUNT(*) AS n FROM votes").first("n"), 0);
+});
+
 test("-3 from two networks hides a post: off the list, 404 to others, no more votes", async () => {
     const e = env();
     await seed(e, { id: "POST0001", key: KEY_A });
@@ -58,14 +79,31 @@ test("no voting on your own post, while blocked, on a gone post, or with a bad v
     assert.deepEqual(await own.json(), { error: "own_post" });
     await e.COMMUNITY_DB.prepare("INSERT INTO blocked (poster, at) VALUES (?1, 1)").bind(await sha256Hex(KEY_C)).run();
     assert.deepEqual(await (await vote(e, "POST0001", 1, KEY_C)).json(), { error: "blocked" });
-    assert.equal((await vote(e, "GONE0001", 1, KEY_B)).status, 404);
-    assert.equal((await vote(e, "NOSUCHID", 1, KEY_B)).status, 404);
-    assert.equal((await vote(e, "POST0001", 2, KEY_B)).status, 400);
-    assert.equal((await vote(e, "POST0001", 1, undefined)).status, 401);
+    for (const id of ["GONE0001", "NOSUCHID"]) {
+        const r = await vote(e, id, 1, KEY_B);
+        assert.equal(r.status, 404, id);
+        assert.deepEqual(await r.json(), { error: "gone" });
+    }
+    const badValue = await vote(e, "POST0001", 2, KEY_B);
+    assert.equal(badValue.status, 400);
+    assert.deepEqual(await badValue.json(), { error: "bad_request" });
+    const noKey = await vote(e, "POST0001", 1, undefined);
+    assert.equal(noKey.status, 401);
+    assert.deepEqual(await noKey.json(), { error: "bad_key" });
+});
+
+test("no voting on an expired post", async () => {
+    const e = env();
+    await seed(e, { id: "EXPIRED0", key: KEY_A, expires: Date.now() - 1 });
+    const r = await vote(e, "EXPIRED0", 1, KEY_B);
+    assert.equal(r.status, 404);
+    assert.deepEqual(await r.json(), { error: "gone" });
 });
 
 test("votes are rate-limited per network", async () => {
     const e = env({ COMMUNITY_VOTE_RL: { limit: async () => ({ success: false }) } });
     await seed(e, { id: "POST0001", key: KEY_A });
-    assert.equal((await vote(e, "POST0001", 1, KEY_B)).status, 429);
+    const r = await vote(e, "POST0001", 1, KEY_B);
+    assert.equal(r.status, 429);
+    assert.deepEqual(await r.json(), { error: "rate_limited" });
 });

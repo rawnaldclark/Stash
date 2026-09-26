@@ -18,7 +18,7 @@ export function call(e, method, path, { key, body, from = "203.0.113.9" } = {}) 
     return handle(new Request(`${BASE}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }), e);
 }
 
-/** [e] with every COMMUNITY_DB query taking ~5 ms, like a real D1 round trip, so races between requests show. */
+/** [e] with every COMMUNITY_DB query and batch taking ~5 ms, like a real D1 round trip, so races between requests show. */
 export function laggy(e) {
     const lag = () => new Promise((r) => setTimeout(r, 5));
     const wrap = (st) => ({ ...st, bind: (...a) => wrap(st.bind(...a)),
@@ -26,7 +26,7 @@ export function laggy(e) {
         run: async () => { await lag(); return st.run(); },
         all: async () => { await lag(); return st.all(); } });
     const d1 = e.COMMUNITY_DB;
-    e.COMMUNITY_DB = { ...d1, prepare: (sql) => wrap(d1.prepare(sql)) };
+    e.COMMUNITY_DB = { ...d1, prepare: (sql) => wrap(d1.prepare(sql)), batch: async (s) => { await lag(); return d1.batch(s); } };
     return e;
 }
 

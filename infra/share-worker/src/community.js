@@ -41,7 +41,7 @@ export async function communityRoute(request, env, path, method) {
     const m = POST_API.exec(path);
     if (m) {
         if (m[2]) return method === "PUT" ? vote(request, env, m[1], now) : notAllowed();
-        if (method === "GET" && !m[2]) return getPost(request, env, m[1], now);
+        if (method === "GET") return getPost(request, env, m[1], now);
         return notAllowed();
     }
     return json({ error: "not_found" }, 404);
@@ -189,20 +189,23 @@ async function vote(request, env, id, now) {
     const { body, tooBig } = await readJson(request);
     const value = body?.value;
     if (tooBig || ![-1, 0, 1].includes(value)) return json({ error: "bad_request" }, 400);
-    const post = await env.COMMUNITY_DB.prepare("SELECT poster, up, down, removed_at, expires_at FROM posts WHERE id = ?1").bind(id).first();
+    const post = await env.COMMUNITY_DB.prepare(
+        "SELECT poster, up, down, removed_at, expires_at, EXISTS (SELECT 1 FROM blocked WHERE poster = ?2) AS blocked FROM posts WHERE id = ?1",
+    ).bind(id, who.id).first();
     if (!post || post.removed_at !== null || post.expires_at <= now || post.up - post.down <= HIDE_AT) return gone();
     if (post.poster === who.id) return json({ error: "own_post" }, 403);
-    if (await env.COMMUNITY_DB.prepare("SELECT 1 AS b FROM blocked WHERE poster = ?1").bind(who.id).first()) {
-        return json({ error: "blocked" }, 403);
-    }
+    if (post.blocked) return json({ error: "blocked" }, 403);
     const net = await networkHash(request, env);
+    // SELECT … FROM posts, not VALUES: if the daily cleanup deleted the post since the check above, no vote row
+    // is left behind, and the recount returns no row.
     const write = value === 0
         ? env.COMMUNITY_DB.prepare("DELETE FROM votes WHERE post_id = ?1 AND voter = ?2").bind(id, who.id)
         : env.COMMUNITY_DB.prepare(
-            `INSERT INTO votes (post_id, voter, ip_hash, value, at) VALUES (?1, ?2, ?3, ?4, ?5)
+            `INSERT INTO votes (post_id, voter, ip_hash, value, at) SELECT ?1, ?2, ?3, ?4, ?5 FROM posts WHERE id = ?1
              ON CONFLICT (post_id, voter) DO UPDATE SET value = excluded.value, ip_hash = excluded.ip_hash, at = excluded.at`,
         ).bind(id, who.id, net, value, now);
     const [, counted] = await env.COMMUNITY_DB.batch([write, env.COMMUNITY_DB.prepare(RECOUNT_SQL).bind(id)]);
+    if (!counted.results[0]) return gone();
     const { up, down } = counted.results[0];
     return json({ up, down, myVote: value });
 }
