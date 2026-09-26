@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.share.SharePreference
+import com.stash.core.media.PlayerRepository
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.media.listen.ListenTogetherState
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
 class ListenTogetherViewModel @Inject constructor(
     private val controller: ListenTogetherController,
     private val sharePreference: SharePreference,
+    private val playerRepository: PlayerRepository,
 ) : ViewModel() {
     val state: StateFlow<ListenTogetherState> = controller.state
     val reactions: SharedFlow<ServerMessage.Reaction> = controller.reactions
@@ -44,6 +46,8 @@ class ListenTogetherViewModel @Inject constructor(
     fun start() {
         viewModelScope.launch {
             sharePreference.setDisplayName(name)
+            // A cold start only shows the last session; load it so the room starts from that song, not from nothing.
+            playerRepository.loadRestoredQueue()
             controller.send(Command.Host)
         }
     }

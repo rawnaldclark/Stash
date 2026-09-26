@@ -725,6 +725,12 @@ class PlayerRepositoryImpl @Inject constructor(
         scope.launch { resumeQueue(play = true) }
     }
 
+    override suspend fun loadRestoredQueue(): Boolean {
+        if (!ghostSession) return false
+        resumeQueue(play = false)
+        return true
+    }
+
     /** Restores the persisted queue: playing ([resumeLastQueue]) or paused and unprepared (after Listen Together). */
     private suspend fun resumeQueue(play: Boolean) {
         try {
