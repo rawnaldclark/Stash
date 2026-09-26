@@ -1,8 +1,13 @@
 package com.stash.feature.nowplaying.ui
 
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,9 +32,6 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +63,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -71,7 +74,9 @@ import com.stash.core.common.primaryArtist
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
 import java.util.Collections
+import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sign
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,25 +108,28 @@ fun QueueBottomSheet(
 
     // Local mutable copy of upcoming tracks for drag reordering.
     // Swaps happen here visually during drag; committed to player on drag end.
-    // Each entry carries a uid assigned at sync time. LazyColumn keys MUST NOT
-    // include the position: index-based keys change identity on every swap,
-    // which recreates the dragged row and cancels its pointerInput mid-gesture
-    // (the original "can't reorder" bug). uids stay glued to their entries
-    // across swaps and are only reassigned on resync, when no drag is active.
+    // Rows are keyed by song (plus which copy, for duplicates), never by position:
+    // position keys made every resync after a move or removal slide other songs
+    // through the rows, and let a removed row's state leak into its successor.
+    // Filled synchronously so the sheet doesn't open on an empty frame.
     val upcomingSource = queue.drop(currentIndex + 1)
-    val localQueue = remember { mutableStateListOf<QueueEntry>() }
+    val localQueue = remember { mutableStateListOf<QueueEntry>().apply { addAll(queueEntries(upcomingSource)) } }
 
-    // Sync local queue with source when not dragging
+    // Sync local queue with source when not dragging. resyncTick replays a sync
+    // that was skipped mid-drag when the drop sends no move.
     var draggedIdx by remember { mutableIntStateOf(-1) }
-    LaunchedEffect(upcomingSource) {
+    var resyncTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(upcomingSource, resyncTick) {
         if (draggedIdx < 0) {
             localQueue.clear()
-            upcomingSource.forEachIndexed { i, t -> localQueue.add(QueueEntry(i, t)) }
+            localQueue.addAll(queueEntries(upcomingSource))
         }
     }
 
-    // Where the dragged row started, in local upcoming-list index space.
+    // Where the dragged row started, in local upcoming-list index space, and the
+    // current song then: if the song changes mid-drag the local indices are stale.
     var dragStartIdx by remember { mutableIntStateOf(-1) }
+    var dragStartCurrent by remember { mutableIntStateOf(-1) }
     // Commit closures live inside pointerInput and outlast recompositions;
     // read currentIndex through updated-state so a track advancing while
     // the sheet is open can't stale the committed absolute indices.
@@ -143,6 +151,7 @@ fun QueueBottomSheet(
                 trackCount = queue.size,
                 currentIndex = currentIndex,
                 sourceLabel = source.displayLabel,
+                showDragHint = !isShuffleEnabled,
                 onClose = onDismiss,
             )
 
@@ -171,6 +180,23 @@ fun QueueBottomSheet(
             val edgePx = with(density) { 64.dp.toPx() }
             val maxStepPx = with(density) { 6.dp.toPx() }
             var autoScrollJob by remember { mutableStateOf<Job?>(null) }
+            var settleJob by remember { mutableStateOf<Job?>(null) }
+
+            // One swap of the dragged row with its neighbour ([dir] = -1 up, +1 down).
+            // LazyColumn keeps the first visible row's key pinned when rows move, so a
+            // swap at the top would scroll the list under the finger; re-requesting the
+            // current position keeps it still.
+            val swapDragged = { dir: Int ->
+                val from = draggedIdx
+                val to = from + dir
+                val first = listState.firstVisibleItemIndex
+                if (from == first || to == first) {
+                    listState.requestScrollToItem(first, listState.firstVisibleItemScrollOffset)
+                }
+                Collections.swap(localQueue, from, to)
+                draggedIdx = to
+                dragOffsetY -= dir * itemHeight
+            }
 
             // Swap normalization shared by finger movement AND auto-scroll:
             // whenever the accumulated offset crosses half a row, swap and
@@ -179,20 +205,8 @@ fun QueueBottomSheet(
             val normalizeSwaps = {
                 if (draggedIdx >= 0 && itemHeight > 0) {
                     val half = itemHeight / 2
-                    while (dragOffsetY < -half && draggedIdx > 0) {
-                        val from = draggedIdx
-                        val to = draggedIdx - 1
-                        Collections.swap(localQueue, from, to)
-                        draggedIdx = to
-                        dragOffsetY += itemHeight
-                    }
-                    while (dragOffsetY > half && draggedIdx < localQueue.lastIndex) {
-                        val from = draggedIdx
-                        val to = draggedIdx + 1
-                        Collections.swap(localQueue, from, to)
-                        draggedIdx = to
-                        dragOffsetY -= itemHeight
-                    }
+                    while (dragOffsetY < -half && draggedIdx > 0) swapDragged(-1)
+                    while (dragOffsetY > half && draggedIdx < localQueue.lastIndex) swapDragged(1)
                 }
             }
 
@@ -201,18 +215,25 @@ fun QueueBottomSheet(
             // remove-then-insert the player's moveInQueue performs. Replaying
             // per-slot swaps as N separate player calls raced the queue
             // round-trip and could snap the row back to its old place on drop.
+            // The row then eases from the finger into its slot instead of snapping.
             val commitDrag = {
                 autoScrollJob?.cancel()
                 autoScrollJob = null
-                if (dragStartIdx >= 0 && draggedIdx >= 0 && dragStartIdx != draggedIdx) {
+                val committed = dragStartIdx >= 0 && draggedIdx >= 0 && dragStartIdx != draggedIdx &&
+                    liveCurrentIndex == dragStartCurrent
+                if (committed) {
                     onMoveTrack(
                         liveCurrentIndex + 1 + dragStartIdx,
                         liveCurrentIndex + 1 + draggedIdx,
                     )
                 }
                 dragStartIdx = -1
-                draggedIdx = -1
-                dragOffsetY = 0f
+                settleJob = scope.launch {
+                    animate(dragOffsetY, 0f, animationSpec = tween(150)) { v, _ -> dragOffsetY = v }
+                    draggedIdx = -1
+                    // No move went out, so no player update will resync the list.
+                    if (!committed) resyncTick++
+                }
             }
 
             LazyColumn(
@@ -232,62 +253,52 @@ fun QueueBottomSheet(
                     // reads the live index through this instead.
                     val currentIdx by rememberUpdatedState(idx)
 
-                    // One-shot guard so confirmValueChange can't mass-remove if
-                    // Compose's swipe state transitions re-fire during a single
-                    // gesture. Tied to row identity via the LazyColumn item key.
-                    val dismissedOnce = remember { mutableStateOf(false) }
+                    // Swipe to remove, by distance only: the row leaves when it is past
+                    // half its width as the finger lifts. Fling speed is ignored, so a
+                    // flick or a diagonal scroll can't remove a track (Material's swipe
+                    // box removed on any flick over 125 dp/s, and that can't be tuned).
+                    var swipeX by remember { mutableFloatStateOf(0f) }
+                    var rowWidthPx by remember { mutableIntStateOf(0) }
 
                     Box(
-                        modifier = Modifier
-                            .animateItem()
-                            .then(
-                                if (isDragging) Modifier
-                                    .zIndex(10f)
-                                    .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-                                    .shadow(8.dp, RoundedCornerShape(8.dp))
-                                else Modifier.zIndex(0f)
-                            ),
+                        // The held row follows the finger through its offset, so it must not
+                        // also get animateItem's slide: that tugged it back a row on every swap.
+                        modifier = if (isDragging) Modifier
+                            .zIndex(10f)
+                            .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+                            .shadow(8.dp, RoundedCornerShape(8.dp))
+                        else Modifier.animateItem().onSizeChanged { rowWidthPx = it.width },
                     ) {
-                        // Swipe-to-remove wrapper (disabled while dragging)
-                        @Suppress("DEPRECATION")
-                        val dismissState = rememberSwipeToDismissBoxState(
-                            confirmValueChange = { value ->
-                                if (value != SwipeToDismissBoxValue.Settled &&
-                                    draggedIdx < 0 &&
-                                    !dismissedOnce.value
-                                ) {
-                                    dismissedOnce.value = true
-                                    // Remove from local queue and notify parent.
-                                    // Return false so the dismiss box resets — the item
-                                    // disappears because we remove it from localQueue.
-                                    if (idx in localQueue.indices) {
-                                        localQueue.removeAt(idx)
-                                        onRemoveTrack(queueIndex)
-                                    }
-                                    false
-                                } else false
-                            },
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .background(
+                                    MaterialTheme.colorScheme.errorContainer.copy(
+                                        alpha = if (rowWidthPx > 0) (abs(swipeX) / (rowWidthPx / 2f)).coerceIn(0f, 1f) else 0f,
+                                    ),
+                                ),
                         )
-
-                        SwipeToDismissBox(
-                            state = dismissState,
-                            backgroundContent = {
-                                val progress = dismissState.progress
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            MaterialTheme.colorScheme.errorContainer.copy(
-                                                alpha = progress.coerceIn(0f, 1f)
-                                            )
-                                        ),
-                                )
-                            },
-                            enableDismissFromStartToEnd = draggedIdx < 0,
-                            enableDismissFromEndToStart = draggedIdx < 0,
-                        ) {
                         Row(
                             modifier = Modifier
+                                .offset { IntOffset(swipeX.roundToInt(), 0) }
+                                .draggable(
+                                    orientation = Orientation.Horizontal,
+                                    enabled = draggedIdx < 0 && !listState.isScrollInProgress,
+                                    state = rememberDraggableState { delta -> swipeX += delta },
+                                    onDragStopped = {
+                                        if (rowWidthPx > 0 && abs(swipeX) > rowWidthPx / 2f) {
+                                            animate(swipeX, sign(swipeX) * rowWidthPx, animationSpec = tween(150)) { v, _ -> swipeX = v }
+                                            // Look the row up now: the song may have changed since it was drawn.
+                                            val i = localQueue.indexOfFirst { it.uid == entry.uid }
+                                            if (i >= 0) {
+                                                localQueue.removeAt(i)
+                                                onRemoveTrack(liveCurrentIndex + 1 + i)
+                                            }
+                                        } else {
+                                            animate(swipeX, 0f) { v, _ -> swipeX = v }
+                                        }
+                                    },
+                                )
                                 .fillMaxWidth()
                                 .background(
                                     if (isDragging) MaterialTheme.colorScheme.surfaceVariant
@@ -331,11 +342,12 @@ fun QueueBottomSheet(
                                 )
                             }
                             // Per-track ⋮ menu (Play next / Save / Download /
-                            // Share / Start radio). Hidden while dragging so it
-                            // can't steal the gesture.
-                            if (menuEnabled && !isDragging) {
+                            // Share / Start radio). Disabled, not hidden, while
+                            // dragging: hiding it reflowed the title at pick-up.
+                            if (menuEnabled) {
                                 IconButton(
                                     onClick = { menuTrack = track },
+                                    enabled = !isDragging,
                                     modifier = Modifier.size(40.dp),
                                 ) {
                                     Icon(
@@ -354,10 +366,15 @@ fun QueueBottomSheet(
                                 modifier = Modifier
                                     .size(48.dp)
                                     .pointerInput(entry.uid) {
-                                        detectDragGesturesAfterLongPress(
+                                        // Starts on touch, no long press: during the long-press
+                                        // wait a sideways twitch went to the swipe and removed
+                                        // the row instead of dragging it.
+                                        detectDragGestures(
                                             onDragStart = {
+                                                settleJob?.cancel()
                                                 draggedIdx = currentIdx
                                                 dragStartIdx = currentIdx
+                                                dragStartCurrent = liveCurrentIndex
                                                 dragOffsetY = 0f
                                                 // Measure item height
                                                 val info = listState.layoutInfo.visibleItemsInfo
@@ -416,7 +433,6 @@ fun QueueBottomSheet(
                                 )
                             }
                         }
-                        } // SwipeToDismissBox
                     }
                 }
             }
@@ -467,18 +483,24 @@ fun QueueBottomSheet(
 // ---------------------------------------------------------------------------
 
 /**
- * A queue row with a drag-stable identity. [uid] is assigned when the local
- * queue syncs from the player and never changes while rows are swapped, so
- * LazyColumn item identity (and the active drag gesture) survives reordering.
- * Also makes duplicate tracks in the queue naturally unique.
+ * A queue row with a stable identity: [uid] is the song plus which copy of it
+ * this is, so it survives swaps, resyncs and removals elsewhere in the queue,
+ * and LazyColumn item identity (and an active drag gesture) stays with the song.
  */
-private class QueueEntry(val uid: Int, val track: Track)
+internal class QueueEntry(val uid: String, val track: Track)
+
+/** [tracks] as rows keyed `"<track id>:<copy number>"`, unique even when a song is queued twice. */
+internal fun queueEntries(tracks: List<Track>): List<QueueEntry> {
+    val copies = HashMap<Long, Int>()
+    return tracks.map { t -> QueueEntry("${t.id}:${copies.merge(t.id, 1) { a, b -> a + b }}", t) }
+}
 
 @Composable
 private fun QueueHeader(
     trackCount: Int,
     currentIndex: Int,
     sourceLabel: String,
+    showDragHint: Boolean,
     onClose: () -> Unit,
 ) {
     Row(
@@ -506,11 +528,14 @@ private fun QueueHeader(
                 )
             }
         }
-        Text(
-            "Hold ≡ to drag",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-        )
+        // Shuffle turns dragging off (the handle is hidden), so the hint goes too.
+        if (showDragHint) {
+            Text(
+                "Drag ≡ to reorder",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            )
+        }
         IconButton(onClick = onClose) {
             Icon(Icons.Default.Close, "Close", Modifier.size(24.dp))
         }
