@@ -56,7 +56,10 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -89,6 +92,9 @@ internal fun nameList(names: List<String>): String = when {
     names.size <= 2 -> names.joinToString(", ")
     else -> "${names[0]}, ${names[1]} +${names.size - 2}"
 }
+
+/** A member's name, also for someone who has left (their picks and suggestions still carry their id). */
+internal fun ListenTogetherState.InRoom.nameOf(id: String): String? = members.firstOrNull { it.id == id }?.name ?: names[id]
 
 internal val HOST_RING = Color(0xFFFBBF24)
 private val FACE_INK = Color(0xFF0D0D18)
@@ -169,9 +175,9 @@ fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: 
 fun PickLine(room: ListenTogetherState.InRoom, modifier: Modifier = Modifier) {
     val by = room.track?.addedBy ?: return
     if (by == room.hostId) return
-    val name = if (by == room.myId) "Your" else "${room.members.firstOrNull { it.id == by }?.name ?: "A friend"}'s"
+    val name = if (by == room.myId) "Your" else "${room.nameOf(by) ?: "A friend"}'s"
     Row(modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        PersonAvatar(by, room.members.firstOrNull { it.id == by }?.name, 18.dp)
+        PersonAvatar(by, room.nameOf(by), 18.dp)
         Spacer(Modifier.width(6.dp))
         Text("$name pick", style = MaterialTheme.typography.labelMedium, color = personColor(by))
     }
@@ -326,7 +332,7 @@ private fun RoomContent(
     onEnd: () -> Unit,
 ) {
     val host = room.members.firstOrNull { it.id == room.hostId }
-    val nameOf = { id: String -> room.members.firstOrNull { it.id == id }?.name }
+    val nameOf = { id: String -> room.nameOf(id) }
     val count = room.members.size
     LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 32.dp)) {
         item {
@@ -473,9 +479,15 @@ private fun SongRow(
         Column(Modifier.weight(1f)) {
             Text(track.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                listOfNotNull(track.artist, detail).joinToString(" · "),
+                buildAnnotatedString {
+                    append(track.artist)
+                    if (detail != null) {
+                        append(" · ")
+                        withStyle(SpanStyle(color = detailColor)) { append(detail) }
+                    }
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (detail != null) detailColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

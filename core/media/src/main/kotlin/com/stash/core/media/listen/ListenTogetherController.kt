@@ -42,6 +42,8 @@ sealed interface ListenTogetherState {
         val track: SharedTrack? = null,
         /** What plays next in the room, each song with who added it. */
         val queue: List<SharedTrack> = emptyList(),
+        /** Everyone seen this session, id → name, kept after they leave so "Maya's pick" still says Maya. */
+        val names: Map<String, String?> = emptyMap(),
     ) : ListenTogetherState
 }
 

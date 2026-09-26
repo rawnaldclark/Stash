@@ -672,6 +672,8 @@ class ListenTogetherSessionTest {
         receive(ServerMessage.Members(listOf(h, me)))
         advanceTimeBy(15_000); runCurrent()
         assertThat(events.last()).isEqualTo(SessionEvent(SessionEvent.Kind.LEFT, "a", "Ana"))
+        // Gone from the room, still named for her picks.
+        assertThat((controller.state.value as ListenTogetherState.InRoom).names["a"]).isEqualTo("Ana")
     }
 
     @Test fun `other people's pause, resume, skip and back are named, but your own and a natural end are not`() = runTest {

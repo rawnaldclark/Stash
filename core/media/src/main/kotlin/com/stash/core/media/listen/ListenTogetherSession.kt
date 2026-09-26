@@ -634,6 +634,7 @@ class ListenTogetherSession(
                 pausedLocally = pausedLocally,
                 track = r.track,
                 queue = r.queue,
+                names = memberNames.toMap(),
             ),
         )
     }
