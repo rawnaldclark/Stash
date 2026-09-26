@@ -50,6 +50,29 @@ jobs:
       - name: Compile every module's unit tests
         run: ./gradlew compileDebugUnitTestKotlin --no-daemon
 
+  # The share Worker's tests (mixes, rooms, Community). They import only local files, so no npm install.
+  worker-tests:
+    name: Share worker tests
+    if: >-
+      github.event_name != 'push' ||
+      github.ref == 'refs/heads/master' ||
+      contains(github.event.head_commit.message, '[do test]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Run the Worker's tests
+        working-directory: infra/share-worker
+        run: node --no-warnings --test test/*.test.js
+
   # Runs EVERY module's unit tests, not just :core:media.
   #
   # This job used to execute one module of fifteen — 345 of 1892 tests — so a
