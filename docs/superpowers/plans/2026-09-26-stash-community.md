@@ -498,6 +498,7 @@ git commit -m "feat(community): clean post requests and summarise stored posts"
 - Create: `infra/share-worker/src/community.js`
 - Modify: `infra/share-worker/src/index.js` (route `/v1/community/`)
 - Modify: `infra/share-worker/test/fake-kv.js` (`env()` bindings)
+- Create: `infra/share-worker/test/community-helpers.js`
 - Test: `infra/share-worker/test/community-posts.test.js`
 
 - [ ] **Step 1: Give the test env the Community bindings**
@@ -512,14 +513,13 @@ In `test/fake-kv.js`, add `import { fakeD1 } from "./fake-d1.js";` at the top an
         COMMUNITY_READ_RL: { limit: async () => ({ success: true }) },
 ```
 
-- [ ] **Step 2: Write the failing test** (it also holds the helpers Tasks 5–7 reuse)
+- [ ] **Step 2: Write the shared test helpers, then the failing test**
+
+The helpers get their own file. The `test/*.test.js` glob doesn't run it, so Tasks 5–9 import from it without re-running this task's tests.
 
 ```js
-// infra/share-worker/test/community-posts.test.js
-import { test } from "node:test";
-import assert from "node:assert/strict";
+// infra/share-worker/test/community-helpers.js
 import { handle } from "../src/index.js";
-import { env } from "./fake-kv.js";
 import { sha256Hex } from "../src/store.js";
 
 export const BASE = "https://share.test";
@@ -546,6 +546,15 @@ export async function seed(e, { id, poster, key, ip = "n".repeat(64), created = 
         "INSERT INTO posts (id, kind, title, poster_name, poster, ip_hash, summary, body, track_count, created_at, expires_at, up, down, removed_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
     ).bind(id, kind, "T", "Seed", owner, ip, JSON.stringify(summary), JSON.stringify(body), 1, created, expires ?? created + 30 * DAY, up, down, removed).run();
 }
+```
+
+```js
+// infra/share-worker/test/community-posts.test.js
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { env } from "./fake-kv.js";
+import { sha256Hex } from "../src/store.js";
+import { call, seed, songPost, KEY_A, KEY_B, DAY } from "./community-helpers.js";
 
 test("a post is stored with the key's hash and a salted network hash, never the key or the IP", async () => {
     const e = env();
@@ -613,6 +622,13 @@ test("a blocked phone can't post; the write limit answers 429 rate_limited", asy
     assert.equal(rl.status, 429);
     assert.deepEqual(await rl.json(), { error: "rate_limited" });
 });
+
+test("the per-minute limits count by network, an IPv6 address by its /56", async () => {
+    const keys = [];
+    const e = env({ COMMUNITY_READ_RL: { limit: async ({ key }) => (keys.push(key), { success: false }) } });
+    assert.equal((await call(e, "GET", "/v1/community/feed", { from: "2001:db8:aa:bb01::1" })).status, 429);
+    assert.deepEqual(keys, ["2001:db8:aa:bb/56"]);
+});
 ```
 
 - [ ] **Step 3: Run it to see it fail**
@@ -629,7 +645,7 @@ Expected: FAIL: every Community request is 404 `not_found` (no route yet).
  * D1 tables: posts, votes, blocked (migrations/0001_community.sql). A phone is sha256(its key);
  * a network is sha256(COMMUNITY_SALT | IPv4, or IPv6 /56). Every error body is {error: "<code>"}.
  */
-import { ip, json, networkOf } from "./http.js";
+import { json, networkOf } from "./http.js";
 import { validEditKey } from "./validate.js";
 import { newId, sha256Hex } from "./store.js";
 import { cleanPost, summaryOf } from "./community-post.js";
@@ -655,7 +671,7 @@ const gone = () => json({ error: "gone" }, 404);
 /** Routes every /v1/community/* request. [method] has HEAD folded into GET. */
 export async function communityRoute(request, env, path, method) {
     const now = Date.now();
-    if (method === "GET" && !(await env.COMMUNITY_READ_RL.limit({ key: ip(request) })).success) return rateLimited();
+    if (method === "GET" && !(await env.COMMUNITY_READ_RL.limit({ key: network(request) })).success) return rateLimited();
     if (path === "/v1/community/posts") return method === "POST" ? createPost(request, env, now) : notAllowed();
     return json({ error: "not_found" }, 404);
 }
@@ -668,8 +684,12 @@ async function identity(request) {
     return { id: await sha256Hex(key) };
 }
 
-const networkHash = (request, env) =>
-    sha256Hex(`${env.COMMUNITY_SALT ?? ""}|${networkOf(request.headers.get("CF-Connecting-IP") || "?")}`);
+/**
+ * The caller's network (an IPv4 address, or an IPv6 /56). The per-minute limits count by it too (spec §2), so
+ * hopping /64s inside one /56 doesn't dodge them; the stored form is salted and hashed.
+ */
+const network = (request) => networkOf(request.headers.get("CF-Connecting-IP") || "?");
+const networkHash = (request, env) => sha256Hex(`${env.COMMUNITY_SALT ?? ""}|${network(request)}`);
 
 async function readJson(request) {
     if (Number(request.headers.get("content-length")) > MAX_REQUEST_BYTES) return { tooBig: true };
@@ -686,7 +706,7 @@ const LIMITS_SQL = `SELECT
     (SELECT COUNT(*) FROM posts WHERE ip_hash = ?4 AND created_at > ?2) AS network`;
 
 async function createPost(request, env, now) {
-    if (!(await env.COMMUNITY_WRITE_RL.limit({ key: ip(request) })).success) return rateLimited();
+    if (!(await env.COMMUNITY_WRITE_RL.limit({ key: network(request) })).success) return rateLimited();
     const who = await identity(request);
     if (!who.id) return json({ error: "bad_key" }, 401);
     const { body, tooBig } = await readJson(request);
@@ -735,7 +755,7 @@ In `src/index.js`, add `import { communityRoute } from "./community.js";` with t
 - [ ] **Step 6: Run it to see it pass**
 
 Run: `node --no-warnings --test test/community-posts.test.js`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 7: Run the whole suite**
 
@@ -745,7 +765,7 @@ Expected: all PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add infra/share-worker/src/community.js infra/share-worker/src/index.js infra/share-worker/test/fake-kv.js infra/share-worker/test/community-posts.test.js
+git add infra/share-worker/src/community.js infra/share-worker/src/index.js infra/share-worker/test/fake-kv.js infra/share-worker/test/community-helpers.js infra/share-worker/test/community-posts.test.js
 git commit -m "feat(community): post route with per-phone and per-network limits"
 ```
 
@@ -765,7 +785,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { env } from "./fake-kv.js";
 import { sha256Hex } from "../src/store.js";
-import { call, seed, KEY_A, KEY_B, HOUR, DAY } from "./community-posts.test.js";
+import { call, seed, KEY_A, KEY_B, HOUR, DAY } from "./community-helpers.js";
 
 const feed = async (e, opts = {}, q = "") => (await (await call(e, "GET", `/v1/community/feed${q}`, opts)).json()).posts;
 
@@ -843,11 +863,6 @@ test("a post opens with its songs; gone ones are 404, and a hidden one only open
         assert.deepEqual(await r.json(), { error: "gone" });
     }
     assert.equal((await call(e, "GET", "/v1/community/posts/HIDDEN00", { key: KEY_A })).status, 200);
-});
-
-test("reads are rate-limited", async () => {
-    const e = env({ COMMUNITY_READ_RL: { limit: async () => ({ success: false }) } });
-    assert.equal((await call(e, "GET", "/v1/community/feed")).status, 429);
 });
 ```
 
@@ -936,7 +951,7 @@ async function getPost(request, env, id, now) {
 - [ ] **Step 4: Run it to see it pass, then the whole suite**
 
 Run: `node --no-warnings --test test/community-reads.test.js`, then `node --no-warnings --test test/*.test.js`
-Expected: PASS, 7 tests; then all PASS.
+Expected: PASS, 6 tests; then all PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -961,7 +976,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { env } from "./fake-kv.js";
 import { sha256Hex } from "../src/store.js";
-import { call, seed, KEY_A, KEY_B, KEY_C } from "./community-posts.test.js";
+import { call, seed, KEY_A, KEY_B, KEY_C } from "./community-helpers.js";
 
 const vote = (e, id, value, key, from) => call(e, "PUT", `/v1/community/posts/${id}/vote`, { key, body: { value }, from });
 const keyN = (n) => `${n}`.padStart(43, "k");
@@ -1048,7 +1063,7 @@ export const RECOUNT_SQL = `UPDATE posts SET
     WHERE id = ?1 RETURNING up, down`;
 
 async function vote(request, env, id, now) {
-    if (!(await env.COMMUNITY_VOTE_RL.limit({ key: ip(request) })).success) return rateLimited();
+    if (!(await env.COMMUNITY_VOTE_RL.limit({ key: network(request) })).success) return rateLimited();
     const who = await identity(request);
     if (!who.id) return json({ error: "bad_key" }, 401);
     const { body, tooBig } = await readJson(request);
@@ -1100,7 +1115,7 @@ git commit -m "feat(community): votes, recounted with at most 2 per network each
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { env } from "./fake-kv.js";
-import { call, seed, songPost, KEY_A, KEY_B } from "./community-posts.test.js";
+import { call, seed, songPost, KEY_A, KEY_B } from "./community-helpers.js";
 
 test("the poster takes a post down: it's gone everywhere, and still counts toward today", async () => {
     const e = env();
@@ -1141,7 +1156,7 @@ Add below `vote`:
 
 ```js
 async function takeDown(request, env, id, now) {
-    if (!(await env.COMMUNITY_WRITE_RL.limit({ key: ip(request) })).success) return rateLimited();
+    if (!(await env.COMMUNITY_WRITE_RL.limit({ key: network(request) })).success) return rateLimited();
     const who = await identity(request);
     if (!who.id) return json({ error: "bad_key" }, 401);
     const post = await env.COMMUNITY_DB.prepare("SELECT poster, removed_at, expires_at FROM posts WHERE id = ?1").bind(id).first();
@@ -1183,7 +1198,7 @@ import assert from "node:assert/strict";
 import worker from "../src/index.js";
 import { cleanup } from "../src/community.js";
 import { env } from "./fake-kv.js";
-import { seed, HOUR, DAY } from "./community-posts.test.js";
+import { seed, HOUR, DAY } from "./community-helpers.js";
 
 const ids = async (e) => (await e.COMMUNITY_DB.prepare("SELECT id FROM posts ORDER BY id").all()).results.map((r) => r.id);
 const voteRow = (e, postId) => e.COMMUNITY_DB.prepare("INSERT INTO votes (post_id, voter, ip_hash, value, at) VALUES (?1, 'v', 'n', 1, 1)").bind(postId).run();
@@ -1307,7 +1322,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { commandSql } from "../scripts/community.mjs";
 import { env } from "./fake-kv.js";
-import { seed, DAY } from "./community-posts.test.js";
+import { seed, DAY } from "./community-helpers.js";
 
 const run = async (e, sql) => {
     for (const s of sql.split(";\n")) await e.COMMUNITY_DB.prepare(s).all();
@@ -1504,7 +1519,7 @@ Match the `actions/checkout` version the other jobs in the file already use.
 Add after the Listen Together bullet:
 
 ```markdown
-- Stash Community (spec `docs/superpowers/specs/2026-09-26-stash-community-design.md`): D1 database `stash-community`, bound as `COMMUNITY_DB`, schema in `migrations/`. `src/community-post.js` is the pure part (cleaning a post, summarising a row); `src/community.js` holds the routes and all SQL. Routes: `GET /v1/community/feed`, `GET /v1/community/mine`, `GET /v1/community/me`, `POST /v1/community/posts`, `GET|DELETE /v1/community/posts/{id}`, `PUT /v1/community/posts/{id}/vote`. A phone is identified by `X-Stash-Community-Key` (only its SHA-256 is stored); a network is a salted hash (`COMMUNITY_SALT` secret) of the IPv4 address or IPv6 /56. Limits: 2 posts a day and 5 live per phone, 10 a day per network, 2 counted votes per network per post each way; `COMMUNITY_WRITE_RL` 10/min, `COMMUNITY_VOTE_RL` 60/min, `COMMUNITY_READ_RL` 120/min per IP. A daily cron (`17 4 * * *`) deletes expired and long-removed posts.
+- Stash Community (spec `docs/superpowers/specs/2026-09-26-stash-community-design.md`): D1 database `stash-community`, bound as `COMMUNITY_DB`, schema in `migrations/`. `src/community-post.js` is the pure part (cleaning a post, summarising a row); `src/community.js` holds the routes and all SQL. Routes: `GET /v1/community/feed`, `GET /v1/community/mine`, `GET /v1/community/me`, `POST /v1/community/posts`, `GET|DELETE /v1/community/posts/{id}`, `PUT /v1/community/posts/{id}/vote`. A phone is identified by `X-Stash-Community-Key` (only its SHA-256 is stored); a network is a salted hash (`COMMUNITY_SALT` secret) of the IPv4 address or IPv6 /56. Limits: 2 posts a day and 5 live per phone, 10 a day per network, 2 counted votes per network per post each way; `COMMUNITY_WRITE_RL` 10/min, `COMMUNITY_VOTE_RL` 60/min, `COMMUNITY_READ_RL` 120/min, each per network. A daily cron (`17 4 * * *`) deletes expired and long-removed posts.
 ```
 
 And a new section before "## Moving to a custom domain later":
@@ -2338,6 +2353,16 @@ class CommunityRepositoryTest {
         assertThat(repo.revision.value).isEqualTo(before + 2)
     }
 
+    @Test fun `a vote that goes through is remembered, and a refused one isn't`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"up":1,"down":0,"myVote":1}"""))
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"gone"}"""))
+        repo.vote("AAAAAAAA", 1)
+        val at = repo.lastVoteAt
+        assertThat(at).isGreaterThan(0L)
+        repo.vote("AAAAAAAA", 1)
+        assertThat(repo.lastVoteAt).isEqualTo(at)
+    }
+
     @Test fun `Mine asks nothing before this phone has a key`() = runBlocking {
         assertThat(repository(existingKey = null).mine()).isEqualTo(CommunityResult.Ok(emptyList<CommunityPost>()))
         assertThat(server.requestCount).isEqualTo(0)
@@ -2402,6 +2427,10 @@ class CommunityRepository @Inject constructor(
     /** Goes up after a post or a take-down, so lists on screen reload. */
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
+    /** When this phone's last vote went through. Home reloads on its next showing after one (CommunityViewModel.onShown). */
+    @Volatile var lastVoteAt: Long = 0L
+        private set
+
     /** The ranked list. It carries the key only once this phone has one: reading never makes one. */
     suspend fun feed(limit: Int): CommunityResult<List<CommunityPost>> = api.feed(limit, keys.existingKey())
 
@@ -2413,7 +2442,8 @@ class CommunityRepository @Inject constructor(
 
     suspend fun open(id: String): CommunityResult<CommunityPost> = api.post(id, keys.existingKey())
 
-    suspend fun vote(id: String, value: Int): CommunityResult<VoteCounts> = api.vote(id, value, keys.key())
+    suspend fun vote(id: String, value: Int): CommunityResult<VoteCounts> =
+        api.vote(id, value, keys.key()).also { if (it is CommunityResult.Ok) lastVoteAt = System.currentTimeMillis() }
 
     suspend fun takeDown(id: String): CommunityResult<Unit> =
         api.takeDown(id, keys.key()).also { if (it is CommunityResult.Ok) _revision.update { n -> n + 1 } }
@@ -2472,7 +2502,7 @@ class CommunityRepository @Inject constructor(
 - [ ] **Step 4: Run it to see it pass**
 
 Run: the Step 2 command.
-Expected: PASS, 7 tests.
+Expected: PASS, 8 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2780,8 +2810,9 @@ dependencies {
 }
 ```
 
+`feature/community/src/main/AndroidManifest.xml`, the same two lines as every other feature module's (an XML declaration must be a file's first line, so no path comment):
+
 ```xml
-<!-- feature/community/src/main/AndroidManifest.xml -->
 <?xml version="1.0" encoding="utf-8"?>
 <manifest />
 ```
@@ -2832,6 +2863,7 @@ class CommunityViewModelTest {
         Dispatchers.setMain(dispatcher)
         every { repo.revision } returns revision
         every { repo.lastHome } returns null
+        every { repo.lastVoteAt } returns 0L
     }
 
     @After fun tearDown() { Dispatchers.resetMain() }
@@ -2905,6 +2937,17 @@ class CommunityViewModelTest {
         assertThat(vm.state.value.posts).isEmpty()
     }
 
+    @Test fun `Home reloads when it shows again only after 30 seconds or a vote`() = runTest(dispatcher) {
+        coEvery { repo.feed(5) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(listOf(post(up = 7))))
+        val vm = CommunityViewModel(repo)
+        vm.onShown(); advanceUntilIdle()
+        vm.onShown(); advanceUntilIdle()
+        coVerify(exactly = 1) { repo.feed(5) }
+        every { repo.lastVoteAt } returns Long.MAX_VALUE
+        vm.onShown(); advanceUntilIdle()
+        assertThat(vm.state.value.posts).containsExactly(post(up = 7))
+    }
+
     @Test fun `a post or take-down elsewhere reloads the list on screen`() = runTest(dispatcher) {
         coEvery { repo.feed(5) } returnsMany listOf(CommunityResult.Ok(emptyList()), CommunityResult.Ok(listOf(post())))
         val vm = CommunityViewModel(repo)
@@ -2976,9 +3019,12 @@ class CommunityViewModel @Inject constructor(private val repository: CommunityRe
         viewModelScope.launch { repository.revision.drop(1).collect { show(_state.value.tab) } }
     }
 
-    /** Home calls this each time the section appears: it reloads unless it loaded in the last 30 seconds. */
+    /**
+     * Home calls this each time the section appears. It reloads unless it loaded in the last 30 seconds and no
+     * vote went through since (See all and the post screen keep their own lists).
+     */
     fun onShown() {
-        if (System.currentTimeMillis() - loadedAt > 30_000) show(Tab.HOME)
+        if (System.currentTimeMillis() - loadedAt > 30_000 || repository.lastVoteAt > loadedAt) show(Tab.HOME)
     }
 
     /** Loads [tab]. The list on screen stays until the new one arrives, unless one is Mine and the other isn't. */
@@ -3039,7 +3085,7 @@ class CommunityViewModel @Inject constructor(private val repository: CommunityRe
 - [ ] **Step 5: Run it to see it pass**
 
 Run: `./gradlew :feature:community:testDebugUnitTest`
-Expected: PASS, 9 tests.
+Expected: PASS, 10 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -5032,7 +5078,7 @@ The daily limit allows two posts, so every way in is opened and cancelled, and o
 - [ ] **Step 3: The other phone and the votes** (Pixel 6, once free)
 
 1. Turn Community on; the Pixel 5's posts are listed. Vote ▲ on one: the highlight and the score change at once. Tap ▲ again: the vote is taken back.
-2. The Pixel 5 sees the new score after reopening Home, and can't vote on its own posts (the arrows don't respond).
+2. On the Pixel 5, Home shows the new score once it reloads: each time Home opens, at most every 30 seconds unless this phone voted. Its own posts' arrows don't respond.
 3. Open a playlist post: Play plays it; Save a copy lands on a new playlist in the Library. Open a song post: Play, then Like (it shows Liked).
 
 - [ ] **Step 4: The live limit on a phone still under its daily limit**
