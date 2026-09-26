@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Stores shared Stash mixes (one JSON document per mix in KV) and serves their preview pages.",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

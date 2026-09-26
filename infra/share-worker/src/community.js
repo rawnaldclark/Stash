@@ -60,7 +60,10 @@ async function readJson(request) {
     try { return { body: JSON.parse(new TextDecoder().decode(buf)) }; } catch { return { body: null }; }
 }
 
-/** How many posts [poster] made in the last day, has live, and [net] made in the last day; and a block. */
+/**
+ * How many posts [poster] made in the last day, has live, and [net] made in the last day; and a block.
+ * Binds ?1 poster, ?2 a day ago, ?3 now, ?4 network. The post INSERT selects from it, so each limit is counted in one place.
+ */
 const LIMITS_SQL = `SELECT
     (SELECT COUNT(*) FROM blocked WHERE poster = ?1) AS blocked,
     (SELECT COUNT(*) FROM posts WHERE poster = ?1 AND created_at > ?2) AS today,
@@ -76,31 +79,25 @@ async function createPost(request, env, now) {
     const post = cleanPost(body);
     if (!post) return json({ error: "bad_request" }, 400);
     const net = await networkHash(request, env);
+    const limits = [who.id, now - DAY, now, net]; // LIMITS_SQL's ?1..?4
     // The limits are checked inside the INSERT itself, so two posts at the same moment can't both slip under
     // them; only when nothing was inserted is the reason looked up.
     for (let attempt = 0; attempt < 5; attempt++) {
         const id = newId();
-        let changes;
-        try {
-            ({ meta: { changes } } = await env.COMMUNITY_DB.prepare(
-                `INSERT INTO posts (id, kind, title, poster_name, poster, ip_hash, summary, body, track_count, created_at, expires_at)
-                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
-                 WHERE NOT EXISTS (SELECT 1 FROM blocked WHERE poster = ?5)
-                   AND (SELECT COUNT(*) FROM posts WHERE poster = ?5 AND created_at > ?12) < ${DAILY_POSTS}
-                   AND (SELECT COUNT(*) FROM posts WHERE poster = ?5 AND removed_at IS NULL AND expires_at > ?10) < ${LIVE_POSTS}
-                   AND (SELECT COUNT(*) FROM posts WHERE ip_hash = ?6 AND created_at > ?12) < ${NETWORK_DAILY_POSTS}`,
-            ).bind(id, post.kind, post.title, post.name, who.id, net, JSON.stringify(post.summary), JSON.stringify(post.body),
-                post.count, now, now + POST_TTL_MS, now - DAY).run());
-        } catch (e) {
-            if (String(e?.message).includes("UNIQUE")) continue; // an id collision: try another
-            throw e;
-        }
+        const { meta: { changes } } = await env.COMMUNITY_DB.prepare(
+            `INSERT INTO posts (id, kind, title, poster_name, poster, ip_hash, summary, body, track_count, created_at, expires_at)
+             SELECT ?5, ?6, ?7, ?8, ?1, ?4, ?9, ?10, ?11, ?3, ?12 FROM (${LIMITS_SQL})
+             WHERE blocked = 0 AND today < ${DAILY_POSTS} AND live < ${LIVE_POSTS} AND network < ${NETWORK_DAILY_POSTS}
+             ON CONFLICT (id) DO NOTHING`,
+        ).bind(...limits, id, post.kind, post.title, post.name, JSON.stringify(post.summary), JSON.stringify(post.body),
+            post.count, now + POST_TTL_MS).run();
         if (changes === 1) return json({ id }, 201);
-        const c = await env.COMMUNITY_DB.prepare(LIMITS_SQL).bind(who.id, now - DAY, now, net).first();
+        const c = await env.COMMUNITY_DB.prepare(LIMITS_SQL).bind(...limits).first();
         if (c.blocked) return json({ error: "blocked" }, 403);
         if (c.today >= DAILY_POSTS) return json({ error: "daily_limit" }, 429);
         if (c.live >= LIVE_POSTS) return json({ error: "live_limit" }, 429);
-        return json({ error: "network_limit" }, 429);
+        if (c.network >= NETWORK_DAILY_POSTS) return json({ error: "network_limit" }, 429);
+        // None hit: the id was taken, or a take-down or unblock landed in between. Try again.
     }
     return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
 }

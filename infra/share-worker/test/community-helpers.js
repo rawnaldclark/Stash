@@ -18,6 +18,18 @@ export function call(e, method, path, { key, body, from = "203.0.113.9" } = {}) 
     return handle(new Request(`${BASE}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }), e);
 }
 
+/** [e] with every COMMUNITY_DB query taking ~5 ms, like a real D1 round trip, so races between requests show. */
+export function laggy(e) {
+    const lag = () => new Promise((r) => setTimeout(r, 5));
+    const wrap = (st) => ({ ...st, bind: (...a) => wrap(st.bind(...a)),
+        first: async (c) => { await lag(); return st.first(c); },
+        run: async () => { await lag(); return st.run(); },
+        all: async () => { await lag(); return st.all(); } });
+    const d1 = e.COMMUNITY_DB;
+    e.COMMUNITY_DB = { ...d1, prepare: (sql) => wrap(d1.prepare(sql)) };
+    return e;
+}
+
 /** Inserts a post row directly, for states the API can't reach quickly (old, expired, many). */
 export async function seed(e, { id, poster, key, ip = "n".repeat(64), created = Date.now(), removed = null, expires, up = 0, down = 0, kind = "song", summary = { artist: "A" }, body = { track: { t: "T", a: "A" } } } = {}) {
     const owner = poster ?? (key ? await sha256Hex(key) : "p".repeat(64));
