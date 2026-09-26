@@ -142,8 +142,10 @@ fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: 
     val others = room.members.filter { it.id != room.myId }
     val host = room.members.firstOrNull { it.id == room.hostId }
     val title = if (others.isEmpty()) "Waiting for friends to join" else "Listening with ${nameList(others.map { it.name ?: "Someone" })}"
+    val waiting = if (room.isHost) room.suggestions.size else 0
     val subtitle = when {
         room.reconnecting -> "Reconnecting…"
+        waiting > 0 -> if (waiting == 1) "1 suggestion waiting" else "$waiting suggestions waiting"
         room.isHost -> "You're hosting · ${room.members.size} in the room"
         host != null -> "${host.name ?: "Someone"} is hosting"
         else -> "The host will be right back"
@@ -164,7 +166,14 @@ fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: 
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                // A waiting suggestion needs the host, so it stands out; everything else is quiet.
+                color = if (waiting > 0 && !room.reconnecting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (waiting > 0 && !room.reconnecting) FontWeight.SemiBold else null,
+                maxLines = 1,
+            )
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -351,17 +360,7 @@ private fun RoomContent(
             }
         }
 
-        item { SectionLabel("UP NEXT") }
-        if (room.queue.isEmpty()) {
-            item { Text("Nothing queued yet", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
-        items(room.queue.take(MAX_UP_NEXT)) { t ->
-            SongRow(t) { t.addedBy?.let { PersonAvatar(it, nameOf(it), 22.dp) } }
-        }
-        if (room.queue.size > MAX_UP_NEXT) {
-            item { Text("+${room.queue.size - MAX_UP_NEXT} more", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
-
+        // What needs you comes first: the host's waiting suggestions, or a listener's own.
         val mine = room.suggestions.filter { it.from == room.myId }
         if (room.isHost && room.suggestions.isNotEmpty()) {
             item { SectionLabel("SUGGESTIONS · ${room.suggestions.size}") }
@@ -377,6 +376,17 @@ private fun RoomContent(
             items(mine, key = { it.id }) { s ->
                 SongRow(s.track, detail = "Waiting for ${host?.name ?: "the host"}")
             }
+        }
+
+        item { SectionLabel("UP NEXT") }
+        if (room.queue.isEmpty()) {
+            item { Text("Nothing queued yet", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        items(room.queue.take(MAX_UP_NEXT)) { t ->
+            SongRow(t) { t.addedBy?.let { PersonAvatar(it, nameOf(it), 22.dp) } }
+        }
+        if (room.queue.size > MAX_UP_NEXT) {
+            item { Text("+${room.queue.size - MAX_UP_NEXT} more", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
 
         item {
