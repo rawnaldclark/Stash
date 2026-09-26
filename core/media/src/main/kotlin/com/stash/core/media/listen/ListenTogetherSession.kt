@@ -220,6 +220,8 @@ class ListenTogetherSession(
             }
             is ServerMessage.Members -> { noticeMembers(m.members); room = room?.copy(members = m.members); publish() }
             is ServerMessage.Suggestions -> { room = room?.copy(suggestions = m.suggestions); publish() }
+            // The host's own edits already set room.queue; the echo brings the adders ("by") the room stamped.
+            is ServerMessage.QueueUpdate -> { room = room?.copy(queue = m.queue); publish() }
             is ServerMessage.Reaction -> controller.reaction(m)
             is ServerMessage.Ended -> teardown("Session ended")
         }

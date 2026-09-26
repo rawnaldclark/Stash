@@ -147,6 +147,10 @@ sealed interface ServerMessage {
     @Serializable @SerialName("suggestions")
     data class Suggestions(val suggestions: List<RoomSuggestion>) : ServerMessage
 
+    /** The room's queue after any change, each song with who added it: every phone's Up next. */
+    @Serializable @SerialName("queue")
+    data class QueueUpdate(val queue: List<SharedTrack>) : ServerMessage
+
     @Serializable @SerialName("reaction")
     data class Reaction(val from: String, val emoji: String) : ServerMessage
 

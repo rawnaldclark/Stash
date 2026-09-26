@@ -201,7 +201,7 @@ test("adding a suggestion queues it and tells the host; dismissing just removes 
     const r = send(s, "h", { t: "suggestion", id: "s1", action: "add" });
     assert.deepEqual(r.state.queue, [{ ...NEXT, by: "a" }]);
     assert.deepEqual(sent(r, "suggestions")[0].msg.suggestions.map((x) => x.id), ["s2"]);
-    assert.equal(sent(r, "state")[0].to, "h");
+    assert.equal(sent(r, "queue")[0].to, "all");
     const d = send(r.state, "h", { t: "suggestion", id: "s2", action: "dismiss" });
     assert.deepEqual(d.state.queue, [{ ...NEXT, by: "a" }]);
     assert.equal(d.state.suggestions.length, 0);
@@ -245,6 +245,17 @@ test("prepare says who loaded and why; timelines say who played, paused or seeke
     assert.equal(sent(p, "timeline")[0].msg.by, "h");
     assert.equal(sent(send(p.state, "h", { t: "play" }, T0 + 2_000), "timeline")[0].msg.by, "h");
     assert.equal(sent(send(s, "h", { t: "seek", positionMs: 5_000 }, T0 + 1_000), "timeline")[0].msg.by, "h");
+});
+
+test("every queue change goes to everyone, so each phone's Up next stays current", () => {
+    const l = send(party(), "h", { t: "load", track: TRACK, positionMs: 0, queue: [NEXT] });
+    assert.deepEqual(sent(l, "queue")[0], { to: "all", msg: { t: "queue", queue: [{ ...NEXT, by: "h" }] } });
+    const q = send(l.state, "h", { t: "queue", queue: [NEXT, TRACK] });
+    assert.equal(sent(q, "queue")[0].to, "all");
+    let s = send(q.state, "a", { t: "suggest", track: { t: "S", a: "A" } }, T0, { newId: "s1" }).state;
+    const acc = send(s, "h", { t: "suggestion", id: "s1", action: "add" });
+    assert.deepEqual(sent(acc, "queue")[0].msg.queue.map((x) => x.t), ["S", "Xtal", "Avril 14th"]);
+    assert.equal(sent(send(s, "h", { t: "suggestion", id: "s1", action: "dismiss" }), "queue").length, 0);
 });
 
 test("reactions: one of the six, at most one per second per member", () => {

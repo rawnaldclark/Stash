@@ -92,6 +92,8 @@ export function nextAlarm(s) {
 const unchanged = (state, out = []) => ({ state, out, alarmAt: nextAlarm(state) });
 const membersMsg = (s) => ({ to: "all", msg: { t: "members", members: publicMembers(s) } });
 const suggestionsMsg = (s) => ({ to: "all", msg: { t: "suggestions", suggestions: s.suggestions } });
+/** Every phone shows Up next (who added what), and the host's app mirrors it, so each change goes to all. */
+const queueMsg = (s) => ({ to: "all", msg: { t: "queue", queue: s.queue } });
 /** A queued song's identity, to find accepted suggestions again after the host's app resends the queue. */
 const songKey = (t) => JSON.stringify([t.t, t.a, t.yt ?? null, t.isrc ?? null]);
 const stateMsg = (s, to = "all") => ({ to, msg: { t: "state", state: publicState(s) } });
@@ -235,6 +237,7 @@ const MESSAGES = {
             by: event.from, ...(WHYS.has(msg.why) ? { why: msg.why } : {}),
         } });
         ctx.out.push(membersMsg(s));
+        ctx.out.push(queueMsg(s));
         return true;
     },
 
@@ -282,6 +285,7 @@ const MESSAGES = {
         if (!Array.isArray(ctx.msg.queue)) return false;
         ctx.s.queue = stamped(cleanQueue(ctx.msg.queue), ctx.event.from);
         ctx.s.rev++;
+        ctx.out.push(queueMsg(ctx.s));
         return true;
     },
 
@@ -312,8 +316,7 @@ const MESSAGES = {
         }
         s.rev++;
         ctx.out.push(suggestionsMsg(s));
-        // The host's app mirrors the room's queue, so it gets the new one straight away.
-        if (msg.action === "add") ctx.out.push(stateMsg(s, s.host));
+        if (msg.action === "add") ctx.out.push(queueMsg(s));
         return true;
     },
 

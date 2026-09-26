@@ -287,18 +287,30 @@ fun SessionSheet(
     onLeave: () -> Unit,
     onEnd: () -> Unit,
 ) {
+    // Right after Start the state is still Idle for a moment (the command is on its way), so Idle only
+    // closes the sheet at once after a session was live; a start that never happens closes it after 10 s.
+    var seenSession by remember { mutableStateOf(false) }
+    val idle = state is ListenTogetherState.Idle
+    LaunchedEffect(idle) {
+        if (idle) {
+            delay(if (seenSession) 0 else 10_000)
+            onDismiss()
+        } else {
+            seenSession = true
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = StashTheme.extendedColors.elevatedSurface) {
         when (state) {
-            ListenTogetherState.Idle -> LaunchedEffect(Unit) { onDismiss() }
-            is ListenTogetherState.Connecting -> Column(
+            is ListenTogetherState.InRoom -> RoomContent(state, onAnswer, onMakeHost, onCopyLink, onShare, onLeave, onEnd)
+            else -> Column(
                 Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 48.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
                 Spacer(Modifier.height(16.dp))
-                Text(if (state.hosting) "Starting your session…" else "Joining…", style = MaterialTheme.typography.bodyMedium)
+                val joining = state is ListenTogetherState.Connecting && !state.hosting
+                Text(if (joining) "Joining…" else "Starting your session…", style = MaterialTheme.typography.bodyMedium)
             }
-            is ListenTogetherState.InRoom -> RoomContent(state, onAnswer, onMakeHost, onCopyLink, onShare, onLeave, onEnd)
         }
     }
 }

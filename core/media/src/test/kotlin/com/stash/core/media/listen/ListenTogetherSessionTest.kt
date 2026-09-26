@@ -699,6 +699,15 @@ class ListenTogetherSessionTest {
         assertThat(events).containsExactly(SessionEvent(SessionEvent.Kind.HOSTING, "me", "Me"))
     }
 
+    @Test fun `a listener's Up next follows every queue change in the room`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(queue = listOf(next))))
+        receive(ServerMessage.QueueUpdate(listOf(third.copy(addedBy = "h"), next)))
+        val room = controller.state.value as ListenTogetherState.InRoom
+        assertThat(room.queue.map { it.title }).containsExactly("Rhubarb", "Xtal").inOrder()
+        assertThat(room.queue.first().addedBy).isEqualTo("h")
+    }
+
     @Test fun `the room's song and queue reach the UI, with who added them`() = runTest {
         join()
         val picked = next.copy(addedBy = "a")
