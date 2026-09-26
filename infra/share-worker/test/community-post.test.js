@@ -25,6 +25,7 @@ test("a playlist post keeps allowed covers and cleaned tracks, and summarises th
     assert.deepEqual(p.summary, { covers: p.body.covers });
     assert.equal(p.body.tracks[1].art, undefined, "an art link off COVER_HOSTS is dropped");
     assert.ok(p.body.tracks.every((t) => t.by === undefined));
+    assert.equal(cleanPost(playlist([song], Array(5).fill("https://i.scdn.co/image/a"))).body.covers.length, 4);
 });
 
 test("bad requests are null", () => {
@@ -42,6 +43,7 @@ test("bad requests are null", () => {
     ];
     for (const b of bad) assert.equal(cleanPost(b), null, JSON.stringify(b)?.slice(0, 80));
     assert.ok(cleanPost(playlist(Array.from({ length: MAX_POST_TRACKS }, () => song))), "500 songs is allowed");
+    assert.ok(cleanPost({ ...playlist(), name: "x".repeat(40), title: "x".repeat(100) }), "40 and 100 are allowed");
 });
 
 test("a mix is a playlist-shaped post with kind mix", () => {
@@ -60,4 +62,5 @@ test("summaryOf exposes the public fields only, and myVote/mine only when asked 
     });
     assert.deepEqual(summaryOf(r, "p".repeat(64)), { ...summaryOf(r, null), myVote: 1, mine: true });
     assert.equal(summaryOf({ ...r, my_vote: null }, "q".repeat(64)).myVote, 0);
+    assert.equal(summaryOf({ ...r, my_vote: null }, "q".repeat(64)).mine, false);
 });
