@@ -18,7 +18,9 @@ export const ip = (request) => limitKey(request.headers.get("CF-Connecting-IP") 
 
 /**
  * Community's "network" (spec 2026-09-26 §2): an IPv4 address as is, an IPv6 address by its /56.
- * Coarser than limitKey's /64 because homes often get a whole /56, and a free tunnel a /48.
+ * Coarser than limitKey's /64: homes often get a whole /56. A free tunnel's /48 still counts as 256 networks (not 65,536).
+ * The result is salted, hashed and stored. Its form (`2001:db8:aa:bb/56`) isn't standard prefix notation, on purpose:
+ * changing it re-keys every stored network hash, which resets the per-network caps, the same as rotating COMMUNITY_SALT.
  */
 export function networkOf(addr) {
     const key = limitKey(addr);

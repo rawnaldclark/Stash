@@ -18,6 +18,8 @@ test("IPv6 addresses are grouped by their /56", () => {
     // A short 4th group is still cut by value: ab (00ab) and ff00 are different /56s.
     assert.notEqual(networkOf("2001:db8:1:ab::"), networkOf("2001:db8:1:ff00::"));
     assert.equal(networkOf("2001:db8:1:ab::"), "2001:db8:1:0/56");
+    // The :: is expanded before the cut: abcd is the 5th group, outside the /56.
+    assert.equal(networkOf("2001:db8::abcd:1:2:3"), "2001:db8:0:0/56");
 });
 
 test("limitKey is still exported from index.js and still cuts IPv6 to /64", () => {
