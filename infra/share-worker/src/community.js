@@ -30,7 +30,15 @@ const gone = () => json({ error: "gone" }, 404);
 export async function communityRoute(request, env, path, method) {
     const now = Date.now();
     if (method === "GET" && !(await env.COMMUNITY_READ_RL.limit({ key: network(request) })).success) return rateLimited();
+    if (path === "/v1/community/feed") return method === "GET" ? feed(request, env, now) : notAllowed();
+    if (path === "/v1/community/mine") return method === "GET" ? mine(request, env, now) : notAllowed();
+    if (path === "/v1/community/me") return method === "GET" ? me(request, env, now) : notAllowed();
     if (path === "/v1/community/posts") return method === "POST" ? createPost(request, env, now) : notAllowed();
+    const m = POST_API.exec(path);
+    if (m) {
+        if (method === "GET" && !m[2]) return getPost(request, env, m[1], now);
+        return notAllowed();
+    }
     return json({ error: "not_found" }, 404);
 }
 
@@ -100,4 +108,61 @@ async function createPost(request, env, now) {
         // None hit: the id was taken, or a take-down or unblock landed in between. Try again.
     }
     return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
+}
+
+/** The columns a list needs. Never `body`: a Home open must not load song lists (spec §2). */
+const LIST_COLUMNS = "p.id, p.kind, p.title, p.poster_name, p.poster, p.summary, p.track_count, p.created_at, p.up, p.down";
+const NO_STORE = { "cache-control": "no-store" };
+
+async function feed(request, env, now) {
+    const who = await identity(request);
+    if (who.bad) return json({ error: "bad_key" }, 401);
+    const asked = Number.parseInt(new URL(request.url).searchParams.get("limit"), 10);
+    const limit = Math.min(Math.max(Number.isNaN(asked) ? 5 : asked, 1), 100);
+    const { results } = await env.COMMUNITY_DB.prepare(
+        `SELECT ${LIST_COLUMNS}, v.value AS my_vote FROM posts p
+         LEFT JOIN votes v ON v.post_id = p.id AND v.voter = ?1
+         WHERE p.removed_at IS NULL AND p.expires_at > ?2 AND (p.up - p.down) > ${HIDE_AT}
+         ORDER BY (p.up - p.down) + p.created_at / ${MS_PER_VOTE}.0 DESC, p.created_at DESC
+         LIMIT ?3`,
+    ).bind(who.id ?? "", now, limit).all();
+    return json({ posts: results.map((r) => summaryOf(r, who.id ?? null)) }, 200, NO_STORE);
+}
+
+async function mine(request, env, now) {
+    const who = await identity(request);
+    if (!who.id) return json({ error: "bad_key" }, 401);
+    const { results } = await env.COMMUNITY_DB.prepare(
+        `SELECT ${LIST_COLUMNS}, p.expires_at, NULL AS my_vote FROM posts p
+         WHERE p.poster = ?1 AND p.removed_at IS NULL AND p.expires_at > ?2
+         ORDER BY p.created_at DESC`,
+    ).bind(who.id, now).all();
+    const posts = results.map((r) => ({ ...summaryOf(r, who.id), hidden: r.up - r.down <= HIDE_AT, expiresAt: r.expires_at }));
+    return json({ posts }, 200, NO_STORE);
+}
+
+async function me(request, env, now) {
+    const who = await identity(request);
+    if (!who.id) return json({ error: "bad_key" }, 401);
+    const c = await env.COMMUNITY_DB.prepare(LIMITS_SQL).bind(who.id, now - DAY, now, "").first();
+    return json({
+        postsLeftToday: Math.max(0, DAILY_POSTS - c.today),
+        spotsFree: Math.max(0, LIVE_POSTS - c.live),
+        blocked: c.blocked > 0,
+    }, 200, NO_STORE);
+}
+
+async function getPost(request, env, id, now) {
+    const who = await identity(request);
+    if (who.bad) return json({ error: "bad_key" }, 401);
+    const r = await env.COMMUNITY_DB.prepare(
+        `SELECT ${LIST_COLUMNS}, p.body, p.removed_at, p.expires_at, v.value AS my_vote FROM posts p
+         LEFT JOIN votes v ON v.post_id = p.id AND v.voter = ?2
+         WHERE p.id = ?1`,
+    ).bind(id, who.id ?? "").first();
+    if (!r || r.removed_at !== null || r.expires_at <= now) return gone();
+    if (r.up - r.down <= HIDE_AT && r.poster !== who.id) return gone(); // hidden: only its poster sees it
+    const body = JSON.parse(r.body);
+    const songs = body.track ? { track: body.track } : { tracks: body.tracks };
+    return json({ post: { ...summaryOf(r, who.id ?? null), ...songs } }, 200, NO_STORE);
 }
