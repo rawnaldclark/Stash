@@ -8,6 +8,7 @@ import { freeId, readMix, sameHex, sha256Hex, writeMix, writeTombstone } from ".
 import { assetLinks, messagePage, mixPage, roomPage, trackPage } from "./pages.js";
 import { base64url, randomCode } from "./listen-room.js";
 import { ip, json, limitKey } from "./http.js";
+import { communityRoute } from "./community.js";
 export { limitKey }; // test/hardening.test.js imports it from here
 
 export { ListenRoom } from "./listen-room.js";
@@ -59,6 +60,7 @@ export async function handle(request, env) {
         const pv = await roomPreview(stub);
         return pv ? json(pv, 200, { "cache-control": "no-store" }) : json({ error: "not_found" }, 404);
     }
+    if (path.startsWith("/v1/community/")) return communityRoute(request, env, path, method);
     if (method === "GET" && path === "/.well-known/assetlinks.json") return json(assetLinks(), 200, { "cache-control": "public, max-age=3600" });
     if (method === "GET" && path === "/t") return html(trackPage(url.searchParams, url.href));
     const page = /^\/m\/([A-Za-z0-9]{8})$/.exec(path);

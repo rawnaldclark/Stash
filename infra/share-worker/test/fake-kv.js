@@ -1,3 +1,4 @@
+import { fakeD1 } from "./fake-d1.js";
 import { roomsNamespace } from "./fake-room.js";
 
 /** Just enough of Workers KV for src/store.js: get(key, "json"), put(key, value, opts), delete(key). */
@@ -22,6 +23,11 @@ export function env(over = {}) {
         ROOM_RL: { limit: async () => ({ success: true }) },
         JOIN_RL: { limit: async () => ({ success: true }) },
         ROOMS: roomsNamespace(),
+        COMMUNITY_DB: fakeD1(),
+        COMMUNITY_SALT: "test-salt",
+        COMMUNITY_WRITE_RL: { limit: async () => ({ success: true }) },
+        COMMUNITY_VOTE_RL: { limit: async () => ({ success: true }) },
+        COMMUNITY_READ_RL: { limit: async () => ({ success: true }) },
         ...over,
     };
 }
