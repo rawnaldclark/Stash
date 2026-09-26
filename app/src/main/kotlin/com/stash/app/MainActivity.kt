@@ -3,18 +3,29 @@ package com.stash.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.IntentCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.stash.app.navigation.StashScaffold
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.model.ThemeMode
 import com.stash.core.model.share.ShareLinks
+import com.stash.core.media.listen.ListenTogetherController
+import com.stash.core.media.listen.ListenTogetherState
+import com.stash.core.ui.components.ListenTogetherRole
+import com.stash.core.ui.components.LocalListenTogetherRole
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
@@ -31,6 +42,9 @@ class MainActivity : ComponentActivity() {
 
         /** [pendingDeepLink] prefix for a shared-mix link; the share id follows. */
         const val DEEP_LINK_SHARED_MIX_PREFIX = "shared_mix:"
+
+        /** [pendingDeepLink] prefix for a Listen Together invite; the room code follows. */
+        const val DEEP_LINK_LISTEN_PREFIX = "listen:"
     }
 
     @Inject
@@ -38,6 +52,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var localImportCoordinator: LocalImportCoordinator
+
+    @Inject
+    lateinit var listenTogether: ListenTogetherController
 
     /**
      * Pending deep-link target read from the launch / new-intent extras.
@@ -63,11 +80,25 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.SYSTEM -> systemDark
             }
 
+            val together by listenTogether.state.collectAsState()
+            val role = (together as? ListenTogetherState.InRoom)
+                ?.let { if (it.isHost) ListenTogetherRole.HOST else ListenTogetherRole.LISTENER }
+                ?: ListenTogetherRole.NONE
+            // Session notices ("Suggested to the host", …) toast on whichever screen is showing.
+            val lifecycleOwner = LocalLifecycleOwner.current
+            val context = LocalContext.current
+            LaunchedEffect(lifecycleOwner) {
+                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    listenTogether.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                }
+            }
             StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
-                StashScaffold(
-                    pendingDeepLink = pendingDeepLink.value,
-                    onDeepLinkConsumed = { pendingDeepLink.value = null },
-                )
+                CompositionLocalProvider(LocalListenTogetherRole provides role) {
+                    StashScaffold(
+                        pendingDeepLink = pendingDeepLink.value,
+                        onDeepLinkConsumed = { pendingDeepLink.value = null },
+                    )
+                }
             }
         }
 
@@ -107,6 +138,10 @@ class MainActivity : ComponentActivity() {
                 }
                 is ShareLinks.Parsed.Track -> {
                     pendingDeepLink.value = DEEP_LINK_SHARED_TRACK_PREFIX + ShareLinks.trackUrl(parsed.track) // bounded, normalised
+                    true
+                }
+                is ShareLinks.Parsed.Room -> {
+                    pendingDeepLink.value = DEEP_LINK_LISTEN_PREFIX + parsed.code
                     true
                 }
                 null -> false

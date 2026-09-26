@@ -351,6 +351,20 @@ fun StashNavHost(
             com.stash.feature.library.share.SharedTrackScreen(onBack = { navController.popBackStack() })
         }
 
+        composable<ListenJoinRoute> {
+            com.stash.feature.nowplaying.listen.JoinSessionScreen(
+                onBack = { navController.popBackStack() },
+                // After joining, Now Playing is the session; Back from it skips the Join screen. Reuse an
+                // existing Now Playing entry rather than stack a second one (as the mini player does).
+                onJoined = {
+                    navController.popBackStack<ListenJoinRoute>(inclusive = true)
+                    if (!navController.popBackStack(NowPlayingRoute, inclusive = false)) {
+                        navController.navigate(NowPlayingRoute) { launchSingleTop = true }
+                    }
+                },
+            )
+        }
+
         composable<ArtistDetailRoute> {
             ArtistDetailScreen(
                 onBack = { navController.popBackStack() },

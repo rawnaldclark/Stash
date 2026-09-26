@@ -72,6 +72,8 @@ fun GlowingProgressBar(
     totalMs: Long,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    /** False shows progress only (a Listen Together listener can't seek). */
+    seekable: Boolean = true,
 ) {
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(progress) }
@@ -96,7 +98,7 @@ fun GlowingProgressBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(TrackHeight + TouchPadding * 2)
-                .pointerInput(totalMs) {
+                .then(if (!seekable) Modifier else Modifier.pointerInput(totalMs) {
                     detectTapGestures { offset ->
                         val fraction = (offset.x / size.width).coerceIn(0f, 1f)
                         onSeek((fraction * totalMs).roundToLong())
@@ -120,7 +122,7 @@ fun GlowingProgressBar(
                                 .coerceIn(0f, 1f)
                         },
                     )
-                },
+                })
         ) {
             val barY = size.height / 2f
             val barHeight = TrackHeight.toPx()

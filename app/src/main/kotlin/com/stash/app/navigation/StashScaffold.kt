@@ -148,6 +148,9 @@ fun StashScaffold(
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_SHARED_TRACK_PREFIX)) {
                     val link = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_SHARED_TRACK_PREFIX)
                     navController.navigate(SharedTrackRoute(link))
+                } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_LISTEN_PREFIX)) {
+                    val code = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_LISTEN_PREFIX)
+                    navController.navigate(ListenJoinRoute(code))
                 }
                 onDeepLinkConsumed() // unknown targets are cleared too, so we don't loop
             }

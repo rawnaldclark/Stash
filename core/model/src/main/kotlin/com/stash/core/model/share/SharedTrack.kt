@@ -55,9 +55,10 @@ fun SharedTrack.toTrack(): Track = Track(
     artist = artist,
     album = album.orEmpty(),
     durationMs = durationMs ?: 0,
-    isrc = isrc,
-    spotifyUri = spotifyId?.let { "spotify:track:$it" },
-    youtubeId = youtubeId,
+    isrc = isrc?.takeIf { it.isNotBlank() },
+    // Blank ids must stay null: youtube_id and spotify_uri are UNIQUE, so "" / "spotify:track:" would collide.
+    spotifyUri = spotifyId?.takeIf { it.isNotBlank() }?.let { "spotify:track:$it" },
+    youtubeId = youtubeId?.takeIf { it.isNotBlank() },
     source = MusicSource.BOTH,
     isStreamable = true,
 )

@@ -35,4 +35,11 @@ class SharedTrackTest {
         assertThat(t.isStreamable).isTrue()
         assertThat(t.id).isEqualTo(0L)
     }
+
+    @Test fun `blank ids in a descriptor become null, never an empty unique key`() {
+        val t = SharedTrack("T", "A", isrc = " ", spotifyId = "", youtubeId = "").toTrack()
+        assertThat(t.isrc).isNull()
+        assertThat(t.spotifyUri).isNull()
+        assertThat(t.youtubeId).isNull()
+    }
 }

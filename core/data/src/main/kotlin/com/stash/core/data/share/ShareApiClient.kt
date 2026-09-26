@@ -22,7 +22,12 @@ sealed interface ShareResult<out T> {
     /** 400/413/other 4xx: the server will never accept this request as sent, so don't retry it. */
     data class Rejected(val code: Int) : ShareResult<Nothing>
     /** Network failure, 429 or 5xx: worth retrying later. */
-    data class Failed(val message: String?) : ShareResult<Nothing>
+    data class Failed(val message: String?) : ShareResult<Nothing> {
+        companion object {
+            /** The [message] for a 429, so a screen can say "wait a minute" rather than "couldn't reach". */
+            const val RATE_LIMITED = "HTTP 429"
+        }
+    }
 }
 
 /** HTTP client for the stash-share Worker (spec §4). */
@@ -61,15 +66,28 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
     suspend fun version(id: String): ShareResult<Int> =
         call(Request.Builder().url("$baseUrl/v1/mixes/$id/version").get()) { ShareJson.decodeFromString(VersionBody.serializer(), it).version }
 
-    private suspend fun <T> call(builder: Request.Builder, parse: (String) -> T): ShareResult<T> = withContext(Dispatchers.IO) {
+    private suspend fun <T> call(builder: Request.Builder, parse: (String) -> T): ShareResult<T> =
+        okHttpClient.shareCall(builder, parse)
+
+    private fun JsonObject.toBody() = toString().toRequestBody(JSON)
+
+    private companion object {
+        const val KEY_HEADER = "X-Stash-Edit-Key"
+        val JSON = "application/json".toMediaType()
+    }
+}
+
+/** One request to the stash-share Worker, mapped to a [ShareResult]. Shared by the mix and room clients. */
+internal suspend fun <T> OkHttpClient.shareCall(builder: Request.Builder, parse: (String) -> T): ShareResult<T> =
+    withContext(Dispatchers.IO) {
         runCatching {
-            okHttpClient.newCall(builder.build()).execute().use { r ->
+            newCall(builder.build()).execute().use { r ->
                 when (r.code) {
                     in 200..299 -> ShareResult.Ok(parse(r.body?.string().orEmpty()))
                     403 -> ShareResult.Forbidden
                     404 -> ShareResult.NotFound
                     410 -> ShareResult.Gone
-                    429 -> ShareResult.Failed("HTTP 429")
+                    429 -> ShareResult.Failed(ShareResult.Failed.RATE_LIMITED)
                     in 400..499 -> ShareResult.Rejected(r.code)
                     else -> ShareResult.Failed("HTTP ${r.code}")
                 }
@@ -79,11 +97,3 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
             ShareResult.Failed(t.message)
         }
     }
-
-    private fun JsonObject.toBody() = toString().toRequestBody(JSON)
-
-    private companion object {
-        const val KEY_HEADER = "X-Stash-Edit-Key"
-        val JSON = "application/json".toMediaType()
-    }
-}

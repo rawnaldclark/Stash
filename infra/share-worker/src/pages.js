@@ -60,3 +60,16 @@ export function trackPage(params, pageUrl) {
 export function messagePage(title, text) {
     return shell({ title, description: text, body: `<h1>${esc(title)}</h1><p class="muted">${esc(text)}</p>` });
 }
+
+/** GET /l/{code}: the Listen Together invite page (spec 2026-09-24 §2), built like the mix page. */
+export function roomPage(pv, pageUrl) {
+    const host = pv.hostName || "A friend";
+    const listening = `${pv.memberCount} listening${pv.full ? " · full" : ""}`;
+    const now = pv.track ? `<p class="muted">Now playing: ${esc(pv.track.t)} · ${esc(pv.track.a)}</p>` : "";
+    return shell({
+        title: `Join ${host}'s session in Stash`,
+        description: `${listening} · Listen Together on Stash`,
+        pageUrl,
+        body: `<h1>Join ${esc(host)}'s session in Stash</h1><p class="muted">${listening}</p>${now}`,
+    });
+}

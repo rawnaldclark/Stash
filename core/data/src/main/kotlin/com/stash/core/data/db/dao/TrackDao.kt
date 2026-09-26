@@ -622,6 +622,10 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE youtube_id = :youtubeId LIMIT 1")
     suspend fun findByYoutubeId(youtubeId: String): TrackEntity?
 
+    /** Find a track by exact ISRC, preferring a downloaded row (Listen Together's exact match, spec 2026-09-24 §4). */
+    @Query("SELECT * FROM tracks WHERE isrc = :isrc ORDER BY is_downloaded DESC, id ASC LIMIT 1")
+    suspend fun findByIsrc(isrc: String): TrackEntity?
+
     /**
      * Find a track by its canonical title + artist combination.
      * Used for cross-source deduplication.

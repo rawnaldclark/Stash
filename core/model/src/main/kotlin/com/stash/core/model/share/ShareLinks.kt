@@ -32,14 +32,22 @@ object ShareLinks {
     sealed interface Parsed {
         data class Mix(val shareId: String) : Parsed
         data class Track(val track: SharedTrack) : Parsed
+
+        /** A Listen Together invite, `https://…/l/{code}` (spec 2026-09-24 §5). */
+        data class Room(val code: String) : Parsed
     }
 
     private val ID = Regex("^[A-Za-z0-9]{8}$")
+
+    /** 8 of the Worker's 32 room-code symbols (no 0/O, 1/I). Keep in sync with ROOM_API in infra/share-worker/src/index.js. */
+    private val ROOM_CODE = Regex("^[A-HJ-NP-Z2-9]{8}$")
 
     /** A share id for logs: the id is the only secret a link has, so logs show just a prefix. */
     fun logId(shareId: String): String = shareId.take(3) + "…"
 
     fun mixUrl(shareId: String): String = "${ShareConfig.BASE_URL}/m/$shareId"
+
+    fun roomUrl(code: String): String = "${ShareConfig.BASE_URL}/l/$code"
 
     fun trackUrl(t: SharedTrack): String = buildString {
         fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
@@ -62,6 +70,7 @@ object ShareLinks {
         return when {
             scheme == "https" && host in ShareConfig.HOSTS -> when {
                 path.startsWith("/m/") -> path.removePrefix("/m/").takeIf { ID.matches(it) }?.let { Parsed.Mix(it) }
+                path.startsWith("/l/") -> path.removePrefix("/l/").uppercase().takeIf { ROOM_CODE.matches(it) }?.let { Parsed.Room(it) }
                 path == "/t" -> trackFrom(q["t"], q["a"], q["al"], q["d"], q["isrc"], q["sp"], q["yt"])
                 else -> null
             }

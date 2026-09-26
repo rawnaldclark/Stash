@@ -42,6 +42,11 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.automirrored.filled.Logout
+import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.common.primaryArtist
 import com.stash.core.media.SleepTimerController
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -166,6 +171,15 @@ fun NowPlayingScreen(
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var queueSaveTrack by remember { mutableStateOf<com.stash.core.model.Track?>(null) }
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
+    // Listen Together (spec 2026-09-24 §5).
+    val together: com.stash.feature.nowplaying.listen.ListenTogetherViewModel = hiltViewModel()
+    val togetherState by together.state.collectAsStateWithLifecycle()
+    val room = togetherState as? ListenTogetherState.InRoom
+    var showStartTogether by remember { mutableStateOf(false) }
+    // A listener follows the room: Leave instead of play, pause, skip and seek (spec §5).
+    val isListener = room != null && !room.isHost
+    var showSuggestions by remember { mutableStateOf(false) }
+    var confirmEndTogether by remember { mutableStateOf(false) }
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
     // the action (find a replacement / delete / delete + block).
@@ -275,7 +289,7 @@ fun NowPlayingScreen(
             liveLyricsEnabled = liveLyricsEnabled,
             onLiveLyricsToggle = viewModel::setLiveLyricsBarEnabled,
             isPlaying = uiState.isPlaying && !uiState.isBuffering,
-            onSeek = viewModel::onLyricsLineSeek,
+            onSeek = { if (!isListener) viewModel.onLyricsLineSeek(it) }, // a listener follows the room
             canSaveToFile = track?.isDownloaded == true,
             savingToFile = exportingLyricsTrackId != null,
             onSaveToFile = viewModel::exportLyricsForCurrentTrack,
@@ -297,6 +311,37 @@ fun NowPlayingScreen(
                 viewModel.createPlaylistAndAddTrack(name, track.id)
             },
             onDismiss = { showSaveSheet = false },
+        )
+    }
+
+    if (showStartTogether) {
+        com.stash.feature.nowplaying.listen.ListenTogetherStartDialog(
+            name = together.name,
+            onNameChange = together::onNameChange,
+            onStart = { together.start(); showStartTogether = false },
+            onDismiss = { showStartTogether = false },
+        )
+    }
+
+    if (confirmEndTogether) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmEndTogether = false },
+            title = { Text("End the session for everyone?") },
+            text = { Text("Everyone listening is dropped from the session.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { together.end(); confirmEndTogether = false }) { Text("End") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmEndTogether = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showSuggestions && room != null && room.isHost) {
+        com.stash.feature.nowplaying.listen.SuggestionsSheet(
+            room = room,
+            onAnswer = together::answerSuggestion,
+            onDismiss = { showSuggestions = false },
         )
     }
 
@@ -462,8 +507,22 @@ fun NowPlayingScreen(
                     radioLock = radioLock,
                     onStartRadio = viewModel::startRadioFromCurrent,
                     onStopRadio = viewModel::stopRadio,
+                    // No radio in a session, for host or listener: the room owns the queue.
+                    showRadio = room == null,
+                    // Nor the queue: the sheet would show the user's own queue, which the room set aside.
+                    showQueueButton = room == null,
                     accentColor = npAccent(uiState.vibrantColor),
                 )
+                if (room != null) {
+                    com.stash.feature.nowplaying.listen.WhosListeningBar(
+                        room = room,
+                        accent = npAccent(uiState.vibrantColor),
+                        onMakeHost = together::makeHost,
+                        onOpenSuggestions = { showSuggestions = true },
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    com.stash.feature.nowplaying.listen.ListenTogetherNotice(room)
+                }
 
                 // -- Album art slot: absorbs all flexible height --
                 BoxWithConstraints(
@@ -634,24 +693,36 @@ fun NowPlayingScreen(
                     elapsedMs = uiState.currentPositionMs,
                     totalMs = uiState.durationMs,
                     onSeek = viewModel::onSeekTo,
+                    seekable = !isListener,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // -- Playback controls --
-                PlaybackControls(
-                    isPlaying = uiState.isPlaying,
-                    isBuffering = uiState.isBuffering,
-                    shuffleEnabled = uiState.shuffleEnabled,
-                    repeatMode = uiState.repeatMode,
-                    accentColor = npAccent(uiState.vibrantColor),
-                    onPlayPauseClick = viewModel::onPlayPauseClick,
-                    onSkipNext = viewModel::onSkipNext,
-                    onSkipPrevious = viewModel::onSkipPrevious,
-                    onToggleShuffle = viewModel::onToggleShuffle,
-                    onCycleRepeatMode = viewModel::onCycleRepeatMode,
-                )
+                if (isListener) {
+                    com.stash.feature.nowplaying.listen.ListenerControls(
+                        pausedLocally = room?.pausedLocally == true,
+                        onRejoin = together::rejoin,
+                        onLeave = together::leave,
+                        onReact = together::react,
+                    )
+                } else {
+                    PlaybackControls(
+                        isPlaying = uiState.isPlaying,
+                        isBuffering = uiState.isBuffering,
+                        shuffleEnabled = uiState.shuffleEnabled,
+                        repeatMode = uiState.repeatMode,
+                        accentColor = npAccent(uiState.vibrantColor),
+                        onPlayPauseClick = viewModel::onPlayPauseClick,
+                        onSkipNext = viewModel::onSkipNext,
+                        onSkipPrevious = viewModel::onSkipPrevious,
+                        onToggleShuffle = viewModel::onToggleShuffle,
+                        onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                        // A host in a session: shuffle and repeat do nothing there, so React takes their place.
+                        onReact = if (room != null) together::react else null,
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -669,6 +740,7 @@ fun NowPlayingScreen(
                 isPlaying = uiState.isPlaying && !uiState.isBuffering,
             )
         }
+        if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, Modifier.fillMaxSize())
     }
 
     if (showOptionsSheet && track != null) {
@@ -679,6 +751,11 @@ fun NowPlayingScreen(
             onShareClick = viewModel::onShareCurrent,
             onFlagWrongMatch = { showWrongMatchDialog = true },
             onViewAlbum = viewModel::onViewAlbumTapped,
+            together = togetherState,
+            onStartTogether = { showStartTogether = true },
+            onInvite = { room?.let { com.stash.feature.nowplaying.listen.shareInvite(toastContext, it.url) } },
+            onLeaveTogether = together::leave,
+            onEndTogether = { confirmEndTogether = true },
             onDismiss = { showOptionsSheet = false },
             sheetState = optionsSheetState,
         )
@@ -711,6 +788,8 @@ private fun TopBar(
     radioLock: Boolean,
     onStartRadio: () -> Unit,
     onStopRadio: () -> Unit,
+    showRadio: Boolean,
+    showQueueButton: Boolean,
     accentColor: Color,
 ) {
     Row(
@@ -733,7 +812,7 @@ private fun TopBar(
         // Radio toggle — start a station from the current song, or stop the
         // running one. Accent tint signals an active station; the radar sweep
         // spins around the icon while the station is being built.
-        if (hasTrack) {
+        if (hasTrack && showRadio) {
             Box(contentAlignment = Alignment.Center) {
                 com.stash.feature.nowplaying.ui.RadarSweep(
                     tuning = radioTuning,
@@ -793,13 +872,15 @@ private fun TopBar(
             // Queue — a permanent, dedicated control at the far-right edge
             // (not buried in the options sheet); it's the one action users
             // reach for constantly while a song is playing.
-            IconButton(onClick = onQueueClick) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                    contentDescription = "Queue",
-                    tint = npInk(),
-                    modifier = Modifier.size(24.dp),
-                )
+            if (showQueueButton) {
+                IconButton(onClick = onQueueClick) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Queue",
+                        tint = npInk(),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
         }
     }
@@ -888,14 +969,17 @@ private fun PlaybackControls(
     onSkipPrevious: () -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeatMode: () -> Unit,
+    onReact: ((String) -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Shuffle
-        IconButton(onClick = onToggleShuffle) {
+        // Shuffle; in a session, an empty slot that keeps Play centred.
+        if (onReact != null) {
+            Spacer(Modifier.size(48.dp))
+        } else IconButton(onClick = onToggleShuffle) {
             Icon(
                 imageVector = Icons.Default.Shuffle,
                 contentDescription = "Shuffle",
@@ -958,8 +1042,10 @@ private fun PlaybackControls(
             )
         }
 
-        // Repeat
-        IconButton(onClick = onCycleRepeatMode) {
+        // Repeat; in a session, React.
+        if (onReact != null) {
+            com.stash.feature.nowplaying.listen.ReactionButton(onReact = onReact)
+        } else IconButton(onClick = onCycleRepeatMode) {
             Icon(
                 imageVector = when (repeatMode) {
                     RepeatMode.ONE -> Icons.Default.RepeatOne
@@ -1093,6 +1179,11 @@ private fun NowPlayingOptionsSheet(
     onShareClick: () -> Unit,
     onFlagWrongMatch: () -> Unit,
     onViewAlbum: () -> Unit,
+    together: ListenTogetherState,
+    onStartTogether: () -> Unit,
+    onInvite: () -> Unit,
+    onLeaveTogether: () -> Unit,
+    onEndTogether: () -> Unit,
     onDismiss: () -> Unit,
     sheetState: androidx.compose.material3.SheetState,
     modifier: Modifier = Modifier,
@@ -1118,6 +1209,22 @@ private fun NowPlayingOptionsSheet(
                     .padding(bottom = 20.dp)
                     .align(Alignment.CenterHorizontally)
             )
+
+            // Listen Together: Start, or Invite / End / Leave once in a room.
+            when (together) {
+                is ListenTogetherState.InRoom -> {
+                    if (together.isHost) {
+                        SheetOptionRow(icon = Icons.Default.PersonAdd, label = "Invite friends", onClick = { onInvite(); onDismiss() })
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SheetOptionRow(icon = Icons.Default.StopCircle, label = "End session for everyone", onClick = { onEndTogether(); onDismiss() })
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    SheetOptionRow(icon = Icons.AutoMirrored.Filled.Logout, label = "Leave session", onClick = { onLeaveTogether(); onDismiss() })
+                }
+                is ListenTogetherState.Connecting -> SheetOptionRow(icon = Icons.Default.Groups, label = "Connecting…", onClick = onDismiss)
+                ListenTogetherState.Idle -> SheetOptionRow(icon = Icons.Default.Groups, label = "Listen together", onClick = { onStartTogether(); onDismiss() })
+            }
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Save to Playlist
             SheetOptionRow(

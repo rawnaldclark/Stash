@@ -17,3 +17,23 @@ simple = { limit = 5, period = 60 }
 name = "WRITE_RL"
 namespace_id = "2002"
 simple = { limit = 30, period = 60 }
+
+# Listen Together (spec 2026-09-24 §2): one Durable Object per room, reached over WebSockets.
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "ListenRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ListenRoom"]
+
+[[ratelimits]]
+name = "ROOM_RL"
+namespace_id = "2003"
+simple = { limit = 5, period = 60 }
+
+# GET /v1/rooms/{code}, /v1/rooms/{code}/ws and /l/{code}, checked before any Durable Object (spec §2).
+[[ratelimits]]
+name = "JOIN_RL"
+namespace_id = "2004"
+simple = { limit = 60, period = 60 }

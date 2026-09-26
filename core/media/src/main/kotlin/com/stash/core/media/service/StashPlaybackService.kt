@@ -54,6 +54,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.guava.future
@@ -104,6 +105,15 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
     @Inject lateinit var discordRpcCoordinator: com.stash.core.data.discord.DiscordRpcCoordinator
 
+    // Listen Together (spec 2026-09-24 §5): the session engine lives here and drives the master player.
+    @Inject lateinit var listenTogetherController: com.stash.core.media.listen.ListenTogetherController
+    @Inject lateinit var listenTogetherCatalog: com.stash.core.media.listen.DefaultSessionCatalog
+    @Inject lateinit var roomApiClient: com.stash.core.data.listen.RoomApiClient
+    @Inject lateinit var roomConnector: com.stash.core.data.listen.OkHttpRoomConnector
+    @Inject lateinit var autoplayRadioPreference: com.stash.core.data.prefs.AutoplayRadioPreference
+    @Inject lateinit var sharePreference: com.stash.core.data.share.SharePreference
+    @Inject lateinit var playbackStateStore: com.stash.core.media.PlaybackStateStore
+
     companion object {
         /** Custom command action for toggling shuffle mode. */
         const val COMMAND_TOGGLE_SHUFFLE = "com.stash.TOGGLE_SHUFFLE"
@@ -116,6 +126,9 @@ class StashPlaybackService : MediaLibraryService() {
 
         /** Custom command action for cancelling an armed sleep timer. */
         const val COMMAND_STOP_SLEEP_TIMER = "com.stash.STOP_SLEEP_TIMER"
+
+        /** Custom command action for leaving a Listen Together session from the notification. */
+        const val COMMAND_LEAVE_SESSION = "com.stash.LEAVE_SESSION"
 
         /** Extra key for the track ID in MediaMetadata extras. */
         const val EXTRA_TRACK_ID = "stash_track_id"
@@ -264,6 +277,16 @@ class StashPlaybackService : MediaLibraryService() {
     /** mediaId the spare is currently primed for, so we don't re-prepare it. */
     @Volatile private var crossfadePreparedId: String? = null
 
+    /** The crossfade preference as last read; [crossfadeEnabled] is this AND not suspended. */
+    @Volatile private var crossfadePrefEnabled = false
+
+    /** Listen Together's session-scoped crossfade override. In memory only, so a crash can't leave crossfade off (spec §4). */
+    private var crossfadeSuspended = false
+
+    private var listenTogetherSession: com.stash.core.media.listen.ListenTogetherSession? = null
+    private var togetherPlayer: com.stash.core.media.listen.ListenTogetherPlayer? = null
+    private var togetherListener: Player.Listener? = null
+
     /** The player [playerListener] is currently attached to (moves on swap). */
     private var listenedPlayer: Player? = null
 
@@ -379,6 +402,45 @@ class StashPlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
 
+        // Listen Together: "Listening together · <artist>" while a session runs. Otherwise the stock provider.
+        val baseProvider = object : androidx.media3.session.DefaultMediaNotificationProvider(this) {
+            override fun getNotificationContentText(metadata: MediaMetadata): CharSequence? {
+                val base = super.getNotificationContentText(metadata)
+                return if (listenTogetherController.active.value) listOfNotNull("Listening together", base).joinToString(" · ") else base
+            }
+        }
+        // Listen Together keeps the service in the foreground while paused (onUpdateNotification below), but
+        // Media3's MediaNotificationManager.onNotificationUpdated, which runs when artwork finishes loading in the
+        // background, calls shouldRunInForeground(false) past that override. After Media3's 10-minute pause
+        // timeout that drops a paused listener to background, and on Android 12+ the cached process freezes and
+        // loses the room's WebSocket. So during a session the artwork callback asks for a full update instead,
+        // which goes through onUpdateNotification.
+        // Recursion: triggerNotificationUpdate runs createNotification inline on main (Util.postOrRun), and the
+        // artwork callback is always posted (Futures.addCallback on the session's handler). The round we start
+        // ourselves normally finds the artwork cached (no callback); if one still arrives it is dropped, so the
+        // redirect happens at most once per artwork load.
+        var redirectingArtwork = false
+        setMediaNotificationProvider(object : androidx.media3.session.MediaNotification.Provider by baseProvider {
+            override fun createNotification(
+                mediaSession: MediaSession,
+                mediaButtonPreferences: ImmutableList<CommandButton>,
+                actionFactory: androidx.media3.session.MediaNotification.ActionFactory,
+                onNotificationChangedCallback: androidx.media3.session.MediaNotification.Provider.Callback,
+            ): androidx.media3.session.MediaNotification {
+                val fromRedirect = redirectingArtwork
+                return baseProvider.createNotification(mediaSession, mediaButtonPreferences, actionFactory) { n ->
+                    when {
+                        !listenTogetherController.active.value -> onNotificationChangedCallback.onNotificationChanged(n)
+                        fromRedirect -> Unit
+                        else -> {
+                            redirectingArtwork = true
+                            try { triggerNotificationUpdate() } finally { redirectingArtwork = false }
+                        }
+                    }
+                }
+            }
+        })
+
         val audioAttributes = AudioAttributes.Builder()
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .setUsage(C.USAGE_MEDIA)
@@ -439,6 +501,10 @@ class StashPlaybackService : MediaLibraryService() {
         )
         engine.initialize()
         crossfadeEngine = engine
+        // Listen Together: focus pauses bypass ListenTogetherPlayer AND carry no focus reason (see the
+        // CrossfadeEngine hooks). Outside a session events is null, so these do nothing.
+        engine.onFocusPause = { sessionPlayer.events?.onExternalPause() }
+        engine.onFocusResume = { sessionPlayer.events?.onExternalResume() }
         val player = engine.masterPlayer
         player.audioSessionId = audioSessionId
 
@@ -488,7 +554,7 @@ class StashPlaybackService : MediaLibraryService() {
         listenedPlayer = player
 
         // Cache crossfade prefs for the poll's prepare/fire decisions.
-        serviceScope.launch { crossfadePreference.enabled.collect { onCrossfadeEnabledChanged(it) } }
+        serviceScope.launch { crossfadePreference.enabled.collect { onCrossfadePreference(it) } }
         serviceScope.launch { crossfadePreference.durationMs.collect { crossfadeDurationMs = it } }
 
         // The service is up — tell the repository so it (re)connects its
@@ -518,6 +584,29 @@ class StashPlaybackService : MediaLibraryService() {
         // (Media3's default provider owns that one); mirrors the "Resuming…"
         // placeholder notification's channel/build pattern below.
         serviceScope.launch { observeSleepTimerState() }
+
+        // Listen Together (spec 2026-09-24 §5). Logged at the wiring site: green unit tests say nothing about this line.
+        // serviceScope is Dispatchers.Main.immediate, so the session (and enterSession/exitSession/configure) runs on main.
+        listenTogetherSession = com.stash.core.media.listen.ListenTogetherSession(
+            scope = serviceScope,
+            controller = listenTogetherController,
+            player = sessionPlayer,
+            catalog = listenTogetherCatalog,
+            api = roomApiClient,
+            connector = roomConnector,
+            autoplayRadio = { autoplayRadioPreference.enabled.first() },
+            displayName = { sharePreference.displayName() },
+            clock = { android.os.SystemClock.elapsedRealtime() },
+        ).also { it.start() }
+        listenTogetherController.serviceAttached = true
+        android.util.Log.i("StashPlayback", "listen-together engine attached")
+        // The layout only differs by role, so rebuild it on a role change, not on every member or reaction update.
+        serviceScope.launch {
+            listenTogetherController.state
+                .map { (it as? com.stash.core.media.listen.ListenTogetherState.InRoom)?.isHost }
+                .distinctUntilChanged()
+                .collect { updateCustomLayout() }
+        }
 
         updateCustomLayout()
     }
@@ -678,6 +767,25 @@ class StashPlaybackService : MediaLibraryService() {
         }
     }
 
+    /** Collector body for the crossfade preference; Listen Together can hold crossfade off without writing it. */
+    internal fun onCrossfadePreference(enabled: Boolean) {
+        crossfadePrefEnabled = enabled
+        onCrossfadeEnabledChanged(enabled && !crossfadeSuspended)
+    }
+
+    /** Suspends or restores crossfade for a Listen Together session. */
+    internal fun setCrossfadeSuspended(suspended: Boolean) {
+        crossfadeSuspended = suspended
+        if (suspended) {
+            crossfadeEngine?.cancelTransition()
+            crossfadePreparedId = null
+        }
+        onCrossfadeEnabledChanged(crossfadePrefEnabled && !suspended)
+    }
+
+    /** The effective crossfade switch (test view). */
+    internal val crossfadeActive: Boolean get() = crossfadeEnabled
+
     /**
      * One crossfade poll tick. Two phases, both no-ops unless crossfade is on
      * and conditions hold:
@@ -779,6 +887,8 @@ class StashPlaybackService : MediaLibraryService() {
      * finds an empty timeline.
      */
     private fun performIdleStop() {
+        // A paused listener, or a host in a long pause, must not drop out of the session (spec §5).
+        if (listenTogetherController.active.value) return
         val master = crossfadeEngine?.masterPlayer
         if (master != null && !isPlayerIdle(master.playWhenReady, master.playbackState)) {
             // Belt and braces: the ticker's view lagged reality somehow.
@@ -995,13 +1105,31 @@ class StashPlaybackService : MediaLibraryService() {
 
     @OptIn(UnstableApi::class)
     private fun pushLayout(session: MediaSession, player: Player, isLiked: Boolean) {
-        val buttons = mutableListOf(
-            buildLikeButton(isLiked),
-            buildRepeatButton(player.repeatMode),
-        )
+        val together = if (::listenTogetherController.isInitialized) listenTogetherController.state.value else null
+        val buttons = mutableListOf<CommandButton>()
+        when {
+            // A listener's notification shows only Leave (spec §5); repeat does nothing in a one-song session.
+            together is com.stash.core.media.listen.ListenTogetherState.InRoom && !together.isHost ->
+                buttons.add(buildLeaveSessionButton())
+            together is com.stash.core.media.listen.ListenTogetherState.InRoom -> {
+                buttons.add(buildLikeButton(isLiked))
+                buttons.add(buildLeaveSessionButton())
+            }
+            else -> {
+                buttons.add(buildLikeButton(isLiked))
+                buttons.add(buildRepeatButton(player.repeatMode))
+            }
+        }
         if (sleepTimerActive) buttons.add(buildStopSleepTimerButton())
         session.setCustomLayout(ImmutableList.copyOf(buttons))
     }
+
+    @OptIn(UnstableApi::class)
+    private fun buildLeaveSessionButton(): CommandButton = CommandButton.Builder()
+        .setDisplayName("Leave session")
+        .setIconResId(R.drawable.ic_listen_leave)
+        .setSessionCommand(SessionCommand(COMMAND_LEAVE_SESSION, android.os.Bundle.EMPTY))
+        .build()
 
     @OptIn(UnstableApi::class)
     private fun buildStopSleepTimerButton(): CommandButton {
@@ -1061,8 +1189,21 @@ class StashPlaybackService : MediaLibraryService() {
         return mediaSession
     }
 
+    /**
+     * During a session the notification stays in the foreground even while paused (spec §5). The ceiling: Android 16
+     * still demotes a media service paused for 10 minutes (system `setFgsInactiveLocked`; device test 2026-09-25)
+     * and Media3 can't restart it from the background, so a long pause holds only while the process lives. Play from
+     * the notification or a media button is exempt and brings the foreground back.
+     */
+    @OptIn(UnstableApi::class)
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        val inSession = ::listenTogetherController.isInitialized && listenTogetherController.active.value
+        super.onUpdateNotification(session, startInForegroundRequired || inSession)
+    }
+
     @OptIn(UnstableApi::class)
     override fun onTaskRemoved(rootIntent: Intent?) {
+        if (listenTogetherController.active.value) return // swiping the app away doesn't leave the session
         val player = mediaSession?.player
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
@@ -1070,6 +1211,12 @@ class StashPlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        // Quiet exit: shutdown() ends the session WITHOUT sessionEnds, so PlayerRepositoryImpl doesn't restore
+        // the queue into (and possibly restart) this dying service. The next launch's cold-start restore
+        // brings the user's queue back; it was never saved over during the session.
+        listenTogetherSession?.shutdown()
+        listenTogetherSession = null
+        if (::listenTogetherController.isInitialized) listenTogetherController.serviceAttached = false
         // Idempotent with performIdleStop's signal; covers every OTHER death
         // path (swipe-away, system kill) so the repo never holds a controller
         // for a session that no longer exists.
@@ -1152,6 +1299,125 @@ class StashPlaybackService : MediaLibraryService() {
             .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
+
+    private val sessionPlayer = ServiceSessionPlayer()
+
+    /** The Listen Together engine's hands on the master player (spec §5 "New player abilities"). Main thread. */
+    @OptIn(UnstableApi::class)
+    private inner class ServiceSessionPlayer : com.stash.core.media.listen.SessionPlayer {
+        // Crossfade is suspended for the whole session, so the master never swaps under us.
+        private val master: ExoPlayer get() = checkNotNull(crossfadeEngine).masterPlayer
+        override var events: com.stash.core.media.listen.SessionPlayerEvents? = null
+
+        override fun userQueue(): com.stash.core.media.listen.UserQueue {
+            val m = master
+            val timeline = m.currentTimeline
+            // Upcoming songs in play order (shuffle included), as the user would have heard them.
+            val upcoming = if (timeline.isEmpty) emptyList() else buildList {
+                var i = m.currentMediaItemIndex
+                while (size < 200) {
+                    i = timeline.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, m.shuffleModeEnabled)
+                    if (i == C.INDEX_UNSET) break
+                    add(m.getMediaItemAt(i))
+                }
+            }
+            return com.stash.core.media.listen.UserQueue(m.currentMediaItem, upcoming, m.currentPosition.coerceAtLeast(0))
+        }
+
+        override suspend fun saveUserPosition() {
+            // The queue ids are already saved on every change; only the position may lag, by up to 5 s.
+            val saved = playbackStateStore.getLastPlaybackState() ?: return
+            val m = master
+            val currentId = m.currentMediaItem?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
+            if (currentId == saved.trackId) {
+                playbackStateStore.savePosition(saved.trackId, m.currentPosition.coerceAtLeast(0), saved.queueIndex)
+            }
+        }
+
+        override fun enterSession(isHost: Boolean, interceptor: com.stash.core.media.listen.SessionInterceptor) {
+            setCrossfadeSuspended(true)
+            val m = master
+            // The session player holds one song, and the room decides what comes next (spec §4).
+            m.repeatMode = Player.REPEAT_MODE_OFF
+            m.shuffleModeEnabled = false
+            val wrapper = togetherPlayer?.also { it.rewrap(m) }
+                ?: com.stash.core.media.listen.ListenTogetherPlayer(m).also { togetherPlayer = it }
+            wrapper.configure(isHost, interceptor)
+            if (togetherListener == null) { // entering the session, not a role change
+                // A listener waits for the room's first load: never show the user's own song meanwhile.
+                // The session has already saved its position, and saves are gated while active.
+                if (!isHost) { m.stop(); m.clearMediaItems() }
+                togetherListener = object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        when (playbackState) {
+                            Player.STATE_READY -> events?.onReady()
+                            Player.STATE_BUFFERING -> events?.onBuffering()
+                            Player.STATE_ENDED -> events?.onEnded()
+                        }
+                    }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        events?.onError()
+                    }
+
+                    // Pauses that bypass ListenTogetherPlayer. Unplugging headphones is ExoPlayer's own
+                    // setHandleAudioBecomingNoisy(true), reported as AUDIO_BECOMING_NOISY. Audio focus is NOT
+                    // ExoPlayer's here: both players build with handleAudioFocus = false and CrossfadeEngine
+                    // handles focus by hand, setting playWhenReady directly, so a call's pause and the
+                    // self-resume after a transient loss both arrive as USER_REQUEST. Those come through
+                    // CrossfadeEngine.onFocusPause and onFocusResume (wired in onCreate) instead.
+                    // AUDIO_FOCUS_LOSS is kept so the pause is still caught if ExoPlayer ever owns focus.
+                    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        if (!playWhenReady && (
+                                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY ||
+                                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS)
+                        ) events?.onExternalPause()
+                    }
+                }.also { m.addListener(it) }
+            }
+            mediaSession?.player = wrapper
+            // Keep the notification (and so the foreground service) even while the one song is idle or failed.
+            setShowNotificationForIdlePlayer(androidx.media3.session.MediaSessionService.SHOW_NOTIFICATION_FOR_IDLE_PLAYER_ALWAYS)
+            updateCustomLayout()
+            triggerNotificationUpdate()
+        }
+
+        override fun exitSession() {
+            val m = master
+            togetherListener?.let { m.removeListener(it) }
+            togetherListener = null
+            togetherPlayer?.configure(isHost = false, interceptor = null)
+            // Empty the player BEFORE the MediaSession gets the bare ExoPlayer back: controllers must never
+            // see the session's song as the user's queue (PlayerRepositoryImpl would save it over theirs).
+            m.setPlaybackSpeed(1f)
+            m.playWhenReady = false // the restored queue must come back paused, never auto-playing
+            m.stop()
+            m.clearMediaItems() // PlayerRepositoryImpl puts the user's own queue back on sessionEnds
+            mediaSession?.player = m
+            setCrossfadeSuspended(false)
+            setShowNotificationForIdlePlayer(androidx.media3.session.MediaSessionService.SHOW_NOTIFICATION_FOR_IDLE_PLAYER_AFTER_STOP_OR_ERROR)
+            updateCustomLayout()
+            triggerNotificationUpdate()
+        }
+
+        override fun load(item: MediaItem, positionMs: Long) {
+            val m = master
+            m.playWhenReady = false
+            m.setMediaItem(item, positionMs)
+            m.prepare()
+        }
+
+        override fun seekTo(positionMs: Long) = master.seekTo(positionMs)
+        override fun play() = master.play()
+        override fun pause() = master.pause()
+
+        /** Player.setPlaybackSpeed keeps pitch at 1, so Sonic time-stretches (spec §4). */
+        override fun setSpeed(speed: Float) = master.setPlaybackSpeed(speed)
+
+        override val positionMs: Long get() = master.currentPosition
+        override val durationMs: Long? get() = master.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+        override val ended: Boolean get() = master.playbackState == Player.STATE_ENDED
+    }
 
     // ---- MediaLibrarySession.Callback ----
 
@@ -1611,6 +1877,7 @@ class StashPlaybackService : MediaLibraryService() {
                 SessionCommand(COMMAND_CYCLE_REPEAT, /* extras = */ android.os.Bundle.EMPTY),
                 SessionCommand(COMMAND_TOGGLE_LIKE, /* extras = */ android.os.Bundle.EMPTY),
                 SessionCommand(COMMAND_STOP_SLEEP_TIMER, /* extras = */ android.os.Bundle.EMPTY),
+                SessionCommand(COMMAND_LEAVE_SESSION, /* extras = */ android.os.Bundle.EMPTY),
             )
             // FULL library command set — not DEFAULT_SESSION_COMMANDS plus a
             // hand-picked subset. The old hand-picked list omitted
@@ -1652,6 +1919,9 @@ class StashPlaybackService : MediaLibraryService() {
                 COMMAND_STOP_SLEEP_TIMER -> {
                     sleepTimerController.cancel()
                 }
+                COMMAND_LEAVE_SESSION -> listenTogetherController.send(
+                    com.stash.core.media.listen.ListenTogetherController.Command.Leave,
+                )
                 COMMAND_TOGGLE_SHUFFLE -> {
                     val player = session.player
                     player.shuffleModeEnabled = !player.shuffleModeEnabled

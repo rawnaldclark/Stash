@@ -54,6 +54,7 @@ class TrackActionsDelegate @Inject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val musicRepository: com.stash.core.data.repository.MusicRepository,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
+    private val listenTogether: com.stash.core.media.listen.ListenTogetherController? = null,
 ) {
     /** Mirrors [PreviewPlayer.previewState] so consumers don't need a second dep. */
     val previewState: StateFlow<PreviewState> = previewPlayer.previewState
@@ -515,8 +516,7 @@ class TrackActionsDelegate @Inject constructor(
     fun playNext(item: TrackItem) {
         scope().launch {
             try {
-                val added = playerRepository.addNext(item.toDomainTrack())
-                _userMessages.tryEmit(if (added) "Playing next" else "Couldn't add to queue")
+                confirmAdd(playerRepository.addNext(item.toDomainTrack()), "Playing next")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -543,8 +543,7 @@ class TrackActionsDelegate @Inject constructor(
     fun addToQueue(item: TrackItem) {
         scope().launch {
             try {
-                val added = playerRepository.addToQueue(item.toDomainTrack())
-                _userMessages.tryEmit(if (added) "Added to queue" else "Couldn't add to queue")
+                confirmAdd(playerRepository.addToQueue(item.toDomainTrack()), "Added to queue")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -552,6 +551,14 @@ class TrackActionsDelegate @Inject constructor(
                 _userMessages.tryEmit("Couldn't add to queue")
             }
         }
+    }
+
+    /** In a Listen Together session an add becomes a suggestion or a session-queue add, and the session confirms it. */
+    val inListenTogether: Boolean get() = listenTogether?.active?.value == true
+
+    private fun confirmAdd(added: Boolean, text: String) {
+        if (added && inListenTogether) return
+        _userMessages.tryEmit(if (added) text else "Couldn't add to queue")
     }
 
     /**

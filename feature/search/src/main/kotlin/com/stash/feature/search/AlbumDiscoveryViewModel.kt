@@ -331,6 +331,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
             val tracks = buildQueueTracks()
             if (tracks.isEmpty()) return@launch
             val added = playerRepository.addToQueue(tracks)
+            if (added && delegate.inListenTogether) return@launch // the session confirms it
             _userMessages.emit(
                 if (added) {
                     "Added album to queue"

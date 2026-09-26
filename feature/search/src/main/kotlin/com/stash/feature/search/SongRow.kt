@@ -297,6 +297,7 @@ fun SearchTrackMenu(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier) {
+        val role = com.stash.core.ui.components.LocalListenTogetherRole.current
         var menuOpen by remember { mutableStateOf(false) }
         IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
             Icon(
@@ -307,25 +308,29 @@ fun SearchTrackMenu(
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
-                text = { Text("Play next") },
+                text = { Text(com.stash.core.ui.components.playNextLabel(role, "Play next")) },
                 leadingIcon = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
                 onClick = { menuOpen = false; onPlayNext() },
             )
-            DropdownMenuItem(
-                text = { Text("Add to queue") },
-                leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
-                onClick = { menuOpen = false; onAddToQueue() },
-            )
+            if (role == com.stash.core.ui.components.ListenTogetherRole.NONE) {
+                DropdownMenuItem(
+                    text = { Text("Add to queue") },
+                    leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
+                    onClick = { menuOpen = false; onAddToQueue() },
+                )
+            }
             DropdownMenuItem(
                 text = { Text("Add to playlist") },
                 leadingIcon = { Icon(Icons.Default.PlaylistAddCheck, contentDescription = null) },
                 onClick = { menuOpen = false; onAddToPlaylist() },
             )
-            DropdownMenuItem(
-                text = { Text("Start radio") },
-                leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null) },
-                onClick = { menuOpen = false; onStartRadio() },
-            )
+            if (role == com.stash.core.ui.components.ListenTogetherRole.NONE) {
+                DropdownMenuItem(
+                    text = { Text("Start radio") },
+                    leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null) },
+                    onClick = { menuOpen = false; onStartRadio() },
+                )
+            }
         }
     }
 }

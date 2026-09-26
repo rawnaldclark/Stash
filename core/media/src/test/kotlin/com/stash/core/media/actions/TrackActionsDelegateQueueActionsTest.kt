@@ -1,6 +1,7 @@
 package com.stash.core.media.actions
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.preview.PreviewPlayer
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.model.MusicSource
@@ -37,7 +38,7 @@ class TrackActionsDelegateQueueActionsTest {
         every { playerErrors } returns MutableSharedFlow()
     }
 
-    private fun delegate(online: Boolean = true): TrackActionsDelegate {
+    private fun delegate(online: Boolean = true, listenTogether: ListenTogetherController? = null): TrackActionsDelegate {
         coEvery { streamingPreference.current() } returns online
         return TrackActionsDelegate(
             previewPlayer = previewPlayer,
@@ -50,6 +51,7 @@ class TrackActionsDelegateQueueActionsTest {
             streamingPreference = streamingPreference,
             musicRepository = musicRepository,
             blocklistGuard = blocklistGuard,
+            listenTogether = listenTogether,
         )
     }
 
@@ -126,6 +128,24 @@ class TrackActionsDelegateQueueActionsTest {
 
         assertThat(messages).containsExactly("Playing next")
         coVerify(exactly = 1) { playerRepository.addNext(any<Track>()) }
+    }
+
+    @Test
+    fun `in a Listen Together session the track menu leaves the confirmation to the session`() = runTest {
+        val session = ListenTogetherController(mockk(relaxed = true)).apply { setActive(true) }
+        val d = delegate(listenTogether = session).apply { bindToScope(backgroundScope) }
+        coEvery { playerRepository.addNext(any<Track>()) } returns true
+        coEvery { playerRepository.addToQueue(any<Track>()) } returns true
+        val messages = mutableListOf<String>()
+        backgroundScope.launch { d.userMessages.collect { messages.add(it) } }
+        runCurrent()
+
+        d.playNext(item)
+        d.addToQueue(item)
+        runCurrent()
+
+        // A listener saw "Playing next" beside "Suggested to the host" (device test 2026-09-25).
+        assertThat(messages).isEmpty()
     }
 
     @Test
