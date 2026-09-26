@@ -56,6 +56,19 @@ test("mine lists your live posts, newest first, including hidden ones", async ()
     assert.equal((await call(e, "GET", "/v1/community/mine")).status, 401);
 });
 
+test("the list and mine never read song lists: no query of theirs selects body", async () => {
+    const e = env();
+    await seed(e, { id: "MINE0000", key: KEY_A });
+    const sqls = [];
+    const prepare = e.COMMUNITY_DB.prepare;
+    e.COMMUNITY_DB.prepare = (sql) => (sqls.push(sql), prepare(sql));
+    await feed(e);
+    await feed(e, { key: KEY_A });
+    await call(e, "GET", "/v1/community/mine", { key: KEY_A });
+    assert.equal(sqls.length, 3); // one query per request, so none went unseen
+    for (const sql of sqls) assert.doesNotMatch(sql, /\bbody\b|\.\*|SELECT\s+\*/i); // by name, or by a wildcard
+});
+
 test("me says how many posts are left today and how many spots are free", async () => {
     const e = env();
     await seed(e, { id: "TODAY000", key: KEY_A });
