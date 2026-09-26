@@ -148,8 +148,11 @@ fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: 
     val host = room.members.firstOrNull { it.id == room.hostId }
     val title = sessionTitle(room)
     val waiting = if (room.isHost) room.suggestions.size else 0
+    // This song's trouble outranks who hosts: the faces' amber ring already says that.
     val subtitle = when {
         room.reconnecting -> "Reconnecting…"
+        room.unavailable -> "This song isn't available to you"
+        room.versionMismatch -> "Your version may be seconds off" // the longer spec wording didn't fit the bar
         waiting > 0 -> if (waiting == 1) "1 suggestion waiting" else "$waiting suggestions waiting"
         room.isHost -> "You're hosting · ${room.members.size} in the room"
         host != null -> "${host.name ?: "Someone"} is hosting"
@@ -178,6 +181,7 @@ fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: 
                 color = if (waiting > 0 && !room.reconnecting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = if (waiting > 0 && !room.reconnecting) FontWeight.SemiBold else null,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -217,33 +221,37 @@ fun PickLine(room: ListenTogetherState.InRoom, modifier: Modifier = Modifier) {
 }
 
 /**
- * A listener's link to the room: LIVE while in sync, "Back to live" while paused on this phone
- * (an unplug, a call, or their own pause). Tapping it rejoins.
+ * A listener's link to the room, between the progress bar's two times: LIVE while in sync, "Back to live"
+ * while paused on this phone (an unplug, a call, or their own pause). Tapping it rejoins. Sized to the
+ * time labels, so it costs the screen no height. The words take [ink], the screen's text colour: an album's
+ * accent can be as dark as the background behind it.
  */
 @Composable
-fun LivePill(pausedLocally: Boolean, accent: Color, onRejoin: () -> Unit, modifier: Modifier = Modifier) {
+fun LivePill(pausedLocally: Boolean, accent: Color, ink: Color, onRejoin: () -> Unit, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(50)
+    // labelSmall's own line height: the default text style's 24 sp made the pill a tall row of its own.
+    val label = MaterialTheme.typography.labelSmall.copy(color = ink, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
     if (pausedLocally) {
         Row(
             modifier
                 .clip(shape)
-                .border(1.5.dp, accent, shape)
+                .border(1.dp, accent, shape)
                 .clickable(onClickLabel = "Rejoin the room", onClick = onRejoin)
-                .padding(horizontal = 12.dp, vertical = 5.dp),
+                .padding(horizontal = 10.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Default.Refresh, contentDescription = null, tint = accent, modifier = Modifier.size(14.dp))
+            Icon(Icons.Default.Refresh, contentDescription = null, tint = ink, modifier = Modifier.size(12.dp))
             Spacer(Modifier.width(4.dp))
-            Text("BACK TO LIVE", color = accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
+            Text("BACK TO LIVE", style = label)
         }
     } else {
         Row(
-            modifier.clip(shape).background(accent.copy(alpha = 0.18f)).padding(horizontal = 12.dp, vertical = 5.dp),
+            modifier.clip(shape).background(accent.copy(alpha = 0.18f)).padding(horizontal = 10.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(7.dp).background(accent, CircleShape))
-            Spacer(Modifier.width(6.dp))
-            Text("LIVE", color = accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
+            Box(Modifier.size(6.dp).background(accent, CircleShape))
+            Spacer(Modifier.width(5.dp))
+            Text("LIVE", style = label)
         }
     }
 }

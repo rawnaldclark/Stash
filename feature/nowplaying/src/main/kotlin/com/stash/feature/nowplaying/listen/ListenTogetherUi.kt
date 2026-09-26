@@ -45,7 +45,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.listen.RoomProtocol
 import com.stash.core.model.listen.ServerMessage
 import kotlin.random.Random
@@ -88,22 +87,6 @@ fun shareInvite(context: Context, url: String) {
 fun copyInvite(context: Context, url: String) {
     context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Stash invite", url))
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
-}
-
-/** The one-line notices from spec §4 and §6 that aren't in the session bar ("Reconnecting…" is). */
-@Composable
-fun ListenTogetherNotice(room: ListenTogetherState.InRoom, modifier: Modifier = Modifier) {
-    val text = when {
-        room.unavailable -> "This song isn't available to you"
-        room.versionMismatch -> "Your version may be a few seconds off"
-        else -> return
-    }
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier.padding(top = 4.dp),
-    )
 }
 
 /** The six reactions. The picker stays open for quick repeat taps; tapping outside closes it. */

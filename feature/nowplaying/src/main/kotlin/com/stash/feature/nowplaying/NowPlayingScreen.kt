@@ -574,7 +574,6 @@ fun NowPlayingScreen(
                         onClick = { showSession = true },
                         modifier = Modifier.padding(top = 4.dp),
                     )
-                    com.stash.feature.nowplaying.listen.ListenTogetherNotice(room)
                 }
 
                 // -- Album art slot: absorbs all flexible height --
@@ -754,21 +753,22 @@ fun NowPlayingScreen(
                     onSeek = viewModel::onSeekTo,
                     seekable = !isListener,
                     modifier = Modifier.fillMaxWidth(),
+                    center = {
+                        if (isListener) {
+                            com.stash.feature.nowplaying.listen.LivePill(
+                                pausedLocally = room.pausedLocally,
+                                accent = npAccent(uiState.vibrantColor),
+                                ink = npInk(),
+                                onRejoin = together::rejoin,
+                            )
+                        }
+                    },
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // -- Playback controls -- the same row for host and listener, so a role change
                 // doesn't move anything; a listener's skip slots are simply empty.
-                if (isListener) {
-                    com.stash.feature.nowplaying.listen.LivePill(
-                        pausedLocally = room.pausedLocally,
-                        accent = npAccent(uiState.vibrantColor),
-                        onRejoin = together::rejoin,
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
                 run {
                     PlaybackControls(
                         isPlaying = uiState.isPlaying,
