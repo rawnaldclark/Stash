@@ -17,7 +17,7 @@ CREATE TABLE posts (
   body         TEXT NOT NULL                   -- JSON: {covers, tracks} or {track}. Last, so reading the other columns never walks past it
 );
 -- Must match the feed's ORDER BY exactly (12960000.0 is MS_PER_VOTE), or the list goes back to sorting every live post.
--- No index on expires_at: D1's planner then picks it and sorts again. node:sqlite doesn't, so no test would notice.
+-- No index on expires_at: with literal values (wrangler d1 execute) SQLite picks it and sorts again. The Worker and the EXPLAIN test bind their values, so no test would notice one.
 CREATE INDEX posts_hot    ON posts ((up - down) + created_at / 12960000.0, created_at) WHERE removed_at IS NULL;
 CREATE INDEX posts_poster ON posts (poster, created_at);
 CREATE INDEX posts_ip     ON posts (ip_hash, created_at);
