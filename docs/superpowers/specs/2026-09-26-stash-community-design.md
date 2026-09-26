@@ -14,12 +14,17 @@ Approved in brainstorming on 2026-09-26. Mockups (git-ignored): `.superpowers/br
 | Ordering | **Likes plus freshness** ("hot"): each net vote is worth 3.6 hours of freshness, so 10 more votes keep a post above a newer one for about a day and a half. | The section keeps moving, new posts get seen, and votes still lift posts. |
 | Names | Posts show the poster's **"Show my name as" name** ("Maya's pick"). | The social point of the feature. |
 | Home layout | **A ranked list** like Top Albums: top 5, votes on each row, `+` and See all in the header. | Most posts in the least space; votes without leaving Home. |
-| Posting | From a **playlist's or mix's Share sheet**, from the **⋮ menu of any song**, and from a `+` button on the section that opens a picker. All lead to one confirm sheet. | Where people already share, plus a button nobody can miss. |
+| Posting | From a **playlist's or mix's Share sheet**, from the **song ⋮ menus** (Library, playlists, albums, artists, Liked Songs, the queue, Now Playing), and from a `+` button on the section that opens a picker. All lead to one confirm sheet. | Where people already share, plus a button nobody can miss. |
 | Accounts | **None.** A random key per phone identifies it, and the server keeps only its hash. Anyone can make keys, so **one internet connection counts for at most 2 votes each way on a post**, and posts are capped per connection. | Stash has no accounts. The per-connection caps make scripted voting and posting expensive without one. |
 | Storage | **D1** (Cloudflare's SQL database) bound to the existing `stash-share` Worker. | One vote per phone per post, correct counts under concurrent votes, ranking in one place, and a console for moderation. |
 | Opt-in | The Home section is **off for everyone** until turned on in Settings → Home layout. While off, the app never contacts the Community routes. | "An optional feature you can enable." |
 
-**Not in this version:** a share link for a post (needs its own web page and App Link); a "New" tab; a report button (downvotes do that job); editing a post (take it down and post again).
+**Not in this version:**
+- A share link for a post (needs its own web page and App Link).
+- A "New" tab.
+- A report button (downvotes do that job).
+- Editing a post (take it down and post again).
+- Posting from search results: their ⋮ is a separate menu with no Share row. A song found in search can be posted from Now Playing or the `+` picker once it has played.
 
 ## 2. Server (in `infra/share-worker`)
 
@@ -31,7 +36,7 @@ The first time a phone uses Community it makes a **community key**: 32 random by
 
 Losing the key (clearing the app's data, a new phone) means a new identity: the old posts can no longer be taken down by that person and simply expire.
 
-**Network.** Where the rules say "network", they mean `sha256(COMMUNITY_SALT + limitKey(CF-Connecting-IP))` in hex: `limitKey` keeps an IPv4 address as is and cuts IPv6 to its /64. `COMMUNITY_SALT` is a Worker secret, so the stored hash can't be reversed by trying every address.
+**Network.** Where the rules say "network", they mean `sha256(COMMUNITY_SALT + prefix)` in hex, where `prefix` is an IPv4 address as is, or an IPv6 address cut to its **/56**. That's a coarser grouping than the rate limits' /64 (`limitKey`): many ISPs give a home a whole /56, and a free tunnel hands out a /48, which would otherwise pose as tens of thousands of networks. `COMMUNITY_SALT` is a Worker secret, so the stored hash can't be reversed by trying every address.
 
 ### Tables (`migrations/0001_community.sql`)
 
@@ -74,8 +79,9 @@ CREATE TABLE blocked (
 
 ### What a post holds
 
-- **Playlist or mix:** `body` is `{covers, tracks}`. `covers` is up to 4 https links on `COVER_HOSTS` (the mix rule). `tracks` is 1–500 songs, each passed through `cleanTrack` (so each keeps an allowed `art` link, as in Listen Together). `summary` is `{covers}`.
-- **Song:** `body` is `{track}`, one song through `cleanTrack`. `summary` is `{art, artist}`, from that track.
+- **Playlist or mix:** `body` is `{covers, tracks}`. `covers` is up to 4 https links on `COVER_HOSTS` (the mix rule). `tracks` is 1–500 songs, each passed through `cleanTrack` (so each keeps an allowed `art` link, as in Listen Together) with its `by` removed (that's a Listen Together member id). `summary` is `{covers}`.
+- **Song:** `body` is `{track}`, one song through `cleanTrack`, `by` removed. `summary` is `{art, artist}`, from that track.
+- **Which kind:** the app sends `mix` for `DAILY_MIX` and `STASH_MIX` playlists, and `playlist` for every other type.
 - Title 1–100 characters, poster name 1–40. Anything else is 400 `{error: "bad_request"}`. A request body over 256 KB is 413 `{error: "too_large"}`, like the mix routes' size check.
 
 The server writes `summary` itself from the cleaned body, so it can't disagree with the body.
@@ -95,13 +101,15 @@ The server writes `summary` itself from the cleaned body, so it can't disagree w
   - Each phone has one vote per post, stored with its network. Changing it replaces it; `0` takes it back. Voting on your own post is 403 `{error: "own_post"}`.
   - **Counting:** one network counts for at most 2 votes in each direction on a post. After every vote, the post's `up` is recounted in the same D1 batch as the sum, over networks, of min(that network's upvotes, 2), and `down` the same way. A script making keys behind one connection can move a post by at most 2 either way.
 - **Hidden:** a post with `up − down <= −3` leaves the list and opens as 404 for everyone except its poster, who still sees it in Mine with `hidden: true`. With the network cap, hiding takes downvotes from at least two networks.
-- **Ordering ("hot"):** computed in the Worker over the live, visible posts:
-  `hot = (up − down) + created_at / MS_PER_VOTE`, where `MS_PER_VOTE` is 3.6 hours.
+- **Ordering ("hot"):** done in the feed's SQL, `ORDER BY (up - down) + created_at / 12960000.0 DESC LIMIT ?`. 12,960,000 ms is 3.6 hours, so:
   - Each net vote is worth 3.6 hours of freshness: 10 more votes keep a post above a newer one for 36 hours.
-  - A brand-new post with no votes starts above everything more than a few hours old that has few votes. `MS_PER_VOTE` is the one constant to tune.
-  - ponytail: sorting every live post in the Worker is fine up to a few thousand (5 per phone). Past that, store `hot` in a column updated on each vote.
+  - A brand-new post with no votes starts above everything more than a few hours old that has few votes.
+  - The 3.6 hours is the one constant to tune.
+  - ponytail: the query scans every live post (the expression can't use an index). That's fine up to a few thousand (5 per phone), and the read limit caps the rate. Past that, store `hot` in a column updated on each vote.
 - **The list never reads `body`:** the feed selects `id, kind, title, poster_name, poster, summary, track_count, created_at, up, down`, so a Home open never loads song lists.
-- **Cleanup:** a daily cron (`[triggers] crons = ["17 4 * * *"]`) deletes posts past `expires_at`, and removed posts created more than 24 hours ago, together with their votes (votes first, in one batch).
+- **Cleanup:** a daily cron (`[triggers] crons = ["17 4 * * *"]`) deletes, together with their votes (votes first, in one batch):
+  - posts past `expires_at`;
+  - posts removed more than 24 hours ago that were also created more than 24 hours ago. That keeps a removed post restorable for a day, and keeps every post of the last 24 hours for `daily_limit`.
 
 ### Routes
 
@@ -145,13 +153,16 @@ Reads are open to anyone (the Home section, and a phone that hasn't made a key y
 
 Ids are checked against `[A-Za-z0-9]{8}` and prefixes against `[0-9a-f]{8,64}` before they go into the SQL (`d1 execute` takes no bind parameters).
 
+These commands are the real backstop. The network caps make vote attacks expensive, not impossible: someone with many addresses can still bury a post, and `restore` undoes it.
+
 ## 3. The app
 
 ### Turning it on
 
 - `HomeSection.COMMUNITY` joins the section list, so it can be moved like the others.
 - **Its visibility is its own switch, off by default**, stored next to the section order (`community_on`), not the hidden set. New sections are otherwise shown automatically, and this one must stay off until chosen.
-- **It isn't in the Home defaults.** Home's default section lists (`HomeUiState.sections`, and the list the Qobuz fetch uses before the preference loads) leave COMMUNITY out, so nothing Community appears or loads before the saved setting is read.
+- **The switch is applied in `HomeSectionsPreference.visibleSections`**, including its `.catch` fallback, which today returns every section. A DataStore error must not turn Community on.
+- **It isn't in the Home defaults.** Home's default section lists (`HomeUiState.sections`, and `DiscoveryUi.sections`, which the Qobuz fetch uses before the preference loads) leave COMMUNITY out, so nothing Community appears or loads before the saved setting is read.
 - **Where it lands:** the first time it's turned on, it moves to the top of the section order, directly under the Discover hero, where the mockups show it. From there it can be moved like any other section.
 - **The Settings → Home layout row** reads "Community: playlists and songs other Stash listeners are into. Your posts show your name."
 - **While it's off,** nothing Community appears anywhere (no section, no menu entries, no `+`), and the app makes no Community requests.
@@ -160,15 +171,25 @@ Ids are checked against `[A-Za-z0-9]{8}` and prefixes against `[0-9a-f]{8,64}` b
 
 - `core/model`:
   - `CommunityPost` (summary), `CommunityPostDetail`, `CommunityMe`.
+  - `PostTarget`: `Song(track: Track)` or `Playlist(playlistId: Long)`. It's what any entry point asks to post.
   - `Track.toSharedTrackWithArt()`, moved from `DefaultSessionCatalog`'s private `Track.shared()`: the descriptor plus its art link when it's on `COVER_HOSTS`. Listen Together and Community both use it.
-- `core/data/community`:
-  - `CommunityApiClient`: OkHttp against `ShareConfig.BASE_URL`, in the style of `ShareApiClient`. Unlike `shareCall`, it **reads the Worker's `error` code** from error bodies and returns `CommunityResult.Ok(value)`, `Rejected(code)` (the codes above) or `Failed(reason)` (offline, timeouts), so the app can say which limit was hit.
-  - `CommunityKeyStore`: the key, in DataStore; made on first use.
-  - `CommunityRepository`: the last feed kept in memory for Home, and building a post.
-    - A playlist or mix: `SharedMixRepository.buildDocument(..., withArt = true)`, a new flag that keeps each song's art link through `toSharedTrackWithArt`.
-    - A song: `toSharedTrackWithArt`.
-- `core/ui`: `LocalPostToCommunity`, a CompositionLocal holding a nullable "post this song" callback, the same pattern as `LocalListenTogetherRole`. The app provides it only while Community is on.
-- `feature/community` (new module): the Home section, See all, the post screen, the picker, the confirm sheet, and their ViewModels. Feature modules don't depend on each other, so the app's `StashNavHost` wires the routes and hosts the one confirm sheet, as it does for the other cross-feature screens.
+- `core/data`:
+  - **`community/CommunityApiClient`:** OkHttp against `ShareConfig.BASE_URL`, in the style of `ShareApiClient`. Unlike `shareCall`, it **reads the Worker's `error` code** from error bodies. It returns:
+    - `CommunityResult.Ok(value)`;
+    - `Rejected(code)` for a 4xx with one of the codes above;
+    - `Failed(reason)` for offline, timeouts and any 5xx, including the catch-all 503 `unavailable`.
+  - **`community/CommunityKeyStore`:** the key, in DataStore; made on first use.
+  - **`community/CommunityRepository`:** the last feed kept in memory for Home, and building a post.
+    - **A playlist or mix:** `SharedMixRepository.buildDocument(..., withArt = true)`, a new flag that keeps each song's art link through `toSharedTrackWithArt`.
+    - **A song:** `toSharedTrackWithArt`.
+    - **Clipping:** titles are cut to 100 characters and names to 40 before sending, the way `buildDocument` already clips a playlist name, so a long song title never becomes a 400.
+  - **`TrackDao.getRecentlyPlayed(limit)`:** a new query, the picker's recent songs. Rows with a `last_played`, newest first, downloaded or stream-only; it's what the person actually played. (The existing `getLastPlayedTrack()` returns one downloaded row.)
+- `core/ui`: `LocalPostToCommunity`, a CompositionLocal holding a nullable `(PostTarget) -> Unit`, the same pattern as `LocalListenTogetherRole`. The app provides it only while Community is on. Every entry point uses it: the song menus, the playlist Share sheet and the `+` picker.
+- `feature/community` (new module): the Home section, See all, the post screen, the picker, the confirm sheet, and their ViewModels.
+- **Wiring, in the app module:** feature modules don't depend on each other, so the app connects them.
+  - **Home:** `HomeScreen` (feature/home) gets a `communitySection: @Composable () -> Unit` slot. Its `when (section)` renders COMMUNITY by calling that slot, and `StashNavHost`'s Home route fills it with feature/community's section.
+  - **The posting sheets:** `StashNavHost` provides `LocalPostToCommunity` and hosts the one confirm sheet and the picker, after its `NavHost`.
+  - **Routes:** See all and the post screen are routes in `StashNavHost`.
 
 ### Home section
 
@@ -193,11 +214,20 @@ All / Mine chips, up to 100 posts, `+ Post` in the top bar. Mine lists your live
 
 ### Posting
 
-- **A playlist or mix:** the Share icon in its header opens `ShareMixSheet`, which gets a second action, **Post to Community**, under "Create link". It appears only while Community is on.
+- **A playlist or mix:** the Share icon in its header opens `ShareMixSheet`.
+  - While `LocalPostToCommunity` is set, the sheet shows **Post to Community** in both of its states: under "Create link" for a playlist that isn't shared yet, and under "Share again" and "Copy link" for one that already has a link.
+  - Tapping it closes the sheet and calls the local with `PostTarget.Playlist(id)`.
 - **A song:**
-  - `TrackOptionsSheet` shows **Post to Community** next to Share whenever `LocalPostToCommunity` is set. That covers all its call sites (Library, playlists, queue, search results) with no change at each one.
-  - Now Playing's options sheet reads the same local.
-- **`+`** opens a picker: your playlists and mixes, then your 20 most recently played songs (`tracks.last_played DESC`; the column and a query over it already exist in `TrackDao`).
+  - `TrackOptionsSheet` shows **Post to Community** next to Share whenever `LocalPostToCommunity` is set.
+  - It gets an `onDismiss: () -> Unit` parameter: the new row calls it, then the local, because the sheet can't close itself (each call site closes its own `ModalBottomSheet`). Each of its 7 call sites passes its sheet-closing lambda, one line each:
+    - `AlbumDetailScreen`
+    - `ArtistDetailScreen`
+    - `LibraryScreen` (two sites)
+    - `LikedSongsDetailScreen`
+    - `PlaylistDetailScreen`
+    - `QueueBottomSheet`
+  - Now Playing's options sheet reads the same local and uses its existing `onDismiss`.
+- **`+`** opens the picker: your playlists and mixes, then your 20 most recently played songs (`TrackDao.getRecentlyPlayed`).
 - **The confirm sheet:**
   - The item with its cover, "Playlist · 42 songs · posting as Maya".
   - The frozen-copy note: "Everyone with Community turned on will see these 42 songs exactly as they are now. Later changes to your playlist won't show. It stays up for 30 days, and you can take it down any time."
@@ -218,7 +248,8 @@ All / Mine chips, up to 100 posts, `+ Post` in the top bar. Mine lists your live
 | `blocked` | "You can't post to Community." |
 | `rate_limited` | "Slow down a moment." |
 | `too_large` | "This playlist is too big to post." |
-| Offline | The usual offline message. |
+| Offline, timeout or 5xx (`Failed`) | "Couldn't reach Community. Try again." |
+| Any other code | "Something went wrong. Try again." |
 
 ### Votes
 
@@ -228,7 +259,7 @@ Optimistic: the highlight and count change at once and flip back with a short me
 
 | Situation | What happens |
 |---|---|
-| Server unreachable, a list was loaded before | The last list stays; votes and posts fail with the offline message. |
+| Server unreachable, a list was loaded before | The last list stays; votes and posts fail with "Couldn't reach Community. Try again." |
 | Server unreachable, nothing loaded yet | "Couldn't load Community" with Retry, not an empty gap. |
 | A vote fails | The highlight flips back; a short message. |
 | Posting fails | The specific reason (above). The sheet stays open, so nothing is lost. |
@@ -257,28 +288,34 @@ Optimistic: the highlight and count change at once and flip back with a short me
   - the posting limits, including take-down-and-repost and `network_limit`;
   - one vote per phone, changing and taking back a vote, no voting on your own post, and the recount;
   - the per-network vote cap: many keys behind one network move a post by 2 at most;
+  - IPv6 grouped by /56: two addresses in one /56 are one network;
   - the −3 hide from votes on two networks, the poster still seeing the post in Mine, and `restore`;
   - hot ordering: 10 more votes ≈ 36 hours;
   - the list never selecting `body`;
+  - `by` removed from posted songs;
   - take-down permissions and block;
-  - the cron cleanup;
+  - the cron cleanup, including a removed post staying restorable for a day;
   - input checks (kinds, lengths, 500 songs, 256 KB, cover hosts, bad keys);
   - `myVote` and `mine` only with a key;
   - every error body carrying its code.
 - **CI:** a `worker-tests` job in `.github/workflows/tests.yml` runs `node --no-warnings --test test/*.test.js` in `infra/share-worker` on Node 24, with no `npm ci` since the tests import only local files. Today these tests run only on the owner's PC.
 - **App unit tests:**
-  - the switch is off by default, including after an update and before the preference loads (Home's defaults leave COMMUNITY out);
+  - the switch is off by default, including after an update, before the preference loads (Home's defaults leave COMMUNITY out), and when the preference read fails (`visibleSections`' fallback);
   - turning it on moves it to the top of the order;
   - the key is made once and reused;
-  - the API client's parsing, including each `error` code;
+  - the API client's parsing, including each `error` code, and 5xx as `Failed`;
+  - titles clipped to 100 and names to 40;
+  - `getRecentlyPlayed`: newest first, stream-only rows included;
+  - `ShareMixSheet` shows Post to Community in both of its states, and only while the local is set;
   - optimistic votes and their rollback;
   - each posting message;
   - the picker lists playlists, then recent songs;
   - the post screen for all three kinds;
   - `LocalPostToCommunity` hides the song entry while off.
 - **Device, before the PR:** the Pixel 5 and Pixel 6, plus a PC script as a third voter.
-  - Post from each way in (Share sheet, song ⋮, `+`), and see it on the other phone.
-  - Vote from both, and hit the daily and live limits.
+  - Post from each way in (Share sheet, a song ⋮ and Now Playing's, `+`), and see it on the other phone. Check that the song's options sheet closes as the confirm sheet opens.
+  - Vote from both, and hit the daily limit.
+  - Hit the live limit: at 2 posts a day, 5 live posts would take three days, so seed 3 posts first with a `wrangler d1 execute` insert that copies the poster id from one of the phone's own posts (`INSERT … SELECT … FROM posts WHERE id = '<its id>'`).
   - Take a post down.
   - Hide one at −3: Wi-Fi counts for 2, so the Pixel 6 votes from mobile data. If that isn't available, use `remove` to check the "no longer available" path.
   - Run `block` and `restore`, and check that switching Community off leaves no trace.
