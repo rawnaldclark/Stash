@@ -402,11 +402,12 @@ class StashPlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
 
-        // Listen Together: "Listening together · <artist>" while a session runs. Otherwise the stock provider.
+        // Listen Together: "With Maya +2 · <artist>" while a session runs. Otherwise the stock provider.
         val baseProvider = object : androidx.media3.session.DefaultMediaNotificationProvider(this) {
             override fun getNotificationContentText(metadata: MediaMetadata): CharSequence? {
                 val base = super.getNotificationContentText(metadata)
-                return if (listenTogetherController.active.value) listOfNotNull("Listening together", base).joinToString(" · ") else base
+                if (!listenTogetherController.active.value) return base
+                return listOfNotNull(togetherLine(listenTogetherController.state.value), base).joinToString(" · ")
             }
         }
         // Listen Together keeps the service in the foreground while paused (onUpdateNotification below), but
@@ -606,6 +607,13 @@ class StashPlaybackService : MediaLibraryService() {
                 .map { (it as? com.stash.core.media.listen.ListenTogetherState.InRoom)?.isHost }
                 .distinctUntilChanged()
                 .collect { updateCustomLayout() }
+        }
+        // Who's in the room shows in the notification, so redraw it when someone joins or leaves.
+        serviceScope.launch {
+            listenTogetherController.state
+                .map { togetherLine(it) }
+                .distinctUntilChanged()
+                .collect { if (listenTogetherController.active.value) triggerNotificationUpdate() }
         }
 
         updateCustomLayout()
@@ -2141,3 +2149,11 @@ internal fun idleStopTicker(
             kotlinx.coroutines.flow.emptyFlow()
         }
     }
+
+/** The notification's session line: "With Maya +2", the host named first for a listener; "Listening together" alone. */
+internal fun togetherLine(state: com.stash.core.media.listen.ListenTogetherState): String {
+    val room = state as? com.stash.core.media.listen.ListenTogetherState.InRoom ?: return "Listening together"
+    val others = room.members.filter { it.id != room.myId }.sortedBy { if (it.id == room.hostId) 0 else 1 }
+    val first = others.firstOrNull() ?: return "Listening together"
+    return "With ${first.name ?: "Someone"}" + if (others.size > 1) " +${others.size - 1}" else ""
+}
