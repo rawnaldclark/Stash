@@ -7,6 +7,8 @@ import { cleanDoc, validateDoc, validEditKey, MAX_BODY_BYTES } from "./validate.
 import { freeId, readMix, sameHex, sha256Hex, writeMix, writeTombstone } from "./store.js";
 import { assetLinks, messagePage, mixPage, roomPage, trackPage } from "./pages.js";
 import { base64url, randomCode } from "./listen-room.js";
+import { ip, json, limitKey } from "./http.js";
+export { limitKey }; // test/hardening.test.js imports it from here
 
 export { ListenRoom } from "./listen-room.js";
 
@@ -75,9 +77,6 @@ export async function handle(request, env) {
     return json({ error: "not_found" }, 404);
 }
 
-export function json(obj, status = 200, extra = {}) {
-    return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json", ...extra } });
-}
 const HTML_HEADERS = {
     "content-type": "text/html; charset=utf-8",
     "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https:",
@@ -92,18 +91,6 @@ async function readBody(request) {
     if (buf.byteLength > MAX_BODY_BYTES) return { tooBig: true };
     try { return { body: JSON.parse(new TextDecoder().decode(buf)) }; } catch { return { body: null }; }
 }
-
-/** Rate-limit key: an IPv4 address as is, an IPv6 one by its /64 (one host usually holds the whole /64). */
-export function limitKey(addr) {
-    if (!addr.includes(":") || addr.includes(".")) return addr; // IPv4, or IPv4-mapped IPv6
-    const [head, tail] = addr.split("::");
-    const left = head ? head.split(":") : [];
-    const right = tail ? tail.split(":") : [];
-    const groups = tail === undefined ? left : [...left, ...Array(8 - left.length - right.length).fill("0"), ...right];
-    return groups.slice(0, 4).join(":");
-}
-
-const ip = (request) => limitKey(request.headers.get("CF-Connecting-IP") || "?");
 
 async function createMix(request, env, url) {
     if (!(await env.CREATE_RL.limit({ key: ip(request) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
