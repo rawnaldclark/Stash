@@ -88,7 +88,7 @@ The server writes `summary` itself from the cleaned body, so it can't disagree w
 
 ### Rules
 
-- **Posting limits:**
+- **Posting limits,** checked in this order (the first one hit is the error): blocked, then daily, then live, then network.
   - A poster with 2 posts created in the last 24 hours gets 429 `{error: "daily_limit"}`. Taken-down posts still count for those 24 hours, so take-down-and-repost doesn't reset it.
   - A poster with 5 live posts (not removed, not expired) gets 429 `{error: "live_limit"}`.
   - A network with 10 posts in the last 24 hours gets 429 `{error: "network_limit"}`.
@@ -118,7 +118,7 @@ All JSON. Summaries and details share these fields:
 ```
 PostSummary {
   id, kind, title,
-  by,            // poster name
+  name,          // poster name (not `by`: in a SharedTrack that's a Listen Together member id)
   count,         // tracks in the post (1 for a song)
   covers,        // up to 4 links (playlist/mix)
   art, artist,   // the song's cover and artist (song posts)
@@ -181,7 +181,7 @@ These commands are the real backstop. The network caps make vote attacks expensi
   - **`community/CommunityKeyStore`:** the key, in DataStore; made on first use.
   - **`community/CommunityRepository`:** the last feed kept in memory for Home, and building a post.
     - **A playlist or mix:** `SharedMixRepository.buildDocument(..., withArt = true)`, a new flag that keeps each song's art link through `toSharedTrackWithArt`.
-    - **A song:** `toSharedTrackWithArt`.
+    - **A song:** `toSharedTrackWithArt` on the song's **library row, re-read by id**. The queue and Now Playing hold a copy rebuilt from the player, with no ISRC or Spotify id and sometimes a local art path. Share already re-reads for this reason (`NowPlayingViewModel.onShareCurrent`), and without it every listener of the post would lose exact lossless matching. A synthetic id with no row falls back to the given track.
     - **Clipping:** titles are cut to 100 characters and names to 40 before sending, the way `buildDocument` already clips a playlist name, so a long song title never becomes a 400.
   - **`TrackDao.getRecentlyPlayed(limit)`:** a new query, the picker's recent songs. Rows with a `last_played`, newest first, downloaded or stream-only; it's what the person actually played. (The existing `getLastPlayedTrack()` returns one downloaded row.)
 - `core/ui`: `LocalPostToCommunity`, a CompositionLocal holding a nullable `(PostTarget) -> Unit`, the same pattern as `LocalListenTogetherRole`. The app provides it only while Community is on. Every entry point uses it: the song menus, the playlist Share sheet and the `+` picker.
@@ -315,7 +315,7 @@ Optimistic: the highlight and count change at once and flip back with a short me
 - **Device, before the PR:** the Pixel 5 and Pixel 6, plus a PC script as a third voter.
   - Post from each way in (Share sheet, a song ⋮ and Now Playing's, `+`), and see it on the other phone. Check that the song's options sheet closes as the confirm sheet opens.
   - Vote from both, and hit the daily limit.
-  - Hit the live limit: at 2 posts a day, 5 live posts would take three days, so seed 3 posts first with a `wrangler d1 execute` insert that copies the poster id from one of the phone's own posts (`INSERT … SELECT … FROM posts WHERE id = '<its id>'`).
+  - Hit the live limit on a phone still under its daily limit, since daily is checked first. After one real post, seed 4 copies of it with a `wrangler d1 execute` insert (`INSERT … SELECT … FROM posts WHERE id = '<its id>'`) that gives them new ids and a `created_at` more than 24 hours ago, keeping `expires_at` in the future. The next post gets `live_limit`.
   - Take a post down.
   - Hide one at −3: Wi-Fi counts for 2, so the Pixel 6 votes from mobile data. If that isn't available, use `remove` to check the "no longer available" path.
   - Run `block` and `restore`, and check that switching Community off leaves no trace.
@@ -341,4 +341,4 @@ The migration only adds a new database; rolling back is deploying the previous W
 - **One vote per network, full stop:** it would stop scripted voting cold, but a family or a dorm on one connection would share a single vote.
 - **Anonymous posts:** less to moderate, but it drops the social point of the feature.
 - **Carousel or a featured banner on Home:** the carousel fits three posts and hides votes; a banner would be the second one on Home, under Daily Discovery.
-- **Accounts or sign-in:** Stash has none. A one-phone key with per-network caps is enough at this size.
+- **Accounts or sign-in:** Stash has none. A one-phone key with per-network caps is enough at this size. The known cost: behind a carrier's shared IPv4 address, many people count as one network for the 10-posts-a-day cap, the 2-vote cap and the read limit. That's fine at this size, and worth revisiting if Community grows.
