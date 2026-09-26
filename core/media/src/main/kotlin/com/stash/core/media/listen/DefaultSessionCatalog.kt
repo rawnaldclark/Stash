@@ -50,7 +50,9 @@ class DefaultSessionCatalog @Inject constructor(
 
     override suspend fun mediaItemFor(track: SharedTrack): MediaItem? = withContext(Dispatchers.IO) {
         try {
-            val id = own[track] ?: musicRepository.ensureExactTrackPersisted(track).also { own[track] = it }
+            // Keyed without the adder: the room echoes our own descriptors back with `by` added.
+            val key = track.copy(addedBy = null)
+            val id = own[key] ?: musicRepository.ensureExactTrackPersisted(track).also { own[key] = it }
             val row = trackDao.getById(id) ?: return@withContext null
             // An exact match may be this phone's download: the same recording, so play the file.
             // A download whose file has gone streams instead of failing, and so does one whose

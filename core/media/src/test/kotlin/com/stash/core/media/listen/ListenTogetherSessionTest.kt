@@ -330,7 +330,7 @@ class ListenTogetherSessionTest {
         catalog.items.remove(track)
         connection.sent.clear()
         receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
-        assertThat(connection.sent).containsExactly(ClientMessage.Status("unavailable", 1), ClientMessage.Load(next, 0, emptyList())).inOrder()
+        assertThat(connection.sent).containsExactly(ClientMessage.Status("unavailable", 1), ClientMessage.Load(next, 0, emptyList(), "end")).inOrder()
     }
 
     @Test fun `a pending advance after leaving doesn't reach the next session`() = runTest {
@@ -615,7 +615,7 @@ class ListenTogetherSessionTest {
         receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
         connection.sent.clear()
         player.events!!.onEnded(); runCurrent()
-        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, emptyList()))
+        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, emptyList(), "end"))
     }
 
     @Test fun `with the queue empty and autoplay radio on the host starts a station`() = runTest {
@@ -625,7 +625,7 @@ class ListenTogetherSessionTest {
         receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
         connection.sent.clear()
         player.events!!.onEnded(); runCurrent()
-        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, listOf(third)))
+        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, listOf(third), "radio"))
     }
 
     @Test fun `a station that can't be built isn't retried for the same song, and the room pauses`() = runTest {
@@ -638,6 +638,74 @@ class ListenTogetherSessionTest {
         player.events!!.onEnded(); runCurrent()
         assertThat(catalog.radioCalls).isEqualTo(1)
         assertThat(connection.sent.filterIsInstance<ClientMessage.Pause>()).isNotEmpty()
+    }
+
+    @Test fun `next says skip and previous says back, so other phones can name who did it`() = runTest {
+        host()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000))
+        connection.sent.clear()
+        player.interceptor!!.onNext(); runCurrent()
+        assertThat(connection.sent.filterIsInstance<ClientMessage.Load>().single().why).isEqualTo("skip")
+        player.positionMs = 1_000
+        player.interceptor!!.onPrevious(); runCurrent()
+        assertThat(connection.sent.filterIsInstance<ClientMessage.Load>().last().why).isEqualTo("back")
+    }
+
+    fun TestScope.events(): MutableList<SessionEvent> {
+        val out = mutableListOf<SessionEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.events.collect { out += it } }
+        return out
+    }
+
+    @Test fun `a newcomer is named once, someone gone 15 s has left, and a blip that comes back says nothing`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state()))
+        val events = events()
+        val h = RoomMember("h", "Host", 1); val me = RoomMember("me", "Me", 2); val a = RoomMember("a", "Ana", 3)
+        receive(ServerMessage.Members(listOf(h, me, a)))
+        assertThat(events).containsExactly(SessionEvent(SessionEvent.Kind.JOINED, "a", "Ana"))
+        receive(ServerMessage.Members(listOf(h, me))) // Ana drops
+        advanceTimeBy(10_000); runCurrent()
+        receive(ServerMessage.Members(listOf(h, me, a))) // and is back within the grace period
+        advanceTimeBy(20_000); runCurrent()
+        assertThat(events).hasSize(1)
+        receive(ServerMessage.Members(listOf(h, me)))
+        advanceTimeBy(15_000); runCurrent()
+        assertThat(events.last()).isEqualTo(SessionEvent(SessionEvent.Kind.LEFT, "a", "Ana"))
+    }
+
+    @Test fun `other people's pause, resume, skip and back are named, but your own and a natural end are not`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(timeline = RoomTimeline(0, 0, true))))
+        val events = events()
+        receive(ServerMessage.TimelineUpdate(2, 1, 5_000, 0, playing = false, by = "h"))
+        receive(ServerMessage.TimelineUpdate(3, 1, 5_000, 0, playing = true, by = "h"))
+        receive(ServerMessage.TimelineUpdate(4, 1, 6_000, 0, playing = false, by = "me"))
+        receive(ServerMessage.TimelineUpdate(5, 1, 6_000, 0, playing = false, by = "h")) // a seek while paused
+        receive(ServerMessage.Prepare(2, next, 0, 8_000, by = "h", why = "skip"))
+        receive(ServerMessage.Prepare(3, third, 0, 8_000, by = "h", why = "back"))
+        receive(ServerMessage.Prepare(4, next, 0, 8_000, by = "h", why = "end"))
+        assertThat(events.map { it.kind }).containsExactly(
+            SessionEvent.Kind.PAUSED, SessionEvent.Kind.RESUMED, SessionEvent.Kind.SKIPPED, SessionEvent.Kind.WENT_BACK,
+        ).inOrder()
+        assertThat(events.first().name).isEqualTo("Host")
+    }
+
+    @Test fun `a new host is named, including when it's you`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state()))
+        val events = events()
+        receive(ServerMessage.StateSync(state(host = "me")))
+        assertThat(events).containsExactly(SessionEvent(SessionEvent.Kind.HOSTING, "me", "Me"))
+    }
+
+    @Test fun `the room's song and queue reach the UI, with who added them`() = runTest {
+        join()
+        val picked = next.copy(addedBy = "a")
+        receive(ServerMessage.Welcome("me", "tok", state(queue = listOf(picked))))
+        val room = controller.state.value as ListenTogetherState.InRoom
+        assertThat(room.track).isEqualTo(track)
+        assertThat(room.queue.single().addedBy).isEqualTo("a")
     }
 
     @Test fun `previous restarts the song once it is more than 3 s in`() = runTest {
@@ -664,7 +732,7 @@ class ListenTogetherSessionTest {
         host()
         connection.sent.clear()
         player.interceptor!!.onSet(listOf(item("2"), item("3")), 0); runCurrent()
-        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, listOf(third)))
+        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, listOf(third), "pick"))
     }
 
     @Test fun `a host who leaves hands the room to the longest-joined listener`() = runTest {
@@ -706,7 +774,7 @@ class ListenTogetherSessionTest {
         connection.sent.clear()
         connection.incoming.trySend(RoomEvent.Connected); runCurrent()
         receive(ServerMessage.Welcome("h", "tok", state(host = "h", key = 1)))
-        assertThat(loads()).containsExactly(ClientMessage.Load(next, 0, emptyList()))
+        assertThat(loads()).containsExactly(ClientMessage.Load(next, 0, emptyList(), "end"))
     }
 
     @Test fun `the first load carries where the song is when the room welcomes the host`() = runTest {
@@ -727,7 +795,7 @@ class ListenTogetherSessionTest {
         player.ended = true
         connection.sent.clear()
         receive(ServerMessage.StateSync(state(host = "me", key = 1, queue = listOf(next))))
-        assertThat(loads()).containsExactly(ClientMessage.Load(next, 0, emptyList()))
+        assertThat(loads()).containsExactly(ClientMessage.Load(next, 0, emptyList(), "end"))
     }
 
     @Test fun `the host's play on an ended song moves the room on instead of sending play`() = runTest {
@@ -736,7 +804,7 @@ class ListenTogetherSessionTest {
         player.ended = true
         connection.sent.clear()
         player.interceptor!!.onPlay(); runCurrent()
-        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, emptyList()))
+        assertThat(connection.sent).containsExactly(ClientMessage.Load(next, 0, emptyList(), "end"))
     }
 
     @Test fun `a host's pause during preparing is sent again when the start arrives`() = runTest {

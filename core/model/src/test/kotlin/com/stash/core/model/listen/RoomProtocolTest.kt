@@ -28,6 +28,20 @@ class RoomProtocolTest {
         )
     }
 
+    @Test fun `who added a song and who did what travel as by and why, and are left out when unknown`() {
+        assertThat(RoomProtocol.encode(ClientMessage.Load(track.copy(addedBy = "M2"), 0, emptyList(), why = "skip"))).isEqualTo(
+            """{"t":"load","track":{"t":"Avril 14th","a":"Aphex Twin","d":125000,"isrc":"GBBPW0100025","by":"M2"},"positionMs":0,"queue":[],"why":"skip"}""",
+        )
+        val prepare = RoomProtocol.decode(
+            """{"t":"prepare","trackKey":2,"track":{"t":"Xtal","a":"Aphex Twin","by":"M2"},"positionMs":0,"deadlineMs":9,"by":"M1","why":"back"}""",
+        ) as ServerMessage.Prepare
+        assertThat(prepare.track.addedBy).isEqualTo("M2")
+        assertThat(prepare.by).isEqualTo("M1")
+        assertThat(prepare.why).isEqualTo("back")
+        val timeline = RoomProtocol.decode("""{"t":"timeline","rev":3,"trackKey":2,"positionMs":0,"atRoomMs":0,"playing":false,"by":"M1"}""")
+        assertThat((timeline as ServerMessage.TimelineUpdate).by).isEqualTo("M1")
+    }
+
     @Test fun `a welcome exactly as the Worker sends it decodes`() {
         val text = """{"t":"welcome","memberId":"m1","token":"tok","state":{"rev":3,"host":"m1","track":null,"trackKey":0,
             "timeline":{"positionMs":0,"atRoomMs":1000,"playing":false},"queue":[],

@@ -38,7 +38,8 @@ sealed interface ClientMessage {
     data class Ping(val c: Long) : ClientMessage
 
     @Serializable @SerialName("load")
-    data class Load(val track: SharedTrack, val positionMs: Long, val queue: List<SharedTrack>) : ClientMessage
+    /** [why]: skip, back, end, pick or radio, so phones can say "Rawn skipped" and stay quiet on a natural end. */
+    data class Load(val track: SharedTrack, val positionMs: Long, val queue: List<SharedTrack>, val why: String? = null) : ClientMessage
 
     @Serializable @SerialName("play")
     data object Play : ClientMessage
@@ -125,11 +126,20 @@ sealed interface ServerMessage {
         val positionMs: Long,
         val atRoomMs: Long,
         val playing: Boolean,
+        /** The member whose play, pause or seek caused this; null when the room itself started playback. */
+        val by: String? = null,
     ) : ServerMessage
 
     /** [positionMs] is where to start the song; the spec's payload plus this one field, so phones needn't wait for `state`. */
     @Serializable @SerialName("prepare")
-    data class Prepare(val trackKey: Int, val track: SharedTrack, val positionMs: Long = 0, val deadlineMs: Long) : ServerMessage
+    data class Prepare(
+        val trackKey: Int,
+        val track: SharedTrack,
+        val positionMs: Long = 0,
+        val deadlineMs: Long,
+        val by: String? = null,
+        val why: String? = null,
+    ) : ServerMessage
 
     @Serializable @SerialName("members")
     data class Members(val members: List<RoomMember>) : ServerMessage

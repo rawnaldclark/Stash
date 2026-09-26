@@ -19,6 +19,8 @@ data class SharedTrack(
     @SerialName("isrc") val isrc: String? = null,
     @SerialName("sp") val spotifyId: String? = null,
     @SerialName("yt") val youtubeId: String? = null,
+    /** Listen Together only: the member id of whoever added the song. Never set for shared mixes (null is left out). */
+    @SerialName("by") val addedBy: String? = null,
 )
 
 private fun String?.clean(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
