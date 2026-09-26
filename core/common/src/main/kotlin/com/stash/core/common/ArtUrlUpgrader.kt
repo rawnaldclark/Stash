@@ -109,6 +109,13 @@ object ArtUrlUpgrader {
     )
 
     /**
+     * The best thumbnail of YouTube video [videoId], the cover of last resort. For an auto-generated
+     * YouTube Music upload it IS the album cover, centred in the 16:9 frame the UI crops square. The
+     * shared client's [artFallback] walk covers the 18% of videos without a `maxresdefault`.
+     */
+    fun youTubeThumbnail(videoId: String): String = "https://i.ytimg.com/vi/$videoId/$YTIMG_TARGET.jpg"
+
+    /**
      * Returns true when [url] is a YouTube *video* thumbnail
      * (`i.ytimg.com/vi/.../sddefault.jpg` etc). These are uploader-chosen
      * images — music-video frames, "Topic" channel placeholders, hand-
