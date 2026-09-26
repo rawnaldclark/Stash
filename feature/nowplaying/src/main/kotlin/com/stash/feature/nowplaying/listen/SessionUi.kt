@@ -414,14 +414,16 @@ private fun RoomContent(
                 TextButton(onClick = { onShare(room.url) }) { Text("Share") }
             }
             Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onLeave, modifier = Modifier.weight(1f)) { Text("Leave") }
-                if (room.isHost) {
-                    OutlinedButton(
-                        onClick = onEnd,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    ) { Text("End for everyone") }
+            val endColors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            if (room.isHost && room.members.size <= 1) {
+                // Alone, leaving and ending are the same thing, and there's nobody to warn.
+                OutlinedButton(onClick = onEnd, modifier = Modifier.fillMaxWidth(), colors = endColors) { Text("End session") }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = onLeave, modifier = Modifier.weight(1f)) { Text("Leave") }
+                    if (room.isHost) {
+                        OutlinedButton(onClick = onEnd, modifier = Modifier.weight(1f), colors = endColors) { Text("End for everyone") }
+                    }
                 }
             }
         }

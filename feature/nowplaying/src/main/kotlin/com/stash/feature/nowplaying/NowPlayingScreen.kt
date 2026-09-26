@@ -392,7 +392,10 @@ fun NowPlayingScreen(
                     else -> confirmLeaveTogether = true
                 }
             },
-            onEnd = { confirmEndTogether = true },
+            // Alone there's nobody to drop, so no confirmation.
+            onEnd = {
+                if ((room?.members?.size ?: 1) <= 1) { together.end(); showSession = false } else confirmEndTogether = true
+            },
         )
     }
 
