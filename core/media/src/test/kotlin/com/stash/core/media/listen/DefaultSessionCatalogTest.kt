@@ -113,6 +113,21 @@ class DefaultSessionCatalogTest {
         coVerify(exactly = 0) { musicRepository.ensureExactTrackPersisted(any()) }
     }
 
+    @Test fun `a song brings its cover link to the room, never a local file or an unknown host`() = runTest {
+        val cover = "https://lastfm-img.freetls.fastly.net/i/u/770x0/ab12.jpg"
+        coEvery { trackDao.getById(3) } returns TrackEntity(id = 3, title = "Home Row", artist = "Me", albumArtUrl = cover, albumArtPath = "/data/art/3.jpg")
+        coEvery { trackDao.getById(4) } returns TrackEntity(id = 4, title = "Tracked", artist = "Me", albumArtUrl = "https://tracker.example/x.jpg")
+        assertThat(catalog.sharedTrackFor(MediaItem.Builder().setMediaId("3").build())!!.artUrl).isEqualTo(cover)
+        assertThat(catalog.sharedTrackFor(MediaItem.Builder().setMediaId("4").build())!!.artUrl).isNull()
+    }
+
+    @Test fun `our own song, echoed back with an adder and its cover, still plays its row`() = runTest {
+        coEvery { trackDao.getById(3) } returns TrackEntity(id = 3, title = "Home Row", artist = "Me", albumArtUrl = "https://i.scdn.co/image/aa")
+        val made = catalog.sharedTrackFor(MediaItem.Builder().setMediaId("3").build())!!
+        assertThat(catalog.mediaItemFor(made.copy(addedBy = "h"))!!.mediaId).isEqualTo("3")
+        coVerify(exactly = 0) { musicRepository.ensureExactTrackPersisted(any()) }
+    }
+
     @Test fun `radio leaves out the seed song`() = runTest {
         coEvery { radio.start(RadioSeed.Song("Avril 14th", "Aphex Twin", "yt1")) } returns (mockk<RadioSession>() to listOf(
             Track(title = "avril  14th ", artist = "Aphex Twin", youtubeId = "yt1"),

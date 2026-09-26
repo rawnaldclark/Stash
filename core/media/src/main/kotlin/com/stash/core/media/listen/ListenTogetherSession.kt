@@ -10,6 +10,7 @@ import com.stash.core.data.listen.RoomEvent
 import com.stash.core.data.share.ShareResult
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.model.listen.ClientMessage
+import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
@@ -79,6 +80,12 @@ class ListenTogetherSession(
     private var versionMismatch = false
     private val history = ArrayDeque<SharedTrack>()
     private var radioTriedKey = NONE
+
+    // Named notices (SessionEvent): who's been seen, their names (kept after they leave), and
+    // leaves waiting out a grace period so a network blip doesn't read as goodbye and hello.
+    private val seenMembers = HashSet<String>()
+    private val memberNames = HashMap<String, String?>()
+    private val pendingLeaves = HashMap<String, Job>()
     /**
      * This phone was paused locally (unplug, a call, a listener's own Pause). It stays paused until the user
      * acts: a listener follows the room silently (new songs load but don't play) until [rejoin], Play or a
@@ -110,6 +117,8 @@ class ListenTogetherSession(
             is Command.React -> send(ClientMessage.React(command.emoji))
             is Command.Suggestion -> send(ClientMessage.SuggestionAction(command.id, if (command.add) "add" else "dismiss"))
             is Command.MakeHost -> send(ClientMessage.MakeHost(command.memberId))
+            // Shown at once, so a swiped or dragged row doesn't flick back while the room's echo is on its way.
+            is Command.SetQueue -> if (isHost && room != null) { setQueue(command.queue.take(MAX_QUEUE)); publish() }
             Command.Rejoin -> rejoin()
         }
     }
@@ -193,7 +202,7 @@ class ListenTogetherSession(
                 }
                 val pending = pendingLoad?.invoke()
                 pendingLoad = null
-                if (isHost) pending?.let { load(it.track, it.positionMs, it.queue) } // may set pendingLoad again
+                if (isHost) pending?.let { load(it.track, it.positionMs, it.queue, it.why) } // may set pendingLoad again
             }
             is ServerMessage.StateSync -> applyState(m.state)
             is ServerMessage.Pong -> {
@@ -203,11 +212,18 @@ class ListenTogetherSession(
             }
             is ServerMessage.TimelineUpdate -> onTimeline(m)
             is ServerMessage.Prepare -> {
+                val by = m.by
+                if (by != null && by != myId) when (m.why) {
+                    "skip", "pick" -> notice(SessionEvent.Kind.SKIPPED, by)
+                    "back" -> notice(SessionEvent.Kind.WENT_BACK, by)
+                }
                 room = room?.copy(track = m.track, trackKey = m.trackKey)
                 prepare(m.trackKey, m.track, m.positionMs)
             }
-            is ServerMessage.Members -> { room = room?.copy(members = m.members); publish() }
+            is ServerMessage.Members -> { noticeMembers(m.members); room = room?.copy(members = m.members); publish() }
             is ServerMessage.Suggestions -> { room = room?.copy(suggestions = m.suggestions); publish() }
+            // The host's own edits already set room.queue; the echo brings the adders ("by") the room stamped.
+            is ServerMessage.QueueUpdate -> { room = room?.copy(queue = m.queue); publish() }
             is ServerMessage.Reaction -> controller.reaction(m)
             is ServerMessage.Ended -> teardown("Session ended")
         }
@@ -215,7 +231,11 @@ class ListenTogetherSession(
 
     private suspend fun applyState(s: RoomState) {
         val wasHost = isHost
+        val oldHost = room?.host
         room = s
+        for (m in s.members) { seenMembers.add(m.id); memberNames[m.id] = m.name } // a snapshot names nobody new
+        val newHost = s.host
+        if (oldHost != null && newHost != null && newHost != oldHost) notice(SessionEvent.Kind.HOSTING, newHost)
         isHost = s.host != null && s.host == myId
         if (isHost != wasHost) player.enterSession(isHost, interceptor) // makeHost or a 60 s handover
         // The song ended while nobody could move the room on (the old host left): the new host does.
@@ -326,6 +346,10 @@ class ListenTogetherSession(
     private fun onTimeline(t: ServerMessage.TimelineUpdate) {
         val current = timeline
         if (current != null && current.trackKey == t.trackKey && t.rev < current.rev) return // out of order
+        val by = t.by
+        if (by != null && by != myId && current != null && current.playing != t.playing) {
+            notice(if (t.playing) SessionEvent.Kind.RESUMED else SessionEvent.Kind.PAUSED, by)
+        }
         timeline = t
         room = room?.copy(timeline = RoomTimeline(t.positionMs, t.atRoomMs, t.playing))
         applyTimeline()
@@ -444,7 +468,7 @@ class ListenTogetherSession(
             playerEvents.onExternalPause()
         }
         override fun onSeek(positionMs: Long) { if (isHost) send(ClientMessage.Seek(positionMs)) }
-        override fun onNext() { if (isHost) sessionScope?.launch { advance() } }
+        override fun onNext() { if (isHost) sessionScope?.launch { advance(why = "skip") } }
         override fun onPrevious() { if (isHost) previous() }
         override fun onAdd(items: List<MediaItem>) { sessionScope?.launch { add(items) } }
         override fun onSet(items: List<MediaItem>, startIndex: Int) {
@@ -457,13 +481,13 @@ class ListenTogetherSession(
     }
 
     /** The song ended or the host skipped: the next queued song, else autoplay radio once per song, else idle (§4). */
-    private suspend fun advance() {
+    private suspend fun advance(why: String = "end") {
         val r = room ?: return
         val current = r.track
         val next = r.queue.firstOrNull()
         if (next != null) {
             current?.let(::remember)
-            load(next, 0, r.queue.drop(1))
+            load(next, 0, r.queue.drop(1), why)
             return
         }
         // Read the preference itself: shouldAutoplayRadio only says yes while a song is still playing.
@@ -472,7 +496,7 @@ class ListenTogetherSession(
             val station = catalog.radioAfter(current)
             if (station.isNotEmpty()) {
                 remember(current)
-                load(station.first(), 0, station.drop(1))
+                load(station.first(), 0, station.drop(1), "radio")
                 return
             }
         }
@@ -485,7 +509,7 @@ class ListenTogetherSession(
             send(ClientMessage.Seek(0))
             return
         }
-        load(history.removeLast(), 0, (listOfNotNull(r.track) + r.queue).take(MAX_QUEUE))
+        load(history.removeLast(), 0, (listOfNotNull(r.track) + r.queue).take(MAX_QUEUE), "back")
     }
 
     private suspend fun add(items: List<MediaItem>) {
@@ -505,12 +529,13 @@ class ListenTogetherSession(
         val first = items.getOrNull(index)?.let { catalog.sharedTrackFor(it) } ?: return
         val rest = items.drop(index + 1).take(MAX_QUEUE).mapNotNull { catalog.sharedTrackFor(it) }
         room?.track?.let(::remember)
-        load(first, 0, rest)
+        load(first, 0, rest, "pick")
     }
 
-    private fun load(track: SharedTrack, positionMs: Long, queue: List<SharedTrack>) {
+    /** [why] lets the other phones say "Rawn skipped" (skip, pick), "Rawn went back" (back), or nothing (end, radio). */
+    private fun load(track: SharedTrack, positionMs: Long, queue: List<SharedTrack>, why: String? = null) {
         room = room?.copy(queue = queue)
-        val msg = ClientMessage.Load(track, positionMs, queue)
+        val msg = ClientMessage.Load(track, positionMs, queue, why)
         if (connection?.send(msg) != true) pendingLoad = { msg } // the socket is down: the next welcome sends it
     }
 
@@ -556,6 +581,7 @@ class ListenTogetherSession(
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
+        seenMembers.clear(); memberNames.clear(); pendingLeaves.clear() // their jobs died with sessionScope
         pausedLocally = false
         clockSync.reset()
         // exitSession has already stopped and emptied the player. With restore, PlayerRepositoryImpl puts the
@@ -568,6 +594,29 @@ class ListenTogetherSession(
     private fun send(message: ClientMessage) {
         connection?.send(message)
     }
+
+    /** Someone new joined; someone gone for [LEAVE_GRACE_MS] left (a blip that comes back says nothing). */
+    private fun noticeMembers(now: List<RoomMember>) {
+        val before = room?.members.orEmpty().map { it.id }.toSet()
+        val ids = now.map { it.id }.toSet()
+        for (m in now) {
+            memberNames[m.id] = m.name
+            pendingLeaves.remove(m.id)?.cancel()
+            if (seenMembers.add(m.id) && m.id != myId) notice(SessionEvent.Kind.JOINED, m.id)
+        }
+        for (gone in before - ids) {
+            if (gone == myId || gone in pendingLeaves) continue
+            val job = sessionScope?.launch {
+                delay(LEAVE_GRACE_MS)
+                pendingLeaves.remove(gone)
+                notice(SessionEvent.Kind.LEFT, gone)
+            } ?: continue
+            pendingLeaves[gone] = job
+        }
+    }
+
+    private fun notice(kind: SessionEvent.Kind, memberId: String) =
+        controller.event(SessionEvent(kind, memberId, memberNames[memberId]))
 
     private fun publish() {
         val code = code ?: return
@@ -585,6 +634,9 @@ class ListenTogetherSession(
                 unavailable = unavailableKey != NONE && unavailableKey == loadedKey,
                 versionMismatch = versionMismatch,
                 pausedLocally = pausedLocally,
+                track = r.track,
+                queue = r.queue,
+                names = memberNames.toMap(),
             ),
         )
     }
@@ -598,6 +650,7 @@ class ListenTogetherSession(
         const val MAX_QUEUE = 200
         const val MAX_SUGGESTIONS = 3
         const val MAX_HISTORY = 50
+        const val LEAVE_GRACE_MS = 15_000L
         const val JOIN_LEAD_MS = 1_000L
         const val DRIFT_TICK_MS = 1_000L
         const val SEEK_HOLD_MS = 2_000L

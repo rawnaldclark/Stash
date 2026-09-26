@@ -141,6 +141,13 @@ interface PlayerRepository {
     fun resumeLastQueue()
 
     /**
+     * When the screen only shows the restored last session (#462: nothing in the player yet), loads it
+     * into the player, paused and unprepared, and returns true. Listen Together calls this before
+     * hosting, so the room starts from the song the host is looking at instead of from nothing.
+     */
+    suspend fun loadRestoredQueue(): Boolean = false
+
+    /**
      * v0.9.14: Replace the queue with a freshly-shuffled snapshot of the
      * user's entire downloaded library, begin playback, and arm the
      * auto-grow watcher so the queue refills from the unused remainder

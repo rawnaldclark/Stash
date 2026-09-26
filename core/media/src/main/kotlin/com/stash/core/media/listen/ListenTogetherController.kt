@@ -6,6 +6,7 @@ import com.stash.core.media.service.StashPlaybackService
 import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.RoomSuggestion
 import com.stash.core.model.listen.ServerMessage
+import com.stash.core.model.share.SharedTrack
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,7 +38,19 @@ sealed interface ListenTogetherState {
         val versionMismatch: Boolean = false,
         /** Paused on this phone by an unplug or a call while the room plays on: "Paused — tap to rejoin". */
         val pausedLocally: Boolean = false,
+        /** The room's current song; [SharedTrack.addedBy] says whose pick it is. */
+        val track: SharedTrack? = null,
+        /** What plays next in the room, each song with who added it. */
+        val queue: List<SharedTrack> = emptyList(),
+        /** Everyone seen this session, id → name, kept after they leave so "Maya's pick" still says Maya. */
+        val names: Map<String, String?> = emptyMap(),
     ) : ListenTogetherState
+}
+
+/** Something a person did in the room, for a short named notice: "Maya joined", "Rawn skipped". */
+data class SessionEvent(val kind: Kind, val memberId: String, val name: String?) {
+    /** HOSTING: [memberId] is the new host (maybe this phone: "You're hosting now"). */
+    enum class Kind { JOINED, LEFT, SKIPPED, WENT_BACK, PAUSED, RESUMED, HOSTING }
 }
 
 /**
@@ -57,6 +70,8 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         data class React(val emoji: String) : Command
         data class Suggestion(val id: String, val add: Boolean) : Command
         data class MakeHost(val memberId: String) : Command
+        /** Host only: Up next after the host removed or moved songs. Replaces the room's queue. */
+        data class SetQueue(val queue: List<SharedTrack>) : Command
         /** Catch up with the room after a local pause (see [ListenTogetherState.InRoom.pausedLocally]). */
         data object Rejoin : Command
     }
@@ -74,6 +89,10 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
 
     private val _reactions = MutableSharedFlow<ServerMessage.Reaction>(extraBufferCapacity = 16)
     val reactions: SharedFlow<ServerMessage.Reaction> = _reactions.asSharedFlow()
+
+    private val _events = MutableSharedFlow<SessionEvent>(extraBufferCapacity = 8)
+    /** Named room events for the Now Playing notice; never replayed. */
+    val events: SharedFlow<SessionEvent> = _events.asSharedFlow()
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     /** One-line notices for a toast: "Session ended", "This session is full", … */
@@ -116,4 +135,5 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
     internal fun publish(state: ListenTogetherState) { _state.value = state }
     internal fun reaction(reaction: ServerMessage.Reaction) { _reactions.tryEmit(reaction) }
     internal fun message(text: String) { _messages.tryEmit(text) }
+    internal fun event(event: SessionEvent) { _events.tryEmit(event) }
 }

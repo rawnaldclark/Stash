@@ -44,7 +44,12 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay" />
-        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/Theme.Stash">
+        <!--
+            singleTop: a link opened while Stash is showing goes to onNewIntent. With the default mode, Android
+            either stacks a second copy of the app or, when the link matches the one Stash was launched with,
+            delivers nothing at all (an invite for the session you're in did nothing).
+        -->
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/Theme.Stash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -5,9 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +19,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -74,6 +74,8 @@ fun GlowingProgressBar(
     modifier: Modifier = Modifier,
     /** False shows progress only (a Listen Together listener can't seek). */
     seekable: Boolean = true,
+    /** Centred between the two times, so it costs no height: a listener's LIVE / Back to live. */
+    center: @Composable () -> Unit = {},
 ) {
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(progress) }
@@ -182,22 +184,25 @@ fun GlowingProgressBar(
         // --- Time labels ---
         Spacer(modifier = Modifier.height(2.dp))
 
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            contentAlignment = Alignment.Center,
         ) {
             val displayMs = if (isDragging) (dragProgress * totalMs).roundToLong() else elapsedMs
             Text(
                 text = formatTime(displayMs),
                 style = MaterialTheme.typography.labelSmall,
                 color = ink.copy(alpha = 0.7f),
+                modifier = Modifier.align(Alignment.CenterStart),
             )
+            center()
             Text(
                 text = "-${formatTime((totalMs - displayMs).coerceAtLeast(0L))}",
                 style = MaterialTheme.typography.labelSmall,
                 color = ink.copy(alpha = 0.7f),
+                modifier = Modifier.align(Alignment.CenterEnd),
             )
         }
     }

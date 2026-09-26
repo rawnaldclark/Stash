@@ -6,10 +6,13 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.share.SharePreference
+import com.stash.core.media.PlayerRepository
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.media.listen.ListenTogetherState
+import com.stash.core.media.listen.SessionEvent
 import com.stash.core.model.listen.ServerMessage
+import com.stash.core.model.share.SharedTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharedFlow
@@ -21,9 +24,12 @@ import kotlinx.coroutines.launch
 class ListenTogetherViewModel @Inject constructor(
     private val controller: ListenTogetherController,
     private val sharePreference: SharePreference,
+    private val playerRepository: PlayerRepository,
 ) : ViewModel() {
     val state: StateFlow<ListenTogetherState> = controller.state
     val reactions: SharedFlow<ServerMessage.Reaction> = controller.reactions
+    /** "Maya joined", "Rawn skipped": named room events for the notice on Now Playing. */
+    val events: SharedFlow<SessionEvent> = controller.events
 
     /** The "Show my name as" field. Compose state, so the TextField reads it synchronously. */
     var name by mutableStateOf("")
@@ -41,6 +47,8 @@ class ListenTogetherViewModel @Inject constructor(
     fun start() {
         viewModelScope.launch {
             sharePreference.setDisplayName(name)
+            // A cold start only shows the last session; load it so the room starts from that song, not from nothing.
+            playerRepository.loadRestoredQueue()
             controller.send(Command.Host)
         }
     }
@@ -51,4 +59,5 @@ class ListenTogetherViewModel @Inject constructor(
     fun react(emoji: String) = controller.send(Command.React(emoji))
     fun makeHost(memberId: String) = controller.send(Command.MakeHost(memberId))
     fun answerSuggestion(id: String, add: Boolean) = controller.send(Command.Suggestion(id, add))
+    fun editQueue(queue: List<SharedTrack>) = controller.send(Command.SetQueue(queue))
 }

@@ -725,6 +725,12 @@ class PlayerRepositoryImpl @Inject constructor(
         scope.launch { resumeQueue(play = true) }
     }
 
+    override suspend fun loadRestoredQueue(): Boolean {
+        if (!ghostSession) return false
+        resumeQueue(play = false)
+        return true
+    }
+
     /** Restores the persisted queue: playing ([resumeLastQueue]) or paused and unprepared (after Listen Together). */
     private suspend fun resumeQueue(play: Boolean) {
         try {
@@ -2416,7 +2422,9 @@ class PlayerRepositoryImpl @Inject constructor(
             currentTrack = track,
             isPlaying = controller.isPlaying,
             positionMs = controller.currentPosition.coerceAtLeast(0),
-            durationMs = controller.duration.coerceAtLeast(0),
+            // Until an item is prepared (your queue put back paused after Listen Together) the player doesn't
+            // know its length, but the item does. Without this Now Playing read "0:13 / -0:00".
+            durationMs = controller.duration.takeIf { it > 0 } ?: track?.durationMs ?: 0L,
             isShuffleEnabled = controller.shuffleModeEnabled,
             repeatMode = controller.repeatMode.toRepeatMode(),
             queue = display.queue,
