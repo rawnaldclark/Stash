@@ -234,6 +234,21 @@ test("songs carry who added them; a listener can't claim someone else's pick", (
     assert.equal(send(party(), "h", { t: "queue", queue: [{ ...NEXT, by: "x".repeat(17) }] }).state.queue.length, 0);
 });
 
+test("a song's cover link comes along only from a known cover host", () => {
+    const cover = "https://lastfm-img.freetls.fastly.net/i/u/770x0/ab12.jpg";
+    const s = send(party(), "h", { t: "queue", queue: [
+        { ...NEXT, art: cover },
+        { ...TRACK, art: "https://tracker.example/pixel.gif" },
+        { t: "C", a: "A", art: "http://i.ytimg.com/vi/x/maxresdefault.jpg" },
+    ] }).state;
+    assert.equal(s.queue[0].art, cover);
+    // Dropped, never fatal: the song stays, only the link goes.
+    assert.deepEqual(s.queue.slice(1).map((x) => ["art" in x, x.t]), [[false, TRACK.t], [false, "C"]]);
+    let t = send(party(), "a", { t: "suggest", track: { ...NEXT, art: cover } }, T0, { newId: "s1" }).state;
+    t = send(t, "h", { t: "suggestion", id: "s1", action: "add" }).state;
+    assert.equal(t.queue[0].art, cover);
+});
+
 test("prepare says who loaded and why; timelines say who played, paused or seeked", () => {
     const r = send(party(), "h", { t: "load", track: TRACK, positionMs: 0, queue: [], why: "skip" });
     assert.equal(sent(r, "prepare")[0].msg.by, "h");

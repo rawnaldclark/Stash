@@ -42,6 +42,14 @@ class RoomProtocolTest {
         assertThat((timeline as ServerMessage.TimelineUpdate).by).isEqualTo("M1")
     }
 
+    @Test fun `a song's cover travels as art, and is left out when unknown`() {
+        val cover = "https://i.scdn.co/image/ab67616d0000b273aa"
+        assertThat(RoomProtocol.encode(ClientMessage.Queue(listOf(track.copy(artUrl = cover))))).contains(""""art":"$cover"""")
+        assertThat(RoomProtocol.encode(ClientMessage.Queue(listOf(track)))).doesNotContain("art")
+        val update = RoomProtocol.decode("""{"t":"queue","queue":[{"t":"Xtal","a":"Aphex Twin","art":"$cover"}]}""")
+        assertThat((update as ServerMessage.QueueUpdate).queue.single().artUrl).isEqualTo(cover)
+    }
+
     @Test fun `a welcome exactly as the Worker sends it decodes`() {
         val text = """{"t":"welcome","memberId":"m1","token":"tok","state":{"rev":3,"host":"m1","track":null,"trackKey":0,
             "timeline":{"positionMs":0,"atRoomMs":1000,"playing":false},"queue":[],

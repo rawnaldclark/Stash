@@ -21,6 +21,11 @@ data class SharedTrack(
     @SerialName("yt") val youtubeId: String? = null,
     /** Listen Together only: the member id of whoever added the song. Never set for shared mixes (null is left out). */
     @SerialName("by") val addedBy: String? = null,
+    /**
+     * Listen Together only: the cover the adder's phone shows, an https link on [ShareConfig.COVER_HOSTS]
+     * (the room drops any other). Never set for shared mixes.
+     */
+    @SerialName("art") val artUrl: String? = null,
 )
 
 private fun String?.clean(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
@@ -61,6 +66,9 @@ fun SharedTrack.toTrack(): Track = Track(
     // Blank ids must stay null: youtube_id and spotify_uri are UNIQUE, so "" / "spotify:track:" would collide.
     spotifyUri = spotifyId?.takeIf { it.isNotBlank() }?.let { "spotify:track:$it" },
     youtubeId = youtubeId?.takeIf { it.isNotBlank() },
+    // A room song this phone didn't have shows the adder's cover. It came from another phone, so it's
+    // checked here too, not only by the room.
+    albumArtUrl = artUrl?.takeIf(ShareConfig::isAllowedCover),
     source = MusicSource.BOTH,
     isStreamable = true,
 )

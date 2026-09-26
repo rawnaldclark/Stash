@@ -63,7 +63,7 @@ import kotlinx.coroutines.launch
 
 internal const val MAX_UP_NEXT = 20
 
-/** A queued song keyed by the song plus which copy it is: the key survives moves, removals and the room's "by" stamps. */
+/** A queued song keyed by the song plus which copy it is: the key survives moves, removals, the room's "by" stamps and its cover. */
 internal class UpNextEntry(val uid: String, val track: SharedTrack)
 
 internal fun upNextEntries(tracks: List<SharedTrack>): List<UpNextEntry> {
@@ -71,7 +71,7 @@ internal fun upNextEntries(tracks: List<SharedTrack>): List<UpNextEntry> {
     // craft that), and a repeated key would crash the list on every phone in the room.
     val copies = HashMap<String, Int>()
     return tracks.map { t ->
-        val song = t.copy(addedBy = null).toString()
+        val song = t.copy(addedBy = null, artUrl = null).toString()
         UpNextEntry("$song#${copies.merge(song, 1) { a, b -> a + b }}", t)
     }
 }

@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.sp
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.media.listen.SessionEvent
 import com.stash.core.model.listen.RoomMember
+import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.SharedTrack
 import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
@@ -515,7 +516,10 @@ private val YOUTUBE_ID = Regex("[A-Za-z0-9_-]{11}")
 internal fun thumbnailUrl(track: SharedTrack): String? =
     track.youtubeId?.takeIf { YOUTUBE_ID.matches(it) }?.let { "https://i.ytimg.com/vi/$it/mqdefault.jpg" }
 
-/** A song in the sheet: its YouTube thumbnail over a tile coloured from the title, which shows until it loads or when there's none. */
+/** The cover the adder's phone shows when it came along (checked again: it's another phone's link), else the YouTube thumbnail. */
+internal fun coverUrl(track: SharedTrack): String? = track.artUrl?.takeIf(ShareConfig::isAllowedCover) ?: thumbnailUrl(track)
+
+/** A song in the sheet: its cover over a tile coloured from the title, which shows until it loads or when there's none. */
 @Composable
 internal fun SongRow(
     track: SharedTrack,
@@ -532,7 +536,7 @@ internal fun SongRow(
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.Default.MusicNote, contentDescription = null, tint = FACE_INK.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
-            thumbnailUrl(track)?.let { AsyncImage(it, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+            coverUrl(track)?.let { AsyncImage(it, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

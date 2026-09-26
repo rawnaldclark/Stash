@@ -36,7 +36,7 @@ class SessionUiTest {
         val keys = upNextEntries(listOf(avril, nude, avril)).map { it.uid }
         assertEquals(3, keys.toSet().size)
         // The room stamps who added a song after the host's own add: the row must stay the same row.
-        assertEquals(keys, upNextEntries(listOf(avril.copy(addedBy = "m"), nude, avril)).map { it.uid })
+        assertEquals(keys, upNextEntries(listOf(avril.copy(addedBy = "m", artUrl = "https://i.scdn.co/image/aa"), nude, avril)).map { it.uid })
         assertEquals(listOf(keys[1], keys[0], keys[2]), upNextEntries(listOf(nude, avril, avril)).map { it.uid })
     }
 
@@ -69,6 +69,15 @@ class SessionUiTest {
         // The id comes from whoever added the song, and the room only limits its length.
         assertNull(thumbnailUrl(nude.copy(youtubeId = "../x?y=1#zz")))
         assertNull(thumbnailUrl(nude.copy(youtubeId = "D5Y11hwjMNsX")))
+    }
+
+    @Test
+    fun `a row shows the adder's cover when it came along, else the YouTube thumbnail`() {
+        val cover = "https://i.scdn.co/image/ab67616d0000b273aa"
+        val song = nude.copy(youtubeId = "D5Y11hwjMNs")
+        assertEquals(cover, coverUrl(song.copy(artUrl = cover)))
+        assertEquals(thumbnailUrl(song), coverUrl(song.copy(artUrl = "https://tracker.example/x.jpg")))
+        assertNull(coverUrl(nude))
     }
 
     @Test

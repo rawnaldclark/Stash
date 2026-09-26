@@ -12,6 +12,8 @@ import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_I
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_YOUTUBE_ID
 import com.stash.core.media.service.toAutoMediaItem
 import com.stash.core.media.trackIdentity
+import com.stash.core.model.Track
+import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.share.toSharedTrack
 import java.io.File
@@ -50,8 +52,9 @@ class DefaultSessionCatalog @Inject constructor(
 
     override suspend fun mediaItemFor(track: SharedTrack): MediaItem? = withContext(Dispatchers.IO) {
         try {
-            // Keyed without the adder: the room echoes our own descriptors back with `by` added.
-            val key = track.copy(addedBy = null)
+            // Keyed without the adder and the cover: the room echoes our own descriptors back with `by`
+            // added, and the cover is decoration, not identity.
+            val key = track.copy(addedBy = null, artUrl = null)
             val id = own[key] ?: musicRepository.ensureExactTrackPersisted(track).also { own[key] = it }
             val row = trackDao.getById(id) ?: return@withContext null
             // An exact match may be this phone's download: the same recording, so play the file.
@@ -83,7 +86,9 @@ class DefaultSessionCatalog @Inject constructor(
         val extras = item.mediaMetadata.extras
         val id = item.mediaId.toLongOrNull()?.takeIf { it > 0 } ?: extras?.getLong(EXTRA_TRACK_ID, -1L)?.takeIf { it > 0 }
         id?.let { trackDao.getById(it) }?.let { row ->
-            return@withContext row.toDomain().toSharedTrack().also { own[it] = row.id }
+            val shared = row.toDomain().shared()
+            own[shared.copy(artUrl = null)] = row.id
+            return@withContext shared
         }
         // Radio and search rows can carry synthetic ids with no Room row: fall back to the metadata.
         val title = item.mediaMetadata.title?.toString()?.takeIf { it.isNotBlank() } ?: return@withContext null
@@ -93,14 +98,18 @@ class DefaultSessionCatalog @Inject constructor(
             artist = artist,
             durationMs = extras?.getLong(EXTRA_TRACK_DURATION_MS, 0L)?.takeIf { it > 0 },
             youtubeId = extras?.getString(EXTRA_TRACK_YOUTUBE_ID),
+            artUrl = item.mediaMetadata.artworkUri?.toString()?.takeIf(ShareConfig::isAllowedCover),
         )
     }
+
+    /** The descriptor for the room, with the cover when it's a link the others can load: never a local file. */
+    private fun Track.shared(): SharedTrack = toSharedTrack().copy(artUrl = albumArtUrl?.takeIf(ShareConfig::isAllowedCover))
 
     override suspend fun radioAfter(track: SharedTrack): List<SharedTrack> = try {
         val (_, batch) = radioGenerator.start(RadioSeed.Song(track.title, track.artist, track.youtubeId))
         // Drop the seed itself, matched by title and artist like PlayerRepositoryImpl.startRadio's keepCurrent.
         val seed = trackIdentity(track.title, track.artist)
-        batch.filter { trackIdentity(it.title, it.artist) != seed }.map { it.toSharedTrack() }.take(MAX_STATION)
+        batch.filter { trackIdentity(it.title, it.artist) != seed }.map { it.shared() }.take(MAX_STATION)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

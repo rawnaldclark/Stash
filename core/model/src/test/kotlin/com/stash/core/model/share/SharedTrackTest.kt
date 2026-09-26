@@ -42,4 +42,15 @@ class SharedTrackTest {
         assertThat(t.spotifyUri).isNull()
         assertThat(t.youtubeId).isNull()
     }
+
+    @Test fun `a room song's cover becomes the new row's art, only from a known cover host`() {
+        val cover = "https://lastfm-img.freetls.fastly.net/i/u/770x0/ab12.jpg"
+        assertThat(SharedTrack("T", "A", artUrl = cover).toTrack().albumArtUrl).isEqualTo(cover)
+        assertThat(SharedTrack("T", "A", artUrl = "https://tracker.example/x.jpg").toTrack().albumArtUrl).isNull()
+        assertThat(SharedTrack("T", "A").toTrack().albumArtUrl).isNull()
+    }
+
+    @Test fun `a shared mix's descriptor never carries a cover`() {
+        assertThat(full.copy(albumArtUrl = "https://i.scdn.co/image/x").toSharedTrack().artUrl).isNull()
+    }
 }

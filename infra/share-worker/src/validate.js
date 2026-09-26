@@ -69,6 +69,9 @@ export function cleanTrack(t) {
     if (!optStr(t.al, 500) || !optStr(t.isrc, 20) || !optStr(t.sp, 40) || !optStr(t.yt, 20) || !optStr(t.by, 16)) return null;
     // by: the member id of whoever added the song (Listen Together); the room stamps or overrides it.
     const clean = pick(t, ["t", "a", "al", "d", "isrc", "sp", "yt", "by"]);
+    // art: the cover the adder's phone shows (Listen Together). Only from a known cover host, so no member
+    // can make every phone in the room fetch from a server that logs IPs. Anything else is dropped, not fatal.
+    if (typeof t.art === "string" && t.art.length <= 1000 && allowedCover(t.art)) clean.art = t.art;
     // A duration outside 1 ms..24 h is dropped, not fatal: positions are clamped to it.
     if (!(Number.isSafeInteger(clean.d) && clean.d >= 1 && clean.d <= 86_400_000)) delete clean.d;
     return clean;
