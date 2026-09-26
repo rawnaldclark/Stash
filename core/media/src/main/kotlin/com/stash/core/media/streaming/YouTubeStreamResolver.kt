@@ -1,6 +1,7 @@
 package com.stash.core.media.streaming
 
 import android.util.Log
+import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.ytmusic.YTMusicApiClient
@@ -150,7 +151,11 @@ class YouTubeStreamResolver @Inject constructor(
             bitsPerSample = null,
             sampleRateHz = null,
             bitrateKbps = null,
-            coverArtUrl = null,
+            // The video's thumbnail, as the lossless resolvers bring Qobuz's cover. The player only
+            // uses it for a row with no art or a YouTube thumbnail, so real covers are untouched; but
+            // without it a song only YouTube plays (not on Qobuz, often not on Last.fm either) was
+            // blank for good, since nothing else fills art for a row with no stored video id.
+            coverArtUrl = ArtUrlUpgrader.youTubeThumbnail(videoId),
             origin = ORIGIN,
         )
     }

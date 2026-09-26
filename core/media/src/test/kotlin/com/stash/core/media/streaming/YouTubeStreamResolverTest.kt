@@ -162,6 +162,25 @@ class YouTubeStreamResolverTest {
         coVerify(exactly = 1) { extractor.extractStreamUrl("abc123", true, true) }
     }
 
+    /**
+     * A YouTube stream brings its video's thumbnail as the cover, the way the lossless resolvers bring
+     * Qobuz's. It brought none, so a song only YouTube can play kept a blank row for good: nothing it
+     * played ever filled the art (Garden by Death Plus, played 11 times, still blank; device 2026-09-26).
+     */
+    @Test
+    fun resolve_bringsTheVideosThumbnailAsTheCover() = runTest {
+        val extractor: PreviewUrlExtractor = mockk()
+        val ytMusic: YTMusicApiClient = mockk()
+        coEvery { ytMusic.searchCanonicalVideoId("Death Plus", "Garden") } returns "9Vz-MkbnSg4"
+        coEvery { extractor.extractStreamUrl("9Vz-MkbnSg4", true, false) } returns "https://raced/9Vz-MkbnSg4"
+        every { extractor.observedCodec("9Vz-MkbnSg4") } returns "opus"
+        val resolver = YouTubeStreamResolver(extractor, ytMusic, policy())
+
+        val result = resolver.resolve(trackWithoutYoutubeId("Death Plus", "Garden"), allowYtDlp = true)
+
+        assertThat(result?.coverArtUrl).isEqualTo("https://i.ytimg.com/vi/9Vz-MkbnSg4/maxresdefault.jpg")
+    }
+
     private fun policy(saveData: Boolean = false): StreamQualityPolicy =
         mockk { coEvery { saveData() } returns saveData }
 
