@@ -59,19 +59,23 @@ class CommunityPickerViewModel @Inject constructor(
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    /** Your playlists and mixes (not the Downloads bucket, not empty ones), then your 20 most recently played songs. */
+    /**
+     * Your playlists and mixes (not Liked Songs or the Downloads bucket, not empty ones), then your 20 most recently
+     * played songs. A reopen keeps the last lists on screen until these arrive.
+     */
     fun load() {
-        _state.value = UiState()
         viewModelScope.launch {
             _state.value = try {
                 val playlists = musicRepository.getAllPlaylists().first()
-                    .filter { it.type != PlaylistType.DOWNLOADS_MIX && it.trackCount > 0 }
+                    .filter { (it.type == PlaylistType.CUSTOM || it.type in CommunityRepository.MIX_TYPES) && it.trackCount > 0 }
+                    // SQLite's name order puts "sad boy hours" after every capitalised name.
+                    .sortedBy { it.name.lowercase() }
                 UiState(playlists, repository.recentSongs(), loading = false)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w("CommunityPicker", "load failed", e)
-                UiState(loading = false)
+                _state.value.copy(loading = false)
             }
         }
     }

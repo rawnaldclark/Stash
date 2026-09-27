@@ -40,12 +40,27 @@ class CommunityPickerViewModelTest {
             playlist(2, "Downloads", PlaylistType.DOWNLOADS_MIX, 10),
             playlist(3, "Empty", PlaylistType.CUSTOM, 0),
             playlist(4, "Daily Discovery", PlaylistType.STASH_MIX, 34),
+            playlist(5, "Liked Songs", PlaylistType.LIKED_SONGS, 812),
+            playlist(6, "Stash Liked", PlaylistType.STASH_LIKED, 57),
+            playlist(7, "Workout", PlaylistType.CUSTOM, 18),
         ))
         coEvery { repo.recentSongs() } returns listOf(Track(id = 9, title = "garden", artist = "Death Plus"))
         val vm = CommunityPickerViewModel(music, repo)
         vm.load(); advanceUntilIdle()
-        assertThat(vm.state.value.playlists.map { it.name }).containsExactly("sad boy hours", "Daily Discovery").inOrder()
+        assertThat(vm.state.value.playlists.map { it.name }).containsExactly("Daily Discovery", "sad boy hours", "Workout").inOrder()
         assertThat(vm.state.value.songs.map { it.title }).containsExactly("garden")
+        assertThat(vm.state.value.loading).isFalse()
+    }
+
+    @Test fun `a failed reload keeps the lists already on screen`() = runTest(dispatcher) {
+        every { music.getAllPlaylists() } returns flowOf(listOf(playlist(1, "sad boy hours", PlaylistType.CUSTOM, 42)))
+        val vm = CommunityPickerViewModel(music, repo)
+        vm.load(); advanceUntilIdle()
+        every { music.getAllPlaylists() } throws IllegalStateException("database closed")
+        vm.load()
+        assertThat(vm.state.value.playlists.map { it.name }).containsExactly("sad boy hours")
+        advanceUntilIdle()
+        assertThat(vm.state.value.playlists.map { it.name }).containsExactly("sad boy hours")
         assertThat(vm.state.value.loading).isFalse()
     }
 }

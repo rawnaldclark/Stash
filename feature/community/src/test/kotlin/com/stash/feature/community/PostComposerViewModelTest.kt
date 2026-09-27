@@ -13,10 +13,12 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -82,5 +84,28 @@ class PostComposerViewModelTest {
             assertThat(it.error).isEqualTo("You've posted twice today. Try again tomorrow.")
             assertThat(it.seeMyPosts).isFalse()
         }
+    }
+
+    @Test fun `the frozen-copy note is the spec's sentence, and one song reads as one`() {
+        assertThat(frozenNote(draft)).isEqualTo("Everyone with Community turned on will see these 42 songs exactly as they are now. Later changes to your playlist won't show. It stays up for 30 days, and you can take it down any time.")
+        assertThat(frozenNote(draft.copy(kind = "mix", tracks = draft.tracks.take(1)))).startsWith("Everyone with Community turned on will see this song exactly as it is now. Later changes to your mix won't show.")
+    }
+
+    @Test fun `a second tap while posting sends one post`() = runTest(dispatcher) {
+        coEvery { repo.post(any(), any()) } coAnswers { delay(1_000); CommunityResult.Ok("AAAAAAAA") }
+        val vm = opened(); vm.post("Maya") {}; vm.post("Maya") {}; advanceUntilIdle()
+        coVerify(exactly = 1) { repo.post(any(), any()) }
+    }
+
+    @Test fun `closing drops the opening, so a late reply can't fill the next one`() = runTest(dispatcher) {
+        coEvery { repo.me() } coAnswers { delay(1_000); CommunityResult.Ok(CommunityMe(2, 4, false)) }
+        val vm = PostComposerViewModel(repo).also { it.open(target); runCurrent() }
+        vm.reset(); advanceUntilIdle()
+        assertThat(vm.state.value).isEqualTo(UiState.Loading)
+    }
+
+    @Test fun `limits that can't be read leave the sheet usable`() = runTest(dispatcher) {
+        coEvery { repo.me() } returns CommunityResult.Failed(null)
+        assertThat((opened().state.value as UiState.Ready).me).isNull()
     }
 }

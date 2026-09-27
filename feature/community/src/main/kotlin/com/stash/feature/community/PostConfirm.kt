@@ -16,17 +16,24 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -99,6 +106,9 @@ class PostComposerViewModel @Inject constructor(private val repository: Communit
         }
     }
 
+    /** The sheet closed: the next opening starts from Loading, not from this one's draft or "Posting…". */
+    fun reset() { opening?.cancel(); _state.value = UiState.Loading }
+
     /** Posts under [name]. [onPosted] closes the sheet; a refusal stays on it with the reason. */
     fun post(name: String, onPosted: () -> Unit) {
         val s = _state.value as? UiState.Ready ?: return
@@ -139,7 +149,7 @@ internal fun frozenNote(draft: Draft.Ready): String =
     if (draft.kind == "song") {
         "Everyone with Community turned on will see this song. It stays up for 30 days, and you can take it down any time."
     } else {
-        "Everyone with Community turned on will see these ${songs(draft.tracks.size)} exactly as they are now. " +
+        "Everyone with Community turned on will see ${if (draft.tracks.size == 1) "this song exactly as it is" else "these ${draft.tracks.size} songs exactly as they are"} now. " +
             "Later changes to your ${if (draft.kind == "mix") "mix" else "playlist"} won't show. " +
             "It stays up for 30 days, and you can take it down any time."
     }
@@ -154,9 +164,14 @@ internal fun PostConfirmSheet(
     viewModel: PostComposerViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(target) { viewModel.open(target) }
+    DisposableEffect(viewModel) { onDispose(viewModel::reset) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = StashTheme.extendedColors.elevatedSurface) {
+    // A post in flight holds the sheet open: its result (the toast or the reason) lands here, and Post can't go twice.
+    val sending by rememberUpdatedState((state as? PostComposerViewModel.UiState.Ready)?.posting == true)
+    val sheetState = rememberModalBottomSheetState(confirmValueChange = { it != SheetValue.Hidden || !sending })
+    // M3 1.4.0: back calls onDismissRequest even after confirmValueChange vetoed the hide.
+    ModalBottomSheet(onDismissRequest = { if (!sending) onDismiss() }, sheetState = sheetState, containerColor = StashTheme.extendedColors.elevatedSurface) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
             Text("Post to Community", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(16.dp))
@@ -199,7 +214,9 @@ private fun ReadyContent(
             Text(draft.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val what = if (draft.kind == "song") draft.tracks.single().artist else songs(draft.tracks.size)
             Text(
-                listOfNotNull(kindLabel(draft.kind), what, s.name.takeUnless { askName }?.let { "posting as $it" }).joinToString(" · "),
+                listOfNotNull(kindLabel(draft.kind), what, s.name.takeUnless { askName }?.let { "posting as $it" })
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -222,7 +239,11 @@ private fun ReadyContent(
     s.me?.let { me ->
         Spacer(Modifier.height(8.dp))
         if (me.blocked) {
-            Text("You can't post to Community.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            Text(
+                communityMessage(CommunityResult.Rejected("blocked")),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
         } else {
             Text(
                 "${me.postsLeftToday} of 2 posts left today · ${me.spotsFree} of 5 spots free",
@@ -233,12 +254,17 @@ private fun ReadyContent(
     }
     s.error?.let {
         Spacer(Modifier.height(8.dp))
-        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        Text(
+            it,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
     }
     if (s.seeMyPosts) TextButton(onClick = onSeeMyPosts) { Text("See my posts") }
     Spacer(Modifier.height(16.dp))
     Button(onClick = { onPost(name) }, enabled = !s.posting && s.me?.blocked != true, modifier = Modifier.fillMaxWidth()) {
         Text(if (s.posting) "Posting…" else "Post")
     }
-    TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+    TextButton(onClick = onDismiss, enabled = !s.posting, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
 }
