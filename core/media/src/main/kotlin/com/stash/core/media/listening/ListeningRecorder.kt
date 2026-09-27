@@ -74,7 +74,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         trackSkipEventDao = trackSkipEventDao,
         scrobbler = scrobbler,
         listenSinks = listenSinks,
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        // One thread at a time: the track and play-state collectors both read and write `pending`.
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)),
     )
 
     /**
