@@ -3,14 +3,16 @@
  *
  *   npm run community -- list [n]                 newest and top posts, with hidden/removed flags, and blocked phones
  *   npm run community -- remove <postId>          take a post down
- *   npm run community -- restore <postId>         undo a removal or a vote attack (drops its downvotes)
+ *   npm run community -- restore <postId>         undo your removal or a vote attack (drops its downvotes)
  *   npm run community -- block <postId>           block that post's phone and remove all its live posts
  *   npm run community -- unblock <posterIdPrefix> undo a block (list shows the first 8 characters)
  *
  * Every command prints what it hit: an empty result means it matched nothing. For `block` and `restore`, read the
- * last result (the blocked row, or the post's recounted votes): block's INSERT and restore's UPDATE and DELETE have
- * no RETURNING, so their results are always empty. `unblock` leaves the phone's posts removed: `restore` any you
- * want back within a day, before the daily cleanup deletes them.
+ * last result: the blocked row, or the post's votes and `removed`. Block's INSERT and restore's UPDATE and DELETE
+ * have no RETURNING, so their results are always empty. `removed` says who took a post down ('owner' or 'poster',
+ * or null while it's up), and `restore` never undoes a poster's own take-down: 'poster' there means restore left
+ * it down. `unblock` leaves the phone's posts removed: `restore` brings back any of them within a day, before the
+ * daily cleanup deletes them.
  *
  * Runs on the live database through `wrangler d1 execute` with your own Cloudflare login. `d1 execute` takes
  * no bind parameters, so every argument is checked against a strict pattern before it goes into the SQL.
@@ -41,24 +43,27 @@ export function commandSql(command, arg, now = Date.now()) {
             const count = arg ?? "20";
             const n = COUNT.test(count) ? Number.parseInt(count, 10) : 0;
             if (!(n >= 1 && n <= 200)) throw new Error("list takes a count from 1 to 200");
-            const cols = `id, kind, title, poster_name, up, down, (up - down) <= ${HIDE_AT} AS hidden, removed_at IS NOT NULL AS removed,
+            const cols = `id, kind, title, poster_name, up, down, (up - down) <= ${HIDE_AT} AS hidden, removed_by AS removed,
                 ROUND((${now} - created_at) / 3600000.0, 1) AS age_h, substr(poster, 1, 8) AS poster`;
             return [`SELECT ${cols} FROM posts ORDER BY created_at DESC LIMIT ${n}`,
                 `SELECT ${cols} FROM posts WHERE removed_at IS NULL ORDER BY (up - down) DESC LIMIT ${n}`,
                 `SELECT substr(poster, 1, 8) AS poster, at, note FROM blocked ORDER BY at DESC LIMIT ${n}`].join(";\n");
         }
         case "remove":
-            return `UPDATE posts SET removed_at = ${now} WHERE id = '${postId(arg)}' RETURNING id, title, poster_name`;
+            // Only a live post: relabelling a poster's take-down 'owner' would let restore bring it back.
+            return `UPDATE posts SET removed_at = ${now}, removed_by = 'owner' WHERE id = '${postId(arg)}' AND removed_at IS NULL RETURNING id, title, poster_name`;
         case "restore": {
             const id = postId(arg);
-            return [`UPDATE posts SET removed_at = NULL WHERE id = '${id}'`,
-                `DELETE FROM votes WHERE post_id = '${id}' AND value = -1`,
-                RECOUNT_SQL.replaceAll("?1", `'${id}'`)].join(";\n");
+            // The downvotes go only if the post is up after the UPDATE: a removal just undone, or a post hidden by votes.
+            return [`UPDATE posts SET removed_at = NULL, removed_by = NULL WHERE id = '${id}' AND removed_by = 'owner'`,
+                `DELETE FROM votes WHERE post_id = '${id}' AND value = -1 AND (SELECT removed_at FROM posts WHERE id = '${id}') IS NULL`,
+                RECOUNT_SQL.replaceAll("?1", `'${id}'`),
+                `SELECT id, up, down, removed_by AS removed FROM posts WHERE id = '${id}'`].join(";\n");
         }
         case "block": {
             const id = postId(arg);
             return [`INSERT OR IGNORE INTO blocked (poster, at, note) SELECT poster, ${now}, 'post ${id}' FROM posts WHERE id = '${id}'`,
-                `UPDATE posts SET removed_at = ${now} WHERE removed_at IS NULL AND poster = (SELECT poster FROM posts WHERE id = '${id}') RETURNING id, title`,
+                `UPDATE posts SET removed_at = ${now}, removed_by = 'owner' WHERE removed_at IS NULL AND poster = (SELECT poster FROM posts WHERE id = '${id}') RETURNING id, title`,
                 `SELECT substr(poster, 1, 8) AS poster, at, note FROM blocked WHERE poster = (SELECT poster FROM posts WHERE id = '${id}')`].join(";\n");
         }
         case "unblock": {

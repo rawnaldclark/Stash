@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { commandSql } from "../scripts/community.mjs";
 import { env } from "./fake-kv.js";
-import { seed, DAY } from "./community-helpers.js";
+import { sha256Hex } from "../src/store.js";
+import { call, seed, DAY, KEY_A } from "./community-helpers.js";
 
 /** Runs each statement in turn, as `d1 execute` does, and returns each one's rows. */
 const run = async (e, sql) => {
@@ -10,42 +11,75 @@ const run = async (e, sql) => {
     for (const s of sql.split(";\n")) rows.push((await e.COMMUNITY_DB.prepare(s).all()).results);
     return rows;
 };
+/** Three downvotes and an upvote on POST0001, each from its own network. */
+const threeDownOneUp = (e) => e.COMMUNITY_DB.prepare("INSERT INTO votes (post_id, voter, ip_hash, value, at) VALUES ('POST0001','v1','n1',-1,1),('POST0001','v2','n2',-1,1),('POST0001','v3','n3',-1,1),('POST0001','v4','n4',1,1)").run();
+const removal = (e, id = "POST0001") => e.COMMUNITY_DB.prepare("SELECT removed_at, removed_by FROM posts WHERE id = ?1").bind(id).first();
+const takeDown = (e, id) => call(e, "DELETE", `/v1/community/posts/${id}`, { key: KEY_A });
 
-test("remove and restore: restore clears the removal, drops the downvotes and recounts", async () => {
+test("remove and restore: restore clears the owner's removal, drops the downvotes and recounts", async () => {
     const e = env();
     await seed(e, { id: "POST0001", down: 3 });
-    await e.COMMUNITY_DB.prepare("INSERT INTO votes (post_id, voter, ip_hash, value, at) VALUES ('POST0001','v1','n1',-1,1),('POST0001','v2','n2',-1,1),('POST0001','v3','n3',-1,1),('POST0001','v4','n4',1,1)").run();
+    await threeDownOneUp(e);
     await run(e, commandSql("remove", "POST0001", 42));
-    assert.equal(await e.COMMUNITY_DB.prepare("SELECT removed_at FROM posts").first("removed_at"), 42);
-    await run(e, commandSql("restore", "POST0001", 43));
-    const p = await e.COMMUNITY_DB.prepare("SELECT removed_at, up, down FROM posts").first();
-    assert.deepEqual(p, { removed_at: null, up: 1, down: 0 });
+    assert.deepEqual(await removal(e), { removed_at: 42, removed_by: "owner" });
+    const shown = await run(e, commandSql("restore", "POST0001", 43));
+    assert.deepEqual(shown.at(-1), [{ id: "POST0001", up: 1, down: 0, removed: null }]);
+    assert.deepEqual(await removal(e), { removed_at: null, removed_by: null });
 });
 
-test("block records the poster and removes all their live posts; unblock matches a prefix", async () => {
+test("a post its poster took down: remove changes nothing, and restore leaves it down with its votes", async () => {
     const e = env();
-    const poster = "ab".repeat(32);
-    await seed(e, { id: "POST0001", poster });
-    await seed(e, { id: "POST0002", poster });
+    await seed(e, { id: "POST0001", key: KEY_A, up: 1, down: 3 });
+    await threeDownOneUp(e);
+    assert.equal((await takeDown(e, "POST0001")).status, 204);
+    const takenDown = await removal(e);
+    assert.deepEqual(await run(e, commandSql("remove", "POST0001", 42)), [[]]);
+    assert.deepEqual(await removal(e), takenDown);
+    const shown = await run(e, commandSql("restore", "POST0001", 43));
+    assert.deepEqual(shown.at(-1), [{ id: "POST0001", up: 1, down: 3, removed: "poster" }]);
+    assert.deepEqual(await removal(e), takenDown);
+    assert.equal(await e.COMMUNITY_DB.prepare("SELECT COUNT(*) AS n FROM votes").first("n"), 4);
+});
+
+test("restore of a post hidden by votes, never removed, drops its downvotes", async () => {
+    const e = env();
+    await seed(e, { id: "POST0001", down: 3 });
+    await threeDownOneUp(e);
+    const shown = await run(e, commandSql("restore", "POST0001", 43));
+    assert.deepEqual(shown.at(-1), [{ id: "POST0001", up: 1, down: 0, removed: null }]);
+    assert.equal(await e.COMMUNITY_DB.prepare("SELECT COUNT(*) AS n FROM votes WHERE value = -1").first("n"), 0);
+});
+
+test("block records the poster and removes all their live posts as the owner's; unblock matches a prefix; restore brings one back", async () => {
+    const e = env();
+    const poster = await sha256Hex(KEY_A);
+    await seed(e, { id: "POST0001", key: KEY_A });
+    await seed(e, { id: "POST0002", key: KEY_A });
+    await seed(e, { id: "TOOKDOWN", key: KEY_A });
     await seed(e, { id: "OTHER001", poster: "cd".repeat(32) });
+    await takeDown(e, "TOOKDOWN");
     await run(e, commandSql("block", "POST0001", 7));
     assert.equal(await e.COMMUNITY_DB.prepare("SELECT poster FROM blocked").first("poster"), poster);
-    const removed = (await e.COMMUNITY_DB.prepare("SELECT id FROM posts WHERE removed_at IS NOT NULL ORDER BY id").all()).results.map((r) => r.id);
-    assert.deepEqual(removed, ["POST0001", "POST0002"]);
+    const removed = (await e.COMMUNITY_DB.prepare("SELECT id, removed_by FROM posts WHERE removed_at IS NOT NULL ORDER BY id").all()).results;
+    assert.deepEqual(removed, [{ id: "POST0001", removed_by: "owner" }, { id: "POST0002", removed_by: "owner" }, { id: "TOOKDOWN", removed_by: "poster" }]);
     await run(e, commandSql("unblock", poster.slice(0, 12)));
     assert.equal(await e.COMMUNITY_DB.prepare("SELECT COUNT(*) AS n FROM blocked").first("n"), 0);
+    await run(e, commandSql("restore", "POST0002", 8));
+    assert.deepEqual(await removal(e, "POST0002"), { removed_at: null, removed_by: null });
 });
 
 test("remove, block and unblock show what they hit, and nothing for an unknown id or prefix", async () => {
     const e = env();
     await seed(e, { id: "POST0001", poster: "ab".repeat(32) });
+    await seed(e, { id: "POST0002" });
     assert.deepEqual(await run(e, commandSql("remove", "NOPE0001")), [[]]);
     assert.deepEqual(await run(e, commandSql("block", "NOPE0001")), [[], [], []]);
     assert.deepEqual(await run(e, commandSql("block", "POST0001", 7)),
         [[], [{ id: "POST0001", title: "T" }], [{ poster: "abababab", at: 7, note: "post POST0001" }]]);
     assert.deepEqual(await run(e, commandSql("unblock", "0123abcd")), [[]]);
     assert.deepEqual(await run(e, commandSql("unblock", "abababab")), [[{ poster: "abababab", note: "post POST0001" }]]);
-    assert.deepEqual(await run(e, commandSql("remove", "POST0001", 8)), [[{ id: "POST0001", title: "T", poster_name: "Seed" }]]);
+    assert.deepEqual(await run(e, commandSql("remove", "POST0001", 8)), [[]]); // still down from the block
+    assert.deepEqual(await run(e, commandSql("remove", "POST0002", 8)), [[{ id: "POST0002", title: "T", poster_name: "Seed" }]]);
 });
 
 test("list shows the newest and the top posts, with hidden and removed flags", async () => {
@@ -57,15 +91,16 @@ test("list shows the newest and the top posts, with hidden and removed flags", a
     assert.equal(newest.hidden, 1);
 });
 
-test("list: the top statement skips removed posts, newest flags them, and the third shows blocked phones", async () => {
+test("list: the top statement skips removed posts, newest says who removed each, and the third shows blocked phones", async () => {
     const e = env();
     await seed(e, { id: "LIVE0001", up: 5 });
-    await seed(e, { id: "GONE0001", up: 9, removed: 1 });
+    await seed(e, { id: "GONE0001", up: 9, key: KEY_A });
+    await takeDown(e, "GONE0001");
     await seed(e, { id: "SPAM0001", poster: "cd".repeat(32) });
     await run(e, commandSql("block", "SPAM0001", 5));
     const [newest, top, blocked] = await run(e, commandSql("list", "10"));
     assert.deepEqual(top.map((r) => r.id), ["LIVE0001"]);
-    assert.equal(newest.find((r) => r.id === "GONE0001").removed, 1);
+    assert.deepEqual(Object.fromEntries(newest.map((r) => [r.id, r.removed])), { LIVE0001: null, GONE0001: "poster", SPAM0001: "owner" });
     assert.deepEqual(blocked, [{ poster: "cdcdcdcd", at: 5, note: "post SPAM0001" }]);
 });
 

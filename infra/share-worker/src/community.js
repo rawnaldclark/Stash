@@ -220,7 +220,7 @@ async function takeDown(request, env, id, now) {
     const post = await env.COMMUNITY_DB.prepare("SELECT poster, up, down, removed_at, expires_at FROM posts WHERE id = ?1").bind(id).first();
     if (isGone(post, now) || (post.poster !== who.id && post.up - post.down <= HIDE_AT)) return gone(); // hidden: only its poster sees it
     if (post.poster !== who.id) return json({ error: "not_yours" }, 403);
-    await env.COMMUNITY_DB.prepare("UPDATE posts SET removed_at = ?2 WHERE id = ?1").bind(id, now).run();
+    await env.COMMUNITY_DB.prepare("UPDATE posts SET removed_at = ?2, removed_by = 'poster' WHERE id = ?1").bind(id, now).run();
     return new Response(null, { status: 204 });
 }
 

@@ -7,6 +7,7 @@ test("the poster takes a post down: it's gone everywhere, and still counts towar
     const e = env();
     const { id } = await (await call(e, "POST", "/v1/community/posts", { key: KEY_A, body: songPost() })).json();
     assert.equal((await call(e, "DELETE", `/v1/community/posts/${id}`, { key: KEY_A })).status, 204);
+    assert.equal(await e.COMMUNITY_DB.prepare("SELECT removed_by FROM posts").first("removed_by"), "poster"); // restore leaves it down
     assert.equal((await call(e, "GET", `/v1/community/posts/${id}`, { key: KEY_A })).status, 404);
     assert.equal((await (await call(e, "GET", "/v1/community/feed")).json()).posts.length, 0);
     assert.equal((await (await call(e, "GET", "/v1/community/mine", { key: KEY_A })).json()).posts.length, 0);

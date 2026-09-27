@@ -8,7 +8,7 @@ Approved in brainstorming on 2026-09-26. Mockups (git-ignored): `.superpowers/br
 
 | Question | Decision | Why |
 |---|---|---|
-| Who removes bad posts | The community first: a post at −3 or below hides for everyone. The owner is the backstop: commands to remove or restore any post and block a phone from posting. | Posts go live at once, and nobody has to approve anything; the owner still has the last word. |
+| Who removes bad posts | The community first: a post at −3 or below hides for everyone. The owner is the backstop: commands to remove any post, undo their removals and vote attacks, and block a phone from posting. | Posts go live at once, and nobody has to approve anything; the owner still has the last word. |
 | What a post is | A **frozen copy**: the songs as they were when posted. Later changes to the poster's playlist don't show. | Votes always match what people heard. |
 | Limits | Per phone: **2 posts per 24 hours, 5 live at once**, each live **30 days**. A looser per-network cap sits behind them. | Enough to share what you're into this week; nobody can flood the section. |
 | Ordering | **Likes plus freshness** ("hot"): each net vote is worth 3.6 hours of freshness, so 10 more votes keep a post above a newer one for about a day and a half. | The section keeps moving, new posts get seen, and votes still lift posts. |
@@ -54,7 +54,8 @@ CREATE TABLE posts (
   expires_at   INTEGER NOT NULL,               -- created_at + 30 days
   up           INTEGER NOT NULL DEFAULT 0,     -- counted votes (per-network cap applied)
   down         INTEGER NOT NULL DEFAULT 0,
-  removed_at   INTEGER,                        -- taken down by the poster or removed by the owner
+  removed_at   INTEGER,                        -- ms, when it was taken down or removed
+  removed_by   TEXT CHECK (removed_by IN ('poster', 'owner')),  -- who removed it; restore only undoes 'owner'
   body         TEXT NOT NULL                   -- JSON: {covers, tracks} or {track}. Last, so reading the other columns never walks past it
 );
 -- Must match the feed's ORDER BY exactly (12960000.0 is MS_PER_VOTE), or the list goes back to sorting every live post.
@@ -148,8 +149,8 @@ Reads are open to anyone (the Home section, and a phone that hasn't made a key y
 `npm run community -- <command>` runs `scripts/community.mjs`, which calls `wrangler d1 execute stash-community --remote --json` (the owner's own Cloudflare login; nothing is exposed on the internet):
 
 - `list [n]`: the newest and the top posts, including hidden ones: id, kind, title, poster name, up/down, age, and the first 8 characters of the poster id.
-- `remove <postId>`: sets `removed_at`.
-- `restore <postId>`: clears `removed_at`, deletes the post's downvotes and recounts. For a post that was removed by mistake, or buried by a vote attack.
+- `remove <postId>`: sets `removed_at`, and `removed_by = 'owner'`, on a post that's still up. A post its poster took down is left alone, so `restore` can't bring it back.
+- `restore <postId>`: undoes the owner's removal (clears `removed_at` and `removed_by`), deletes the post's downvotes if it's up after that, and recounts. For a post that was removed by mistake, or buried by a vote attack. A post its poster took down (`removed_by = 'poster'`) stays down, votes and all.
 - `block <postId>`: blocks that post's poster and removes all their live posts.
 - `unblock <posterIdPrefix>`: undoes a block, matched with `substr(poster, 1, length) = '<prefix>'` (D1 caps `LIKE` patterns at 50 bytes).
 
