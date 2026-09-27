@@ -108,7 +108,13 @@ class LyricsRepository @Inject constructor(
 
     suspend fun resolveTransient(query: LyricsQuery): LyricsResult? = walkSources(query)
 
-    suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
+    suspend fun clearFetchStamp(trackId: Long) {
+        trackDao.setLyricsFetchedAt(trackId, null)
+        // Explicit retry — don't let a stale failure stamp make this track sort
+        // as "recently failed" the next time the bulk fetch runs; the user just
+        // asked for a fresh attempt.
+        trackDao.setLastLyricsAttemptFailedAt(trackId, null)
+    }
 
     /** Empty when the user has set LRC-only — nothing to upgrade if Apple is never consulted. */
     suspend fun trackIdsPendingTtml(): List<Long> {
@@ -141,6 +147,7 @@ class LyricsRepository @Inject constructor(
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Manual lyrics fetch failed for trackId=$trackId", e)
+            trackDao.setLastLyricsAttemptFailedAt(trackId, clock.now())
             ManualFetchResult.FAILED
         }
     }

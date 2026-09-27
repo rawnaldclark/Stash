@@ -1198,6 +1198,16 @@ interface TrackDao {
     suspend fun setLyricsFetchedAt(trackId: Long, ts: Long?)
 
     /**
+     * Stamps a transient lyrics-fetch failure (network/parse error), distinct from
+     * [setLyricsFetchedAt]'s success/definitive-miss sentinel. Lets
+     * [LyricsDao.trackIdsMissingLyrics]'s ordering tell "never tried" apart from
+     * "tried and errored" so a retry doesn't keep re-selecting the same failed
+     * tracks ahead of untouched ones. Pass `null` to clear it.
+     */
+    @Query("UPDATE tracks SET last_lyrics_attempt_failed_at = :ts WHERE id = :trackId")
+    suspend fun setLastLyricsAttemptFailedAt(trackId: Long, ts: Long?)
+
+    /**
      * One-shot repair for miss-stamps written before v0.9.73: transient
      * failures (timeouts, 429s, DNS drops during bulk post-download bursts)
      * were conflated with genuine misses and stamped `0L` permanently —
