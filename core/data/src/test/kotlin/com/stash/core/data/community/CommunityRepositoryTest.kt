@@ -158,7 +158,7 @@ class CommunityRepositoryTest {
         val start = System.currentTimeMillis()
         assertThat(repo.vote("AAAAAAAA", 1)).isEqualTo(CommunityResult.Ok(VoteCounts(up = 1, down = 0, myVote = 1)))
         assertThat(repo.lastVoteAt).isAtLeast(start)
-        // Set before sending, so a refused vote counts too, as does one whose screen closed before the answer.
+        // Set before sending, so a refused vote counts too.
         assertThat(refusing.vote("AAAAAAAA", 1)).isEqualTo(CommunityResult.Rejected("gone"))
         assertThat(refusing.lastVoteAt).isAtLeast(start)
     }

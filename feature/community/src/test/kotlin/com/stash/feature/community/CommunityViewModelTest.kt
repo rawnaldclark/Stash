@@ -80,6 +80,16 @@ class CommunityViewModelTest {
         assertThat(vm.state.value.message).isEqualTo("Couldn't reach Community. Try again.")
     }
 
+    @Test fun `a vote on a post that's gone reloads the list`() = runTest(dispatcher) {
+        coEvery { repo.feed(5) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(emptyList()))
+        coEvery { repo.vote(any(), any()) } returns CommunityResult.Rejected("gone")
+        val vm = CommunityViewModel(repo)
+        vm.show(Tab.HOME); advanceUntilIdle()
+        vm.vote(post(), 1); advanceUntilIdle()
+        coVerify(exactly = 2) { repo.feed(5) }
+        assertThat(vm.state.value.posts).isEmpty()
+    }
+
     @Test fun `a tap while a vote is out shows at once and is sent after it`() = runTest(dispatcher) {
         coEvery { repo.feed(5) } returns CommunityResult.Ok(listOf(post()))
         coEvery { repo.vote("AAAAAAAA", 1) } coAnswers { delay(1_000); CommunityResult.Ok(VoteCounts(up = 4, down = 1, myVote = 1)) }
