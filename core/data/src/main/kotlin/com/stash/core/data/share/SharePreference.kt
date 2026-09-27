@@ -28,6 +28,6 @@ class SharePreference @Inject constructor(@ApplicationContext private val contex
         runCatching { context.shareDataStore.data.map { it[nameKey] }.first() }.getOrNull()?.takeIf { it.isNotBlank() }
 
     suspend fun setDisplayName(name: String?) {
-        context.shareDataStore.edit { if (name.isNullOrBlank()) it.remove(nameKey) else it[nameKey] = name.trim().take(40) }
+        context.shareDataStore.edit { if (name.isNullOrBlank()) it.remove(nameKey) else it[nameKey] = name.trim().cut(40) }
     }
 }

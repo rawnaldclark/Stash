@@ -33,8 +33,8 @@ sealed interface Draft {
 
 /**
  * Stash Community (spec 2026-09-26 §3): the lists, votes, take-downs, and building and sending a post.
- * The network calls return a [CommunityResult] and never throw; [draft] and [post] can throw on a database
- * or DataStore failure.
+ * The network calls return a [CommunityResult] and never throw; [draft], [post] and [recentSongs] can throw
+ * on a database or DataStore failure.
  */
 @Singleton
 class CommunityRepository @Inject constructor(
@@ -101,7 +101,8 @@ class CommunityRepository @Inject constructor(
 
     private suspend fun playlistDraft(playlistId: Long): Draft {
         val playlist = playlistDao.getById(playlistId) ?: return Draft.Problem("This playlist is empty.")
-        // It maps every song and checks each art link, and the picker calls draft() from the main thread.
+        // It maps every song and checks each art link, and the confirm sheet (PostComposerViewModel.open) calls
+        // draft() from the main thread.
         val doc = withContext(Dispatchers.Default) {
             sharedMixRepository.buildDocument(playlistId, playlist.name, sharedBy = null, withArt = true)
         }
