@@ -34,7 +34,10 @@ import kotlinx.serialization.json.Json
  */
 private val SQLITE_MAGIC: ByteArray = "SQLite format 3".toByteArray(Charsets.US_ASCII) + 0
 
-/** This phone's Community key (CommunityKeyStore). Never backed up or restored: a new phone is a new Community identity. */
+/**
+ * This phone's Community key (CommunityKeyStore). Never backed up or restored, and matched by prefix so DataStore's
+ * leftover `.tmp` copy of it stays out too: a new phone is a new Community identity.
+ */
 private const val COMMUNITY_KEY_FILE = "community_preference.preferences_pb"
 
 /**
@@ -103,8 +106,8 @@ enum class BackupImportScope(
  *   Those hold the encrypted tokens, which cannot survive a reinstall anyway
  *   (their keyset is sealed by an Android Keystore key that uninstalling
  *   destroys), so a settings-bearing archive restores preferences, not logins.
- *   The Community identity key is left out, so a restored phone gets a new
- *   Community identity.
+ *   The Community identity key is left out, and skipped when an older archive
+ *   has it, so a restore never changes a phone's Community identity.
  * @property likesOnly         True when the database is pruned to the liked
  *   tracks and the playlists that hold them before it is written.
  */
@@ -251,7 +254,7 @@ class DatabaseBackupManager @Inject constructor(
                     // 4. Add all DataStore files (settings, tokens, etc.) but the Community key
                     if (scope.includesSettings && datastoreDir.exists()) {
                         datastoreDir.listFiles()?.forEach { file ->
-                            if (file.isFile && file.name != COMMUNITY_KEY_FILE) {
+                            if (file.isFile && !file.name.startsWith(COMMUNITY_KEY_FILE)) {
                                 addToZip(zipOut, file, "datastore/${file.name}")
                             }
                         }
@@ -485,7 +488,7 @@ class DatabaseBackupManager @Inject constructor(
                                 }
 
                                 val finalFile = resolved.toFile()
-                                if (finalFile.name == COMMUNITY_KEY_FILE) {
+                                if (finalFile.name.startsWith(COMMUNITY_KEY_FILE)) {
                                     null // an archive from before the key was left out: this phone keeps its own
                                 } else {
                                     val tmp = File(finalFile.path + ".import-tmp")

@@ -129,12 +129,14 @@ class DatabaseBackupExportScopeTest {
         }
     }
 
-    @Test fun `settings leave out the Community key, so a restored phone is a new Community identity`() = runTest {
+    @Test fun `settings leave out the Community key and DataStore's leftover copy of it`() = runTest {
         val theme = context.preferencesDataStoreFile("theme_preferences")
         val key = context.preferencesDataStoreFile("community_preference")
+        val leftover = File(key.path + ".tmp") // DataStore's scratch file, left behind if a write is cut short
         theme.parentFile?.mkdirs()
         theme.writeText("theme")
         key.writeText("key")
+        leftover.writeText("key")
         try {
             manager.exportDatabase(Uri.fromFile(out), BackupExportScope.SETTINGS_ONLY).getOrThrow()
 
@@ -142,10 +144,12 @@ class DatabaseBackupExportScopeTest {
                 val names = zip.entries().toList().map { it.name }
                 assertTrue("other settings still ride along", "datastore/theme_preferences.preferences_pb" in names)
                 assertTrue("the Community key must not", "datastore/community_preference.preferences_pb" !in names)
+                assertTrue("nor its leftover copy", "datastore/community_preference.preferences_pb.tmp" !in names)
             }
         } finally {
             theme.delete()
             key.delete()
+            leftover.delete()
         }
     }
 
