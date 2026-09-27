@@ -1,6 +1,7 @@
 package com.stash.core.data.prefs
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,7 +24,7 @@ class HomeSectionOrderTest {
                 HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.MOOD_DECADES,
                 HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS,
                 // appended: added after this arrangement was saved.
-                HomeSection.YOUR_PLAYLISTS,
+                HomeSection.YOUR_PLAYLISTS, HomeSection.COMMUNITY,
             ),
             resolveHomeSectionOrder(saved),
         )
@@ -38,7 +39,7 @@ class HomeSectionOrderTest {
                 // appended in default order:
                 HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES,
                 HomeSection.QOBUZ_PLAYLISTS, HomeSection.MADE_FOR_YOU,
-                HomeSection.MOOD_DECADES,
+                HomeSection.MOOD_DECADES, HomeSection.COMMUNITY,
             ),
             resolveHomeSectionOrder(saved),
         )
@@ -67,5 +68,32 @@ class HomeSectionOrderTest {
         // New-in-an-update section can't be hidden by a stale pref: appended.
         assertTrue(HomeSection.YOUR_PLAYLISTS in resolved)
         assertTrue(resolved.indexOf(HomeSection.YOUR_PLAYLISTS) >= 2)
+    }
+
+    @Test
+    fun `community is off by default, including right after the update that adds it`() {
+        assertFalse(HomeSection.COMMUNITY in visibleHomeSections(resolveHomeSectionOrder(emptyList()), emptySet(), communityOn = false))
+        val savedBeforeTheUpdate = listOf("your_playlists", "new_releases", "qobuz_playlists", "top_albums", "made_for_you", "radios", "mood_decades")
+        assertEquals(
+            savedBeforeTheUpdate.mapNotNull(HomeSection::fromKey),
+            visibleHomeSections(resolveHomeSectionOrder(savedBeforeTheUpdate), emptySet(), communityOn = false),
+        )
+        // Home before the preference loads, and the preference's fallback when it can't be read.
+        assertFalse(HomeSection.COMMUNITY in DEFAULT_HOME_SECTIONS)
+    }
+
+    @Test
+    fun `turned on, community shows where it sits in the order`() {
+        val order = withCommunityFirst(resolveHomeSectionOrder(emptyList()))
+        assertEquals(HomeSection.COMMUNITY, visibleHomeSections(order, emptySet(), communityOn = true).first())
+        assertEquals(order - HomeSection.COMMUNITY, visibleHomeSections(order, emptySet(), communityOn = false))
+    }
+
+    @Test
+    fun `withCommunityFirst moves community to the top and keeps the rest in order`() {
+        val order = resolveHomeSectionOrder(listOf("radios", "top_albums"))
+        val moved = withCommunityFirst(order)
+        assertEquals(HomeSection.COMMUNITY, moved.first())
+        assertEquals(order - HomeSection.COMMUNITY, moved.drop(1))
     }
 }

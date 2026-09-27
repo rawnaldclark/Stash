@@ -70,7 +70,7 @@ data class HomeUiState(
     /** User-arranged visible Home sections, in render order
      * (Settings > Appearance > Home layout). */
     val sections: List<com.stash.core.data.prefs.HomeSection> =
-        com.stash.core.data.prefs.HomeSection.entries.toList(),
+        com.stash.core.data.prefs.DEFAULT_HOME_SECTIONS,
     val newReleases: List<AlbumSummary> = emptyList(),
     val topAlbums: List<AlbumSummary> = emptyList(),
     val playlists: List<PlaylistSummary> = emptyList(),

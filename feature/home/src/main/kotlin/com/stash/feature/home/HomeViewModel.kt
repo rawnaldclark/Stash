@@ -391,7 +391,7 @@ class HomeViewModel @Inject constructor(
         // the user-arranged visible Home sections, which also gate the
         // fetches above — a hidden Qobuz section costs zero requests.
         val sections: List<com.stash.core.data.prefs.HomeSection> =
-            com.stash.core.data.prefs.HomeSection.entries.toList(),
+            com.stash.core.data.prefs.DEFAULT_HOME_SECTIONS,
     )
 
     /**

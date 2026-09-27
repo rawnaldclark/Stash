@@ -602,6 +602,7 @@ class SettingsViewModel @Inject constructor(
         homeSectionsPreference.order,
         homeSectionsPreference.hidden,
         homeSectionsPreference.showLikedOnHome,
+        homeSectionsPreference.communityOn,
         storagePreference.libraryLayout,
         reorganizeLibraryCoordinator.state,
     ) { values ->
@@ -651,6 +652,7 @@ class SettingsViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         val homeSectionsHidden = v.next<Set<com.stash.core.data.prefs.HomeSection>>()
         val showLikedOnHome = v.next<Boolean>()
+        val communityOn = v.next<Boolean>()
         val libraryLayout = v.next<com.stash.core.data.prefs.LibraryLayout>()
         val reorganizeState = v.next<ReorganizeLibraryState>()
         v.requireExhausted()
@@ -702,6 +704,7 @@ class SettingsViewModel @Inject constructor(
             homeSectionOrder = homeSectionOrder,
             homeSectionsHidden = homeSectionsHidden,
             showLikedOnHome = showLikedOnHome,
+            communityOn = communityOn,
             ytHistoryHealth = ytHistoryHealth,
             ytPendingCount = ytPendingCount,
             losslessEnabled = losslessEnabled,
@@ -1495,6 +1498,11 @@ class SettingsViewModel @Inject constructor(
     /** Merged Liked Songs card on Home's "Your playlists" rail. */
     fun onShowLikedOnHomeChanged(shown: Boolean) {
         viewModelScope.launch { homeSectionsPreference.setShowLikedOnHome(shown) }
+    }
+
+    /** Community's switch (Settings > Appearance > Home layout); the first time on, it moves to the top. */
+    fun onCommunityOnChanged(on: Boolean) {
+        viewModelScope.launch { homeSectionsPreference.setCommunityOn(on) }
     }
 
     /** Clear the kill-switch after PROTOCOL_BROKEN. Exposed to the Settings

@@ -132,14 +132,19 @@ fun SettingsAppearanceScreen(
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
         )
         uiState.homeSectionOrder.forEachIndexed { index, section ->
+            // Community's switch is its own, off by default (spec 2026-09-26 §3), not the hidden set.
+            val community = section == com.stash.core.data.prefs.HomeSection.COMMUNITY
             HomeSectionRow(
                 label = section.displayLabel(),
-                shown = section !in uiState.homeSectionsHidden,
+                subtitle = if (community) "Playlists and songs other Stash listeners are into. Your posts show your name." else null,
+                shown = if (community) uiState.communityOn else section !in uiState.homeSectionsHidden,
                 canMoveUp = index > 0,
                 canMoveDown = index < uiState.homeSectionOrder.lastIndex,
                 onMoveUp = { viewModel.onHomeSectionMoved(section, up = true) },
                 onMoveDown = { viewModel.onHomeSectionMoved(section, up = false) },
-                onShownChange = { shown -> viewModel.onHomeSectionHiddenChanged(section, hide = !shown) },
+                onShownChange = { shown ->
+                    if (community) viewModel.onCommunityOnChanged(shown) else viewModel.onHomeSectionHiddenChanged(section, hide = !shown)
+                },
             )
         }
 
@@ -163,12 +168,14 @@ private fun com.stash.core.data.prefs.HomeSection.displayLabel(): String = when 
     com.stash.core.data.prefs.HomeSection.MADE_FOR_YOU -> "Made for you"
     com.stash.core.data.prefs.HomeSection.RADIOS -> "Radios"
     com.stash.core.data.prefs.HomeSection.MOOD_DECADES -> "Mood & decades"
+    com.stash.core.data.prefs.HomeSection.COMMUNITY -> "Community"
 }
 
 /** One row of the Home layout editor: name, up/down movers, show switch. */
 @Composable
 private fun HomeSectionRow(
     label: String,
+    subtitle: String? = null,
     shown: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
@@ -182,16 +189,20 @@ private fun HomeSectionRow(
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (shown) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (shown) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         IconButton(onClick = onMoveUp, enabled = canMoveUp) {
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowUp,
