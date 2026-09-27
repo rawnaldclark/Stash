@@ -42,7 +42,7 @@ simple = { limit = 60, period = 60 }
 [[d1_databases]]
 binding = "COMMUNITY_DB"
 database_name = "stash-community"
-database_id = "SET-BY-TASK-24" # `npx wrangler d1 create stash-community` prints it
+database_id = "dfbf6783-001d-40ce-9412-1e56c9ab2d84"
 migrations_dir = "migrations"
 
 [[ratelimits]]
