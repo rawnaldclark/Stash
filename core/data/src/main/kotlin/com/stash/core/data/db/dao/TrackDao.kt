@@ -1333,8 +1333,22 @@ interface TrackDao {
     /**
      * The Community picker's recent songs (spec 2026-09-26 §3): every played row, newest first, downloaded
      * or stream-only, since it's what the person actually played. [getLastPlayedTrack] is downloaded-only.
+     * Blocked songs are left out: a later listen can re-create a blocked song's row. The filter is in SQL
+     * so the limit counts after it.
      */
-    @Query("SELECT * FROM tracks WHERE last_played IS NOT NULL ORDER BY last_played DESC LIMIT :limit")
+    @Query(
+        """
+        SELECT t.* FROM tracks t
+        LEFT JOIN track_blocklist bl
+            ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+            OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+        WHERE t.last_played IS NOT NULL
+          AND bl.canonical_key IS NULL
+        ORDER BY t.last_played DESC
+        LIMIT :limit
+        """
+    )
     suspend fun getRecentlyPlayed(limit: Int): List<TrackEntity>
 
     /**

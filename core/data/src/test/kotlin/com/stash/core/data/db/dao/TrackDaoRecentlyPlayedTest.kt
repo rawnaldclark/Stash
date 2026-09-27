@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import java.time.Instant
 import kotlinx.coroutines.test.runTest
@@ -35,5 +36,14 @@ class TrackDaoRecentlyPlayedTest {
         dao.insert(TrackEntity(title = "never", artist = "A"))
         assertThat(dao.getRecentlyPlayed(20).map { it.title }).containsExactly("streamed", "old").inOrder()
         assertThat(dao.getRecentlyPlayed(1).map { it.title }).containsExactly("streamed")
+    }
+
+    @Test fun `a blocked song isn't suggested, and the limit counts after the filter`() = runTest {
+        dao.insert(TrackEntity(title = "Banned", artist = "Drake", canonicalArtist = "drake", canonicalTitle = "banned",
+            youtubeId = "y9", lastPlayed = Instant.ofEpochMilli(500)))
+        dao.insert(TrackEntity(title = "ok", artist = "A", youtubeId = "y1", lastPlayed = Instant.ofEpochMilli(300)))
+        db.trackBlocklistDao().insert(TrackBlocklistEntity(canonicalKey = "drake|banned", artist = "Drake",
+            title = "Banned", blockedAt = 1L, blockedFrom = "OTHER"))
+        assertThat(dao.getRecentlyPlayed(1).map { it.title }).containsExactly("ok")
     }
 }
