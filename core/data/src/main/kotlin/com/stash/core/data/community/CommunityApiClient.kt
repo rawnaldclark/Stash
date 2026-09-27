@@ -21,7 +21,11 @@ import okhttp3.RequestBody.Companion.toRequestBody
 sealed interface CommunityResult<out T> {
     data class Ok<T>(val value: T) : CommunityResult<T>
 
-    /** A 4xx: [code] is the Worker's `error` ("daily_limit", "gone", …), or "unknown" when the body had none ("rate_limited" for a 429). */
+    /**
+     * A 4xx: [code] is the Worker's `error` ("daily_limit", "gone", …), or "unknown" when the body had none
+     * ("rate_limited" for a 429). Or one the app makes before sending: "off" (Community is turned off) or
+     * "bad_request" (a blank name).
+     */
     data class Rejected(val code: String) : CommunityResult<Nothing>
 
     /** Offline, a timeout, a 5xx (the Worker's catch-all is 503 `unavailable`), a redirect, or a 2xx it can't read: worth trying again. */

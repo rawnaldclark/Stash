@@ -74,7 +74,8 @@ fun StashNavHost(
     val posting = rememberCommunityPosting()
     val host: CommunityHostViewModel = hiltViewModel()
     // Community turned off (spec §3: nothing Community anywhere): a tab can restore a Community screen it saved
-    // while it was on, so leave any that's showing. null is "not read yet", so a cold start that restores one keeps it.
+    // while it was on, so leave any that's showing. null is "not read yet": a restored one stays until the switch is
+    // read, so a cold start with Community on doesn't lose it.
     val communityOn by host.on.collectAsStateWithLifecycle()
     val top by navController.currentBackStackEntryAsState()
     LaunchedEffect(communityOn, top) {

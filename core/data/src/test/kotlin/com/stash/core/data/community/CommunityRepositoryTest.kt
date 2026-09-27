@@ -26,6 +26,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.QueueDispatcher
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -194,6 +195,8 @@ class CommunityRepositoryTest {
     }
 
     @Test fun `while Community is off every call is refused before anything is sent, saved or made`() = runBlocking {
+        // Every request would get an instant 204, so a missing guard fails at once (and takeDown would bump revision).
+        server.dispatcher = QueueDispatcher().apply { setFailFast(MockResponse().setResponseCode(204)) }
         val keys = keyStore(existingKey = key)
         val off = repository(keys, on = false)
         val draft = off.draft(PostTarget.Song(Track(id = 999_999, title = "us", artist = "sincewhen"))) as Draft.Ready
