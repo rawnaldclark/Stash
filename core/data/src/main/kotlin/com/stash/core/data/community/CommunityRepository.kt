@@ -5,6 +5,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.share.SharePreference
 import com.stash.core.data.share.SharedMixRepository
+import com.stash.core.data.share.cut
 import com.stash.core.data.share.withinLimits
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
@@ -15,10 +16,12 @@ import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.share.toSharedTrackWithArt
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withContext
 
 /** What posting would send, or why it can't be posted (spec 2026-09-26 §3 Posting). */
 sealed interface Draft {
@@ -28,7 +31,11 @@ sealed interface Draft {
     data class Problem(val message: String) : Draft
 }
 
-/** Stash Community (spec 2026-09-26 §3): the lists, votes, take-downs, and building and sending a post. */
+/**
+ * Stash Community (spec 2026-09-26 §3): the lists, votes, take-downs, and building and sending a post.
+ * The network calls return a [CommunityResult] and never throw; [draft] and [post] can throw on a database
+ * or DataStore failure.
+ */
 @Singleton
 class CommunityRepository @Inject constructor(
     private val api: CommunityApiClient,
@@ -87,17 +94,20 @@ class CommunityRepository @Inject constructor(
             // sometimes with a local art path. Post the library row, as Share does (NowPlayingViewModel.onShareCurrent).
             val track = trackDao.getById(target.track.id)?.toDomain() ?: target.track
             val song = track.toSharedTrackWithArt().withinLimits()
-            Draft.Ready("song", song.title.trim().take(100), listOfNotNull(song.artUrl), listOf(song))
+            Draft.Ready("song", song.title.trim().cut(100), listOfNotNull(song.artUrl), listOf(song))
         }
         is PostTarget.Playlist -> playlistDraft(target.playlistId)
     }
 
     private suspend fun playlistDraft(playlistId: Long): Draft {
         val playlist = playlistDao.getById(playlistId) ?: return Draft.Problem("This playlist is empty.")
-        val doc = sharedMixRepository.buildDocument(playlistId, playlist.name, sharedBy = null, withArt = true)
+        // It maps every song and checks each art link, and the picker calls draft() from the main thread.
+        val doc = withContext(Dispatchers.Default) {
+            sharedMixRepository.buildDocument(playlistId, playlist.name, sharedBy = null, withArt = true)
+        }
         return when {
             doc.tracks.isEmpty() -> Draft.Problem("This playlist is empty.")
-            doc.tracks.size > MAX_POST_TRACKS -> Draft.Problem("Too many songs to post (500 at most).")
+            doc.tracks.size > MAX_POST_TRACKS -> Draft.Problem("Too many songs to post ($MAX_POST_TRACKS at most).")
             else -> Draft.Ready(
                 kind = if (playlist.type in MIX_TYPES) "mix" else "playlist",
                 title = doc.name.ifBlank { "Playlist" },
@@ -109,7 +119,9 @@ class CommunityRepository @Inject constructor(
 
     /** Sends [draft] under [name], cut to the Worker's 40 characters and remembered as "Show my name as". */
     suspend fun post(draft: Draft.Ready, name: String): CommunityResult<String> {
-        val poster = name.trim().take(40)
+        val poster = name.trim().cut(40)
+        // The Worker refuses a blank name too, and saving "" would wipe the name mixes and Listen Together use.
+        if (poster.isEmpty()) return CommunityResult.Rejected("bad_request")
         sharePreference.setDisplayName(poster)
         val body = if (draft.kind == "song") NewPost.Body(track = draft.tracks.single())
         else NewPost.Body(covers = draft.covers, tracks = draft.tracks)
@@ -120,11 +132,12 @@ class CommunityRepository @Inject constructor(
     companion object {
         const val HOME_SIZE = 5
         const val ALL_SIZE = 100
-        const val MAX_POST_TRACKS = 500
+        private const val MAX_POST_TRACKS = 500
         /** The Worker's per-phone limits (DAILY_POSTS, LIVE_POSTS in infra/share-worker/src/community.js). */
         private const val DAILY_POSTS = 2
         private const val LIVE_POSTS = 5
         private const val RECENT_SONGS = 20
-        private val MIX_TYPES = setOf(PlaylistType.DAILY_MIX, PlaylistType.STASH_MIX)
+        /** Posted as "mix". The picker labels playlists from this too, so the label and the kind can't drift. */
+        val MIX_TYPES = setOf(PlaylistType.DAILY_MIX, PlaylistType.STASH_MIX)
     }
 }

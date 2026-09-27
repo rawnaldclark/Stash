@@ -44,6 +44,9 @@ internal fun SharedTrack.withinLimits() = copy(
     artUrl = artUrl?.takeIf { it.length <= 1000 },
 )
 
+/** [take] that never ends on half an emoji: UTF-8 would send the lone half as "?". */
+internal fun String.cut(n: Int) = take(n).let { if (it.length == n && it.last().isHighSurrogate()) it.dropLast(1) else it }
+
 /** Every share and follow operation (spec §5-6). */
 @Singleton
 class SharedMixRepository @Inject constructor(
@@ -73,7 +76,7 @@ class SharedMixRepository @Inject constructor(
         // Untagged local files are kept: toSharedTrack() gives them placeholder title/artist.
         val tracks = playlistDao.getTracksForPlaylist(playlistId).map { it.toDomain() }
         return SharedMixDocument(
-            name = name.trim().take(100),
+            name = name.trim().cut(100),
             sharedBy = sharedBy?.trim()?.take(40)?.ifBlank { null },
             covers = tracks.mapNotNull { it.albumArtUrl?.takeIf { u -> u.length <= 1000 && ShareConfig.isAllowedCover(u) } }.distinct().take(4),
             tracks = tracks.take(MAX_TRACKS).map { (if (withArt) it.toSharedTrackWithArt() else it.toSharedTrack()).withinLimits() },
