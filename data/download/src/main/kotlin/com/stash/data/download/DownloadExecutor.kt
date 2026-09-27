@@ -53,8 +53,22 @@ class DownloadExecutor @Inject constructor(
     private val webmRemuxer: WebmAudioRemuxer,
 ) {
     companion object {
-        private const val TAG = "StashDL"
-    }
+    private const val TAG = "StashDL"
+
+    /**
+     * Format selector for pinned fast clients (web_embedded, android_vr).
+     * The per-tier selectors in QualityTier.toYtDlpArgs() are tuned for
+     * yt-dlp's default client set — e.g. itag 141 needs a premium-auth
+     * client neither pinned client provides — and fail outright
+     * ("Requested format is not available") when pinned to a client with
+     * a different available itag set. No `/best` catch-all: a combined
+     * video+audio fallback would leak video bytes into a permanent
+     * library file, unlike the preview path's throwaway stream.
+     * Falls through to the next pinned client, then the default client
+     * set (which keeps the user's real tier selector), on failure.
+     */
+    private const val PINNED_CLIENT_FORMAT_SELECTOR = "251/250/140/bestaudio"
+}
 
     /**
      * Downloads audio from a YouTube URL using yt-dlp.
@@ -146,7 +160,17 @@ class DownloadExecutor @Inject constructor(
             val outputTemplate = File(outputDir, "$filename.%(ext)s").absolutePath
 
             val request = YoutubeDLRequest(url).apply {
-                qualityArgs.forEach { addOption(it) }
+                // qualityArgs is always ["-f", "<tier-selector>", "--embed-metadata"]
+                // (see QualityTier.toYtDlpArgs()). For a pinned client, drop the
+                // tier's format pair and substitute one this client can actually
+                // serve — the default-client fallback below still gets the real
+                // tier selector, where it's proven to work.
+                if (playerClient != null) {
+                    qualityArgs.drop(2).forEach { addOption(it) }
+                    addOption("-f", PINNED_CLIENT_FORMAT_SELECTOR)
+                } else {
+                    qualityArgs.forEach { addOption(it) }
+                }
                 addOption("-o", outputTemplate)
                 addOption("--no-playlist")
                 playerClient?.let { addOption("--extractor-args", "youtube:player_client=$it") }
@@ -169,7 +193,9 @@ class DownloadExecutor @Inject constructor(
                     "after_video:STASHDL_FMT|id=%(format_id)s|abr=%(abr)s|" +
                         "acodec=%(acodec)s|ext=%(ext)s|height=%(height)s",
                 )
-                cookiePath?.let { addOption("--cookies", it) }
+                if (cookiePath != null && PreviewUrlExtractor.supportsCookies(playerClient)) {
+                    addOption("--cookies", cookiePath)
+                }
             }
 
             Log.d(TAG, "download: starting url=$url client=${playerClient ?: "default"} args=$qualityArgs")
