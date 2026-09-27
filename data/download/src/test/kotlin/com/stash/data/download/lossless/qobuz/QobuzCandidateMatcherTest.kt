@@ -183,7 +183,7 @@ class QobuzCandidateMatcherTest {
         )
         val live = cand("Live", 218)
         val studio = cand(null, 185)
-        assertThat(live).isWithin(0.0001f).of(0.95f)
+        assertThat(live).isWithin(0.0001f).of(0.9f)
         assertThat(live).isGreaterThan(studio)
     }
 
@@ -211,6 +211,14 @@ class QobuzCandidateMatcherTest {
             candVersion = "Live",
         )
         assertThat(s).isEqualTo(0.95f)
+    }
+
+    @Test fun `an ISRC match beats a length-confirmed version`() {
+        val query = TrackQuery(artist = "KISS", title = "Deuce", isrc = "USPR37500001", durationMs = 217_000)
+        fun cand(isrc: String, version: String?) = QobuzCandidateMatcher.confidence(
+            query, "Deuce", "KISS", candIsrc = isrc, candDurationSec = 217, candStreamable = true, candVersion = version,
+        )
+        assertThat(cand("USPR37500001", null)).isGreaterThan(cand("USPR37699999", "Live"))
     }
 
     @Test fun `a version the query also names is not penalized`() {

@@ -115,8 +115,8 @@ object QobuzCandidateMatcher {
     /** Scales a candidate that names a version the query doesn't. 1.0 x 0.4 falls under [MIN_CONFIDENCE]. */
     private const val VERSION_PENALTY = 0.4f
 
-    /** The same, when the length confirms the match: just enough that an unversioned twin wins. */
-    private const val VERSION_TIEBREAK = 0.95f
+    /** The same, when the length confirms the match: an unversioned twin still wins, and so does an ISRC match (0.95). */
+    private const val VERSION_TIEBREAK = 0.9f
 
     private val BRACKETED = Regex("\\([^)]*\\)|\\[[^]]*\\]")
     private val DASHED = Regex("\\s[-\u2013\u2014]\\s.*")
