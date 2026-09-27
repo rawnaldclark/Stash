@@ -210,7 +210,7 @@ class PlaylistDetailViewModelTest {
         vm.saveSelectedToPlaylist(ids, targetPlaylistId)
         runCurrent()
 
-        ids.forEach { id -> verify(musicRepo).addTrackToPlaylist(id, targetPlaylistId) }
+        verify(musicRepo).addTracksToPlaylist(ids, targetPlaylistId)
     }
 
     @Test
@@ -227,7 +227,7 @@ class PlaylistDetailViewModelTest {
         // The playlist is created exactly once with the given name…
         verify(musicRepo).createPlaylist("My Mix")
         // …and every selected track is added to the freshly-created playlist id.
-        ids.forEach { id -> verify(musicRepo).addTrackToPlaylist(id, newPlaylistId) }
+        verify(musicRepo).addTracksToPlaylist(ids, newPlaylistId)
     }
 
     @Test

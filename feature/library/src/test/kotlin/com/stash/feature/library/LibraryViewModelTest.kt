@@ -114,7 +114,7 @@ class LibraryViewModelTest {
         vm.saveSelectedToPlaylist(ids, targetPlaylistId)
         runCurrent()
 
-        ids.forEach { id -> verify(musicRepo).addTrackToPlaylist(id, targetPlaylistId) }
+        verify(musicRepo).addTracksToPlaylist(ids, targetPlaylistId)
     }
 
     @Test
@@ -129,7 +129,7 @@ class LibraryViewModelTest {
         runCurrent()
 
         verify(musicRepo).createPlaylist("My Mix")
-        ids.forEach { id -> verify(musicRepo).addTrackToPlaylist(id, newPlaylistId) }
+        verify(musicRepo).addTracksToPlaylist(ids, newPlaylistId)
     }
 
     @Test

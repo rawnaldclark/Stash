@@ -321,7 +321,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
                 sourceId = savedAlbumSourceId,
                 artUrl = hero.thumbnailUrl,
             )
-            ids.forEach { musicRepository.addTrackToPlaylist(it, playlistId) }
+            musicRepository.addTracksToPlaylist(ids, playlistId)
             _userMessages.emit("Saved to your library")
         }
     }

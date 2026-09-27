@@ -309,6 +309,13 @@ interface MusicRepository {
     /** Add a track to a playlist. */
     suspend fun addTrackToPlaylist(trackId: Long, playlistId: Long)
 
+    /**
+     * Add each of [trackIds] to a playlist, in order. #479: the batch finishes
+     * even if the caller's scope is cancelled (e.g. the user leaves the screen).
+     * One track failing doesn't stop the rest.
+     */
+    suspend fun addTracksToPlaylist(trackIds: List<Long>, playlistId: Long)
+
     /** Remove a track from a playlist (soft delete). */
     suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long)
 

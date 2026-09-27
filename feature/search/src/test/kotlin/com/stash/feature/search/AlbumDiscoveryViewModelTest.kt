@@ -412,9 +412,7 @@ class AlbumDiscoveryViewModelTest {
 
         // One playlist per album (keyed by source + browse id), named after it, wearing its art.
         verify(repo).ensureCustomPlaylist(eq("Curtains"), eq("album:youtube:MPREb_xxx"), eq("u"))
-        verify(repo).addTrackToPlaylist(11L, 77L)
-        verify(repo).addTrackToPlaylist(12L, 77L)
-        verify(repo).addTrackToPlaylist(13L, 77L)
+        verify(repo).addTracksToPlaylist(listOf(11L, 12L, 13L), 77L)
     }
 
     @Test
@@ -438,6 +436,6 @@ class AlbumDiscoveryViewModelTest {
             assertEquals("Already in your library", awaitItem())
         }
         verify(repo, never()).ensureCustomPlaylist(any(), any(), anyOrNull())
-        verify(repo, never()).addTrackToPlaylist(any(), any())
+        verify(repo, never()).addTracksToPlaylist(any(), any())
     }
 }
