@@ -31,7 +31,7 @@ internal fun CommunityPost.headline(): String {
     val length = when {
         minutes <= 0 -> null
         minutes < 60 -> "$minutes min"
-        else -> "${minutes / 60} h ${minutes % 60} min"
+        else -> "${minutes / 60} h" + if (minutes % 60 > 0) " ${minutes % 60} min" else ""
     }
     return listOfNotNull(kindLabel(kind), songs(count), length).joinToString(" · ")
 }
@@ -55,7 +55,8 @@ class CommunityPostViewModel @Inject constructor(
         data object Loading : UiState
         /** Taken down, removed, expired or hidden (spec §3). */
         data object Gone : UiState
-        data object Failed : UiState
+        /** [message] says why: offline, rate limited (spec §4). */
+        data class Failed(val message: String) : UiState
         data class Loaded(val post: CommunityPost, val busy: Boolean = false, val liked: Boolean = false, val message: String? = null) : UiState
     }
 
@@ -70,28 +71,32 @@ class CommunityPostViewModel @Inject constructor(
         _state.value = UiState.Loading
         viewModelScope.launch {
             _state.value = when (val r = repository.open(postId)) {
-                is CommunityResult.Ok -> UiState.Loaded(r.value)
-                is CommunityResult.Rejected -> if (r.code == "gone") UiState.Gone else UiState.Failed
-                is CommunityResult.Failed -> UiState.Failed
+                is CommunityResult.Ok -> UiState.Loaded(r.value, liked = likedAlready(r.value))
+                is CommunityResult.Rejected -> if (r.code == "gone") UiState.Gone else UiState.Failed(communityMessage(r))
+                is CommunityResult.Failed -> UiState.Failed(communityMessage(r))
             }
         }
     }
 
     /** Plays the frozen songs, as a shared mix's Play does: each is kept as a hidden stream-only row first. */
-    fun play() = withPost("play") { post ->
+    fun play() = withPost("play this") { post ->
         if (post.kind == "song") {
-            songRow(post)?.let { playerRepository.setQueue(listOf(it), 0) }
+            songRow(post)?.let { row ->
+                // As SharedTrackViewModel.play: the row says whether the song is liked here.
+                update { it.copy(liked = row.stashLikedAt != null) }
+                playerRepository.setQueue(listOf(row), 0)
+            }
         } else {
             val tracks = sharedMixRepository.tracksFor(post.toDocument())
             if (tracks.isNotEmpty()) playerRepository.setQueue(tracks, 0)
         }
     }
 
-    fun saveCopy(onSaved: (Long) -> Unit) = withPost("save") { post -> onSaved(sharedMixRepository.saveCopy(post.toDocument())) }
+    fun saveCopy(onSaved: (Long) -> Unit) = withPost("save a copy") { post -> onSaved(sharedMixRepository.saveCopy(post.toDocument())) }
 
-    fun like() = withPost("like") { post ->
-        val row = songRow(post) ?: return@withPost
-        likeCoordinator.setLiked(row.id, true)
+    fun like() = withPost("like this song") { post ->
+        val song = post.track ?: return@withPost
+        likeCoordinator.setLiked(musicRepository.ensureTrackPersisted(song.toTrack()), true)
         update { it.copy(liked = true) }
     }
 
@@ -126,7 +131,7 @@ class CommunityPostViewModel @Inject constructor(
         }
     }
 
-    fun takeDown(onDone: () -> Unit) = withPost("take down") { _ ->
+    fun takeDown(onDone: () -> Unit) = withPost("take this post down") { _ ->
         when (val r = repository.takeDown(postId)) {
             is CommunityResult.Ok -> onDone()
             else -> update { it.copy(message = communityMessage(r)) }
@@ -135,13 +140,20 @@ class CommunityPostViewModel @Inject constructor(
 
     fun messageShown() = update { it.copy(message = null) }
 
-    /** The song post's library row: saved like a song link's (SharedTrackViewModel), then read back. */
+    /** Is the posted song already liked here: a read-only lookup, so opening a post never adds a row. */
+    private suspend fun likedAlready(post: CommunityPost): Boolean {
+        val yt = post.track?.youtubeId ?: return false
+        return try { musicRepository.observeTrackByYoutubeId(yt).first()?.stashLikedAt != null }
+        catch (e: CancellationException) { throw e } catch (e: Exception) { false }
+    }
+
+    /** The song post's library row, for Play: saved like a song link's (SharedTrackViewModel), then read back. */
     private suspend fun songRow(post: CommunityPost): Track? {
         val song = post.track ?: return null
         return musicRepository.observeTrackById(musicRepository.ensureTrackPersisted(song.toTrack())).first()
     }
 
-    /** Runs one action on the loaded post; a failure (DB, IO) becomes a message, never a crash. */
+    /** Runs one action on the loaded post; a failure (DB, IO) becomes "Couldn't [action]. Try again.", never a crash. */
     private fun withPost(action: String, block: suspend (CommunityPost) -> Unit) {
         val s = _state.value as? UiState.Loaded ?: return
         if (s.busy) return
@@ -153,7 +165,7 @@ class CommunityPostViewModel @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "$action failed", e)
-                update { it.copy(message = "Couldn't $action this. Try again.") }
+                update { it.copy(message = "Couldn't $action. Try again.") }
             } finally {
                 update { it.copy(busy = false) }
             }

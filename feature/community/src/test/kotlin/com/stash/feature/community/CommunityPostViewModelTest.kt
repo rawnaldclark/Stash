@@ -5,6 +5,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.community.CommunityRepository
 import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.community.VoteCounts
+import com.stash.core.data.community.communityMessage
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.share.SharedMixDocument
 import com.stash.core.data.share.SharedMixRepository
@@ -52,7 +53,12 @@ class CommunityPostViewModelTest {
         createdAt = 1, up = 1, down = 0, track = SharedTrack("garden", "Death Plus", youtubeId = "9Vz"),
     )
 
-    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @Before fun setUp() {
+        Dispatchers.setMain(dispatcher)
+        // Not in this phone's library unless a test says so.
+        every { music.observeTrackByYoutubeId(any()) } returns flowOf(null)
+    }
+
     @After fun tearDown() { Dispatchers.resetMain() }
 
     private fun vm() = CommunityPostViewModel(SavedStateHandle(mapOf("postId" to "AAAAAAAA")), repo, sharedMix, music, player, likes)
@@ -63,6 +69,13 @@ class CommunityPostViewModelTest {
         assertThat(songPost.headline()).isEqualTo("Death Plus")
     }
 
+    @Test fun `whole hours drop the minutes, and an unknown length is left out`() {
+        fun lasting(vararg ms: Long?) = playlistPost().copy(tracks = ms.map { SharedTrack("T", "A", durationMs = it) })
+        assertThat(lasting(3_600_000).headline()).isEqualTo("Playlist · 2 songs · 1 h")
+        assertThat(lasting(300_000).headline()).isEqualTo("Playlist · 2 songs · 5 min")
+        assertThat(lasting(null, null).headline()).isEqualTo("Playlist · 2 songs")
+    }
+
     @Test fun `a gone post says so, and a failed load can be retried`() = runTest(dispatcher) {
         coEvery { repo.open("AAAAAAAA") } returnsMany listOf(
             CommunityResult.Rejected("gone"), CommunityResult.Failed("offline"), CommunityResult.Ok(songPost),
@@ -70,9 +83,15 @@ class CommunityPostViewModelTest {
         val vm = vm(); advanceUntilIdle()
         assertThat(vm.state.value).isEqualTo(UiState.Gone)
         vm.load(); advanceUntilIdle()
-        assertThat(vm.state.value).isEqualTo(UiState.Failed)
+        assertThat(vm.state.value).isEqualTo(UiState.Failed("Couldn't reach Community. Try again."))
         vm.load(); advanceUntilIdle()
         assertThat((vm.state.value as UiState.Loaded).post).isEqualTo(songPost)
+    }
+
+    @Test fun `a rate-limited open says to slow down`() = runTest(dispatcher) {
+        coEvery { repo.open(any()) } returns CommunityResult.Rejected("rate_limited")
+        val vm = vm(); advanceUntilIdle()
+        assertThat(vm.state.value).isEqualTo(UiState.Failed("Slow down a moment."))
     }
 
     @Test fun `Play queues the frozen songs, and Save a copy saves the post as posted`() = runTest(dispatcher) {
@@ -91,14 +110,56 @@ class CommunityPostViewModelTest {
         }
     }
 
+    @Test fun `a failed action says why and frees the buttons`() = runTest(dispatcher) {
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(playlistPost())
+        coEvery { sharedMix.tracksFor(any()) } throws IllegalStateException("database closed")
+        val vm = vm(); advanceUntilIdle()
+        vm.play(); advanceUntilIdle()
+        val s = vm.state.value as UiState.Loaded
+        assertThat(s.message).isEqualTo("Couldn't play this. Try again.")
+        assertThat(s.busy).isFalse()
+    }
+
+    @Test fun `a double tap on Save a copy makes one copy`() = runTest(dispatcher) {
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(playlistPost())
+        coEvery { sharedMix.saveCopy(any()) } returns 7L
+        val vm = vm(); advanceUntilIdle()
+        val saved = mutableListOf<Long>()
+        vm.saveCopy { saved += it }
+        vm.saveCopy { saved += it }
+        advanceUntilIdle()
+        coVerify(exactly = 1) { sharedMix.saveCopy(any()) }
+        assertThat(saved).containsExactly(7L)
+    }
+
     @Test fun `Like saves the song and likes it`() = runTest(dispatcher) {
         coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost)
         coEvery { music.ensureTrackPersisted(any()) } returns 5L
-        every { music.observeTrackById(5L) } returns flowOf(Track(id = 5, title = "garden", artist = "Death Plus"))
         val vm = vm(); advanceUntilIdle()
         vm.like(); advanceUntilIdle()
         coVerify { likes.setLiked(5L, true) }
         assertThat((vm.state.value as UiState.Loaded).liked).isTrue()
+    }
+
+    @Test fun `Play on a song post plays its library row and shows whether it's liked`() = runTest(dispatcher) {
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost)
+        coEvery { music.ensureTrackPersisted(any()) } returns 5L
+        val row = Track(id = 5, title = "garden", artist = "Death Plus", stashLikedAt = 1L)
+        every { music.observeTrackById(5L) } returns flowOf(row)
+        val vm = vm(); advanceUntilIdle()
+        assertThat((vm.state.value as UiState.Loaded).liked).isFalse()
+        vm.play(); advanceUntilIdle()
+        coVerify { player.setQueue(listOf(row), 0, any()) }
+        assertThat((vm.state.value as UiState.Loaded).liked).isTrue()
+    }
+
+    @Test fun `a song you already like opens as liked`() = runTest(dispatcher) {
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost)
+        every { music.observeTrackByYoutubeId("9Vz") } returns flowOf(Track(id = 5, title = "garden", artist = "Death Plus", stashLikedAt = 1L))
+        val vm = vm(); advanceUntilIdle()
+        assertThat((vm.state.value as UiState.Loaded).liked).isTrue()
+        // Only a lookup: opening a post never adds the song to the library.
+        coVerify(exactly = 0) { music.ensureTrackPersisted(any()) }
     }
 
     @Test fun `a vote shows at once and flips back when refused`() = runTest(dispatcher) {
@@ -129,6 +190,15 @@ class CommunityPostViewModelTest {
         assertThat((vm.state.value as UiState.Loaded).post).isEqualTo(songPost.copy(down = 5, myVote = -1))
     }
 
+    @Test fun `your own post can't be voted on`() = runTest(dispatcher) {
+        val mine = songPost.copy(mine = true)
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(mine)
+        val vm = vm(); advanceUntilIdle()
+        vm.vote(1); advanceUntilIdle()
+        assertThat((vm.state.value as UiState.Loaded).post).isEqualTo(mine)
+        coVerify(exactly = 0) { repo.vote(any(), any()) }
+    }
+
     @Test fun `taking your post down leaves the screen`() = runTest(dispatcher) {
         coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost.copy(mine = true))
         coEvery { repo.takeDown("AAAAAAAA") } returns CommunityResult.Ok(Unit)
@@ -136,5 +206,16 @@ class CommunityPostViewModelTest {
         var left = false
         vm.takeDown { left = true }; advanceUntilIdle()
         assertThat(left).isTrue()
+    }
+
+    @Test fun `a refused take-down stays and says why`() = runTest(dispatcher) {
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost.copy(mine = true))
+        val refused = CommunityResult.Failed("offline")
+        coEvery { repo.takeDown("AAAAAAAA") } returns refused
+        val vm = vm(); advanceUntilIdle()
+        var left = false
+        vm.takeDown { left = true }; advanceUntilIdle()
+        assertThat(left).isFalse()
+        assertThat((vm.state.value as UiState.Loaded).message).isEqualTo(communityMessage(refused))
     }
 }
