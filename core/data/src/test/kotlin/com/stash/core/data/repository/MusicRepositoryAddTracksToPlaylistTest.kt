@@ -11,6 +11,7 @@ import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -20,6 +21,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /** #479: a bulk add must finish even when the screen that started it goes away. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class MusicRepositoryAddTracksToPlaylistTest {
 
     private val added = mutableListOf<Long>()
