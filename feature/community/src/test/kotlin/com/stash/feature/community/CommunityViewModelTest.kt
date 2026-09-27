@@ -97,6 +97,20 @@ class CommunityViewModelTest {
         assertThat(vm.state.value.posts).containsExactly(post(up = 3, down = 5, myVote = -1))
     }
 
+    @Test fun `a reload while a vote is out keeps the vote on its row`() = runTest(dispatcher) {
+        // The reload's row is from before the vote, with someone else's upvote since.
+        coEvery { repo.feed(5) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(listOf(post(up = 5))))
+        coEvery { repo.vote("AAAAAAAA", 1) } coAnswers { delay(1_000); CommunityResult.Ok(VoteCounts(up = 9, down = 1, myVote = 1)) }
+        val vm = CommunityViewModel(repo)
+        vm.show(Tab.HOME); advanceUntilIdle()
+        vm.vote(post(), 1); runCurrent()
+        vm.show(Tab.HOME); runCurrent()
+        assertThat(vm.state.value.posts).containsExactly(post(up = 6, myVote = 1))
+        verify { repo.lastHome = listOf(post(up = 6, myVote = 1)) }
+        advanceUntilIdle()
+        assertThat(vm.state.value.posts).containsExactly(post(up = 9, myVote = 1))
+    }
+
     @Test fun `your own post can't be voted on`() = runTest(dispatcher) {
         val vm = CommunityViewModel(repo)
         vm.vote(post(mine = true), 1); advanceUntilIdle()
@@ -148,6 +162,16 @@ class CommunityViewModelTest {
         every { repo.lastVoteAt } returns Long.MAX_VALUE
         vm.onShown(); advanceUntilIdle()
         assertThat(vm.state.value.posts).containsExactly(post(up = 8))
+    }
+
+    @Test fun `Home reloads after the clock is set back`() = runTest(dispatcher) {
+        coEvery { repo.feed(5) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(listOf(post(up = 7))))
+        var now = 1_000_000L
+        val vm = CommunityViewModel(repo).apply { clock = { now } }
+        vm.onShown(); advanceUntilIdle()
+        now -= 60_000 // the last load now looks like it's from the future
+        vm.onShown(); advanceUntilIdle()
+        assertThat(vm.state.value.posts).containsExactly(post(up = 7))
     }
 
     @Test fun `a post or take-down elsewhere reloads the list on screen`() = runTest(dispatcher) {
