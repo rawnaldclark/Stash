@@ -6,7 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.dropUnlessResumed
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -66,7 +66,14 @@ fun StashNavHost(
 ) {
     // Stash Community (spec 2026-09-26 §3): LocalPostToCommunity and the posting sheets sit over every screen.
     val posting = rememberCommunityPosting()
-    CommunityPostingHost(posting, onSeeMyPosts = { navController.navigate(CommunityRoute(mine = true)) }) {
+    CommunityPostingHost(
+        posting,
+        onSeeMyPosts = {
+            // From See all itself, replace it rather than stacking a second one; from anywhere else, just open it.
+            val onSeeAll = navController.currentBackStackEntry?.destination?.hasRoute<CommunityRoute>() == true
+            navController.navigate(CommunityRoute(mine = true)) { if (onSeeAll) popUpTo<CommunityRoute> { inclusive = true } }
+        },
+    ) {
         StashNavGraph(navController, modifier, onSelectionModeChanged, onNavigateToTab, posting)
     }
 }
@@ -391,18 +398,18 @@ private fun StashNavGraph(
         }
 
         composable<CommunityPostRoute> { entry ->
-            // Save a copy opens the new playlist; Back returns to the post. A take-down's or a save's reply can land
-            // after Back started closing this screen (the NavHost fades for 700 ms, and the ViewModel lives until
-            // the fade ends). Popping then would pop the screen below too (from Home: Home itself, a blank screen),
-            // so both calls are dropped unless the post is the screen showing. CommunityPostViewModel reads the
-            // route's `postId` from SavedStateHandle by that name.
+            // Save a copy opens the new playlist (Back returns to the post), and a take-down closes the post. Both run
+            // from a ViewModel coroutine, so each acts only while this entry is the top of a live back stack: a
+            // take-down's reply after Back (the ViewModel lives through the 700 ms fade) would otherwise pop the screen
+            // below too (from Home: Home itself, a blank screen), and a callback left over from before a rotation holds
+            // the old NavController, whose entry is DESTROYED. CommunityPostViewModel reads the route's `postId` from
+            // SavedStateHandle by that name.
+            val onTop = {
+                navController.currentBackStackEntry === entry && entry.lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)
+            }
             CommunityPostScreen(
-                onBack = dropUnlessResumed { navController.popBackStack() },
-                onOpenPlaylist = { id ->
-                    if (entry.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                        navController.navigate(PlaylistDetailRoute(id))
-                    }
-                },
+                onBack = { if (onTop()) navController.popBackStack() },
+                onOpenPlaylist = { id -> if (onTop()) navController.navigate(PlaylistDetailRoute(id)) },
             )
         }
 
