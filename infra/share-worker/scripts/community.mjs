@@ -7,10 +7,10 @@
  *   npm run community -- block <postId>           block that post's phone and remove all its live posts
  *   npm run community -- unblock <posterIdPrefix> undo a block (list shows the first 8 characters)
  *
- * Every command prints what it hit: an empty result means it matched nothing. For `block`, the last result (the
- * blocked row read back) is the one that shows whether the phone is blocked: the INSERT's own result is always empty.
- * `unblock` leaves the phone's posts removed: `restore` any you want back within a day, before the daily cleanup
- * deletes them.
+ * Every command prints what it hit: an empty result means it matched nothing. For `block` and `restore`, read the
+ * last result (the blocked row, or the post's recounted votes): block's INSERT and restore's UPDATE and DELETE have
+ * no RETURNING, so their results are always empty. `unblock` leaves the phone's posts removed: `restore` any you
+ * want back within a day, before the daily cleanup deletes them.
  *
  * Runs on the live database through `wrangler d1 execute` with your own Cloudflare login. `d1 execute` takes
  * no bind parameters, so every argument is checked against a strict pattern before it goes into the SQL.
