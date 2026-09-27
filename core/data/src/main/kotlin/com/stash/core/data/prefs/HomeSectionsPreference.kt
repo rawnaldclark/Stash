@@ -123,12 +123,6 @@ class HomeSectionsPreference @Inject constructor(
         visibleHomeSections(resolveHomeSectionOrder(prefs[orderKey].toKeys()), hiddenSet, prefs[communityOnKey] ?: false)
     }.distinctUntilChanged().catch { emit(DEFAULT_HOME_SECTIONS) }
 
-    suspend fun setOrder(order: List<HomeSection>) {
-        context.homeSectionsDataStore.edit { prefs ->
-            prefs[orderKey] = order.joinToString(",") { it.key }
-        }
-    }
-
     /** Swap [section] one slot up or down in the full order. */
     suspend fun move(section: HomeSection, up: Boolean) {
         context.homeSectionsDataStore.edit { prefs ->
