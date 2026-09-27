@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.common.extensions.pluralize
 import com.stash.core.model.community.PostTarget
 import com.stash.core.ui.components.LocalPostToCommunity
 
@@ -111,7 +112,7 @@ fun ShareMixSheet(
 }
 
 private fun sendLink(context: Context, name: String, count: Int, url: String) {
-    val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "$name: $count tracks on Stash · $url") }
+    val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "$name: ${pluralize(count, "track")} on Stash · $url") }
     context.startActivity(Intent.createChooser(intent, "Share \"$name\""))
 }
 

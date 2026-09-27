@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.stash.core.common.extensions.pluralize
 import com.stash.core.model.share.ShareConfig
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -78,7 +79,7 @@ fun SharedMixScreen(
                                 if (now - it * 1000 < DateUtils.MINUTE_IN_MILLIS) " · updated just now"
                                 else " · updated " + DateUtils.getRelativeTimeSpanString(it * 1000, now, DateUtils.MINUTE_IN_MILLIS)
                             }.orEmpty()
-                            Text("${s.doc.tracks.size} tracks$by$updated", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${pluralize(s.doc.tracks.size, "track")}$by$updated", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     Spacer(Modifier.height(16.dp))
