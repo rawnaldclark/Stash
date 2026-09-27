@@ -53,7 +53,7 @@ class CommunityRepository @Inject constructor(
     /** Goes up after a post or a take-down, so lists on screen reload. */
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
-    /** When this phone's last vote went through. Home reloads on its next showing after one (CommunityViewModel.onShown). */
+    /** When this phone last sent a vote. Home reloads on its next showing after one (CommunityViewModel.onShown). */
     @Volatile var lastVoteAt: Long = 0L
         private set
 
@@ -74,8 +74,11 @@ class CommunityRepository @Inject constructor(
 
     suspend fun open(id: String): CommunityResult<CommunityPost> = api.open(id, keys.existingKey())
 
-    suspend fun vote(id: String, value: Int): CommunityResult<VoteCounts> =
-        api.vote(id, value, keys.key()).also { if (it is CommunityResult.Ok) lastVoteAt = System.currentTimeMillis() }
+    suspend fun vote(id: String, value: Int): CommunityResult<VoteCounts> {
+        // Before sending: a screen closed mid-vote cancels this call, maybe after the vote has landed.
+        lastVoteAt = System.currentTimeMillis()
+        return api.vote(id, value, keys.key())
+    }
 
     /** A post that's already gone counts as taken down: it's what the person wanted (e.g. a retry after a lost 204). */
     suspend fun takeDown(id: String): CommunityResult<Unit> =

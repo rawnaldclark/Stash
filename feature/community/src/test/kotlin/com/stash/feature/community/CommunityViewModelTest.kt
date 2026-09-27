@@ -8,15 +8,18 @@ import com.stash.core.model.community.CommunityPost
 import com.stash.feature.community.CommunityViewModel.Tab
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -77,6 +80,23 @@ class CommunityViewModelTest {
         assertThat(vm.state.value.message).isEqualTo("Couldn't reach Community. Try again.")
     }
 
+    @Test fun `a tap while a vote is out shows at once and is sent after it`() = runTest(dispatcher) {
+        coEvery { repo.feed(5) } returns CommunityResult.Ok(listOf(post()))
+        coEvery { repo.vote("AAAAAAAA", 1) } coAnswers { delay(1_000); CommunityResult.Ok(VoteCounts(up = 4, down = 1, myVote = 1)) }
+        coEvery { repo.vote("AAAAAAAA", -1) } returns CommunityResult.Ok(VoteCounts(up = 3, down = 5, myVote = -1))
+        val vm = CommunityViewModel(repo)
+        vm.show(Tab.HOME); advanceUntilIdle()
+        vm.vote(post(), 1); runCurrent()
+        vm.vote(post(up = 4, myVote = 1), -1)
+        assertThat(vm.state.value.posts).containsExactly(post(up = 3, down = 2, myVote = -1))
+        advanceUntilIdle()
+        coVerifyOrder {
+            repo.vote("AAAAAAAA", 1)
+            repo.vote("AAAAAAAA", -1)
+        }
+        assertThat(vm.state.value.posts).containsExactly(post(up = 3, down = 5, myVote = -1))
+    }
+
     @Test fun `your own post can't be voted on`() = runTest(dispatcher) {
         val vm = CommunityViewModel(repo)
         vm.vote(post(mine = true), 1); advanceUntilIdle()
@@ -113,14 +133,21 @@ class CommunityViewModelTest {
     }
 
     @Test fun `Home reloads when it shows again only after 30 seconds or a vote`() = runTest(dispatcher) {
-        coEvery { repo.feed(5) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(listOf(post(up = 7))))
-        val vm = CommunityViewModel(repo)
+        coEvery { repo.feed(5) } returnsMany listOf(
+            CommunityResult.Ok(listOf(post())), CommunityResult.Ok(listOf(post(up = 7))), CommunityResult.Ok(listOf(post(up = 8))),
+        )
+        var now = 1_000_000L // well past 30 s, since a loadedAt of 0 means never loaded
+        val vm = CommunityViewModel(repo).apply { clock = { now } }
         vm.onShown(); advanceUntilIdle()
+        now += 29_000
         vm.onShown(); advanceUntilIdle()
         coVerify(exactly = 1) { repo.feed(5) }
-        every { repo.lastVoteAt } returns Long.MAX_VALUE
+        now += 2_000
         vm.onShown(); advanceUntilIdle()
         assertThat(vm.state.value.posts).containsExactly(post(up = 7))
+        every { repo.lastVoteAt } returns Long.MAX_VALUE
+        vm.onShown(); advanceUntilIdle()
+        assertThat(vm.state.value.posts).containsExactly(post(up = 8))
     }
 
     @Test fun `a post or take-down elsewhere reloads the list on screen`() = runTest(dispatcher) {

@@ -151,14 +151,16 @@ class CommunityRepositoryTest {
         assertThat(repo.revision.value).isEqualTo(before + 2)
     }
 
-    @Test fun `a vote that goes through is remembered, and a refused one isn't`() = runBlocking {
+    @Test fun `every vote asks Home to reload`() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"up":1,"down":0,"myVote":1}"""))
         server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"gone"}"""))
-        repo.vote("AAAAAAAA", 1)
-        val at = repo.lastVoteAt
-        assertThat(at).isGreaterThan(0L)
-        repo.vote("AAAAAAAA", 1)
-        assertThat(repo.lastVoteAt).isEqualTo(at)
+        val refusing = repository(keyStore(existingKey = key))
+        val start = System.currentTimeMillis()
+        assertThat(repo.vote("AAAAAAAA", 1)).isEqualTo(CommunityResult.Ok(VoteCounts(up = 1, down = 0, myVote = 1)))
+        assertThat(repo.lastVoteAt).isAtLeast(start)
+        // Set before sending, so a refused vote counts too, as does one whose screen closed before the answer.
+        assertThat(refusing.vote("AAAAAAAA", 1)).isEqualTo(CommunityResult.Rejected("gone"))
+        assertThat(refusing.lastVoteAt).isAtLeast(start)
     }
 
     @Test fun `Mine and the limits ask nothing before this phone has a key, and make none`() = runBlocking {
