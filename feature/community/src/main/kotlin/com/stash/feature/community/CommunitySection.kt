@@ -57,8 +57,16 @@ fun CommunitySection(
         if (posts.isNullOrEmpty()) {
             ListStatus(state, "Nothing here yet. Be the first: tap +.", onRetry = { viewModel.show(CommunityViewModel.Tab.HOME) })
         } else {
+            val rankWidth = rankWidthFor(posts.size)
             posts.forEachIndexed { i, p ->
-                PostRow(rank = i + 1, post = p, withAge = false, onOpen = { onOpenPost(p.id) }, onVote = { viewModel.vote(p, it) })
+                PostRow(
+                    rank = i + 1,
+                    rankWidth = rankWidth,
+                    post = p,
+                    withAge = false,
+                    onOpen = { onOpenPost(p.id) },
+                    onVote = { viewModel.vote(p, it) },
+                )
             }
         }
     }

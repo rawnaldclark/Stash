@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,7 +36,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.feature.community.CommunityViewModel.Tab
 
 /** See all (spec 2026-09-26 §3): All / Mine, up to 100 posts, `+ Post` in the top bar. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommunityScreen(
     mine: Boolean,
@@ -72,10 +70,12 @@ fun CommunityScreen(
                 onRetry = { viewModel.show(tab) },
             )
         } else {
+            val rankWidth = rankWidthFor(posts.size)
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 120.dp)) {
                 itemsIndexed(posts, key = { _, p -> p.id }) { i, p ->
                     PostRow(
                         rank = if (tab == Tab.MINE) null else i + 1,
+                        rankWidth = rankWidth,
                         post = p,
                         withAge = true,
                         onOpen = { onOpenPost(p.id) },

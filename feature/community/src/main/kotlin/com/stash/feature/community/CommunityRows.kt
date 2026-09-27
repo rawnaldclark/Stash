@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -33,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -124,15 +127,29 @@ private fun VoteArrow(icon: ImageVector, label: String, lit: Boolean, enabled: B
         contentDescription = label,
         tint = if (lit) MaterialTheme.colorScheme.primary else StashTheme.extendedColors.textTertiary,
         modifier = Modifier
-            .size(width = 40.dp, height = 28.dp)
+            .size(width = 40.dp, height = 20.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, onClick = onClick),
+            .selectable(selected = lit, enabled = enabled, role = Role.Button, onClick = onClick),
     )
 }
 
-/** One ranked post (the Top Albums row, with votes on the right). [rank] null leaves the number out (Mine). */
+/**
+ * The rank column for a list of [count] posts, one width for every row so the covers line up. A digit is at most
+ * 0.65 em in Space Grotesk. It's in em of the rank's own style because Android scales large sp values less than
+ * small ones, so a width in sp would stop growing before the 16sp numbers do.
+ */
 @Composable
-internal fun PostRow(rank: Int?, post: CommunityPost, withAge: Boolean, onOpen: () -> Unit, onVote: (Int) -> Unit) {
+internal fun rankWidthFor(count: Int): Dp {
+    val em = with(LocalDensity.current) { MaterialTheme.typography.titleMedium.fontSize.toDp() }
+    return maxOf(22.dp, em * 0.7f * count.toString().length)
+}
+
+/**
+ * One ranked post (the Top Albums row, with votes on the right). [rankWidth] comes from [rankWidthFor] for the
+ * whole list; [rank] null leaves the number and its column out (Mine).
+ */
+@Composable
+internal fun PostRow(rank: Int?, rankWidth: Dp, post: CommunityPost, withAge: Boolean, onOpen: () -> Unit, onVote: (Int) -> Unit) {
     val now = remember { System.currentTimeMillis() }
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 20.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
@@ -145,7 +162,9 @@ internal fun PostRow(rank: Int?, post: CommunityPost, withAge: Boolean, onOpen: 
                 style = MaterialTheme.typography.titleMedium,
                 color = StashTheme.extendedColors.textTertiary,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.width(22.dp),
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.width(rankWidth),
             )
         }
         CoverArt(post.coverUrls(), Modifier.size(46.dp))
