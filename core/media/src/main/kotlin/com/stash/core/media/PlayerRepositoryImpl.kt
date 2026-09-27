@@ -1803,7 +1803,8 @@ class PlayerRepositoryImpl @Inject constructor(
             // (empty) refresh wipes it and the app reopens to "Not Playing".
             if (_playerState.value.currentTrack != null) {
                 ghostSession = true
-                _playerState.value = _playerState.value.copy(isPlaying = false)
+                // No spinner either: a snapshot taken mid-load would keep play disabled.
+                _playerState.value = _playerState.value.copy(isPlaying = false, isBuffering = false)
             }
         }
     }

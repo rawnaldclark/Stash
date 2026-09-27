@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -124,7 +125,7 @@ class PlayerRepositorySessionBusTest {
      * recreated and the fresh controller's first sync is EMPTY. That refresh used to
      * wipe the kept snapshot, so the app showed "Not Playing" and no mini player.
      */
-    private suspend fun idleOutAndReopen(): MediaController {
+    private suspend fun idleOutAndReopen(buffering: Boolean = false): MediaController {
         coEvery { playbackResumer.buildResumePlan() } returns null
         shadowOf(Looper.getMainLooper()).idle()
         repo.controllerDeferred = controller // init's "not alive" released the seam; re-seat it
@@ -137,10 +138,12 @@ class PlayerRepositorySessionBusTest {
         every { controller.mediaItemCount } returns 1
         every { controller.currentMediaItem } returns item
         every { controller.getMediaItemAt(0) } returns item
-        every { controller.isPlaying } returns true
+        every { controller.isPlaying } returns !buffering
+        if (buffering) every { controller.playbackState } returns Player.STATE_BUFFERING
         every { streamUrlCache.get(any()) } returns null // a downloaded track: no live stream
         repo.updateState(controller)
         assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(2L)
+        assertThat(repo.playerState.value.isBuffering).isEqualTo(buffering)
 
         repo.onSessionAliveChanged(false) // the idle-stop
         val fresh: MediaController = mockk(relaxed = true)
@@ -161,6 +164,39 @@ class PlayerRepositorySessionBusTest {
         assertThat(state.currentTrack?.id).isEqualTo(2L)
         assertThat(state.currentTrack?.title).isEqualTo("Reckoner")
         assertThat(state.isPlaying).isFalse()
+    }
+
+    @Test
+    fun `a ghost made while the song was loading shows no spinner`() = runTest {
+        idleOutAndReopen(buffering = true)
+
+        assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(2L)
+        assertThat(repo.playerState.value.isBuffering).isFalse()
+    }
+
+    @Test
+    fun `a refresh with real items after an idle-out retires the ghost`() = runTest {
+        val fresh = idleOutAndReopen()
+        // Android Auto or a media button started playback on the new service.
+        val extras = Bundle().apply { putLong(StashPlaybackService.EXTRA_TRACK_ID, 3L) }
+        val item = MediaItem.Builder()
+            .setMediaId("3")
+            .setMediaMetadata(MediaMetadata.Builder().setTitle("Nude").setExtras(extras).build())
+            .build()
+        every { fresh.mediaItemCount } returns 1
+        every { fresh.currentMediaItem } returns item
+        every { fresh.getMediaItemAt(0) } returns item
+        every { fresh.isPlaying } returns true
+
+        repo.updateState(fresh)
+
+        assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(3L)
+        assertThat(repo.playerState.value.isPlaying).isTrue()
+        // Retired: the next empty refresh is the player's truth again, not a ghost to keep.
+        every { fresh.mediaItemCount } returns 0
+        every { fresh.currentMediaItem } returns null
+        repo.updateState(fresh)
+        assertThat(repo.playerState.value.currentTrack).isNull()
     }
 
     @Test
