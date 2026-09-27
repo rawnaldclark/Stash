@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -807,11 +808,13 @@ fun NowPlayingScreen(
     }
 
     if (showOptionsSheet && track != null) {
+        val postToCommunity = com.stash.core.ui.components.LocalPostToCommunity.current
         NowPlayingOptionsSheet(
             isDownloaded = track.isDownloaded,
             onSaveClick = { showSaveSheet = true },
             onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
             onShareClick = viewModel::onShareCurrent,
+            onPostToCommunity = postToCommunity?.let { post -> { post(com.stash.core.model.community.PostTarget.Song(track)) } },
             onFlagWrongMatch = { showWrongMatchDialog = true },
             onViewAlbum = viewModel::onViewAlbumTapped,
             together = togetherState,
@@ -1240,6 +1243,7 @@ private fun NowPlayingOptionsSheet(
     onSaveClick: () -> Unit,
     onDownloadTap: () -> Unit,
     onShareClick: () -> Unit,
+    onPostToCommunity: (() -> Unit)?,
     onFlagWrongMatch: () -> Unit,
     onViewAlbum: () -> Unit,
     together: ListenTogetherState,
@@ -1301,6 +1305,16 @@ private fun NowPlayingOptionsSheet(
                     onDismiss()
                 }
             )
+
+            // Post to Community (only while Community is on)
+            if (onPostToCommunity != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                SheetOptionRow(
+                    icon = Icons.Default.Public,
+                    label = "Post to Community",
+                    onClick = { onPostToCommunity(); onDismiss() },
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 

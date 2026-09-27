@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.HorizontalDivider
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
+import com.stash.core.model.community.PostTarget
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -53,6 +55,9 @@ import com.stash.core.ui.theme.StashTheme
  * @param track               The track the user long-pressed.
  * @param onPlayNext          Inserts the track after the currently-playing track.
  * @param onSaveToPlaylist    Opens the save-to-playlist flow.
+ * @param onDismiss           Closes the sheet. Each call site owns its
+ *                            ModalBottomSheet, so a row that hands off to
+ *                            another sheet (Post to Community) calls this first.
  * @param onAddToQueue        Appends the track to the end of the queue. Null hides.
  * @param onStartRadio        Starts a song radio seeded from this track. Null hides.
  * @param onShare             Opens the share-links sheet. Null hides.
@@ -66,6 +71,7 @@ fun TrackOptionsSheet(
     track: Track,
     onPlayNext: (Track) -> Unit,
     onSaveToPlaylist: (Track) -> Unit,
+    onDismiss: () -> Unit,
     onAddToQueue: ((Track) -> Unit)? = null,
     onStartRadio: ((Track) -> Unit)? = null,
     onShare: ((Track) -> Unit)? = null,
@@ -198,6 +204,15 @@ fun TrackOptionsSheet(
                 icon = Icons.Default.Share,
                 label = "Share",
                 onClick = { onShare(track) },
+            )
+        }
+
+        // -- Post to Community (only while Community is on) --
+        LocalPostToCommunity.current?.let { post ->
+            SheetOptionRow(
+                icon = Icons.Default.Public,
+                label = "Post to Community",
+                onClick = { onDismiss(); post(PostTarget.Song(track)) },
             )
         }
 

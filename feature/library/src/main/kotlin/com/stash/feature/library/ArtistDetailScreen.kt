@@ -272,6 +272,7 @@ fun ArtistDetailScreen(
                     trackToSave = it
                     selectedTrack = null
                 },
+                onDismiss = { selectedTrack = null },
                 onDelete = {
                     viewModel.deleteTrack(it)
                     selectedTrack = null

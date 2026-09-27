@@ -34,6 +34,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.model.community.PostTarget
+import com.stash.core.ui.components.LocalPostToCommunity
 
 /** Spec §5 share sheet. Keyed per playlist so each playlist gets its own ViewModel. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,6 +50,8 @@ fun ShareMixSheet(
     LaunchedEffect(playlistId) { viewModel.bind(playlistId, playlistName) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // Stash Community (spec 2026-09-26 §3): offered in both states while Community is on.
+    val postToCommunity = LocalPostToCommunity.current
     // Spec §5: "Create link" goes straight on to the Android share sheet once the link exists.
     var justCreated by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(state) {
@@ -75,6 +79,11 @@ fun ShareMixSheet(
                     Button(onClick = { justCreated = true; viewModel.create(name, display.ifBlank { null }, auto) }, enabled = !s.working, modifier = Modifier.fillMaxWidth()) {
                         Text(if (s.working) "Creating link…" else "Create link")
                     }
+                    postToCommunity?.let { post ->
+                        OutlinedButton(onClick = { onDismiss(); post(PostTarget.Playlist(playlistId)) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Post to Community")
+                        }
+                    }
                 }
                 is ShareMixUiState.Shared -> {
                     Text(s.url, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
@@ -82,6 +91,9 @@ fun ShareMixSheet(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { sendLink(context, s.name, trackCount, s.url) }) { Text("Share again") }
                         OutlinedButton(onClick = { copy(context, s.url) }) { Text("Copy link") }
+                    }
+                    postToCommunity?.let { post ->
+                        OutlinedButton(onClick = { onDismiss(); post(PostTarget.Playlist(playlistId)) }) { Text("Post to Community") }
                     }
                     if (s.canManage) {
                         Row(verticalAlignment = Alignment.CenterVertically) {

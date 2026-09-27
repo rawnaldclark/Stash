@@ -471,6 +471,7 @@ fun QueueBottomSheet(
                 track = t,
                 onPlayNext = { onPlayNext?.invoke(it); menuTrack = null },
                 onSaveToPlaylist = { onSaveToPlaylist?.invoke(it); menuTrack = null },
+                onDismiss = { menuTrack = null },
                 onStartRadio = onStartRadio?.let { cb -> { track: Track -> cb(track); menuTrack = null } },
                 onShare = onShare?.let { cb -> { track: Track -> cb(track); menuTrack = null } },
                 onDownload = onToggleDownload?.let { cb -> { track: Track -> cb(track); menuTrack = null } },

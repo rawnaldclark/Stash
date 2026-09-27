@@ -392,6 +392,7 @@ fun PlaylistDetailScreen(
                     trackToSave = it
                     selectedTrack = null
                 },
+                onDismiss = { selectedTrack = null },
                 onDelete = { t: Track ->
                     // Hand off to the confirmation dialog so the user can
                     // choose "delete only" vs "delete and block future
