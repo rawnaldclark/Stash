@@ -3,15 +3,21 @@ package com.stash.app.navigation
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.toRoute
 import com.stash.data.ytmusic.model.AlbumSource
+import com.stash.feature.community.CommunityHostViewModel
 import com.stash.feature.community.CommunityPostScreen
 import com.stash.feature.community.CommunityPosting
 import com.stash.feature.community.CommunityPostingHost
@@ -66,6 +72,17 @@ fun StashNavHost(
 ) {
     // Stash Community (spec 2026-09-26 §3): LocalPostToCommunity and the posting sheets sit over every screen.
     val posting = rememberCommunityPosting()
+    val host: CommunityHostViewModel = hiltViewModel()
+    // Community turned off (spec §3: nothing Community anywhere): a tab can restore a Community screen it saved
+    // while it was on, so leave any that's showing. null is "not read yet", so a cold start that restores one keeps it.
+    val communityOn by host.on.collectAsStateWithLifecycle()
+    val top by navController.currentBackStackEntryAsState()
+    LaunchedEffect(communityOn, top) {
+        if (communityOn == false) {
+            while (navController.currentDestination?.let { it.hasRoute<CommunityRoute>() || it.hasRoute<CommunityPostRoute>() } == true &&
+                navController.popBackStack()) Unit
+        }
+    }
     CommunityPostingHost(
         posting,
         onSeeMyPosts = {
@@ -73,6 +90,7 @@ fun StashNavHost(
             val onSeeAll = navController.currentBackStackEntry?.destination?.hasRoute<CommunityRoute>() == true
             navController.navigate(CommunityRoute(mine = true)) { if (onSeeAll) popUpTo<CommunityRoute> { inclusive = true } }
         },
+        viewModel = host,
     ) {
         StashNavGraph(navController, modifier, onSelectionModeChanged, onNavigateToTab, posting)
     }

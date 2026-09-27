@@ -41,15 +41,19 @@ fun rememberCommunityPosting(): CommunityPosting =
     // rotation mid-post ever matters.
     remember { CommunityPosting() }
 
-/** Is Community on: all the host reads while it's off, so the app makes no Community requests (spec §3). */
+/**
+ * Is Community on: all the host reads while it's off, so the app makes no Community requests (spec §3).
+ * [on] is null until the switch is read.
+ */
 @HiltViewModel
 class CommunityHostViewModel @Inject constructor(homeSections: HomeSectionsPreference) : ViewModel() {
-    val on: StateFlow<Boolean> = homeSections.communityOn.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val on: StateFlow<Boolean?> = homeSections.communityOn.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 }
 
 /**
  * Provides [LocalPostToCommunity] to [content] while Community is on, and hosts the picker and the confirm
- * sheet over it. [onSeeMyPosts] opens See all ▸ Mine (the live_limit message's button).
+ * sheet over it. Until the switch is read it counts as off. [onSeeMyPosts] opens See all ▸ Mine (the
+ * live_limit message's button).
  */
 @Composable
 fun CommunityPostingHost(
@@ -58,7 +62,7 @@ fun CommunityPostingHost(
     viewModel: CommunityHostViewModel = hiltViewModel(),
     content: @Composable () -> Unit,
 ) {
-    val on by viewModel.on.collectAsStateWithLifecycle()
+    val on = viewModel.on.collectAsStateWithLifecycle().value == true
     CompositionLocalProvider(LocalPostToCommunity provides posting.post.takeIf { on }) { content() }
     if (!on) return
     if (posting.picking) CommunityPicker(onPick = posting.post, onDismiss = { posting.picking = false })

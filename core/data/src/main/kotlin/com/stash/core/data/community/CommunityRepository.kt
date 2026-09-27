@@ -3,6 +3,7 @@ package com.stash.core.data.community
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.mapper.toDomain
+import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.share.SharePreference
 import com.stash.core.data.share.SharedMixRepository
 import com.stash.core.data.share.cut
@@ -20,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 
@@ -35,6 +37,7 @@ sealed interface Draft {
  * Stash Community (spec 2026-09-26 §3): the lists, votes, take-downs, and building and sending a post.
  * The network calls return a [CommunityResult] and never throw; [draft], [post] and [recentSongs] can throw
  * on a database or DataStore failure.
+ * While Community is off, the network calls send nothing and change nothing: each returns `Rejected("off")`.
  */
 @Singleton
 class CommunityRepository @Inject constructor(
@@ -44,6 +47,7 @@ class CommunityRepository @Inject constructor(
     private val playlistDao: PlaylistDao,
     private val trackDao: TrackDao,
     private val sharePreference: SharePreference,
+    private val homeSections: HomeSectionsPreference,
 ) {
     /** Home's last loaded list, shown at once on the next Home open while it reloads. */
     @Volatile var lastHome: List<CommunityPost>? = null
@@ -58,33 +62,36 @@ class CommunityRepository @Inject constructor(
         private set
 
     /** The ranked list. It carries the key only once this phone has one: reading never makes one. */
-    suspend fun feed(limit: Int): CommunityResult<List<CommunityPost>> = api.feed(limit, keys.existingKey())
+    suspend fun feed(limit: Int): CommunityResult<List<CommunityPost>> = whileOn { api.feed(limit, keys.existingKey()) }
 
     /** Your live posts, hidden ones included; none, without asking, before this phone has a key. */
-    suspend fun mine(): CommunityResult<List<CommunityPost>> =
+    suspend fun mine(): CommunityResult<List<CommunityPost>> = whileOn {
         keys.existingKey()?.let { api.mine(it) } ?: CommunityResult.Ok(emptyList())
+    }
 
     /**
      * The confirm sheet's limits. A phone with no key has posted nothing and can't be blocked, so it gets the
      * full limits without a request: opening the sheet never makes a key (the README says "the first time you
      * post or vote").
      */
-    suspend fun me(): CommunityResult<CommunityMe> =
+    suspend fun me(): CommunityResult<CommunityMe> = whileOn {
         keys.existingKey()?.let { api.me(it) } ?: CommunityResult.Ok(CommunityMe(DAILY_POSTS, LIVE_POSTS, blocked = false))
+    }
 
-    suspend fun open(id: String): CommunityResult<CommunityPost> = api.open(id, keys.existingKey())
+    suspend fun open(id: String): CommunityResult<CommunityPost> = whileOn { api.open(id, keys.existingKey()) }
 
-    suspend fun vote(id: String, value: Int): CommunityResult<VoteCounts> {
+    suspend fun vote(id: String, value: Int): CommunityResult<VoteCounts> = whileOn {
         // Before sending: a screen closed mid-vote cancels this call, maybe after the vote has landed.
         lastVoteAt = System.currentTimeMillis()
-        return api.vote(id, value, keys.key())
+        api.vote(id, value, keys.key())
     }
 
     /** A post that's already gone counts as taken down: it's what the person wanted (e.g. a retry after a lost 204). */
-    suspend fun takeDown(id: String): CommunityResult<Unit> =
+    suspend fun takeDown(id: String): CommunityResult<Unit> = whileOn {
         api.takeDown(id, keys.key())
             .let { if (it is CommunityResult.Rejected && it.code == "gone") CommunityResult.Ok(Unit) else it }
             .also { if (it is CommunityResult.Ok) _revision.update { n -> n + 1 } }
+    }
 
     suspend fun displayName(): String? = sharePreference.displayName()
 
@@ -122,16 +129,20 @@ class CommunityRepository @Inject constructor(
     }
 
     /** Sends [draft] under [name], cut to the Worker's 40 characters and remembered as "Show my name as". */
-    suspend fun post(draft: Draft.Ready, name: String): CommunityResult<String> {
+    suspend fun post(draft: Draft.Ready, name: String): CommunityResult<String> = whileOn {
         val poster = name.trim().cut(40)
         // The Worker refuses a blank name too, and saving "" would wipe the name mixes and Listen Together use.
-        if (poster.isEmpty()) return CommunityResult.Rejected("bad_request")
+        if (poster.isEmpty()) return@whileOn CommunityResult.Rejected("bad_request")
         sharePreference.setDisplayName(poster)
         val body = if (draft.kind == "song") NewPost.Body(track = draft.tracks.single())
         else NewPost.Body(covers = draft.covers, tracks = draft.tracks)
-        return api.create(NewPost(draft.kind, poster, draft.title, body), keys.key())
+        api.create(NewPost(draft.kind, poster, draft.title, body), keys.key())
             .also { if (it is CommunityResult.Ok) _revision.update { n -> n + 1 } }
     }
+
+    /** Community off: no request leaves the phone (spec §3), whichever screen asks. */
+    private suspend fun <T> whileOn(call: suspend () -> CommunityResult<T>): CommunityResult<T> =
+        if (homeSections.communityOn.first()) call() else CommunityResult.Rejected("off")
 
     companion object {
         const val HOME_SIZE = 5

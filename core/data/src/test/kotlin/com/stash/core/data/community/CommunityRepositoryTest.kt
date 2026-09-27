@@ -7,6 +7,7 @@ import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.share.ShareApiClient
 import com.stash.core.data.share.SharePreference
 import com.stash.core.data.share.SharedMixRepository
@@ -18,7 +19,9 @@ import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.community.PostTarget
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -59,9 +62,10 @@ class CommunityRepositoryTest {
         coEvery { existingKey() } returns existingKey
     }
 
-    private fun repository(keys: CommunityKeyStore): CommunityRepository {
+    private fun repository(keys: CommunityKeyStore, on: Boolean = true): CommunityRepository {
         val api = CommunityApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
-        return CommunityRepository(api, keys, shared, db.playlistDao(), db.trackDao(), prefs)
+        val homeSections = mockk<HomeSectionsPreference> { every { communityOn } returns flowOf(on) }
+        return CommunityRepository(api, keys, shared, db.playlistDao(), db.trackDao(), prefs, homeSections)
     }
 
     private suspend fun playlist(type: PlaylistType, songs: Int): Long {
@@ -187,5 +191,20 @@ class CommunityRepositoryTest {
         val before = repo.revision.value
         assertThat(repo.takeDown("AAAAAAAA")).isEqualTo(CommunityResult.Ok(Unit))
         assertThat(repo.revision.value).isEqualTo(before + 1)
+    }
+
+    @Test fun `while Community is off every call is refused before anything is sent, saved or made`() = runBlocking {
+        val keys = keyStore(existingKey = key)
+        val off = repository(keys, on = false)
+        val draft = off.draft(PostTarget.Song(Track(id = 999_999, title = "us", artist = "sincewhen"))) as Draft.Ready
+        val results = listOf(
+            off.feed(5), off.mine(), off.me(), off.open("AAAAAAAA"), off.vote("AAAAAAAA", 1), off.takeDown("AAAAAAAA"), off.post(draft, "Sam"),
+        )
+        assertThat(results).isEqualTo(List(7) { CommunityResult.Rejected("off") })
+        assertThat(server.requestCount).isEqualTo(0)
+        assertThat(off.lastVoteAt).isEqualTo(0L)
+        assertThat(off.revision.value).isEqualTo(0)
+        coVerify(exactly = 0) { keys.key() }
+        coVerify(exactly = 0) { prefs.setDisplayName(any()) }
     }
 }

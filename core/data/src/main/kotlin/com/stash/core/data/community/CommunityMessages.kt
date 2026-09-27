@@ -13,6 +13,7 @@ fun communityMessage(result: CommunityResult<*>): String = when (result) {
         "too_large" -> "This playlist is too big to post."
         "gone" -> "This post is no longer available."
         "own_post" -> "You can't vote on your own post."
+        "off" -> "Community is turned off."
         else -> "Something went wrong. Try again."
     }
 }

@@ -14,6 +14,7 @@ class CommunityMessagesTest {
             "too_large" to "This playlist is too big to post.",
             "gone" to "This post is no longer available.",
             "own_post" to "You can't vote on your own post.",
+            "off" to "Community is turned off.",
             "bad_request" to "Something went wrong. Try again.",
         ).forEach { (code, message) -> assertThat(communityMessage(CommunityResult.Rejected(code))).isEqualTo(message) }
         assertThat(communityMessage(CommunityResult.Failed("timeout"))).isEqualTo("Couldn't reach Community. Try again.")
