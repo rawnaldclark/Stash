@@ -104,6 +104,13 @@ class PostComposerViewModelTest {
         assertThat(vm.state.value).isEqualTo(UiState.Loading)
     }
 
+    @Test fun `closing cancels a draft still loading`() = runTest(dispatcher) {
+        coEvery { repo.draft(target) } coAnswers { delay(1_000); draft }
+        val vm = PostComposerViewModel(repo).also { it.open(target); runCurrent() }
+        vm.reset(); advanceUntilIdle()
+        assertThat(vm.state.value).isEqualTo(UiState.Loading)
+    }
+
     @Test fun `limits that can't be read leave the sheet usable`() = runTest(dispatcher) {
         coEvery { repo.me() } returns CommunityResult.Failed(null)
         assertThat((opened().state.value as UiState.Ready).me).isNull()
