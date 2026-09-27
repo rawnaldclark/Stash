@@ -12,10 +12,9 @@ import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_I
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_YOUTUBE_ID
 import com.stash.core.media.service.toAutoMediaItem
 import com.stash.core.media.trackIdentity
-import com.stash.core.model.Track
 import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.SharedTrack
-import com.stash.core.model.share.toSharedTrack
+import com.stash.core.model.share.toSharedTrackWithArt
 import java.io.File
 import java.util.Collections
 import javax.inject.Inject
@@ -86,7 +85,7 @@ class DefaultSessionCatalog @Inject constructor(
         val extras = item.mediaMetadata.extras
         val id = item.mediaId.toLongOrNull()?.takeIf { it > 0 } ?: extras?.getLong(EXTRA_TRACK_ID, -1L)?.takeIf { it > 0 }
         id?.let { trackDao.getById(it) }?.let { row ->
-            val shared = row.toDomain().shared()
+            val shared = row.toDomain().toSharedTrackWithArt()
             own[shared.copy(artUrl = null)] = row.id
             return@withContext shared
         }
@@ -102,14 +101,11 @@ class DefaultSessionCatalog @Inject constructor(
         )
     }
 
-    /** The descriptor for the room, with the cover when it's a link the others can load: never a local file. */
-    private fun Track.shared(): SharedTrack = toSharedTrack().copy(artUrl = albumArtUrl?.takeIf(ShareConfig::isAllowedCover))
-
     override suspend fun radioAfter(track: SharedTrack): List<SharedTrack> = try {
         val (_, batch) = radioGenerator.start(RadioSeed.Song(track.title, track.artist, track.youtubeId))
         // Drop the seed itself, matched by title and artist like PlayerRepositoryImpl.startRadio's keepCurrent.
         val seed = trackIdentity(track.title, track.artist)
-        batch.filter { trackIdentity(it.title, it.artist) != seed }.map { it.shared() }.take(MAX_STATION)
+        batch.filter { trackIdentity(it.title, it.artist) != seed }.map { it.toSharedTrackWithArt() }.take(MAX_STATION)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

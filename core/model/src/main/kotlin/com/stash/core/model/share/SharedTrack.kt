@@ -53,6 +53,13 @@ fun Track.toSharedTrack(): SharedTrack = SharedTrack(
 )
 
 /**
+ * [toSharedTrack] plus the cover this phone shows, when it's an https link on [ShareConfig.COVER_HOSTS].
+ * Listen Together and Community send it so other phones show the same art (a local art path never leaves).
+ */
+fun Track.toSharedTrackWithArt(): SharedTrack =
+    toSharedTrack().copy(artUrl = albumArtUrl?.takeIf(ShareConfig::isAllowedCover))
+
+/**
  * A received descriptor as a new, stream-only library track. Always [MusicSource.BOTH]
  * (spec §2, owner decision): download reconciliation only queues tracks whose source is
  * connected, and BOTH is always connected, so a followed mix downloads for anyone.

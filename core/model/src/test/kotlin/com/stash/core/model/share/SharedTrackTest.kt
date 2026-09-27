@@ -53,4 +53,12 @@ class SharedTrackTest {
     @Test fun `a shared mix's descriptor never carries a cover`() {
         assertThat(full.copy(albumArtUrl = "https://i.scdn.co/image/x").toSharedTrack().artUrl).isNull()
     }
+
+    @Test fun `toSharedTrackWithArt keeps an art link on the cover hosts and drops any other`() {
+        assertThat(full.copy(albumArtUrl = "https://i.scdn.co/image/abc").toSharedTrackWithArt().artUrl)
+            .isEqualTo("https://i.scdn.co/image/abc")
+        assertThat(full.copy(albumArtUrl = "https://evil.example/a.jpg").toSharedTrackWithArt().artUrl).isNull()
+        assertThat(full.copy(albumArtUrl = "file:///data/art.jpg").toSharedTrackWithArt().artUrl).isNull()
+        assertThat(full.toSharedTrackWithArt().copy(artUrl = null)).isEqualTo(full.toSharedTrack())
+    }
 }
