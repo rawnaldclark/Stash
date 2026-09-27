@@ -470,7 +470,7 @@ fun HomeScreen(
             val mixPages = uiState.yourMixes
             when {
                 uiState.isLoading -> DiscoverHeroCard(
-                    label = "Daily discovery",
+                    label = "Updated daily",
                     title = "Discover",
                     subtitle = "",
                     artUrl = null,
@@ -498,7 +498,7 @@ fun HomeScreen(
                         ) { page ->
                             if (page < heroPages && hero != null) {
                                 DiscoverHeroCard(
-                                    label = "Daily discovery",
+                                    label = "Updated daily",
                                     title = hero.title,
                                     subtitle = hero.subtitle,
                                     artUrl = hero.artUrl,

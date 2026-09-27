@@ -50,7 +50,7 @@ import com.stash.core.ui.theme.StashPurpleDark
  * first materializes). The caller omits this card entirely when there is no
  * discovery to show — this component always renders something (shimmer or hero).
  *
- * @param label    Small uppercase eyebrow (e.g. "Daily discovery").
+ * @param label    Small uppercase eyebrow (e.g. "Updated daily"). Not the title again: the text column is narrow.
  * @param title    Hero title (e.g. "Discover").
  * @param subtitle Supporting line (track count + cadence).
  * @param artUrl   Cover art URL — rendered as the card background (with a scrim
@@ -150,14 +150,15 @@ fun DiscoverHeroCard(
                     text = title,
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                     color = Color.White,
-                    maxLines = 1,
+                    // Two lines: between the cover and the buttons a name like "Daily Discover" doesn't fit on one.
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.72f),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

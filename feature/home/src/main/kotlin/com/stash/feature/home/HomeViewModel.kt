@@ -240,7 +240,7 @@ class HomeViewModel @Inject constructor(
             ?.let { playlist ->
                 DiscoverHeroState(
                     title = playlist.name,
-                    subtitle = "${playlist.trackCount} tracks · updated daily",
+                    subtitle = "${playlist.trackCount} tracks", // the card's eyebrow says "Updated daily"
                     artUrl = playlist.artUrl,
                     playlistId = playlist.id,
                 )

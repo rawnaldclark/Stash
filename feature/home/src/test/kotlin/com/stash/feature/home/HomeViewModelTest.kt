@@ -79,7 +79,7 @@ class HomeViewModelTest {
         val hero = state.hero
         assertThat(hero).isNotNull()
         assertThat(hero!!.title).isEqualTo("Daily Discover")
-        assertThat(hero.subtitle).isEqualTo("30 tracks · updated daily")
+        assertThat(hero.subtitle).isEqualTo("30 tracks")
         assertThat(hero.artUrl).isEqualTo("https://art/7")
         assertThat(hero.playlistId).isEqualTo(7L)
         assertThat(state.isColdStart).isFalse()
