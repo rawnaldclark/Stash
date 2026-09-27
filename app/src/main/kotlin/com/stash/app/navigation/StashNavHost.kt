@@ -402,8 +402,8 @@ private fun StashNavGraph(
             // from a ViewModel coroutine, so each acts only while this entry is the top of a live back stack: a
             // take-down's reply after Back (the ViewModel lives through the 700 ms fade) would otherwise pop the screen
             // below too (from Home: Home itself, a blank screen), and a callback left over from before a rotation holds
-            // the old NavController, whose entry is DESTROYED. CommunityPostViewModel reads the route's `postId` from
-            // SavedStateHandle by that name.
+            // the old NavController, whose entry is DESTROYED (navigate() on it throws, so a finished save would read
+            // as failed). CommunityPostViewModel reads the route's `postId` from SavedStateHandle by that name.
             val onTop = {
                 navController.currentBackStackEntry === entry && entry.lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)
             }
