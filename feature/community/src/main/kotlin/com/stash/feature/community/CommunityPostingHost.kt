@@ -36,8 +36,9 @@ class CommunityPosting {
 @Composable
 fun rememberCommunityPosting(): CommunityPosting =
     // ponytail: remember, not rememberSaveable. PostTarget.Song holds a Track, which isn't Parcelable, so a rotation closes
-    // the sheet like the app's track sheets. A post in flight still finishes and toasts; a refusal then goes unseen, and a
-    // reopen within the 15 s timeout could post twice. Add a Saver if rotation mid-post ever matters.
+    // the sheet like the app's track sheets. A post in flight still finishes and toasts; a refusal then shows only on a
+    // sheet reopened before it lands, and such a reopen (within the 15 s timeout) could post twice. Add a Saver if
+    // rotation mid-post ever matters.
     remember { CommunityPosting() }
 
 /** Is Community on: all the host reads while it's off, so the app makes no Community requests (spec §3). */
