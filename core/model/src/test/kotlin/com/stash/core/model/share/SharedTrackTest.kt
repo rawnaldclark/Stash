@@ -57,7 +57,7 @@ class SharedTrackTest {
     @Test fun `toSharedTrackWithArt keeps an art link on the cover hosts and drops any other`() {
         val cover = "https://i.scdn.co/image/abc"
         assertThat(full.copy(albumArtUrl = cover).toSharedTrackWithArt()).isEqualTo(full.toSharedTrack().copy(artUrl = cover))
-        assertThat(full.copy(albumArtUrl = "https://evil.example/a.jpg").toSharedTrackWithArt().artUrl).isNull()
+        assertThat(full.copy(albumArtUrl = "https://evil.example/a.jpg").toSharedTrackWithArt()).isEqualTo(full.toSharedTrack())
         assertThat(full.copy(albumArtUrl = "file:///data/art.jpg").toSharedTrackWithArt().artUrl).isNull()
     }
 }
