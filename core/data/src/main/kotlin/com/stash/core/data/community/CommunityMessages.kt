@@ -8,7 +8,7 @@ fun communityMessage(result: CommunityResult<*>): String = when (result) {
         "daily_limit" -> "You've posted twice today. Try again tomorrow."
         "live_limit" -> "You have 5 posts up. Take one down to post again."
         "network_limit" -> "Too many posts from your internet connection today. Try again tomorrow."
-        "blocked" -> "You can't post to Community."
+        "blocked" -> "You can't post or vote in Community."
         "rate_limited" -> "Slow down a moment."
         "too_large" -> "This playlist is too big to post."
         "gone" -> "This post is no longer available."

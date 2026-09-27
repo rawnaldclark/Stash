@@ -9,7 +9,7 @@ class CommunityMessagesTest {
             "daily_limit" to "You've posted twice today. Try again tomorrow.",
             "live_limit" to "You have 5 posts up. Take one down to post again.",
             "network_limit" to "Too many posts from your internet connection today. Try again tomorrow.",
-            "blocked" to "You can't post to Community.",
+            "blocked" to "You can't post or vote in Community.",
             "rate_limited" to "Slow down a moment.",
             "too_large" to "This playlist is too big to post.",
             "gone" to "This post is no longer available.",

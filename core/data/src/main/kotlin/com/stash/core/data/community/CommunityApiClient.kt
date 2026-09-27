@@ -5,6 +5,7 @@ import com.stash.core.model.community.CommunityMe
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.SharedTrack
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -20,10 +21,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 sealed interface CommunityResult<out T> {
     data class Ok<T>(val value: T) : CommunityResult<T>
 
-    /** A 4xx: [code] is the Worker's `error` ("daily_limit", "gone", …), or "unknown" when the body had none. */
+    /** A 4xx: [code] is the Worker's `error` ("daily_limit", "gone", …), or "unknown" when the body had none ("rate_limited" for a 429). */
     data class Rejected(val code: String) : CommunityResult<Nothing>
 
-    /** Offline, a timeout, or a 5xx (the Worker's catch-all is 503 `unavailable`): worth trying again. */
+    /** Offline, a timeout, a 5xx (the Worker's catch-all is 503 `unavailable`), a redirect, or a 2xx it can't read: worth trying again. */
     data class Failed(val reason: String?) : CommunityResult<Nothing>
 }
 
@@ -40,7 +41,11 @@ data class VoteCounts(val up: Int, val down: Int, val myVote: Int)
 
 /** HTTP client for the Worker's `/v1/community` routes. Unlike `shareCall`, it keeps a 4xx's `error` code. */
 @Singleton
-class CommunityApiClient @Inject constructor(private val okHttpClient: OkHttpClient) {
+class CommunityApiClient @Inject constructor(okHttpClient: OkHttpClient) {
+    // Bounds the whole call (every address, TLS, the answer): a caller's withTimeout can't cut a blocking execute() short.
+    // No redirects: OkHttp would carry X-Stash-Community-Key to another host.
+    private val http = okHttpClient.newBuilder().callTimeout(15, TimeUnit.SECONDS).followRedirects(false).build()
+
     /** Test seam; off the constructor because Hilt rejects @Inject with default params. */
     internal var baseUrl: String = ShareConfig.BASE_URL
 
@@ -59,7 +64,7 @@ class CommunityApiClient @Inject constructor(private val okHttpClient: OkHttpCli
     suspend fun me(key: String): CommunityResult<CommunityMe> =
         call(request("/v1/community/me", key)) { ShareJson.decodeFromString(CommunityMe.serializer(), it) }
 
-    suspend fun post(id: String, key: String?): CommunityResult<CommunityPost> =
+    suspend fun open(id: String, key: String?): CommunityResult<CommunityPost> =
         call(request("/v1/community/posts/$id", key)) { ShareJson.decodeFromString(One.serializer(), it).post }
 
     suspend fun create(post: NewPost, key: String): CommunityResult<String> =
@@ -81,11 +86,11 @@ class CommunityApiClient @Inject constructor(private val okHttpClient: OkHttpCli
     private suspend fun <T> call(builder: Request.Builder, parse: (String) -> T): CommunityResult<T> =
         withContext(Dispatchers.IO) {
             try {
-                okHttpClient.newCall(builder.build()).execute().use { r ->
+                http.newCall(builder.build()).execute().use { r ->
                     val text = r.body?.string().orEmpty()
                     when (r.code) {
                         in 200..299 -> CommunityResult.Ok(parse(text))
-                        in 400..499 -> CommunityResult.Rejected(errorCode(text))
+                        in 400..499 -> CommunityResult.Rejected(errorCode(r.code, text))
                         else -> CommunityResult.Failed("HTTP ${r.code}")
                     }
                 }
@@ -96,8 +101,10 @@ class CommunityApiClient @Inject constructor(private val okHttpClient: OkHttpCli
             }
         }
 
-    private fun errorCode(text: String): String =
-        runCatching { ShareJson.decodeFromString(ErrorBody.serializer(), text).error }.getOrNull() ?: "unknown"
+    /** The Worker's `error`. A 429 without one is Cloudflare's own rate-limit page. */
+    private fun errorCode(status: Int, text: String): String =
+        runCatching { ShareJson.decodeFromString(ErrorBody.serializer(), text).error }.getOrNull()
+            ?: if (status == 429) "rate_limited" else "unknown"
 
     companion object {
         const val KEY_HEADER = "X-Stash-Community-Key"
