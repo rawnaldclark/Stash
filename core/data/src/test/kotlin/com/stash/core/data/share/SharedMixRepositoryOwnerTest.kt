@@ -116,4 +116,8 @@ class SharedMixRepositoryOwnerTest {
         assertThat(repo.buildDocument(playlistId, "Ambient", null, withArt = true).tracks.map { it.artUrl })
             .containsExactly("https://i.scdn.co/image/1", null).inOrder()
     }
+
+    @Test fun `buildDocument cuts the shared-by name to 40 without splitting an emoji`() = runBlocking {
+        assertThat(repo.buildDocument(playlistId, "Ambient", sharedBy = "n".repeat(39) + "🎧").sharedBy).isEqualTo("n".repeat(39))
+    }
 }

@@ -19,4 +19,16 @@ class SharedTrackLimitsTest {
         assertThat(t.artUrl).hasLength(1000)
         assertThat(t.withinLimits()).isEqualTo(t)
     }
+
+    @Test fun `cut never ends on half an emoji, and cut(0) is empty`() {
+        assertThat("".cut(0)).isEqualTo("")
+        assertThat(("n".repeat(9) + "🎧").cut(10)).isEqualTo("n".repeat(9))
+        assertThat(("n".repeat(8) + "🎧").cut(10)).isEqualTo("n".repeat(8) + "🎧")
+    }
+
+    @Test fun `withinLimits never cuts an emoji in half`() {
+        val text = "x".repeat(499) + "🎧"
+        val t = SharedTrack(title = text, artist = text, album = text).withinLimits()
+        assertThat(listOf(t.title, t.artist, t.album)).containsExactly("x".repeat(499), "x".repeat(499), "x".repeat(499))
+    }
 }

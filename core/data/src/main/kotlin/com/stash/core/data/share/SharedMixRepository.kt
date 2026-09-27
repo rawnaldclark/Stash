@@ -35,9 +35,9 @@ enum class PublishOutcome { Unchanged, Published, Removed, Forbidden, Rejected, 
 
 /** Clips a descriptor to the Worker's limits (worker src/validate.js), so one odd row can't fail a whole mix or post. */
 internal fun SharedTrack.withinLimits() = copy(
-    title = title.take(500),
-    artist = artist.take(500),
-    album = album?.take(500),
+    title = title.cut(500),
+    artist = artist.cut(500),
+    album = album?.cut(500),
     isrc = isrc?.takeIf { it.length <= 20 },
     spotifyId = spotifyId?.takeIf { it.length <= 40 },
     youtubeId = youtubeId?.takeIf { it.length <= 20 },
@@ -45,7 +45,7 @@ internal fun SharedTrack.withinLimits() = copy(
 )
 
 /** [take] that never ends on half an emoji: UTF-8 would send the lone half as "?". */
-internal fun String.cut(n: Int) = take(n).let { if (it.length == n && it.last().isHighSurrogate()) it.dropLast(1) else it }
+internal fun String.cut(n: Int) = take(n).let { if (it.isNotEmpty() && it.length == n && it.last().isHighSurrogate()) it.dropLast(1) else it }
 
 /** Every share and follow operation (spec §5-6). */
 @Singleton
@@ -77,7 +77,7 @@ class SharedMixRepository @Inject constructor(
         val tracks = playlistDao.getTracksForPlaylist(playlistId).map { it.toDomain() }
         return SharedMixDocument(
             name = name.trim().cut(100),
-            sharedBy = sharedBy?.trim()?.take(40)?.ifBlank { null },
+            sharedBy = sharedBy?.trim()?.cut(40)?.ifBlank { null },
             covers = tracks.mapNotNull { it.albumArtUrl?.takeIf { u -> u.length <= 1000 && ShareConfig.isAllowedCover(u) } }.distinct().take(4),
             tracks = tracks.take(MAX_TRACKS).map { (if (withArt) it.toSharedTrackWithArt() else it.toSharedTrack()).withinLimits() },
         )
