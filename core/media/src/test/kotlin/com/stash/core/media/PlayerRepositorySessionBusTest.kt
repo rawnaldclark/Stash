@@ -1,6 +1,9 @@
 package com.stash.core.media
 
+import android.os.Bundle
 import android.os.Looper
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -8,13 +11,17 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.TrackIdentityEvents
+import com.stash.core.media.service.StashPlaybackService
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrlCache
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -44,6 +51,7 @@ class PlayerRepositorySessionBusTest {
     private val connectivity: ConnectivityMonitor = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true)
     private val controller: MediaController = mockk(relaxed = true)
+    private val playbackResumer: PlaybackResumer = mockk(relaxed = true)
     private val trackIdentityEvents: TrackIdentityEvents = mockk {
         every { changes } returns MutableSharedFlow()
     }
@@ -62,7 +70,7 @@ class PlayerRepositorySessionBusTest {
             streamUrlCache = streamUrlCache,
             connectivity = connectivity,
             trackDao = trackDao,
-            playbackResumer = mockk(relaxed = true),
+            playbackResumer = playbackResumer,
             radioGenerator = mockk(relaxed = true),
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = bus,
@@ -109,5 +117,62 @@ class PlayerRepositorySessionBusTest {
 
         verify(exactly = 1) { controller.release() }
         assertThat(repo.controllerDeferred).isNull()
+    }
+
+    /**
+     * #462, second half: the service idles out, the app reopens, the service is
+     * recreated and the fresh controller's first sync is EMPTY. That refresh used to
+     * wipe the kept snapshot, so the app showed "Not Playing" and no mini player.
+     */
+    private suspend fun idleOutAndReopen(): MediaController {
+        coEvery { playbackResumer.buildResumePlan() } returns null
+        shadowOf(Looper.getMainLooper()).idle()
+        repo.controllerDeferred = controller // init's "not alive" released the seam; re-seat it
+        io.mockk.clearMocks(playbackResumer, answers = false)
+        val extras = Bundle().apply { putLong(StashPlaybackService.EXTRA_TRACK_ID, 2L) }
+        val item = MediaItem.Builder()
+            .setMediaId("2")
+            .setMediaMetadata(MediaMetadata.Builder().setTitle("Reckoner").setExtras(extras).build())
+            .build()
+        every { controller.mediaItemCount } returns 1
+        every { controller.currentMediaItem } returns item
+        every { controller.getMediaItemAt(0) } returns item
+        every { controller.isPlaying } returns true
+        every { streamUrlCache.get(any()) } returns null // a downloaded track: no live stream
+        repo.updateState(controller)
+        assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(2L)
+
+        repo.onSessionAliveChanged(false) // the idle-stop
+        val fresh: MediaController = mockk(relaxed = true)
+        every { fresh.isConnected } returns true
+        every { fresh.mediaItemCount } returns 0
+        every { fresh.currentMediaItem } returns null
+        repo.controllerDeferred = fresh
+        repo.onSessionAliveChanged(true)
+        repo.updateState(fresh) // what a fresh connect's first sync does
+        return fresh
+    }
+
+    @Test
+    fun `after an idle-out the paused song is still on screen when the app reopens`() = runTest {
+        idleOutAndReopen()
+
+        val state = repo.playerState.value
+        assertThat(state.currentTrack?.id).isEqualTo(2L)
+        assertThat(state.currentTrack?.title).isEqualTo("Reckoner")
+        assertThat(state.isPlaying).isFalse()
+    }
+
+    @Test
+    fun `play after an idle-out rebuilds the persisted queue`() = runTest {
+        val fresh = idleOutAndReopen()
+        coEvery { trackDao.getLastPlayedTrack() } returns null
+        every { trackDao.getRecentlyAdded(any()) } returns flowOf(emptyList())
+
+        repo.play()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        coVerify(exactly = 1) { playbackResumer.buildResumePlan() }
+        verify(exactly = 0) { fresh.play() }
     }
 }

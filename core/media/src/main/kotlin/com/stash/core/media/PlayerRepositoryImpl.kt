@@ -317,12 +317,12 @@ class PlayerRepositoryImpl @Inject constructor(
     private val _playerState = MutableStateFlow(PlayerState())
 
     /**
-     * #462: true while [_playerState] shows a paused "ghost" of the persisted last
-     * session on a player that holds NO timeline (a cold start after process
-     * death). The idle-stop design already keeps the last state on screen when only
-     * the SERVICE dies, and [play] rebuilds the queue from [PlaybackStateStore] when
-     * the timeline comes back empty; a cold start had no state to keep. Cleared the
-     * moment the controller reports real items, or when the ghost's track is deleted.
+     * #462: true while [_playerState] shows a paused "ghost" of the last session on
+     * a player that holds NO timeline: seeded from the persisted session on a cold
+     * start after process death, or kept from the last state when the SERVICE stops
+     * ([onSessionAliveChanged]). [play] rebuilds the queue from [PlaybackStateStore]
+     * when the timeline comes back empty. Cleared the moment the controller reports
+     * real items, or when the ghost's track is deleted.
      */
     @Volatile private var ghostSession = false
     override val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
@@ -1799,6 +1799,12 @@ class PlayerRepositoryImpl @Inject constructor(
         } else {
             controllerDeferred?.release()
             controllerDeferred = null
+            // #462: the kept snapshot becomes a paused ghost, or the reconnect's first
+            // (empty) refresh wipes it and the app reopens to "Not Playing".
+            if (_playerState.value.currentTrack != null) {
+                ghostSession = true
+                _playerState.value = _playerState.value.copy(isPlaying = false)
+            }
         }
     }
 
