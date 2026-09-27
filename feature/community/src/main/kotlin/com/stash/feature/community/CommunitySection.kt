@@ -15,6 +15,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -34,8 +37,10 @@ fun CommunitySection(
     viewModel: CommunityViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    // Each time Home resumes (first open, back from another screen or from the background); the ViewModel throttles it.
-    LifecycleResumeEffect(Unit) { viewModel.onShown(); onPauseOrDispose {} }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // Each time Home resumes (first open, back from another screen or from the background) the ages catch up and
+    // the list reloads; the ViewModel throttles the reload.
+    LifecycleResumeEffect(Unit) { now = System.currentTimeMillis(); viewModel.onShown(); onPauseOrDispose {} }
     MessageToast(state.message, viewModel::messageShown)
     Column(Modifier.fillMaxWidth()) {
         Spacer(Modifier.height(16.dp))
@@ -64,6 +69,7 @@ fun CommunitySection(
                     rankWidth = rankWidth,
                     post = p,
                     withAge = false,
+                    now = now,
                     onOpen = { onOpenPost(p.id) },
                     onVote = { viewModel.vote(p, it) },
                 )

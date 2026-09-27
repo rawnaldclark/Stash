@@ -25,13 +25,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.feature.community.CommunityViewModel.Tab
 
@@ -47,6 +50,9 @@ fun CommunityScreen(
     var tab by rememberSaveable { mutableStateOf(if (mine) Tab.MINE else Tab.ALL) }
     LaunchedEffect(tab) { viewModel.show(tab) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // Back from the background, the ages catch up.
+    LifecycleResumeEffect(Unit) { now = System.currentTimeMillis(); onPauseOrDispose {} }
     MessageToast(state.message, viewModel::messageShown)
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -62,11 +68,12 @@ fun CommunityScreen(
             FilterChip(selected = tab == Tab.ALL, onClick = { tab = Tab.ALL }, label = { Text("All") })
             FilterChip(selected = tab == Tab.MINE, onClick = { tab = Tab.MINE }, label = { Text("Mine") })
         }
+        // The list's own tab, not the chip's: until show() runs, the list on screen is still the last tab's.
         val posts = state.posts
         if (posts.isNullOrEmpty()) {
             ListStatus(
                 state,
-                if (tab == Tab.MINE) "You have no posts up." else "Nothing here yet. Be the first: tap + Post.",
+                if (state.tab == Tab.MINE) "You have no posts up." else "Nothing here yet. Be the first: tap + Post.",
                 onRetry = { viewModel.show(tab) },
             )
         } else {
@@ -74,10 +81,11 @@ fun CommunityScreen(
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 120.dp)) {
                 itemsIndexed(posts, key = { _, p -> p.id }) { i, p ->
                     PostRow(
-                        rank = if (tab == Tab.MINE) null else i + 1,
+                        rank = if (state.tab == Tab.MINE) null else i + 1,
                         rankWidth = rankWidth,
                         post = p,
                         withAge = true,
+                        now = now,
                         onOpen = { onOpenPost(p.id) },
                         onVote = { viewModel.vote(p, it) },
                     )
