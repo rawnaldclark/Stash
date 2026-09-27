@@ -13,8 +13,8 @@ test("cleanup drops expired posts and long-removed ones with their votes, and ke
     const now = Date.now();
     await seed(e, { id: "EXPIRED0", created: now - 31 * DAY });
     await seed(e, { id: "OLDREMOV", created: now - 3 * DAY, removed: now - 2 * DAY });
-    await seed(e, { id: "RESTORAB", created: now - 3 * DAY, removed: now - 2 * HOUR }); // removed today: restorable
-    await seed(e, { id: "TODAYREM", created: now - 2 * HOUR, removed: now - HOUR }); // kept because it was removed only an hour ago; today's limit still counts it
+    await seed(e, { id: "RESTORAB", created: now - 3 * DAY, removed: now - 2 * HOUR }); // the owner removed it today: restorable
+    await seed(e, { id: "TODAYREM", created: now - 2 * HOUR, removed: now - HOUR, removedBy: "poster" }); // kept because its poster took it down only an hour ago; today's limit still counts it, but restore won't undo it
     await seed(e, { id: "SLOWCLOK", created: now - HOUR, removed: now - 2 * DAY }); // the CLI stamps removed_at with the PC's clock: still today's post
     await seed(e, { id: "LIVEPOST", created: now - 3 * DAY });
     for (const id of await ids(e)) await voteRow(e, id);

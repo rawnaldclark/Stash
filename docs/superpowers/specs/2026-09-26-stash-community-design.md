@@ -55,7 +55,7 @@ CREATE TABLE posts (
   up           INTEGER NOT NULL DEFAULT 0,     -- counted votes (per-network cap applied)
   down         INTEGER NOT NULL DEFAULT 0,
   removed_at   INTEGER,                        -- ms, when it was taken down or removed
-  removed_by   TEXT CHECK (removed_by IN ('poster', 'owner')),  -- who removed it; restore only undoes 'owner'
+  removed_by   TEXT CHECK (removed_by IN ('poster', 'owner') AND (removed_by IS NULL) = (removed_at IS NULL)),  -- who removed it; restore only undoes 'owner'
   body         TEXT NOT NULL                   -- JSON: {covers, tracks} or {track}. Last, so reading the other columns never walks past it
 );
 -- Must match the feed's ORDER BY exactly (12960000.0 is MS_PER_VOTE), or the list goes back to sorting every live post.
@@ -112,7 +112,7 @@ The server writes `summary` itself from the cleaned body, so it can't disagree w
 - **The list never reads `body`:** the feed selects `id, kind, title, poster_name, poster, summary, track_count, created_at, up, down`, so a Home open never loads song lists.
 - **Cleanup:** a daily cron (`[triggers] crons = ["17 4 * * *"]`) deletes, together with their votes (votes first, in one batch):
   - posts past `expires_at`;
-  - posts removed more than 24 hours ago that were also created more than 24 hours ago. That keeps a removed post restorable for a day, and keeps every post of the last 24 hours for `daily_limit`.
+  - posts removed more than 24 hours ago that were also created more than 24 hours ago. That keeps an owner's removal restorable for a day (a poster's take-down is kept too, but `restore` won't undo it), and keeps every post of the last 24 hours for `daily_limit`.
 
 ### Routes
 
@@ -148,7 +148,7 @@ Reads are open to anyone (the Home section, and a phone that hasn't made a key y
 
 `npm run community -- <command>` runs `scripts/community.mjs`, which calls `wrangler d1 execute stash-community --remote --json` (the owner's own Cloudflare login; nothing is exposed on the internet):
 
-- `list [n]`: the newest and the top posts, including hidden ones: id, kind, title, poster name, up/down, age, and the first 8 characters of the poster id.
+- `list [n]`: the newest and the top posts (the top ones only while up), including hidden ones: id, kind, title, poster name, up/down, `hidden`, `removed` (null while the post is up, else `'poster'` or `'owner'`), age, and the first 8 characters of the poster id. Then the blocked phones: that prefix, when each was blocked, and a note naming the post.
 - `remove <postId>`: sets `removed_at`, and `removed_by = 'owner'`, on a post that's still up. A post its poster took down is left alone, so `restore` can't bring it back.
 - `restore <postId>`: undoes the owner's removal (clears `removed_at` and `removed_by`), deletes the post's downvotes if it's up after that, and recounts. For a post that was removed by mistake, or buried by a vote attack. A post its poster took down (`removed_by = 'poster'`) stays down, votes and all.
 - `block <postId>`: blocks that post's poster and removes all their live posts.
@@ -297,7 +297,7 @@ Optimistic: the highlight and count change at once and flip back with a short me
   - the list never selecting `body`;
   - `by` removed from posted songs;
   - take-down permissions and block;
-  - the cron cleanup, including a removed post staying restorable for a day;
+  - the cron cleanup, including an owner's removal staying restorable for a day;
   - input checks (kinds, lengths, 500 songs, 256 KB, cover hosts, bad keys);
   - `myVote` and `mine` only with a key;
   - every error body carrying its code.

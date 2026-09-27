@@ -23,6 +23,17 @@ test("the kind CHECK rejects anything but playlist, mix and song", async () => {
     await assert.rejects(() => insert(fakeD1(), row({ kind: "album" })));
 });
 
+test("the removed_by CHECK: set exactly when removed_at is, to poster or owner", async () => {
+    const d = fakeD1();
+    await insert(d, row());
+    const set = (at, by) => d.prepare("UPDATE posts SET removed_at = ?1, removed_by = ?2").bind(at, by).run();
+    await assert.rejects(() => set(1, null), /CHECK constraint failed/);
+    await assert.rejects(() => set(null, "owner"), /CHECK constraint failed/);
+    await assert.rejects(() => set(1, "admin"), /CHECK constraint failed/);
+    await set(1, "poster");
+    await set(null, null);
+});
+
 test("batch runs in one transaction and returns each statement's rows", async () => {
     const d = fakeD1();
     await insert(d, row());

@@ -14,7 +14,7 @@ CREATE TABLE posts (
   up           INTEGER NOT NULL DEFAULT 0,     -- counted votes (per-network cap applied)
   down         INTEGER NOT NULL DEFAULT 0,
   removed_at   INTEGER,                        -- ms, when it was taken down or removed
-  removed_by   TEXT CHECK (removed_by IN ('poster', 'owner')),  -- who removed it; restore only undoes 'owner'
+  removed_by   TEXT CHECK (removed_by IN ('poster', 'owner') AND (removed_by IS NULL) = (removed_at IS NULL)),  -- who removed it; restore only undoes 'owner'
   body         TEXT NOT NULL                   -- JSON: {covers, tracks} or {track}. Last, so reading the other columns never walks past it
 );
 -- Must match the feed's ORDER BY exactly (12960000.0 is MS_PER_VOTE), or the list goes back to sorting every live post.

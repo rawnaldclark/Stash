@@ -220,14 +220,16 @@ async function takeDown(request, env, id, now) {
     const post = await env.COMMUNITY_DB.prepare("SELECT poster, up, down, removed_at, expires_at FROM posts WHERE id = ?1").bind(id).first();
     if (isGone(post, now) || (post.poster !== who.id && post.up - post.down <= HIDE_AT)) return gone(); // hidden: only its poster sees it
     if (post.poster !== who.id) return json({ error: "not_yours" }, 403);
+    // No `removed_at IS NULL` guard, on purpose: a take-down always wins a race with the owner's `remove`, so
+    // `restore` can never republish it.
     await env.COMMUNITY_DB.prepare("UPDATE posts SET removed_at = ?2, removed_by = 'poster' WHERE id = ?1").bind(id, now).run();
     return new Response(null, { status: 204 });
 }
 
 /**
  * The daily cron (spec §2 Cleanup): expired posts, and posts removed more than a day ago that were also
- * created more than a day ago, with their votes. A removed post stays restorable for a day, and every post
- * of the last 24 hours stays for the daily limit.
+ * created more than a day ago, with their votes. An owner's removal stays restorable for a day (a poster's
+ * take-down stays too, but restore won't undo it), and every post of the last 24 hours stays for the daily limit.
  */
 export async function cleanup(env, now) {
     // ponytail: one DELETE per table; D1 needs batching past ~hundreds of MB (~1,000 max-size posts in a day).

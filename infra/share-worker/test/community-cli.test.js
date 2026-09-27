@@ -68,12 +68,13 @@ test("block records the poster and removes all their live posts as the owner's; 
     assert.deepEqual(await removal(e, "POST0002"), { removed_at: null, removed_by: null });
 });
 
-test("remove, block and unblock show what they hit, and nothing for an unknown id or prefix", async () => {
+test("remove, block, unblock and restore show what they hit, and nothing for an unknown id or prefix", async () => {
     const e = env();
     await seed(e, { id: "POST0001", poster: "ab".repeat(32) });
     await seed(e, { id: "POST0002" });
     assert.deepEqual(await run(e, commandSql("remove", "NOPE0001")), [[]]);
     assert.deepEqual(await run(e, commandSql("block", "NOPE0001")), [[], [], []]);
+    assert.deepEqual(await run(e, commandSql("restore", "NOPE0001")), [[], [], [], []]);
     assert.deepEqual(await run(e, commandSql("block", "POST0001", 7)),
         [[], [{ id: "POST0001", title: "T" }], [{ poster: "abababab", at: 7, note: "post POST0001" }]]);
     assert.deepEqual(await run(e, commandSql("unblock", "0123abcd")), [[]]);
