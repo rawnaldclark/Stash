@@ -14,6 +14,60 @@
 
 ---
 
+## As built (read this before the tasks)
+
+The build followed this plan task by task, with a spec review and a code review after every task. Where the code departs from a task's text below, the code and this note are right; the task texts are left as they were written.
+
+**Server**
+- **Schema.** `posts_hot`, an expression index on the feed's exact ordering (`WHERE removed_at IS NULL`), replaces `posts_live`. There is still no index on `expires_at`: with literal values SQLite picks it and sorts again. `body` is the last column. `removed_by` (`'poster'` or `'owner'`, tied to `removed_at` by a CHECK) records who removed a post.
+- **Posting.** A song post's title is its track's title, so a title can't be spoofed. Covers are cut to 4 before any is checked. The limits are defined once (`LIMITS_SQL`). An id collision retries through `ON CONFLICT (id) DO NOTHING`. `networkHash` fails closed without `COMMUNITY_SALT`.
+- **Votes.** The upsert is an `INSERT … SELECT FROM posts`, so a vote can't outlive its post. The blocked check rides on the post lookup. `isGone(post, now)` is shared by opening, voting and taking down.
+- **Take-down.** A hidden post answers 404 to anyone but its poster. The poster's take-down `UPDATE` is deliberately unguarded, so it always wins a race with the owner's `remove`.
+- **Moderation CLI.** Every command prints what it hit.
+  - `list` also shows blocked phones and `removed` (null, `poster` or `owner`).
+  - `remove` only hits a live post.
+  - `restore` undoes only the owner's own removals, and drops downvotes only when the post ends up live.
+  - A guard rejects `--`, `"` and `%` before the SQL is collapsed onto one command line.
+- **Tests.** 147 node tests, run in CI.
+
+**App**
+- **Keys.** Reading never makes a key (`existingKey()`); `me()` and `mine()` answer locally until a key exists. Settings backups leave the key out, on export and on restore, so a restore never changes a phone's Community identity.
+- **Client.** A derived OkHttp client with a 15 s call timeout and no redirects. A bare 429 counts as rate-limited.
+- **Repository.**
+  - Every network call is refused while Community is off, so no request leaves the phone.
+  - A take-down answered `gone` counts as done.
+  - Names are cut without splitting an emoji.
+  - `buildDocument` runs on `Dispatchers.Default`.
+- **Votes, in the list and on the post screen.** A tap while a vote is out is sent after it. A refusal rolls back to the last vote the server confirmed.
+- **Home layout.** `move()` is one atomic edit. The first turn-on puts Community at the top, and a hand-placed Community keeps its spot. Settings search finds "community".
+- **Screens.**
+  - Ages refresh on resume.
+  - Ranks are sized in their own ems, so they fit at any font size.
+  - Your own post's arrows are left out of TalkBack.
+  - The post screen centers its header and wraps its actions (FlowRow). It shows progress, says why an open failed ("Slow down a moment."), and starts Like from the song's real liked state.
+- **Posting.**
+  - The picker lists only your playlists (CUSTOM) and mixes, A to Z.
+  - A post in flight holds its sheet open, so a post can't go out twice or report on the wrong sheet.
+  - Each opening of the sheet starts from Loading.
+- **Wiring.**
+  - The post route's Back and open act only while that entry is the top of a live back stack. A late take-down reply can't pop Home, and a callback left from before a rotation does nothing.
+  - See my posts replaces a See all that's showing.
+  - A Community screen that a tab restores after Community was turned off is closed at once.
+
+**Deployed 2026-09-27.** D1 `stash-community` (`dfbf6783-001d-40ce-9412-1e56c9ab2d84`) and Worker `stash-share` version `f69039dc`; the code-only rollback target is `98c58f73`. All 8 shared mixes and 6 other routes answered byte for byte the same before and after.
+
+**Left for later** (none blocks the release):
+- **Downvote griefing.** `restore` drops the downvotes, but fresh keys can hide the post again.
+- **Listen Together's privacy line.** Its "nothing is kept" may need the same 30-day-recovery caveat as D1.
+- **Workers Free plan.** It allows 100k requests a day. Check the plan before launch.
+- **Wrong-match songs.** A song flagged as a wrong match still carries its YouTube id when posted or shared.
+- **Phone-to-phone transfer.** Android 12+ may copy app files, the Community key included, despite `allowBackup="false"`.
+- **Double-tap Back.** App-wide and older than this work: a fast double tap on any top-bar Back can blank the NavHost.
+- **Shared mixes.** Follow and Save a copy navigate from a ViewModel coroutine, unguarded.
+- **Listen Together names.** They are cut with `take(40)`, which can split an emoji.
+
+---
+
 ## File Structure
 
 ### Server (`infra/share-worker`)
