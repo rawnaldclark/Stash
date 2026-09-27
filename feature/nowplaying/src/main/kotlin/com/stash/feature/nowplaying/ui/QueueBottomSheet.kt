@@ -341,9 +341,9 @@ fun QueueBottomSheet(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                            // Per-track ⋮ menu (Play next / Save / Download /
-                            // Share / Start radio). Disabled, not hidden, while
-                            // dragging: hiding it reflowed the title at pick-up.
+                            // Per-track ⋮ menu (the song's actions). Disabled,
+                            // not hidden, while dragging: hiding it reflowed the
+                            // title at pick-up.
                             if (menuEnabled) {
                                 IconButton(
                                     onClick = { menuTrack = track },
