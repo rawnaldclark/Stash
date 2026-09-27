@@ -832,7 +832,7 @@ fun NowPlayingScreen(
 
 /**
  * Top bar: dismiss, radio toggle, a "more" kebab that opens
- * [NowPlayingOptionsSheet] (Save / Download / Share / View Album / Flag), and a
+ * [NowPlayingOptionsSheet] (the current track's actions), and a
  * dedicated Queue button pinned to the far-right edge.
  *
  * @param onDismiss    Callback when the down-arrow is tapped.
@@ -1232,7 +1232,7 @@ private fun QualityLine(
 
 /**
  * Premium track options bottom sheet, opened via the [TopBar]'s "more"
- * kebab icon. Consolidates Save / Download / Share / View Album / Flag. Queue
+ * kebab icon. Consolidates the current track's actions. Queue
  * is NOT here — it has its own permanent icon at the TopBar's far right, next
  * to Dismiss and Radio.
  */

@@ -80,9 +80,7 @@ fun ShareMixSheet(
                         Text(if (s.working) "Creating link…" else "Create link")
                     }
                     postToCommunity?.let { post ->
-                        OutlinedButton(onClick = { onDismiss(); post(PostTarget.Playlist(playlistId)) }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Post to Community")
-                        }
+                        OutlinedButton(onClick = { onDismiss(); post(PostTarget.Playlist(playlistId)) }, enabled = !s.working, modifier = Modifier.fillMaxWidth()) { Text("Post to Community") }
                     }
                 }
                 is ShareMixUiState.Shared -> {
