@@ -3,6 +3,7 @@ package com.stash.core.media.listening
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.lastfm.LastFmScrobbler
+import com.stash.core.data.listen.ListenSinkCoordinator
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
 import com.stash.core.data.repository.MusicRepository
@@ -18,6 +19,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -125,7 +127,7 @@ class ListeningRecorderSkipTest {
     @Test
     fun `track id transition before threshold fire records a skip`() = runTest {
         val playerRepo = FakePlayerRepository(
-            PlayerState(currentTrack = trackA, positionMs = 5_000),
+            PlayerState(isPlaying = true, currentTrack = trackA, positionMs = 5_000),
         )
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
         val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
@@ -148,7 +150,7 @@ class ListeningRecorderSkipTest {
         runCurrent()
         // Less than the 90s threshold for a 180s track — the delay body
         // never runs, so this MUST count as a skip.
-        playerRepo.setState(PlayerState(currentTrack = trackB, positionMs = 0))
+        playerRepo.setState(PlayerState(isPlaying = true, currentTrack = trackB, positionMs = 0))
         runCurrent()
         advanceUntilIdle()
 
@@ -161,7 +163,7 @@ class ListeningRecorderSkipTest {
     @Test
     fun `track id transition after threshold fire records listen but no skip`() = runTest {
         val playerRepo = FakePlayerRepository(
-            PlayerState(currentTrack = trackA, positionMs = 0),
+            PlayerState(isPlaying = true, currentTrack = trackA, positionMs = 0),
         )
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
         val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
@@ -183,7 +185,7 @@ class ListeningRecorderSkipTest {
         // and claims completion BEFORE we transition to track B.
         advanceTimeBy(95_000)
         runCurrent()
-        playerRepo.setState(PlayerState(currentTrack = trackB, positionMs = 0))
+        playerRepo.setState(PlayerState(isPlaying = true, currentTrack = trackB, positionMs = 0))
         runCurrent()
         advanceUntilIdle()
 
@@ -201,7 +203,7 @@ class ListeningRecorderSkipTest {
             durationMs = 60_000L,
             youtubeId = "video-id",
         )
-        val playerRepo = FakePlayerRepository(PlayerState(currentTrack = streamingTrack))
+        val playerRepo = FakePlayerRepository(PlayerState(isPlaying = true, currentTrack = streamingTrack))
         val musicRepository = mockk<MusicRepository>()
         val persistedTrack = slot<Track>()
         val persistenceStarted = CompletableDeferred<Unit>()
@@ -231,7 +233,7 @@ class ListeningRecorderSkipTest {
         runCurrent()
         assertTrue(persistenceStarted.isCompleted)
 
-        playerRepo.setState(PlayerState(currentTrack = trackB))
+        playerRepo.setState(PlayerState(isPlaying = true, currentTrack = trackB))
         runCurrent()
         coVerify(exactly = 0) { skipDao.insert(any()) }
         coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
@@ -248,7 +250,7 @@ class ListeningRecorderSkipTest {
     @Test
     fun `completed repeat-one loops each record a play`() = runTest {
         val playerRepo = FakePlayerRepository(
-            PlayerState(currentTrack = trackA, repeatMode = RepeatMode.ONE, positionMs = 0),
+            PlayerState(isPlaying = true, currentTrack = trackA, repeatMode = RepeatMode.ONE, positionMs = 0),
         )
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
         val capture = slot<ListeningEventEntity>()
@@ -290,7 +292,7 @@ class ListeningRecorderSkipTest {
     @Test
     fun `seek-back without landing near zero does not trigger new session`() = runTest {
         val playerRepo = FakePlayerRepository(
-            PlayerState(currentTrack = trackA, repeatMode = RepeatMode.ONE, positionMs = 0),
+            PlayerState(isPlaying = true, currentTrack = trackA, repeatMode = RepeatMode.ONE, positionMs = 0),
         )
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
 
@@ -324,7 +326,7 @@ class ListeningRecorderSkipTest {
     @Test
     fun `track change resets position tracking so B does not misfire as loop`() = runTest {
         val playerRepo = FakePlayerRepository(
-            PlayerState(currentTrack = trackA, repeatMode = RepeatMode.ONE, positionMs = 0),
+            PlayerState(isPlaying = true, currentTrack = trackA, repeatMode = RepeatMode.ONE, positionMs = 0),
         )
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
         val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
@@ -351,7 +353,7 @@ class ListeningRecorderSkipTest {
         // lastTrackId so the first near-zero position tick for B is NOT
         // mistaken for a repeat-one loop restart.
         playerRepo.setState(
-            PlayerState(currentTrack = trackB, repeatMode = RepeatMode.ONE, positionMs = 0),
+            PlayerState(isPlaying = true, currentTrack = trackB, repeatMode = RepeatMode.ONE, positionMs = 0),
         )
         playerRepo.setPosition(0L)
         runCurrent()
@@ -370,7 +372,7 @@ class ListeningRecorderSkipTest {
 
     @Test
     fun `playback collectors wait for stats backfill`() = runTest {
-        val playerRepo = FakePlayerRepository(PlayerState(currentTrack = trackA))
+        val playerRepo = FakePlayerRepository(PlayerState(isPlaying = true, currentTrack = trackA))
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
         val backfill = CompletableDeferred<Unit>()
         coEvery { listeningDao.backfillMissingTrackStats() } coAnswers { backfill.await() }
@@ -399,8 +401,74 @@ class ListeningRecorderSkipTest {
     }
 
     @Test
+    fun `a song shown paused after a restart is not sent as playing or recorded`() = runTest {
+        val playerRepo = FakePlayerRepository(PlayerState(currentTrack = trackA, isPlaying = false))
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val scrobbler = mockk<LastFmScrobbler>(relaxed = true)
+        val sinks = mockk<ListenSinkCoordinator>(relaxed = true)
+        val recorder = ListeningRecorder(
+            playerRepository = playerRepo,
+            musicRepository = passthroughMusicRepository(),
+            listeningEventDao = listeningDao,
+            trackSkipEventDao = mockk(relaxed = true),
+            scrobbler = scrobbler,
+            listenSinks = sinks,
+            scope = backgroundScope,
+        )
+        recorder.start()
+        runCurrent()
+
+        advanceTimeBy(300_000) // longer than any threshold
+        runCurrent()
+
+        coVerify(exactly = 0) { scrobbler.notifyNowPlaying(any(), any(), any()) }
+        verify(exactly = 0) { sinks.notifyNowPlaying(any()) }
+        coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
+    }
+
+    @Test
+    fun `a song shown paused is recorded normally once it plays`() = runTest {
+        val paused = PlayerState(currentTrack = trackA, isPlaying = false)
+        val playerRepo = FakePlayerRepository(paused)
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val scrobbler = mockk<LastFmScrobbler>(relaxed = true)
+        val sinks = mockk<ListenSinkCoordinator>(relaxed = true)
+        val listen = slot<ListeningEventEntity>()
+        coEvery { listeningDao.recordCompletedListen(capture(listen)) } returns 1L
+        val recorder = ListeningRecorder(
+            playerRepository = playerRepo,
+            musicRepository = passthroughMusicRepository(),
+            listeningEventDao = listeningDao,
+            trackSkipEventDao = mockk(relaxed = true),
+            scrobbler = scrobbler,
+            listenSinks = sinks,
+            scope = backgroundScope,
+        )
+        recorder.start()
+        runCurrent()
+        advanceTimeBy(60_000) // shown paused for a while
+        runCurrent()
+
+        playerRepo.setState(paused.copy(isPlaying = true))
+        runCurrent()
+        // A pause and resume mid-track keeps the one session going.
+        advanceTimeBy(10_000)
+        playerRepo.setState(paused)
+        runCurrent()
+        playerRepo.setState(paused.copy(isPlaying = true))
+        runCurrent()
+        advanceTimeBy(95_000)
+        runCurrent()
+
+        coVerify(exactly = 1) { scrobbler.notifyNowPlaying("X", "A", null) }
+        verify(exactly = 1) { sinks.notifyNowPlaying(any()) }
+        coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
+        assertEquals(trackA.id, listen.captured.trackId)
+    }
+
+    @Test
     fun `completed-listen cancellation cancels the threshold job`() = runTest {
-        val playerRepo = FakePlayerRepository(PlayerState(currentTrack = trackA))
+        val playerRepo = FakePlayerRepository(PlayerState(isPlaying = true, currentTrack = trackA))
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
         coEvery { listeningDao.recordCompletedListen(any()) } throws CancellationException("cancelled")
         val parent = SupervisorJob()

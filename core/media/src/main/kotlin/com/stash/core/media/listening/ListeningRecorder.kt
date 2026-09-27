@@ -109,18 +109,21 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     // ── Collector 1: track-change transitions ─────────────────────
     private fun startTrackChangeCollector() {
         scope.launch {
-            // Drop repeats on the SAME track id so we only react to track
-            // transitions. Pause/resume mid-track re-emits the same state
-            // but with different positionMs — those shouldn't restart the
-            // countdown. Different track id always wins.
+            // React to track transitions, plus play/pause edges so a song shown
+            // paused (a restart's ghost, a queue put back after Listen Together)
+            // starts its session only when it actually plays. Position ticks
+            // re-emit the same key and are dropped.
+            var lastTrackId: Long? = null
             playerRepository.playerState
-                .distinctUntilChangedBy { it.currentTrack?.id }
+                .distinctUntilChangedBy { it.currentTrack?.id to it.isPlaying }
                 .collect { state ->
+                    val trackChanged = state.currentTrack?.id != lastTrackId
+                    lastTrackId = state.currentTrack?.id
                     // 1. Claim the previous session for this transition.
                     //    If completion already claimed it, leave its job
                     //    alive so persistence + listen recording can finish.
                     val previousPending = pending
-                    if (previousPending != null) {
+                    if (trackChanged && previousPending != null) {
                         if (previousPending.claimed.compareAndSet(false, true)) {
                             previousPending.job.cancel()
                             val skipAt = System.currentTimeMillis()
@@ -142,11 +145,13 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                             }.onFailure { Log.w(TAG, "skip insert failed", it) }
                         }
                     }
-                    pending = null
+                    if (trackChanged) pending = null
 
-                    // 2. Schedule the new track's threshold-fire.
+                    // 2. Schedule the track's threshold-fire once it plays. Nothing is
+                    //    announced or counted for a song only shown paused, and a
+                    //    pause/resume mid-track keeps the countdown already running.
                     val track = state.currentTrack ?: return@collect
-                    schedulePendingFire(track)
+                    if (state.isPlaying && pending == null) schedulePendingFire(track)
                 }
         }
     }
