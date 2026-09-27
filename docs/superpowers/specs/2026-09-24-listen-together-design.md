@@ -220,7 +220,7 @@ While a listener is in a session, their Now Playing hides play, pause, skip and 
 ## 7. Privacy
 
 - The room sees display names, song descriptors, room codes and IP addresses (the IPs are used only for rate limiting and are not stored).
-- Nothing is kept once the room closes.
+- Nothing is kept once the room closes, apart from Cloudflare's 30-day point-in-time recovery for Durable Object storage, which only the owner could use to restore a closed room.
 - The README's "What Stash talks to" entry for `stash-share` gets a sentence about Listen Together.
 
 ## 8. Testing

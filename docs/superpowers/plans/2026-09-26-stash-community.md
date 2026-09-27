@@ -56,10 +56,12 @@ The build followed this plan task by task, with a spec review and a code review 
 
 **Deployed 2026-09-27.** D1 `stash-community` (`dfbf6783-001d-40ce-9412-1e56c9ab2d84`) with migrations 0001 and 0002, and Worker `stash-share` version `72ddf4fd`. Worker `f69039dc` (Community before `vouched`) runs fine on the migrated schema, so it's a safe rollback; `98c58f73` is the one before Community. Every shared mix and 6 other routes answered byte for byte the same across both deploys. Tested on the Pixel 5 and the Pixel 6 Pro; the live database was emptied afterwards.
 
+**Decided 2026-09-27:**
+- The Cloudflare account is on the Workers Paid plan, so capacity is fine.
+- A song flagged as a wrong match posts as it is; someone who flagged it won't post it.
+- Listen Together's privacy line in the README now mentions Cloudflare's 30-day recovery history.
+
 **Left for later** (none blocks the release):
-- **Listen Together's privacy line.** Its "nothing is kept" may need the same 30-day-recovery caveat as D1.
-- **Workers Free plan.** It allows 100k requests a day. Check the plan before launch.
-- **Wrong-match songs.** A song flagged as a wrong match still carries its YouTube id when posted or shared.
 - **Phone-to-phone transfer.** Android 12+ may copy app files, the Community key included, despite `allowBackup="false"`.
 - **Double-tap Back.** App-wide and older than this work: a fast double tap on any top-bar Back can blank the NavHost.
 - **Shared mixes.** Follow and Save a copy navigate from a ViewModel coroutine, unguarded.
