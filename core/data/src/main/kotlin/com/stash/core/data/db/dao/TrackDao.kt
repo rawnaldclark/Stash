@@ -1331,6 +1331,13 @@ interface TrackDao {
     suspend fun getLastPlayedTrack(): TrackEntity?
 
     /**
+     * The Community picker's recent songs (spec 2026-09-26 §3): every played row, newest first, downloaded
+     * or stream-only, since it's what the person actually played. [getLastPlayedTrack] is downloaded-only.
+     */
+    @Query("SELECT * FROM tracks WHERE last_played IS NOT NULL ORDER BY last_played DESC LIMIT :limit")
+    suspend fun getRecentlyPlayed(limit: Int): List<TrackEntity>
+
+    /**
      * v0.9.13: Mark a track as saved to Spotify Liked Songs.
      * Called by [LikeDestinationDispatcher] after a successful
      * `PUT /v1/me/tracks` call. Forward-only; once set, never cleared
