@@ -1,6 +1,7 @@
 package com.stash.feature.home
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.prefs.HomeSection
 import org.junit.Test
 
 class HomeUiStateTest {
@@ -9,6 +10,10 @@ class HomeUiStateTest {
         assertThat(s.hero).isNull()
         assertThat(s.isColdStart).isTrue()
         assertThat(s.isLoading).isTrue()
+    }
+
+    @Test fun `Home leaves Community out before the preference loads`() {
+        assertThat(HomeUiState().sections).doesNotContain(HomeSection.COMMUNITY)
     }
     @Test fun `cold start is false once a hero exists`() {
         val s = HomeUiState(

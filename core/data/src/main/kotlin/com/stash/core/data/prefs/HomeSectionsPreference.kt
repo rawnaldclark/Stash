@@ -13,7 +13,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,8 +64,8 @@ fun visibleHomeSections(order: List<HomeSection>, hidden: Set<HomeSection>, comm
 fun withCommunityFirst(order: List<HomeSection>): List<HomeSection> =
     listOf(HomeSection.COMMUNITY) + (order - HomeSection.COMMUNITY)
 
-/** Dedicated DataStore for Home section order + visibility. */
-private val Context.homeSectionsDataStore: DataStore<Preferences> by preferencesDataStore(
+/** Dedicated DataStore for Home section order + visibility. Internal so tests can clear it. */
+internal val Context.homeSectionsDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "home_sections_preference",
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
@@ -132,12 +131,16 @@ class HomeSectionsPreference @Inject constructor(
 
     /** Swap [section] one slot up or down in the full order. */
     suspend fun move(section: HomeSection, up: Boolean) {
-        val current = order.first().toMutableList()
-        val idx = current.indexOf(section)
-        val target = if (up) idx - 1 else idx + 1
-        if (idx < 0 || target !in current.indices) return
-        current[idx] = current[target].also { current[target] = current[idx] }
-        setOrder(current)
+        context.homeSectionsDataStore.edit { prefs ->
+            val current = resolveHomeSectionOrder(prefs[orderKey].toKeys()).toMutableList()
+            val idx = current.indexOf(section)
+            val target = if (up) idx - 1 else idx + 1
+            if (idx < 0 || target !in current.indices) return@edit
+            current[idx] = current[target].also { current[target] = current[idx] }
+            prefs[orderKey] = current.joinToString(",") { it.key }
+            // Placed by hand before it was ever on: keep that spot when it's turned on.
+            if (section == HomeSection.COMMUNITY && prefs[communityOnKey] == null) prefs[communityOnKey] = false
+        }
     }
 
     suspend fun setHidden(section: HomeSection, hide: Boolean) {
