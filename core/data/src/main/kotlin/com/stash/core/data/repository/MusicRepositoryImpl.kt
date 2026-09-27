@@ -841,6 +841,18 @@ class MusicRepositoryImpl @Inject constructor(
         trackId: Long,
         fromPlaylistId: Long,
         alsoBlacklist: Boolean,
+    ): MusicRepository.CascadeRemovalSummary =
+        removeAndMaybeDelete(trackId, fromPlaylistId, alsoBlacklist).also {
+            // Every path detaches the track, so the Library card's count must follow.
+            // ponytail: a block also detaches it from other playlists; those keep a stale count until their next recount.
+            val count = trackDao.getByPlaylist(fromPlaylistId, includeStreamable = true).first().size
+            playlistDao.updateTrackCount(fromPlaylistId, count)
+        }
+
+    private suspend fun removeAndMaybeDelete(
+        trackId: Long,
+        fromPlaylistId: Long,
+        alsoBlacklist: Boolean,
     ): MusicRepository.CascadeRemovalSummary {
         // Shared mixes (spec §5): at the top, before the early returns below. The job waits 30 s.
         if (sharedMixDao.forPlaylist(fromPlaylistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
@@ -921,7 +933,8 @@ class MusicRepositoryImpl @Inject constructor(
         var blacklisted = 0
 
         for (id in trackIds) {
-            val result = removeTrackFromPlaylistAndMaybeDelete(
+            // The playlist is deleted below, so skip the per-track recount.
+            val result = removeAndMaybeDelete(
                 trackId = id,
                 fromPlaylistId = playlistId,
                 alsoBlacklist = alsoBlacklist,
