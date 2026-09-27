@@ -54,7 +54,7 @@ The build followed this plan task by task, with a spec review and a code review 
   - See my posts replaces a See all that's showing.
   - A Community screen that a tab restores after Community was turned off is closed at once.
 
-**Deployed 2026-09-27.** D1 `stash-community` (`dfbf6783-001d-40ce-9412-1e56c9ab2d84`) and Worker `stash-share` version `f69039dc`; the code-only rollback target is `98c58f73`. All 8 shared mixes and 6 other routes answered byte for byte the same before and after.
+**Deployed 2026-09-27.** D1 `stash-community` (`dfbf6783-001d-40ce-9412-1e56c9ab2d84`) with migrations 0001 and 0002, and Worker `stash-share` version `72ddf4fd`. Worker `f69039dc` (Community before `vouched`) runs fine on the migrated schema, so it's a safe rollback; `98c58f73` is the one before Community. Every shared mix and 6 other routes answered byte for byte the same across both deploys. Tested on the Pixel 5 and the Pixel 6 Pro; the live database was emptied afterwards.
 
 **Left for later** (none blocks the release):
 - **Listen Together's privacy line.** Its "nothing is kept" may need the same 30-day-recovery caveat as D1.
