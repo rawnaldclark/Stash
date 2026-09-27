@@ -42,6 +42,12 @@ class QbdlxApiClientTest {
         assertThat(server.takeRequest().getHeader("X-User-Auth-Token")).isNull()
     }
 
+    @Test fun `search reads the track's version`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"tracks":{"items":[{"id":7,"title":"Bosun Bill","version":"Retro Mix","duration":117},{"id":8,"title":"Bosun Bill","version":null}]}}"""))
+        val items = client.search("Sea of Thieves Bosun Bill")
+        assertThat(items.map { it.version }).containsExactly("Retro Mix", null).inOrder()
+    }
+
     /**
      * Catalog browsing needs no account: Qobuz's own web player reads the catalog
      * logged-out under its web app_id (live-probed 2026-08-29 — all eight catalog

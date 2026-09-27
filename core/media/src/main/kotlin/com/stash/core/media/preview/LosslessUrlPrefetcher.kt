@@ -165,7 +165,7 @@ class LosslessUrlPrefetcher internal constructor(
     private fun TrackItem.toQuery() = TrackQuery(
         artist = artist,
         title = title,
-        album = null,
+        album = album?.takeIf { it.isNotBlank() },
         isrc = null,
         durationMs = durationSeconds.takeIf { it > 0 }?.let { (it * 1_000).toLong() },
     )

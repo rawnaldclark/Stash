@@ -175,6 +175,44 @@ class QobuzCandidateMatcherTest {
         assertThat(score("Song", "Song", candVersion = "2019 Remix")).isLessThan(QobuzCandidateMatcher.MIN_CONFIDENCE)
     }
 
+    @Test fun `a live album whose titles don't say live keeps the live cut when the length confirms it`() {
+        // KISS "Deuce" off "Alive!" (217 s). Neither the title nor the album says "live".
+        val query = TrackQuery(artist = "KISS", title = "Deuce", album = "Alive!", durationMs = 217_000)
+        fun cand(version: String?, sec: Int) = QobuzCandidateMatcher.confidence(
+            query, "Deuce", "KISS", candIsrc = null, candDurationSec = sec, candStreamable = true, candVersion = version,
+        )
+        val live = cand("Live", 218)
+        val studio = cand(null, 185)
+        assertThat(live).isWithin(0.0001f).of(0.95f)
+        assertThat(live).isGreaterThan(studio)
+    }
+
+    @Test fun `a length more than 5 percent off still rejects the version`() {
+        // 8% off is not confirmation (Bosun Bill itself, 19% off, is covered above).
+        val s = score("Bosun Bill", "Bosun Bill", candVersion = "Retro Mix", queryDurationMs = 144_000, candDurationSec = 133)
+        assertThat(s).isLessThan(QobuzCandidateMatcher.MIN_CONFIDENCE)
+    }
+
+    @Test fun `with equal lengths the unversioned candidate still wins`() {
+        val plain = score("Song", "Song", queryDurationMs = 200_000, candDurationSec = 200)
+        val live = score("Song", "Song", candVersion = "Live", queryDurationMs = 200_000, candDurationSec = 200)
+        assertThat(plain).isGreaterThan(live)
+        assertThat(live).isAtLeast(QobuzCandidateMatcher.MIN_CONFIDENCE)
+    }
+
+    @Test fun `an ISRC match ignores the version`() {
+        val s = QobuzCandidateMatcher.confidence(
+            query = TrackQuery(artist = "KISS", title = "Deuce", isrc = "USPR37500001"),
+            candTitle = "Deuce",
+            candArtist = "KISS",
+            candIsrc = "USPR37500001",
+            candDurationSec = 0,
+            candStreamable = true,
+            candVersion = "Live",
+        )
+        assertThat(s).isEqualTo(0.95f)
+    }
+
     @Test fun `a version the query also names is not penalized`() {
         assertThat(score("Song - Live", "Song (Live)")).isAtLeast(QobuzCandidateMatcher.MIN_CONFIDENCE)
         assertThat(score("Song (Live)", "Song - Live")).isAtLeast(QobuzCandidateMatcher.MIN_CONFIDENCE)

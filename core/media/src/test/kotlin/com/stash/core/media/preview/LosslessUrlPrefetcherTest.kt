@@ -45,6 +45,15 @@ class LosslessUrlPrefetcherTest {
         coVerify { registry.resolve(any(), bypassRateLimit = true) }
     }
 
+    @Test fun `the preview query carries the album like a download does`() = runTest {
+        coEvery { availability.ownAccountLiveNow() } returns false
+        coEvery { registry.resolve(any(), any()) } returns null
+
+        LosslessUrlPrefetcher(registry, availability, losslessPrefs).lookup(item.copy(album = "Alive!"))
+
+        coVerify { registry.resolve(match { it.album == "Alive!" }, any()) }
+    }
+
     @Test fun `warmUp resolves with bypassRateLimit false when the user's own account is live`() = runTest {
         coEvery { availability.ownAccountLiveNow() } returns true
         coEvery { registry.resolve(any(), any()) } returns null
