@@ -55,6 +55,16 @@ class MusicRepositoryAddTracksToPlaylistTest {
         assertEquals(ids, added)
     }
 
+    @Test fun `cancelling the caller mid-create still gives the new playlist every id`() = runTest {
+        coEvery { playlistDao.insert(any()) } coAnswers { delay(100); PID }
+        val ids = (1L..5L).toList()
+        val caller = launch { repo().createPlaylistWithTracks("Road trip", ids) }
+        runCurrent() // now suspended inside the playlist insert
+        caller.cancel()
+        caller.join()
+        assertEquals(ids, added)
+    }
+
     @Test fun `one failing track does not stop the rest`() = runTest {
         coEvery { trackDao.getById(2L) } throws IllegalStateException("boom")
         repo().addTracksToPlaylist(listOf(1L, 2L, 3L), PID)

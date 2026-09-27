@@ -316,6 +316,13 @@ interface MusicRepository {
      */
     suspend fun addTracksToPlaylist(trackIds: List<Long>, playlistId: Long)
 
+    /**
+     * Create a playlist named [name] holding [trackIds] and return its ID. Like
+     * [addTracksToPlaylist] it finishes even if the caller's scope is cancelled,
+     * so leaving mid-create can't strand an empty playlist.
+     */
+    suspend fun createPlaylistWithTracks(name: String, trackIds: List<Long>): Long
+
     /** Remove a track from a playlist (soft delete). */
     suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long)
 

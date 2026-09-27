@@ -16,6 +16,7 @@ import com.stash.data.ytmusic.model.AlbumSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -316,12 +318,15 @@ class AlbumDiscoveryViewModel @Inject constructor(
             if (tracks.isEmpty()) return@launch
             val ids = tracks.map { musicRepository.ensureTrackPersisted(it.copy(id = 0L)) }
             val hero = _uiState.value.hero
-            val playlistId = musicRepository.ensureCustomPlaylist(
-                name = hero.title,
-                sourceId = savedAlbumSourceId,
-                artUrl = hero.thumbnailUrl,
-            )
-            musicRepository.addTracksToPlaylist(ids, playlistId)
+            // #479: once the playlist exists it must get its tracks, or isSaved blocks a re-save.
+            withContext(NonCancellable) {
+                val playlistId = musicRepository.ensureCustomPlaylist(
+                    name = hero.title,
+                    sourceId = savedAlbumSourceId,
+                    artUrl = hero.thumbnailUrl,
+                )
+                musicRepository.addTracksToPlaylist(ids, playlistId)
+            }
             _userMessages.emit("Saved to your library")
         }
     }

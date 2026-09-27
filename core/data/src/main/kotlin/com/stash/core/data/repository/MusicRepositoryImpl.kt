@@ -768,6 +768,9 @@ class MusicRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun createPlaylistWithTracks(name: String, trackIds: List<Long>): Long =
+        withContext(NonCancellable) { createPlaylist(name).also { addTracksToPlaylist(trackIds, it) } }
+
     override suspend fun ensureDownloadsMixSeeded(): Long {
         return playlistDao.ensurePlaylist(downloadsMixEntity())
     }

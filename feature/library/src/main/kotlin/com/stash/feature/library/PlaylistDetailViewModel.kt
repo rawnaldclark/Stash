@@ -556,8 +556,7 @@ class PlaylistDetailViewModel @Inject constructor(
     /** Create a new playlist and add the whole batch of [trackIds] to it. */
     fun createPlaylistAndAddTracks(name: String, trackIds: List<Long>) {
         viewModelScope.launch {
-            val playlistId = musicRepository.createPlaylist(name)
-            musicRepository.addTracksToPlaylist(trackIds, playlistId)
+            musicRepository.createPlaylistWithTracks(name, trackIds)
         }
     }
 

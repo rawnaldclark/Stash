@@ -1,6 +1,7 @@
 package com.stash.feature.search
 
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.repository.MusicRepository
@@ -16,6 +17,8 @@ import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -23,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -412,6 +416,25 @@ class AlbumDiscoveryViewModelTest {
 
         // One playlist per album (keyed by source + browse id), named after it, wearing its art.
         verify(repo).ensureCustomPlaylist(eq("Curtains"), eq("album:youtube:MPREb_xxx"), eq("u"))
+        verify(repo).addTracksToPlaylist(listOf(11L, 12L, 13L), 77L)
+    }
+
+    @Test
+    fun `leaving while the album playlist is being made still files every track`() = runTest {
+        val cache = mock<AlbumCache>().also {
+            whenever(it.get(eq("MPREb_xxx"), any())).thenReturn(albumDetail())
+        }
+        val repo = mock<MusicRepository>()
+        whenever(repo.ensureTrackPersisted(any())).thenReturn(11L, 12L, 13L)
+        whenever(repo.ensureCustomPlaylist(any(), any(), anyOrNull())).doSuspendableAnswer { delay(1_000); 77L }
+        val vm = vmWith(cache = cache, musicRepository = repo)
+        advanceUntilIdle()
+
+        vm.saveAlbum()
+        runCurrent() // now suspended inside ensureCustomPlaylist
+        vm.viewModelScope.cancel() // the screen closes
+        advanceUntilIdle()
+
         verify(repo).addTracksToPlaylist(listOf(11L, 12L, 13L), 77L)
     }
 
