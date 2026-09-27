@@ -19,12 +19,12 @@ npx wrangler deploy
 
 The first deploy after adding Listen Together applies the `v1` Durable Object migration (`new_sqlite_classes = ["ListenRoom"]`). Migrations are one-way: never rename or delete `ListenRoom` without a new migration tag.
 
-The first deploy with Community needs its database, schema and salt first:
+The first deploy with Community needs its database, schema and salt first. Commit the `database_id` you paste: like `SHARE_KV`'s id, it isn't a secret. The salt is generated, not typed, so nobody can guess it; changing it later resets the per-network caps. Check that a shared-mix link answers the same before and after the deploy.
 
 ```bash
 npx wrangler d1 create stash-community                      # paste the printed id into wrangler.toml's database_id
 npx wrangler d1 migrations apply stash-community --remote
-npx wrangler secret put COMMUNITY_SALT                      # any long random value; changing it later resets the per-network caps
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))" | npx wrangler secret put COMMUNITY_SALT
 npx wrangler deploy
 ```
 
@@ -38,6 +38,8 @@ npx wrangler kv key put --binding SHARE_KV --remote --ttl 15552000 "mix:<id>" '{
 
 ## Community moderation
 
+The script needs Node 24.2 or later (22.18 or later also works); older versions silently do nothing.
+
 ```bash
 cd infra/share-worker
 npm run community -- list 20             # newest and top posts, then blocked phones; `poster` is the first 8 characters of the poster id
@@ -49,8 +51,9 @@ npm run community -- unblock <prefix>
 
 Every command prints what it hit, and an empty result means nothing matched. For `block` and `restore`, read the last result (the blocked row, or the post's recounted votes): some of their statements print an empty result even when they change rows.
 
-- `list` shows each blocked phone's prefix, when it was blocked, and a note, `post <id>`. That's where to find the prefix for `unblock` once the cleanup has deleted the phone's posts.
-- `unblock` leaves the phone's posts removed. `restore` any you want back within a day, before the cleanup deletes them.
+- A post at −3 or below (up minus down) hides for everyone but its poster, and `list` marks it `hidden`. A vote attack buries a good post this way; `restore` undoes it.
+- `list` shows each blocked phone's prefix, when it was blocked (`at`, in milliseconds since 1970), and a note, `post <id>`. That's where to find the prefix for `unblock` once the cleanup has deleted the phone's posts.
+- `unblock` leaves the phone's posts removed. `restore` any you want back within a day, before the cleanup deletes them. `list` can't tell the posts a block removed from ones the poster took down themselves, so check before you restore: only `block`'s own output lists the posts it removed.
 - `list [n]` takes up to 200. A post buried by votes and older than the newest n can be in neither list, so `list 200` is the way to find it.
 
 ## Moving to a custom domain later
