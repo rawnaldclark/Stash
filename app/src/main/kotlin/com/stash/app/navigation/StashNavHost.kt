@@ -5,11 +5,19 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import com.stash.data.ytmusic.model.AlbumSource
+import com.stash.feature.community.CommunityPostScreen
+import com.stash.feature.community.CommunityPosting
+import com.stash.feature.community.CommunityPostingHost
+import com.stash.feature.community.CommunityScreen
+import com.stash.feature.community.CommunitySection
+import com.stash.feature.community.rememberCommunityPosting
 import com.stash.feature.home.HomeScreen
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
@@ -55,6 +63,21 @@ fun StashNavHost(
     // The scaffold's canonical bottom-nav tab switch, for screens that trigger
     // one themselves (Home's Liked card → Library ▸ Liked).
     onNavigateToTab: (TopLevelDestination) -> Unit = {},
+) {
+    // Stash Community (spec 2026-09-26 §3): LocalPostToCommunity and the posting sheets sit over every screen.
+    val posting = rememberCommunityPosting()
+    CommunityPostingHost(posting, onSeeMyPosts = { navController.navigate(CommunityRoute(mine = true)) }) {
+        StashNavGraph(navController, modifier, onSelectionModeChanged, onNavigateToTab, posting)
+    }
+}
+
+@Composable
+private fun StashNavGraph(
+    navController: NavHostController,
+    modifier: Modifier,
+    onSelectionModeChanged: (Boolean) -> Unit,
+    onNavigateToTab: (TopLevelDestination) -> Unit,
+    posting: CommunityPosting,
 ) {
     NavHost(
         navController = navController,
@@ -112,6 +135,13 @@ fun StashNavHost(
                 },
                 // Report an issue = diagnostics preview first, GitHub from there.
                 onReportIssue = { navController.navigate(DiagnosticsPreviewRoute) },
+                communitySection = {
+                    CommunitySection(
+                        onOpenPost = { id -> navController.navigate(CommunityPostRoute(id)) },
+                        onSeeAll = { navController.navigate(CommunityRoute()) },
+                        onPost = posting.pick,
+                    )
+                },
             )
         }
         composable<PlaylistBrowseRoute> {
@@ -349,6 +379,31 @@ fun StashNavHost(
 
         composable<SharedTrackRoute> {
             com.stash.feature.library.share.SharedTrackScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable<CommunityRoute> {
+            CommunityScreen(
+                mine = it.toRoute<CommunityRoute>().mine,
+                onBack = { navController.popBackStack() },
+                onOpenPost = { id -> navController.navigate(CommunityPostRoute(id)) },
+                onPost = posting.pick,
+            )
+        }
+
+        composable<CommunityPostRoute> { entry ->
+            // Save a copy opens the new playlist; Back returns to the post. A take-down's or a save's reply can land
+            // after Back started closing this screen (the NavHost fades for 700 ms, and the ViewModel lives until
+            // the fade ends). Popping then would pop the screen below too (from Home: Home itself, a blank screen),
+            // so both calls are dropped unless the post is the screen showing. CommunityPostViewModel reads the
+            // route's `postId` from SavedStateHandle by that name.
+            CommunityPostScreen(
+                onBack = dropUnlessResumed { navController.popBackStack() },
+                onOpenPlaylist = { id ->
+                    if (entry.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                        navController.navigate(PlaylistDetailRoute(id))
+                    }
+                },
+            )
         }
 
         composable<ListenJoinRoute> {
