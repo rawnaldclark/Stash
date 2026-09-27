@@ -22,8 +22,8 @@ data class SharedTrack(
     /** Listen Together only: the member id of whoever added the song. Never set for shared mixes (null is left out). */
     @SerialName("by") val addedBy: String? = null,
     /**
-     * Listen Together only: the cover the adder's phone shows, an https link on [ShareConfig.COVER_HOSTS]
-     * (the room drops any other). Never set for shared mixes.
+     * Listen Together and Community: the cover the sender's phone shows, an https link on
+     * [ShareConfig.COVER_HOSTS] (the Worker drops any other). Never set for shared mix links.
      */
     @SerialName("art") val artUrl: String? = null,
 )

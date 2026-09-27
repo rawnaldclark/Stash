@@ -172,7 +172,7 @@ These commands are the real backstop. The network caps make vote attacks expensi
 ### Code layout
 
 - `core/model`:
-  - `CommunityPost` (summary), `CommunityPostDetail`, `CommunityMe`.
+  - `CommunityPost`, both the list row and the opened post (which fills its `tracks` or `track`), and `CommunityMe`.
   - `PostTarget`: `Song(track: Track)` or `Playlist(playlistId: Long)`. It's what any entry point asks to post.
   - `Track.toSharedTrackWithArt()`, moved from `DefaultSessionCatalog`'s private `Track.shared()`: the descriptor plus its art link when it's on `COVER_HOSTS`. Listen Together and Community both use it.
 - `core/data`:
