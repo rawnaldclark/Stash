@@ -210,8 +210,8 @@ private fun PostBody(s: UiState.Loaded, viewModel: CommunityPostViewModel, onOpe
                 }
                 VoteControl(post, onVote = viewModel::vote, modifier = Modifier.align(Alignment.CenterVertically), vertical = false)
             }
-            // A 500-song Play or Save a copy can take seconds.
-            if (s.busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
+            // A 500-song Play or Save a copy can take seconds. Its space is kept, so the songs don't jump when it shows.
+            Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(4.dp)) { if (s.busy) LinearProgressIndicator(Modifier.fillMaxWidth()) }
             if (!song) {
                 Spacer(Modifier.height(12.dp))
                 Text(
