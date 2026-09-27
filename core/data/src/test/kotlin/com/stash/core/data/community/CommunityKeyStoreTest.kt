@@ -5,6 +5,9 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -37,7 +40,10 @@ class CommunityKeyStoreTest {
     @Test fun `the key is made on first use and reused after, and reads never make one`() = runTest {
         val store = CommunityKeyStore(context)
         assertThat(store.existingKey()).isNull()
-        val key = store.key()
+        // Separate instances: only DataStore's one-at-a-time edits can make them agree.
+        val keys = List(8) { async(Dispatchers.IO) { CommunityKeyStore(context).key() } }.awaitAll()
+        assertThat(keys.toSet()).hasSize(1)
+        val key = keys[0]
         assertThat(store.key()).isEqualTo(key)
         assertThat(store.existingKey()).isEqualTo(key)
         assertThat(CommunityKeyStore(context).key()).isEqualTo(key)
