@@ -110,4 +110,64 @@ class QobuzCandidateMatcherTest {
     @Test fun `MIN_CONFIDENCE threshold value is preserved`() {
         assertThat(QobuzCandidateMatcher.MIN_CONFIDENCE).isEqualTo(0.5f)
     }
+
+    // ── #502: a named version the query lacks ──────────────────────────────
+
+    private fun score(
+        queryTitle: String,
+        candTitle: String,
+        candVersion: String? = null,
+        queryDurationMs: Long? = null,
+        candDurationSec: Int = 0,
+        album: String? = null,
+    ) = QobuzCandidateMatcher.confidence(
+        query = TrackQuery(artist = "Sea of Thieves", title = queryTitle, album = album, durationMs = queryDurationMs),
+        candTitle = candTitle,
+        candArtist = "Sea of Thieves",
+        candIsrc = null,
+        candDurationSec = candDurationSec,
+        candStreamable = true,
+        candVersion = candVersion,
+    )
+
+    @Test fun `Bosun Bill Retro Mix in the version field no longer passes for the original`() {
+        // Was 1.0 * 1.0 * 0.6 = 0.6, which downloaded the remix.
+        val s = score("Bosun Bill", "Bosun Bill", candVersion = "Retro Mix", queryDurationMs = 144_000, candDurationSec = 117)
+        assertThat(s).isLessThan(QobuzCandidateMatcher.MIN_CONFIDENCE)
+    }
+
+    @Test fun `Bosun Bill Retro Mix in the title no longer passes for the original`() {
+        val s = score("Bosun Bill", "Bosun Bill (Retro Mix)", queryDurationMs = 144_000, candDurationSec = 117)
+        assertThat(s).isLessThan(QobuzCandidateMatcher.MIN_CONFIDENCE)
+    }
+
+    @Test fun `a version named only in the version field is penalized`() {
+        assertThat(score("bloody valentine", "bloody valentine", candVersion = "Acoustic"))
+            .isWithin(0.0001f).of(0.4f)
+    }
+
+    @Test fun `a remaster still matches the original`() {
+        assertThat(score("Song", "Song (Remastered 2011)")).isEqualTo(1.0f)
+        assertThat(score("Song", "Song", candVersion = "2011 Remaster")).isEqualTo(1.0f)
+    }
+
+    @Test fun `an original mix still matches the original`() {
+        assertThat(score("Song", "Song (Original Mix)")).isEqualTo(1.0f)
+    }
+
+    @Test fun `a version the query also names is not penalized`() {
+        assertThat(score("Song - Live", "Song (Live)")).isAtLeast(QobuzCandidateMatcher.MIN_CONFIDENCE)
+        assertThat(score("Song (Live)", "Song - Live")).isAtLeast(QobuzCandidateMatcher.MIN_CONFIDENCE)
+        assertThat(score("Bosun Bill (Retro Mix)", "Bosun Bill", candVersion = "Retro Mix")).isEqualTo(1.0f)
+    }
+
+    @Test fun `a live album lets a live candidate through`() {
+        assertThat(score("Young Man Blues", "Young Man Blues", candVersion = "Live", album = "Live at Leeds"))
+            .isEqualTo(1.0f)
+    }
+
+    @Test fun `version words match whole words only`() {
+        assertThat(QobuzCandidateMatcher.versionWords("Alive (Stay Alive) - Olive Remixed")).isEmpty()
+        assertThat(score("Stay Alive", "Stay Alive (Alive)", candVersion = "Alive")).isEqualTo(1.0f)
+    }
 }

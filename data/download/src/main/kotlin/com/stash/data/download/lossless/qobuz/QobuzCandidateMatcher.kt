@@ -25,7 +25,13 @@ object QobuzCandidateMatcher {
      * penalty that downweights mismatched cuts (live, extended,
      * edits) without hard-rejecting them.
      *
+     * #502: a candidate that names a version the query doesn't (a remix,
+     * live take, cover...) is scaled by [VERSION_PENALTY]. Qobuz keeps the
+     * version out of the title and [normalize] drops brackets, so the title
+     * score alone can't tell them apart.
+     *
      * @param candDurationSec candidate duration in SECONDS (Qobuz's unit).
+     * @param candVersion Qobuz's separate `version` field, when known.
      */
     fun confidence(
         query: TrackQuery,
@@ -34,6 +40,7 @@ object QobuzCandidateMatcher {
         candIsrc: String?,
         candDurationSec: Int,
         candStreamable: Boolean,
+        candVersion: String? = null,
     ): Float {
         if (!candStreamable) return 0f
 
@@ -76,8 +83,45 @@ object QobuzCandidateMatcher {
             }
         }
 
-        return (titleSim * artistSim * durationFactor)
+        // Only the candidate's bracketed/dashed parts and version field count, so
+        // "Piano Man" itself isn't a piano version. The query's album counts too,
+        // so a track off a live album can still take a live candidate.
+        val candVersionWords = versionWords(
+            BRACKETED.findAll(candTitle).joinToString(" ") { it.value } + " " +
+                DASHED.find(candTitle)?.value.orEmpty() + " " + candVersion.orEmpty(),
+        )
+        val versionFactor =
+            if ((candVersionWords - versionWords(query.title + " " + query.album.orEmpty())).isEmpty()) 1.0f
+            else VERSION_PENALTY
+
+        return (titleSim * artistSim * durationFactor * versionFactor)
     }
+
+    /** Scales a candidate that names a version the query doesn't. 1.0 x 0.4 falls under [MIN_CONFIDENCE]. */
+    private const val VERSION_PENALTY = 0.4f
+
+    private val BRACKETED = Regex("\\([^)]*\\)|\\[[^]]*\\]")
+    private val DASHED = Regex("\\s[-\u2013\u2014]\\s.*")
+    private val ORIGINAL_MIX = Regex("\\boriginal mix\\b")
+
+    // Whole words only, so "Alive" is not "live". "Edit" is left out: radio edits are fine.
+    private val VERSION_WORDS = Regex(
+        "\\b(remix|mix|live|cover|karaoke|instrumental|lofi|lo-fi|lo fi|piano|acoustic|" +
+            "orchestral|sped up|sped|slowed|nightcore|demo)\\b",
+    )
+
+    /** The version words [text] names, folded so "remix"/"mix", "lo-fi"/"lofi" and "sped up"/"sped" compare equal. */
+    internal fun versionWords(text: String): Set<String> =
+        VERSION_WORDS.findAll(ORIGINAL_MIX.replace(text.lowercase(), " "))
+            .map {
+                when (it.value) {
+                    "remix" -> "mix"
+                    "lo-fi", "lo fi" -> "lofi"
+                    "sped up" -> "sped"
+                    else -> it.value
+                }
+            }
+            .toSet()
 
     // ── Pure-function helpers ────────────────────────────────────────────
 

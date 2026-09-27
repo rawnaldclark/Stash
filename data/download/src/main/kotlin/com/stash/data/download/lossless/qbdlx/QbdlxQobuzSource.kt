@@ -139,6 +139,7 @@ class QbdlxQobuzSource @Inject constructor(
             candIsrc = candidate.isrc,
             candDurationSec = candidate.duration,
             candStreamable = candidate.streamable,
+            candVersion = candidate.version,
         )
 
     /**

@@ -21,6 +21,8 @@ data class QbdlxTrack(
     @SerialName("maximum_bit_depth") val maximumBitDepth: Int = 0,
     @SerialName("maximum_sampling_rate") val maximumSamplingRate: Float = 0f,  // kHz
     val album: QbdlxAlbum? = null,
+    /** The recording's version, kept out of [title] by Qobuz (e.g. "Retro Mix", "Acoustic"). */
+    val version: String? = null,
 )
 
 @Serializable data class QbdlxPerformer(val name: String = "")
