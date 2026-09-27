@@ -44,15 +44,15 @@ The script needs Node 24.2 or later (22.18 or later also works); older versions 
 cd infra/share-worker
 npm run community -- list 20             # newest and top posts, then blocked phones; `poster` is the first 8 characters of the poster id
 npm run community -- remove <postId>
-npm run community -- restore <postId>    # undo your removal, or a vote attack (drops the post's downvotes)
+npm run community -- restore <postId>    # undo your removal, or a vote attack (drops the post's downvotes); votes can't hide it again
 npm run community -- block <postId>      # blocks that phone and removes all its live posts
 npm run community -- unblock <prefix>
 ```
 
-Every command prints what it hit, and an empty result means nothing matched. For `block` and `restore`, read the last result (the blocked row, or the post's votes and `removed`): some of their statements print an empty result even when they change rows. `restore` never undoes a poster's own take-down: its `removed` is null when the post is up, and `poster` when its poster took it down and restore left it down.
+Every command prints what it hit, and an empty result means nothing matched. For `block` and `restore`, read the last result (the blocked row, or the post's votes, `removed` and `vouched`): some of their statements print an empty result even when they change rows. `restore` never undoes a poster's own take-down: its `removed` is null when the post is up (and `vouched` is 1), and `poster` when its poster took it down and restore left it down.
 
 - `remove` also prints nothing for a post that's already down: that's not a wrong id. If its poster took it down, `restore` leaves it down too.
-- A post at −3 or below (up minus down) hides for everyone but its poster, and `list` marks it `hidden`. A vote attack buries a good post this way; `restore` undoes it.
+- A post at −3 or below (up minus down) hides for everyone but its poster, and `list` marks it `hidden`. A vote attack buries a good post this way; `restore` undoes it and vouches for the post (`list` shows `vouched`), so votes can never hide it again. Its votes still count for ranking, and `remove` still takes it down.
 - `list` shows each blocked phone's prefix, when it was blocked (`at`, in milliseconds since 1970), and a note, `post <id>`. That's where to find the prefix for `unblock` once the cleanup has deleted the phone's posts.
 - `unblock` leaves the phone's posts removed. `restore` brings back any of them within a day, before the cleanup deletes them. `list` shows who removed each post (`removed`: `owner` or `poster`); the ones the poster took down themselves stay down.
 - `list [n]` takes up to 200. A post buried by votes and older than the newest n can be in neither list, so `list 200` is the way to find it.

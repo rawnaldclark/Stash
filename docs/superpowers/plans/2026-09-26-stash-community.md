@@ -26,9 +26,9 @@ The build followed this plan task by task, with a spec review and a code review 
 - **Moderation CLI.** Every command prints what it hit.
   - `list` also shows blocked phones and `removed` (null, `poster` or `owner`).
   - `remove` only hits a live post.
-  - `restore` undoes only the owner's own removals, and drops downvotes only when the post ends up live.
+  - `restore` undoes only the owner's own removals. Only when the post ends up live does it drop the downvotes and vouch for the post (`vouched`, migration 0002), so votes can't hide it again.
   - A guard rejects `--`, `"` and `%` before the SQL is collapsed onto one command line.
-- **Tests.** 147 node tests, run in CI.
+- **Tests.** 151 node tests, run in CI.
 
 **App**
 - **Keys.** Reading never makes a key (`existingKey()`); `me()` and `mine()` answer locally until a key exists. Settings backups leave the key out, on export and on restore, so a restore never changes a phone's Community identity.
@@ -57,7 +57,6 @@ The build followed this plan task by task, with a spec review and a code review 
 **Deployed 2026-09-27.** D1 `stash-community` (`dfbf6783-001d-40ce-9412-1e56c9ab2d84`) and Worker `stash-share` version `f69039dc`; the code-only rollback target is `98c58f73`. All 8 shared mixes and 6 other routes answered byte for byte the same before and after.
 
 **Left for later** (none blocks the release):
-- **Downvote griefing.** `restore` drops the downvotes, but fresh keys can hide the post again.
 - **Listen Together's privacy line.** Its "nothing is kept" may need the same 30-day-recovery caveat as D1.
 - **Workers Free plan.** It allows 100k requests a day. Check the plan before launch.
 - **Wrong-match songs.** A song flagged as a wrong match still carries its YouTube id when posted or shared.

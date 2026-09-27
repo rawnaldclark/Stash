@@ -1,11 +1,13 @@
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
-const MIGRATION = readFileSync(new URL("../migrations/0001_community.sql", import.meta.url), "utf8");
+const DIR = new URL("../migrations/", import.meta.url);
+/** Every migration, in name order, as `wrangler d1 migrations apply` runs them. */
+const MIGRATIONS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort().map((f) => readFileSync(new URL(f, DIR), "utf8"));
 
 /**
  * Just enough of Cloudflare D1 for src/community.js, over a real in-memory SQLite running the real
- * migration: prepare().bind().first(col?)/all()/run(), and batch() as one transaction.
+ * migrations: prepare().bind().first(col?)/all()/run(), and batch() as one transaction.
  * Rows are copied into plain objects: node:sqlite rows have a null prototype, which
  * assert.deepStrictEqual treats as different from {}.
  * A missing bind silently becomes NULL here (node:sqlite can't report a statement's parameter
@@ -13,7 +15,7 @@ const MIGRATION = readFileSync(new URL("../migrations/0001_community.sql", impor
  */
 export function fakeD1() {
     const db = new DatabaseSync(":memory:");
-    db.exec(MIGRATION);
+    for (const sql of MIGRATIONS) db.exec(sql);
     const plain = (r) => (r ? { ...r } : null);
     const rows = (sql, args) => ({ results: db.prepare(sql).all(...args).map(plain), success: true });
     const statement = (sql, args = []) => ({

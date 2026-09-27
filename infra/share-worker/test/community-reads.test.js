@@ -64,6 +64,16 @@ test("mine lists your live posts, newest first, including hidden ones", async ()
     assert.equal((await call(e, "GET", "/v1/community/mine")).status, 401);
 });
 
+test("a post the owner vouched for is never hidden by votes: at -5 it's on the list, opens for anyone, and mine says not hidden", async () => {
+    const e = env();
+    await seed(e, { id: "VOUCHED0", key: KEY_A, down: 5 });
+    await e.COMMUNITY_DB.prepare("UPDATE posts SET vouched = 1").run();
+    assert.deepEqual((await feed(e)).map((p) => p.id), ["VOUCHED0"]);
+    assert.equal((await call(e, "GET", "/v1/community/posts/VOUCHED0", { key: KEY_B })).status, 200);
+    const mine = (await (await call(e, "GET", "/v1/community/mine", { key: KEY_A })).json()).posts;
+    assert.deepEqual(mine.map((p) => [p.id, p.hidden]), [["VOUCHED0", false]]);
+});
+
 test("the list and mine never read song lists: no query of theirs selects body", async () => {
     const e = env();
     await seed(e, { id: "MINE0000", key: KEY_A });

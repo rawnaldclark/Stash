@@ -8,7 +8,7 @@ Approved in brainstorming on 2026-09-26. Mockups (git-ignored): `.superpowers/br
 
 | Question | Decision | Why |
 |---|---|---|
-| Who removes bad posts | The community first: a post at −3 or below hides for everyone. The owner is the backstop: commands to remove any post, undo their removals and vote attacks, and block a phone from posting. | Posts go live at once, and nobody has to approve anything; the owner still has the last word. |
+| Who removes bad posts | The community first: a post at −3 or below hides for everyone. The owner is the backstop: commands to remove any post, undo their removals and vote attacks (a post the owner restores can't be hidden by votes again), and block a phone from posting. | Posts go live at once, and nobody has to approve anything; the owner still has the last word. |
 | What a post is | A **frozen copy**: the songs as they were when posted. Later changes to the poster's playlist don't show. | Votes always match what people heard. |
 | Limits | Per phone: **2 posts per 24 hours, 5 live at once**, each live **30 days**. A looser per-network cap sits behind them. | Enough to share what you're into this week; nobody can flood the section. |
 | Ordering | **Likes plus freshness** ("hot"): each net vote is worth 3.6 hours of freshness, so 10 more votes keep a post above a newer one for about a day and a half. | The section keeps moving, new posts get seen, and votes still lift posts. |
@@ -38,7 +38,7 @@ Losing the key (clearing the app's data, a new phone) means a new identity: the 
 
 **Network.** Where the rules say "network", they mean `sha256(COMMUNITY_SALT + prefix)` in hex, where `prefix` is an IPv4 address as is, or an IPv6 address cut to its **/56**. That's a coarser grouping than the rate limits' /64 (`limitKey`): many ISPs give a home a whole /56, and a free tunnel hands out a /48, which would otherwise pose as tens of thousands of networks. `COMMUNITY_SALT` is a Worker secret, so the stored hash can't be reversed by trying every address.
 
-### Tables (`migrations/0001_community.sql`)
+### Tables (`migrations/0001_community.sql`, and `0002_vouched.sql`, which rebuilds `posts` to add `vouched` before `body`)
 
 ```sql
 CREATE TABLE posts (
@@ -56,6 +56,7 @@ CREATE TABLE posts (
   down         INTEGER NOT NULL DEFAULT 0,
   removed_at   INTEGER,                        -- ms, when it was taken down or removed
   removed_by   TEXT CHECK (removed_by IN ('poster', 'owner') AND (removed_by IS NULL) = (removed_at IS NULL)),  -- who removed it; restore only undoes 'owner'
+  vouched      INTEGER NOT NULL DEFAULT 0,     -- 1 once the owner restores it: votes never hide it again
   body         TEXT NOT NULL                   -- JSON: {covers, tracks} or {track}. Last, so reading the other columns never walks past it
 );
 -- Must match the feed's ORDER BY exactly (12960000.0 is MS_PER_VOTE), or the list goes back to sorting every live post.
@@ -103,7 +104,7 @@ The server writes `summary` itself from the cleaned body, so it can't disagree w
 - **Votes:**
   - Each phone has one vote per post, stored with its network. Changing it replaces it; `0` takes it back. Voting on your own post is 403 `{error: "own_post"}`.
   - **Counting:** one network counts for at most 2 votes in each direction on a post. After every vote, the post's `up` is recounted in the same D1 batch as the sum, over networks, of min(that network's upvotes, 2), and `down` the same way. A script making keys behind one connection can move a post by at most 2 either way.
-- **Hidden:** a post with `up − down <= −3` leaves the list and opens as 404 for everyone except its poster, who still sees it in Mine with `hidden: true`. With the network cap, hiding takes downvotes from at least two networks.
+- **Hidden:** a post with `up − down <= −3` leaves the list and opens as 404 for everyone except its poster, who still sees it in Mine with `hidden: true`. With the network cap, hiding takes downvotes from at least two networks. A post the owner has restored is `vouched`: votes never hide it again, though they still count for its ranking.
 - **Ordering ("hot"):** done in the feed's SQL, `ORDER BY (up - down) + created_at / 12960000.0 DESC LIMIT ?`. 12,960,000 ms is 3.6 hours, so:
   - Each net vote is worth 3.6 hours of freshness: 10 more votes keep a post above a newer one for 36 hours.
   - A brand-new post with no votes starts above everything more than a few hours old that has few votes.
@@ -148,15 +149,15 @@ Reads are open to anyone (the Home section, and a phone that hasn't made a key y
 
 `npm run community -- <command>` runs `scripts/community.mjs`, which calls `wrangler d1 execute stash-community --remote --json` (the owner's own Cloudflare login; nothing is exposed on the internet):
 
-- `list [n]`: the newest and the top posts (the top ones only while up), including hidden ones: id, kind, title, poster name, up/down, `hidden`, `removed` (null while the post is up, else `'poster'` or `'owner'`), age, and the first 8 characters of the poster id. Then the blocked phones: that prefix, when each was blocked, and a note naming the post.
+- `list [n]`: the newest and the top posts (the top ones only while up), including hidden ones: id, kind, title, poster name, up/down, `hidden`, `vouched`, `removed` (null while the post is up, else `'poster'` or `'owner'`), age, and the first 8 characters of the poster id. Then the blocked phones: that prefix, when each was blocked, and a note naming the post.
 - `remove <postId>`: sets `removed_at`, and `removed_by = 'owner'`, on a post that's still up. A post its poster took down is left alone, so `restore` can't bring it back.
-- `restore <postId>`: undoes the owner's removal (clears `removed_at` and `removed_by`), deletes the post's downvotes if it's up after that, and recounts. For a post that was removed by mistake, or buried by a vote attack. A post its poster took down (`removed_by = 'poster'`) stays down, votes and all.
+- `restore <postId>`: undoes the owner's removal (clears `removed_at` and `removed_by`). If the post is up after that, it deletes the post's downvotes and sets `vouched`, so votes can't hide it again. Then it recounts. For a post that was removed by mistake, or buried by a vote attack. A post its poster took down (`removed_by = 'poster'`) stays down and unvouched, votes and all.
 - `block <postId>`: blocks that post's poster and removes all their live posts.
 - `unblock <posterIdPrefix>`: undoes a block, matched with `substr(poster, 1, length) = '<prefix>'` (D1 caps `LIKE` patterns at 50 bytes).
 
 Ids are checked against `[A-Za-z0-9]{8}` and prefixes against `[0-9a-f]{8,64}` before they go into the SQL (`d1 execute` takes no bind parameters).
 
-These commands are the real backstop. The network caps make vote attacks expensive, not impossible: someone with many addresses can still bury a post, and `restore` undoes it.
+These commands are the real backstop. The network caps make vote attacks expensive, not impossible: someone with many addresses can still bury a post, and `restore` undoes it for good: fresh downvotes can't hide a vouched post again.
 
 ## 3. The app
 
@@ -287,12 +288,12 @@ Optimistic: the highlight and count change at once and flip back with a short me
 
 ## 6. Testing
 
-- **Worker:** `node --test` against a real in-memory SQLite database through a small `test/fake-d1.js` shim over Node's built-in `node:sqlite` (no new dependency), running `0001_community.sql`. The shim returns plain objects (`{...row}`), because `node:sqlite` rows have a null prototype and fail `assert.deepStrictEqual`. The tests cover:
+- **Worker:** `node --test` against a real in-memory SQLite database through a small `test/fake-d1.js` shim over Node's built-in `node:sqlite` (no new dependency), running every migration in `migrations/` in order. The shim returns plain objects (`{...row}`), because `node:sqlite` rows have a null prototype and fail `assert.deepStrictEqual`. The tests cover:
   - the posting limits, including take-down-and-repost and `network_limit`;
   - one vote per phone, changing and taking back a vote, no voting on your own post, and the recount;
   - the per-network vote cap: many keys behind one network move a post by 2 at most;
   - IPv6 grouped by /56: two addresses in one /56 are one network;
-  - the −3 hide from votes on two networks, the poster still seeing the post in Mine, and `restore`;
+  - the −3 hide from votes on two networks, the poster still seeing the post in Mine, and `restore`, after which votes can't hide the post again;
   - hot ordering: 10 more votes ≈ 36 hours;
   - the list never selecting `body`;
   - `by` removed from posted songs;

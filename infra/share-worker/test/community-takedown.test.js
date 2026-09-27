@@ -47,3 +47,12 @@ test("the poster can take down a post hidden by votes; to anyone else it's gone"
     assert.deepEqual(await other.json(), { error: "gone" });
     assert.equal((await call(e, "DELETE", "/v1/community/posts/HIDDEN00", { key: KEY_A })).status, 204);
 });
+
+test("a post the owner vouched for isn't hidden at any score: to anyone else it's not_yours, not gone", async () => {
+    const e = env();
+    await seed(e, { id: "VOUCHED0", key: KEY_A, down: 5 });
+    await e.COMMUNITY_DB.prepare("UPDATE posts SET vouched = 1").run();
+    const other = await call(e, "DELETE", "/v1/community/posts/VOUCHED0", { key: KEY_B });
+    assert.equal(other.status, 403);
+    assert.deepEqual(await other.json(), { error: "not_yours" });
+});

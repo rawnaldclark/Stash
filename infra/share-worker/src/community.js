@@ -1,6 +1,6 @@
 /**
  * Stash Community routes (spec docs/superpowers/specs/2026-09-26-stash-community-design.md §2).
- * D1 tables: posts, votes, blocked (migrations/0001_community.sql). A phone is sha256(its key);
+ * D1 tables: posts, votes, blocked (migrations/). A phone is sha256(its key);
  * a network is sha256(COMMUNITY_SALT | IPv4, or IPv6 /56). Every error body is {error: "<code>"}.
  */
 import { json, networkOf } from "./http.js";
@@ -14,7 +14,7 @@ export const POST_TTL_MS = 30 * DAY;
 export const DAILY_POSTS = 2;
 export const LIVE_POSTS = 5;
 export const NETWORK_DAILY_POSTS = 10;
-export const HIDE_AT = -3; // up - down at or below this hides a post
+export const HIDE_AT = -3; // up - down at or below this hides a post, unless the owner vouched for it
 export const VOTES_PER_NETWORK = 2; // counted votes per network per post, in each direction
 export const MAX_REQUEST_BYTES = 256 * 1024;
 /**
@@ -31,6 +31,8 @@ const notAllowed = () => json({ error: "method_not_allowed" }, 405);
 const gone = () => json({ error: "gone" }, 404);
 /** A post that's missing, taken down or removed, or expired. Hidden is checked separately: its poster still sees it. */
 const isGone = (post, now) => !post || post.removed_at !== null || post.expires_at <= now;
+/** At or below HIDE_AT, unless the owner vouched for it (`restore`): votes never hide a vouched post. The feed's WHERE is the same rule in SQL. */
+export const hiddenByVotes = (p) => p.up - p.down <= HIDE_AT && !p.vouched;
 
 /** Routes every /v1/community/* request. [method] has HEAD folded into GET. */
 export async function communityRoute(request, env, path, method) {
@@ -130,7 +132,7 @@ async function feed(request, env, now) {
     const { results } = await env.COMMUNITY_DB.prepare(
         `SELECT ${LIST_COLUMNS}, v.value AS my_vote FROM posts p
          LEFT JOIN votes v ON v.post_id = p.id AND v.voter = ?1
-         WHERE p.removed_at IS NULL AND p.expires_at > ?2 AND (p.up - p.down) > ${HIDE_AT}
+         WHERE p.removed_at IS NULL AND p.expires_at > ?2 AND ((p.up - p.down) > ${HIDE_AT} OR p.vouched = 1)
          ORDER BY (p.up - p.down) + p.created_at / ${MS_PER_VOTE}.0 DESC, p.created_at DESC
          LIMIT ?3`,
     ).bind(who.id ?? "", now, limit).all();
@@ -141,11 +143,11 @@ async function mine(request, env, now) {
     const who = await identity(request);
     if (!who.id) return json({ error: "bad_key" }, 401);
     const { results } = await env.COMMUNITY_DB.prepare(
-        `SELECT ${LIST_COLUMNS}, p.expires_at, NULL AS my_vote FROM posts p
+        `SELECT ${LIST_COLUMNS}, p.vouched, p.expires_at, NULL AS my_vote FROM posts p
          WHERE p.poster = ?1 AND p.removed_at IS NULL AND p.expires_at > ?2
          ORDER BY p.created_at DESC`,
     ).bind(who.id, now).all();
-    const posts = results.map((r) => ({ ...summaryOf(r, who.id), hidden: r.up - r.down <= HIDE_AT, expiresAt: r.expires_at }));
+    const posts = results.map((r) => ({ ...summaryOf(r, who.id), hidden: hiddenByVotes(r), expiresAt: r.expires_at }));
     return json({ posts }, 200, NO_STORE);
 }
 
@@ -165,12 +167,12 @@ async function getPost(request, env, id, now) {
     const who = await identity(request);
     if (who.bad) return json({ error: "bad_key" }, 401);
     const r = await env.COMMUNITY_DB.prepare(
-        `SELECT ${LIST_COLUMNS}, p.body, p.removed_at, p.expires_at, v.value AS my_vote FROM posts p
+        `SELECT ${LIST_COLUMNS}, p.vouched, p.body, p.removed_at, p.expires_at, v.value AS my_vote FROM posts p
          LEFT JOIN votes v ON v.post_id = p.id AND v.voter = ?2
          WHERE p.id = ?1`,
     ).bind(id, who.id ?? "").first();
     if (isGone(r, now)) return gone();
-    if (r.up - r.down <= HIDE_AT && r.poster !== who.id) return gone(); // hidden: only its poster sees it
+    if (hiddenByVotes(r) && r.poster !== who.id) return gone(); // hidden: only its poster sees it
     const body = JSON.parse(r.body);
     const songs = body.track ? { track: body.track } : { tracks: body.tracks };
     return json({ post: { ...summaryOf(r, who.id ?? null), ...songs } }, 200, NO_STORE);
@@ -193,9 +195,9 @@ async function vote(request, env, id, now) {
     const value = body?.value;
     if (tooBig || ![-1, 0, 1].includes(value)) return json({ error: "bad_request" }, 400);
     const post = await env.COMMUNITY_DB.prepare(
-        "SELECT poster, up, down, removed_at, expires_at, EXISTS (SELECT 1 FROM blocked WHERE poster = ?2) AS blocked FROM posts WHERE id = ?1",
+        "SELECT poster, up, down, vouched, removed_at, expires_at, EXISTS (SELECT 1 FROM blocked WHERE poster = ?2) AS blocked FROM posts WHERE id = ?1",
     ).bind(id, who.id).first();
-    if (isGone(post, now) || post.up - post.down <= HIDE_AT) return gone();
+    if (isGone(post, now) || hiddenByVotes(post)) return gone();
     if (post.poster === who.id) return json({ error: "own_post" }, 403);
     if (post.blocked) return json({ error: "blocked" }, 403);
     const net = await networkHash(request, env);
@@ -217,8 +219,8 @@ async function takeDown(request, env, id, now) {
     if (!(await env.COMMUNITY_WRITE_RL.limit({ key: network(request) })).success) return rateLimited();
     const who = await identity(request);
     if (!who.id) return json({ error: "bad_key" }, 401);
-    const post = await env.COMMUNITY_DB.prepare("SELECT poster, up, down, removed_at, expires_at FROM posts WHERE id = ?1").bind(id).first();
-    if (isGone(post, now) || (post.poster !== who.id && post.up - post.down <= HIDE_AT)) return gone(); // hidden: only its poster sees it
+    const post = await env.COMMUNITY_DB.prepare("SELECT poster, up, down, vouched, removed_at, expires_at FROM posts WHERE id = ?1").bind(id).first();
+    if (isGone(post, now) || (post.poster !== who.id && hiddenByVotes(post))) return gone(); // hidden: only its poster sees it
     if (post.poster !== who.id) return json({ error: "not_yours" }, 403);
     // No `removed_at IS NULL` guard, on purpose: a take-down always wins a race with the owner's `remove`, so
     // `restore` can never republish it.

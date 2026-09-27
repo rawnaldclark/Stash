@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
 import { fakeD1 } from "./fake-d1.js";
+
+const migration = (name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8");
 
 const row = (over = {}) => ({
     id: "AAAAAAAA", kind: "song", title: "garden", poster_name: "Sam", poster: "p".repeat(64), ip_hash: "n".repeat(64),
@@ -53,4 +57,18 @@ test("two batches at once both land, as on D1", async () => {
     const d = fakeD1();
     await Promise.all(["a", "b"].map((p) => d.batch([d.prepare("INSERT INTO blocked (poster, at) VALUES (?1, 1)").bind(p)])));
     assert.equal(await d.prepare("SELECT COUNT(*) AS n FROM blocked").first("n"), 2);
+});
+
+test("0002 keeps every row 0001 held, adds vouched = 0 just before body, and rebuilds 0001's indexes exactly", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(migration("0001_community.sql"));
+    db.exec("INSERT INTO posts (id, kind, title, poster_name, poster, ip_hash, summary, body, track_count, created_at, expires_at, up, down, removed_at, removed_by) VALUES ('AAAAAAAA', 'mix', 't', 'n', 'p', 'i', 's', 'b', 7, 1, 2, 3, 4, 5, 'owner')");
+    const indexes = () => db.prepare("SELECT name, sql FROM sqlite_schema WHERE type = 'index' AND sql IS NOT NULL ORDER BY name").all().map((r) => ({ ...r }));
+    const before = { ...db.prepare("SELECT * FROM posts").get() };
+    const beforeIndexes = indexes();
+    db.exec(migration("0002_vouched.sql"));
+    const after = { ...db.prepare("SELECT * FROM posts").get() };
+    assert.deepEqual(after, { ...before, vouched: 0 });
+    assert.deepEqual(Object.keys(after), [...Object.keys(before).slice(0, -1), "vouched", "body"]);
+    assert.deepEqual(indexes(), beforeIndexes);
 });
