@@ -102,7 +102,9 @@ object QobuzCandidateMatcher {
 
     private val BRACKETED = Regex("\\([^)]*\\)|\\[[^]]*\\]")
     private val DASHED = Regex("\\s[-\u2013\u2014]\\s.*")
-    private val ORIGINAL_MIX = Regex("\\boriginal mix\\b")
+    // A year, stereo, mono, single... mix is the same song, often a remaster reissue.
+    private val SAME_SONG_MIX =
+        Regex("\\b(\\d{4}|stereo|mono|single|radio|album|original|remaster|remastered)\\s+mix\\b")
 
     // Whole words only, so "Alive" is not "live". "Edit" is left out: radio edits are fine.
     private val VERSION_WORDS = Regex(
@@ -112,7 +114,7 @@ object QobuzCandidateMatcher {
 
     /** The version words [text] names, folded so "remix"/"mix", "lo-fi"/"lofi" and "sped up"/"sped" compare equal. */
     internal fun versionWords(text: String): Set<String> =
-        VERSION_WORDS.findAll(ORIGINAL_MIX.replace(text.lowercase(), " "))
+        VERSION_WORDS.findAll(SAME_SONG_MIX.replace(text.lowercase(), " "))
             .map {
                 when (it.value) {
                     "remix" -> "mix"

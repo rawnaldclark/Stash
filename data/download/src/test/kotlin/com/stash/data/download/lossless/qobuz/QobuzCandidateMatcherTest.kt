@@ -155,6 +155,26 @@ class QobuzCandidateMatcherTest {
         assertThat(score("Song", "Song (Original Mix)")).isEqualTo(1.0f)
     }
 
+    @Test fun `a year mix remaster still matches the remastered original`() {
+        val s = score("Come Together - Remastered 2009", "Come Together (2019 Mix)")
+        assertThat(s).isAtLeast(QobuzCandidateMatcher.MIN_CONFIDENCE)
+        assertThat(score("Come Together - Remastered 2009", "Come Together", candVersion = "2019 Mix"))
+            .isAtLeast(QobuzCandidateMatcher.MIN_CONFIDENCE)
+    }
+
+    @Test fun `a stereo mono or single mix still matches the original`() {
+        assertThat(score("Song", "Song (Stereo Mix)")).isEqualTo(1.0f)
+        assertThat(score("Song", "Song (Mono Mix)")).isEqualTo(1.0f)
+        assertThat(score("Song", "Song", candVersion = "Single Mix")).isEqualTo(1.0f)
+        // The dashed form names no version either (its title score is lower for other reasons).
+        assertThat(QobuzCandidateMatcher.versionWords("Song - Single Mix")).isEmpty()
+    }
+
+    @Test fun `a club mix or year remix is still rejected`() {
+        assertThat(score("Song", "Song (Club Mix)")).isLessThan(QobuzCandidateMatcher.MIN_CONFIDENCE)
+        assertThat(score("Song", "Song", candVersion = "2019 Remix")).isLessThan(QobuzCandidateMatcher.MIN_CONFIDENCE)
+    }
+
     @Test fun `a version the query also names is not penalized`() {
         assertThat(score("Song - Live", "Song (Live)")).isAtLeast(QobuzCandidateMatcher.MIN_CONFIDENCE)
         assertThat(score("Song (Live)", "Song - Live")).isAtLeast(QobuzCandidateMatcher.MIN_CONFIDENCE)
