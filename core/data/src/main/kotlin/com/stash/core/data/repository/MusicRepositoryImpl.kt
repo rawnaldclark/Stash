@@ -3,6 +3,12 @@ package com.stash.core.data.repository
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.await
 import com.stash.core.common.matchesArtistCredits
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
@@ -13,6 +19,8 @@ import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.mapper.toEntity
 import com.stash.core.data.mix.LastFmRecommendationSource
+import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
+import com.stash.core.data.sync.workers.constraintsForManualTrigger
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import com.stash.core.model.share.toTrack
@@ -30,6 +38,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import androidx.core.net.toUri
@@ -566,7 +576,9 @@ class MusicRepositoryImpl @Inject constructor(
         // this a silent no-op: previously a stuck sync row (streaming-mode
         // PENDING / deferred WAITING_FOR_LOSSLESS) made every already-synced
         // track report "Couldn't queue download". Reset the row to PENDING so it
-        // downloads fresh.
+        // downloads fresh. Either way the row is the user's own request
+        // (user_requested), so a playlist's Download switch going off never
+        // deletes it (#474).
         val existing = downloadQueueDao.getByTrackId(trackId)
         val queueId = if (existing == null) {
             downloadQueueDao.insert(
@@ -575,10 +587,12 @@ class MusicRepositoryImpl @Inject constructor(
                     syncId = null,
                     searchQuery = "${entity.artist} - ${entity.title}",
                     youtubeUrl = entity.youtubeId?.let { "https://music.youtube.com/watch?v=$it" },
+                    userRequested = true,
                 )
             )
         } else {
             downloadQueueDao.resetToPending(listOf(existing.id))
+            downloadQueueDao.markUserRequested(existing.id)
             existing.id
         }
 
@@ -603,17 +617,135 @@ class MusicRepositoryImpl @Inject constructor(
         // next play picks up the streaming path naturally.
     }
 
-    override suspend fun queueDownloadsForPlaylist(playlistId: Long): Int {
+    override suspend fun queueDownloadsForPlaylist(playlistId: Long, background: Boolean): Int {
+        val queued = insertDownloadsForPlaylist(playlistId)
+        if (queued > 0) startDiscoveryDrain(background)
+        return queued
+    }
+
+    override suspend fun queueKeptPlaylists(manualSync: Boolean): Int {
+        // Every playlist's rows first, then one drain: a drain per playlist
+        // would restart it each time and cancel the song in progress.
+        val queued = playlistDao.getKeepOfflinePlaylistIds().sumOf { insertKeptPlaylist(it) }
+        // Nothing new still restarts a drain for songs already waiting, whose
+        // run was cancelled or cut short. "Sync now" downloads on any network,
+        // like that sync's own download step (SyncScheduler.triggerManualSync).
+        if (queued > 0 || downloadQueueDao.hasPendingDiscoveryDownload()) {
+            startDiscoveryDrain(background = true, anyNetwork = manualSync)
+        }
+        return queued
+    }
+
+    /**
+     * Starts a drain when a download is waiting for one, and never otherwise:
+     * the worker shows its notification before it looks at the queue, so an
+     * empty start would flash it. Every download row the drain reads comes from
+     * something the user asked for (a tap, a kept playlist, a followed mix, a
+     * Library Health repair), so cold start calls this too: a run that was
+     * cancelled or cut short picks up again under the background constraints.
+     * Waiting means PENDING: failed songs retry when a drain runs for real
+     * work, not on their own at every start.
+     */
+    override suspend fun resumeWaitingDownloads(tap: Boolean) {
+        if (downloadQueueDao.hasPendingDiscoveryDownload()) startDiscoveryDrain(background = !tap)
+    }
+
+    /**
+     * Starts the drain for the rows just queued. The unique work keeps only one
+     * drain's constraints, so the two kinds of caller use different policies:
+     *
+     * - A tap wants the songs now, on any network, but never cancels a song in
+     *   progress. With nothing downloading it takes over (REPLACE), a waiting
+     *   background run's Wi-Fi rule included, cancelling nothing. With a song
+     *   downloading it queues behind that run, unless one already waits there:
+     *   the waiting run reads the queue when it starts.
+     * - Background work downloads the way a sync does and never cancels the
+     *   song in progress: it joins a drain that is waiting to start, or queues
+     *   one behind the drain that is running. [anyNetwork] is "Sync now".
+     *
+     * One caller at a time ([DRAIN_START_LOCK]): a cold start and a sync can
+     * both read "nothing waiting" at once, and both would enqueue.
+     *
+     * ponytail: a tap's drain takes every waiting row, background ones too, on
+     * the tap's network. Keeping those back needs a per-row marker.
+     */
+    // internal, not private, only so MusicRepositoryDownloadSwitchRaceTest can stub it on a spy.
+    internal suspend fun startDiscoveryDrain(background: Boolean, anyNetwork: Boolean = false) {
+        if (!background) {
+            val constraints = constraintsForManualTrigger(downloadNetworkPreference.current())
+            DRAIN_START_LOCK.withLock {
+                val runs = WorkManager.getInstance(context)
+                    .getWorkInfosForUniqueWorkFlow(DiscoveryDownloadWorker.UNIQUE_WORK_NAME).first()
+                val policy = when {
+                    runs.none { it.state == WorkInfo.State.RUNNING } -> ExistingWorkPolicy.REPLACE
+                    runs.none { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED } ->
+                        ExistingWorkPolicy.APPEND_OR_REPLACE
+                    else -> return
+                }
+                DiscoveryDownloadWorker.enqueueOneTime(context, constraints, policy).await()
+            }
+            return
+        }
+        DRAIN_START_LOCK.withLock {
+            val runs = WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWorkFlow(DiscoveryDownloadWorker.UNIQUE_WORK_NAME).first()
+            // The Sync tab's "Wi-Fi only", exactly as SyncScheduler builds a sync's
+            // own download step: never charging, which belongs to the recommendations
+            // setting (DownloadNetworkMode), not to downloads. Read fresh every time:
+            // a waiting run keeps the rule it was created with.
+            val network = if (anyNetwork || !syncPreferencesManager.preferences.first().wifiOnly) {
+                NetworkType.CONNECTED
+            } else {
+                NetworkType.UNMETERED
+            }
+            val running = runs.any { it.state == WorkInfo.State.RUNNING }
+            val waiting = runs.filter { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }
+            val policy = when {
+                // None waiting: start one, or queue it behind the running one,
+                // whose snapshot of the queue is already taken.
+                waiting.isEmpty() -> ExistingWorkPolicy.APPEND_OR_REPLACE
+                // A waiting run reads the queue when it starts, so it takes these
+                // rows too; stacking another would show the notification once per
+                // run. Unless it waits for Wi-Fi this start doesn't need (Wi-Fi
+                // only was turned off, or "Sync now"): with nothing running,
+                // replacing it cancels nothing.
+                !running && network == NetworkType.CONNECTED &&
+                    waiting.any { it.constraints.requiredNetworkType == NetworkType.UNMETERED } ->
+                    ExistingWorkPolicy.REPLACE
+                else -> return
+            }
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(network)
+                .setRequiresBatteryNotLow(true)
+                .build()
+            DiscoveryDownloadWorker.enqueueOneTime(context, constraints, policy).await()
+        }
+    }
+
+    /**
+     * Queue rows only, no drain: see [queueKeptPlaylists]. Returns rows queued.
+     * [stillWanted] is asked again right before inserting: a kept playlist's
+     * switch can go off while this checks each song (#474).
+     */
+    private suspend fun insertDownloadsForPlaylist(
+        playlistId: Long,
+        stillWanted: suspend () -> Boolean = { true },
+    ): Int {
+        // Stream-only mode never runs the sync's download step, so songs an
+        // earlier Download-mode sync queued would wait forever (and count as
+        // handled below). Hand them to the drain this starts instead.
+        val moved = if (streamingPreference.current()) downloadQueueDao.moveSyncRowsToDiscovery(playlistId) else 0
         val tracks = trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .first()
-        val candidates = tracks.filter { !it.isDownloaded }
-        if (candidates.isEmpty()) return 0
+        // A match the user dismissed stays dismissed, and a track with a row
+        // already queued, failed or cancelled keeps that one row. That makes
+        // this safe to call after every sync (#474) without re-trying the same
+        // unmatchable songs, or piling duplicate rows into Failed downloads.
+        val candidates = tracks.filter { !it.isDownloaded && !it.matchDismissed }
+        if (candidates.isEmpty()) return moved
 
         val entries = candidates.mapNotNull { entity ->
-            val existing = downloadQueueDao.getByTrackId(entity.id)
-            if (existing != null && existing.status in NON_TERMINAL_QUEUE_STATES) {
-                return@mapNotNull null
-            }
+            if (downloadQueueDao.hasRowToLeaveAlone(entity.id)) return@mapNotNull null
             com.stash.core.data.db.entity.DownloadQueueEntity(
                 trackId = entity.id,
                 syncId = null,
@@ -621,15 +753,60 @@ class MusicRepositoryImpl @Inject constructor(
                 youtubeUrl = entity.youtubeId?.let { "https://music.youtube.com/watch?v=$it" },
             )
         }
-        if (entries.isNotEmpty()) {
-            downloadQueueDao.insertAll(entries)
-            val mode = downloadNetworkPreference.current()
-            com.stash.core.data.sync.workers.DiscoveryDownloadWorker.enqueueOneTime(
-                context = context,
-                constraints = com.stash.core.data.sync.workers.constraintsForManualTrigger(mode),
-            )
+        if (!stillWanted()) return 0
+        if (entries.isNotEmpty()) downloadQueueDao.insertAll(entries)
+        return moved + entries.size
+    }
+
+    /**
+     * A kept playlist's missing songs (#474), queued with [KEEP_OFFLINE_LOCK]
+     * held and the switch read again right before inserting. An off that lands
+     * while this checks each song wins (nothing is queued); one that lands
+     * later waits for the lock, then deletes what this queued.
+     */
+    private suspend fun insertKeptPlaylist(playlistId: Long): Int = KEEP_OFFLINE_LOCK.withLock {
+        val kept: suspend () -> Boolean = { playlistDao.getById(playlistId)?.keepOffline == true }
+        if (kept()) insertDownloadsForPlaylist(playlistId, stillWanted = kept) else 0
+    }
+
+    /** A kept playlist's missing songs, queued and started like a tap. */
+    internal suspend fun queueKeptPlaylist(playlistId: Long) {
+        if (insertKeptPlaylist(playlistId) > 0) startDiscoveryDrain(background = false)
+    }
+
+    override suspend fun setPlaylistDownload(playlistId: Long, on: Boolean) {
+        // The switch itself is written first, outside the lock, so a flip lands
+        // at once, even while an earlier one is still queueing: that one reads
+        // it again before inserting. The last position wins.
+        playlistDao.setKeepOffline(playlistId, on)
+        if (on) {
+            queueKeptPlaylist(playlistId)
+            return
         }
-        return entries.size
+        KEEP_OFFLINE_LOCK.withLock {
+            // Off stops what hasn't started: the songs still waiting go (a song
+            // running now finishes). Songs already downloaded stay (owner's call).
+            downloadQueueDao.cancelWaitingForPlaylist(playlistId)
+            if (!streamingPreference.current()) {
+                // Download mode: a synced playlist downloads through sync, so off
+                // has to turn that off too, exactly as the Sync tab's switch does:
+                // sync off, then drop sync-queued songs no synced playlist wants.
+                // No Home unpin.
+                playlistDao.setSyncEnabled(playlistId, false)
+                downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist()
+            }
+        }
+    }
+
+    /** A playlist kept on the phone (#474) downloads what the user adds to it. Never fails the add. */
+    private suspend fun queueIfKeptOffline(playlistId: Long) {
+        try {
+            if (playlistDao.getById(playlistId)?.keepOffline == true) queueKeptPlaylist(playlistId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("MusicRepository", "queueIfKeptOffline: playlist $playlistId failed", e)
+        }
     }
 
     override suspend fun removeDownloadsForPlaylist(playlistId: Long): Int {
@@ -704,6 +881,12 @@ class MusicRepositoryImpl @Inject constructor(
         )
 
     override suspend fun addTrackToPlaylist(trackId: Long, playlistId: Long) {
+        insertIntoPlaylist(trackId, playlistId)
+        queueIfKeptOffline(playlistId)
+    }
+
+    /** One add, without the keep-offline queue, so a batch queues once at the end. */
+    private suspend fun insertIntoPlaylist(trackId: Long, playlistId: Long) {
         // Issue #114: this previously inserted the cross-ref unconditionally
         // and crashed the app with SQLITE_CONSTRAINT_FOREIGNKEY when either
         // parent row was missing (track orphaned by cleanup, playlist deleted
@@ -761,13 +944,15 @@ class MusicRepositoryImpl @Inject constructor(
         // ponytail: no app-wide scope exists, so NonCancellable keeps the batch alive.
         withContext(NonCancellable) {
             trackIds.forEach { id ->
-                runCatching { addTrackToPlaylist(id, playlistId) }.onFailure { e ->
+                runCatching { insertIntoPlaylist(id, playlistId) }.onFailure { e ->
                     android.util.Log.w("MusicRepository", "addTracksToPlaylist: track $id failed", e)
                 }
             }
+            queueIfKeptOffline(playlistId)
         }
     }
 
+    // Queues through addTracksToPlaylist (a brand-new playlist is never kept offline, so it's a no-op today).
     override suspend fun createPlaylistWithTracks(name: String, trackIds: List<Long>): Long =
         withContext(NonCancellable) { createPlaylist(name).also { addTracksToPlaylist(trackIds, it) } }
 
@@ -847,7 +1032,7 @@ class MusicRepositoryImpl @Inject constructor(
     ): MusicRepository.CascadeRemovalSummary =
         removeAndMaybeDelete(trackId, fromPlaylistId, alsoBlacklist).also {
             // Every path detaches the track, so the Library card's count must follow.
-            // ponytail: a block also detaches it from other playlists; those keep a stale count until their next recount.
+            // A block also recounts every other playlist that held it (BlocklistGuard.block).
             val count = trackDao.getByPlaylist(fromPlaylistId, includeStreamable = true).first().size
             playlistDao.updateTrackCount(fromPlaylistId, count)
         }
@@ -1101,29 +1286,28 @@ class MusicRepositoryImpl @Inject constructor(
     companion object {
         private const val DOWNLOADS_MIX_SOURCE_ID = "stash_downloads_mix"
 
+        /** Serializes [startDiscoveryDrain]'s read-then-enqueue, across every instance. */
+        private val DRAIN_START_LOCK = Mutex()
+
         /**
-         * WorkManager unique-work names for the five Stash Mix workers. Used
-         * by [applyStashMixesEnabled] to cancel them all in one shot when
-         * the user opts out. Names mirror the `WORK_NAME` / `UNIQUE_WORK_NAME`
-         * constants inside each worker — kept in sync by code review.
+         * One Download switch change at a time, across every instance: queueing a
+         * kept playlist ([insertKeptPlaylist]) and the switch's off never interleave.
          */
-        private val STASH_MIX_WORK_NAMES = listOf(
+        private val KEEP_OFFLINE_LOCK = Mutex()
+
+        /**
+         * WorkManager unique-work names for the Stash Mix workers. Used by
+         * [applyStashMixesEnabled], and by the app's cold start, to cancel them
+         * all in one shot when the user opts out. Names mirror the `WORK_NAME` /
+         * `UNIQUE_WORK_NAME` constants inside each worker — kept in sync by code
+         * review.
+         */
+        val STASH_MIX_WORK_NAMES = listOf(
             "stash_mix_refresh",
             "stash_discovery",
             "stash_tag_enrichment",
             "stash_track_info_enrichment",
-            "discovery_download",
-        )
-
-        /**
-         * Queue statuses we treat as "still in flight" — if any of these
-         * already exists for a track, [queueDownload] / bulk variants
-         * short-circuit so rapid taps don't fan out into duplicate inserts.
-         */
-        private val NON_TERMINAL_QUEUE_STATES = setOf(
-            com.stash.core.model.DownloadStatus.PENDING,
-            com.stash.core.model.DownloadStatus.IN_PROGRESS,
-            com.stash.core.model.DownloadStatus.WAITING_FOR_LOSSLESS,
+            // Not "discovery_download": every row it drains is a download the user asked for (#474).
         )
     }
 }

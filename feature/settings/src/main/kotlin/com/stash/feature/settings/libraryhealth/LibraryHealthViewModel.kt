@@ -42,6 +42,7 @@ class LibraryHealthViewModel @Inject constructor(
     private val fileExistenceSessionFactory: com.stash.core.data.library.FileExistenceSessionFactory,
     private val reconciliationUseCase: com.stash.core.data.library.LibraryReconciliationUseCase,
     private val adoptExistingFilesUseCase: com.stash.data.download.files.AdoptExistingFilesUseCase,
+    private val musicRepository: com.stash.core.data.repository.MusicRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LibraryHealthState())
@@ -97,12 +98,16 @@ class LibraryHealthViewModel @Inject constructor(
                     ids.size
                 }.onFailure { Log.w(TAG, "restoreMissingDownloads failed", it) }.getOrDefault(0)
             }
+            // Start them now, as a tap (#474): a bare TrackDownloadWorker, with no
+            // sync to run, failed at once and left them waiting for a later run.
             if (queued > 0) {
-                WorkManager.getInstance(appContext).enqueue(
-                    androidx.work.OneTimeWorkRequestBuilder<
-                        com.stash.core.data.sync.workers.TrackDownloadWorker,
-                        >().build(),
-                )
+                try {
+                    musicRepository.resumeWaitingDownloads(tap = true)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "starting the re-downloads failed", e)
+                }
             }
             _state.update { it.copy(restoreQueued = queued) }
             refresh()

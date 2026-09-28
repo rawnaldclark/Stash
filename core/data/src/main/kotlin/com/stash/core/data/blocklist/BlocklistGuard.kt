@@ -11,6 +11,7 @@ import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.sync.TrackMatcher
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -88,11 +89,18 @@ class BlocklistGuard @Inject constructor(
         fileDeleter.delete(track.filePath)
         fileDeleter.delete(track.albumArtPath)
 
-        database.withTransaction {
+        val playlistIds = database.withTransaction {
+            val heldBy = playlistDao.playlistIdsForTrack(track.id)
             blocklistDao.insert(entry)
             playlistDao.deleteAllCrossRefsForTrack(track.id)
             downloadQueueDao.deleteByTrackId(track.id)
             trackDao.deleteById(track.id)
+            heldBy
+        }
+        // The Library cards show a stored count; every playlist that held the song loses one.
+        // After the commit, so the recount reads the rows without it.
+        playlistIds.forEach { id ->
+            playlistDao.updateTrackCount(id, trackDao.getByPlaylist(id, includeStreamable = true).first().size)
         }
         Log.d(TAG, "Blocked '${track.artist} - ${track.title}' (id=${track.id}, source=$source)")
     }

@@ -9,16 +9,15 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.DiscoveryQueueEntity
 import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.db.entity.TrackEntity
-import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.TrackMatcher
-import com.stash.core.model.DownloadNetworkMode
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.slot
 import io.mockk.unmockkObject
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertFalse
@@ -46,9 +45,9 @@ import org.junit.Test
  * call. If a future change re-adds the DAO, the constructor signature
  * shift will force this test to be updated, restoring the assertion.
  *
- * `DiscoveryDownloadWorker.enqueueOneTime` is mocked because the production
- * `doWork()` chains a manual-trigger download sweep at the end — irrelevant
- * here, and unsafe to call from a unit test without a real WorkManager.
+ * `DiscoveryDownloadWorker` is mocked so each test can check that `doWork()`
+ * never starts it (#474): that REPLACE start, after every mix refresh,
+ * cancelled downloads mid-song and ignored the Wi-Fi-only setting.
  */
 class StashDiscoveryWorkerStreamOnlyTest {
 
@@ -63,20 +62,15 @@ class StashDiscoveryWorkerStreamOnlyTest {
     private val blocklistGuard: BlocklistGuard = mockk {
         coEvery { isBlocked(any(), any(), any(), any()) } returns false
     }
-    private val downloadNetworkPreference: DownloadNetworkPreference = mockk {
-        coEvery { current() } returns DownloadNetworkMode.WIFI_AND_CHARGING
-    }
     private val syncNotificationManager: SyncNotificationManager = mockk(relaxed = true)
 
     @Before fun setUp() {
-        // `doWork()` chains DiscoveryDownloadWorker.enqueueOneTime → WorkManager
-        // .getInstance. Stubbing the companion object here keeps the test pure
-        // (no Robolectric WorkManager bring-up needed).
         mockkObject(DiscoveryDownloadWorker.Companion)
-        coEvery { DiscoveryDownloadWorker.enqueueOneTime(any(), any()) } returns Unit
     }
 
+    /** Discovery makes stream-only stubs; it never starts a download run (#474). */
     @After fun tearDown() {
+        verify(exactly = 0) { DiscoveryDownloadWorker.enqueueOneTime(any(), any(), any()) }
         unmockkObject(DiscoveryDownloadWorker.Companion)
     }
 
@@ -85,7 +79,7 @@ class StashDiscoveryWorkerStreamOnlyTest {
         return StashDiscoveryWorker(
             appContext, params,
             discoveryQueueDao, trackDao, recipeDao,
-            trackMatcher, blocklistGuard, downloadNetworkPreference, syncNotificationManager,
+            trackMatcher, blocklistGuard, syncNotificationManager,
         )
     }
 

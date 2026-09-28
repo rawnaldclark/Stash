@@ -4,6 +4,7 @@ import android.util.Log
 import com.stash.data.download.ytdlp.YtDlpSearchResult
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.model.MusicVideoType
+import com.stash.data.ytmusic.parseListItemSubtitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -24,7 +25,8 @@ import javax.inject.Singleton
  * The response structure for YouTube Music search is:
  * ```
  * contents.tabbedSearchResultsRenderer.tabs[0].tabRenderer.content
- *   .sectionListRenderer.contents[].musicShelfRenderer.contents[]
+ *   .sectionListRenderer.contents[].musicShelfRenderer.contents[]      (signed in)
+ *                                  .itemSectionRenderer.contents[]      (signed out)
  *     .musicResponsiveListItemRenderer
  * ```
  */
@@ -121,8 +123,9 @@ class InnerTubeSearchExecutor @Inject constructor(
      * Parses the top-level InnerTube search response into a flat list of results.
      *
      * Navigates through `tabbedSearchResultsRenderer` -> tabs -> sections ->
-     * `musicShelfRenderer` -> contents, extracting each
-     * `musicResponsiveListItemRenderer` item.
+     * `musicShelfRenderer` or `itemSectionRenderer` -> contents, extracting each
+     * `musicResponsiveListItemRenderer` item. Rows without a videoId (albums,
+     * artists, playlists, profiles) are dropped by [parseRenderer].
      */
     private fun parseSearchResults(response: JsonObject, maxResults: Int): List<YtDlpSearchResult> {
         val results = mutableListOf<YtDlpSearchResult>()
@@ -142,7 +145,12 @@ class InnerTubeSearchExecutor @Inject constructor(
             ?.jsonArray ?: return emptyList()
 
         for (section in sections) {
-            val shelf = section.jsonObject["musicShelfRenderer"]?.jsonObject ?: continue
+            // Signed-in: titled musicShelfRenderer shelves. Signed-out (live,
+            // 2026-09-28): one itemSectionRenderer per row, in rank order, and no
+            // shelf at all. The musicCardShelfRenderer top card is skipped either way.
+            val sectionObj = section.jsonObject
+            val shelf = (sectionObj["musicShelfRenderer"] ?: sectionObj["itemSectionRenderer"])
+                ?.jsonObject ?: continue
             val contents = shelf["contents"]?.jsonArray ?: continue
 
             for (item in contents) {
@@ -167,8 +175,8 @@ class InnerTubeSearchExecutor @Inject constructor(
      * Extracts:
      * - **videoId** from `playlistItemData` or the overlay play button endpoint
      * - **title** from flexColumns[0]
-     * - **artist** from flexColumns[1] (all text runs joined, separators filtered)
-     * - **duration** from fixedColumns[0] (converted from "M:SS" to seconds)
+     * - **artist** from flexColumns[1], read by the runs' browse ids ([parseListItemSubtitle])
+     * - **duration** from fixedColumns[0], else the subtitle's "M:SS" group
      *
      * @return A populated [YtDlpSearchResult], or null if essential fields are missing.
      */
@@ -193,7 +201,7 @@ class InnerTubeSearchExecutor @Inject constructor(
             ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
             ?: return null
 
-        // Extract artist from flexColumns[1] — join all text runs, filter separators
+        // Extract artist from flexColumns[1]
         val artistRuns = flexColumns.getOrNull(1)?.jsonObject
             ?.navigatePath(
                 "musicResponsiveListItemFlexColumnRenderer", "text", "runs"
@@ -207,9 +215,10 @@ class InnerTubeSearchExecutor @Inject constructor(
         val resultType = allArtistTexts.firstOrNull() ?: ""
         val isSongType = resultType.equals("Song", ignoreCase = true)
 
-        val artist = allArtistTexts
-            .filterNot { it == " & " || it == ", " || it == " • " || it == " x " || it == " · " || it == "Song" || it == "Video" || it == "Album" || it == "EP" || it == "Single" }
-            .joinToString(", ")
+        // Read the way search reads it: joining every run made a Video's artist
+        // "Grimm's VGM, 845 views", which lowered its artist score.
+        val subtitle = parseListItemSubtitle(artistRuns)
+        val artist = subtitle.artist
 
         // Extract album from flexColumns[2] (if present).
         // YouTube Music repurposes this column for play-count badges
@@ -224,8 +233,8 @@ class InnerTubeSearchExecutor @Inject constructor(
             ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
         val albumName = rawAlbum?.takeUnless { looksLikePlayCountBadge(it) }
 
-        // Extract duration from fixedColumns[0] — format "M:SS" or "H:MM:SS"
-        // Some results have duration in flexColumns[1] runs (after artist, album, duration)
+        // Extract duration from fixedColumns[0] — format "M:SS" or "H:MM:SS",
+        // else the subtitle's own unlinked length group (flexColumns[1]).
         val durationText = renderer["fixedColumns"]?.jsonArray
             ?.firstOrNull()?.jsonObject
             ?.navigatePath(
@@ -233,15 +242,7 @@ class InnerTubeSearchExecutor @Inject constructor(
             )?.jsonArray?.firstOrNull()
             ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
 
-        // Fallback: duration might be in flexColumns[1] as the last run (after artist info)
-        val durationFallback = if (durationText == null) {
-            artistRuns
-                ?.mapNotNull { it.jsonObject["text"]?.jsonPrimitive?.contentOrNull }
-                ?.lastOrNull { it.matches(Regex("\\d+:\\d+")) }
-        } else null
-
-        val finalDurationText = durationText ?: durationFallback
-        val durationSeconds = parseDurationToSeconds(finalDurationText)
+        val durationSeconds = durationText?.let { parseDurationToSeconds(it) } ?: subtitle.durationSeconds
 
         if (durationSeconds == 0.0) {
             Log.d(TAG, "No duration for '$title' — fixedColumns=${renderer["fixedColumns"]?.toString()?.take(200)}")

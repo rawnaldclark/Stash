@@ -170,6 +170,8 @@ class DiffWorker @AssistedInject constructor(
         const val KEY_SYNC_ID = "sync_id"
         const val KEY_NEW_TRACKS = "new_tracks"
         const val KEY_PLAYLISTS_CHECKED = "playlists_checked"
+        /** Set by SyncScheduler on a "Sync now" chain: the kept-playlist sweep then uses any network. */
+        const val KEY_MANUAL_SYNC = "manual_sync"
         private const val TAG = "DiffWorker"
         /** How many new songs to name before collapsing to "+N more". */
         private const val NEW_TRACKS_NAMED = 3
@@ -276,8 +278,11 @@ class DiffWorker @AssistedInject constructor(
                 // where nothing is switched on yet (defaultSyncEnabled). So mixes
                 // always link (Home shows them, Online streams them on tap), and
                 // in Online mode everything links. Offline mode keeps the skip for
-                // switched-off playlists.
+                // switched-off playlists, except one kept on the phone (#474): its
+                // Download switch needs what the playlist gained linked here, or the
+                // sweep below has nothing new to queue.
                 if (!localPlaylist.syncEnabled &&
+                    !localPlaylist.keepOffline &&
                     localPlaylist.type != PlaylistType.DAILY_MIX &&
                     !streamingMode
                 ) {
@@ -383,6 +388,25 @@ class DiffWorker @AssistedInject constructor(
             val cleaned = musicRepository.cleanOrphanedMixTracks()
             if (cleaned > 0) {
                 Log.i(TAG, "Cleaned $cleaned orphaned track(s) after diff")
+            }
+
+            // A playlist kept on the phone (#474) downloads what it gained this
+            // run, in either mode: new songs, and library songs newly linked to it
+            // (the existing-track path never queues). Queued, failed and cancelled
+            // songs are left alone, so one pass per run is safe, and it starts one
+            // drain that follows the Sync tab's "Wi-Fi only", like this sync's own
+            // downloads, or any network for "Sync now". Never fatal: the sync
+            // itself already worked.
+            runCatching {
+                val queued = musicRepository.queueKeptPlaylists(
+                    manualSync = inputData.getBoolean(KEY_MANUAL_SYNC, false),
+                )
+                if (queued > 0) {
+                    syncLog.info("Downloading $queued song${if (queued == 1) "" else "s"} for playlists kept on this phone")
+                }
+            }.onFailure { e ->
+                if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+                Log.w(TAG, "Keep-offline download sweep failed for sync $syncId", e)
             }
 
             Log.i(

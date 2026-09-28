@@ -222,6 +222,28 @@ class LyricsRepositoryTest {
         assertEquals(42L, stored.last().ttmlCheckedAt)
     }
 
+    @Test fun `missing-lyrics list resumes after the track the last run reached`() = runTest {
+        val lyricsDao = mockk<LyricsDao> { coEvery { trackIdsMissingLyrics() } returns listOf(1L, 2L, 3L, 4L, 5L) }
+        fun repoAt(cursor: Long) = LyricsRepository(
+            emptyList(), lyricsDao, mockk(relaxed = true), mockk(relaxed = true), clock,
+            mockk { every { bulkFetchCursor } returns flowOf(cursor) },
+        )
+
+        assertEquals(listOf(4L, 5L, 1L, 2L, 3L), repoAt(3L).trackIdsMissingLyrics())
+        // Fresh install (0) and a cursor past every id both mean plain id order.
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), repoAt(0L).trackIdsMissingLyrics())
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), repoAt(99L).trackIdsMissingLyrics())
+    }
+
+    @Test fun `fetchLyricsNow moves the cursor before anything else`() = runTest {
+        val trackDao = mockk<TrackDao> { coEvery { getById(7L) } returns null }
+        val preference = mockk<LyricsPreference> { coEvery { setBulkFetchCursor(any()) } just Runs }
+        val repo = LyricsRepository(emptyList(), mockk(), trackDao, mockk(), clock, preference)
+
+        assertEquals(ManualFetchResult.SKIPPED, repo.fetchLyricsNow(7L))
+        coVerify(exactly = 1) { preference.setBulkFetchCursor(7L) }
+    }
+
     private fun fakeSource(sourceId: String, result: LyricsResult?): LyricsSource = object : LyricsSource {
         override val id = sourceId
         override val displayName = sourceId

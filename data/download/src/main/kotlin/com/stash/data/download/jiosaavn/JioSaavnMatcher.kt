@@ -15,7 +15,18 @@ object JioSaavnMatcher {
     fun best(query: TrackQuery, songs: List<JioSaavnSong>): JioSaavnMatch? {
         val ranked = songs.mapNotNull { score(query, it) }.sortedByDescending { it.rankScore }
         val top = ranked.firstOrNull() ?: return null
-        val runnerUp = ranked.getOrNull(1)
+        // JioSaavn lists one recording on many compilations and the copies
+        // score alike, so "Ae Mere Humsafar" on seven albums was rejected as
+        // ambiguous and fell to YouTube (#484). A copy of the top pick is not
+        // a rival, unless ANY result (gated out or not) has the top's title in
+        // another language: a dubbed film song keeps its title, singer and
+        // length in every language ("Fear Song" is Tamil and Telugu).
+        val topSong = top.match.song
+        val topTitle = recordingTitle(topSong.name)
+        val oneLanguage = topSong.language != null && songs.none {
+            it.language != topSong.language && recordingTitle(it.name) == topTitle
+        }
+        val runnerUp = ranked.drop(1).firstOrNull { !(oneLanguage && sameRecording(topSong, it.match.song)) }
         if (
             runnerUp != null &&
             top.rankScore - runnerUp.rankScore < MIN_MARGIN &&
@@ -35,6 +46,9 @@ object JioSaavnMatcher {
             return null
         }
         if (query.explicit != null && query.explicit != song.explicitContent) return null
+        // "Devara Part 1 (Tamil)" must never get the Telugu dub of the song.
+        val languages = requestedLanguages(query)
+        if (languages.isNotEmpty() && song.language != null && song.language !in languages) return null
 
         // Compare CORE titles: parenthetical decorations — '(From "Bhediya")',
         // "(Official Video)" — tank token similarity for what is the same
@@ -83,6 +97,37 @@ object JioSaavnMatcher {
         return topAlbum >= MIN_EXACT_ALBUM && topAlbum - runnerUpAlbum >= MIN_ALBUM_ADVANTAGE
     }
 
+    /**
+     * One recording re-issued on another album: equal titles once a soundtrack
+     * credit ('(From "Qayamat Se Qayamat Tak")') is dropped, known durations
+     * within [SAME_RECORDING_MAX_DRIFT_SEC], the same explicit flag (a
+     * search-tab request cannot tell clean from explicit) and the same singers.
+     * Every other parenthetical, "(Sad)", "(Female Version)", "(feat. X)", stays
+     * significant, and an unknown duration never counts as a copy. The singers
+     * matter because the artist check lets a solo by one of a duet's singers
+     * through: without them a same-titled solo counted as a copy of the duet.
+     */
+    private fun sameRecording(a: JioSaavnSong, b: JioSaavnSong): Boolean {
+        val aSec = a.duration?.takeIf { it > 0 } ?: return false
+        val bSec = b.duration?.takeIf { it > 0 } ?: return false
+        return abs(aSec - bSec) <= SAME_RECORDING_MAX_DRIFT_SEC &&
+            a.explicitContent == b.explicitContent &&
+            primaryArtists(a) == primaryArtists(b) &&
+            recordingTitle(a.name) == recordingTitle(b.name)
+    }
+
+    private fun primaryArtists(song: JioSaavnSong): Set<String> =
+        song.artists.primary.mapTo(mutableSetOf()) { normalize(it.name) }
+
+    /** Languages the request names as whole words, e.g. the album "KGF Chapter 2 - Telugu". */
+    private fun requestedLanguages(query: TrackQuery): Set<String> =
+        listOfNotNull(query.album, query.title)
+            .flatMap { normalize(it).split(' ') }
+            .filterTo(mutableSetOf()) { it in LANGUAGES }
+
+    private fun recordingTitle(value: String): String =
+        normalize(value.replace(SOUNDTRACK_CREDIT, " "), keepFeaturing = true)
+
     private fun albumSimilarity(query: TrackQuery, song: JioSaavnSong): Float? {
         val requestedAlbum = query.album?.takeIf { it.isNotBlank() } ?: return null
         val candidateAlbum = song.album?.name?.takeIf { it.isNotBlank() } ?: return null
@@ -100,12 +145,13 @@ object JioSaavnMatcher {
     private fun coreTitle(value: String): String =
         normalize(value.replace(Regex("[(\\[][^)\\]]*[)\\]]"), " "))
 
-    private fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
-        .lowercase()
-        .replace(Regex("(?i)\\b(feat\\.?|ft\\.?|featuring)\\b.*"), " ")
-        .replace(Regex("[^\\p{L}\\p{N}\\p{S}\\s]"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    private fun normalize(value: String, keepFeaturing: Boolean = false): String =
+        Normalizer.normalize(value, Normalizer.Form.NFKC)
+            .lowercase()
+            .let { if (keepFeaturing) it else it.replace(Regex("(?i)\\b(feat\\.?|ft\\.?|featuring)\\b.*"), " ") }
+            .replace(Regex("[^\\p{L}\\p{N}\\p{S}\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
 
     private fun similarity(a: String, b: String): Float {
         val left = a.split(' ').filter { it.isNotBlank() }.toSet()
@@ -147,6 +193,17 @@ object JioSaavnMatcher {
     private const val MIN_MARGIN = 0.06f
     private const val MIN_EXACT_ALBUM = 0.90f
     private const val MIN_ALBUM_ADVANTAGE = 0.35f
+    // ponytail: JioSaavn's duration drifts a few seconds between copies of one
+    // master. Live 2026-09-28: Ae Mere Humsafar at 352-355 s, its Baazigar
+    // namesake at 450-454 s; distinct edits sat 10 s+ apart. 6 s apart must
+    // stay ambiguous (JioSaavnMatcherTest); widen only on log evidence.
+    private const val SAME_RECORDING_MAX_DRIFT_SEC = 4
+    // f(?:ro|or)m: JioSaavn also lists 'Jaadu Teri Nazar (Form "Darr")'.
+    private val SOUNDTRACK_CREDIT =
+        Regex("""(?i)\(\s*f(?:ro|or)m\s+"[^"]*"\s*\)|\[\s*f(?:ro|or)m\s+"[^"]*"\s*\]""")
+    private val LANGUAGES = setOf(
+        "tamil", "telugu", "hindi", "kannada", "malayalam", "marathi", "bengali", "punjabi", "gujarati",
+    )
     private data class RankedMatch(val match: JioSaavnMatch, val rankScore: Float)
     private val VERSION_MARKERS = listOf(
         "karaoke", "instrumental", "cover", "tribute", "live", "concert",

@@ -107,6 +107,43 @@ interface DownloadQueueDao {
     @Query("SELECT * FROM download_queue WHERE track_id = :trackId LIMIT 1")
     suspend fun getByTrackId(trackId: Long): DownloadQueueEntity?
 
+    /**
+     * Whether [trackId] has a row a bulk "download this playlist" must leave
+     * alone: waiting or running, failed (its retries and the Failed downloads
+     * screen own it), or cancelled by the user. The rows [getUnqueuedTrackIds]
+     * already counts as queued, plus WAITING_FOR_LOSSLESS. Checks EVERY row:
+     * [getByTrackId]'s LIMIT 1 answers with the oldest, so one old FAILED row
+     * let a re-queue add a fresh row on every call (#474's per-sync sweep).
+     */
+    @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM download_queue WHERE track_id = :trackId
+              AND status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS', 'FAILED', 'SKIPPED')
+        )
+    """)
+    suspend fun hasRowToLeaveAlone(trackId: Long): Boolean
+
+    /**
+     * Stream-only mode (#474): the sync's download step never runs there, so a
+     * row an earlier Download-mode sync queued for one of [playlistId]'s songs
+     * would wait forever. [hasRowToLeaveAlone] counts it as handled, so the
+     * playlist's Download switch couldn't queue the song either. This hands those
+     * rows to the discovery drain: the ones it would still pick up, PENDING or
+     * FAILED with retries left (the same rule as [pendingDiscoveryDownloads]).
+     *
+     * @return Number of rows moved.
+     */
+    @Query("""
+        UPDATE download_queue SET sync_id = NULL
+        WHERE sync_id IS NOT NULL
+          AND (status = 'PENDING' OR (status = 'FAILED' AND retry_count < 3))
+          AND track_id IN (
+              SELECT track_id FROM playlist_tracks
+              WHERE playlist_id = :playlistId AND removed_at IS NULL
+          )
+    """)
+    suspend fun moveSyncRowsToDiscovery(playlistId: Long): Int
+
     /** Reactive count of tracks deferred because no lossless source could serve them. */
     @Query("SELECT COUNT(*) FROM download_queue WHERE status = 'WAITING_FOR_LOSSLESS'")
     fun waitingForLosslessCount(): Flow<Int>
@@ -247,6 +284,15 @@ interface DownloadQueueDao {
         """
     )
     suspend fun pendingDiscoveryDownloads(): List<DownloadQueueEntity>
+
+    /**
+     * Whether a discovery download is waiting to start: PENDING only. FAILED
+     * rows retry whenever a drain runs for real work; starting one just for
+     * them retried an unmatchable song at every app start and every sync, a
+     * lossless attempt each time (#474).
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM download_queue WHERE sync_id IS NULL AND status = 'PENDING')")
+    suspend fun hasPendingDiscoveryDownload(): Boolean
 
     // ── Updates ─────────────────────────────────────────────────────────
 
@@ -413,6 +459,13 @@ interface DownloadQueueDao {
     suspend fun resetToPendingRaw(ids: List<Long>)
 
     /**
+     * A download the user asked for by hand (#474): a tap on a song. A playlist's
+     * Download switch going off leaves such a row alone ([cancelWaitingForPlaylist]).
+     */
+    @Query("UPDATE download_queue SET user_requested = 1 WHERE id = :id")
+    suspend fun markUserRequested(id: Long)
+
+    /**
      * Chunked wrapper for [resetToPendingRaw]: a retry-all over a large failed
      * batch can exceed the bind cap, so chunk it (#337 class).
      */
@@ -568,6 +621,43 @@ interface DownloadQueueDao {
     )
     suspend fun cancelDownloadsWithNoEnabledPlaylist(): Int
 
+    /**
+     * The playlist page's Download switch turned off (#474): drop this playlist's
+     * downloads that haven't started. Discovery partition only (the switch's own
+     * rows); a row running or done is left alone, and so is a Library Health
+     * "Re-download missing" row (`user_requested`), which the user asked for on
+     * its own. A song another playlist still keeps on the phone, or a followed
+     * mix still downloads, keeps its row.
+     *
+     * DELETE, not SKIPPED: a SKIPPED row counts as handled
+     * ([hasRowToLeaveAlone]), so it would stop a later On from queueing the song.
+     *
+     * @return Number of rows deleted.
+     */
+    @Query(
+        """
+        DELETE FROM download_queue
+        WHERE sync_id IS NULL
+          AND user_requested = 0
+          AND status IN ('PENDING', 'FAILED', 'WAITING_FOR_LOSSLESS')
+          AND track_id IN (
+              SELECT track_id FROM playlist_tracks
+              WHERE playlist_id = :playlistId AND removed_at IS NULL
+          )
+          AND track_id NOT IN (
+              SELECT pt.track_id FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.removed_at IS NULL
+                AND p.id != :playlistId
+                AND p.is_active = 1
+                -- Kept on the phone, or a followed mix with "Download this mix" on
+                -- (its switch is sync_enabled, and it downloads through these rows).
+                AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.source_id LIKE 'share:%'))
+          )
+        """
+    )
+    suspend fun cancelWaitingForPlaylist(playlistId: Long): Int
+
     // ── Cleanup ─────────────────────────────────────────────────────────
 
     /**
@@ -602,6 +692,16 @@ interface DownloadQueueDao {
      */
     @Query("UPDATE download_queue SET status = 'PENDING' WHERE status = 'IN_PROGRESS'")
     suspend fun resetStaleInProgress(): Int
+
+    /**
+     * [resetStaleInProgress] for the sync's own rows only. A sync's reconcile runs
+     * while the download run outside the sync (a kept playlist's, a tap's, #474)
+     * may be mid-song; resetting that row would let the sync claim the same song
+     * and download it at the same time. Cold start, with nothing running, keeps
+     * the global reset.
+     */
+    @Query("UPDATE download_queue SET status = 'PENDING' WHERE status = 'IN_PROGRESS' AND sync_id IS NOT NULL")
+    suspend fun resetStaleSyncInProgress(): Int
 
     /**
      * Hands one claimed row back (IN_PROGRESS → PENDING) when its worker is stopped

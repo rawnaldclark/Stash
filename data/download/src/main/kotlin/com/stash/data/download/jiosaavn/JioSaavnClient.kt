@@ -223,6 +223,7 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
             artists = JioSaavnArtists(primary),
             image = images,
             downloadUrl = media,
+            language = raw.language?.trim()?.lowercase()?.takeIf { it.isNotBlank() },
         )
     }
 
@@ -248,6 +249,7 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
         @SerialName("explicit_content") val explicitContent: Int? = null,
         @SerialName("320kbps") val has320: String? = null,
         @SerialName("encrypted_media_url") val encryptedMediaUrl: String? = null,
+        val language: String? = null,
     )
 
     private companion object {

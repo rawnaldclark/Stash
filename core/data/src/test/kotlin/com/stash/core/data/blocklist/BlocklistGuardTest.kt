@@ -13,11 +13,13 @@ import com.stash.core.model.MusicSource
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.slot
 import io.mockk.unmockkStatic
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -113,6 +115,19 @@ class BlocklistGuardTest {
         coVerify(exactly = 1) { playlistDao.deleteAllCrossRefsForTrack(42L) }
         coVerify(exactly = 1) { downloadQueueDao.deleteByTrackId(42L) }
         coVerify(exactly = 1) { trackDao.deleteById(42L) }
+    }
+
+    @Test
+    fun `block recounts every playlist that held the track`() = runTest {
+        val track = TrackEntity(id = 42L, title = "505", artist = "Arctic Monkeys", source = MusicSource.SPOTIFY)
+        coEvery { playlistDao.playlistIdsForTrack(42L) } returns listOf(7L, 9L)
+        every { trackDao.getByPlaylist(7L, true) } returns flowOf(List(3) { TrackEntity(title = "t$it", artist = "a") })
+        every { trackDao.getByPlaylist(9L, true) } returns flowOf(emptyList())
+
+        guard.block(track, BlockSource.CONTEXT_MENU)
+
+        coVerify(exactly = 1) { playlistDao.updateTrackCount(7L, 3) }
+        coVerify(exactly = 1) { playlistDao.updateTrackCount(9L, 0) }
     }
 
     @Test

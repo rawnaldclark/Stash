@@ -87,18 +87,24 @@ class AudioDurationExtractor @Inject constructor(
                 ?.toIntOrNull() ?: 0
             val mime = retriever
                 .extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
-            val (extractorSampleRate, extractorBitDepth) = probeExtractor(context, filePath)
+            val (trackMime, extractorSampleRate, extractorBitDepth) = probeExtractor(context, filePath)
+            // The retriever's MIMETYPE is the CONTAINER ("audio/mp4" for AAC in MP4,
+            // "audio/ogg" for Opus), so the codec comes from the audio track when the
+            // extractor reads one. Container-only, JioSaavn's AAC read as "mp4" and
+            // failed its `format == "aac"` check every time (Pixel 5, 2026-09-28).
+            // Except "audio/raw": Android's FLAC (and WAV) extractor decodes to PCM
+            // itself, so its track says nothing about the file. Taking it stored new
+            // FLACs as "raw" on the Pixel 5, which the lossless upgrade would refetch.
+            val format = normalizeFormat(trackMime?.takeUnless { it == MediaFormat.MIMETYPE_AUDIO_RAW } ?: mime)
             // FLAC fallback: MediaExtractor on some devices returns -1 for FLAC
             // bit-depth even on API 30+. Always try STREAMINFO when we have a
             // FLAC file but no bit-depth from the extractor.
-            val resolvedBitDepth = extractorBitDepth ?: run {
-                val format = normalizeFormat(mime)
-                if (format == "flac") parseFlacStreamInfoBitDepth(filePath) else null
-            }
+            val resolvedBitDepth = extractorBitDepth
+                ?: if (format == "flac") parseFlacStreamInfoBitDepth(filePath) else null
             AudioMetadata(
                 durationMs = durationMs,
                 bitrateKbps = if (bitrateBps > 0) bitrateBps / 1000 else 0,
-                format = normalizeFormat(mime),
+                format = format,
                 bitsPerSample = resolvedBitDepth?.takeIf { it in 8..32 },
                 sampleRateHz = extractorSampleRate?.takeIf { it > 0 },
             )
@@ -143,9 +149,10 @@ class AudioDurationExtractor @Inject constructor(
         private const val TAG = "AudioDurationExtractor"
 
         /**
-         * Maps MediaMetadataRetriever's MIME string to the short format
-         * tags we store in `file_format`. Kept stable so the Library
-         * Health screen can group by these values without surprises.
+         * Maps a MIME string (the audio track's codec MIME, else the
+         * retriever's container MIME) to the short format tags we store in
+         * `file_format`. Kept stable so the Library Health screen can group
+         * by these values without surprises.
          */
         internal fun normalizeFormat(mime: String?): String {
             if (mime == null) return "unknown"
@@ -161,20 +168,20 @@ class AudioDurationExtractor @Inject constructor(
         }
 
         /**
-         * Reads `KEY_SAMPLE_RATE` (all API levels) and `KEY_BITS_PER_SAMPLE`
-         * (API 30+) from the audio track. Best-effort — containers/codecs
-         * vary in what they expose, and `MediaExtractor` will throw on a
-         * corrupt file. Returns `(null, null)` on any failure so callers
-         * can continue.
+         * Reads `KEY_MIME`, `KEY_SAMPLE_RATE` (all API levels) and
+         * `KEY_BITS_PER_SAMPLE` (API 30+) from the first audio track.
+         * Best-effort — containers/codecs vary in what they expose, and
+         * `MediaExtractor` will throw on a corrupt file. Returns all nulls
+         * on any failure so callers can continue.
          *
          * Mirrors the `content://` branch from [extract] so SAF/SD-card
          * libraries get probed too — without it, MediaExtractor would
          * NPE on the URI string when the underlying file isn't a plain
          * filesystem path.
          *
-         * Returns `(sampleRate, bitsPerSample)`.
+         * Returns `(trackMime, sampleRate, bitsPerSample)`.
          */
-        internal fun probeExtractor(context: Context, filePath: String): Pair<Int?, Int?> {
+        internal fun probeExtractor(context: Context, filePath: String): Triple<String?, Int?, Int?> {
             val extractor = MediaExtractor()
             return try {
                 if (filePath.startsWith("content://")) {
@@ -182,8 +189,9 @@ class AudioDurationExtractor @Inject constructor(
                 } else {
                     extractor.setDataSource(filePath)
                 }
-                if (extractor.trackCount == 0) return Pair(null, null)
-                val format = extractor.getTrackFormat(0)
+                val format = (0 until extractor.trackCount).asSequence().map(extractor::getTrackFormat)
+                    .firstOrNull { it.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
+                    ?: return Triple(null, null, null)
                 val sampleRate = runCatching { format.getInteger(MediaFormat.KEY_SAMPLE_RATE) }
                     .getOrNull()
                     ?.takeIf { it > 0 }
@@ -196,10 +204,10 @@ class AudioDurationExtractor @Inject constructor(
                         format.getInteger("bits-per-sample")
                     }.getOrNull()?.takeIf { it > 0 }
                 } else null
-                Pair(sampleRate, bitDepth)
+                Triple(format.getString(MediaFormat.KEY_MIME), sampleRate, bitDepth)
             } catch (e: Exception) {
                 Log.w(TAG, "probeExtractor failed for $filePath: ${e.javaClass.simpleName}: ${e.message}")
-                Pair(null, null)
+                Triple(null, null, null)
             } finally {
                 runCatching { extractor.release() }
             }

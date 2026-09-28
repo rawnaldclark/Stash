@@ -116,8 +116,16 @@ class LyricsRepository @Inject constructor(
         return lyricsDao.trackIdsPendingTtml()
     }
 
-    /** Downloaded tracks that have no lyrics (never tried, or an earlier all-source miss). */
-    suspend fun trackIdsMissingLyrics(): List<Long> = lyricsDao.trackIdsMissingLyrics()
+    /**
+     * Downloaded tracks that have no lyrics (never tried, or an earlier all-source miss), starting
+     * just after the one the last manual run reached and wrapping round, so a run cut short
+     * (Cancel, app killed, the OS job cap) moves on instead of re-asking the same head of the list.
+     */
+    suspend fun trackIdsMissingLyrics(): List<Long> {
+        val after = lyricsPreference.bulkFetchCursor.first()
+        // ponytail: one resume point, not per-track state. Stable sort keeps id order in each half.
+        return lyricsDao.trackIdsMissingLyrics().sortedBy { it <= after }
+    }
 
     /**
      * Manual-run path: walks the full source chain for one track and stores the hit. Failures are
@@ -125,6 +133,8 @@ class LyricsRepository @Inject constructor(
      * definitive miss re-stamps 0L exactly as [resolveAndStore] always does.
      */
     suspend fun fetchLyricsNow(trackId: Long): ManualFetchResult {
+        // First, before the network, so a kill mid-request still moves the next run on.
+        lyricsPreference.setBulkFetchCursor(trackId)
         val track = trackDao.getById(trackId) ?: return ManualFetchResult.SKIPPED
         val query = LyricsQuery(
             trackId = track.id,

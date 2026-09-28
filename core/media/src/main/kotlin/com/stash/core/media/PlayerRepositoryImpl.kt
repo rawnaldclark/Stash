@@ -19,6 +19,7 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
 import com.stash.core.media.service.StashPlaybackService
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
@@ -106,6 +107,8 @@ class PlayerRepositoryImpl @Inject constructor(
     // Listen Together (spec 2026-09-24 §4): while a session owns the player, this class's own
     // automation and persistence stand aside. Null in hand-built tests.
     private val listenTogether: com.stash.core.media.listen.ListenTogetherController? = null,
+    // The diagnostics bundle's "Recent playback errors". A fresh, unshared one in hand-built tests.
+    private val diagnosticsLog: PlaybackDiagnosticsLog = PlaybackDiagnosticsLog(),
 ) : PlayerRepository {
 
     /**
@@ -1929,12 +1932,20 @@ class PlayerRepositoryImpl @Inject constructor(
          * the queue we stop gracefully rather than loop on errors.
          */
         override fun onPlayerError(error: PlaybackException) {
-            if (listenTogetherOwnsQueue) return // the session reports "unavailable" and stays silent (spec §6)
             val controller = controllerDeferred
             val current = controller?.currentMediaItem
             val failingTitle = current?.mediaMetadata?.title?.toString()
             val scheme = current?.localConfiguration?.uri?.scheme
             val streamOrigin = current?.mediaMetadata?.extras?.getString(EXTRA_STREAM_ORIGIN)
+            // Every error lands in the diagnostics bundle with the branch it took: the track id,
+            // origin and URI scheme only. Never the title, never the URI: a stash-resolve URI
+            // carries the title, a googlevideo one the user's IP.
+            val failingId = current?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L)?.takeIf { it != 0L }
+            fun note(branch: String) = diagnosticsLog.recordError(failingId, error, branch, streamOrigin, scheme)
+            if (listenTogetherOwnsQueue) {
+                note("LISTEN_TOGETHER (left to the session)")
+                return // the session reports "unavailable" and stays silent (spec §6)
+            }
 
             // The error code alone is NOT enough to decide recovery. A streamed
             // track that gets a 200 serving empty/garbage bytes fails with
@@ -1949,6 +1960,7 @@ class PlayerRepositoryImpl @Inject constructor(
                     // that same track as a stream when online; otherwise use the
                     // established per-track skip. This is not a backend outage,
                     // so the local failure itself does not arm the cascade.
+                    note("LOCAL (stream instead, or skip)")
                     Log.w(
                         TAG,
                         "onPlayerError: '$failingTitle' code=${error.errorCode} " +
@@ -1989,6 +2001,7 @@ class PlayerRepositoryImpl @Inject constructor(
                     // the queue. `origin` is logged so a diagnostics capture reveals
                     // which source (kennyy/squid/youtube) served the bad URL.
                     val verdict = cascadeGuard.onError(current?.mediaId)
+                    note("STREAMING_CASCADE → $verdict")
                     Log.w(
                         TAG,
                         "onPlayerError: '$failingTitle' code=${error.errorCode} " +

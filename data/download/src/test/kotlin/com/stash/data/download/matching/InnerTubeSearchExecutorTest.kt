@@ -90,6 +90,55 @@ class InnerTubeSearchExecutorTest {
     }
 
     @Test
+    fun `a Video candidate's artist is its channel, without the view count`() = runTest {
+        // The live flat-search row "Video • Grimm's VGM(UC…) • 845 views" (2026-09-27).
+        // The executor reads musicShelfRenderer rows only, so the fixture wraps it
+        // in the shelf that carries the same Video rows in the Smooth Criminal capture.
+        val executor = executorFor("innertube_search_flat_video_row.json")
+
+        val video = executor.search("Mii Channel Theme Cover").single()
+
+        assertEquals("Grimm's VGM", video.uploader)
+        assertEquals("Grimm's VGM", video.channel)
+    }
+
+    @Test
+    fun `Song and Video candidates in the real Smooth Criminal shelf keep only the artist`() = runTest {
+        val results = executorFor("innertube_search_smooth_criminal.json")
+            .search("Michael Jackson Smooth Criminal", maxResults = 10)
+
+        // "Video • Lyrixa(UC…) • 937K views"
+        assertEquals("Lyrixa", results.single { it.id == "gV5SnMKpEqs" }.uploader)
+        // "Song • Michael Jackson(UC…)": unchanged, still flagged as a Topic-equivalent.
+        val song = results.single { it.id == "XzNWRmqibNE" }
+        assertEquals("Michael Jackson", song.uploader)
+        assertEquals("Michael Jackson - Topic", song.channel)
+    }
+
+    @Test
+    fun `signed-out flat layout yields its Song and Video rows in order, skipping the card and albums`() = runTest {
+        // Live signed-out "The Strokes Someday" search (WEB_REMIX, 2026-09-28): a
+        // musicCardShelfRenderer, then one itemSectionRenderer per row and no
+        // musicShelfRenderer at all. Trimmed to the card, 3 Songs, an Album and a Video.
+        val results = executorFor("innertube_search_signed_out_flat.json")
+            .search("The Strokes Someday", maxResults = 10)
+
+        assertEquals(
+            listOf("eArVJFjd6S0", "6FnbPTaoahM", "Bn-lcvrMOlc", "5kRQm3k3CU8"),
+            results.map { it.id },
+        )
+        val song = results.first()
+        assertEquals("Someday", song.title)
+        assertEquals("The Strokes", song.uploader)
+        assertEquals("Song rows get the Topic-equivalent channel", "The Strokes - Topic", song.channel)
+        assertEquals(MusicVideoType.ATV, song.musicVideoType)
+        val video = results.last()
+        assertEquals("ToBe 카인드", video.uploader)
+        assertEquals("ToBe 카인드", video.channel)
+        assertEquals(MusicVideoType.UGC, video.musicVideoType)
+    }
+
+    @Test
     fun `verifyVideo returns OMV musicVideoType for Smooth Criminal MV videoId`() = runTest {
         // Player-endpoint fixture for the Smooth Criminal OMV (videoId h_D3VFfhvs4).
         // `videoDetails.musicVideoType == "MUSIC_VIDEO_TYPE_OMV"` per the real

@@ -26,7 +26,8 @@ class JioSaavnResolver @Inject constructor(
 
         val searchQueries = listOf(
             "${query.artist} ${query.title}".trim(),
-            "${query.artist.substringBefore(',').trim()} ${query.title}".trim(),
+            // Primary-artist retry; "Alka Yagnik & Udit Narayan" has no comma (#484).
+            "${query.artist.split(Regex("\\s*(,|&| x )\\s*")).first().trim()} ${query.title}".trim(),
         ).filter { it.isNotBlank() }.distinct()
 
         // Counted only so the terminal miss can say whether the catalog had

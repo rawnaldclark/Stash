@@ -94,7 +94,8 @@ class SharedMixRepositoryFollowerTest {
         server.enqueue(MockResponse().setBody("""{"version":2}"""))
         server.enqueue(MockResponse().setBody(docJson(doc(2, "One", "Two"))))
         repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 1L)
-        coVerify(atLeast = 2) { music.queueDownloadsForPlaylist(id) } // once on enable, once after the update
+        coVerify(exactly = 1) { music.queueDownloadsForPlaylist(id, false) } // on enable: a tap
+        coVerify(exactly = 1) { music.queueDownloadsForPlaylist(id, true) } // after the update: background
     }
 
     @Test fun `only 410 converts to an ordinary playlist, repeated 404s never do`() = runBlocking {

@@ -146,6 +146,8 @@ class DownloadExecutor @Inject constructor(
             val outputTemplate = File(outputDir, "$filename.%(ext)s").absolutePath
 
             val request = YoutubeDLRequest(url).apply {
+                // The user's quality tier on every attempt. Its `-f` list already falls through
+                // (141/251/140/.../bestaudio), so a pinned client needs no selector of its own.
                 qualityArgs.forEach { addOption(it) }
                 addOption("-o", outputTemplate)
                 addOption("--no-playlist")
@@ -162,17 +164,25 @@ class DownloadExecutor @Inject constructor(
                 }
 
                 // Log the actually-selected format (140 AAC-128 vs 141 AAC-256
-                // vs 251 Opus — all land as their own ext). after_video: fires
-                // AFTER the download; bare --print implies --simulate and breaks it.
+                // vs 251 Opus — all land as their own ext). after_move fires after
+                // the file is in place, with the chosen format's fields; after_video
+                // prints NA for every field (yt-dlp 2026.08+). A bare --print implies
+                // --simulate and breaks the download.
                 addOption(
                     "--print",
-                    "after_video:STASHDL_FMT|id=%(format_id)s|abr=%(abr)s|" +
+                    "after_move:STASHDL_FMT|id=%(format_id)s|abr=%(abr)s|" +
                         "acodec=%(acodec)s|ext=%(ext)s|height=%(height)s",
                 )
-                cookiePath?.let { addOption("--cookies", it) }
+                if (cookiePath != null && PreviewUrlExtractor.supportsCookies(playerClient)) {
+                    addOption("--cookies", cookiePath)
+                }
             }
 
-            Log.d(TAG, "download: starting url=$url client=${playerClient ?: "default"} args=$qualityArgs")
+            Log.d(
+                TAG,
+                "download: starting url=$url client=${playerClient ?: "default"} args=$qualityArgs " +
+                    "cookies=${cookiePath != null && PreviewUrlExtractor.supportsCookies(playerClient)}",
+            )
 
             // processId must be null, not `url`: youtubedl-android throws
             // "Process ID already exists" if two execute() calls share a

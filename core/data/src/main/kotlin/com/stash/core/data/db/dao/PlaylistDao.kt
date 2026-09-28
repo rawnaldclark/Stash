@@ -542,6 +542,10 @@ interface PlaylistDao {
     @Query("DELETE FROM playlist_tracks WHERE track_id = :trackId")
     suspend fun deleteAllCrossRefsForTrack(trackId: Long)
 
+    /** Every playlist holding [trackId], so a block can recount their song counts. */
+    @Query("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = :trackId")
+    suspend fun playlistIdsForTrack(trackId: Long): List<Long>
+
     /**
      * One-time cleanup: hard-delete all soft-deleted playlist_tracks entries.
      * These accumulate from daily mix rotations and serve no purpose after
@@ -687,20 +691,17 @@ interface PlaylistDao {
     """)
     fun getYouTubePlaylistsForPreferences(): Flow<List<PlaylistEntity>>
 
-    /**
-     * Idempotent cleanup for mixes auto-enabled by older releases or restored
-     * from an older backup. Mix Home
-     * visibility is controlled independently, so no algorithmic mix should
-     * retain implicit download consent. Other playlist types are untouched.
-     *
-     * @return the number of rows updated.
-     */
-    @Query("UPDATE playlists SET sync_enabled = 0 WHERE type = 'DAILY_MIX' AND sync_enabled = 1")
-    suspend fun disableLegacyDailyMixSync(): Int
-
     /** The followed mix's "Download this mix" switch (spec §6): sync_enabled only, no Home pin. */
     @Query("UPDATE playlists SET sync_enabled = :enabled WHERE id = :playlistId")
     suspend fun setSyncEnabled(playlistId: Long, enabled: Boolean)
+
+    /** The playlist page's Download switch (#474). Never touches sync_enabled. */
+    @Query("UPDATE playlists SET keep_offline = :on WHERE id = :playlistId")
+    suspend fun setKeepOffline(playlistId: Long, on: Boolean)
+
+    /** Active playlists with the Download switch on: the post-sync sweep queues each one (#474). */
+    @Query("SELECT id FROM playlists WHERE keep_offline = 1 AND is_active = 1")
+    suspend fun getKeepOfflinePlaylistIds(): List<Long>
 
     /**
      * One-shot data migration: hide every YouTube playlist that currently

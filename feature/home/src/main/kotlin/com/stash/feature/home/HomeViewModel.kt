@@ -600,10 +600,10 @@ class HomeViewModel @Inject constructor(
             // inside the mix refresh worker enqueues new Last.fm candidates into
             // discovery_queue PENDING; this trigger processes them right now (subject
             // to user's DownloadNetworkMode pref) instead of waiting up to 24h for
-            // the periodic schedule. The chain in StashDiscoveryWorker's tail will
-            // fire DiscoveryDownloadWorker, which fires StashMixRefreshWorker again
-            // at the end — the mix re-materializes with newly-downloaded survivors
-            // without the user lifting another finger.
+            // the periodic schedule. StashDiscoveryWorker turns them into
+            // stream-only tracks and, when it made any, re-links the mix with a
+            // materialize-only refresh — nothing downloads, and the user doesn't
+            // lift another finger.
             val mode = downloadNetworkPreference.current()
             StashDiscoveryWorker.enqueueOneTime(context, mode)
 

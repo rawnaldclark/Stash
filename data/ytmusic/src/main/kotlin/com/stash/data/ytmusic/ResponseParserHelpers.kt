@@ -1,6 +1,7 @@
 package com.stash.data.ytmusic
 
 import com.stash.data.ytmusic.model.TrackSummary
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -12,8 +13,9 @@ import kotlinx.serialization.json.JsonObject
  * semantics — extracting a single helper avoids copy-pasting ~40 lines of
  * column-walking code into two places.
  *
- * Kept `internal` so it's a module-private contract: parser files in
- * `data.ytmusic` may use it; no other module should need it.
+ * Mostly `internal` (a module-private contract for the `data.ytmusic` parsers).
+ * The one exception is [parseListItemSubtitle], public so `:data:download`'s
+ * YouTube matcher reads a row's artist and length the same way search does.
  */
 
 /**
@@ -37,12 +39,97 @@ internal fun normalizeArtistBrowseId(browseId: String): String =
 internal val PLAY_COUNT_REGEX =
     Regex("""^[\d.,]+\s*[KMB]?\s*plays?$""", RegexOption.IGNORE_CASE)
 
+/** Same shape as [PLAY_COUNT_REGEX] for a video's view count ("845 views", "1.4K views"). */
+internal val VIEW_COUNT_REGEX =
+    Regex("""^[\d.,]+\s*[KMB]?\s*views?$""", RegexOption.IGNORE_CASE)
+
+/** Subtitle separators between runs of one group ("A, B & C", "A x B"). */
+private val SUBTITLE_JOINERS = setOf(", ", " & ", " x ")
+
+/** Separates the subtitle's groups: artist(s) • album • length. */
+private const val SUBTITLE_GROUP_SEPARATOR = " • "
+
+/**
+ * A length or play/view count: row metadata, never an artist or album name.
+ * Years are deliberately NOT included — "1989" and "2112" are real album titles.
+ */
+private fun isRowStat(text: String): Boolean =
+    text.matches(DURATION_REGEX) || text.matches(PLAY_COUNT_REGEX) || text.matches(VIEW_COUNT_REGEX)
+
+private fun JsonObject.runText(): String? = this["text"]?.asString()
+
+private fun JsonObject.runBrowseId(): String? =
+    navigatePath("navigationEndpoint", "browseEndpoint", "browseId")?.asString()
+
+/** A run linking to an artist or channel (UC…, MPLAUC…) or a podcast show (MPSPP…). */
+private fun JsonObject.isArtistLink(): Boolean =
+    runBrowseId()?.let { it.startsWith("UC") || it.startsWith("MPLAUC") || it.startsWith("MPSPP") } == true
+
 /**
  * Leading content-type labels that flat search rows (issue #268) put before the
  * artist in a song row's subtitle ("Song • <artist>"). The titled "Songs" shelf
  * omits these, so stripping a single leading match is safe for both shapes.
  */
 internal val SONG_ROW_TYPE_LABELS = setOf("Song", "Video", "Music video", "Episode")
+
+/**
+ * What a list row's subtitle (`flexColumns[1]`) says once its runs are read by
+ * their browse ids rather than joined: no "Song"/"Video" label, view or play count.
+ */
+data class ListItemSubtitle(
+    /** Artist(s) joined with ", "; blank when the subtitle names none. */
+    val artist: String,
+    /** The album linked in the subtitle (the search "Songs" shelf), or null. */
+    val album: String?,
+    /** The subtitle's unlinked length ("3:52") in seconds; 0.0 when it has none. */
+    val durationSeconds: Double,
+)
+
+/**
+ * Reads a list row's subtitle runs (`flexColumns[1]...runs`). Its " • " groups
+ * vary by layout (live InnerTube, 2026-09-27):
+ * ```
+ *   flat search (#268):  "Song" • <artist>          | "Video" • <channel> • "845 views"
+ *   "Songs" shelf:       <artist(s)> • <album> • "5:13"
+ *   older / hand-built:  <artist> & <artist>        (length in fixedColumns)
+ * ```
+ * Joining every run made the artist "Grimm's VGM, 845 views". Public so the
+ * download matcher (`:data:download`) reads candidates the same way search does.
+ */
+fun parseListItemSubtitle(runs: JsonArray?): ListItemSubtitle {
+    val groups = mutableListOf(mutableListOf<JsonObject>())
+    runs?.mapNotNull { it.asObject() }?.forEach { run ->
+        if (run.runText() == SUBTITLE_GROUP_SEPARATOR) groups.add(mutableListOf())
+        else groups.last().add(run)
+    }
+    // Flat rows lead with a content-type label ("Song", "Video") the shelf omits.
+    if (groups.first().singleOrNull()?.runText() in SONG_ROW_TYPE_LABELS) groups.removeAt(0)
+
+    // Artist: the whole group holding the first artist link, so an unlinked
+    // co-artist in it is kept ("Yeahman, Hajna & Mina Shankha" links only two).
+    // No link: the first group, unless it links elsewhere or is a stat/year.
+    val artistGroup = groups.firstOrNull { group -> group.any { it.isArtistLink() } }
+        ?: groups.firstOrNull()?.takeIf { group ->
+            group.none { run ->
+                run.runBrowseId() != null ||
+                    run.runText().orEmpty().let { isRowStat(it) || it.matches(YEAR_REGEX) }
+            }
+        }
+    val artist = artistGroup.orEmpty()
+        .mapNotNull { it.runText() }
+        .filterNot { it in SUBTITLE_JOINERS }
+        .joinToString(", ")
+
+    val album = groups.flatten().firstOrNull { it.runBrowseId()?.startsWith("MPREb_") == true }?.runText()
+
+    // Only an unlinked group: a linked one is an album, even one titled like a
+    // length (JAY-Z "4:44").
+    val durationText = groups.firstNotNullOfOrNull { group ->
+        group.singleOrNull()?.takeIf { it.runBrowseId() == null }
+            ?.runText()?.takeIf { it.matches(DURATION_REGEX) }
+    }
+    return ListItemSubtitle(artist, album, parseDurationToSeconds(durationText))
+}
 
 /**
  * Parses a `musicResponsiveListItemRenderer` into a [TrackSummary].
@@ -88,38 +175,26 @@ internal fun parseTrackSummaryFromListItem(
         ?.get("text")?.asString()
         ?: return null
 
-    // Album-page tracklists omit the artist column from flexColumns (the
-    // artist is shown once in the album header). The result is an empty
-    // artist string here, which breaks downstream lossless matching
-    // (Qobuz/Kennyy score on artist+title and can't find candidates
-    // without an artist). The caller — typically AlbumResponseParser —
-    // passes the album header's artist as fallbackArtist so per-row
-    // artists default to that when the shelf row carries none.
-    val artistTexts = flexColumns.getOrNull(1)?.asObject()
-        ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
-        ?.asArray()
-        ?.mapNotNull { it.asObject()?.get("text")?.asString() }
-        ?.filterNot { it == " & " || it == ", " || it == " x " || it == " • " }
-        ?: emptyList()
-    // Flat search rows (issue #268) prefix the subtitle with a content-type
-    // label — "Song • <artist>" — that the titled "Songs" shelf omits. Drop a
-    // single leading label so it doesn't pollute the artist string; harmless
-    // for legacy rows, whose first token is already the artist.
-    val cleanedArtistTexts =
-        if (artistTexts.firstOrNull() in SONG_ROW_TYPE_LABELS) artistTexts.drop(1) else artistTexts
-    val artist = cleanedArtistTexts.joinToString(", ").ifBlank { fallbackArtist.orEmpty() }
+    val subtitle = parseListItemSubtitle(
+        flexColumns.getOrNull(1)?.asObject()
+            ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
+            ?.asArray(),
+    )
+    // Rows that name no artist at all (the artist "Popular" shelf, album
+    // tracklists) take the caller's fallbackArtist: lossless matching scores
+    // on artist + title and finds nothing with a blank artist.
+    val artist = subtitle.artist.ifBlank { fallbackArtist.orEmpty() }
 
-    // flexColumns[2] is the album ONLY on album-page tracklists (a different
-    // parser). This helper's callers are the search "Songs" shelf and the artist
-    // "Popular" shelf, where flexColumns[2] is the PLAY COUNT ("16M plays"), not
-    // the album — YouTube Music search song rows carry no album at all. Guard
-    // against stamping the play count as the album (which polluted track.album and
-    // broke tap-to-album focus); keep a real album if a future layout ever supplies one.
-    val albumRaw = flexColumns.getOrNull(2)?.asObject()
+    // flexColumns[2] is the album on album-page tracklists but the PLAY COUNT
+    // ("16M plays") on the search "Songs" shelf and artist "Popular" shelf —
+    // stamping that as the album broke tap-to-album focus. Otherwise the
+    // "Songs" shelf names the album in the subtitle, linked to an MPREb_ page.
+    val albumColumn = flexColumns.getOrNull(2)?.asObject()
         ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
         ?.firstArray()?.firstOrNull()?.asObject()
-        ?.get("text")?.asString()
-    val album = albumRaw?.takeUnless { it.matches(PLAY_COUNT_REGEX) }
+        ?.runText()
+        ?.takeUnless(::isRowStat)
+    val album = albumColumn ?: subtitle.album
 
     val thumbnails = renderer.navigatePath(
         "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",
@@ -130,6 +205,8 @@ internal fun parseTrackSummaryFromListItem(
         }?.asObject()?.get("url")?.asString(),
     )
 
+    // Length: the fixed column (album pages, older shapes), else the "Songs"
+    // shelf's "5:13" subtitle group. Flat rows carry no length at all (0).
     val durationText = renderer["fixedColumns"]?.asArray()
         ?.firstOrNull()?.asObject()
         ?.navigatePath("musicResponsiveListItemFixedColumnRenderer", "text", "runs")
@@ -141,7 +218,7 @@ internal fun parseTrackSummaryFromListItem(
         title = title,
         artist = artist,
         album = album,
-        durationSeconds = parseDurationToSeconds(durationText),
+        durationSeconds = durationText?.let(::parseDurationToSeconds) ?: subtitle.durationSeconds,
         thumbnailUrl = thumbnailUrl,
     )
 }

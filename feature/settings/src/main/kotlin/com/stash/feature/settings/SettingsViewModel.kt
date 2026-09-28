@@ -14,6 +14,7 @@ import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.LikePreferences
 import com.stash.core.data.social.Destination
 import com.stash.core.data.prefs.QualityPreference
+import com.stash.core.data.prefs.StartTab
 import com.stash.core.data.prefs.StoragePreference
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.data.prefs.YouTubeHistoryPreference
@@ -1503,6 +1504,20 @@ class SettingsViewModel @Inject constructor(
     /** Community's switch (Settings > Appearance > Home layout); the first time on, it moves to the top. */
     fun onCommunityOnChanged(on: Boolean) {
         viewModelScope.launch { homeSectionsPreference.setCommunityOn(on) }
+    }
+
+    /**
+     * Settings > Appearance > Open Stash on (#428). Its own StateFlow rather than a
+     * [uiState] field: see [Values] on why new spokes stay out of that combine.
+     */
+    val startTab: StateFlow<StartTab> = homeSectionsPreference.startTab.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        StartTab.HOME,
+    )
+
+    fun onStartTabChanged(tab: StartTab) {
+        viewModelScope.launch { homeSectionsPreference.setStartTab(tab) }
     }
 
     /** Clear the kill-switch after PROTOCOL_BROKEN. Exposed to the Settings

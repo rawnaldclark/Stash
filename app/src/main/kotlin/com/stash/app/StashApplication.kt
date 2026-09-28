@@ -32,7 +32,6 @@ import com.stash.data.download.ytdlp.YtDlpManager
 import com.stash.core.data.sync.workers.ArtBackfillWorker
 import com.stash.core.data.sync.workers.ArtistImageBackfillWorker
 import com.stash.core.data.sync.workers.AutoSaveScrobbler
-import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
 import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
 import com.stash.core.data.sync.workers.LoudnessBackfillWorker
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
@@ -40,7 +39,6 @@ import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker
 import com.stash.core.data.sync.workers.UpdateCheckWorker
-import com.stash.core.data.sync.workers.constraintsForManualTrigger
 import com.stash.core.media.streaming.KennyyHealthProbe
 import com.stash.core.media.streaming.SquidCookieAutoRefresher
 import com.stash.data.download.lossless.LosslessRetryScheduler
@@ -326,6 +324,11 @@ class StashApplication : Application(), Configuration.Provider {
                 val reset = downloadQueueDao.resetStaleInProgress()
                 if (reset > 0) Log.i("StashStartup", "reset $reset stale IN_PROGRESS download rows -> PENDING")
             }.onFailure { Log.w("StashStartup", "stale IN_PROGRESS reset failed", it) }
+            // Then pick waiting downloads back up (#474), Stash Mixes on or off: a
+            // run cancelled or cut short leaves them otherwise until the next tap.
+            // Only when something waits, and under the background constraints.
+            runCatching { musicRepository.resumeWaitingDownloads() }
+                .onFailure { Log.w("StashStartup", "resuming waiting downloads failed", it) }
         }
         applicationScope.launch {
             runCatching { musicRepository.ensureDownloadsMixSeeded() }
@@ -413,13 +416,7 @@ class StashApplication : Application(), Configuration.Provider {
                 // Best-effort cancel of any periodic work left over from an
                 // earlier run where the toggle was on. Idempotent.
                 val wm = WorkManager.getInstance(applicationContext)
-                listOf(
-                    "stash_mix_refresh",
-                    "stash_discovery",
-                    "stash_tag_enrichment",
-                    "stash_track_info_enrichment",
-                    "discovery_download",
-                ).forEach { wm.cancelUniqueWork(it) }
+                MusicRepositoryImpl.STASH_MIX_WORK_NAMES.forEach { wm.cancelUniqueWork(it) }
                 return@launch
             }
             maybeReseedStashMixes()
@@ -439,16 +436,7 @@ class StashApplication : Application(), Configuration.Provider {
             // one-shots are safe (unique-work policy = REPLACE).
             StashMixRefreshWorker.enqueueOneTime(this@StashApplication)
             StashMixRefreshWorker.schedulePeriodic(this@StashApplication)
-            // v0.9.20: drain orphan discovery download rows from prior version
-            // installs (stubs that StashDiscoveryWorker created in PR 3 era but
-            // were never downloaded because the sync-chain TrackDownloadWorker
-            // was always sync-gated). Respects user's network preference; runs
-            // when constraints are satisfied.
             val mode = downloadNetworkPreference.current()
-            DiscoveryDownloadWorker.enqueueOneTime(
-                this@StashApplication,
-                constraintsForManualTrigger(mode),
-            )
             TagEnrichmentWorker.schedulePeriodic(this@StashApplication, mode)
             StashDiscoveryWorker.schedulePeriodic(this@StashApplication, mode)
             TrackInfoEnrichmentWorker.schedulePeriodic(this@StashApplication)
@@ -489,12 +477,10 @@ class StashApplication : Application(), Configuration.Provider {
         // waiting up to 48 hours when Android Doze defers the fire.
         UpdateCheckWorker.enqueueOneTimeCheck(this)
         applicationScope.launch { maybeInvalidateArtistCache() }
-        // The pin backfill runs after the mix-flag cleanup on purpose: a stale
-        // DAILY_MIX sync flag must be cleared before "synced" is read as intent.
-        applicationScope.launch {
-            enforceDailyMixSyncDisabled()
-            maybePinSyncedPlaylists()
-        }
+        // The pin backfill reads sync_enabled as intent. Stale mix flags from
+        // older releases are already gone: MIGRATION_50_51 clears them when the
+        // database opens, before this runs.
+        applicationScope.launch { maybePinSyncedPlaylists() }
         applicationScope.launch { maybeHideEmptyYouTubePlaylists() }
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
@@ -897,16 +883,6 @@ class StashApplication : Application(), Configuration.Provider {
             val pinned = playlistDao.pinSyncedPlaylists(System.currentTimeMillis())
             Log.i("StashMigration", "maybePinSyncedPlaylists: pinned $pinned already-synced playlist(s) to Home")
             prefs.edit().putInt("synced_playlists_pin_version", SYNCED_PLAYLISTS_PIN_VERSION).apply()
-        }
-    }
-
-    private suspend fun enforceDailyMixSyncDisabled() {
-        val updated = playlistDao.disableLegacyDailyMixSync()
-        if (updated > 0) {
-            Log.i(
-                "StashMigration",
-                "enforceDailyMixSyncDisabled: cleared sync_enabled on $updated mix row(s)",
-            )
         }
     }
 

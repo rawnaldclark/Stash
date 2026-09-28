@@ -126,6 +126,102 @@ class PlaylistDetailViewModelTest {
         org.mockito.kotlin.verifyBlocking(shared) { setDownload(1L, true) }
     }
 
+    // ── The page's Download switch (#474) ──────────────────────────────
+
+    @Test fun `stream-only mode shows the switch on only for a kept playlist`() = runTest {
+        assertEquals(false, downloadState(playlist(syncEnabled = true), streamOnly = true))
+        assertEquals(true, downloadState(playlist(keepOffline = true), streamOnly = true))
+    }
+
+    @Test fun `download mode also shows on for a playlist the Sync tab downloads`() = runTest {
+        assertEquals(true, downloadState(playlist(syncEnabled = true), streamOnly = false))
+        assertEquals(true, downloadState(playlist(keepOffline = true), streamOnly = false))
+        assertEquals(false, downloadState(playlist(), streamOnly = false))
+    }
+
+    @Test fun `imported mixes and playlists get the switch, system mixes do not`() = runTest {
+        assertEquals(false, downloadState(playlist(type = com.stash.core.model.PlaylistType.DAILY_MIX)))
+        assertEquals(false, downloadState(playlist(type = com.stash.core.model.PlaylistType.CUSTOM)))
+        assertEquals(null, downloadState(playlist(type = com.stash.core.model.PlaylistType.STASH_MIX)))
+        assertEquals(null, downloadState(playlist(type = com.stash.core.model.PlaylistType.DOWNLOADS_MIX)))
+        assertEquals(null, downloadState(playlist(type = com.stash.core.model.PlaylistType.LIKED_SONGS)))
+    }
+
+    @Test fun `a read-only followed mix keeps only its own switch`() = runTest {
+        val follower = com.stash.core.data.db.entity.SharedMixEntity(
+            1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient",
+        )
+        assertEquals(null, downloadState(playlist(), shared = follower))
+        // Once the owner stops sharing it is an ordinary playlist, and gets the page's switch.
+        val removed = follower.copy(status = com.stash.core.data.db.entity.SharedMixEntity.STATUS_REMOVED)
+        assertEquals(false, downloadState(playlist(), shared = removed))
+    }
+
+    @Test fun `the switch follows the playlist row live`() = runTest {
+        val live = MutableStateFlow<com.stash.core.model.Playlist?>(null)
+        val music = musicRepoMock().stub {
+            on { observePlaylist(any()) } doReturn live
+            onBlocking { getPlaylistWithTracks(1L) } doReturn playlist()
+        }
+        val vm = buildVm(musicRepository = music)
+        backgroundScope.launch { vm.download.collect {} }
+        runCurrent()
+        assertEquals(false, vm.download.value)
+        live.value = playlist(keepOffline = true)
+        runCurrent()
+        assertEquals(true, vm.download.value)
+    }
+
+    @Test fun `toggling the switch writes it through the repository`() = runTest {
+        val music = musicRepoMock()
+        val vm = buildVm(musicRepository = music)
+        vm.setDownload(true)
+        vm.setDownload(false)
+        runCurrent()
+        org.mockito.kotlin.verifyBlocking(music) { setPlaylistDownload(1L, true) }
+        org.mockito.kotlin.verifyBlocking(music) { setPlaylistDownload(1L, false) }
+    }
+
+    @Test fun `a failed toggle says so`() = runTest {
+        val music = musicRepoMock().stub {
+            onBlocking { setPlaylistDownload(any(), any()) } doThrow RuntimeException("db")
+        }
+        val vm = buildVm(musicRepository = music)
+        val messages = collectMessages(vm)
+        vm.setDownload(true)
+        runCurrent()
+        assertEquals(listOf("Couldn't change that. Try again."), messages)
+    }
+
+    private fun playlist(
+        type: com.stash.core.model.PlaylistType = com.stash.core.model.PlaylistType.CUSTOM,
+        syncEnabled: Boolean = false,
+        keepOffline: Boolean = false,
+    ) = com.stash.core.model.Playlist(
+        id = 1L, name = "Release Radar", source = com.stash.core.model.MusicSource.SPOTIFY,
+        type = type, syncEnabled = syncEnabled, keepOffline = keepOffline,
+    )
+
+    /** The page's switch for [playlist] in the given mode: null = no switch. */
+    private fun kotlinx.coroutines.test.TestScope.downloadState(
+        playlist: com.stash.core.model.Playlist,
+        streamOnly: Boolean = true,
+        shared: com.stash.core.data.db.entity.SharedMixEntity? = null,
+    ): Boolean? {
+        val music = musicRepoMock().stub { onBlocking { getPlaylistWithTracks(1L) } doReturn playlist }
+        val vm = buildVm(
+            musicRepository = music,
+            streamingPreference = mock {
+                onBlocking { current() } doReturn streamOnly
+                on { enabled } doReturn flowOf(streamOnly)
+            },
+            sharedMixRepository = mock { on { observe(any()) } doReturn flowOf(shared) },
+        )
+        backgroundScope.launch { vm.download.collect {} }
+        runCurrent()
+        return vm.download.value
+    }
+
     @Test fun `unfollow runs onDone only when it succeeds`() = runTest {
         val shared = mock<com.stash.core.data.share.SharedMixRepository> { on { observe(any()) } doReturn flowOf(null) }
         val vm = buildVm(sharedMixRepository = shared)
@@ -398,6 +494,7 @@ class PlaylistDetailViewModelTest {
         playlistImageHelper: PlaylistImageHelper = mock(),
         streamingPreference: StreamingPreference = mock {
             onBlocking { current() } doReturn true
+            on { enabled } doReturn flowOf(true)
         },
         connectivityMonitor: ConnectivityMonitor = mock(),
         recipeDao: StashMixRecipeDao = mock {

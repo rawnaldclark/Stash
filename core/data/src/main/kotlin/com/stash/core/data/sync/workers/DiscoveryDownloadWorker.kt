@@ -7,6 +7,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
+import androidx.work.Operation
 import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -38,15 +39,18 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 
 /**
- * Drains `download_queue` rows produced by [StashDiscoveryWorker]
- * (`sync_id IS NULL`). Parallels [TrackDownloadWorker]'s per-track flow
- * (blocklist guard -> [TrackDownloader.downloadTrack] -> mark COMPLETED
- * with isDownloaded=true + filePath, or FAILED with retry accounting)
- * without the sync-history coupling that worker requires.
+ * Drains `download_queue` rows outside any sync (`sync_id IS NULL`): a
+ * playlist's Download switch and the songs it gains (#474), a followed mix's
+ * "Download this mix", Library Health repairs. Parallels
+ * [TrackDownloadWorker]'s per-track flow (blocklist guard ->
+ * [TrackDownloader.downloadTrack] -> mark COMPLETED with isDownloaded=true +
+ * filePath, or FAILED with retry accounting) without the sync-history
+ * coupling that worker requires.
  *
- * Chained from the tail of [StashDiscoveryWorker.doWork] (REPLACE policy
- * on the unique work name so a rapid discovery + drain cycle doesn't
- * double-run). At the end of the drain, enqueues a one-shot
+ * Started by MusicRepositoryImpl: REPLACE for a tap, a queued-behind start for
+ * background work (see its startDiscoveryDrain). [StashDiscoveryWorker] filed
+ * these rows until v0.9.37 and started this worker until #474; it does
+ * neither now. At the end of the drain, enqueues a one-shot
  * [StashMixRefreshWorker] so mixes re-materialize and the user sees the
  * newly-downloaded survivors without manual refresh.
  *
@@ -69,22 +73,30 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
 
     companion object {
         const val UNIQUE_WORK_NAME = "discovery_download"
+        /** It downloads kept playlists, followed mixes and repairs, not just discoveries (#474). */
+        private const val NOTIFICATION_TITLE = "Downloading songs"
         private const val TAG = "DiscoveryDownload"
 
-        fun enqueueOneTime(context: Context, constraints: Constraints) {
+        /**
+         * [policy] REPLACE (the default) restarts the drain now, for a tap.
+         * APPEND_OR_REPLACE queues a drain behind the current one instead, so
+         * background work never cancels the song in progress or swaps a waiting
+         * tap's constraints for its own (#474).
+         */
+        fun enqueueOneTime(
+            context: Context,
+            constraints: Constraints,
+            policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE,
+        ): Operation {
             val work = OneTimeWorkRequestBuilder<DiscoveryDownloadWorker>()
                 .setConstraints(constraints)
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                UNIQUE_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
-                work,
-            )
+            return WorkManager.getInstance(context).enqueueUniqueWork(UNIQUE_WORK_NAME, policy, work)
         }
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo {
-        return buildForegroundInfo("Downloading discoveries", "Preparing\u2026", progress = -1f)
+        return buildForegroundInfo(NOTIFICATION_TITLE, "Preparing\u2026", progress = -1f)
     }
 
     /**
@@ -103,7 +115,7 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
-        safeUpdateForeground("Downloading discoveries", "Preparing\u2026", progress = -1f)
+        safeUpdateForeground(NOTIFICATION_TITLE, "Preparing\u2026", progress = -1f)
 
         val pending = downloadQueueDao.pendingDiscoveryDownloads()
         if (pending.isEmpty()) {
@@ -130,7 +142,7 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
 
         for ((index, queueItem) in pending.withIndex()) {
             safeUpdateForeground(
-                title = "Downloading discoveries",
+                title = NOTIFICATION_TITLE,
                 text = "${index + 1} of ${pending.size}",
                 progress = (index.toFloat() / pending.size),
             )

@@ -68,6 +68,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -114,6 +118,8 @@ fun PlaylistDetailScreen(
     // An active follow (spec §6) is read-only: no delete, no batch delete, no cover change.
     val follow by viewModel.follow.collectAsStateWithLifecycle()
     val readOnly = follow?.readOnly == true
+    // The page's Download switch (#474); null on pages that have none.
+    val download by viewModel.download.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
     // Bottom sheet state for the ⋮ track menu.
@@ -193,10 +199,24 @@ fun PlaylistDetailScreen(
                     )
                 }
 
+                // ── Download switch (#474): the followed mix's row, for mixes and playlists ──
+                download?.let { on ->
+                    item(key = "download") {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = HeaderGutter, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val label = if (state.playlist?.type == PlaylistType.DAILY_MIX) "Download this mix" else "Download this playlist"
+                            Text(label, Modifier.weight(1f))
+                            Switch(checked = on, onCheckedChange = { viewModel.setDownload(it) })
+                        }
+                    }
+                }
+
                 // ── Followed mix: sharer, Download this mix, Unfollow ───
                 follow?.takeIf { it.readOnly }?.let { f ->
                     item(key = "follow") {
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = HeaderGutter, vertical = 8.dp)) {
                             Text("Following · from ${f.sharedBy ?: "a friend"}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("Download this mix", Modifier.weight(1f))
@@ -619,6 +639,9 @@ fun PlaylistDetailScreen(
 
 // ── Header composable ───────────────────────────────────────────────────────
 
+/** Side padding of the header's text, shared by the Download rows under it so they line up. */
+private val HeaderGutter = 20.dp
+
 /**
  * Displays the playlist artwork, title, metadata subtitle, and action buttons.
  * A gradient scrim overlays the bottom of the artwork for text readability.
@@ -718,7 +741,7 @@ private fun PlaylistHeader(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = HeaderGutter),
         ) {
             // Playlist name
             Text(
@@ -784,13 +807,7 @@ private fun PlaylistHeader(
                         contentPadding = PaddingValues(vertical = 12.dp),
                         shape = RoundedCornerShape(12.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Play All", style = MaterialTheme.typography.labelLarge)
+                        IconLabel(Icons.Default.PlayArrow, "Play All")
                     }
                 }
 
@@ -804,13 +821,7 @@ private fun PlaylistHeader(
                         contentPadding = PaddingValues(vertical = 12.dp),
                         shape = RoundedCornerShape(12.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Shuffle", style = MaterialTheme.typography.labelLarge)
+                        IconLabel(Icons.Default.Shuffle, "Shuffle")
                     }
                 }
 
@@ -871,3 +882,26 @@ private fun PlaylistHeader(
     }
 }
 
+/**
+ * A header button's icon + label that never wraps. With three icon buttons beside them (an editable
+ * playlist), Play All and Shuffle get ~70dp each on a 392dp phone (Pixel 5, default scale), less than
+ * icon + gap + "Shuffle", so the label broke as "Shuffl / e". The icon drops out when both don't fit,
+ * measured against the real text, so it adapts to font scale and language.
+ */
+@Composable
+private fun IconLabel(icon: ImageVector, text: String) {
+    val style = MaterialTheme.typography.labelLarge
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    BoxWithConstraints(contentAlignment = Alignment.Center) {
+        val textWidth = with(density) { measurer.measure(text, style, maxLines = 1).size.width.toDp() }
+        val showIcon = textWidth + 28.dp <= maxWidth // 20dp icon + 8dp gap
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (showIcon) {
+                Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(text = text, style = style, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}

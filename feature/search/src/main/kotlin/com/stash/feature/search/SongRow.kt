@@ -216,14 +216,17 @@ fun SongRow(
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // Duration label
-        Text(
-            text = formatDuration(item.durationSeconds),
-            style = MaterialTheme.typography.bodySmall,
-            color = extendedColors.textTertiary,
-        )
+        // Duration label. Flat YouTube Music search rows carry no length, so an
+        // unknown (0) duration shows nothing rather than a false "0:00".
+        if (item.durationSeconds > 0) {
+            Text(
+                text = formatDuration(item.durationSeconds),
+                style = MaterialTheme.typography.bodySmall,
+                color = extendedColors.textTertiary,
+            )
 
-        Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+        }
 
         // Download action button (hidden where download-by-id isn't supported).
         if (downloadSupported) {

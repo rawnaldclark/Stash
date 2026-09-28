@@ -826,8 +826,12 @@ class DatabaseBackupManager @Inject constructor(
                         playlist.copy(
                             id = 0,
                             // Never inherit download consent from a backup —
-                            // see PlaylistEntity.syncEnabled's KDoc.
+                            // see PlaylistEntity.syncEnabled's KDoc. The page's
+                            // Download switch (#474) is consent too: a merged
+                            // playlist starts with it off, or the next sync
+                            // would start downloading it unasked.
                             syncEnabled = false,
+                            keepOffline = false,
                             dateAdded = if (playlist.dateAdded.toEpochMilli() > 0) {
                                 playlist.dateAdded
                             } else Instant.now(),

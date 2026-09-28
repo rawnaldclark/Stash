@@ -13,12 +13,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.stash.app.navigation.StashScaffold
+import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.model.ThemeMode
 import com.stash.core.model.share.ShareLinks
@@ -56,6 +58,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var listenTogether: ListenTogetherController
 
+    @Inject
+    lateinit var homeSectionsPreference: HomeSectionsPreference
+
     /**
      * Pending deep-link target read from the launch / new-intent extras.
      * Compose observes this via [StashScaffold]'s `pendingDeepLink`
@@ -92,11 +97,15 @@ class MainActivity : ComponentActivity() {
                     listenTogether.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 }
             }
+            // Open Stash on (#428): the tab the NavHost starts on. Saved across recreation so a
+            // restored back stack always sits on the graph it was saved with.
+            val startTab = rememberSaveable { homeSectionsPreference.startTabNow }
             StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
                 CompositionLocalProvider(LocalListenTogetherRole provides role) {
                     StashScaffold(
                         pendingDeepLink = pendingDeepLink.value,
                         onDeepLinkConsumed = { pendingDeepLink.value = null },
+                        startTab = startTab,
                     )
                 }
             }

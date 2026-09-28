@@ -18,7 +18,6 @@ import androidx.work.WorkerParameters
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.model.DownloadNetworkMode
-import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.DiscoveryQueueEntity
@@ -51,10 +50,10 @@ import java.util.concurrent.TimeUnit
  *     `PlaylistDao.getStreamableOrDoneTrackIdsForRecipe`.
  *
  * v0.9.37 also dropped the `DownloadQueueDao` constructor injection —
- * this worker no longer files download rows. The chained
- * [DiscoveryDownloadWorker] still drains legacy / leftover rows in
- * `download_queue` (orphan PENDING, retry-eligible FAILED from prior
- * runs); see `doWork()`'s tail chain.
+ * this worker no longer files download rows, and since #474 it no longer
+ * starts [DiscoveryDownloadWorker] either: that REPLACE start cancelled
+ * downloads mid-song after every mix refresh. Waiting download rows are
+ * picked up by MusicRepositoryImpl.resumeWaitingDownloads instead.
  *
  * Caps per-recipe throughput at 100 new discoveries per rolling 7 days
  * (a hold-over from the download-era storage cap; storage cost is gone
@@ -70,7 +69,6 @@ class StashDiscoveryWorker @AssistedInject constructor(
     private val recipeDao: StashMixRecipeDao,
     private val trackMatcher: TrackMatcher,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
-    private val downloadNetworkPreference: DownloadNetworkPreference,
     private val syncNotificationManager: SyncNotificationManager,
 ) : CoroutineWorker(appContext, params) {
 
@@ -145,10 +143,8 @@ class StashDiscoveryWorker @AssistedInject constructor(
          * Fire a one-shot discovery sweep — manual user trigger, no charging
          * requirement. Respects [DownloadNetworkMode] for cellular gating via
          * [constraintsForManualTrigger]. Unique work name + REPLACE policy so a
-         * rapid double-tap coalesces. At the end of [doWork], the existing
-         * v0.9.20 chain to [DiscoveryDownloadWorker] fires, completing the
-         * pipeline: discovery_queue PENDING → stubs + download_queue PENDING →
-         * actual downloads.
+         * rapid double-tap coalesces. [doWork] turns discovery_queue PENDING rows
+         * into stream-only stubs; nothing downloads.
          */
         fun enqueueOneTime(context: Context, mode: DownloadNetworkMode, expedited: Boolean = false) {
             val builder = OneTimeWorkRequestBuilder<StashDiscoveryWorker>()
@@ -277,16 +273,12 @@ class StashDiscoveryWorker @AssistedInject constructor(
         }
 
         // Stream-only stubs need no download — only a materialize pass to link
-        // them into the recipe playlists. That pass runs in StashMixRefreshWorker,
-        // which the DiscoveryDownloadWorker chain below also re-kicks — but that
-        // worker is battery-not-low gated (it downloads files), so on a low
-        // battery the freshly-drained stubs would never surface and the mix sits
-        // on "Building…" indefinitely (root cause: device at 4%, stubs DONE,
-        // playlist empty). Kick the network-only refresh directly so stream-only
-        // mixes materialize regardless of battery. Same unique work as the
-        // chain's kick (REPLACE) → the two coalesce when both fire. Guarded, and
-        // only when we actually produced stubs so an idle run doesn't spin the
-        // refresh⇄drain loop.
+        // them into the recipe playlists. That pass runs in StashMixRefreshWorker.
+        // Kick its network-only form directly so stream-only mixes materialize
+        // regardless of battery (a battery-gated path once left a mix on
+        // "Building…" indefinitely: device at 4%, stubs DONE, playlist empty).
+        // Guarded, and only when we actually produced stubs so an idle run
+        // doesn't spin the refresh⇄drain loop.
         if (newlyMaterialized > 0) {
             // Materialize-only: LINK the freshly-drained stubs into the mix
             // playlists, but do NOT re-queue discovery or re-kick this drain —
@@ -295,26 +287,6 @@ class StashDiscoveryWorker @AssistedInject constructor(
             runCatching { StashMixRefreshWorker.enqueueOneTime(applicationContext, materializeOnly = true) }
                 .onFailure { Log.w(TAG, "post-drain re-materialize enqueue failed; stubs surface on next refresh", it) }
         }
-
-        // v0.9.20: after queueing/processing discoveries, kick the downloader
-        // so the new tracks become playable.
-        //
-        // Always chain — even when discovery_queue was empty this run. Prior
-        // runs may have queued download_queue rows that haven't been drained
-        // yet (FAILED-with-retry, leftover PENDING, app crash mid-drain).
-        //
-        // Use manual-trigger constraints (drop charging, respect user network
-        // pref) regardless of whether THIS worker invocation was periodic or
-        // manual. For the periodic path, the parent's own charging requirement
-        // already gated this worker from running — by the time we chain, we
-        // know the device is charging + on WiFi, so dropping the charging req
-        // on the chain is a no-op. For the manual path, dropping charging is
-        // the whole point: the user is actively asking for content; honor that.
-        val mode = downloadNetworkPreference.current()
-        DiscoveryDownloadWorker.enqueueOneTime(
-            applicationContext,
-            constraintsForManualTrigger(mode),
-        )
         return Result.success()
     }
 

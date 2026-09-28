@@ -1,0 +1,290 @@
+[
+  {
+    "itemSectionRenderer": {
+      "contents": [
+        {
+          "musicResponsiveListItemRenderer": {
+            "playlistItemData": {
+              "videoId": "Ba1mzFtR_Zk"
+            },
+            "flexColumns": [
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "Mii Channel Theme (feat. Gabe Nekrutman & Chris Allison)"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "Song"
+                      },
+                      {
+                        "text": " • "
+                      },
+                      {
+                        "text": "Insaneintherainmusic",
+                        "navigationEndpoint": {
+                          "browseEndpoint": {
+                            "browseId": "UCpznTIpk7wywAf62U3Jm-mg",
+                            "browseEndpointContextSupportedConfigs": {
+                              "browseEndpointContextMusicConfig": {
+                                "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "5.7M plays"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "itemSectionRenderer": {
+      "contents": [
+        {
+          "musicResponsiveListItemRenderer": {
+            "playlistItemData": {
+              "videoId": "jXX93PprOMQ"
+            },
+            "flexColumns": [
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "Mii Channel Jazz"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "Song"
+                      },
+                      {
+                        "text": " • "
+                      },
+                      {
+                        "text": "The Deku Trio",
+                        "navigationEndpoint": {
+                          "browseEndpoint": {
+                            "browseId": "UCzp-AsgbWM68QHdmTgsjM-g",
+                            "browseEndpointContextSupportedConfigs": {
+                              "browseEndpointContextMusicConfig": {
+                                "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "text": ", "
+                      },
+                      {
+                        "text": "GameChops",
+                        "navigationEndpoint": {
+                          "browseEndpoint": {
+                            "browseId": "UCEG-f4I9kT_OFQv44ch6Y8Q",
+                            "browseEndpointContextSupportedConfigs": {
+                              "browseEndpointContextMusicConfig": {
+                                "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "text": " & "
+                      },
+                      {
+                        "text": "Unplugged",
+                        "navigationEndpoint": {
+                          "browseEndpoint": {
+                            "browseId": "UCZVpQWzaDM1A0YXGPCteKlQ",
+                            "browseEndpointContextSupportedConfigs": {
+                              "browseEndpointContextMusicConfig": {
+                                "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "111K plays"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "itemSectionRenderer": {
+      "contents": [
+        {
+          "musicResponsiveListItemRenderer": {
+            "playlistItemData": {
+              "videoId": "3g4kgJ1Ye_E"
+            },
+            "flexColumns": [
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "Mii Channel Theme Cover"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "Video"
+                      },
+                      {
+                        "text": " • "
+                      },
+                      {
+                        "text": "Grimm's VGM",
+                        "navigationEndpoint": {
+                          "browseEndpoint": {
+                            "browseId": "UCbEnhIlLrhQy3ImkECBoU6A",
+                            "browseEndpointContextSupportedConfigs": {
+                              "browseEndpointContextMusicConfig": {
+                                "pageType": "MUSIC_PAGE_TYPE_USER_CHANNEL"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "text": " • "
+                      },
+                      {
+                        "text": "845 views"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "itemSectionRenderer": {
+      "contents": [
+        {
+          "musicResponsiveListItemRenderer": {
+            "playlistItemData": {
+              "videoId": "RY_y2mtHl5c"
+            },
+            "flexColumns": [
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "Arrangement, Insaneintherainmusic, & Making Covers (ft. SmartGamePiano) || OC Podcast",
+                        "navigationEndpoint": {
+                          "browseEndpoint": {
+                            "browseId": "MPEDRY_y2mtHl5c",
+                            "browseEndpointContextSupportedConfigs": {
+                              "browseEndpointContextMusicConfig": {
+                                "pageType": "MUSIC_PAGE_TYPE_NON_MUSIC_AUDIO_TRACK_PAGE"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "Episode"
+                      },
+                      {
+                        "text": " • "
+                      },
+                      {
+                        "text": "Jul 15, 2017"
+                      },
+                      {
+                        "text": " • "
+                      },
+                      {
+                        "text": "OC Podcast",
+                        "navigationEndpoint": {
+                          "browseEndpoint": {
+                            "browseId": "MPSPPLqIOOHS4sNl5uOm4Eay_Ox49v9Ekuc1Jl",
+                            "browseEndpointContextSupportedConfigs": {
+                              "browseEndpointContextMusicConfig": {
+                                "pageType": "MUSIC_PAGE_TYPE_PODCAST_SHOW_DETAIL_PAGE"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+]

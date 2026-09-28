@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.data.prefs.StartTab
 import com.stash.core.ui.theme.StashElevation
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -49,6 +50,7 @@ import com.stash.feature.nowplaying.MiniPlayer
 fun StashScaffold(
     pendingDeepLink: String? = null,
     onDeepLinkConsumed: () -> Unit = {},
+    startTab: StartTab = StartTab.HOME,
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -78,9 +80,9 @@ fun StashScaffold(
     fun navigateToTab(dest: TopLevelDestination) {
         val destRoute = dest.route::class.qualifiedName
         // The "current tab" is the top-most top-level route in
-        // the live back stack (Home, the start dest, is always at
-        // the bottom; the active tab sits above it, with detail
-        // screens above that).
+        // the live back stack (the start tab, Home unless Open Stash
+        // on says otherwise, is always at the bottom; the active tab
+        // sits above it, with detail screens above that).
         val topLevelRoutes =
             TopLevelDestination.entries.map { it.route::class.qualifiedName }.toSet()
         val currentTabRoute = navController.currentBackStack.value
@@ -228,6 +230,11 @@ fun StashScaffold(
                 .consumeWindowInsets(innerPadding),
             onSelectionModeChanged = { selectionActive = it },
             onNavigateToTab = ::navigateToTab,
+            startDestination = when (startTab) {
+                StartTab.HOME -> HomeRoute
+                StartTab.LIBRARY -> LibraryRoute
+                StartTab.SEARCH -> SearchRoute
+            },
         )
     }
 }

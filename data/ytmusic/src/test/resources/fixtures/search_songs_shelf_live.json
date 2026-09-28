@@ -1,0 +1,425 @@
+{
+  "title": {
+    "runs": [
+      {
+        "text": "Songs"
+      }
+    ]
+  },
+  "contents": [
+    {
+      "musicResponsiveListItemRenderer": {
+        "playlistItemData": {
+          "videoId": "Ba1mzFtR_Zk"
+        },
+        "flexColumns": [
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Mii Channel Theme (feat. Gabe Nekrutman & Chris Allison)"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Insaneintherainmusic",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UCpznTIpk7wywAf62U3Jm-mg",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "Mii Channel Theme",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "MPREb_F2C7KCXEFjQ",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "5:13"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "5.7M plays"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "musicResponsiveListItemRenderer": {
+        "playlistItemData": {
+          "videoId": "jXX93PprOMQ"
+        },
+        "flexColumns": [
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Mii Channel Jazz"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "The Deku Trio",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UCzp-AsgbWM68QHdmTgsjM-g",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": ", "
+                  },
+                  {
+                    "text": "GameChops",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UCEG-f4I9kT_OFQv44ch6Y8Q",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " & "
+                  },
+                  {
+                    "text": "Unplugged",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UCZVpQWzaDM1A0YXGPCteKlQ",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "Mii Channel Jazz",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "MPREb_AWzU2g7bS6u",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "2:43"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "111K plays"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "musicResponsiveListItemRenderer": {
+        "playlistItemData": {
+          "videoId": "-fKJLtBYCAo"
+        },
+        "flexColumns": [
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Mii Channel Theme"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Nuovi Venti Saxophone Quartet"
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "Nuovi Venti Saxophone Quartet",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "MPREb_MAWJfHbY8v4",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "1:21"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "456 plays"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "musicResponsiveListItemRenderer": {
+        "playlistItemData": {
+          "videoId": "JRW5TbVApFw"
+        },
+        "flexColumns": [
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "The Story of O.J."
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "JAŸ-Z",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UCbJG1HvzgzaMe_15xfiUyWw",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "4:44",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "MPREb_KbfUSj7oM2A",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "3:52"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "190M plays"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "musicResponsiveListItemRenderer": {
+        "playlistItemData": {
+          "videoId": "L3HuPWCaIrU"
+        },
+        "flexColumns": [
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Cariñito (Goldie B Remix)"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Yeahman",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UCn7Le5iE0MlxHfbMXq4KHHQ",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": ", "
+                  },
+                  {
+                    "text": "Hajna"
+                  },
+                  {
+                    "text": " & "
+                  },
+                  {
+                    "text": "Mina Shankha",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UC83QERLPDuKraHXPOAINSPQ",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "Ostriconi (Remixes)",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "MPREb_CnRnRpsdoTq",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "6:02"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "10K plays"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -93,4 +93,14 @@ data class PlaylistEntity(
      */
     @ColumnInfo(name = "pinned_to_home_at")
     val pinnedToHomeAt: Long? = null,
+
+    /**
+     * The playlist page's Download switch (#474): keep this playlist on the
+     * phone in either mode. Separate from [syncEnabled], which in Stream-only
+     * mode means "keep synced and on Home" and so can't double as "download".
+     * Every sync queues whatever a kept playlist gained; turning it off stops
+     * new downloads and deletes nothing.
+     */
+    @ColumnInfo(name = "keep_offline", defaultValue = "0")
+    val keepOffline: Boolean = false,
 )

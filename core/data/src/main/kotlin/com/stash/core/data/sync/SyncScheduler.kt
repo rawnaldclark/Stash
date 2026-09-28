@@ -218,7 +218,7 @@ class SyncScheduler @Inject constructor(
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        enqueueChain(initialDelayMs = 0, constraints = constraints)
+        enqueueChain(initialDelayMs = 0, constraints = constraints, trigger = SyncTrigger.MANUAL)
     }
 
     /**
@@ -355,6 +355,9 @@ class SyncScheduler @Inject constructor(
 
         val diffWork = OneTimeWorkRequestBuilder<DiffWorker>()
             .setConstraints(constraints)
+            // WorkManager hands a chained worker its own input merged with the
+            // fetch step's output, so the diff step learns a "Sync now" here.
+            .setInputData(workDataOf(DiffWorker.KEY_MANUAL_SYNC to (trigger == SyncTrigger.MANUAL)))
             .addTag("sync_diff")
             .build()
 

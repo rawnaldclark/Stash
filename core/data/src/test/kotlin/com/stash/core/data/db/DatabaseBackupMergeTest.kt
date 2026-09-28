@@ -211,6 +211,21 @@ class DatabaseBackupMergeTest {
             assertFalse(p2After.syncEnabled)
         }
 
+    /** #474: the Download switch is download consent, so a merge never brings it in. */
+    @Test
+    fun `merge never inherits the keep-offline switch and keeps the live one`() = runTest {
+        val livePid = live.playlistDao().insert(playlist("Mine", "sp-mine").copy(keepOffline = true))
+
+        val uri = buildBackupZip { backup ->
+            backup.playlistDao().insert(playlist("Mine", "sp-mine"))
+            backup.playlistDao().insert(playlist("Theirs", "sp-theirs").copy(keepOffline = true))
+        }
+
+        assertTrue(manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE).isSuccess)
+        assertTrue(live.playlistDao().getById(livePid)!!.keepOffline)
+        assertFalse(live.playlistDao().findBySourceId("sp-theirs")!!.keepOffline)
+    }
+
     @Test
     fun `merge never duplicates active members and preserves their order`() = runTest {
         val a = live.trackDao().insert(track("A", spotifyUri = "spotify:track:a"))

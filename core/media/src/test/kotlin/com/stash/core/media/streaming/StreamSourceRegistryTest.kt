@@ -3,6 +3,7 @@ package com.stash.core.media.streaming
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -12,6 +13,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -39,9 +41,11 @@ class StreamSourceRegistryTest {
         coEvery { enabledNow() } returns true // the Lossless switch, on by default
     }
 
+    private val log = PlaybackDiagnosticsLog()
+
     private fun registry(dispatcher: CoroutineDispatcher = Dispatchers.IO) = StreamSourceRegistry(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
-        LosslessSourceHealth(), losslessPrefs, dispatcher,
+        LosslessSourceHealth(), losslessPrefs, dispatcher, log,
     )
 
     private fun stubStreamUrl(origin: String) = StreamUrl(
@@ -391,5 +395,65 @@ class StreamSourceRegistryTest {
 
         assertThat(result?.origin).isEqualTo(JioSaavnStreamResolver.ORIGIN)
         coVerify(exactly = 0) { youtube.resolve(any(), allowYtDlp = true) }
+    }
+
+    // ── The diagnostics bundle's "Recent resolves": one line per finished chain walk ──
+
+    @Test
+    fun `a served resolve is recorded by source and gates, without its title or url`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns StreamUrl(
+            url = "https://streaming-qobuz-std.akamaized.net/file?uid=7&eid=8&fmt=27&hmac=SECRET",
+            expiresAtMs = Long.MAX_VALUE,
+            codec = "flac",
+            origin = "qbdlx",
+        )
+        coEvery { youtube.resolve(any(), any()) } returns null
+
+        registry().resolve(stubTrack().copy(title = "Secret Song"))
+
+        val r = log.recentResolves().single()
+        assertThat(r.trackId).isEqualTo(1L)
+        assertThat(r.servedBy).isEqualTo("qbdlx")
+        assertThat(r.lossless).isTrue()
+        assertThat(r.toString()).doesNotContain("Secret Song")
+        assertThat(r.toString()).doesNotContain("akamaized")
+    }
+
+    @Test
+    fun `a resolve every source missed is recorded as all missed`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { youtube.resolve(any(), any()) } returns null
+
+        val result = registry().resolve(stubTrack(), allowYouTube = true, allowYtDlp = false)
+
+        assertThat(result).isNull()
+        val r = log.recentResolves().single()
+        assertThat(r.servedBy).isEqualTo("none (all missed)")
+    }
+
+    @Test
+    fun `a cancelled resolve is not an outcome and is never recorded`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } throws CancellationException("preempted")
+        coEvery { youtube.resolve(any(), any()) } returns null
+
+        val outcome = runCatching { registry().resolve(stubTrack()) }
+
+        assertThat(outcome.exceptionOrNull()).isInstanceOf(CancellationException::class.java)
+        assertThat(log.recentResolves()).isEmpty()
+    }
+
+    /** The deadline is the one cancellation that IS an outcome: the player only sees a generic IO error for it. */
+    @Test
+    fun `a resolve that hits its deadline is recorded as timed out`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } coAnswers { delay(LazyResolvingDataSource.RESOLVE_DEADLINE_MS * 2); null }
+        coEvery { youtube.resolve(any(), any()) } returns null
+
+        val outcome = runCatching { registry(StandardTestDispatcher(testScheduler)).resolve(stubTrack()) }
+
+        assertThat(outcome.exceptionOrNull()).isInstanceOf(TimeoutCancellationException::class.java)
+        assertThat(log.recentResolves().single().servedBy).isEqualTo("none (timed out)")
     }
 }

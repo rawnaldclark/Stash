@@ -6,6 +6,7 @@ import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.TrackQuery
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -68,6 +69,19 @@ class JioSaavnResolverTest {
 
         assertThat(JioSaavnResolver(client, limiter).resolve(query(), true)).isNull()
         coVerify { limiter.reportRateLimited(JioSaavnResolver.SOURCE_ID) }
+    }
+
+    @Test
+    fun `second search retries the first artist of an ampersand credit`() = runTest {
+        ready()
+        coEvery { client.search(any(), any()) } returns JioSaavnSearchOutcome.Success(emptyList())
+
+        JioSaavnResolver(client, limiter).resolve(TrackQuery("Alka Yagnik & Udit Narayan", "Ae Mere Humsafar"), true)
+
+        coVerifyOrder {
+            client.search("Alka Yagnik & Udit Narayan Ae Mere Humsafar", any())
+            client.search("Alka Yagnik Ae Mere Humsafar", any())
+        }
     }
 
     private fun ready() {

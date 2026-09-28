@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
+import com.stash.core.data.diagnostics.DiagnosticsContributor
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.PlayerRepositoryImpl
+import com.stash.core.media.diagnostics.PlaybackDiagnosticsContributor
 import com.stash.core.media.equalizer.EqStore
 import com.stash.core.media.equalizer.LegacyEqualizerStore
 import com.stash.core.media.equalizer.LegacyEqualizerStoreImpl
@@ -16,6 +18,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import dagger.multibindings.IntoSet
 import javax.inject.Singleton
 
 // File-scope extension for the new EqStore DataStore (name differs from the
@@ -51,6 +54,11 @@ abstract class MediaModule {
     @Binds
     @Singleton
     abstract fun bindLegacyEqualizerStore(impl: LegacyEqualizerStoreImpl): LegacyEqualizerStore
+
+    /** The diagnostics bundle's "Playback" section: audio settings, output, recent resolves and errors. */
+    @Binds
+    @IntoSet
+    abstract fun bindPlaybackDiagnostics(impl: PlaybackDiagnosticsContributor): DiagnosticsContributor
 
     companion object {
 

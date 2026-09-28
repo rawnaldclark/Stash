@@ -231,8 +231,38 @@ interface MusicRepository {
      * Bulk queueDownload for every undownloaded track in [playlistId].
      * Returns the number of tracks queued (those already downloaded are
      * skipped). Caller can show "Queued N tracks" snackbar.
+     *
+     * [background] is for work nobody tapped (a followed mix's update): the
+     * download then follows the Sync tab's "Wi-Fi only", like a sync's own
+     * downloads, instead of starting on any network.
      */
-    suspend fun queueDownloadsForPlaylist(playlistId: Long): Int
+    suspend fun queueDownloadsForPlaylist(playlistId: Long, background: Boolean = false): Int
+
+    /**
+     * After a sync: queue what every playlist kept on the phone (#474) is
+     * missing, then start ONE background download for all of it. Returns the
+     * number of songs queued. [manualSync]: the user tapped "Sync now", so
+     * these download on any network, like that sync's own downloads.
+     */
+    suspend fun queueKeptPlaylists(manualSync: Boolean = false): Int
+
+    /**
+     * Starts the download run for songs already waiting in the queue, and does
+     * nothing when none are. [tap]: the user just asked (Library Health's
+     * "Re-download missing"), so it goes on any network like a tap, still never
+     * cancelling a song in progress. Otherwise (cold start) it follows the Sync
+     * tab's Wi-Fi only.
+     */
+    suspend fun resumeWaitingDownloads(tap: Boolean = false)
+
+    /**
+     * The playlist page's Download switch (#474). On keeps [playlistId] on the
+     * phone in either mode: everything not yet downloaded is queued now, and
+     * every later sync (plus every add to it) queues what it gains. Off stops
+     * new downloads and deletes nothing; in Download mode it also turns the
+     * playlist's sync off, since a synced playlist downloads through sync.
+     */
+    suspend fun setPlaylistDownload(playlistId: Long, on: Boolean)
 
     /**
      * Bulk removeDownload for every downloaded track in [playlistId].

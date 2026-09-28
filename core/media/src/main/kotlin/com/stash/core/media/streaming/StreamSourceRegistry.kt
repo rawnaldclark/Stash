@@ -3,6 +3,7 @@ package com.stash.core.media.streaming
 import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -10,6 +11,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
@@ -65,6 +67,8 @@ class StreamSourceRegistry internal constructor(
     private val losslessPrefs: LosslessSourcePreferences,
     /** Where resolves run; tests pass a test dispatcher so the hedge is measured in virtual time. */
     resolveDispatcher: CoroutineDispatcher,
+    /** The diagnostics bundle's "Recent resolves". A fresh, unshared one in hand-built tests. */
+    private val diagnosticsLog: PlaybackDiagnosticsLog = PlaybackDiagnosticsLog(),
 ) {
     @Inject
     constructor(
@@ -76,9 +80,10 @@ class StreamSourceRegistry internal constructor(
         streamingPreference: StreamingPreference,
         losslessSourceHealth: LosslessSourceHealth,
         losslessPrefs: LosslessSourcePreferences,
+        diagnosticsLog: PlaybackDiagnosticsLog,
     ) : this(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
-        losslessSourceHealth, losslessPrefs, Dispatchers.IO,
+        losslessSourceHealth, losslessPrefs, Dispatchers.IO, diagnosticsLog,
     )
     /**
      * Try each resolver in priority order; return the first non-null
@@ -172,6 +177,7 @@ class StreamSourceRegistry internal constructor(
         allowYouTube: Boolean,
         allowYtDlp: Boolean,
     ): StreamUrl? {
+        val startedNs = System.nanoTime()
         // The Lossless switch (Settings › Audio & Quality) governs streaming as well as
         // downloads (2026-09-05): off means no FLAC anywhere, so the lossless sources
         // leave the chain and the track streams from the lossy rungs. It outranks the
@@ -249,54 +255,74 @@ class StreamSourceRegistry internal constructor(
         // only then the yt-dlp-capable rung. Foreground resolves only: the
         // speculative background fill keeps its cheap sequential chain.
         val hedged = allowYouTube && allowYtDlp && resolvers.size > 1 && resolvers.last().first == "youtube"
-        return coroutineScope {
-            val jioLane = if (hedged && resolvers.any { it.first == "jiosaavn" }) {
-                async { quietly("jiosaavn", track) { jiosaavn.resolve(track) } }
-            } else {
-                null
-            }
-            val fastLane = if (hedged) {
-                async { quietly("youtube-fast", track) { youtube.resolve(track, allowYtDlp = false) } }
-            } else {
-                null
-            }
 
-            for ((name, fn) in resolvers) {
-                if (hedged && (name == "jiosaavn" || name == "youtube")) continue // consulted below
-                val result = quietly(name, track) { fn(track) }
-                // Feed the Home lossless-offline banner signal: a qbdlx null here
-                // is a miss (dead credential OR catalog gap; the streak threshold
-                // tells them apart), a non-null is a serve that resets the streak.
-                if (name == "qbdlx") {
-                    if (result != null) losslessSourceHealth.recordQbdlxServed() else losslessSourceHealth.recordQbdlxMiss()
+        // For the diagnostics bundle's "Recent resolves": the rung that served, set at each
+        // exit below. Still null when the walk ends means every rung missed.
+        var servedBy: String? = null
+        return try {
+            coroutineScope {
+                val jioLane = if (hedged && resolvers.any { it.first == "jiosaavn" }) {
+                    async { quietly("jiosaavn", track) { jiosaavn.resolve(track) } }
+                } else {
+                    null
                 }
-                if (result != null) {
-                    // Diagnostic: which source actually served the stream. Helps
-                    // explain "this track played but at lower quality" reports.
-                    Log.i(TAG, "$name served ${track.id} '${track.title}'")
-                    jioLane?.cancel()
+                val fastLane = if (hedged) {
+                    async { quietly("youtube-fast", track) { youtube.resolve(track, allowYtDlp = false) } }
+                } else {
+                    null
+                }
+
+                for ((name, fn) in resolvers) {
+                    if (hedged && (name == "jiosaavn" || name == "youtube")) continue // consulted below
+                    val result = quietly(name, track) { fn(track) }
+                    // Feed the Home lossless-offline banner signal: a qbdlx null here
+                    // is a miss (dead credential OR catalog gap; the streak threshold
+                    // tells them apart), a non-null is a serve that resets the streak.
+                    if (name == "qbdlx") {
+                        if (result != null) losslessSourceHealth.recordQbdlxServed() else losslessSourceHealth.recordQbdlxMiss()
+                    }
+                    if (result != null) {
+                        // Diagnostic: which source actually served the stream. Helps
+                        // explain "this track played but at lower quality" reports.
+                        Log.i(TAG, "$name served ${track.id} '${track.title}'")
+                        servedBy = name
+                        jioLane?.cancel()
+                        fastLane?.cancel()
+                        return@coroutineScope result
+                    }
+                }
+                jioLane?.await()?.let {
+                    Log.i(TAG, "jiosaavn served ${track.id} '${track.title}' (hedged)")
+                    servedBy = "jiosaavn"
                     fastLane?.cancel()
-                    return@coroutineScope result
+                    return@coroutineScope it
                 }
-            }
-            jioLane?.await()?.let {
-                Log.i(TAG, "jiosaavn served ${track.id} '${track.title}' (hedged)")
-                fastLane?.cancel()
-                return@coroutineScope it
-            }
-            fastLane?.await()?.let {
-                Log.i(TAG, "youtube served ${track.id} '${track.title}' (fast lane, hedged)")
-                return@coroutineScope it
-            }
-            if (hedged) {
-                quietly("youtube", track) { youtube.resolve(track, allowYtDlp = true) }?.also {
-                    Log.i(TAG, "youtube served ${track.id} '${track.title}'")
+                fastLane?.await()?.let {
+                    Log.i(TAG, "youtube served ${track.id} '${track.title}' (fast lane, hedged)")
+                    servedBy = "youtube (fast lane)"
+                    return@coroutineScope it
                 }
-            } else {
-                null
+                if (hedged) {
+                    quietly("youtube", track) { youtube.resolve(track, allowYtDlp = true) }?.also {
+                        Log.i(TAG, "youtube served ${track.id} '${track.title}'")
+                        servedBy = "youtube"
+                    }
+                } else {
+                    null
+                }
+            }.also {
+                diagnosticsLog.recordResolve(track.id, servedBy ?: "none (all missed)", msSince(startedNs), lossless)
             }
+        } catch (e: TimeoutCancellationException) {
+            // resolve()'s deadline fired mid-walk. A hang is an outcome, and the player only sees
+            // it as a generic IO error, so it gets its own line. Any other cancellation is not an
+            // outcome (see quietly) and is never recorded.
+            diagnosticsLog.recordResolve(track.id, "none (timed out)", msSince(startedNs), lossless)
+            throw e
         }
     }
+
+    private fun msSince(startedNs: Long): Long = (System.nanoTime() - startedNs) / 1_000_000
 
     /**
      * Runs one rung. Preemption (the user tapped another track) cancels this job

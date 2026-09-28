@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -48,6 +49,7 @@ class LyricsPreference @Inject constructor(
 ) {
     private val liveBarKey = booleanPreferencesKey("live_bar_enabled")
     private val sourceKey = stringPreferencesKey("lyrics_source_preference")
+    private val bulkFetchCursorKey = longPreferencesKey("bulk_fetch_cursor")
 
     val liveBarEnabled: Flow<Boolean> = context.lyricsDataStore.data.map { prefs ->
         prefs[liveBarKey] ?: false
@@ -65,5 +67,12 @@ class LyricsPreference @Inject constructor(
 
     suspend fun setSourcePreference(value: LyricsSourcePreference) {
         context.lyricsDataStore.edit { it[sourceKey] = value.name }
+    }
+
+    /** Last track id the manual "Fetch lyrics" run reached; the next run starts just after it. */
+    val bulkFetchCursor: Flow<Long> = context.lyricsDataStore.data.map { it[bulkFetchCursorKey] ?: 0L }
+
+    suspend fun setBulkFetchCursor(trackId: Long) {
+        context.lyricsDataStore.edit { it[bulkFetchCursorKey] = trackId }
     }
 }

@@ -12,7 +12,9 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.files.LocalFileOps
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.model.MusicSource
+import com.stash.core.model.QualityTier
 import com.stash.core.model.TrackItem
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.jiosaavn.JioSaavnResolver
@@ -34,6 +36,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
@@ -67,6 +70,7 @@ class SearchDownloadCoordinatorCompletionTest {
     private val localFileOps: LocalFileOps = mockk()
     private val loudnessMeasurer: LoudnessMeasurer = mockk(relaxed = true)
     private val lyricsFetchTrigger: LyricsFetchTrigger = mockk(relaxed = true)
+    private val qualityPrefs: QualityPreference = mockk { every { qualityTier } returns flowOf(QualityTier.MAX) }
 
     private val tmpCacheDir = File(
         System.getProperty("java.io.tmpdir"),
@@ -92,6 +96,7 @@ class SearchDownloadCoordinatorCompletionTest {
         localFileOps = localFileOps,
         loudnessMeasurer = loudnessMeasurer,
         lyricsFetchTrigger = lyricsFetchTrigger,
+        qualityPrefs = qualityPrefs,
     )
 
     @Before

@@ -28,8 +28,7 @@ import javax.inject.Singleton
 /**
  * Observes the playback state and records a [ListeningEventEntity] each
  * time the user listens to a track long enough for it to "count" as a
- * play (Last.fm convention: ≥30s for tracks longer than 60s, or ≥50% of
- * a shorter track).
+ * play: half the track, at least 30 s and at most 4 minutes (see [thresholdFor]).
  *
  * The recorder runs on an app-scoped [CoroutineScope] so it keeps working
  * when screens are recreated. [start] should be called once from the
@@ -37,6 +36,9 @@ import javax.inject.Singleton
  *
  * Invariants:
  *   - Exactly one ListeningEventEntity per (track play session).
+ *   - The threshold counts time actually PLAYING, as Last.fm defines a
+ *     scrobble: a pause (or buffering) stops the countdown and play
+ *     resumes it. A song played for 3 s and left paused never counts.
  *   - Switching tracks cancels the pending fire; the new track starts
  *     its own countdown.
  *   - If the user switches tracks before the threshold hits, no
@@ -57,6 +59,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     private val scrobbler: LastFmScrobbler,
     private val listenSinks: ListenSinkCoordinator,
     private val scope: CoroutineScope,
+    /** Monotonic clock for listening time. Tests pass the test scheduler's time. */
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
 
     @Inject
@@ -79,16 +83,21 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     )
 
     /**
-     * [claimed] is a one-shot handoff between the threshold job and a
-     * transition. Only the side that atomically claims it may act.
+     * One play session of [track]. [claimed] is a one-shot handoff between the
+     * threshold job and a transition. Only the side that atomically claims it
+     * may act. [job] counts down the listening time still needed and runs only
+     * while the track plays; [playedMs] banks the time of earlier play stretches.
      */
-    private data class PendingFire(
+    private class PendingFire(
         val track: Track,
         val sessionStart: Long,
-        val job: Job,
         val claimed: AtomicBoolean,
         val positionAtScheduleMs: Long,
-    )
+    ) {
+        var job: Job? = null
+        var playedMs = 0L
+        var playingSinceMs = 0L
+    }
 
     private var pending: PendingFire? = null
 
@@ -126,7 +135,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     val previousPending = pending
                     if (trackChanged && previousPending != null) {
                         if (previousPending.claimed.compareAndSet(false, true)) {
-                            previousPending.job.cancel()
+                            previousPending.job?.cancel()
                             val skipAt = System.currentTimeMillis()
                             val position = previousPending.positionAtScheduleMs
                             // Inline (rather than `scope.launch { ... }`) so
@@ -148,11 +157,16 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     }
                     if (trackChanged) pending = null
 
-                    // 2. Schedule the track's threshold-fire once it plays. Nothing is
-                    //    announced or counted for a song only shown paused, and a
-                    //    pause/resume mid-track keeps the countdown already running.
+                    // 2. The session starts on the track's first real play. Nothing is
+                    //    announced or counted for a song only shown paused; a pause stops
+                    //    the countdown and play resumes it within the same session.
                     val track = state.currentTrack ?: return@collect
-                    if (state.isPlaying && pending == null) schedulePendingFire(track)
+                    val current = pending
+                    when {
+                        !state.isPlaying -> current?.let { pauseCountdown(it) }
+                        current == null -> schedulePendingFire(track)
+                        else -> resumeCountdown(current)
+                    }
                 }
         }
     }
@@ -190,7 +204,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                         Log.d(TAG, "repeat detected for track ${track.id} — scheduling new fire")
                         pending?.takeIf { it.claimed.compareAndSet(false, true) }?.job?.cancel()
                         pending = null
-                        schedulePendingFire(track)
+                        // Paused (a scrub to 0 or "previous" while paused): the next play edge starts the session.
+                        if (state.isPlaying) schedulePendingFire(track)
                     }
 
                     lastPositionMs = positionMs
@@ -199,48 +214,21 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     }
 
     /**
-     * Schedules a threshold-fire for the given track. Shared by both the
-     * track-change collector and the repeat-one loop detector so the
-     * insert + now-playing logic stays in one place.
+     * Starts a play session for the given track and its countdown. Shared by
+     * both the track-change collector and the repeat-one loop detector so the
+     * insert + now-playing logic stays in one place. Callers run while the
+     * track plays.
      */
     private fun schedulePendingFire(track: Track) {
         val sessionStart = System.currentTimeMillis()
-        val threshold = thresholdFor(track.durationMs)
-        val claimed = AtomicBoolean(false)
-        val job = scope.launch {
-            delay(threshold)
-            val nowPlaying = playerRepository.playerState.value.currentTrack?.id
-            if (nowPlaying == track.id && claimed.compareAndSet(false, true)) {
-                try {
-                    val persistedTrackId = musicRepository.ensureTrackPersisted(track)
-                    val completedAt = System.currentTimeMillis()
-                    listeningEventDao.recordCompletedListen(
-                        ListeningEventEntity(
-                            trackId = persistedTrackId,
-                            startedAt = sessionStart,
-                            scrobbled = false,
-                            // v0.9.13: insert IS the completion event — recorder only fires
-                            // after threshold delay. AutoSaveScrobbler reads completed_at.
-                            completedAt = completedAt,
-                        ),
-                    )
-                    // Push the new listen to the generic sinks (ListenBrainz).
-                    // Last.fm has its own Flow-driven scrobbler and needs no nudge.
-                    listenSinks.onListenRecorded()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to record completed listen", e)
-                }
-            }
-        }
-        pending = PendingFire(
+        val session = PendingFire(
             track = track,
             sessionStart = sessionStart,
-            job = job,
-            claimed = claimed,
+            claimed = AtomicBoolean(false),
             positionAtScheduleMs = playerRepository.playerState.value.positionMs,
         )
+        pending = session
+        resumeCountdown(session)
         scope.launch {
             scrobbler.notifyNowPlaying(
                 artist = track.artist,
@@ -259,6 +247,54 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     startedAtMs = sessionStart,
                 ),
             )
+        }
+    }
+
+    /** Play started or resumed: count down the listening time still needed. */
+    private fun resumeCountdown(session: PendingFire) {
+        if (session.job != null || session.claimed.get()) return
+        session.playingSinceMs = nowMs()
+        val remaining = (thresholdFor(session.track.durationMs) - session.playedMs).coerceAtLeast(0L)
+        session.job = scope.launch {
+            delay(remaining)
+            recordListen(session)
+        }
+    }
+
+    /** Paused or buffering: stop the countdown and bank the time played so far. */
+    private fun pauseCountdown(session: PendingFire) {
+        val job = session.job ?: return
+        if (session.claimed.get()) return // the listen is already being recorded; let it finish
+        job.cancel()
+        session.job = null
+        session.playedMs += nowMs() - session.playingSinceMs
+    }
+
+    /** Enough listening time has played: record the listen, unless a transition claimed it first. */
+    private suspend fun recordListen(session: PendingFire) {
+        val track = session.track
+        val nowPlaying = playerRepository.playerState.value.currentTrack?.id
+        if (nowPlaying != track.id || !session.claimed.compareAndSet(false, true)) return
+        try {
+            val persistedTrackId = musicRepository.ensureTrackPersisted(track)
+            val completedAt = System.currentTimeMillis()
+            listeningEventDao.recordCompletedListen(
+                ListeningEventEntity(
+                    trackId = persistedTrackId,
+                    startedAt = session.sessionStart,
+                    scrobbled = false,
+                    // v0.9.13: insert IS the completion event — recorder only fires
+                    // after threshold delay. AutoSaveScrobbler reads completed_at.
+                    completedAt = completedAt,
+                ),
+            )
+            // Push the new listen to the generic sinks (ListenBrainz).
+            // Last.fm has its own Flow-driven scrobbler and needs no nudge.
+            listenSinks.onListenRecorded()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to record completed listen", e)
         }
     }
 
