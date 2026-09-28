@@ -247,6 +247,15 @@ interface MusicRepository {
     suspend fun queueKeptPlaylists(manualSync: Boolean = false): Int
 
     /**
+     * Starts the download run for songs already waiting in the queue, and does
+     * nothing when none are. [tap]: the user just asked (Library Health's
+     * "Re-download missing"), so it goes on any network like a tap, still never
+     * cancelling a song in progress. Otherwise (cold start) it follows the Sync
+     * tab's Wi-Fi only.
+     */
+    suspend fun resumeWaitingDownloads(tap: Boolean = false)
+
+    /**
      * The playlist page's Download switch (#474). On keeps [playlistId] on the
      * phone in either mode: everything not yet downloaded is queued now, and
      * every later sync (plus every add to it) queues what it gains. Off stops

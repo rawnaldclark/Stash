@@ -637,17 +637,17 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Starts a background drain when a download is waiting for one, and never
-     * otherwise: the worker shows its notification before it looks at the
-     * queue, so an empty start would flash it. Every download row the drain
-     * reads comes from something the user asked for (a tap, a kept playlist, a
-     * followed mix, a Library Health repair), so cold start calls this too: a
-     * run that was cancelled or cut short picks up again under the background
-     * constraints. Waiting means PENDING: failed songs retry when a drain runs
-     * for real work, not on their own at every start.
+     * Starts a drain when a download is waiting for one, and never otherwise:
+     * the worker shows its notification before it looks at the queue, so an
+     * empty start would flash it. Every download row the drain reads comes from
+     * something the user asked for (a tap, a kept playlist, a followed mix, a
+     * Library Health repair), so cold start calls this too: a run that was
+     * cancelled or cut short picks up again under the background constraints.
+     * Waiting means PENDING: failed songs retry when a drain runs for real
+     * work, not on their own at every start.
      */
-    suspend fun resumeWaitingDownloads() {
-        if (downloadQueueDao.hasPendingDiscoveryDownload()) startDiscoveryDrain(background = true)
+    override suspend fun resumeWaitingDownloads(tap: Boolean) {
+        if (downloadQueueDao.hasPendingDiscoveryDownload()) startDiscoveryDrain(background = !tap)
     }
 
     /**
