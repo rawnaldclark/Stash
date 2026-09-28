@@ -162,11 +162,13 @@ class DownloadExecutor @Inject constructor(
                 }
 
                 // Log the actually-selected format (140 AAC-128 vs 141 AAC-256
-                // vs 251 Opus — all land as their own ext). after_video: fires
-                // AFTER the download; bare --print implies --simulate and breaks it.
+                // vs 251 Opus — all land as their own ext). after_move fires after
+                // the file is in place, with the chosen format's fields; after_video
+                // prints NA for every field (yt-dlp 2026.08+). A bare --print implies
+                // --simulate and breaks the download.
                 addOption(
                     "--print",
-                    "after_video:STASHDL_FMT|id=%(format_id)s|abr=%(abr)s|" +
+                    "after_move:STASHDL_FMT|id=%(format_id)s|abr=%(abr)s|" +
                         "acodec=%(acodec)s|ext=%(ext)s|height=%(height)s",
                 )
                 cookiePath?.let { addOption("--cookies", it) }
