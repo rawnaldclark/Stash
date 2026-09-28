@@ -72,6 +72,37 @@ class SongRowSubtitleParserTest {
         assertEquals(81.0, t.durationSeconds, 0.0)
     }
 
+    @Test fun `an album titled like a length is not the length`() {
+        // JAY-Z's album "4:44" is a linked subtitle group; the real length is the unlinked 3:52.
+        val t = shelfSongs.byId("JRW5TbVApFw")
+        assertEquals("JAŸ-Z", t.artist)
+        assertEquals("4:44", t.album)
+        assertEquals(232.0, t.durationSeconds, 0.0)
+    }
+
+    @Test fun `an unlinked co-artist between linked ones is kept`() {
+        // "Yeahman(UC), Hajna & Mina Shankha(UC)": Hajna has no artist page.
+        assertEquals("Yeahman, Hajna, Mina Shankha", shelfSongs.byId("L3HuPWCaIrU").artist)
+    }
+
+    @Test fun `podcast episode takes the show as its artist, not the date`() {
+        assertEquals("OC Podcast", flatSongs.byId("RY_y2mtHl5c").artist)
+    }
+
+    @Test fun `a view count is never the artist`() {
+        // The live Grimm's VGM row with its channel run removed, so the view count
+        // is the first subtitle group: the one place the view-count check decides.
+        val row = Json.parseToJsonElement(
+            """
+            {"playlistItemData":{"videoId":"3g4kgJ1Ye_E"},"flexColumns":[
+              {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Mii Channel Theme Cover"}]}}},
+              {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[
+                {"text":"Video"},{"text":" • "},{"text":"845 views"}]}}}]}
+            """,
+        ).jsonObject
+        assertEquals("", parseTrackSummaryFromListItem(row)!!.artist)
+    }
+
     @Test fun `fixed-column row still reads its length from fixedColumns`() {
         val shelf = Json.parseToJsonElement(fixture("search_artist.json")).jsonObject
             .navigatePath("contents", "tabbedSearchResultsRenderer", "tabs")!!.jsonArray[0].jsonObject

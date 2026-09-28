@@ -59,6 +59,10 @@ private fun JsonObject.runText(): String? = this["text"]?.asString()
 private fun JsonObject.runBrowseId(): String? =
     navigatePath("navigationEndpoint", "browseEndpoint", "browseId")?.asString()
 
+/** A run linking to an artist or channel (UC…, MPLAUC…) or a podcast show (MPSPP…). */
+private fun JsonObject.isArtistLink(): Boolean =
+    runBrowseId()?.let { it.startsWith("UC") || it.startsWith("MPLAUC") || it.startsWith("MPSPP") } == true
+
 /**
  * Leading content-type labels that flat search rows (issue #268) put before the
  * artist in a song row's subtitle ("Song • <artist>"). The titled "Songs" shelf
@@ -132,21 +136,22 @@ internal fun parseTrackSummaryFromListItem(
     }
     val subtitleRuns = subtitleGroups.flatten()
 
-    // Artist: runs linking to an artist/channel page (UC…, MPLAUC…). Rows with
-    // no such link fall back to the first group's text unless it is a stat.
+    // Artist: the whole group holding the first artist link, so an unlinked
+    // co-artist in it is kept ("Yeahman, Hajna & Mina Shankha" links only two).
+    // No link: the first group, unless it links elsewhere or is a stat/year.
     // Rows that name no artist at all (the artist "Popular" shelf, album
     // tracklists) take the caller's fallbackArtist: lossless matching scores
     // on artist + title and finds nothing with a blank artist.
-    val linkedArtists = subtitleRuns
-        .filter { run -> run.runBrowseId()?.let { it.startsWith("UC") || it.startsWith("MPLAUC") } == true }
-        .mapNotNull { it.runText() }
-    val firstGroupTexts = subtitleGroups.firstOrNull().orEmpty()
+    val artistGroup = subtitleGroups.firstOrNull { group -> group.any { it.isArtistLink() } }
+        ?: subtitleGroups.firstOrNull()?.takeIf { group ->
+            group.none { run ->
+                run.runBrowseId() != null ||
+                    run.runText().orEmpty().let { isRowStat(it) || it.matches(YEAR_REGEX) }
+            }
+        }
+    val artist = artistGroup.orEmpty()
         .mapNotNull { it.runText() }
         .filterNot { it in SUBTITLE_JOINERS }
-    val artist = linkedArtists
-        .ifEmpty {
-            firstGroupTexts.takeIf { texts -> texts.none { isRowStat(it) || it.matches(YEAR_REGEX) } }.orEmpty()
-        }
         .joinToString(", ")
         .ifBlank { fallbackArtist.orEmpty() }
 
@@ -172,14 +177,16 @@ internal fun parseTrackSummaryFromListItem(
     )
 
     // Length: the fixed column (album pages, older shapes), else the "Songs"
-    // shelf's "5:13" subtitle group. Flat rows carry no length at all (0).
+    // shelf's unlinked "5:13" subtitle group. A linked group is an album, even
+    // one titled like a length (JAY-Z "4:44"). Flat rows carry no length (0).
     val durationText = renderer["fixedColumns"]?.asArray()
         ?.firstOrNull()?.asObject()
         ?.navigatePath("musicResponsiveListItemFixedColumnRenderer", "text", "runs")
         ?.firstArray()?.firstOrNull()?.asObject()
         ?.get("text")?.asString()
         ?: subtitleGroups.firstNotNullOfOrNull { group ->
-            group.singleOrNull()?.runText()?.takeIf { it.matches(DURATION_REGEX) }
+            group.singleOrNull()?.takeIf { it.runBrowseId() == null }
+                ?.runText()?.takeIf { it.matches(DURATION_REGEX) }
         }
 
     return TrackSummary(

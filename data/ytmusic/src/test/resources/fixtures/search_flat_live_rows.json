@@ -217,5 +217,74 @@
         }
       ]
     }
+  },
+  {
+    "itemSectionRenderer": {
+      "contents": [
+        {
+          "musicResponsiveListItemRenderer": {
+            "playlistItemData": {
+              "videoId": "RY_y2mtHl5c"
+            },
+            "flexColumns": [
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "Arrangement, Insaneintherainmusic, & Making Covers (ft. SmartGamePiano) || OC Podcast",
+                        "navigationEndpoint": {
+                          "browseEndpoint": {
+                            "browseId": "MPEDRY_y2mtHl5c",
+                            "browseEndpointContextSupportedConfigs": {
+                              "browseEndpointContextMusicConfig": {
+                                "pageType": "MUSIC_PAGE_TYPE_NON_MUSIC_AUDIO_TRACK_PAGE"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": {
+                    "runs": [
+                      {
+                        "text": "Episode"
+                      },
+                      {
+                        "text": " • "
+                      },
+                      {
+                        "text": "Jul 15, 2017"
+                      },
+                      {
+                        "text": " • "
+                      },
+                      {
+                        "text": "OC Podcast",
+                        "navigationEndpoint": {
+                          "browseEndpoint": {
+                            "browseId": "MPSPPLqIOOHS4sNl5uOm4Eay_Ox49v9Ekuc1Jl",
+                            "browseEndpointContextSupportedConfigs": {
+                              "browseEndpointContextMusicConfig": {
+                                "pageType": "MUSIC_PAGE_TYPE_PODCAST_SHOW_DETAIL_PAGE"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
   }
 ]
