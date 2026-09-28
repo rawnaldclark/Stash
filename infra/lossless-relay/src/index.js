@@ -122,9 +122,9 @@ async function mint(request, url, env, fetchImpl, nowSec) {
     }
     let refusedBy = null; // an account that refused this track without naming the track
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const label = await selectAccount(env.DB, nowSec, caps, refusedBy);
+        const label = await selectAccount(env.DB, nowSec, caps, refusedBy, accounts.map((a) => a.label));
         const account = accounts.find((a) => a.label === label);
-        if (!account) break; // nothing live under its caps (or a D1 label with no secret entry) → 503 below
+        if (!account) break; // nothing live under its caps → 503 below (or the 404 a refusal already earned)
         const r = await mintFromQobuz(fetchImpl, account, trackId, formatId, nowSec);
         // Country/colo: the Worker runs — and calls Qobuz from — the colo nearest the phone, so
         // if Qobuz applies rights by calling IP, refusals will follow the colo, not the account.

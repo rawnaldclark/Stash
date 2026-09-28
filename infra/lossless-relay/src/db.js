@@ -40,6 +40,8 @@ export function bumpQuotaStmt(db, day, key, ip = null) {
 /**
  * Spec §5.3 in one statement: pick the live, un-cooled account with the oldest
  * last_used_at that is under both caps, and stamp its counters in the same write.
+ * `labels` (the accounts in the secret) keeps a row whose label was removed from the secret
+ * out of the rotation; otherwise it would be picked, have no token, and turn the request into a 503.
  * With `exclude` (the account that just refused a track), pick the most recently used
  * other one instead: the likeliest to be healthy, so two refusing accounts don't pair
  * up at the front of the rotation and hide each other.
@@ -47,7 +49,7 @@ export function bumpQuotaStmt(db, day, key, ip = null) {
  * side compares the OLD key. Atomic under concurrent invocations because D1 runs
  * one statement at a time. Returns the label, or null when nothing is eligible.
  */
-export async function selectAccount(db, nowSec, caps, exclude = null) {
+export async function selectAccount(db, nowSec, caps, exclude = null, labels = null) {
     const row = await db.prepare(`
 UPDATE accounts SET
   hour_n = CASE WHEN hour_key = ?2 THEN hour_n + 1 ELSE 1 END, hour_key = ?2,
@@ -59,8 +61,9 @@ WHERE label = (
     AND (hour_key != ?2 OR hour_n < ?4)
     AND (day_key  != ?3 OR day_n  < ?5)
     AND label IS NOT ?6
+    AND (?7 IS NULL OR label IN (SELECT value FROM json_each(?7)))
   ORDER BY CASE WHEN ?6 IS NULL THEN last_used_at ELSE -last_used_at END ASC, label ASC LIMIT 1)
-RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, caps.daily, exclude).first();
+RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, caps.daily, exclude, labels && JSON.stringify(labels)).first();
     return row ? row.label : null;
 }
 

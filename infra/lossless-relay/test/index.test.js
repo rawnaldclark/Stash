@@ -193,6 +193,14 @@ function qobuzByToken(expired) {
     return f;
 }
 
+test("an account removed from the secret is never picked, though its D1 row lingers", async () => {
+    const e = env(); const q = qobuz([200, GOOD], [200, { ...GOOD, url: "https://cdn.example/g.flac?etsp=" + (NOW + 3599) }]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 200); // rows for a and b now exist; a served
+    e.QOBUZ_ACCOUNTS = JSON.stringify([ACCOUNTS[0]]); // operator drops b from the secret; b's row stays, and b is next in LRU
+    assert.equal((await handle(mintReq(43, 27), e, q, NOW + 60)).status, 200);
+    assert.deepEqual(q.calls.map((c) => c.init.headers["X-User-Auth-Token"]), ["tok-a", "tok-a"]);
+});
+
 test("rotation with half the pool expired: both expired accounts end up cooled and the listener gets FLAC", async () => {
     const four = ["a", "b", "c", "d"].map((l) => ({ label: l, token: "tok-" + l, app_id: "111111111", app_secret: "s-" + l }));
     const e = env({ QOBUZ_ACCOUNTS: JSON.stringify(four) }); const q = qobuzByToken(new Set(["tok-a", "tok-b"]));
