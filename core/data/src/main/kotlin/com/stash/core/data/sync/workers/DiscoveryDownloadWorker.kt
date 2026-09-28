@@ -7,6 +7,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
+import androidx.work.Operation
 import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -86,11 +87,11 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
             context: Context,
             constraints: Constraints,
             policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE,
-        ) {
+        ): Operation {
             val work = OneTimeWorkRequestBuilder<DiscoveryDownloadWorker>()
                 .setConstraints(constraints)
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(UNIQUE_WORK_NAME, policy, work)
+            return WorkManager.getInstance(context).enqueueUniqueWork(UNIQUE_WORK_NAME, policy, work)
         }
     }
 

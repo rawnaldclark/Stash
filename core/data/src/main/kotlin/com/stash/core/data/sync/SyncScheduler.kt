@@ -8,6 +8,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.stash.core.data.sync.workers.DiffWorker
 import com.stash.core.data.sync.workers.PlaylistFetchWorker
 import com.stash.core.data.sync.workers.SyncFinalizeWorker
@@ -76,7 +77,7 @@ class SyncScheduler @Inject constructor(
             )
             .setRequiresBatteryNotLow(true)
             .build()
-        enqueueChain(initialDelayMs = delayMs, constraints = constraints)
+        enqueueChain(initialDelayMs = delayMs, constraints = constraints, manual = false)
     }
 
     /**
@@ -110,7 +111,7 @@ class SyncScheduler @Inject constructor(
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        enqueueChain(initialDelayMs = 0, constraints = constraints)
+        enqueueChain(initialDelayMs = 0, constraints = constraints, manual = true)
     }
 
     /**
@@ -180,7 +181,7 @@ class SyncScheduler @Inject constructor(
      *                       (Fetch, Diff, Download). The Finalize worker uses no
      *                       constraints since it only writes local state.
      */
-    private fun enqueueChain(initialDelayMs: Long, constraints: Constraints) {
+    private fun enqueueChain(initialDelayMs: Long, constraints: Constraints, manual: Boolean) {
         val fetchWork = OneTimeWorkRequestBuilder<PlaylistFetchWorker>()
             .setConstraints(constraints)
             .setBackoffCriteria(
@@ -197,6 +198,9 @@ class SyncScheduler @Inject constructor(
 
         val diffWork = OneTimeWorkRequestBuilder<DiffWorker>()
             .setConstraints(constraints)
+            // WorkManager hands a chained worker its own input merged with the
+            // fetch step's output, so the diff step learns a "Sync now" here.
+            .setInputData(workDataOf(DiffWorker.KEY_MANUAL_SYNC to manual))
             .addTag("sync_diff")
             .build()
 

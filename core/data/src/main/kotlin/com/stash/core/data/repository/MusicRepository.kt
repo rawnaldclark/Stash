@@ -241,9 +241,10 @@ interface MusicRepository {
     /**
      * After a sync: queue what every playlist kept on the phone (#474) is
      * missing, then start ONE background download for all of it. Returns the
-     * number of songs queued.
+     * number of songs queued. [manualSync]: the user tapped "Sync now", so
+     * these download on any network, like that sync's own downloads.
      */
-    suspend fun queueKeptPlaylists(): Int
+    suspend fun queueKeptPlaylists(manualSync: Boolean = false): Int
 
     /**
      * The playlist page's Download switch (#474). On keeps [playlistId] on the

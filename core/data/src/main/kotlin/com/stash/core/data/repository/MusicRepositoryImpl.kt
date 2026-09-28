@@ -3,6 +3,12 @@ package com.stash.core.data.repository
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.await
 import com.stash.core.common.matchesArtistCredits
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
@@ -13,6 +19,8 @@ import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.mapper.toEntity
 import com.stash.core.data.mix.LastFmRecommendationSource
+import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
+import com.stash.core.data.sync.workers.constraintsForManualTrigger
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import com.stash.core.model.share.toTrack
@@ -30,6 +38,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import androidx.core.net.toUri
@@ -609,13 +619,16 @@ class MusicRepositoryImpl @Inject constructor(
         return queued
     }
 
-    override suspend fun queueKeptPlaylists(): Int {
+    override suspend fun queueKeptPlaylists(manualSync: Boolean): Int {
         // Every playlist's rows first, then one drain: a drain per playlist
         // would restart it each time and cancel the song in progress.
         val queued = playlistDao.getKeepOfflinePlaylistIds().sumOf { insertDownloadsForPlaylist(it) }
         // Nothing new still restarts a drain for songs already waiting, whose
-        // run was cancelled or cut short.
-        if (queued > 0) startDiscoveryDrain(background = true) else resumeWaitingDownloads()
+        // run was cancelled or cut short. "Sync now" downloads on any network,
+        // like that sync's own download step (SyncScheduler.triggerManualSync).
+        if (queued > 0 || downloadQueueDao.hasPendingDiscoveryDownload()) {
+            startDiscoveryDrain(background = true, anyNetwork = manualSync)
+        }
         return queued
     }
 
@@ -639,47 +652,55 @@ class MusicRepositoryImpl @Inject constructor(
      *
      * - A tap wants the songs now: any network, and REPLACE, so it takes over
      *   from a background drain still waiting for Wi-Fi.
-     * - Background work downloads the way a sync does and APPENDs, so it never
-     *   turns a waiting tap into a Wi-Fi-only one or cancels the song in
-     *   progress. It runs after the current drain and picks up what that one's
-     *   snapshot missed.
+     * - Background work downloads the way a sync does and never cancels the
+     *   song in progress: it joins a drain that is waiting to start, or queues
+     *   one behind the drain that is running. [anyNetwork] is "Sync now".
+     *
+     * One caller at a time ([DRAIN_START_LOCK]): a cold start and a sync can
+     * both read "nothing waiting" at once, and both would enqueue.
      *
      * ponytail: a tap's drain takes every waiting row, background ones too, on
      * the tap's network. Keeping those back needs a per-row marker.
      */
-    private suspend fun startDiscoveryDrain(background: Boolean) {
-        if (background) {
-            // A drain that hasn't started yet reads the queue when it does, so it
-            // takes these rows too. Appending would stack one waiting drain per call
-            // (every sync, every cold start while off Wi-Fi), and each would show
-            // its notification in turn once Wi-Fi is back. Only a RUNNING drain,
-            // whose snapshot is taken, needs one queued behind it.
-            val waiting = androidx.work.WorkManager.getInstance(context)
-                .getWorkInfosForUniqueWorkFlow(com.stash.core.data.sync.workers.DiscoveryDownloadWorker.UNIQUE_WORK_NAME)
-                .first()
-                .any { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
-            if (waiting) return
-            // The Sync tab's "Wi-Fi only", exactly as SyncScheduler builds the
-            // sync's own download step: never charging, which belongs to the
-            // recommendations setting (DownloadNetworkMode), not to downloads.
-            val wifiOnly = syncPreferencesManager.preferences.first().wifiOnly
-            com.stash.core.data.sync.workers.DiscoveryDownloadWorker.enqueueOneTime(
-                context = context,
-                constraints = androidx.work.Constraints.Builder()
-                    .setRequiredNetworkType(
-                        if (wifiOnly) androidx.work.NetworkType.UNMETERED else androidx.work.NetworkType.CONNECTED,
-                    )
-                    .setRequiresBatteryNotLow(true)
-                    .build(),
-                policy = androidx.work.ExistingWorkPolicy.APPEND_OR_REPLACE,
-            )
-        } else {
-            com.stash.core.data.sync.workers.DiscoveryDownloadWorker.enqueueOneTime(
-                context = context,
-                constraints = com.stash.core.data.sync.workers.constraintsForManualTrigger(
-                    downloadNetworkPreference.current(),
-                ),
-            )
+    private suspend fun startDiscoveryDrain(background: Boolean, anyNetwork: Boolean = false) {
+        if (!background) {
+            val constraints = constraintsForManualTrigger(downloadNetworkPreference.current())
+            DRAIN_START_LOCK.withLock { DiscoveryDownloadWorker.enqueueOneTime(context, constraints).await() }
+            return
+        }
+        DRAIN_START_LOCK.withLock {
+            val runs = WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWorkFlow(DiscoveryDownloadWorker.UNIQUE_WORK_NAME).first()
+            // The Sync tab's "Wi-Fi only", exactly as SyncScheduler builds a sync's
+            // own download step: never charging, which belongs to the recommendations
+            // setting (DownloadNetworkMode), not to downloads. Read fresh every time:
+            // a waiting run keeps the rule it was created with.
+            val network = if (anyNetwork || !syncPreferencesManager.preferences.first().wifiOnly) {
+                NetworkType.CONNECTED
+            } else {
+                NetworkType.UNMETERED
+            }
+            val running = runs.any { it.state == WorkInfo.State.RUNNING }
+            val waiting = runs.filter { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }
+            val policy = when {
+                // None waiting: start one, or queue it behind the running one,
+                // whose snapshot of the queue is already taken.
+                waiting.isEmpty() -> ExistingWorkPolicy.APPEND_OR_REPLACE
+                // A waiting run reads the queue when it starts, so it takes these
+                // rows too; stacking another would show the notification once per
+                // run. Unless it waits for Wi-Fi this start doesn't need (Wi-Fi
+                // only was turned off, or "Sync now"): with nothing running,
+                // replacing it cancels nothing.
+                !running && network == NetworkType.CONNECTED &&
+                    waiting.any { it.constraints.requiredNetworkType == NetworkType.UNMETERED } ->
+                    ExistingWorkPolicy.REPLACE
+                else -> return
+            }
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(network)
+                .setRequiresBatteryNotLow(true)
+                .build()
+            DiscoveryDownloadWorker.enqueueOneTime(context, constraints, policy).await()
         }
     }
 
@@ -1217,6 +1238,9 @@ class MusicRepositoryImpl @Inject constructor(
 
     companion object {
         private const val DOWNLOADS_MIX_SOURCE_ID = "stash_downloads_mix"
+
+        /** Serializes [startDiscoveryDrain]'s read-then-enqueue, across every instance. */
+        private val DRAIN_START_LOCK = Mutex()
 
         /**
          * WorkManager unique-work names for the Stash Mix workers. Used by

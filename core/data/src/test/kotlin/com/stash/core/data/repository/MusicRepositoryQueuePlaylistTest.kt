@@ -32,7 +32,10 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -211,6 +214,48 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(emptyList<WorkInfo>(), drains())
     }
 
+    // ── The network rule is read fresh (#474) ─────────────────────────────
+
+    @Test fun `turning Wi-Fi only off replaces a run still waiting for Wi-Fi`() = runTest {
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting"))))
+        repo(wifiOnly = true).resumeWaitingDownloads()
+        repo(wifiOnly = false).resumeWaitingDownloads()
+        // Nothing was running, so nothing was cancelled: the waiting run just stops waiting for Wi-Fi.
+        assertEquals(listOf(WorkInfo.State.ENQUEUED to NetworkType.CONNECTED), liveDrains())
+    }
+
+    @Test fun `a run in progress is never replaced, even after Wi-Fi only is turned off`() = runTest {
+        val pid = playlist("Mix")
+        member(pid, 0, track("A"))
+        repo().queueDownloadsForPlaylist(pid)
+        startDrain()
+        member(pid, 1, track("B"))
+        repo(wifiOnly = true).queueDownloadsForPlaylist(pid, background = true)
+        member(pid, 2, track("C"))
+        repo(wifiOnly = false).queueDownloadsForPlaylist(pid, background = true)
+
+        // Replacing would cancel the song downloading now; the queued-behind run takes C.
+        assertEquals(
+            setOf(WorkInfo.State.RUNNING to NetworkType.CONNECTED, WorkInfo.State.BLOCKED to NetworkType.UNMETERED),
+            liveDrains().toSet(),
+        )
+    }
+
+    @Test fun `a manual sync downloads kept playlists on any network, even with Wi-Fi only on`() = runTest {
+        member(playlist("Kept", keepOffline = true), 0, track("A"))
+        assertEquals(1, repo(wifiOnly = true).queueKeptPlaylists(manualSync = true))
+        assertEquals(listOf(WorkInfo.State.ENQUEUED to NetworkType.CONNECTED), liveDrains())
+    }
+
+    /** A cold start and a sync can both look for a waiting run at once; only one may start one. */
+    @Test fun `two background starts at the same moment start one run`() = runTest {
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting"))))
+        val coldStart = repo()
+        val sync = repo()
+        listOf(launch { coldStart.resumeWaitingDownloads() }, launch { sync.resumeWaitingDownloads() }).joinAll()
+        assertEquals(listOf(WorkInfo.State.ENQUEUED to NetworkType.UNMETERED), liveDrains())
+    }
+
     @Test fun `resuming starts one background drain, and never stacks a second one`() = runTest {
         db.downloadQueueDao().insert(DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting"))))
         val repo = repo()
@@ -296,7 +341,8 @@ class MusicRepositoryQueuePlaylistTest {
         val streaming = mockk<StreamingPreference>()
         coEvery { streaming.current() } returns streamOnly
         val sync = mockk<SyncPreferencesManager>(relaxed = true)
-        every { sync.preferences } returns flowOf(SyncPreferences(wifiOnly = wifiOnly))
+        // Like DataStore, reading the setting suspends: that is where two starts can interleave.
+        every { sync.preferences } returns flow { yield(); emit(SyncPreferences(wifiOnly = wifiOnly)) }
         return MusicRepositoryImpl(
             context = context,
             trackDao = db.trackDao(),

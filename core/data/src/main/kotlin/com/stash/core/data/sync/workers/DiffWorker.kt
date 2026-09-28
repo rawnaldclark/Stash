@@ -170,6 +170,8 @@ class DiffWorker @AssistedInject constructor(
         const val KEY_SYNC_ID = "sync_id"
         const val KEY_NEW_TRACKS = "new_tracks"
         const val KEY_PLAYLISTS_CHECKED = "playlists_checked"
+        /** Set by SyncScheduler on a "Sync now" chain: the kept-playlist sweep then uses any network. */
+        const val KEY_MANUAL_SYNC = "manual_sync"
         private const val TAG = "DiffWorker"
         /** How many new songs to name before collapsing to "+N more". */
         private const val NEW_TRACKS_NAMED = 3
@@ -393,9 +395,12 @@ class DiffWorker @AssistedInject constructor(
             // (the existing-track path never queues). Queued, failed and cancelled
             // songs are left alone, so one pass per run is safe, and it starts one
             // drain that follows the Sync tab's "Wi-Fi only", like this sync's own
-            // downloads. Never fatal: the sync itself already worked.
+            // downloads, or any network for "Sync now". Never fatal: the sync
+            // itself already worked.
             runCatching {
-                val queued = musicRepository.queueKeptPlaylists()
+                val queued = musicRepository.queueKeptPlaylists(
+                    manualSync = inputData.getBoolean(KEY_MANUAL_SYNC, false),
+                )
                 if (queued > 0) {
                     syncLog.info("Downloading $queued song${if (queued == 1) "" else "s"} for playlists kept on this phone")
                 }

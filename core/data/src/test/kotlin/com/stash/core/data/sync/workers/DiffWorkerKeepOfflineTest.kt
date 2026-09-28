@@ -100,7 +100,18 @@ class DiffWorkerKeepOfflineTest {
 
         assertEquals(3, db.playlistDao().getTracksForPlaylist(id).size)
         coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
-        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists() }
+        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists(false) }
+    }
+
+    /** "Sync now" downloads on any network, and the sweep's songs must too. */
+    @Test
+    fun `a manual sync's sweep is told it was manual`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        insert("Release Radar", "spotify:playlist:rr", PlaylistType.DAILY_MIX, keepOffline = true)
+
+        buildWorker(manualSync = true).doWork()
+
+        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists(true) }
     }
 
     private suspend fun assertOneSweep(streamOnly: Boolean) {
@@ -110,7 +121,7 @@ class DiffWorkerKeepOfflineTest {
 
         buildWorker().doWork()
 
-        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists() }
+        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists(false) }
         coVerify(exactly = 0) { musicRepository.queueDownloadsForPlaylist(any(), any()) }
     }
 
@@ -155,8 +166,8 @@ class DiffWorkerKeepOfflineTest {
         }
     }
 
-    private fun buildWorker(): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
-        .setInputData(workDataOf(PlaylistFetchWorker.KEY_SYNC_ID to 1L))
+    private fun buildWorker(manualSync: Boolean = false): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
+        .setInputData(workDataOf(PlaylistFetchWorker.KEY_SYNC_ID to 1L, DiffWorker.KEY_MANUAL_SYNC to manualSync))
         .setWorkerFactory(object : WorkerFactory() {
             override fun createWorker(
                 appContext: Context,
