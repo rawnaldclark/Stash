@@ -1,11 +1,14 @@
 package com.stash.core.media
 
+import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.entity.TrackEntity
@@ -15,7 +18,9 @@ import com.stash.core.data.radio.RadioSession
 import com.stash.core.data.radio.RadioStationGenerator
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.TrackIdentityEvents
+import com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
 import com.stash.core.media.listen.ListenTogetherController
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_ORIGIN
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.model.PlaybackSource
@@ -47,6 +52,7 @@ class PlayerRepositoryListenTogetherTest {
     private val radioGenerator: RadioStationGenerator = mockk { coEvery { start(any()) } returns (mockk<RadioSession>() to emptyList()) }
     private val trackIdentityEvents: TrackIdentityEvents = mockk { every { changes } returns MutableSharedFlow() }
     private val together = ListenTogetherController(ApplicationProvider.getApplicationContext())
+    private val log = PlaybackDiagnosticsLog()
 
     private val autoplayOn = object : AutoplayRadioPreference {
         override val enabled = flowOf(true)
@@ -78,6 +84,7 @@ class PlayerRepositoryListenTogetherTest {
             playbackSessionBus = PlaybackSessionBus(),
             autoplayRadioPreference = autoplay,
             listenTogether = together,
+            diagnosticsLog = log,
         )
         repo.controllerDeferred = controller
         shadowOf(Looper.getMainLooper()).idle()
@@ -269,6 +276,58 @@ class PlayerRepositoryListenTogetherTest {
         repo.playerListener.onPlayerError(error)
         shadowOf(Looper.getMainLooper()).idle()
         verify(atLeast = 1) { controller.prepare() }
+    }
+
+    // ── The diagnostics bundle's "Recent playback errors": every onPlayerError, with the branch taken ──
+
+    @Test fun `a streaming error is recorded for the diagnostics bundle, without its title or url`() {
+        val repo = build()
+        val url = "https://rr3---sn-4g5e6nsz.googlevideo.com/videoplayback?ip=203.0.113.7&sig=SECRET"
+        every { controller.currentMediaItem } returns MediaItem.Builder()
+            .setMediaId("42")
+            .setUri(url)
+            .setMediaMetadata(
+                MediaMetadata.Builder().setTitle("Secret Song").setArtist("Some Artist")
+                    .setExtras(
+                        Bundle().apply {
+                            putLong(EXTRA_TRACK_ID, 42L)
+                            putString(EXTRA_STREAM_ORIGIN, "youtube")
+                        },
+                    ).build(),
+            )
+            .build()
+        // What ExoPlayer raises for a 403: the cause carries the full URL in its DataSpec.
+        val forbidden = HttpDataSource.InvalidResponseCodeException(
+            403, "Forbidden", null, emptyMap(), DataSpec(Uri.parse(url)), ByteArray(0),
+        )
+
+        repo.playerListener.onPlayerError(
+            PlaybackException("Source error", forbidden, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS),
+        )
+
+        val e = log.recentErrors().single()
+        assertThat(e.trackId).isEqualTo(42L)
+        assertThat(e.code).isEqualTo("ERROR_CODE_IO_BAD_HTTP_STATUS")
+        assertThat(e.httpStatus).isEqualTo(403)
+        assertThat(e.branch).isEqualTo("STREAMING_CASCADE → RetrySameItem")
+        assertThat(e.origin).isEqualTo("youtube")
+        assertThat(e.scheme).isEqualTo("https")
+        assertThat(e.toString()).doesNotContain("Secret Song")
+        assertThat(e.toString()).doesNotContain("googlevideo")
+    }
+
+    @Test fun `during a session a playback error is still recorded, as left to the session`() {
+        val repo = build()
+        sessionPlayer()
+        together.setActive(true)
+
+        repo.playerListener.onPlayerError(
+            PlaybackException("boom", null, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED),
+        )
+
+        val e = log.recentErrors().single()
+        assertThat(e.trackId).isEqualTo(99L)
+        assertThat(e.branch).isEqualTo("LISTEN_TOGETHER (left to the session)")
     }
 
     @Test fun `during a session the radio grower adds nothing`() = runTest {
