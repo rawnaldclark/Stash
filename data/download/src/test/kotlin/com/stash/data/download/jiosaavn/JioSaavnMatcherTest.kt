@@ -183,6 +183,17 @@ class JioSaavnMatcherTest {
     }
 
     @Test
+    fun `live dub - a language named in any album picks that language`() {
+        // Not the dub's own album name, so only the language gate can single out the Telugu copy.
+        val result = JioSaavnMatcher.best(
+            TrackQuery("Ananya Bhat", "Mehabooba", album = "Telugu Hits 2022", durationMs = 212_000L),
+            liveSongs(MEHABOOBA),
+        )
+
+        assertThat(result?.song?.id).isEqualTo("92hBBPo0")
+    }
+
+    @Test
     fun `copies up to four seconds apart are one recording`() {
         // Live 2026-09-28: the Baazigar "Ae Mere Humsafar" is listed at 450, 453 and 454 s.
         val result = JioSaavnMatcher.best(
@@ -299,6 +310,18 @@ class JioSaavnMatcherTest {
         assertThat(JioSaavnMatcher.best(query, listOf(unknown, known))).isNull()
     }
 
+    @Test
+    fun `a duet request never takes a same-titled solo as a copy`() {
+        // The artist check lets a solo by one of the duet's singers through, so without
+        // comparing singers the solo counted as a copy and could win the tie.
+        val query = TrackQuery(ALKA_AND_UDIT, "Ae Mere Humsafar", durationMs = 300_000L)
+        val duet = song(id = "duet", name = "Ae Mere Humsafar", artists = listOf("Alka Yagnik", "Udit Narayan"), duration = 302, album = "Album A")
+        val solo = song(id = "solo", name = "Ae Mere Humsafar", artists = listOf("Udit Narayan"), duration = 300, album = "Album B")
+
+        assertThat(JioSaavnMatcher.best(query, listOf(duet, solo))?.song?.id).isNotEqualTo("solo")
+        assertThat(JioSaavnMatcher.best(query, listOf(solo, duet))?.song?.id).isNotEqualTo("solo")
+    }
+
     /** A saved live search response, parsed by the real [JioSaavnClient] as in JioSaavnClientTest. */
     private fun liveSongs(fixture: String): List<JioSaavnSong> = MockWebServer().use { server ->
         val body = javaClass.classLoader!!.getResource("fixtures/$fixture")!!.readText()
@@ -313,6 +336,7 @@ class JioSaavnMatcherTest {
         id: String = "rjkrTnma",
         name: String = "Kesariya",
         artist: String = "Arijit Singh",
+        artists: List<String> = listOf(artist),
         duration: Int? = 268,
         mediaUrl: String = "https://aac.saavncdn.com/song_320.mp4",
         album: String = "Brahmastra",
@@ -324,7 +348,7 @@ class JioSaavnMatcherTest {
         duration = duration,
         explicitContent = explicit,
         album = JioSaavnAlbum(album),
-        artists = JioSaavnArtists(listOf(JioSaavnArtist(artist))),
+        artists = JioSaavnArtists(artists.map { JioSaavnArtist(it) }),
         image = listOf(JioSaavnImage("500x500", "https://c.saavncdn.com/cover.jpg")),
         downloadUrl = listOf(JioSaavnMediaLink("320kbps", mediaUrl)),
         language = language,

@@ -64,6 +64,21 @@ class AudioDurationExtractorTest {
     }
 
     @Test
+    fun `a FLAC whose track reads as decoded PCM stays flac`() {
+        // Android's FLAC extractor decodes to PCM itself, so its track MIME is "audio/raw"
+        // (Pixel 5, 2026-09-28): taking it stored every new FLAC as "raw".
+        val path = "/music/radiohead_nude.flac"
+        retrieverReports(path, "audio/flac")
+        ShadowMediaExtractor.addTrack(
+            DataSource.toDataSource(path),
+            MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_RAW, 44_100, 2),
+            ByteArray(0),
+        )
+
+        assertThat(extractor.extract(path)!!.format).isEqualTo("flac")
+    }
+
+    @Test
     fun `falls back to the container MIME when the extractor finds no audio track`() {
         val path = "/music/unreadable_by_extractor.flac"
         retrieverReports(path, "audio/flac")

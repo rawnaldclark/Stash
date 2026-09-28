@@ -100,18 +100,24 @@ object JioSaavnMatcher {
     /**
      * One recording re-issued on another album: equal titles once a soundtrack
      * credit ('(From "Qayamat Se Qayamat Tak")') is dropped, known durations
-     * within [SAME_RECORDING_MAX_DRIFT_SEC] and the same explicit flag (a
-     * search-tab request cannot tell clean from explicit). Every other
-     * parenthetical, "(Sad)", "(Female Version)", "(feat. X)", stays
-     * significant, and an unknown duration never counts as a copy.
+     * within [SAME_RECORDING_MAX_DRIFT_SEC], the same explicit flag (a
+     * search-tab request cannot tell clean from explicit) and the same singers.
+     * Every other parenthetical, "(Sad)", "(Female Version)", "(feat. X)", stays
+     * significant, and an unknown duration never counts as a copy. The singers
+     * matter because the artist check lets a solo by one of a duet's singers
+     * through: without them a same-titled solo counted as a copy of the duet.
      */
     private fun sameRecording(a: JioSaavnSong, b: JioSaavnSong): Boolean {
         val aSec = a.duration?.takeIf { it > 0 } ?: return false
         val bSec = b.duration?.takeIf { it > 0 } ?: return false
         return abs(aSec - bSec) <= SAME_RECORDING_MAX_DRIFT_SEC &&
             a.explicitContent == b.explicitContent &&
+            primaryArtists(a) == primaryArtists(b) &&
             recordingTitle(a.name) == recordingTitle(b.name)
     }
+
+    private fun primaryArtists(song: JioSaavnSong): Set<String> =
+        song.artists.primary.mapTo(mutableSetOf()) { normalize(it.name) }
 
     /** Languages the request names as whole words, e.g. the album "KGF Chapter 2 - Telugu". */
     private fun requestedLanguages(query: TrackQuery): Set<String> =

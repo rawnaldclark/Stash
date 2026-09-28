@@ -92,7 +92,10 @@ class AudioDurationExtractor @Inject constructor(
             // "audio/ogg" for Opus), so the codec comes from the audio track when the
             // extractor reads one. Container-only, JioSaavn's AAC read as "mp4" and
             // failed its `format == "aac"` check every time (Pixel 5, 2026-09-28).
-            val format = normalizeFormat(trackMime ?: mime)
+            // Except "audio/raw": Android's FLAC (and WAV) extractor decodes to PCM
+            // itself, so its track says nothing about the file. Taking it stored new
+            // FLACs as "raw" on the Pixel 5, which the lossless upgrade would refetch.
+            val format = normalizeFormat(trackMime?.takeUnless { it == MediaFormat.MIMETYPE_AUDIO_RAW } ?: mime)
             // FLAC fallback: MediaExtractor on some devices returns -1 for FLAC
             // bit-depth even on API 30+. Always try STREAMINFO when we have a
             // FLAC file but no bit-depth from the extractor.
@@ -186,7 +189,7 @@ class AudioDurationExtractor @Inject constructor(
                 } else {
                     extractor.setDataSource(filePath)
                 }
-                val format = (0 until extractor.trackCount).map(extractor::getTrackFormat)
+                val format = (0 until extractor.trackCount).asSequence().map(extractor::getTrackFormat)
                     .firstOrNull { it.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
                     ?: return Triple(null, null, null)
                 val sampleRate = runCatching { format.getInteger(MediaFormat.KEY_SAMPLE_RATE) }
