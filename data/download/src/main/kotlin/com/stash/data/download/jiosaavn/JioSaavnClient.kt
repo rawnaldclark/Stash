@@ -82,8 +82,8 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
         }
     }
 
-    /** Validate the synthesized 320 URL before it enters playback. */
-    suspend fun isPlayable320(url: String): JioSaavnProbeOutcome {
+    /** Validate a synthesized variant URL ([jioSaavnVariantUrl]) before it enters playback. */
+    suspend fun isPlayable(url: String): JioSaavnProbeOutcome {
         if (!isTrustedMediaUrl(url)) return JioSaavnProbeOutcome.Unavailable
         val request = Request.Builder().url(url).header("Range", "bytes=0-4095").get().build()
         return try {
@@ -176,7 +176,8 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
 
     internal fun isTrustedMediaUrl(value: String): Boolean {
         val url = value.toHttpUrlOrNull() ?: return false
-        return url.isHttps && url.host == AAC_CDN_HOST && url.encodedPath.contains("_320")
+        return url.isHttps && url.host == AAC_CDN_HOST &&
+            VARIANTS_KBPS.any { url.encodedPath.contains("_$it") }
     }
 
     internal fun decrypt320Url(encryptedMediaUrl: String): String? = runCatching {
@@ -256,8 +257,17 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
         const val TAG = "JioSaavnClient"
         const val DES_KEY = "38346591"
         const val AAC_CDN_HOST = "aac.saavncdn.com"
+        /** The variants Stash asks for; the CDN also has _12 and _48, which it never does. */
+        val VARIANTS_KBPS = listOf(96, 160, 320)
         const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
         val JSON = Json { ignoreUnknownKeys = true; isLenient = true }
     }
 }
+
+/**
+ * [url320] (a search result's link) re-pointed at the [kbps] variant. JioSaavn's
+ * CDN holds each song at _96, _160 and _320 under one name: all three answered
+ * for every song checked live on 2026-09-28, and a made-up _128 was a 404.
+ */
+internal fun jioSaavnVariantUrl(url320: String, kbps: Int): String = url320.replace("_320", "_$kbps")

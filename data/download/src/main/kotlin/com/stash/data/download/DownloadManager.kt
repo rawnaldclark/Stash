@@ -14,6 +14,7 @@ import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
 import com.stash.data.download.lyrics.LyricsFetchTrigger
 import com.stash.data.download.jiosaavn.JioSaavnResolver
+import com.stash.data.download.jiosaavn.toJioSaavnKbps
 import com.stash.data.download.shared.TrackFinalizer
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.data.download.lossless.LosslessSourceHealthGate
@@ -162,7 +163,14 @@ class DownloadManager @Inject constructor(
          * (kennyy, squid, + headroom) so it can't spin.
          */
         internal const val MAX_LOSSLESS_FAILOVER_ATTEMPTS = 3
-        internal const val MIN_JIOSAAVN_BITRATE_KBPS = 256
+
+        /**
+         * The least a real JioSaavn file at [expectedKbps] measures: a fifth under
+         * its nominal rate (96 → 77, 160 → 128, 320 → 256); real files measure just
+         * over it. Rejects a lower variant or an error page. A 96 kbps preview
+         * passes this for a 96 request, so the length check is what rejects it.
+         */
+        internal fun minJioSaavnBitrateKbps(expectedKbps: Int): Int = expectedKbps - expectedKbps / 5
         private const val JIOSAAVN_DURATION_TOLERANCE_MS = 8_000L
         private const val JIOSAAVN_DURATION_TOLERANCE_FRACTION = 0.03
     }
@@ -429,7 +437,8 @@ class DownloadManager @Inject constructor(
         )
 
         val match = try {
-            jioSaavnResolver.resolve(query)
+            // The Download quality picker sets the JioSaavn variant too.
+            jioSaavnResolver.resolve(query, qualityPrefs.qualityTier.first().toJioSaavnKbps())
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -461,12 +470,14 @@ class DownloadManager @Inject constructor(
         val durationValid = track.durationMs <= 0L ||
             (metadata != null && kotlin.math.abs(metadata.durationMs - track.durationMs) <= durationTolerance)
         val codecValid = metadata?.format == "aac"
-        val bitrateValid = metadata != null && metadata.bitrateKbps >= MIN_JIOSAAVN_BITRATE_KBPS
+        val bitrateValid = metadata != null &&
+            metadata.bitrateKbps >= minJioSaavnBitrateKbps(match.format.bitrateKbps)
         if (!codecValid || !bitrateValid || !durationValid) {
             Log.w(
                 TAG,
                 "JioSaavn media rejected for '${track.artist} - ${track.title}': " +
-                    "format=${metadata?.format}, bitrate=${metadata?.bitrateKbps}, " +
+                    "format=${metadata?.format}, bitrate=${metadata?.bitrateKbps} " +
+                    "(asked ${match.format.bitrateKbps}), " +
                     "duration=${metadata?.durationMs}, expected=${track.durationMs}",
             )
             runCatching { fetched.delete() }

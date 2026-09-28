@@ -17,6 +17,7 @@ import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
 import com.stash.data.download.DownloadManager
 import com.stash.data.download.jiosaavn.JioSaavnResolver
+import com.stash.data.download.jiosaavn.toJioSaavnKbps
 import com.stash.data.download.lossless.AudioFormat
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
@@ -241,12 +242,13 @@ class SearchDownloadCoordinator @Inject constructor(
 
     /** Resolves the preferred lossy fallback, then preserves YouTube as the last resort. */
     private suspend fun finalizeFromLossyFallback(track: TrackItem): DownloadJobResult.Resolved {
-        val match = runCatching { jioSaavnResolver.resolve(track.toQuery()) }
-            .onFailure { error ->
-                if (error is CancellationException) throw error
-                Log.w(TAG, "JioSaavn resolve threw for ${track.videoId}: ${error.message}")
-            }
-            .getOrNull()
+        // The Download quality picker sets the JioSaavn variant too.
+        val match = runCatching {
+            jioSaavnResolver.resolve(track.toQuery(), qualityPrefs.qualityTier.first().toJioSaavnKbps())
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+            Log.w(TAG, "JioSaavn resolve threw for ${track.videoId}: ${error.message}")
+        }.getOrNull()
 
         if (match != null) {
             when (val attempt = finalizeFromSource(track, match)) {
@@ -353,11 +355,12 @@ class SearchDownloadCoordinator @Inject constructor(
 
         if (match.sourceId == JioSaavnResolver.SOURCE_ID) {
             val metadata = audioDurationExtractor.extract(tempFile.absolutePath)
-            if (!isValidJioSaavnMedia(metadata, track)) {
+            if (!isValidJioSaavnMedia(metadata, track, match.format.bitrateKbps)) {
                 runCatching { tempFile.delete() }
                 return SourceFinalizeAttempt.BeforeCommitFailure(
                     "JioSaavn media failed AAC quality validation: format=${metadata?.format}, " +
-                        "bitrate=${metadata?.bitrateKbps}, duration=${metadata?.durationMs}, " +
+                        "bitrate=${metadata?.bitrateKbps} (asked ${match.format.bitrateKbps}), " +
+                        "duration=${metadata?.durationMs}, " +
                         "expected=${(track.durationSeconds * 1_000).toLong()}",
                 )
             }
@@ -398,9 +401,10 @@ class SearchDownloadCoordinator @Inject constructor(
     private fun isValidJioSaavnMedia(
         metadata: com.stash.core.data.audio.AudioMetadata?,
         track: TrackItem,
+        expectedKbps: Int,
     ): Boolean {
         metadata ?: return false
-        if (metadata.format != "aac" || metadata.bitrateKbps < DownloadManager.MIN_JIOSAAVN_BITRATE_KBPS) {
+        if (metadata.format != "aac" || metadata.bitrateKbps < DownloadManager.minJioSaavnBitrateKbps(expectedKbps)) {
             return false
         }
         if (track.durationSeconds <= 0) return true

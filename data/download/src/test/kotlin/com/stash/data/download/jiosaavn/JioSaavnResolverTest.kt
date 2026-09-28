@@ -1,6 +1,7 @@
 package com.stash.data.download.jiosaavn
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.model.QualityTier
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.TrackQuery
@@ -19,9 +20,9 @@ class JioSaavnResolverTest {
     fun `exact playable result becomes 320kbps AAC in an m4a container`() = runTest {
         ready()
         coEvery { client.search(any(), any()) } returns JioSaavnSearchOutcome.Success(listOf(song()))
-        coEvery { client.isPlayable320(any()) } returns JioSaavnProbeOutcome.Playable
+        coEvery { client.isPlayable(any()) } returns JioSaavnProbeOutcome.Playable
 
-        val result = JioSaavnResolver(client, limiter).resolve(query(), bypassRateLimit = true)
+        val result = JioSaavnResolver(client, limiter).resolve(query(), 320, bypassRateLimit = true)
 
         assertThat(result).isNotNull()
         assertThat(result!!.sourceId).isEqualTo(JioSaavnResolver.SOURCE_ID)
@@ -32,12 +33,39 @@ class JioSaavnResolverTest {
     }
 
     @Test
+    fun `download quality picks the JioSaavn variant for every tier`() {
+        assertThat(QualityTier.entries.associateWith { it.toJioSaavnKbps() }).containsExactly(
+            QualityTier.MAX, 320,
+            QualityTier.BEST, 320,
+            QualityTier.HIGH, 160,
+            QualityTier.NORMAL, 96,
+            QualityTier.LOW, 96,
+        )
+    }
+
+    @Test
+    fun `requested variant is the one probed, returned and declared`() = runTest {
+        ready()
+        coEvery { client.search(any(), any()) } returns JioSaavnSearchOutcome.Success(listOf(song()))
+        coEvery { client.isPlayable(any()) } returns JioSaavnProbeOutcome.Playable
+
+        for (kbps in listOf(96, 160)) {
+            val result = JioSaavnResolver(client, limiter).resolve(query(), kbps, bypassRateLimit = true)
+
+            val url = "https://aac.saavncdn.com/song_$kbps.mp4"
+            assertThat(result!!.downloadUrl).isEqualTo(url)
+            assertThat(result.format.bitrateKbps).isEqualTo(kbps)
+            coVerify { client.isPlayable(url) }
+        }
+    }
+
+    @Test
     fun `fabricated 320 url that fails media probe falls through`() = runTest {
         ready()
         coEvery { client.search(any(), any()) } returns JioSaavnSearchOutcome.Success(listOf(song()))
-        coEvery { client.isPlayable320(any()) } returns JioSaavnProbeOutcome.Unavailable
+        coEvery { client.isPlayable(any()) } returns JioSaavnProbeOutcome.Unavailable
 
-        assertThat(JioSaavnResolver(client, limiter).resolve(query(), true)).isNull()
+        assertThat(JioSaavnResolver(client, limiter).resolve(query(), 320, true)).isNull()
         coVerify(exactly = 0) { limiter.reportFailure(JioSaavnResolver.SOURCE_ID) }
         coVerify { limiter.reportSuccess(JioSaavnResolver.SOURCE_ID) }
     }
@@ -46,9 +74,9 @@ class JioSaavnResolverTest {
     fun `probe transport failure records provider failure`() = runTest {
         ready()
         coEvery { client.search(any(), any()) } returns JioSaavnSearchOutcome.Success(listOf(song()))
-        coEvery { client.isPlayable320(any()) } returns JioSaavnProbeOutcome.Failure("HTTP 503")
+        coEvery { client.isPlayable(any()) } returns JioSaavnProbeOutcome.Failure("HTTP 503")
 
-        assertThat(JioSaavnResolver(client, limiter).resolve(query(), true)).isNull()
+        assertThat(JioSaavnResolver(client, limiter).resolve(query(), 320, true)).isNull()
         coVerify { limiter.reportFailure(JioSaavnResolver.SOURCE_ID) }
     }
 
@@ -56,9 +84,9 @@ class JioSaavnResolverTest {
     fun `probe rate limit records backoff`() = runTest {
         ready()
         coEvery { client.search(any(), any()) } returns JioSaavnSearchOutcome.Success(listOf(song()))
-        coEvery { client.isPlayable320(any()) } returns JioSaavnProbeOutcome.RateLimited
+        coEvery { client.isPlayable(any()) } returns JioSaavnProbeOutcome.RateLimited
 
-        assertThat(JioSaavnResolver(client, limiter).resolve(query(), true)).isNull()
+        assertThat(JioSaavnResolver(client, limiter).resolve(query(), 320, true)).isNull()
         coVerify { limiter.reportRateLimited(JioSaavnResolver.SOURCE_ID) }
     }
 
@@ -67,7 +95,7 @@ class JioSaavnResolverTest {
         ready()
         coEvery { client.search(any(), any()) } returns JioSaavnSearchOutcome.RateLimited
 
-        assertThat(JioSaavnResolver(client, limiter).resolve(query(), true)).isNull()
+        assertThat(JioSaavnResolver(client, limiter).resolve(query(), 320, true)).isNull()
         coVerify { limiter.reportRateLimited(JioSaavnResolver.SOURCE_ID) }
     }
 
@@ -76,7 +104,7 @@ class JioSaavnResolverTest {
         ready()
         coEvery { client.search(any(), any()) } returns JioSaavnSearchOutcome.Success(emptyList())
 
-        JioSaavnResolver(client, limiter).resolve(TrackQuery("Alka Yagnik & Udit Narayan", "Ae Mere Humsafar"), true)
+        JioSaavnResolver(client, limiter).resolve(TrackQuery("Alka Yagnik & Udit Narayan", "Ae Mere Humsafar"), 320, true)
 
         coVerifyOrder {
             client.search("Alka Yagnik & Udit Narayan Ae Mere Humsafar", any())

@@ -85,11 +85,24 @@ class JioSaavnClientTest {
     }
 
     @Test
-    fun `media URL trust gate requires HTTPS exact CDN and 320 path`() {
+    fun `each variant URL is the same file under its own suffix`() {
+        val url320 = client.decrypt320Url(KNOWN_ENCRYPTED_MEDIA_URL)!!
+
+        assertThat(jioSaavnVariantUrl(url320, 96))
+            .isEqualTo("https://aac.saavncdn.com/871/c2febd353f3a076a406fa37510f31f9f_96.mp4")
+        assertThat(jioSaavnVariantUrl(url320, 160))
+            .isEqualTo("https://aac.saavncdn.com/871/c2febd353f3a076a406fa37510f31f9f_160.mp4")
+        assertThat(jioSaavnVariantUrl(url320, 320)).isEqualTo(KNOWN_320_URL)
+    }
+
+    @Test
+    fun `media URL trust gate requires HTTPS exact CDN and a variant Stash asks for`() {
         assertThat(client.isTrustedMediaUrl(KNOWN_320_URL)).isTrue()
+        assertThat(client.isTrustedMediaUrl(KNOWN_320_URL.replace("_320", "_160"))).isTrue()
+        assertThat(client.isTrustedMediaUrl(KNOWN_320_URL.replace("_320", "_96"))).isTrue()
         assertThat(client.isTrustedMediaUrl(KNOWN_320_URL.replace("https://", "http://"))).isFalse()
         assertThat(client.isTrustedMediaUrl("https://evil.example/song_320.mp4")).isFalse()
-        assertThat(client.isTrustedMediaUrl(KNOWN_320_URL.replace("_320", "_160"))).isFalse()
+        assertThat(client.isTrustedMediaUrl(KNOWN_320_URL.replace("_320", "_48"))).isFalse()
     }
 
     private fun nativeResponse(has320: String): String =

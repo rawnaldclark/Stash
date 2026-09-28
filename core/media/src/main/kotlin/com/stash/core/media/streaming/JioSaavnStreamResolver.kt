@@ -7,10 +7,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** Adapts the shared JioSaavn AAC-320 resolver to the player stream contract. */
+/**
+ * Adapts the shared JioSaavn AAC resolver to the player stream contract:
+ * 320 kbps, or 96 under Save Data.
+ */
 @Singleton
 class JioSaavnStreamResolver @Inject constructor(
     private val resolver: JioSaavnResolver,
+    private val qualityPolicy: StreamQualityPolicy,
 ) {
     suspend fun resolve(track: TrackEntity): StreamUrl? =
         withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
@@ -22,6 +26,9 @@ class JioSaavnStreamResolver @Inject constructor(
                     durationMs = track.durationMs.takeIf { it > 0 },
                     explicit = track.explicit,
                 ),
+                // Save Data streams JioSaavn's lowest variant, as it does YouTube's
+                // lowest audio. Read through the policy so a flip clears cached URLs.
+                kbps = if (qualityPolicy.saveData()) 96 else 320,
                 bypassRateLimit = false,
             )?.let { result ->
                 StreamUrl(
