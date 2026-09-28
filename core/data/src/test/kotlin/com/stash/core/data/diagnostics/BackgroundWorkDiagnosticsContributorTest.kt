@@ -18,6 +18,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import androidx.work.workDataOf
 import com.google.common.truth.Truth.assertThat
@@ -59,8 +60,13 @@ class BackgroundWorkDiagnosticsContributorTest {
     private lateinit var workManager: WorkManager
 
     @Before fun setUp() {
-        // A fixed clock stamps every enqueue at T0, so due times read the same on every run.
-        WorkManagerTestInitHelper.initializeTestWorkManager(context, Configuration.Builder().setClock { T0 }.build())
+        // A fixed clock stamps every enqueue at T0, so due times read the same on every run. A
+        // custom configuration drops the helper's default synchronous executor, and without it
+        // the finished-work test raced the worker on a background thread (red once on CI).
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            context,
+            Configuration.Builder().setClock { T0 }.setExecutor(SynchronousExecutor()).build(),
+        )
         workManager = WorkManager.getInstance(context)
     }
 
