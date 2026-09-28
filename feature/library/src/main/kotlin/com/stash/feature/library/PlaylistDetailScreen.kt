@@ -114,6 +114,8 @@ fun PlaylistDetailScreen(
     // An active follow (spec §6) is read-only: no delete, no batch delete, no cover change.
     val follow by viewModel.follow.collectAsStateWithLifecycle()
     val readOnly = follow?.readOnly == true
+    // The page's Download switch (#474); null on pages that have none.
+    val download by viewModel.download.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
     // Bottom sheet state for the ⋮ track menu.
@@ -191,6 +193,20 @@ fun PlaylistDetailScreen(
                             )
                         },
                     )
+                }
+
+                // ── Download switch (#474): the followed mix's row, for mixes and playlists ──
+                download?.let { on ->
+                    item(key = "download") {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val label = if (state.playlist?.type == PlaylistType.DAILY_MIX) "Download this mix" else "Download this playlist"
+                            Text(label, Modifier.weight(1f))
+                            Switch(checked = on, onCheckedChange = { viewModel.setDownload(it) })
+                        }
+                    }
                 }
 
                 // ── Followed mix: sharer, Download this mix, Unfollow ───

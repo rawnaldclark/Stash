@@ -126,6 +126,31 @@ class PlaylistDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * The page's own Download switch (#474); null = this page has none. Imported mixes and
+     * playlists, the user's own included, get one. Stash Mixes, Your Downloads and Liked Songs
+     * don't, and nor does a read-only followed mix: it keeps its "Download this mix" row.
+     * On = kept on the phone, or, in Download mode, already downloading through the Sync tab.
+     * Reads the raw follow row, not [follow]: that one starts null and would flash this row.
+     */
+    val download: StateFlow<Boolean?> = combine(
+        _playlist,
+        streamingPreference.enabled,
+        sharedMixRepository.observe(playlistId),
+    ) { playlist, streamOnly, shared ->
+        val readOnlyFollow = shared?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER &&
+            shared.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE
+        playlist?.takeIf { it.type in DOWNLOAD_SWITCH_TYPES && !readOnlyFollow }
+            ?.let { it.keepOffline || (!streamOnly && it.syncEnabled) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** The switch follows the playlist row (see init), so success needs no local copy. */
+    fun setDownload(on: Boolean) = viewModelScope.launch {
+        if (!followAction("change download for") { musicRepository.setPlaylistDownload(playlistId, on) }) {
+            _userMessages.tryEmit("Couldn't change that. Try again.")
+        }
+    }
+
     /** [onDone] runs only once the follow is really gone. */
     fun unfollow(onDone: () -> Unit) = viewModelScope.launch {
         if (followAction("unfollow") { sharedMixRepository.unfollow(playlistId) }) onDone()
@@ -194,10 +219,16 @@ class PlaylistDetailViewModel @Inject constructor(
 
     init {
         loadPlaylistMetadata()
-        // The header follows the row: a followed mix renamed by its owner's update, the Download switch.
+        // The header follows the row: a followed mix renamed by its owner's update, both Download switches.
         viewModelScope.launch {
             musicRepository.observePlaylist(playlistId).collect { live ->
-                if (live != null) _playlist.value = _playlist.value?.copy(name = live.name, syncEnabled = live.syncEnabled)
+                if (live != null) {
+                    _playlist.value = _playlist.value?.copy(
+                        name = live.name,
+                        syncEnabled = live.syncEnabled,
+                        keepOffline = live.keepOffline,
+                    )
+                }
             }
         }
     }
@@ -588,5 +619,10 @@ class PlaylistDetailViewModel @Inject constructor(
             musicRepository.updatePlaylistArtUrl(playlistId, null)
             _playlist.value = _playlist.value?.copy(artUrl = null)
         }
+    }
+
+    private companion object {
+        /** Playlist types whose page has a Download switch (#474). */
+        val DOWNLOAD_SWITCH_TYPES = setOf(PlaylistType.DAILY_MIX, PlaylistType.CUSTOM)
     }
 }
