@@ -474,12 +474,10 @@ class StashApplication : Application(), Configuration.Provider {
         // waiting up to 48 hours when Android Doze defers the fire.
         UpdateCheckWorker.enqueueOneTimeCheck(this)
         applicationScope.launch { maybeInvalidateArtistCache() }
-        // The pin backfill runs after the mix-flag cleanup on purpose: a stale
-        // DAILY_MIX sync flag must be cleared before "synced" is read as intent.
-        applicationScope.launch {
-            enforceDailyMixSyncDisabled()
-            maybePinSyncedPlaylists()
-        }
+        // The pin backfill reads sync_enabled as intent. Stale mix flags from
+        // older releases are already gone: MIGRATION_50_51 clears them when the
+        // database opens, before this runs.
+        applicationScope.launch { maybePinSyncedPlaylists() }
         applicationScope.launch { maybeHideEmptyYouTubePlaylists() }
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
@@ -882,16 +880,6 @@ class StashApplication : Application(), Configuration.Provider {
             val pinned = playlistDao.pinSyncedPlaylists(System.currentTimeMillis())
             Log.i("StashMigration", "maybePinSyncedPlaylists: pinned $pinned already-synced playlist(s) to Home")
             prefs.edit().putInt("synced_playlists_pin_version", SYNCED_PLAYLISTS_PIN_VERSION).apply()
-        }
-    }
-
-    private suspend fun enforceDailyMixSyncDisabled() {
-        val updated = playlistDao.disableLegacyDailyMixSync()
-        if (updated > 0) {
-            Log.i(
-                "StashMigration",
-                "enforceDailyMixSyncDisabled: cleared sync_enabled on $updated mix row(s)",
-            )
         }
     }
 

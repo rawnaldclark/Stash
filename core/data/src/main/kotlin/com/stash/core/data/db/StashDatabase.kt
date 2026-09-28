@@ -1339,11 +1339,19 @@ abstract class StashDatabase : RoomDatabase() {
 
         /**
          * v50 -> v51: `playlists.keep_offline`, the playlist page's Download switch (#474).
-         * Default 0, so nothing starts downloading on upgrade. Purely additive.
+         * Default 0, so nothing starts downloading on upgrade.
+         *
+         * Also clears every mix's sync switch, ONCE. Older releases auto-enabled
+         * mixes (#368), so #438 cleared DAILY_MIX sync_enabled on every cold start.
+         * Since a44d8c99 that switch is real download consent in Download mode, and
+         * the every-launch reset wiped it. A stale flag can only come from an older
+         * database, and an old backup passes through this migration when it opens,
+         * so clearing here covers the case #438 was guarding.
          */
         val MIGRATION_50_51 = object : Migration(50, 51) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE playlists ADD COLUMN keep_offline INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE playlists SET sync_enabled = 0 WHERE type = 'DAILY_MIX'")
             }
         }
 
