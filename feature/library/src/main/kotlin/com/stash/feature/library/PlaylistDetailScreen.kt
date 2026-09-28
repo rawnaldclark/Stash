@@ -68,6 +68,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -784,13 +788,7 @@ private fun PlaylistHeader(
                         contentPadding = PaddingValues(vertical = 12.dp),
                         shape = RoundedCornerShape(12.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Play All", style = MaterialTheme.typography.labelLarge)
+                        IconLabel(Icons.Default.PlayArrow, "Play All")
                     }
                 }
 
@@ -804,13 +802,7 @@ private fun PlaylistHeader(
                         contentPadding = PaddingValues(vertical = 12.dp),
                         shape = RoundedCornerShape(12.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Shuffle", style = MaterialTheme.typography.labelLarge)
+                        IconLabel(Icons.Default.Shuffle, "Shuffle")
                     }
                 }
 
@@ -871,3 +863,26 @@ private fun PlaylistHeader(
     }
 }
 
+/**
+ * A header button's icon + label that never wraps. With three icon buttons beside them (an editable
+ * playlist), Play All and Shuffle get ~70dp each on a 392dp phone (Pixel 5, default scale), less than
+ * icon + gap + "Shuffle", so the label broke as "Shuffl / e". The icon drops out when both don't fit,
+ * measured against the real text, so it adapts to font scale and language.
+ */
+@Composable
+private fun IconLabel(icon: ImageVector, text: String) {
+    val style = MaterialTheme.typography.labelLarge
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    BoxWithConstraints(contentAlignment = Alignment.Center) {
+        val textWidth = with(density) { measurer.measure(text, style, maxLines = 1).size.width.toDp() }
+        val showIcon = textWidth + 28.dp <= maxWidth // 20dp icon + 8dp gap
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (showIcon) {
+                Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(text = text, style = style, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
