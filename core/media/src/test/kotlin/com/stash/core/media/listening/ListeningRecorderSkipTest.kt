@@ -557,6 +557,45 @@ class ListeningRecorderSkipTest {
     }
 
     @Test
+    fun `a repeat-one restart while paused waits for play before counting`() = runTest {
+        val playing = PlayerState(isPlaying = true, currentTrack = trackA, repeatMode = RepeatMode.ONE, positionMs = 0)
+        val playerRepo = FakePlayerRepository(playing)
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val scrobbler = mockk<LastFmScrobbler>(relaxed = true)
+        ListeningRecorder(
+            playerRepository = playerRepo,
+            musicRepository = passthroughMusicRepository(),
+            listeningEventDao = listeningDao,
+            trackSkipEventDao = mockk(relaxed = true),
+            scrobbler = scrobbler,
+            listenSinks = mockk(relaxed = true),
+            scope = backgroundScope,
+            nowMs = { testScheduler.currentTime },
+        ).start()
+        runCurrent()
+
+        playerRepo.setPosition(15_000L)
+        runCurrent()
+        playerRepo.setState(playing.copy(isPlaying = false))
+        runCurrent()
+        playerRepo.setPosition(0L) // scrubbed back to the start while paused
+        runCurrent()
+        advanceTimeBy(10 * 60_000L)
+        runCurrent()
+
+        coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
+        coVerify(exactly = 1) { scrobbler.notifyNowPlaying(any(), any(), any()) }
+
+        // Playing again starts the new session and counts only play time.
+        playerRepo.setState(playing)
+        runCurrent()
+        advanceTimeBy(90_000)
+        runCurrent()
+        coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
+        coVerify(exactly = 2) { scrobbler.notifyNowPlaying(any(), any(), any()) }
+    }
+
+    @Test
     fun `completed-listen cancellation cancels the threshold job`() = runTest {
         val playerRepo = FakePlayerRepository(PlayerState(isPlaying = true, currentTrack = trackA))
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)

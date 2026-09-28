@@ -28,8 +28,7 @@ import javax.inject.Singleton
 /**
  * Observes the playback state and records a [ListeningEventEntity] each
  * time the user listens to a track long enough for it to "count" as a
- * play (Last.fm convention: ≥30s for tracks longer than 60s, or ≥50% of
- * a shorter track).
+ * play: half the track, at least 30 s and at most 4 minutes (see [thresholdFor]).
  *
  * The recorder runs on an app-scoped [CoroutineScope] so it keeps working
  * when screens are recreated. [start] should be called once from the
@@ -205,7 +204,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                         Log.d(TAG, "repeat detected for track ${track.id} — scheduling new fire")
                         pending?.takeIf { it.claimed.compareAndSet(false, true) }?.job?.cancel()
                         pending = null
-                        schedulePendingFire(track)
+                        // Paused (a scrub to 0 or "previous" while paused): the next play edge starts the session.
+                        if (state.isPlaying) schedulePendingFire(track)
                     }
 
                     lastPositionMs = positionMs
