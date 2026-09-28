@@ -3,9 +3,15 @@ package com.stash.core.data.repository
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.Configuration
+import androidx.work.CoroutineWorker
+import androidx.work.ListenableWorker
 import androidx.work.NetworkType
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.WorkerFactory
+import androidx.work.WorkerParameters
+import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.DownloadQueueEntity
@@ -25,6 +31,7 @@ import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -49,7 +56,20 @@ class MusicRepositoryQueuePlaylistTest {
     private lateinit var db: StashDatabase
 
     @Before fun setUp() {
-        WorkManagerTestInitHelper.initializeTestWorkManager(context)
+        // The real drain needs Hilt. This stand-in never finishes, so a test can hold a drain RUNNING.
+        val neverFinishes = object : WorkerFactory() {
+            override fun createWorker(
+                appContext: Context,
+                workerClassName: String,
+                workerParameters: WorkerParameters,
+            ): ListenableWorker = object : CoroutineWorker(appContext, workerParameters) {
+                override suspend fun doWork(): ListenableWorker.Result = awaitCancellation()
+            }
+        }
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            context,
+            Configuration.Builder().setExecutor(SynchronousExecutor()).setWorkerFactory(neverFinishes).build(),
+        )
         db = Room.inMemoryDatabaseBuilder(context, StashDatabase::class.java)
             .allowMainThreadQueries()
             .build()
@@ -123,20 +143,64 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(listOf(NetworkType.CONNECTED), live.map { it.constraints.requiredNetworkType })
     }
 
-    @Test fun `a background drain after a tap never downgrades it`() = runTest {
+    @Test fun `a background start leaves a waiting tap drain alone`() = runTest {
         val pid = playlist("Mix")
         member(pid, 0, track("A"))
         repo().queueDownloadsForPlaylist(pid)
         member(pid, 1, track("B"))
         repo().queueDownloadsForPlaylist(pid, background = true)
 
-        // The tap's drain still goes on any network; the background one waits behind it.
-        val live = drains().filter { !it.state.isFinished }
-            .map { it.state to it.constraints.requiredNetworkType }
+        // The tap's drain hasn't started, so it will take B too, still on any network.
+        assertEquals(listOf(WorkInfo.State.ENQUEUED to NetworkType.CONNECTED), liveDrains())
+    }
+
+    @Test fun `a background start queues behind a running drain, never cancelling it`() = runTest {
+        val pid = playlist("Mix")
+        member(pid, 0, track("A"))
+        repo().queueDownloadsForPlaylist(pid)
+        startDrain()
+        member(pid, 1, track("B"))
+        repo().queueDownloadsForPlaylist(pid, background = true)
+
+        // The running tap drain goes on; B, which its snapshot missed, waits behind it for Wi-Fi.
         assertEquals(
-            setOf(WorkInfo.State.ENQUEUED to NetworkType.CONNECTED, WorkInfo.State.BLOCKED to NetworkType.UNMETERED),
-            live.toSet(),
+            setOf(WorkInfo.State.RUNNING to NetworkType.CONNECTED, WorkInfo.State.BLOCKED to NetworkType.UNMETERED),
+            liveDrains().toSet(),
         )
+    }
+
+    // ── Nothing strands a waiting download (#474) ─────────────────────────
+
+    @Test fun `turning Stash Mixes off never cancels a download run`() = runTest {
+        val pid = playlist("Mix")
+        member(pid, 0, track("A"))
+        val repo = repo()
+        repo.queueDownloadsForPlaylist(pid)
+        repo.applyStashMixesEnabled(false)
+        assertEquals(listOf(WorkInfo.State.ENQUEUED to NetworkType.CONNECTED), liveDrains())
+    }
+
+    @Test fun `a sync with nothing new still restarts a drain for songs already waiting`() = runTest {
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting"))))
+        assertEquals(0, repo().queueKeptPlaylists())
+        assertEquals(listOf(WorkInfo.State.ENQUEUED to NetworkType.UNMETERED), liveDrains())
+    }
+
+    /** The worker shows its notification before it looks at the queue: no work, no start. */
+    @Test fun `with nothing waiting, nothing starts a drain`() = runTest {
+        member(playlist("Kept", keepOffline = true), 0, track("Done").copy(isDownloaded = true, filePath = "/x.flac"))
+        val repo = repo()
+        assertEquals(0, repo.queueKeptPlaylists())
+        repo.resumeWaitingDownloads()
+        assertEquals(emptyList<WorkInfo>(), drains())
+    }
+
+    @Test fun `resuming starts one background drain, and never stacks a second one`() = runTest {
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting"))))
+        val repo = repo()
+        repo.resumeWaitingDownloads()
+        repo.resumeWaitingDownloads() // a second cold start while still off Wi-Fi
+        assertEquals(listOf(WorkInfo.State.ENQUEUED to NetworkType.UNMETERED), liveDrains())
     }
 
     /**
@@ -180,6 +244,15 @@ class MusicRepositoryQueuePlaylistTest {
 
     private fun drains(): List<WorkInfo> =
         WorkManager.getInstance(context).getWorkInfosForUniqueWork(DiscoveryDownloadWorker.UNIQUE_WORK_NAME).get()
+
+    private fun liveDrains() = drains().filter { !it.state.isFinished }.map { it.state to it.constraints.requiredNetworkType }
+
+    /** Runs the waiting drain's stand-in worker (see setUp), which holds it RUNNING. */
+    private fun startDrain() {
+        val id = drains().single { it.state == WorkInfo.State.ENQUEUED }.id
+        WorkManagerTestInitHelper.getTestDriver(context)!!.setAllConstraintsMet(id)
+        assertEquals(WorkInfo.State.RUNNING, drains().single { it.id == id }.state)
+    }
 
     private suspend fun playlist(name: String, keepOffline: Boolean = false): Long =
         db.playlistDao().findBySourceId("custom_$name")?.id ?: db.playlistDao().insert(
