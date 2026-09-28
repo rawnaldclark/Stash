@@ -1,6 +1,7 @@
 package com.stash.feature.library
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -47,7 +50,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Snackbar
-import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -66,6 +68,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -118,8 +123,8 @@ fun PlaylistDetailScreen(
     // An active follow (spec §6) is read-only: no delete, no batch delete, no cover change.
     val follow by viewModel.follow.collectAsStateWithLifecycle()
     val readOnly = follow?.readOnly == true
-    // The page's Download switch (#474); null on pages that have none.
-    val download by viewModel.download.collectAsStateWithLifecycle()
+    // The page's Download button (#474); null on pages that have none.
+    val downloadButton by viewModel.downloadButton.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
     // Bottom sheet state for the ⋮ track menu.
@@ -199,28 +204,28 @@ fun PlaylistDetailScreen(
                     )
                 }
 
-                // ── Download switch (#474): the followed mix's row, for mixes and playlists ──
-                download?.let { on ->
+                // ── Download button (#474); a followed mix has it in its follow block ──
+                downloadButton?.takeIf { !it.followed }?.let { button ->
                     item(key = "download") {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = HeaderGutter, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            val label = if (state.playlist?.type == PlaylistType.DAILY_MIX) "Download this mix" else "Download this playlist"
-                            Text(label, Modifier.weight(1f))
-                            Switch(checked = on, onCheckedChange = { viewModel.setDownload(it) })
-                        }
+                        DownloadButton(
+                            state = button,
+                            onClick = { viewModel.toggleDownload() },
+                            modifier = Modifier.padding(start = HeaderGutter, end = HeaderGutter, bottom = 8.dp),
+                        )
                     }
                 }
 
-                // ── Followed mix: sharer, Download this mix, Unfollow ───
+                // ── Followed mix: sharer, Download, Unfollow ────────────
                 follow?.takeIf { it.readOnly }?.let { f ->
                     item(key = "follow") {
                         Column(Modifier.fillMaxWidth().padding(horizontal = HeaderGutter, vertical = 8.dp)) {
                             Text("Following · from ${f.sharedBy ?: "a friend"}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Download this mix", Modifier.weight(1f))
-                                Switch(checked = f.downloadOn, onCheckedChange = { viewModel.setFollowDownload(it) })
+                            downloadButton?.takeIf { it.followed }?.let { button ->
+                                DownloadButton(
+                                    state = button,
+                                    onClick = { viewModel.toggleDownload() },
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
                             }
                             // Unfollow removes the playlist (and can take its downloads): second tap confirms.
                             var confirmUnfollow by remember { mutableStateOf(false) }
@@ -639,7 +644,7 @@ fun PlaylistDetailScreen(
 
 // ── Header composable ───────────────────────────────────────────────────────
 
-/** Side padding of the header's text, shared by the Download rows under it so they line up. */
+/** Side padding of the header's text, shared by the Download button and follow block under it so they line up. */
 private val HeaderGutter = 20.dp
 
 /**
@@ -903,5 +908,43 @@ private fun IconLabel(icon: ImageVector, text: String) {
             }
             Text(text = text, style = style, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         }
+    }
+}
+
+/**
+ * The page's Download button (#474), after Spotify's: "Download" while off; "Downloading 3 of 12"
+ * with a ring that fills as songs land; "Downloaded", in the primary color (Spotify's green), once
+ * every song is on the phone. Shaped like the header's Shuffle button, but in the plain text color
+ * until it's done, so it stays quieter than Play All. It wraps its label and resizes smoothly.
+ */
+@Composable
+private fun DownloadButton(state: DownloadButtonState, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val color = if (state.complete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    OutlinedButton(
+        onClick = onClick,
+        // TalkBack: "Downloading 3 of 12, On, Button", as the switch it replaced said On/Off.
+        modifier = modifier
+            .animateContentSize()
+            .semantics { stateDescription = if (state.on) "On" else "Off" },
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = color),
+    ) {
+        // One 20dp slot for the icon or the ring, so the label never shifts between states.
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            when {
+                !state.on -> Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(20.dp))
+                state.complete -> Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
+                else -> CircularProgressIndicator(
+                    progress = { state.downloaded.toFloat() / state.total },
+                    // The label already says how far along it is; "25 percent" would repeat it.
+                    modifier = Modifier.size(18.dp).clearAndSetSemantics {},
+                    strokeWidth = 2.dp,
+                    trackColor = StashTheme.extendedColors.glassBorderBright,
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(state.label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

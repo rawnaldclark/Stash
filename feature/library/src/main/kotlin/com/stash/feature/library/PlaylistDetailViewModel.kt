@@ -52,6 +52,26 @@ data class PlaylistDetailUiState(
 )
 
 /**
+ * The page's Download button (#474). [downloaded] of [total] counts the whole playlist, never the
+ * search-filtered list. [followed]: a read-only followed mix, whose button sits in its follow block.
+ */
+data class DownloadButtonState(
+    val on: Boolean,
+    val downloaded: Int,
+    val total: Int,
+    val followed: Boolean = false,
+) {
+    /** On, and every song is on the phone. */
+    val complete: Boolean get() = on && downloaded == total
+
+    val label: String get() = when {
+        !on -> "Download"
+        complete -> "Downloaded"
+        else -> "Downloading $downloaded of $total"
+    }
+}
+
+/**
  * ViewModel for the Playlist Detail screen.
  *
  * Loads the playlist metadata via a one-shot suspend call and its tracks
@@ -101,53 +121,63 @@ class PlaylistDetailViewModel @Inject constructor(
     /** Holds the one-shot playlist metadata fetched in [init]. */
     private val _playlist = MutableStateFlow<Playlist?>(null)
 
-    /** Non-null when this playlist is a followed mix (spec §6). Declared after [_playlist]: initialisers run in order. */
-    data class FollowUi(val readOnly: Boolean, val sharedBy: String?, val downloadOn: Boolean)
+    /** Non-null when this playlist is a followed mix (spec §6). */
+    data class FollowUi(val readOnly: Boolean, val sharedBy: String?)
 
-    val follow: StateFlow<FollowUi?> = combine(
-        sharedMixRepository.observe(playlistId),
-        _playlist,
-    ) { row, playlist ->
+    val follow: StateFlow<FollowUi?> = sharedMixRepository.observe(playlistId).map { row ->
         row?.takeIf { it.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER }?.let {
-            FollowUi(
-                // A REMOVED follow (owner stopped sharing) is an ordinary editable playlist.
-                readOnly = it.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE,
-                sharedBy = it.sharedBy,
-                downloadOn = playlist?.syncEnabled == true,
-            )
+            // A REMOVED follow (owner stopped sharing) is an ordinary editable playlist.
+            FollowUi(readOnly = it.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE, sharedBy = it.sharedBy)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    fun setFollowDownload(on: Boolean) = viewModelScope.launch {
-        if (followAction("change download for") { sharedMixRepository.setDownload(playlistId, on) }) {
-            _playlist.value = _playlist.value?.copy(syncEnabled = on)
-        } else {
-            _userMessages.tryEmit("Couldn't change that. Try again.")
-        }
-    }
-
     /**
-     * The page's own Download switch (#474); null = this page has none. Imported mixes and
-     * playlists, the user's own included, get one. Stash Mixes, Your Downloads and Liked Songs
-     * don't, and nor does a read-only followed mix: it keeps its "Download this mix" row.
-     * On = kept on the phone, or, in Download mode, already downloading through the Sync tab.
-     * Reads the raw follow row, not [follow]: that one starts null and would flash this row.
+     * The page's Download button (#474); null = this page has none. Imported mixes and playlists,
+     * the user's own included, get one. Stash Mixes, Your Downloads and Liked Songs don't. A
+     * read-only followed mix gets it in its follow block, where it is "Download this mix" (its
+     * sync_enabled). Elsewhere on = kept on the phone, or, in Download mode, already downloading
+     * through the Sync tab. The button follows the playlist row (see init), so a tap needs no local
+     * copy. Reads the raw follow row, not [follow]: that one can land a frame later, and the button
+     * would flash in the wrong place.
      */
-    val download: StateFlow<Boolean?> = combine(
+    val downloadButton: StateFlow<DownloadButtonState?> = combine(
         _playlist,
         streamingPreference.enabled,
         sharedMixRepository.observe(playlistId),
-    ) { playlist, streamOnly, shared ->
-        val readOnlyFollow = shared?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER &&
+        musicRepository.getTracksByPlaylist(playlistId),
+    ) { playlist, streamOnly, shared, tracks ->
+        val followed = shared?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER &&
             shared.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE
-        playlist?.takeIf { it.type in DOWNLOAD_SWITCH_TYPES && !readOnlyFollow }
-            ?.let { it.keepOffline || (!streamOnly && it.syncEnabled) }
+        val on = when {
+            playlist == null -> null
+            followed -> playlist.syncEnabled
+            playlist.type in DOWNLOAD_BUTTON_TYPES -> playlist.keepOffline || (!streamOnly && playlist.syncEnabled)
+            else -> null
+        }
+        on?.let { DownloadButtonState(it, downloaded = tracks.count { t -> t.isDownloaded }, total = tracks.size, followed = followed) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** The switch follows the playlist row (see init), so success needs no local copy. */
-    fun setDownload(on: Boolean) = viewModelScope.launch {
-        if (!followAction("change download for") { musicRepository.setPlaylistDownload(playlistId, on) }) {
-            _userMessages.tryEmit("Couldn't change that. Try again.")
+    /**
+     * A tap on the Download button. Off → on queues what's missing; on → off cancels the songs
+     * still waiting and keeps the downloaded ones (owner's rule). A short message says which.
+     */
+    fun toggleDownload() {
+        val button = downloadButton.value ?: return
+        val on = !button.on
+        viewModelScope.launch {
+            val changed = followAction("change download for") {
+                if (button.followed) sharedMixRepository.setDownload(playlistId, on)
+                else musicRepository.setPlaylistDownload(playlistId, on)
+            }
+            val missing = button.total - button.downloaded
+            _userMessages.tryEmit(
+                when {
+                    !changed -> "Couldn't change that. Try again."
+                    !on -> "Stopped. Downloaded songs stay on your phone."
+                    missing > 0 -> "Downloading $missing ${songs(missing)}"
+                    else -> "Every song is already on your phone."
+                },
+            )
         }
     }
 
@@ -219,7 +249,7 @@ class PlaylistDetailViewModel @Inject constructor(
 
     init {
         loadPlaylistMetadata()
-        // The header follows the row: a followed mix renamed by its owner's update, both Download switches.
+        // The page follows the row: a followed mix renamed by its owner's update, the Download button.
         viewModelScope.launch {
             musicRepository.observePlaylist(playlistId).collect { live ->
                 if (live != null) {
@@ -258,7 +288,7 @@ class PlaylistDetailViewModel @Inject constructor(
         // A track with no local audio needs a live connection; without one the
         // player would fail it silently, so bail out early with a Snackbar so
         // the user knows *why* nothing happened. Downloaded tracks always play.
-        // (The Download switch is not consulted: it decides what sync writes
+        // (The Download button is not consulted: it decides what gets written
         // to disk, never what plays.)
         viewModelScope.launch {
             val tapped = uiState.value.tracks.firstOrNull { it.id == trackId }
@@ -622,7 +652,7 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     private companion object {
-        /** Playlist types whose page has a Download switch (#474). */
-        val DOWNLOAD_SWITCH_TYPES = setOf(PlaylistType.DAILY_MIX, PlaylistType.CUSTOM)
+        /** Playlist types whose page has a Download button (#474). */
+        val DOWNLOAD_BUTTON_TYPES = setOf(PlaylistType.DAILY_MIX, PlaylistType.CUSTOM)
     }
 }
