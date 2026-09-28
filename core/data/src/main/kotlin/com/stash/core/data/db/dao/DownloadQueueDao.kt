@@ -12,20 +12,6 @@ import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
 import kotlinx.coroutines.flow.Flow
 
-/**
- * Songs some playlist still wants on the phone (#474): in an active playlist
- * kept on the phone, or in a followed mix with "Download this mix" on (its
- * switch is sync_enabled, and it downloads through discovery rows). Append
- * conditions on `p` to narrow it.
- */
-private const val WANTED_OFFLINE_TRACK_IDS = """
-    SELECT pt.track_id FROM playlist_tracks pt
-    INNER JOIN playlists p ON p.id = pt.playlist_id
-    WHERE pt.removed_at IS NULL
-      AND p.is_active = 1
-      AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.source_id LIKE 'share:%'))
-"""
-
 /** Room projection for status count diagnostic query. */
 data class StatusCount(
     val status: String,
@@ -658,33 +644,19 @@ interface DownloadQueueDao {
               SELECT track_id FROM playlist_tracks
               WHERE playlist_id = :playlistId AND removed_at IS NULL
           )
-          AND track_id NOT IN ($WANTED_OFFLINE_TRACK_IDS AND p.id != :playlistId)
+          AND track_id NOT IN (
+              SELECT pt.track_id FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.removed_at IS NULL
+                AND p.id != :playlistId
+                AND p.is_active = 1
+                -- Kept on the phone, or a followed mix with "Download this mix" on
+                -- (its switch is sync_enabled, and it downloads through these rows).
+                AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.source_id LIKE 'share:%'))
+          )
         """
     )
     suspend fun cancelWaitingForPlaylist(playlistId: Long): Int
-
-    /**
-     * One-time clean-up (#474). From v0.9.20 until v0.9.37 (2026-05-25) Stash
-     * Mixes filed discovery download rows. For users who turned Stash Mixes
-     * off, only the cold-start cancel of the download worker kept those from
-     * downloading, and that cancel is gone. Drops the ones that never started:
-     * discovery rows, not user-requested, created before [createdBefore],
-     * unless a playlist still wants the song on the phone. Newer rows are
-     * never touched, so a current install deletes nothing.
-     *
-     * @return Number of rows deleted.
-     */
-    @Query(
-        """
-        DELETE FROM download_queue
-        WHERE sync_id IS NULL
-          AND user_requested = 0
-          AND status IN ('PENDING', 'FAILED', 'WAITING_FOR_LOSSLESS')
-          AND created_at < :createdBefore
-          AND track_id NOT IN ($WANTED_OFFLINE_TRACK_IDS)
-        """
-    )
-    suspend fun deleteLegacyStashMixDownloads(createdBefore: Long): Int
 
     // ── Cleanup ─────────────────────────────────────────────────────────
 

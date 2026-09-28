@@ -1347,11 +1347,40 @@ abstract class StashDatabase : RoomDatabase() {
          * the every-launch reset wiped it. A stale flag can only come from an older
          * database, and an old backup passes through this migration when it opens,
          * so clearing here covers the case #438 was guarding.
+         *
+         * And drops Stash Mixes' own download rows that never started, ONCE. From
+         * v0.9.20 until v0.9.37 (2026-05-25) Stash Mixes queued their discoveries
+         * for download; for people who later turned Stash Mixes off, only a
+         * cold-start cancel of the download worker held those back, and #474
+         * removed it. Here, not at startup, so a restored old backup is cleaned
+         * too. Narrow on purpose: a single-song tap or "download this playlist"
+         * filed the same row shape until 2026-06-29, so only a track discovery
+         * brought in counts, and a followed mix with "Download this mix" on keeps
+         * its songs (keep_offline, the other download switch, is 0 for everything
+         * right after the ALTER above).
          */
         val MIGRATION_50_51 = object : Migration(50, 51) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE playlists ADD COLUMN keep_offline INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("UPDATE playlists SET sync_enabled = 0 WHERE type = 'DAILY_MIX'")
+                db.execSQL(
+                    """
+                    DELETE FROM download_queue
+                    WHERE sync_id IS NULL
+                      AND user_requested = 0
+                      AND status IN ('PENDING', 'FAILED', 'WAITING_FOR_LOSSLESS')
+                      AND created_at < 1779753600000
+                      AND track_id IN (SELECT track_id FROM discovery_queue WHERE track_id IS NOT NULL)
+                      AND track_id NOT IN (
+                          SELECT pt.track_id FROM playlist_tracks pt
+                          INNER JOIN playlists p ON p.id = pt.playlist_id
+                          WHERE pt.removed_at IS NULL
+                            AND p.is_active = 1
+                            AND p.sync_enabled = 1
+                            AND p.source_id LIKE 'share:%'
+                      )
+                    """.trimIndent(),
+                )
             }
         }
 

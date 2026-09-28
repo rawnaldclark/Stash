@@ -316,17 +316,6 @@ class StashApplication : Application(), Configuration.Provider {
                 val reset = downloadQueueDao.resetStaleInProgress()
                 if (reset > 0) Log.i("StashStartup", "reset $reset stale IN_PROGRESS download rows -> PENDING")
             }.onFailure { Log.w("StashStartup", "stale IN_PROGRESS reset failed", it) }
-            // One-shot (#474), before the resume below can start them: Stash
-            // Mixes' pre-v0.9.37 download rows, which only the Stash Mixes-off
-            // cancel of the download worker used to hold back.
-            runCatching {
-                val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
-                if (!prefs.getBoolean(LEGACY_MIX_DOWNLOADS_CLEANUP_KEY, false)) {
-                    val deleted = downloadQueueDao.deleteLegacyStashMixDownloads(LEGACY_MIX_DOWNLOADS_BEFORE)
-                    prefs.edit().putBoolean(LEGACY_MIX_DOWNLOADS_CLEANUP_KEY, true).apply()
-                    Log.i("StashStartup", "deleted $deleted pre-v0.9.37 Stash Mixes download row(s)")
-                }
-            }.onFailure { Log.w("StashStartup", "legacy Stash Mixes download cleanup failed", it) }
             // Then pick waiting downloads back up (#474), Stash Mixes on or off: a
             // run cancelled or cut short leaves them otherwise until the next tap.
             // Only when something waits, and under the background constraints.
@@ -974,16 +963,6 @@ class StashApplication : Application(), Configuration.Provider {
          * tracks forever.
          */
         private const val LYRICS_MISS_RESET_KEY = "lyrics_miss_reset_done"
-
-        /**
-         * Never-again gate for the one-shot clean-up of Stash Mixes' old
-         * download rows (#474). NOT version-keyed: rows newer than the cutoff
-         * are downloads users asked for, so there is nothing to redo.
-         */
-        private const val LEGACY_MIX_DOWNLOADS_CLEANUP_KEY = "legacy_mix_downloads_cleanup_done"
-
-        /** 2026-05-26T00:00Z: v0.9.37 (2026-05-25) stopped Stash Mixes filing download rows. */
-        private const val LEGACY_MIX_DOWNLOADS_BEFORE = 1_779_753_600_000L
 
         /**
          * [BackfillVersionTracker] key for the TTML lyrics upgrade. Keep stable across releases
