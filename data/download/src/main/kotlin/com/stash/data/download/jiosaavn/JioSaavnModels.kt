@@ -10,6 +10,8 @@ data class JioSaavnSong(
     val artists: JioSaavnArtists,
     val image: List<JioSaavnImage>,
     val downloadUrl: List<JioSaavnMediaLink>,
+    /** Lowercase, e.g. "tamil": a dubbed film song shares everything else across languages. */
+    val language: String? = null,
 )
 
 data class JioSaavnAlbum(val name: String?)

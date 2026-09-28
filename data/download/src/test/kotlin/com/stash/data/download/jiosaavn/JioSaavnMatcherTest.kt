@@ -72,11 +72,12 @@ class JioSaavnMatcherTest {
 
     @Test
     fun `equally exact recordings are rejected when album cannot disambiguate`() {
+        // 6 s apart, so two recordings rather than copies, each 3 s from the request.
         val result = JioSaavnMatcher.best(
-            TrackQuery("Artist", "Song", durationMs = 200_000L),
+            TrackQuery("Artist", "Song", durationMs = 203_000L),
             listOf(
                 song(id = "a", name = "Song", artist = "Artist", duration = 200, album = "Album A"),
-                song(id = "b", name = "Song (Reprise)", artist = "Artist", duration = 200, album = "Different Record"),
+                song(id = "b", name = "Song", artist = "Artist", duration = 206, album = "Different Record"),
             ),
         )
 
@@ -86,9 +87,9 @@ class JioSaavnMatcherTest {
     @Test
     fun `exact album breaks an otherwise exact recording tie`() {
         val result = JioSaavnMatcher.best(
-            TrackQuery("Artist", "Song", album = "Album A", durationMs = 200_000L),
+            TrackQuery("Artist", "Song", album = "Album A", durationMs = 203_000L),
             listOf(
-                song(id = "b", name = "Song (Reprise)", artist = "Artist", duration = 200, album = "Different Record"),
+                song(id = "b", name = "Song", artist = "Artist", duration = 206, album = "Different Record"),
                 song(id = "a", name = "Song", artist = "Artist", duration = 200, album = "Album A"),
             ),
         )
@@ -107,7 +108,7 @@ class JioSaavnMatcherTest {
                 album = "Qayamat Se Qayamat Tak (Original Motion Picture Soundtrack)",
                 durationMs = 353_000L,
             ),
-            liveSongs(),
+            liveSongs(AE_MERE_HUMSAFAR),
         )
 
         assertThat(result?.song?.id).isIn(AE_MERE_HUMSAFAR_COPIES)
@@ -117,7 +118,7 @@ class JioSaavnMatcherTest {
     fun `live 484 - an unrelated compilation album still gets a copy`() {
         val result = JioSaavnMatcher.best(
             TrackQuery(ALKA_AND_UDIT, "Ae Mere Humsafar", album = "Bollywood Romance", durationMs = 351_000L),
-            liveSongs(),
+            liveSongs(AE_MERE_HUMSAFAR),
         )
 
         assertThat(result?.song?.id).isIn(AE_MERE_HUMSAFAR_COPIES)
@@ -125,9 +126,60 @@ class JioSaavnMatcherTest {
 
     @Test
     fun `live 484 - a search download with no album still gets a copy`() {
-        val result = JioSaavnMatcher.best(TrackQuery(ALKA_AND_UDIT, "Ae Mere Humsafar"), liveSongs())
+        val result = JioSaavnMatcher.best(TrackQuery(ALKA_AND_UDIT, "Ae Mere Humsafar"), liveSongs(AE_MERE_HUMSAFAR))
 
         assertThat(result?.song?.id).isIn(AE_MERE_HUMSAFAR_COPIES)
+    }
+
+    // Pan-India dubs: one title, singer and length in every language. Only the
+    // Telugu copies of "Fear Song" pass the artist gate (the Tamil ones credit
+    // the lyricist too), so merging them would hand everyone the Telugu dub.
+    @Test
+    fun `live dub - a song whose title exists in several languages stays ambiguous`() {
+        val result = JioSaavnMatcher.best(TrackQuery(ANIRUDH, "Fear Song", durationMs = 195_000L), liveSongs(FEAR_SONG))
+
+        assertThat(result).isNull()
+    }
+
+    @Test
+    fun `live dub - a Tamil album never gets the Telugu dub`() {
+        val result = JioSaavnMatcher.best(
+            TrackQuery(ANIRUDH, "Fear Song", album = "Devara Part 1 (Tamil)", durationMs = 195_000L),
+            liveSongs(FEAR_SONG),
+        )
+
+        assertThat(result).isNull()
+    }
+
+    @Test
+    fun `a language the request names rejects other-language dubs`() {
+        // Only the Telugu copies, so no other-language title is left to block the merge.
+        val telugu = liveSongs(FEAR_SONG).filter { it.language == "telugu" }
+        assertThat(telugu.map { it.id }).containsExactly("m0Yt29rq", "8_n_c7ay", "jqWYUCWU")
+
+        val result = JioSaavnMatcher.best(
+            TrackQuery(ANIRUDH, "Fear Song", album = "Devara Part 1 (Tamil)", durationMs = 195_000L),
+            telugu,
+        )
+
+        assertThat(result).isNull()
+    }
+
+    @Test
+    fun `live dub - Mehabooba without an album stays ambiguous`() {
+        val result = JioSaavnMatcher.best(TrackQuery("Ananya Bhat", "Mehabooba", durationMs = 212_000L), liveSongs(MEHABOOBA))
+
+        assertThat(result).isNull()
+    }
+
+    @Test
+    fun `live dub - a Telugu album picks the Telugu dub`() {
+        val result = JioSaavnMatcher.best(
+            TrackQuery("Ananya Bhat", "Mehabooba", album = "KGF Chapter 2 - Telugu", durationMs = 212_000L),
+            liveSongs(MEHABOOBA),
+        )
+
+        assertThat(result?.song?.id).isEqualTo("92hBBPo0")
     }
 
     @Test
@@ -150,10 +202,64 @@ class JioSaavnMatcherTest {
                     duration = 454,
                     album = "Bollywood Queens",
                 ),
+                song(
+                    id = "d",
+                    name = "Ae Mere Humsafar [From \"Baazigar\"]",
+                    artist = "Vinod Rathod, Alka Yagnik",
+                    duration = 452,
+                    album = "Mushy Love Songs of Bollywood",
+                ),
             ),
         )
 
         assertThat(result?.song?.id).isEqualTo("a")
+    }
+
+    @Test
+    fun `a Form typo in the soundtrack credit is still a copy`() {
+        // Live 2026-09-28: 'Jaadu Teri Nazar (Form "Darr")' is listed next to the Darr original.
+        val result = JioSaavnMatcher.best(
+            TrackQuery("Udit Narayan", "Jaadu Teri Nazar", durationMs = 280_000L),
+            listOf(
+                song(id = "a", name = "Jaadu Teri Nazar", artist = "Udit Narayan", duration = 280, album = "Darr"),
+                song(
+                    id = "b",
+                    name = "Jaadu Teri Nazar (Form \"Darr\")",
+                    artist = "Udit Narayan",
+                    duration = 279,
+                    album = "Hit Songs Of Yash Chopra Films",
+                ),
+            ),
+        )
+
+        assertThat(result?.song?.id).isEqualTo("a")
+    }
+
+    @Test
+    fun `a tie with a featured-artist title stays ambiguous`() {
+        val result = JioSaavnMatcher.best(
+            TrackQuery("Artist", "Song", durationMs = 200_000L),
+            listOf(
+                song(id = "a", name = "Song", artist = "Artist", duration = 200, album = "Album A"),
+                song(id = "b", name = "Song (feat. X)", artist = "Artist", duration = 200, album = "Album B"),
+            ),
+        )
+
+        assertThat(result).isNull()
+    }
+
+    @Test
+    fun `a clean and an explicit copy stay ambiguous when the request cannot tell`() {
+        // explicit = null, as search-tab downloads send it.
+        val result = JioSaavnMatcher.best(
+            TrackQuery("Artist", "Song", durationMs = 200_000L),
+            listOf(
+                song(id = "a", name = "Song", artist = "Artist", duration = 200, album = "Album A"),
+                song(id = "b", name = "Song", artist = "Artist", duration = 200, album = "Album B", explicit = true),
+            ),
+        )
+
+        assertThat(result).isNull()
     }
 
     @Test
@@ -193,13 +299,13 @@ class JioSaavnMatcherTest {
         assertThat(JioSaavnMatcher.best(query, listOf(unknown, known))).isNull()
     }
 
-    /** The #484 live response, parsed by the real [JioSaavnClient] as in JioSaavnClientTest. */
-    private fun liveSongs(): List<JioSaavnSong> = MockWebServer().use { server ->
-        val body = javaClass.classLoader!!.getResource("fixtures/jiosaavn_search_ae_mere_humsafar.json")!!.readText()
+    /** A saved live search response, parsed by the real [JioSaavnClient] as in JioSaavnClientTest. */
+    private fun liveSongs(fixture: String): List<JioSaavnSong> = MockWebServer().use { server ->
+        val body = javaClass.classLoader!!.getResource("fixtures/$fixture")!!.readText()
         server.enqueue(MockResponse().setBody(body))
         server.start()
         val client = JioSaavnClient(OkHttpClient()).apply { baseUrl = server.url("/").toString() }
-        val outcome = runBlocking { client.search("$ALKA_AND_UDIT Ae Mere Humsafar") }
+        val outcome = runBlocking { client.search(fixture) }
         (outcome as JioSaavnSearchOutcome.Success).songs
     }
 
@@ -210,19 +316,26 @@ class JioSaavnMatcherTest {
         duration: Int? = 268,
         mediaUrl: String = "https://aac.saavncdn.com/song_320.mp4",
         album: String = "Brahmastra",
+        explicit: Boolean = false,
+        language: String? = "hindi",
     ) = JioSaavnSong(
         id = id,
         name = name,
         duration = duration,
-        explicitContent = false,
+        explicitContent = explicit,
         album = JioSaavnAlbum(album),
         artists = JioSaavnArtists(listOf(JioSaavnArtist(artist))),
         image = listOf(JioSaavnImage("500x500", "https://c.saavncdn.com/cover.jpg")),
         downloadUrl = listOf(JioSaavnMediaLink("320kbps", mediaUrl)),
+        language = language,
     )
 
     private companion object {
         const val ALKA_AND_UDIT = "Alka Yagnik & Udit Narayan"
+        const val ANIRUDH = "Anirudh Ravichander"
+        const val AE_MERE_HUMSAFAR = "jiosaavn_search_ae_mere_humsafar.json"
+        const val FEAR_SONG = "jiosaavn_search_fear_song.json"
+        const val MEHABOOBA = "jiosaavn_search_mehabooba.json"
 
         /** Every copy of the 1988 recording in the fixture; its sixth result is a remix. */
         val AE_MERE_HUMSAFAR_COPIES = listOf("S1Yo84Ql", "4TFF_9qZ", "-EFMYYTR", "g2B_ionR", "boha3h8c")
