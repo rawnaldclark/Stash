@@ -60,6 +60,7 @@ class DownloadQueueDaoCancelWaitingTest {
         val onlyHiddenKept = song("Only hidden kept", off, hiddenKept)
         val elsewhere = song("Other playlist", kept)
         val removedHere = song("Removed here", off, removedFromFirst = true)
+        val redownload = song("Re-download missing", off)
 
         row(pending, DownloadStatus.PENDING)
         row(failed, DownloadStatus.FAILED)
@@ -72,14 +73,15 @@ class DownloadQueueDaoCancelWaitingTest {
         row(onlyHiddenKept, DownloadStatus.PENDING)
         row(elsewhere, DownloadStatus.PENDING)
         row(removedHere, DownloadStatus.PENDING)
+        row(redownload, DownloadStatus.PENDING, userRequested = true) // Library Health asked for it
 
         assertThat(dao.cancelWaitingForPlaylist(off)).isEqualTo(5)
 
         val left = listOf(
             pending, failed, waiting, running, syncQueued, alsoKept, alsoFollowed, alsoMineSynced,
-            onlyHiddenKept, elsewhere, removedHere,
+            onlyHiddenKept, elsewhere, removedHere, redownload,
         ).filter { dao.getByTrackId(it) != null }
-        assertThat(left).containsExactly(running, syncQueued, alsoKept, alsoFollowed, elsewhere, removedHere)
+        assertThat(left).containsExactly(running, syncQueued, alsoKept, alsoFollowed, elsewhere, removedHere, redownload)
     }
 
     private suspend fun playlist(
@@ -114,7 +116,7 @@ class DownloadQueueDaoCancelWaitingTest {
         return id
     }
 
-    private suspend fun row(trackId: Long, status: DownloadStatus, syncId: Long? = null) {
-        dao.insert(DownloadQueueEntity(trackId = trackId, syncId = syncId, status = status))
+    private suspend fun row(trackId: Long, status: DownloadStatus, syncId: Long? = null, userRequested: Boolean = false) {
+        dao.insert(DownloadQueueEntity(trackId = trackId, syncId = syncId, status = status, userRequested = userRequested))
     }
 }

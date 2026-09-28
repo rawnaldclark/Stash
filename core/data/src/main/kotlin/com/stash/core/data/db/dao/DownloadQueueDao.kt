@@ -608,8 +608,10 @@ interface DownloadQueueDao {
     /**
      * The playlist page's Download switch turned off (#474): drop this playlist's
      * downloads that haven't started. Discovery partition only (the switch's own
-     * rows); a row running or done is left alone. A song another playlist still
-     * keeps on the phone, or a followed mix still downloads, keeps its row.
+     * rows); a row running or done is left alone, and so is a Library Health
+     * "Re-download missing" row (`user_requested`), which the user asked for on
+     * its own. A song another playlist still keeps on the phone, or a followed
+     * mix still downloads, keeps its row.
      *
      * DELETE, not SKIPPED: a SKIPPED row counts as handled
      * ([hasRowToLeaveAlone]), so it would stop a later On from queueing the song.
@@ -620,6 +622,7 @@ interface DownloadQueueDao {
         """
         DELETE FROM download_queue
         WHERE sync_id IS NULL
+          AND user_requested = 0
           AND status IN ('PENDING', 'FAILED', 'WAITING_FOR_LOSSLESS')
           AND track_id IN (
               SELECT track_id FROM playlist_tracks
