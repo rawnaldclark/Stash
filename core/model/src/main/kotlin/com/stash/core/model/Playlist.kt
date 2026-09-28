@@ -40,6 +40,8 @@ data class Playlist(
      * rail; null = not on Home. Also the rail's sort key.
      */
     val pinnedToHomeAt: Long? = null,
+    /** The playlist page's Download switch (#474): kept on the phone in either mode. */
+    val keepOffline: Boolean = false,
 )
 
 enum class PlaylistType {

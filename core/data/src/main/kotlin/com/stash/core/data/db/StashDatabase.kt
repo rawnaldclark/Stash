@@ -98,7 +98,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         ArtistImageEntity::class,
         SharedMixEntity::class,
     ],
-    version = 50,
+    version = 51,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1338,6 +1338,16 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v50 -> v51: `playlists.keep_offline`, the playlist page's Download switch (#474).
+         * Default 0, so nothing starts downloading on upgrade. Purely additive.
+         */
+        val MIGRATION_50_51 = object : Migration(50, 51) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playlists ADD COLUMN keep_offline INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
          * The complete migration chain, shared by every builder of a
          * [StashDatabase]: the DI singleton in
          * [com.stash.core.data.di.DatabaseModule] AND the throwaway instance
@@ -1400,6 +1410,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_47_48,
                 MIGRATION_48_49,
                 MIGRATION_49_50,
+                MIGRATION_50_51,
             )
         }
     }

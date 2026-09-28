@@ -33,6 +33,7 @@ fun PlaylistEntity.toDomain(): Playlist {
         pinned = pinned,
         dateAdded = dateAdded.toEpochMilli(),
         pinnedToHomeAt = pinnedToHomeAt,
+        keepOffline = keepOffline,
     )
 }
 
@@ -60,4 +61,5 @@ fun Playlist.toEntity(): PlaylistEntity = PlaylistEntity(
     pinned = pinned,
     dateAdded = Instant.ofEpochMilli(dateAdded),
     pinnedToHomeAt = pinnedToHomeAt,
+    keepOffline = keepOffline,
 )

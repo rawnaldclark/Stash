@@ -702,6 +702,14 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET sync_enabled = :enabled WHERE id = :playlistId")
     suspend fun setSyncEnabled(playlistId: Long, enabled: Boolean)
 
+    /** The playlist page's Download switch (#474). Never touches sync_enabled. */
+    @Query("UPDATE playlists SET keep_offline = :on WHERE id = :playlistId")
+    suspend fun setKeepOffline(playlistId: Long, on: Boolean)
+
+    /** Active playlists with the Download switch on: the post-sync sweep queues each one (#474). */
+    @Query("SELECT id FROM playlists WHERE keep_offline = 1 AND is_active = 1")
+    suspend fun getKeepOfflinePlaylistIds(): List<Long>
+
     /**
      * One-shot data migration: hide every YouTube playlist that currently
      * has zero linked tracks. Cleans up stale "My Mix N" rows left over
