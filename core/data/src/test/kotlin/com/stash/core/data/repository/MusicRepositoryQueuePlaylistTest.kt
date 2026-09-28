@@ -11,8 +11,10 @@ import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.DownloadNetworkPreference
+import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.DownloadStatus
@@ -118,15 +120,55 @@ class MusicRepositoryQueuePlaylistTest {
         )
     }
 
+    /**
+     * A song an earlier Download-mode sync queued is stuck in Stream-only mode: that
+     * mode never runs the sync's download step, and the row counts as handled. Queueing
+     * the playlist hands it to the drain; another playlist's stuck song is left alone.
+     */
+    @Test fun `stream-only mode hands this playlist's stuck sync rows to the drain`() = runTest {
+        val (stuck, failedOnce, otherPlaylists) = seedStuckSyncRows()
+
+        assertEquals(2, repo(streamOnly = true).queueDownloadsForPlaylist(playlist("Kept")))
+
+        val drainable = db.downloadQueueDao().pendingDiscoveryDownloads().map { it.trackId }
+        assertEquals(setOf(stuck, failedOnce), drainable.toSet())
+        assertEquals(syncId, db.downloadQueueDao().getByTrackId(otherPlaylists)!!.syncId)
+        assertEquals(1, drains().size)
+    }
+
+    @Test fun `download mode leaves sync rows to the sync`() = runTest {
+        seedStuckSyncRows()
+        assertEquals(0, repo(streamOnly = false).queueDownloadsForPlaylist(playlist("Kept")))
+        assertEquals(emptyList<Long>(), db.downloadQueueDao().pendingDiscoveryDownloads().map { it.trackId })
+    }
+
+    private var syncId = 0L
+
+    /** Sync rows for songs of the playlist named "Kept" (created first here) and of another playlist. */
+    private suspend fun seedStuckSyncRows(): Triple<Long, Long, Long> {
+        syncId = db.syncHistoryDao().insert(SyncHistoryEntity())
+        val kept = playlist("Kept")
+        val stuck = member(kept, 0, track("Stuck"))
+        val failedOnce = member(kept, 1, track("Failed once"))
+        val otherPlaylists = member(playlist("Other"), 0, track("Other"))
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = stuck, syncId = syncId))
+        db.downloadQueueDao().insert(
+            DownloadQueueEntity(trackId = failedOnce, syncId = syncId, status = DownloadStatus.FAILED, retryCount = 1),
+        )
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = otherPlaylists, syncId = syncId))
+        return Triple(stuck, failedOnce, otherPlaylists)
+    }
+
     private fun drains(): List<WorkInfo> =
         WorkManager.getInstance(context).getWorkInfosForUniqueWork(DiscoveryDownloadWorker.UNIQUE_WORK_NAME).get()
 
-    private suspend fun playlist(name: String, keepOffline: Boolean = false): Long = db.playlistDao().insert(
-        PlaylistEntity(
-            name = name, source = MusicSource.BOTH, sourceId = "custom_$name", type = PlaylistType.CUSTOM,
-            keepOffline = keepOffline,
-        ),
-    )
+    private suspend fun playlist(name: String, keepOffline: Boolean = false): Long =
+        db.playlistDao().findBySourceId("custom_$name")?.id ?: db.playlistDao().insert(
+            PlaylistEntity(
+                name = name, source = MusicSource.BOTH, sourceId = "custom_$name", type = PlaylistType.CUSTOM,
+                keepOffline = keepOffline,
+            ),
+        )
 
     private suspend fun track(title: String) = TrackEntity(
         title = title, artist = "A", durationMs = 1000L, source = MusicSource.SPOTIFY,
@@ -139,9 +181,11 @@ class MusicRepositoryQueuePlaylistTest {
         return id
     }
 
-    private fun repo(): MusicRepositoryImpl {
+    private fun repo(streamOnly: Boolean = false): MusicRepositoryImpl {
         val network = mockk<DownloadNetworkPreference>()
         coEvery { network.current() } returns DownloadNetworkMode.WIFI_ANY
+        val streaming = mockk<StreamingPreference>()
+        coEvery { streaming.current() } returns streamOnly
         return MusicRepositoryImpl(
             context = context,
             trackDao = db.trackDao(),
@@ -153,7 +197,7 @@ class MusicRepositoryQueuePlaylistTest {
             trackMatcher = mockk(relaxed = true),
             stashMixRecipeDao = mockk(relaxed = true),
             downloadNetworkPreference = network,
-            streamingPreference = mockk(relaxed = true),
+            streamingPreference = streaming,
             localFileOps = mockk(relaxed = true),
             syncPreferencesManager = mockk(relaxed = true),
             singleTrackDownloadEnqueuer = mockk(relaxed = true),

@@ -649,6 +649,10 @@ class MusicRepositoryImpl @Inject constructor(
 
     /** Queue rows only, no drain: see [queueKeptPlaylists]. Returns rows queued. */
     private suspend fun insertDownloadsForPlaylist(playlistId: Long): Int {
+        // Stream-only mode never runs the sync's download step, so songs an
+        // earlier Download-mode sync queued would wait forever (and count as
+        // handled below). Hand them to the drain this starts instead.
+        val moved = if (streamingPreference.current()) downloadQueueDao.moveSyncRowsToDiscovery(playlistId) else 0
         val tracks = trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .first()
         // A match the user dismissed stays dismissed, and a track with a row
@@ -656,7 +660,7 @@ class MusicRepositoryImpl @Inject constructor(
         // this safe to call after every sync (#474) without re-trying the same
         // unmatchable songs, or piling duplicate rows into Failed downloads.
         val candidates = tracks.filter { !it.isDownloaded && !it.matchDismissed }
-        if (candidates.isEmpty()) return 0
+        if (candidates.isEmpty()) return moved
 
         val entries = candidates.mapNotNull { entity ->
             if (downloadQueueDao.hasRowToLeaveAlone(entity.id)) return@mapNotNull null
@@ -668,7 +672,7 @@ class MusicRepositoryImpl @Inject constructor(
             )
         }
         if (entries.isNotEmpty()) downloadQueueDao.insertAll(entries)
-        return entries.size
+        return moved + entries.size
     }
 
     override suspend fun setPlaylistDownload(playlistId: Long, on: Boolean) {

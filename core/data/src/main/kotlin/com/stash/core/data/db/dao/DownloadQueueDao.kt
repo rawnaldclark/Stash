@@ -123,6 +123,27 @@ interface DownloadQueueDao {
     """)
     suspend fun hasRowToLeaveAlone(trackId: Long): Boolean
 
+    /**
+     * Stream-only mode (#474): the sync's download step never runs there, so a
+     * row an earlier Download-mode sync queued for one of [playlistId]'s songs
+     * would wait forever. [hasRowToLeaveAlone] counts it as handled, so the
+     * playlist's Download switch couldn't queue the song either. This hands those
+     * rows to the discovery drain: the ones it would still pick up, PENDING or
+     * FAILED with retries left (the same rule as [pendingDiscoveryDownloads]).
+     *
+     * @return Number of rows moved.
+     */
+    @Query("""
+        UPDATE download_queue SET sync_id = NULL
+        WHERE sync_id IS NOT NULL
+          AND (status = 'PENDING' OR (status = 'FAILED' AND retry_count < 3))
+          AND track_id IN (
+              SELECT track_id FROM playlist_tracks
+              WHERE playlist_id = :playlistId AND removed_at IS NULL
+          )
+    """)
+    suspend fun moveSyncRowsToDiscovery(playlistId: Long): Int
+
     /** Reactive count of tracks deferred because no lossless source could serve them. */
     @Query("SELECT COUNT(*) FROM download_queue WHERE status = 'WAITING_FOR_LOSSLESS'")
     fun waitingForLosslessCount(): Flow<Int>
