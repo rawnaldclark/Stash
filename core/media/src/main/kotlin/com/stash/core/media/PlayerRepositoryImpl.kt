@@ -1940,7 +1940,7 @@ class PlayerRepositoryImpl @Inject constructor(
             // Every error lands in the diagnostics bundle with the branch it took: the track id,
             // origin and URI scheme only. Never the title, never the URI: a stash-resolve URI
             // carries the title, a googlevideo one the user's IP.
-            val failingId = current?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L)
+            val failingId = current?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L)?.takeIf { it != 0L }
             fun note(branch: String) = diagnosticsLog.recordError(failingId, error, branch, streamOrigin, scheme)
             if (listenTogetherOwnsQueue) {
                 note("LISTEN_TOGETHER (left to the session)")
@@ -1960,7 +1960,7 @@ class PlayerRepositoryImpl @Inject constructor(
                     // that same track as a stream when online; otherwise use the
                     // established per-track skip. This is not a backend outage,
                     // so the local failure itself does not arm the cascade.
-                    note("LOCAL_SKIP")
+                    note("LOCAL (stream instead, or skip)")
                     Log.w(
                         TAG,
                         "onPlayerError: '$failingTitle' code=${error.errorCode} " +

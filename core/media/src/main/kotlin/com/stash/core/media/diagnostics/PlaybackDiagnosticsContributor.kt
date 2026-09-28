@@ -105,7 +105,7 @@ class PlaybackDiagnosticsContributor @Inject constructor(
         val now = log.clock()
         return "Recent resolves, this app run (newest first):\n" + rows.joinToString("\n") {
             "  ${ago(now - it.atMs)} · track ${it.trackId} · ${it.servedBy} · ${it.elapsedMs} ms · " +
-                (if (it.foreground) "foreground" else "background") + " · lossless ${onOff(it.lossless)}"
+                "lossless ${onOff(it.lossless)}"
         }
     }
 

@@ -311,13 +311,13 @@ class StreamSourceRegistry internal constructor(
                     null
                 }
             }.also {
-                diagnosticsLog.recordResolve(track.id, servedBy ?: "none (all missed)", msSince(startedNs), allowYtDlp, lossless)
+                diagnosticsLog.recordResolve(track.id, servedBy ?: "none (all missed)", msSince(startedNs), lossless)
             }
         } catch (e: TimeoutCancellationException) {
             // resolve()'s deadline fired mid-walk. A hang is an outcome, and the player only sees
             // it as a generic IO error, so it gets its own line. Any other cancellation is not an
             // outcome (see quietly) and is never recorded.
-            diagnosticsLog.recordResolve(track.id, "none (timed out)", msSince(startedNs), allowYtDlp, lossless)
+            diagnosticsLog.recordResolve(track.id, "none (timed out)", msSince(startedNs), lossless)
             throw e
         }
     }

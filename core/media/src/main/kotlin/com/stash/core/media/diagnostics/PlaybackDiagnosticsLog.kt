@@ -27,7 +27,6 @@ class PlaybackDiagnosticsLog @Inject constructor() {
         val trackId: Long,
         val servedBy: String,
         val elapsedMs: Long,
-        val foreground: Boolean,
         val lossless: Boolean,
     )
 
@@ -48,8 +47,8 @@ class PlaybackDiagnosticsLog @Inject constructor() {
     private val resolves = ArrayDeque<Resolve>()
     private val errors = ArrayDeque<PlaybackError>()
 
-    fun recordResolve(trackId: Long, servedBy: String, elapsedMs: Long, foreground: Boolean, lossless: Boolean) =
-        push(resolves, RESOLVES_MAX) { Resolve(clock(), trackId, servedBy, elapsedMs, foreground, lossless) }
+    fun recordResolve(trackId: Long, servedBy: String, elapsedMs: Long, lossless: Boolean) =
+        push(resolves, RESOLVES_MAX) { Resolve(clock(), trackId, servedBy, elapsedMs, lossless) }
 
     /** Keeps [error]'s code name and HTTP status only: its message and causes can carry the URL. */
     fun recordError(trackId: Long?, error: PlaybackException, branch: String, origin: String?, scheme: String?) =

@@ -86,15 +86,15 @@ class PlaybackDiagnosticsContributorTest {
 
     @Test fun `recent resolves read newest first, with the source, the time taken and the gates`() = runTest {
         log.clock = { NOW - 40_000 }
-        log.recordResolve(7L, "none (all missed)", 3_120, foreground = false, lossless = false)
+        log.recordResolve(7L, "none (all missed)", 3_120, lossless = false)
         log.clock = { NOW - 12_000 }
-        log.recordResolve(4711L, "qbdlx", 812, foreground = true, lossless = true)
+        log.recordResolve(4711L, "qbdlx", 812, lossless = true)
         log.clock = { NOW }
 
         assertThat(contributor().section()).contains(
             "Recent resolves, this app run (newest first):\n" +
-                "  12 s ago · track 4711 · qbdlx · 812 ms · foreground · lossless on\n" +
-                "  40 s ago · track 7 · none (all missed) · 3120 ms · background · lossless off",
+                "  12 s ago · track 4711 · qbdlx · 812 ms · lossless on\n" +
+                "  40 s ago · track 7 · none (all missed) · 3120 ms · lossless off",
         )
     }
 
@@ -140,7 +140,7 @@ class PlaybackDiagnosticsContributorTest {
     }
 
     @Test fun `the buffers keep only the last 10 resolves and 5 errors, newest first`() {
-        repeat(12) { log.recordResolve(it.toLong(), "youtube", 100, foreground = true, lossless = true) }
+        repeat(12) { log.recordResolve(it.toLong(), "youtube", 100, lossless = true) }
         repeat(7) { log.recordError(it.toLong(), PlaybackException("x", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED), "LOCAL_SKIP", null, "file") }
 
         assertThat(log.recentResolves().map { it.trackId }).containsExactly(11L, 10L, 9L, 8L, 7L, 6L, 5L, 4L, 3L, 2L).inOrder()
@@ -149,7 +149,7 @@ class PlaybackDiagnosticsContributorTest {
 
     @Test fun `a failing block costs one line, not the section`() = runTest {
         coEvery { eqStore.read() } throws IllegalStateException("datastore closed")
-        log.recordResolve(4711L, "qbdlx", 812, foreground = true, lossless = true)
+        log.recordResolve(4711L, "qbdlx", 812, lossless = true)
 
         val s = contributor().section()
 

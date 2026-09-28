@@ -415,7 +415,6 @@ class StreamSourceRegistryTest {
         val r = log.recentResolves().single()
         assertThat(r.trackId).isEqualTo(1L)
         assertThat(r.servedBy).isEqualTo("qbdlx")
-        assertThat(r.foreground).isTrue()
         assertThat(r.lossless).isTrue()
         assertThat(r.toString()).doesNotContain("Secret Song")
         assertThat(r.toString()).doesNotContain("akamaized")
@@ -431,7 +430,6 @@ class StreamSourceRegistryTest {
         assertThat(result).isNull()
         val r = log.recentResolves().single()
         assertThat(r.servedBy).isEqualTo("none (all missed)")
-        assertThat(r.foreground).isFalse()
     }
 
     @Test
