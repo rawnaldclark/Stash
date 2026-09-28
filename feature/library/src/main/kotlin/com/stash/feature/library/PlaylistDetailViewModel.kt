@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
 import com.stash.core.data.db.dao.DiscoveryQueueDao
+import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.data.mix.mixBuildState
@@ -53,7 +54,8 @@ data class PlaylistDetailUiState(
 
 /**
  * The page's Download button (#474). [downloaded] of [total] counts the whole playlist, never the
- * search-filtered list. [followed]: a read-only followed mix, whose button sits in its follow block.
+ * search-filtered list, less the songs that won't download unless the user acts (failed, cancelled,
+ * match dismissed). [followed]: a read-only followed mix, whose button sits in its follow block.
  */
 data class DownloadButtonState(
     val on: Boolean,
@@ -92,6 +94,7 @@ class PlaylistDetailViewModel @Inject constructor(
     private val recipeDao: StashMixRecipeDao,
     private val discoveryQueueDao: DiscoveryQueueDao,
     private val sharedMixRepository: com.stash.core.data.share.SharedMixRepository,
+    private val downloadQueueDao: DownloadQueueDao,
 ) : ViewModel() {
 
     /** The playlist ID extracted from the navigation route arguments. */
@@ -138,14 +141,17 @@ class PlaylistDetailViewModel @Inject constructor(
      * sync_enabled). Elsewhere on = kept on the phone, or, in Download mode, already downloading
      * through the Sync tab. The button follows the playlist row (see init), so a tap needs no local
      * copy. Reads the raw follow row, not [follow]: that one can land a frame later, and the button
-     * would flash in the wrong place.
+     * would flash in the wrong place. A song that won't download unless the user acts (failed,
+     * cancelled, match dismissed; [DownloadQueueDao.observeGivenUpTrackIds]) is left out of the
+     * count, so the button never sits at "Downloading 11 of 12" forever.
      */
     val downloadButton: StateFlow<DownloadButtonState?> = combine(
         _playlist,
         streamingPreference.enabled,
         sharedMixRepository.observe(playlistId),
         musicRepository.getTracksByPlaylist(playlistId),
-    ) { playlist, streamOnly, shared, tracks ->
+        downloadQueueDao.observeGivenUpTrackIds(playlistId),
+    ) { playlist, streamOnly, shared, tracks, givenUpIds ->
         val followed = shared?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER &&
             shared.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE
         val on = when {
@@ -154,7 +160,16 @@ class PlaylistDetailViewModel @Inject constructor(
             playlist.type in DOWNLOAD_BUTTON_TYPES -> playlist.keepOffline || (!streamOnly && playlist.syncEnabled)
             else -> null
         }
-        on?.let { DownloadButtonState(it, downloaded = tracks.count { t -> t.isDownloaded }, total = tracks.size, followed = followed) }
+        // A downloaded song always counts, even if a stale emission still lists it as given up.
+        val givenUp = givenUpIds.toSet()
+        on?.let {
+            DownloadButtonState(
+                on = it,
+                downloaded = tracks.count { t -> t.isDownloaded },
+                total = tracks.count { t -> t.isDownloaded || t.id !in givenUp },
+                followed = followed,
+            )
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**

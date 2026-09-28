@@ -658,6 +658,40 @@ interface DownloadQueueDao {
     )
     suspend fun cancelWaitingForPlaylist(playlistId: Long): Int
 
+    /**
+     * [playlistId]'s songs that won't download unless the user acts (#474's Download button): a
+     * failed download (what Failed downloads and Failed matches list), one the user cancelled
+     * (SKIPPED), or a dismissed match. The playlist's queueing leaves all of these alone
+     * ([hasRowToLeaveAlone]; a dismissed match is never queued), so the button leaves them out of
+     * its "N of M" instead of sitting at "Downloading 11 of 12" forever.
+     *
+     * Every FAILED row counts, not only an exhausted one (retry_count >= 3): [resetExhaustedRetries]
+     * gives those another chance at each app start and sync, and a drain only starts for a PENDING
+     * row ([hasPendingDiscoveryDownload]), so "retries left" can mean waiting for nothing. A retry
+     * that does run makes the row IN_PROGRESS, and the song counts again.
+     *
+     * ponytail: a song with a FAILED row AND a newer live row (rare: [getByTrackId] reuses the
+     * oldest) counts as given up, so the button can say Downloaded while it still lands. Add
+     * `NOT EXISTS` over live rows if that ever shows.
+     */
+    @Query(
+        """
+        SELECT t.id FROM playlist_tracks pt
+        INNER JOIN tracks t ON t.id = pt.track_id
+        WHERE pt.playlist_id = :playlistId
+          AND pt.removed_at IS NULL
+          AND t.is_downloaded = 0
+          AND (
+              t.match_dismissed = 1
+              OR EXISTS (
+                  SELECT 1 FROM download_queue dq
+                  WHERE dq.track_id = t.id AND dq.status IN ('FAILED', 'SKIPPED')
+              )
+          )
+        """
+    )
+    fun observeGivenUpTrackIds(playlistId: Long): Flow<List<Long>>
+
     // ── Cleanup ─────────────────────────────────────────────────────────
 
     /**

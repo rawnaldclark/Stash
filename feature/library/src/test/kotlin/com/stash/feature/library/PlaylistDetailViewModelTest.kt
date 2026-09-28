@@ -167,6 +167,21 @@ class PlaylistDetailViewModelTest {
         assertEquals("Downloaded", done.label)
     }
 
+    @Test fun `a song that won't download leaves the count, so a finished playlist says Downloaded`() = runTest {
+        // 12 songs: 11 downloaded, 1 given up (failed, cancelled or its match dismissed).
+        val tracks = (1L..12L).map { track(it, downloaded = it <= 11) }
+        val button = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = tracks, givenUp = listOf(12L)))
+        assertEquals(DownloadButtonState(on = true, downloaded = 11, total = 11), button)
+        assertEquals("Downloaded", button.label)
+    }
+
+    @Test fun `a given-up song leaves the total, a pending one still counts`() = runTest {
+        // 12 songs: 10 downloaded, 1 given up, 1 pending (say, waiting for Wi-Fi).
+        val tracks = (1L..12L).map { track(it, downloaded = it <= 10) }
+        val button = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = tracks, givenUp = listOf(11L)))
+        assertEquals("Downloading 10 of 11", button.label)
+    }
+
     @Test fun `the counts cover the whole playlist while a search filter is active`() = runTest {
         val music = musicRepoMock().stub {
             on { getTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L), track(3L)))
@@ -246,12 +261,16 @@ class PlaylistDetailViewModelTest {
         type = type, syncEnabled = syncEnabled, keepOffline = keepOffline,
     )
 
-    /** The page's button for [playlist] holding [tracks], in the given mode: null = no button. */
+    /**
+     * The page's button for [playlist] holding [tracks], in the given mode: null = no button.
+     * [givenUp]: the songs that won't download unless the user acts (failed, cancelled, dismissed).
+     */
     private fun kotlinx.coroutines.test.TestScope.downloadButton(
         playlist: com.stash.core.model.Playlist,
         streamOnly: Boolean = true,
         shared: com.stash.core.data.db.entity.SharedMixEntity? = null,
         tracks: List<Track> = emptyList(),
+        givenUp: List<Long> = emptyList(),
     ): DownloadButtonState? {
         val music = musicRepoMock().stub {
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist
@@ -264,6 +283,7 @@ class PlaylistDetailViewModelTest {
                 on { enabled } doReturn flowOf(streamOnly)
             },
             sharedMixRepository = mock { on { observe(any()) } doReturn flowOf(shared) },
+            downloadQueueDao = mock { on { observeGivenUpTrackIds(1L) } doReturn flowOf(givenUp) },
         )
         backgroundScope.launch { vm.downloadButton.collect {} }
         runCurrent()
@@ -575,6 +595,9 @@ class PlaylistDetailViewModelTest {
         sharedMixRepository: com.stash.core.data.share.SharedMixRepository = mock {
             on { observe(any()) } doReturn flowOf(null)
         },
+        downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao = mock {
+            on { observeGivenUpTrackIds(any()) } doReturn flowOf(emptyList())
+        },
     ): PlaylistDetailViewModel = PlaylistDetailViewModel(
         savedStateHandle = savedStateHandle,
         musicRepository = musicRepository,
@@ -585,5 +608,6 @@ class PlaylistDetailViewModelTest {
         recipeDao = recipeDao,
         discoveryQueueDao = discoveryQueueDao,
         sharedMixRepository = sharedMixRepository,
+        downloadQueueDao = downloadQueueDao,
     )
 }
