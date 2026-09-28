@@ -98,7 +98,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         ArtistImageEntity::class,
         SharedMixEntity::class,
     ],
-    version = 51,
+    version = 50,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1338,21 +1338,6 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
-         * v50 -> v51: `tracks.last_lyrics_attempt_failed_at` records when a transient
-         * fetch failure (network/parse error) last happened for a track, separate from
-         * the `lyrics_fetched_at` success/definitive-miss sentinel. Without it, a track
-         * that failed due to a flaky lyrics source was indistinguishable from one never
-         * attempted, so the bulk "Fetch lyrics" candidate query kept re-selecting the
-         * same failed tracks (in id order) ahead of ones never tried at all — a partial
-         * or bailed run made no forward progress on retry. NULL = never failed.
-         */
-        val MIGRATION_50_51 = object : Migration(50, 51) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE tracks ADD COLUMN last_lyrics_attempt_failed_at INTEGER DEFAULT NULL")
-            }
-        }
-
-        /**
          * The complete migration chain, shared by every builder of a
          * [StashDatabase]: the DI singleton in
          * [com.stash.core.data.di.DatabaseModule] AND the throwaway instance
@@ -1415,7 +1400,6 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_47_48,
                 MIGRATION_48_49,
                 MIGRATION_49_50,
-                MIGRATION_50_51,
             )
         }
     }

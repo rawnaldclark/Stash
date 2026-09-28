@@ -342,16 +342,4 @@ data class TrackEntity(
      */
     @ColumnInfo(name = "lyrics_fetched_at")
     val lyricsFetchedAt: Long? = null,
-
-    /**
-     * Epoch-millis of the most recent lyrics-fetch attempt that ended in a
-     * transient failure (network/parse error), as opposed to [lyricsFetchedAt]'s
-     * success/definitive-miss sentinel. NULL = never failed (either never tried,
-     * or its only outcomes were success/definitive-miss). Used purely to order
-     * [com.stash.core.data.db.dao.LyricsDao.trackIdsMissingLyrics]'s candidate
-     * list so a track that merely errored sorts behind tracks that were never
-     * attempted at all, instead of blocking them on every retry.
-     */
-    @ColumnInfo(name = "last_lyrics_attempt_failed_at")
-    val lastLyricsAttemptFailedAt: Long? = null,
 )

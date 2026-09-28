@@ -43,19 +43,10 @@ interface LyricsDao {
     suspend fun markTtmlChecked(trackId: Long, at: Long)
 
     /**
-     * Downloaded tracks with no lyrics: never tried (NULL) or previously a miss (0L).
-     * Ordered so tracks that never had a fetch attempt come first, then tracks whose
-     * last attempt merely errored (transient failure) come back oldest-failure-first.
-     * SQLite sorts NULL before any value in ASC order, so no extra NULL-handling is
-     * needed. Without this ordering, a bulk run that errors out or bails partway
-     * through re-selects the exact same head-of-queue tracks next time instead of
-     * making forward progress into untried ones.
+     * Downloaded tracks with no lyrics: never tried (NULL) or previously a miss (0L). In id order:
+     * `LyricsRepository.trackIdsMissingLyrics` resumes the bulk fetch from an id cursor.
      */
-    @Query("""
-        SELECT id FROM tracks
-        WHERE is_downloaded = 1 AND (lyrics_fetched_at IS NULL OR lyrics_fetched_at = 0)
-        ORDER BY last_lyrics_attempt_failed_at ASC, id ASC
-    """)
+    @Query("SELECT id FROM tracks WHERE is_downloaded = 1 AND (lyrics_fetched_at IS NULL OR lyrics_fetched_at = 0) ORDER BY id")
     suspend fun trackIdsMissingLyrics(): List<Long>
 
     /** Rows currently carrying word-synced TTML — used when the user switches to LRC-only, to know which to clean up. */

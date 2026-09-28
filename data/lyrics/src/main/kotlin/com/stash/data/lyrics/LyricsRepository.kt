@@ -108,13 +108,7 @@ class LyricsRepository @Inject constructor(
 
     suspend fun resolveTransient(query: LyricsQuery): LyricsResult? = walkSources(query)
 
-    suspend fun clearFetchStamp(trackId: Long) {
-        trackDao.setLyricsFetchedAt(trackId, null)
-        // Explicit retry — don't let a stale failure stamp make this track sort
-        // as "recently failed" the next time the bulk fetch runs; the user just
-        // asked for a fresh attempt.
-        trackDao.setLastLyricsAttemptFailedAt(trackId, null)
-    }
+    suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
 
     /** Empty when the user has set LRC-only — nothing to upgrade if Apple is never consulted. */
     suspend fun trackIdsPendingTtml(): List<Long> {
@@ -122,8 +116,16 @@ class LyricsRepository @Inject constructor(
         return lyricsDao.trackIdsPendingTtml()
     }
 
-    /** Downloaded tracks that have no lyrics (never tried, or an earlier all-source miss). */
-    suspend fun trackIdsMissingLyrics(): List<Long> = lyricsDao.trackIdsMissingLyrics()
+    /**
+     * Downloaded tracks that have no lyrics (never tried, or an earlier all-source miss), starting
+     * just after the one the last manual run reached and wrapping round, so a run cut short
+     * (Cancel, app killed, the OS job cap) moves on instead of re-asking the same head of the list.
+     */
+    suspend fun trackIdsMissingLyrics(): List<Long> {
+        val after = lyricsPreference.bulkFetchCursor.first()
+        // ponytail: one resume point, not per-track state. Stable sort keeps id order in each half.
+        return lyricsDao.trackIdsMissingLyrics().sortedBy { it <= after }
+    }
 
     /**
      * Manual-run path: walks the full source chain for one track and stores the hit. Failures are
@@ -131,6 +133,8 @@ class LyricsRepository @Inject constructor(
      * definitive miss re-stamps 0L exactly as [resolveAndStore] always does.
      */
     suspend fun fetchLyricsNow(trackId: Long): ManualFetchResult {
+        // First, before the network, so a kill mid-request still moves the next run on.
+        lyricsPreference.setBulkFetchCursor(trackId)
         val track = trackDao.getById(trackId) ?: return ManualFetchResult.SKIPPED
         val query = LyricsQuery(
             trackId = track.id,
@@ -147,7 +151,6 @@ class LyricsRepository @Inject constructor(
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Manual lyrics fetch failed for trackId=$trackId", e)
-            trackDao.setLastLyricsAttemptFailedAt(trackId, clock.now())
             ManualFetchResult.FAILED
         }
     }
