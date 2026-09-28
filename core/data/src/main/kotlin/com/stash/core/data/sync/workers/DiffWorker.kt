@@ -392,8 +392,8 @@ class DiffWorker @AssistedInject constructor(
             // run, in either mode: new songs, and library songs newly linked to it
             // (the existing-track path never queues). Queued, failed and cancelled
             // songs are left alone, so one pass per run is safe, and it starts one
-            // drain that waits for the user's download network setting. Never
-            // fatal: the sync itself already worked.
+            // drain that follows the Sync tab's "Wi-Fi only", like this sync's own
+            // downloads. Never fatal: the sync itself already worked.
             runCatching {
                 val queued = musicRepository.queueKeptPlaylists()
                 if (queued > 0) {

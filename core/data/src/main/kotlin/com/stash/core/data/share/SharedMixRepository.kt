@@ -253,7 +253,7 @@ class SharedMixRepository @Inject constructor(
             sharedMixDao.markApplied(row.playlistId, doc.version, doc.name, doc.sharedBy, now)
             playlist.syncEnabled
         }
-        // Nobody tapped anything: the new songs wait for the user's download network setting.
+        // Nobody tapped anything: the new songs follow the Sync tab's "Wi-Fi only", like a sync's.
         if (download == true) musicRepository.queueDownloadsForPlaylist(row.playlistId, background = true)
     }
 

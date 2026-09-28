@@ -15,13 +15,17 @@ import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.data.sync.SyncPreferences
+import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -73,7 +77,7 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(listOf(fresh), pending.map { it.trackId })
     }
 
-    @Test fun `a sync queues every kept playlist, then starts one drain that follows the download setting`() = runTest {
+    @Test fun `a sync queues every kept playlist, then starts one drain that follows Wi-Fi only`() = runTest {
         member(playlist("Kept 1", keepOffline = true), 0, track("A"))
         member(playlist("Kept 2", keepOffline = true), 0, track("B"))
         member(playlist("Not kept"), 0, track("C"))
@@ -82,16 +86,31 @@ class MusicRepositoryQueuePlaylistTest {
 
         val waiting = db.downloadQueueDao().pendingDiscoveryDownloads().map { db.trackDao().getById(it.trackId)!!.title }
         assertEquals(setOf("A", "B"), waiting.toSet())
-        // One drain for both playlists (a drain per playlist restarts it), on Wi-Fi as the setting says.
+        // One drain for both playlists (a drain per playlist restarts it), on Wi-Fi as the Sync tab says.
         assertEquals(listOf(NetworkType.UNMETERED), drains().map { it.constraints.requiredNetworkType })
     }
 
-    @Test fun `background queueing waits for the download setting`() = runTest {
+    /**
+     * Background downloads follow the Sync tab's "Wi-Fi only", the setting a sync's
+     * own downloads use. "Run recommendations when" (DownloadNetworkMode) sits at its
+     * default, Wi-Fi + charging, in [repo]: none of it may leak in, charging included.
+     */
+    @Test fun `with Wi-Fi only on, background downloads wait for Wi-Fi and never for a charger`() = runTest {
         val pid = playlist("Mix")
         member(pid, 0, track("A"))
-        repo().queueDownloadsForPlaylist(pid, background = true)
-        assertEquals(listOf(NetworkType.UNMETERED), drains().map { it.constraints.requiredNetworkType })
+        repo(wifiOnly = true).queueDownloadsForPlaylist(pid, background = true)
+        assertEquals(listOf(NetworkType.UNMETERED to false), drains().map(::networkAndCharging))
     }
+
+    @Test fun `with Wi-Fi only off, background downloads use any network`() = runTest {
+        val pid = playlist("Mix")
+        member(pid, 0, track("A"))
+        repo(wifiOnly = false).queueDownloadsForPlaylist(pid, background = true)
+        assertEquals(listOf(NetworkType.CONNECTED to false), drains().map(::networkAndCharging))
+    }
+
+    private fun networkAndCharging(info: WorkInfo) =
+        info.constraints.requiredNetworkType to info.constraints.requiresCharging()
 
     @Test fun `a tap after a background drain takes over on any network`() = runTest {
         val pid = playlist("Mix")
@@ -181,11 +200,14 @@ class MusicRepositoryQueuePlaylistTest {
         return id
     }
 
-    private fun repo(streamOnly: Boolean = false): MusicRepositoryImpl {
+    private fun repo(streamOnly: Boolean = false, wifiOnly: Boolean = true): MusicRepositoryImpl {
+        // "Run recommendations when" at its default: it must never reach a download.
         val network = mockk<DownloadNetworkPreference>()
-        coEvery { network.current() } returns DownloadNetworkMode.WIFI_ANY
+        coEvery { network.current() } returns DownloadNetworkMode.WIFI_AND_CHARGING
         val streaming = mockk<StreamingPreference>()
         coEvery { streaming.current() } returns streamOnly
+        val sync = mockk<SyncPreferencesManager>(relaxed = true)
+        every { sync.preferences } returns flowOf(SyncPreferences(wifiOnly = wifiOnly))
         return MusicRepositoryImpl(
             context = context,
             trackDao = db.trackDao(),
@@ -199,7 +221,7 @@ class MusicRepositoryQueuePlaylistTest {
             downloadNetworkPreference = network,
             streamingPreference = streaming,
             localFileOps = mockk(relaxed = true),
-            syncPreferencesManager = mockk(relaxed = true),
+            syncPreferencesManager = sync,
             singleTrackDownloadEnqueuer = mockk(relaxed = true),
             lastFmRecommendationSource = mockk(relaxed = true),
             sharedMixDao = mockk(relaxed = true),

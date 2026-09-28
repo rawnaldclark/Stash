@@ -233,8 +233,8 @@ interface MusicRepository {
      * skipped). Caller can show "Queued N tracks" snackbar.
      *
      * [background] is for work nobody tapped (a followed mix's update): the
-     * download then waits for the user's download network setting instead of
-     * starting on any network.
+     * download then follows the Sync tab's "Wi-Fi only", like a sync's own
+     * downloads, instead of starting on any network.
      */
     suspend fun queueDownloadsForPlaylist(playlistId: Long, background: Boolean = false): Int
 

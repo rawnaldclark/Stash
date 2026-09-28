@@ -623,8 +623,8 @@ class MusicRepositoryImpl @Inject constructor(
      *
      * - A tap wants the songs now: any network, and REPLACE, so it takes over
      *   from a background drain still waiting for Wi-Fi.
-     * - Background work follows the user's download setting and APPENDs, so it
-     *   never turns a waiting tap into a Wi-Fi-only one or cancels the song in
+     * - Background work downloads the way a sync does and APPENDs, so it never
+     *   turns a waiting tap into a Wi-Fi-only one or cancels the song in
      *   progress. It runs after the current drain and picks up what that one's
      *   snapshot missed.
      *
@@ -632,17 +632,27 @@ class MusicRepositoryImpl @Inject constructor(
      * the tap's network. Keeping those back needs a per-row marker.
      */
     private suspend fun startDiscoveryDrain(background: Boolean) {
-        val mode = downloadNetworkPreference.current()
         if (background) {
+            // The Sync tab's "Wi-Fi only", exactly as SyncScheduler builds the
+            // sync's own download step: never charging, which belongs to the
+            // recommendations setting (DownloadNetworkMode), not to downloads.
+            val wifiOnly = syncPreferencesManager.preferences.first().wifiOnly
             com.stash.core.data.sync.workers.DiscoveryDownloadWorker.enqueueOneTime(
                 context = context,
-                constraints = com.stash.core.data.sync.workers.constraintsFor(mode),
+                constraints = androidx.work.Constraints.Builder()
+                    .setRequiredNetworkType(
+                        if (wifiOnly) androidx.work.NetworkType.UNMETERED else androidx.work.NetworkType.CONNECTED,
+                    )
+                    .setRequiresBatteryNotLow(true)
+                    .build(),
                 policy = androidx.work.ExistingWorkPolicy.APPEND_OR_REPLACE,
             )
         } else {
             com.stash.core.data.sync.workers.DiscoveryDownloadWorker.enqueueOneTime(
                 context = context,
-                constraints = com.stash.core.data.sync.workers.constraintsForManualTrigger(mode),
+                constraints = com.stash.core.data.sync.workers.constraintsForManualTrigger(
+                    downloadNetworkPreference.current(),
+                ),
             )
         }
     }
