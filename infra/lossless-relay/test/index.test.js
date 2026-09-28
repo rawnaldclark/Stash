@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { fakeD1 } from "./fake-d1.js";
-import worker, { handle } from "../src/index.js";
+import worker, { handle, refusalNamesTrack } from "../src/index.js";
 import { bumpQuotaStmt } from "../src/db.js";
 
 const NOW = 1788282000; // 2026-09-01T17:00:00Z
@@ -114,12 +114,53 @@ test("a dead account is retired and the next one serves the same request", async
     assert.deepEqual(await e.DB.prepare("SELECT state, dead_reason FROM accounts WHERE label = 'a'").first(), { state: "dead", dead_reason: "401" });
 });
 
+const RIGHTS_LOCK = { format_id: 7, restrictions: [{ code: "SampleRestrictedByRightHolders" }] }; // live 2026-09-27
+
 test("region lock → 404, never cached, quota spent", async () => {
-    const e = env(); const q = qobuz([200, { format_id: 7 }], [200, { format_id: 7 }]);
+    const e = env(); const q = qobuz([200, RIGHTS_LOCK], [200, RIGHTS_LOCK]);
     assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
     assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
     assert.equal(q.calls.length, 2);
     assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 2);
+});
+
+test("a refusal that names the track is a 404 at once: no second account is asked", async () => {
+    const e = env(); const q = qobuz([200, RIGHTS_LOCK], [200, GOOD]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+    assert.equal(q.calls.length, 1);
+});
+
+test("a refusal with no track-level code is cross-checked: another account serves it and the refuser cools, never dies", async () => {
+    const e = env(); const q = qobuz([200, { ...GOOD, sample: true }], [200, GOOD]);
+    const r = await handle(mintReq(42, 27), e, q, NOW);
+    assert.equal(r.status, 200);
+    assert.deepEqual(q.calls.map((c) => c.init.headers["X-User-Auth-Token"]), ["tok-a", "tok-b"]);
+    const a = await e.DB.prepare("SELECT state, cooling_until FROM accounts WHERE label = 'a'").first();
+    assert.equal(a.state, "live");
+    assert.equal(a.cooling_until, NOW + 3600);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+});
+
+test("both accounts refusing with no code → 404 as before, quota spent once, nobody cooled", async () => {
+    const e = env(); const q = qobuz([200, { format_id: 7 }], [200, { format_id: 7 }]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+    assert.equal(q.calls.length, 2);
+    assert.equal((await e.DB.prepare("SELECT COUNT(*) AS n FROM accounts WHERE cooling_until > 0").first()).n, 0);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+});
+
+test("a codeless refusal then a transient failure still answers 404, not 503", async () => {
+    const e = env(); const q = qobuz([200, { format_id: 7 }], [500, ""]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+});
+
+test("refusalNamesTrack: catalog miss and Track/Sample/Format codes name the track; bare refusals and User codes don't", () => {
+    for (const r of ["404", "no_url SampleRestrictedByRightHolders", "sample TrackRestrictedByRightHolders", "fmt_5 FormatRestrictedByFormatAvailability"]) {
+        assert.equal(refusalNamesTrack(r), true, r);
+    }
+    for (const r of ["sample", "no_url", "fmt_5", "sample UserUserSubscriptionRequired", undefined]) {
+        assert.equal(refusalNamesTrack(r), false, String(r));
+    }
 });
 
 test("every account failing transiently → 503 with Retry-After after at most two attempts; both cool; the next request is a 503 with no Qobuz call", async () => {
