@@ -15,7 +15,11 @@ object JioSaavnMatcher {
     fun best(query: TrackQuery, songs: List<JioSaavnSong>): JioSaavnMatch? {
         val ranked = songs.mapNotNull { score(query, it) }.sortedByDescending { it.rankScore }
         val top = ranked.firstOrNull() ?: return null
-        val runnerUp = ranked.getOrNull(1)
+        // JioSaavn lists one recording on many compilations and the copies
+        // score alike, so "Ae Mere Humsafar" on seven albums was rejected as
+        // ambiguous and fell to YouTube (#484). A copy of the top pick is not
+        // a rival: the margin is measured against the best OTHER recording.
+        val runnerUp = ranked.drop(1).firstOrNull { !sameRecording(top.match.song, it.match.song) }
         if (
             runnerUp != null &&
             top.rankScore - runnerUp.rankScore < MIN_MARGIN &&
@@ -83,6 +87,23 @@ object JioSaavnMatcher {
         return topAlbum >= MIN_EXACT_ALBUM && topAlbum - runnerUpAlbum >= MIN_ALBUM_ADVANTAGE
     }
 
+    /**
+     * One recording re-issued on another album: equal titles once a soundtrack
+     * credit ('(From "Qayamat Se Qayamat Tak")') is dropped, and known
+     * durations within [SAME_RECORDING_MAX_DRIFT_SEC]. Every other
+     * parenthetical, "(Sad)", "(Female Version)", "(feat. X)", stays
+     * significant, and an unknown duration never counts as a copy.
+     */
+    private fun sameRecording(a: JioSaavnSong, b: JioSaavnSong): Boolean {
+        val aSec = a.duration?.takeIf { it > 0 } ?: return false
+        val bSec = b.duration?.takeIf { it > 0 } ?: return false
+        return abs(aSec - bSec) <= SAME_RECORDING_MAX_DRIFT_SEC &&
+            recordingTitle(a.name) == recordingTitle(b.name)
+    }
+
+    private fun recordingTitle(value: String): String =
+        normalize(value.replace(SOUNDTRACK_CREDIT, " "), keepFeaturing = true)
+
     private fun albumSimilarity(query: TrackQuery, song: JioSaavnSong): Float? {
         val requestedAlbum = query.album?.takeIf { it.isNotBlank() } ?: return null
         val candidateAlbum = song.album?.name?.takeIf { it.isNotBlank() } ?: return null
@@ -100,12 +121,13 @@ object JioSaavnMatcher {
     private fun coreTitle(value: String): String =
         normalize(value.replace(Regex("[(\\[][^)\\]]*[)\\]]"), " "))
 
-    private fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
-        .lowercase()
-        .replace(Regex("(?i)\\b(feat\\.?|ft\\.?|featuring)\\b.*"), " ")
-        .replace(Regex("[^\\p{L}\\p{N}\\p{S}\\s]"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    private fun normalize(value: String, keepFeaturing: Boolean = false): String =
+        Normalizer.normalize(value, Normalizer.Form.NFKC)
+            .lowercase()
+            .let { if (keepFeaturing) it else it.replace(Regex("(?i)\\b(feat\\.?|ft\\.?|featuring)\\b.*"), " ") }
+            .replace(Regex("[^\\p{L}\\p{N}\\p{S}\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
 
     private fun similarity(a: String, b: String): Float {
         val left = a.split(' ').filter { it.isNotBlank() }.toSet()
@@ -147,6 +169,12 @@ object JioSaavnMatcher {
     private const val MIN_MARGIN = 0.06f
     private const val MIN_EXACT_ALBUM = 0.90f
     private const val MIN_ALBUM_ADVANTAGE = 0.35f
+    // ponytail: JioSaavn's duration drifts a few seconds between copies of one
+    // master. Live 2026-09-28: Ae Mere Humsafar at 352-355 s, its Baazigar
+    // namesake at 450-454 s; distinct edits sat 10 s+ apart. 6 s apart must
+    // stay ambiguous (JioSaavnMatcherTest); widen only on log evidence.
+    private const val SAME_RECORDING_MAX_DRIFT_SEC = 4
+    private val SOUNDTRACK_CREDIT = Regex("""(?i)\(\s*from\s+"[^"]*"\s*\)|\[\s*from\s+"[^"]*"\s*\]""")
     private data class RankedMatch(val match: JioSaavnMatch, val rankScore: Float)
     private val VERSION_MARKERS = listOf(
         "karaoke", "instrumental", "cover", "tribute", "live", "concert",
