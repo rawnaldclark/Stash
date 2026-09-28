@@ -45,6 +45,8 @@ class DownloadQueueDaoCancelWaitingTest {
         val off = playlist("Turned off", "custom_off")
         val kept = playlist("Still kept", "custom_kept", keepOffline = true)
         val followed = playlist("Followed", "share:abc", syncEnabled = true)
+        // Synced but not a followed mix: a user's own playlist is created with sync on.
+        val mineSynced = playlist("Mine, synced", "custom_mine", syncEnabled = true)
         val hiddenKept = playlist("Kept but hidden", "custom_hidden", keepOffline = true, isActive = false)
 
         val pending = song("Pending", off)
@@ -54,6 +56,7 @@ class DownloadQueueDaoCancelWaitingTest {
         val syncQueued = song("Sync queued", off)
         val alsoKept = song("Also kept", off, kept)
         val alsoFollowed = song("Also followed", off, followed)
+        val alsoMineSynced = song("Also mine, synced", off, mineSynced)
         val onlyHiddenKept = song("Only hidden kept", off, hiddenKept)
         val elsewhere = song("Other playlist", kept)
         val removedHere = song("Removed here", off, removedFromFirst = true)
@@ -65,14 +68,17 @@ class DownloadQueueDaoCancelWaitingTest {
         row(syncQueued, DownloadStatus.PENDING, syncId = db.syncHistoryDao().insert(SyncHistoryEntity()))
         row(alsoKept, DownloadStatus.PENDING)
         row(alsoFollowed, DownloadStatus.PENDING)
+        row(alsoMineSynced, DownloadStatus.PENDING)
         row(onlyHiddenKept, DownloadStatus.PENDING)
         row(elsewhere, DownloadStatus.PENDING)
         row(removedHere, DownloadStatus.PENDING)
 
-        assertThat(dao.cancelWaitingForPlaylist(off)).isEqualTo(4)
+        assertThat(dao.cancelWaitingForPlaylist(off)).isEqualTo(5)
 
-        val left = listOf(pending, failed, waiting, running, syncQueued, alsoKept, alsoFollowed, onlyHiddenKept, elsewhere, removedHere)
-            .filter { dao.getByTrackId(it) != null }
+        val left = listOf(
+            pending, failed, waiting, running, syncQueued, alsoKept, alsoFollowed, alsoMineSynced,
+            onlyHiddenKept, elsewhere, removedHere,
+        ).filter { dao.getByTrackId(it) != null }
         assertThat(left).containsExactly(running, syncQueued, alsoKept, alsoFollowed, elsewhere, removedHere)
     }
 

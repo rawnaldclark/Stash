@@ -51,6 +51,8 @@ class PlaylistDaoKeepOfflineTest {
         val kept = insert("Kept")
         val hidden = insert("Kept but hidden", isActive = false)
         insert("Not kept")
+        // Synced is not kept: counting it would queue every synced playlist after each sync (#368).
+        insert("Synced, not kept", syncEnabled = true)
         dao.setKeepOffline(kept, true)
         dao.setKeepOffline(hidden, true)
 
