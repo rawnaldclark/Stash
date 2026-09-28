@@ -75,6 +75,7 @@ open class LogcatCapture @Inject constructor(
      */
     @Synchronized
     internal fun append(line: String) {
+        if (FRAME_SPAM.containsMatchIn(line)) return
         runCatching {
             if (bytesWritten >= maxBytes) rotate()
             val out = writer ?: openWriter().also { writer = it }
@@ -117,6 +118,13 @@ open class LogcatCapture @Inject constructor(
 
     companion object {
         private const val TAG = "LogcatCapture"
+
+        /**
+         * Samsung One UI logs `View: setRequestedFrameRate…` and `VRI[<Activity>]@<id>: Requested
+         * frameRateCategory…` on every frame. In a Galaxy S26 Ultra bundle (2026-09-27) they were 96%
+         * of the bytes, so the rotating 1 MB window held seconds of real logs. Neither tag is ours.
+         */
+        private val FRAME_SPAM = Regex("""^\S+ \S+\s+\d+\s+\d+ [VDIWEF] (View|VRI\[[^\]]*\]@\w+)\s*: """)
         private const val ACTIVE = "applog.txt"
         private const val ROTATED = "applog.1.txt"
     }
