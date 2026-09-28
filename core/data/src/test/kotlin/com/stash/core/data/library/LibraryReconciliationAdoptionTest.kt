@@ -23,7 +23,7 @@ class LibraryReconciliationAdoptionTest {
 
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true) {
         coEvery { deleteOrphanedQueueEntries() } returns 0
-        coEvery { resetStaleInProgress() } returns 0
+        coEvery { resetStaleSyncInProgress() } returns 0
         coEvery { getUnqueuedTrackIds(any()) } returns emptyList()
     }
     private val trackDao: TrackDao = mockk(relaxed = true) {

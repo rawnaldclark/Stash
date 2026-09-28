@@ -86,7 +86,8 @@ class LibraryReconciliationUseCase @Inject constructor(
         downloadQueueDao.resetExhaustedRetries()
         onProgress(2, TOTAL_STEPS)
 
-        val resetInProgress = downloadQueueDao.resetStaleInProgress()
+        // The sync's own leftovers only: a download run outside the sync may be mid-song.
+        val resetInProgress = downloadQueueDao.resetStaleSyncInProgress()
         onProgress(3, TOTAL_STEPS)
 
         // Disk-truth check: every track the DB believes is downloaded gets

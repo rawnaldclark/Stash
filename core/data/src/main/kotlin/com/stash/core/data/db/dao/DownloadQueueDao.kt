@@ -694,6 +694,16 @@ interface DownloadQueueDao {
     suspend fun resetStaleInProgress(): Int
 
     /**
+     * [resetStaleInProgress] for the sync's own rows only. A sync's reconcile runs
+     * while the download run outside the sync (a kept playlist's, a tap's, #474)
+     * may be mid-song; resetting that row would let the sync claim the same song
+     * and download it at the same time. Cold start, with nothing running, keeps
+     * the global reset.
+     */
+    @Query("UPDATE download_queue SET status = 'PENDING' WHERE status = 'IN_PROGRESS' AND sync_id IS NOT NULL")
+    suspend fun resetStaleSyncInProgress(): Int
+
+    /**
      * Hands one claimed row back (IN_PROGRESS → PENDING) when its worker is stopped
      * before it finishes — WorkManager cancelling for an unmet constraint, say — so
      * the rerun can [claimForDownload] it again. Guarded on IN_PROGRESS so a row the
