@@ -12,11 +12,13 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Re-schedules the daily sync alarm after the device reboots.
+ * Makes sure Auto-sync has its daily trigger after the device reboots
+ * ([SyncScheduler.ensureDailySync]).
  *
- * WorkManager persists its own work across reboots, but if the user changes
- * the schedule time in [SyncPreferencesManager] we rely on this receiver to
- * re-apply the correct hour/minute.
+ * WorkManager keeps periodic work across reboots, and each run pins the next
+ * to the chosen time, so an existing trigger is kept as it is: replacing it
+ * would throw away a run that's already due. Changing a sync setting
+ * reschedules on its own.
  *
  * Uses [goAsync] so the coroutine can complete before the system kills the
  * receiver process.
@@ -33,15 +35,7 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val prefs = syncPreferencesManager.preferences.first()
-                if (prefs.autoSyncEnabled) {
-                    syncScheduler.scheduleDailySync(
-                        prefs.syncHour,
-                        prefs.syncMinute,
-                        wifiOnly = prefs.wifiOnly,
-                        days = DayOfWeekSet(prefs.syncDays),
-                    )
-                }
+                syncScheduler.ensureDailySync(syncPreferencesManager.preferences.first())
             } finally {
                 pendingResult.finish()
             }

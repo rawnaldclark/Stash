@@ -501,6 +501,8 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             val current = _uiState.value.syncPreferences.wifiOnly
             syncPreferencesManager.setWifiOnly(!current)
+            // A scheduled sync still waiting (say, for Wi-Fi) takes the new rule now.
+            syncScheduler.applyWifiOnlyToWaitingSync(!current)
         }
     }
 

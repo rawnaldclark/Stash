@@ -391,7 +391,7 @@ class StashApplication : Application(), Configuration.Provider {
         UpdateCheckWorker.schedulePeriodicCheck(this)
         // Auto-sync used to be one delayed chain that nothing re-armed, so an
         // upgrading user with it on has no daily trigger yet. KEEP leaves an
-        // existing trigger's time alone.
+        // existing trigger's time alone; with Auto-sync off, a leftover is cleared.
         applicationScope.launch {
             runCatching { syncScheduler.ensureDailySync(syncPreferencesManager.preferences.first()) }
                 .onFailure { Log.w("StashStartup", "daily sync trigger check failed", it) }

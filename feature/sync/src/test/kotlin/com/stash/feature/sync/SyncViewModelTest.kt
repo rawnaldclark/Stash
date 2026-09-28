@@ -194,7 +194,7 @@ class SyncViewModelTest {
     fun `Stop cancels the running sync but keeps the daily schedule`() {
         newVm().onStopSync()
         verify { syncScheduler.cancelSync() }
-        verify(exactly = 0) { syncScheduler.cancelDailySync() }
+        coVerify(exactly = 0) { syncScheduler.cancelDailySync() }
     }
 
     @Test
@@ -206,7 +206,19 @@ class SyncViewModelTest {
         advanceUntilIdle()
 
         coVerify { prefs.setAutoSyncEnabled(false) }
-        verify { syncScheduler.cancelDailySync() }
+        coVerify { syncScheduler.cancelDailySync() }
+    }
+
+    @Test
+    fun `toggling Wi-Fi-only applies the new rule to a scheduled sync still waiting`() = runTest {
+        every { prefs.preferences } returns MutableStateFlow(SyncPreferences(wifiOnly = true))
+        val vm = newVm()
+
+        vm.onToggleWifiOnly()
+        advanceUntilIdle()
+
+        coVerify { prefs.setWifiOnly(false) }
+        coVerify { syncScheduler.applyWifiOnlyToWaitingSync(false) }
     }
 
     @Test

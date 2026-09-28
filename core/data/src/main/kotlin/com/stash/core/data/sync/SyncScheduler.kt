@@ -49,6 +49,9 @@ class SyncScheduler @Inject constructor(
 
         /** Unique work name for the periodic trigger that starts the daily sync. */
         const val TRIGGER_WORK_NAME = "stash_daily_sync_trigger"
+
+        /** Tag on the fetch step of a chain the trigger started; "Sync now" chains lack it. */
+        const val SCHEDULED_TAG = "sync_scheduled"
         private const val TAG = "SyncScheduler"
     }
 
@@ -66,7 +69,9 @@ class SyncScheduler @Inject constructor(
      * whose delay of up to a day made "Sync now" ignore every tap.
      *
      * [ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE] so a changed time takes
-     * effect. If [days] is empty, cancels the daily sync instead of enqueuing.
+     * effect. If [days] is empty, cancels the trigger instead of enqueuing; a
+     * scheduled sync already queued still runs, as editing the days can pass
+     * through none.
      *
      * @param hour     Hour of day (0-23).
      * @param minute   Minute of hour (0-59).
@@ -83,8 +88,8 @@ class SyncScheduler @Inject constructor(
     ) {
         val delayMs = computeDelayToNextSync(hour, minute, days)
         if (delayMs == null) {
-            Log.d(TAG, "scheduleDailySync: no enabled days, cancelling the daily sync")
-            cancelDailySync()
+            Log.d(TAG, "scheduleDailySync: no enabled days, cancelling the daily trigger")
+            workManager.cancelUniqueWork(TRIGGER_WORK_NAME)
             return
         }
         enqueueTrigger(ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE) {
@@ -99,15 +104,19 @@ class SyncScheduler @Inject constructor(
      * user has no trigger yet. [ExistingPeriodicWorkPolicy.KEEP] leaves an
      * existing trigger's time alone. The old delayed chain may still be queued:
      * it runs once, and the trigger skips a day's sync while it's queued or
-     * running ([startScheduledSync]).
+     * running ([startScheduledSync]). With Auto-sync off (or no days), cancels
+     * a leftover trigger, which would only wake the app to do nothing.
      */
     fun ensureDailySync(prefs: SyncPreferences) {
-        if (!prefs.autoSyncEnabled) return
-        val delayMs = computeDelayToNextSync(
-            prefs.syncHour,
-            prefs.syncMinute,
-            DayOfWeekSet(prefs.syncDays),
-        ) ?: return
+        val delayMs = if (prefs.autoSyncEnabled) {
+            computeDelayToNextSync(prefs.syncHour, prefs.syncMinute, DayOfWeekSet(prefs.syncDays))
+        } else {
+            null
+        }
+        if (delayMs == null) {
+            workManager.cancelUniqueWork(TRIGGER_WORK_NAME)
+            return
+        }
         enqueueTrigger(ExistingPeriodicWorkPolicy.KEEP) {
             setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
         }
@@ -119,20 +128,21 @@ class SyncScheduler @Inject constructor(
      * sync day. Scheduled constraints: an unmetered network when [wifiOnly]
      * (else any), and battery not low.
      *
-     * Never touches another sync: one already queued or running is left alone,
-     * and [ExistingWorkPolicy.KEEP] covers one enqueued between the check and
-     * this enqueue.
+     * Leaves a running sync, a queued "Sync now" and the old schedule's chain
+     * alone, so a manual sync is never turned into a Wi-Fi-only one. An earlier
+     * scheduled chain still waiting (for its network, or between steps) is
+     * replaced: it takes today's Wi-Fi rule instead of blocking every day's run.
+     * [ExistingWorkPolicy.KEEP] drops this one if a sync was enqueued meanwhile.
      */
     suspend fun startScheduledSync(wifiOnly: Boolean) {
-        // Suspends rather than blocks: this runs inside a worker, and a blocking
-        // read deadlocks when WorkManager runs the worker on its own task thread
-        // (as its test driver does).
-        val chain = workManager.getWorkInfosForUniqueWorkFlow(UNIQUE_WORK_NAME).first()
-        if (chain.any { !it.state.isFinished }) {
+        val chain = chainInfos()
+        val replace = chain.isWaitingScheduledSync()
+        if (!replace && chain.any { !it.state.isFinished }) {
             Log.i(TAG, "Scheduled sync due, but a sync is already queued or running — skipping")
             return
         }
-        Log.i(TAG, "Starting the scheduled sync (wifiOnly=$wifiOnly)")
+        if (replace) workManager.cancelUniqueWork(UNIQUE_WORK_NAME) // runs before the enqueue below
+        Log.i(TAG, "Starting the scheduled sync (wifiOnly=$wifiOnly, replacing a waiting one: $replace)")
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(
                 if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED,
@@ -141,6 +151,20 @@ class SyncScheduler @Inject constructor(
             .build()
         enqueueChain(initialDelayMs = 0, constraints = constraints, trigger = SyncTrigger.SCHEDULED)
     }
+
+    /**
+     * The Wi-Fi-only switch changed: a scheduled sync still waiting takes the new
+     * rule now, instead of waiting on the old one. Nothing else is touched.
+     */
+    suspend fun applyWifiOnlyToWaitingSync(wifiOnly: Boolean) {
+        if (chainInfos().isWaitingScheduledSync()) startScheduledSync(wifiOnly)
+    }
+
+    /** A chain the trigger started with no step running: waiting for its network, or between steps. */
+    private fun List<WorkInfo>.isWaitingScheduledSync(): Boolean =
+        any { SCHEDULED_TAG in it.tags } &&
+            any { !it.state.isFinished } &&
+            none { it.state == WorkInfo.State.RUNNING }
 
     /**
      * Pins the trigger's next run to the next [hour]:[minute]; each trigger run
@@ -162,8 +186,9 @@ class SyncScheduler @Inject constructor(
      * Triggers a sync immediately without any initial delay.
      *
      * Uses relaxed constraints (any network, no battery requirement) because
-     * the user explicitly requested this sync. Replaces a sync chain that
-     * hasn't started yet; ignored while a sync is in progress.
+     * the user explicitly requested this sync. Replaces a sync chain with no
+     * step running (not started, or paused between steps); ignored while a
+     * step runs.
      */
     fun triggerManualSync() {
         // Guard against re-triggering a sync that's already running. Without
@@ -176,9 +201,10 @@ class SyncScheduler @Inject constructor(
         // finishing. isSyncInProgress() checks WorkManager's live state
         // directly rather than trusting caller-side flags, so this holds
         // even if the UI's own isSyncing guard is bypassed or stale.
-        // A chain that hasn't started is replaced, though: nothing in it is in
-        // flight, and the guard used to count it, so a scheduled chain waiting
-        // out its day-long delay swallowed every tap.
+        // Only a RUNNING step counts, though. A chain that hasn't started, or is
+        // paused between steps (downloads waiting for Wi-Fi, or after a process
+        // restart), has nothing in flight and shows no sync on the Sync tab: the
+        // guard used to count those, and ignored every tap without a word.
         if (isSyncInProgress()) {
             Log.i(TAG, "Manual sync requested, but a sync is already running — ignoring")
             return
@@ -196,24 +222,21 @@ class SyncScheduler @Inject constructor(
     }
 
     /**
-     * True while a sync is really underway: a step is RUNNING, or the chain has
-     * started (a step finished while later ones haven't, e.g. fetch SUCCEEDED
-     * and diff waiting for its network). A chain that hasn't started — every
-     * step ENQUEUED or BLOCKED, like a scheduled sync waiting for Wi-Fi —
-     * doesn't count.
+     * True while a chain step is RUNNING. A chain paused between steps doesn't
+     * count: replacing it just fetches again, and the downloads it queued stay
+     * queued. Blocks on a query of WorkManager's own database.
      */
-    private fun isSyncInProgress(): Boolean {
-        val states = chainStates()
-        return WorkInfo.State.RUNNING in states ||
-            (states.any { it.isFinished } && states.any { !it.isFinished })
-    }
+    private fun isSyncInProgress(): Boolean =
+        workManager.getWorkInfosForUniqueWork(UNIQUE_WORK_NAME).get()
+            .any { it.state == WorkInfo.State.RUNNING }
 
     /**
-     * States of the sync chain's steps; empty when there's no chain. Blocks on
-     * a query of WorkManager's own database.
+     * The sync chain's steps; empty when there's none. Suspends rather than
+     * blocks: a blocking read deadlocks inside a worker when WorkManager runs
+     * it on its own task thread (as its test driver does).
      */
-    private fun chainStates(): List<WorkInfo.State> =
-        workManager.getWorkInfosForUniqueWork(UNIQUE_WORK_NAME).get().map { it.state }
+    private suspend fun chainInfos(): List<WorkInfo> =
+        workManager.getWorkInfosForUniqueWorkFlow(UNIQUE_WORK_NAME).first()
 
     /**
      * Cancels the sync chain, running or waiting: the Sync tab's Stop. The
@@ -226,13 +249,17 @@ class SyncScheduler @Inject constructor(
     }
 
     /**
-     * Turns the daily sync off: cancels the trigger, and a chain that hasn't
-     * started yet (e.g. a scheduled sync waiting for Wi-Fi, or one left by the
-     * old one-time schedule). A sync already in progress is left to finish.
+     * Turns the daily sync off: cancels the trigger, and a scheduled chain that
+     * hasn't started (one the trigger queued, or one the old one-time schedule
+     * left, the only chains with a delay). A sync that has started finishes,
+     * and a queued "Sync now" still runs.
      */
-    fun cancelDailySync() {
+    suspend fun cancelDailySync() {
         workManager.cancelUniqueWork(TRIGGER_WORK_NAME)
-        if (!isSyncInProgress()) cancelSync()
+        val chain = chainInfos()
+        val scheduled = chain.any { SCHEDULED_TAG in it.tags || it.initialDelayMillis > 0 }
+        val unstarted = chain.all { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }
+        if (scheduled && unstarted) workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
     }
 
     /**
@@ -319,6 +346,9 @@ class SyncScheduler @Inject constructor(
                 if (initialDelayMs > 0) {
                     setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
                 }
+                // One tag marks the chain: WorkManager keeps the fetch step's
+                // record while any later step is unfinished.
+                if (trigger == SyncTrigger.SCHEDULED) addTag(SCHEDULED_TAG)
             }
             .addTag("sync_fetch")
             .build()

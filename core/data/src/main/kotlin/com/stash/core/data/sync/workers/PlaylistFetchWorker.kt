@@ -256,7 +256,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
-        // Step 1: Create a sync history record.
+        // Step 1: Create a sync history record. Only one sync runs at a time, so a
+        // row still open now belongs to a chain that was replaced while paused
+        // between steps: close it as interrupted, not "Running" until the next launch.
+        syncHistoryDao.resetStaleSyncs()
         val syncEntry = SyncHistoryEntity(
             status = SyncState.AUTHENTICATING,
             // SyncScheduler says what started the sync; a chain queued before it did counts as MANUAL.

@@ -11,6 +11,7 @@ import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.model.SyncTrigger
 import io.mockk.coEvery
+import io.mockk.coVerifyOrder
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.runBlocking
@@ -21,8 +22,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The sync history row says what started the sync, as SyncScheduler hands it to
- * the fetch step. Every sync used to be recorded MANUAL, the daily ones too.
+ * The sync history row the fetch step writes: it says what started the sync, as
+ * SyncScheduler hands it over (every sync used to be recorded MANUAL, the daily
+ * ones too), and it comes after closing any row an abandoned sync left open.
  *
  * Runs the worker's no-accounts early return, which writes the row first.
  */
@@ -46,12 +48,29 @@ class PlaylistFetchWorkerTriggerTest {
         assertEquals(SyncTrigger.MANUAL, recordedTrigger(Data.EMPTY))
     }
 
+    /** A chain replaced while paused between steps never closes its own row. */
+    @Test fun `a sync left open is marked interrupted before the next one's row is written`() {
+        val syncHistoryDao = mockk<SyncHistoryDao>(relaxed = true)
+
+        runFetch(Data.EMPTY, syncHistoryDao)
+
+        coVerifyOrder {
+            syncHistoryDao.resetStaleSyncs(any())
+            syncHistoryDao.insert(any())
+        }
+    }
+
     /** Runs the fetch step with [input]; returns the trigger on the history row it writes. */
-    private fun recordedTrigger(input: Data): SyncTrigger = runBlocking {
+    private fun recordedTrigger(input: Data): SyncTrigger {
         val row = slot<SyncHistoryEntity>()
         val syncHistoryDao = mockk<SyncHistoryDao>(relaxed = true) {
             coEvery { insert(capture(row)) } returns 1L
         }
+        runFetch(input, syncHistoryDao)
+        return row.captured.trigger
+    }
+
+    private fun runFetch(input: Data, syncHistoryDao: SyncHistoryDao) = runBlocking {
         TestListenableWorkerBuilder<PlaylistFetchWorker>(context)
             .setInputData(input)
             .setWorkerFactory(object : WorkerFactory() {
@@ -79,6 +98,5 @@ class PlaylistFetchWorkerTriggerTest {
             })
             .build()
             .doWork()
-        row.captured.trigger
     }
 }
