@@ -10,7 +10,9 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.model.MusicSource
+import com.stash.core.model.QualityTier
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.TrackItem
 import com.stash.data.download.DownloadExecutor
@@ -19,11 +21,13 @@ import com.stash.data.download.DownloadResult
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
 import com.stash.data.download.lyrics.LyricsFetchTrigger
+import com.stash.data.download.prefs.toYtDlpArgs
 import com.stash.data.download.shared.TrackFinalizer
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertTrue
@@ -66,6 +70,7 @@ class SearchDownloadCoordinatorDeferTest {
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true)
     private val loudnessMeasurer: com.stash.core.data.audio.LoudnessMeasurer = mockk(relaxed = true)
     private val lyricsFetchTrigger: LyricsFetchTrigger = mockk(relaxed = true)
+    private val qualityPrefs: QualityPreference = mockk { every { qualityTier } returns flowOf(QualityTier.MAX) }
 
     private fun newSubject(): SearchDownloadCoordinator = SearchDownloadCoordinator(
         registry = registry,
@@ -86,6 +91,7 @@ class SearchDownloadCoordinatorDeferTest {
         localFileOps = mockk(relaxed = true) { every { acceptDownloadOrDelete(any()) } returns true },
         loudnessMeasurer = loudnessMeasurer,
         lyricsFetchTrigger = lyricsFetchTrigger,
+        qualityPrefs = qualityPrefs,
     )
 
     private fun stubTrack(): TrackItem = TrackItem(
@@ -161,5 +167,27 @@ class SearchDownloadCoordinatorDeferTest {
             statuses.none { it is SearchDownloadStatus.WaitingForLossless },
         )
         coVerify(exactly = 0) { registry.resolve(any()) }
+    }
+
+    @Test
+    fun `registry-null + fallback-on downloads from YouTube at the user's quality tier`() = runTest {
+        // Bug: the search-tab yt-dlp fallback passed qualityArgs = emptyList(),
+        // so yt-dlp used its default `bv*+ba/b` (best video + audio) and ignored
+        // the user's tier. LOW (not the MAX default) proves the pref is read.
+        coEvery { losslessPrefs.enabledNow() } returns true
+        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns true
+        coEvery { registry.resolve(any()) } returns null
+        every { qualityPrefs.qualityTier } returns flowOf(QualityTier.LOW)
+        every { context.cacheDir } returns
+            java.io.File(System.getProperty("java.io.tmpdir"), "stashtest").apply { mkdirs() }
+        coEvery {
+            downloadExecutor.download(any(), any(), any(), any(), any())
+        } returns DownloadResult.NoOutput(null, null)
+
+        newSubject().download(stubTrack()).toList()
+
+        coVerify(exactly = 1) {
+            downloadExecutor.download(any(), any(), any(), QualityTier.LOW.toYtDlpArgs(), any())
+        }
     }
 }

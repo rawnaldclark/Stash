@@ -9,6 +9,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.SimpleCache
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.TrackItem
@@ -23,6 +24,7 @@ import com.stash.data.download.lossless.LosslessUrlDownloader
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lyrics.LyricsFetchTrigger
+import com.stash.data.download.prefs.toYtDlpArgs
 import com.stash.data.download.shared.TrackFinalizer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -32,6 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -97,6 +100,11 @@ class SearchDownloadCoordinator @Inject constructor(
      * [LyricsFetchTrigger] for the cyclic-dep rationale.
      */
     private val lyricsFetchTrigger: LyricsFetchTrigger,
+    /**
+     * The user's YouTube quality tier, turned into yt-dlp `-f` args for the
+     * fallback path. Without it yt-dlp picks its default `bv*+ba/b` (video).
+     */
+    private val qualityPrefs: QualityPreference,
 ) {
     // App-lifetime scope. Class is @Singleton.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -435,7 +443,7 @@ class SearchDownloadCoordinator @Inject constructor(
                 url = "https://www.youtube.com/watch?v=${track.videoId}",
                 outputDir = tempDir,
                 filename = filename,
-                qualityArgs = emptyList(),
+                qualityArgs = qualityPrefs.qualityTier.first().toYtDlpArgs(),
             )
         }.getOrElse { e ->
             if (e is CancellationException) throw e

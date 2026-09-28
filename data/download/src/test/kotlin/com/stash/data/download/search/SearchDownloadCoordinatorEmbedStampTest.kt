@@ -10,7 +10,9 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.model.MusicSource
+import com.stash.core.model.QualityTier
 import com.stash.core.model.Track
 import com.stash.core.model.TrackItem
 import com.stash.data.download.DownloadExecutor
@@ -26,6 +28,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -68,6 +71,7 @@ class SearchDownloadCoordinatorEmbedStampTest {
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true)
     private val loudnessMeasurer: com.stash.core.data.audio.LoudnessMeasurer = mockk(relaxed = true)
     private val lyricsFetchTrigger: LyricsFetchTrigger = mockk(relaxed = true)
+    private val qualityPrefs: QualityPreference = mockk { every { qualityTier } returns flowOf(QualityTier.MAX) }
 
     private val tmpCacheDir: File = File(
         System.getProperty("java.io.tmpdir"),
@@ -93,6 +97,7 @@ class SearchDownloadCoordinatorEmbedStampTest {
         localFileOps = mockk(relaxed = true) { every { acceptDownloadOrDelete(any()) } returns true },
         loudnessMeasurer = loudnessMeasurer,
         lyricsFetchTrigger = lyricsFetchTrigger,
+        qualityPrefs = qualityPrefs,
     )
 
     @Before
