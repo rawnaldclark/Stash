@@ -303,6 +303,25 @@ class MusicRepositoryQueuePlaylistTest {
         return Triple(stuck, failedOnce, otherPlaylists)
     }
 
+    // ── No tap cancels a song in progress (#474) ──────────────────────────
+
+    @Test fun `a tap while a song downloads queues behind it, and never stacks another`() = runTest {
+        val pid = playlist("Mix")
+        member(pid, 0, track("A"))
+        val repo = repo()
+        repo.queueDownloadsForPlaylist(pid)
+        startDrain() // A is downloading
+        member(pid, 1, track("B"))
+        repo.queueDownloadsForPlaylist(pid) // queues behind A's run, cancelling nothing
+        member(pid, 2, track("C"))
+        repo.queueDownloadsForPlaylist(pid) // the run waiting behind takes C when it starts
+
+        assertEquals(
+            listOf(WorkInfo.State.RUNNING to NetworkType.CONNECTED, WorkInfo.State.BLOCKED to NetworkType.CONNECTED),
+            liveDrains().sortedBy { it.first },
+        )
+    }
+
     // ── A tap is the user's own request (#474) ────────────────────────────
 
     @Test fun `a song the user tapped keeps its row when its playlist's switch goes off`() = runTest {
