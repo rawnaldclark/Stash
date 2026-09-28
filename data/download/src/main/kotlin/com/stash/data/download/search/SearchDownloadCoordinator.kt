@@ -348,7 +348,9 @@ class SearchDownloadCoordinator @Inject constructor(
             if (!isValidJioSaavnMedia(metadata, track)) {
                 runCatching { tempFile.delete() }
                 return SourceFinalizeAttempt.BeforeCommitFailure(
-                    "JioSaavn media failed AAC quality validation",
+                    "JioSaavn media failed AAC quality validation: format=${metadata?.format}, " +
+                        "bitrate=${metadata?.bitrateKbps}, duration=${metadata?.durationMs}, " +
+                        "expected=${(track.durationSeconds * 1_000).toLong()}",
                 )
             }
         }
