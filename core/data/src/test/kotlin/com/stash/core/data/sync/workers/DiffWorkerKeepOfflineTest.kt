@@ -37,10 +37,11 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The playlist page's Download switch (#474) at the end of a sync: every playlist
- * kept on the phone gets [MusicRepository.queueDownloadsForPlaylist], in either
- * mode, and no other playlist does. Runs the WORKER against a real DB, so it
- * proves the sweep is wired, not just that a helper works.
+ * The playlist page's Download switch (#474) at the end of a sync: the worker runs
+ * [MusicRepository.queueKeptPlaylists] once, in either mode, and never queues a
+ * playlist on its own (one drain per sync). Which playlists that queues is
+ * covered in MusicRepositoryQueuePlaylistTest. Runs the WORKER against a real DB,
+ * so it proves the sweep is wired, not just that a helper works.
  *
  * Fixture mirrors [DiffWorkerMixNoDownloadTest].
  */
@@ -75,13 +76,13 @@ class DiffWorkerKeepOfflineTest {
     fun tearDown() { db.close() }
 
     @Test
-    fun `stream-only mode queues only the kept playlist after a sync`() = runBlocking {
-        assertSweepQueuesOnlyTheKeptPlaylist(streamOnly = true)
+    fun `stream-only mode sweeps the kept playlists once after a sync`() = runBlocking {
+        assertOneSweep(streamOnly = true)
     }
 
     @Test
-    fun `download mode queues only the kept playlist after a sync`() = runBlocking {
-        assertSweepQueuesOnlyTheKeptPlaylist(streamOnly = false)
+    fun `download mode sweeps the kept playlists once after a sync`() = runBlocking {
+        assertOneSweep(streamOnly = false)
     }
 
     /**
@@ -99,20 +100,18 @@ class DiffWorkerKeepOfflineTest {
 
         assertEquals(3, db.playlistDao().getTracksForPlaylist(id).size)
         coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
-        coVerify(exactly = 1) { musicRepository.queueDownloadsForPlaylist(id) }
+        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists() }
     }
 
-    private suspend fun assertSweepQueuesOnlyTheKeptPlaylist(streamOnly: Boolean) {
+    private suspend fun assertOneSweep(streamOnly: Boolean) {
         coEvery { streamingPreference.current() } returns streamOnly
-        val kept = insert("Release Radar", "spotify:playlist:rr", PlaylistType.DAILY_MIX, keepOffline = true)
-        val synced = insert("Daily Mix 1", "spotify:playlist:dm", PlaylistType.DAILY_MIX, syncEnabled = true)
-        val plain = insert("Road Trip", "spotify:playlist:mine", PlaylistType.CUSTOM)
+        insert("Release Radar", "spotify:playlist:rr", PlaylistType.DAILY_MIX, keepOffline = true)
+        insert("Discover Weekly", "spotify:playlist:dw", PlaylistType.DAILY_MIX, keepOffline = true)
 
         buildWorker().doWork()
 
-        coVerify(exactly = 1) { musicRepository.queueDownloadsForPlaylist(kept) }
-        coVerify(exactly = 0) { musicRepository.queueDownloadsForPlaylist(synced) }
-        coVerify(exactly = 0) { musicRepository.queueDownloadsForPlaylist(plain) }
+        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists() }
+        coVerify(exactly = 0) { musicRepository.queueDownloadsForPlaylist(any(), any()) }
     }
 
     private suspend fun insert(

@@ -71,15 +71,21 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
         const val UNIQUE_WORK_NAME = "discovery_download"
         private const val TAG = "DiscoveryDownload"
 
-        fun enqueueOneTime(context: Context, constraints: Constraints) {
+        /**
+         * [policy] REPLACE (the default) restarts the drain now, for a tap.
+         * APPEND_OR_REPLACE queues a drain behind the current one instead, so
+         * background work never cancels the song in progress or swaps a waiting
+         * tap's constraints for its own (#474).
+         */
+        fun enqueueOneTime(
+            context: Context,
+            constraints: Constraints,
+            policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE,
+        ) {
             val work = OneTimeWorkRequestBuilder<DiscoveryDownloadWorker>()
                 .setConstraints(constraints)
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                UNIQUE_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
-                work,
-            )
+            WorkManager.getInstance(context).enqueueUniqueWork(UNIQUE_WORK_NAME, policy, work)
         }
     }
 

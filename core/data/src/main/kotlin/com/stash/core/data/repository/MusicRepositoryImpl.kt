@@ -603,7 +603,52 @@ class MusicRepositoryImpl @Inject constructor(
         // next play picks up the streaming path naturally.
     }
 
-    override suspend fun queueDownloadsForPlaylist(playlistId: Long): Int {
+    override suspend fun queueDownloadsForPlaylist(playlistId: Long, background: Boolean): Int {
+        val queued = insertDownloadsForPlaylist(playlistId)
+        if (queued > 0) startDiscoveryDrain(background)
+        return queued
+    }
+
+    override suspend fun queueKeptPlaylists(): Int {
+        // Every playlist's rows first, then one drain: a drain per playlist
+        // would restart it each time and cancel the song in progress.
+        val queued = playlistDao.getKeepOfflinePlaylistIds().sumOf { insertDownloadsForPlaylist(it) }
+        if (queued > 0) startDiscoveryDrain(background = true)
+        return queued
+    }
+
+    /**
+     * Starts the drain for the rows just queued. The unique work keeps only one
+     * drain's constraints, so the two kinds of caller use different policies:
+     *
+     * - A tap wants the songs now: any network, and REPLACE, so it takes over
+     *   from a background drain still waiting for Wi-Fi.
+     * - Background work follows the user's download setting and APPENDs, so it
+     *   never turns a waiting tap into a Wi-Fi-only one or cancels the song in
+     *   progress. It runs after the current drain and picks up what that one's
+     *   snapshot missed.
+     *
+     * ponytail: a tap's drain takes every waiting row, background ones too, on
+     * the tap's network. Keeping those back needs a per-row marker.
+     */
+    private suspend fun startDiscoveryDrain(background: Boolean) {
+        val mode = downloadNetworkPreference.current()
+        if (background) {
+            com.stash.core.data.sync.workers.DiscoveryDownloadWorker.enqueueOneTime(
+                context = context,
+                constraints = com.stash.core.data.sync.workers.constraintsFor(mode),
+                policy = androidx.work.ExistingWorkPolicy.APPEND_OR_REPLACE,
+            )
+        } else {
+            com.stash.core.data.sync.workers.DiscoveryDownloadWorker.enqueueOneTime(
+                context = context,
+                constraints = com.stash.core.data.sync.workers.constraintsForManualTrigger(mode),
+            )
+        }
+    }
+
+    /** Queue rows only, no drain: see [queueKeptPlaylists]. Returns rows queued. */
+    private suspend fun insertDownloadsForPlaylist(playlistId: Long): Int {
         val tracks = trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .first()
         // A match the user dismissed stays dismissed, and a track with a row
@@ -622,14 +667,7 @@ class MusicRepositoryImpl @Inject constructor(
                 youtubeUrl = entity.youtubeId?.let { "https://music.youtube.com/watch?v=$it" },
             )
         }
-        if (entries.isNotEmpty()) {
-            downloadQueueDao.insertAll(entries)
-            val mode = downloadNetworkPreference.current()
-            com.stash.core.data.sync.workers.DiscoveryDownloadWorker.enqueueOneTime(
-                context = context,
-                constraints = com.stash.core.data.sync.workers.constraintsForManualTrigger(mode),
-            )
-        }
+        if (entries.isNotEmpty()) downloadQueueDao.insertAll(entries)
         return entries.size
     }
 

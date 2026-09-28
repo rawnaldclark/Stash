@@ -253,7 +253,8 @@ class SharedMixRepository @Inject constructor(
             sharedMixDao.markApplied(row.playlistId, doc.version, doc.name, doc.sharedBy, now)
             playlist.syncEnabled
         }
-        if (download == true) musicRepository.queueDownloadsForPlaylist(row.playlistId)
+        // Nobody tapped anything: the new songs wait for the user's download network setting.
+        if (download == true) musicRepository.queueDownloadsForPlaylist(row.playlistId, background = true)
     }
 
     private suspend fun removed(row: SharedMixEntity): FollowCheck {

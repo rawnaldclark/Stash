@@ -65,7 +65,7 @@ class MusicRepositoryPlaylistDownloadTest {
         coVerify(exactly = 0) { repo.removeDownloadsForPlaylist(any()) }
         coVerify(exactly = 0) { repo.removeDownload(any()) }
         coVerify(exactly = 0) { trackDao.clearDownloadState(any()) }
-        coVerify(exactly = 0) { repo.queueDownloadsForPlaylist(any()) }
+        coVerify(exactly = 0) { repo.queueDownloadsForPlaylist(any(), any()) }
     }
 
     @Test fun `off in Download mode also turns sync off`() = runTest {
@@ -94,7 +94,7 @@ class MusicRepositoryPlaylistDownloadTest {
         val repo = repo()
         repo.addTrackToPlaylist(1L, PLAIN)
         repo.addTracksToPlaylist(listOf(1L, 2L), PLAIN)
-        coVerify(exactly = 0) { repo.queueDownloadsForPlaylist(any()) }
+        coVerify(exactly = 0) { repo.queueDownloadsForPlaylist(any(), any()) }
     }
 
     @Test fun `a batch added to a kept playlist queues once, after the adds`() = runTest {
@@ -106,7 +106,7 @@ class MusicRepositoryPlaylistDownloadTest {
 
     @Test fun `a failed queue never fails the add`() = runTest {
         val repo = repo()
-        coEvery { repo.queueDownloadsForPlaylist(KEPT) } throws IllegalStateException("db")
+        coEvery { repo.queueDownloadsForPlaylist(KEPT, any()) } throws IllegalStateException("db")
         repo.addTrackToPlaylist(1L, KEPT) // must not throw
         coVerify(exactly = 1) { playlistDao.insertCrossRef(any()) }
     }
@@ -140,7 +140,7 @@ class MusicRepositoryPlaylistDownloadTest {
             lastFmRecommendationSource = mockk(relaxed = true),
             sharedMixDao = sharedMixDao,
         ),
-    ).also { coEvery { it.queueDownloadsForPlaylist(any()) } returns 0 }
+    ).also { coEvery { it.queueDownloadsForPlaylist(any(), any()) } returns 0 }
 
     private companion object {
         const val KEPT = 7L

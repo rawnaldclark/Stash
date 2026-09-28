@@ -231,8 +231,19 @@ interface MusicRepository {
      * Bulk queueDownload for every undownloaded track in [playlistId].
      * Returns the number of tracks queued (those already downloaded are
      * skipped). Caller can show "Queued N tracks" snackbar.
+     *
+     * [background] is for work nobody tapped (a followed mix's update): the
+     * download then waits for the user's download network setting instead of
+     * starting on any network.
      */
-    suspend fun queueDownloadsForPlaylist(playlistId: Long): Int
+    suspend fun queueDownloadsForPlaylist(playlistId: Long, background: Boolean = false): Int
+
+    /**
+     * After a sync: queue what every playlist kept on the phone (#474) is
+     * missing, then start ONE background download for all of it. Returns the
+     * number of songs queued.
+     */
+    suspend fun queueKeptPlaylists(): Int
 
     /**
      * The playlist page's Download switch (#474). On keeps [playlistId] on the

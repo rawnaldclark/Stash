@@ -390,12 +390,12 @@ class DiffWorker @AssistedInject constructor(
 
             // A playlist kept on the phone (#474) downloads what it gained this
             // run, in either mode: new songs, and library songs newly linked to it
-            // (the existing-track path never queues). queueDownloadsForPlaylist
-            // leaves queued, failed and cancelled songs alone, so one pass per run
-            // is safe. Never fatal: the sync itself already worked.
+            // (the existing-track path never queues). Queued, failed and cancelled
+            // songs are left alone, so one pass per run is safe, and it starts one
+            // drain that waits for the user's download network setting. Never
+            // fatal: the sync itself already worked.
             runCatching {
-                val queued = playlistDao.getKeepOfflinePlaylistIds()
-                    .sumOf { musicRepository.queueDownloadsForPlaylist(it) }
+                val queued = musicRepository.queueKeptPlaylists()
                 if (queued > 0) {
                     syncLog.info("Downloading $queued song${if (queued == 1) "" else "s"} for playlists kept on this phone")
                 }

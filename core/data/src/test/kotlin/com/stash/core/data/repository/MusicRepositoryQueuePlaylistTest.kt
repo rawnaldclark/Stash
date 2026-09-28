@@ -3,6 +3,9 @@ package com.stash.core.data.repository
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.NetworkType
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.DownloadQueueEntity
@@ -10,6 +13,7 @@ import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.DownloadNetworkPreference
+import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
@@ -67,6 +71,63 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(listOf(fresh), pending.map { it.trackId })
     }
 
+    @Test fun `a sync queues every kept playlist, then starts one drain that follows the download setting`() = runTest {
+        member(playlist("Kept 1", keepOffline = true), 0, track("A"))
+        member(playlist("Kept 2", keepOffline = true), 0, track("B"))
+        member(playlist("Not kept"), 0, track("C"))
+
+        assertEquals(2, repo().queueKeptPlaylists())
+
+        val waiting = db.downloadQueueDao().pendingDiscoveryDownloads().map { db.trackDao().getById(it.trackId)!!.title }
+        assertEquals(setOf("A", "B"), waiting.toSet())
+        // One drain for both playlists (a drain per playlist restarts it), on Wi-Fi as the setting says.
+        assertEquals(listOf(NetworkType.UNMETERED), drains().map { it.constraints.requiredNetworkType })
+    }
+
+    @Test fun `background queueing waits for the download setting`() = runTest {
+        val pid = playlist("Mix")
+        member(pid, 0, track("A"))
+        repo().queueDownloadsForPlaylist(pid, background = true)
+        assertEquals(listOf(NetworkType.UNMETERED), drains().map { it.constraints.requiredNetworkType })
+    }
+
+    @Test fun `a tap after a background drain takes over on any network`() = runTest {
+        val pid = playlist("Mix")
+        member(pid, 0, track("A"))
+        repo().queueDownloadsForPlaylist(pid, background = true)
+        member(pid, 1, track("B"))
+        repo().queueDownloadsForPlaylist(pid)
+
+        val live = drains().filter { !it.state.isFinished }
+        assertEquals(listOf(NetworkType.CONNECTED), live.map { it.constraints.requiredNetworkType })
+    }
+
+    @Test fun `a background drain after a tap never downgrades it`() = runTest {
+        val pid = playlist("Mix")
+        member(pid, 0, track("A"))
+        repo().queueDownloadsForPlaylist(pid)
+        member(pid, 1, track("B"))
+        repo().queueDownloadsForPlaylist(pid, background = true)
+
+        // The tap's drain still goes on any network; the background one waits behind it.
+        val live = drains().filter { !it.state.isFinished }
+            .map { it.state to it.constraints.requiredNetworkType }
+        assertEquals(
+            setOf(WorkInfo.State.ENQUEUED to NetworkType.CONNECTED, WorkInfo.State.BLOCKED to NetworkType.UNMETERED),
+            live.toSet(),
+        )
+    }
+
+    private fun drains(): List<WorkInfo> =
+        WorkManager.getInstance(context).getWorkInfosForUniqueWork(DiscoveryDownloadWorker.UNIQUE_WORK_NAME).get()
+
+    private suspend fun playlist(name: String, keepOffline: Boolean = false): Long = db.playlistDao().insert(
+        PlaylistEntity(
+            name = name, source = MusicSource.BOTH, sourceId = "custom_$name", type = PlaylistType.CUSTOM,
+            keepOffline = keepOffline,
+        ),
+    )
+
     private suspend fun track(title: String) = TrackEntity(
         title = title, artist = "A", durationMs = 1000L, source = MusicSource.SPOTIFY,
         canonicalTitle = title.lowercase(), canonicalArtist = "a",
@@ -80,7 +141,7 @@ class MusicRepositoryQueuePlaylistTest {
 
     private fun repo(): MusicRepositoryImpl {
         val network = mockk<DownloadNetworkPreference>()
-        coEvery { network.current() } returns DownloadNetworkMode.entries.first()
+        coEvery { network.current() } returns DownloadNetworkMode.WIFI_ANY
         return MusicRepositoryImpl(
             context = context,
             trackDao = db.trackDao(),
