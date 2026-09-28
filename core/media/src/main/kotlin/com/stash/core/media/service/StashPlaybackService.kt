@@ -222,8 +222,12 @@ class StashPlaybackService : MediaLibraryService() {
         /** Separate, low-priority channel for the sleep-timer status notification. */
         private const val SLEEP_TIMER_CHANNEL_ID = "stash_sleep_timer"
 
-        /** Notification id for the sleep-timer status notification (distinct from Media3's default media notification id). */
-        private const val SLEEP_TIMER_NOTIFICATION_ID = 9001
+        /**
+         * Notification id for the sleep-timer status notification. Distinct from Media3's
+         * media notification and from the sync's progress notification (9001): sharing 9001
+         * let each replace the other, and a finished sync cleared a running timer's notice.
+         */
+        private const val SLEEP_TIMER_NOTIFICATION_ID = 9101
 
         /** How often the sleep-timer notification's remaining-time text refreshes. */
         private const val SLEEP_TIMER_TICK_MS = 60_000L
