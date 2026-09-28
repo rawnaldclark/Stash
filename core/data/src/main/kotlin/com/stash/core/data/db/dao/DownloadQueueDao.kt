@@ -285,6 +285,15 @@ interface DownloadQueueDao {
     )
     suspend fun pendingDiscoveryDownloads(): List<DownloadQueueEntity>
 
+    /**
+     * Whether a discovery download is waiting to start: PENDING only. FAILED
+     * rows retry whenever a drain runs for real work; starting one just for
+     * them retried an unmatchable song at every app start and every sync, a
+     * lossless attempt each time (#474).
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM download_queue WHERE sync_id IS NULL AND status = 'PENDING')")
+    suspend fun hasPendingDiscoveryDownload(): Boolean
+
     // ── Updates ─────────────────────────────────────────────────────────
 
     /**

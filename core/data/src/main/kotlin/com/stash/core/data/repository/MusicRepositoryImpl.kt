@@ -626,10 +626,11 @@ class MusicRepositoryImpl @Inject constructor(
      * reads comes from something the user asked for (a tap, a kept playlist, a
      * followed mix, a Library Health repair), so cold start calls this too: a
      * run that was cancelled or cut short picks up again under the background
-     * constraints.
+     * constraints. Waiting means PENDING: failed songs retry when a drain runs
+     * for real work, not on their own at every start.
      */
     suspend fun resumeWaitingDownloads() {
-        if (downloadQueueDao.pendingDiscoveryDownloads().isNotEmpty()) startDiscoveryDrain(background = true)
+        if (downloadQueueDao.hasPendingDiscoveryDownload()) startDiscoveryDrain(background = true)
     }
 
     /**

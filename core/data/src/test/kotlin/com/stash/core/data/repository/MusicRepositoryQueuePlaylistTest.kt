@@ -75,7 +75,13 @@ class MusicRepositoryQueuePlaylistTest {
             .build()
     }
 
-    @After fun tearDown() { db.close() }
+    @After fun tearDown() {
+        // Stop any stand-in worker a test left RUNNING, then close this WorkManager's database, while both
+        // are alive. Left to the garbage collector, they fail later, on a closed connection, in another test.
+        WorkManager.getInstance(context).cancelAllWork().result.get()
+        WorkManagerTestInitHelper.closeWorkDatabase()
+        db.close()
+    }
 
     @Test fun `queues only never-tried songs, and a second call adds nothing`() = runTest {
         val pid = db.playlistDao().insert(
@@ -192,6 +198,16 @@ class MusicRepositoryQueuePlaylistTest {
         val repo = repo()
         assertEquals(0, repo.queueKeptPlaylists())
         repo.resumeWaitingDownloads()
+        assertEquals(emptyList<WorkInfo>(), drains())
+    }
+
+    /** Failed songs retry when a drain runs for real work, never on their own (relay quota, notification). */
+    @Test fun `with only failed songs queued, neither a cold start nor a sync starts a drain`() = runTest {
+        val failed = db.trackDao().insert(track("Unmatchable"))
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = failed, status = DownloadStatus.FAILED, retryCount = 1))
+        val repo = repo()
+        repo.resumeWaitingDownloads()
+        assertEquals(0, repo.queueKeptPlaylists())
         assertEquals(emptyList<WorkInfo>(), drains())
     }
 
