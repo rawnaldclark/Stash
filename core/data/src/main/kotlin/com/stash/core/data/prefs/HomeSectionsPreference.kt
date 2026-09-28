@@ -64,6 +64,9 @@ fun visibleHomeSections(order: List<HomeSection>, hidden: Set<HomeSection>, comm
 fun withCommunityFirst(order: List<HomeSection>): List<HomeSection> =
     listOf(HomeSection.COMMUNITY) + (order - HomeSection.COMMUNITY)
 
+/** The tab a plain cold launch opens on (#428). Missing or unknown stored values read as [HOME]. */
+enum class StartTab { HOME, LIBRARY, SEARCH }
+
 /** Dedicated DataStore for Home section order + visibility. Internal so tests can clear it. */
 internal val Context.homeSectionsDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "home_sections_preference",
@@ -85,6 +88,7 @@ class HomeSectionsPreference @Inject constructor(
     private val hiddenKey = stringPreferencesKey("home_sections_hidden")
     private val showLikedKey = booleanPreferencesKey("show_liked_on_home")
     private val communityOnKey = booleanPreferencesKey("community_on")
+    private val startTabKey = stringPreferencesKey("start_tab")
 
     /**
      * Show one Liked Songs card — the STASH_LIKED + LIKED_SONGS playlists
@@ -107,10 +111,15 @@ class HomeSectionsPreference @Inject constructor(
         prefs[communityOnKey] ?: false
     }.distinctUntilChanged().catch { emit(false) }
 
+    /** Settings > Appearance > Open Stash on (#428). */
+    val startTab: Flow<StartTab> = context.homeSectionsDataStore.data.map { prefs ->
+        StartTab.entries.firstOrNull { it.name == prefs[startTabKey] } ?: StartTab.HOME
+    }.distinctUntilChanged().catch { emit(StartTab.HOME) }
+
     /**
      * What Home actually renders: [order] minus [hidden], and minus Community while its switch is off.
      *
-     * All five flows here are deduped (the store re-emits on every unrelated
+     * All the flows here are deduped (the store re-emits on every unrelated
      * write) and catch to the same default the `map` already uses: they feed
      * `HomeViewModel`'s and `SettingsViewModel`'s `combine` directly, and a
      * DataStore IOException that terminated the chain would leave those screens
@@ -157,6 +166,10 @@ class HomeSectionsPreference @Inject constructor(
             }
             prefs[communityOnKey] = on
         }
+    }
+
+    suspend fun setStartTab(tab: StartTab) {
+        context.homeSectionsDataStore.edit { prefs -> prefs[startTabKey] = tab.name }
     }
 
     private fun String?.toKeys(): List<String> =

@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.data.prefs.StartTab
 import com.stash.core.model.ThemeMode
 import com.stash.core.ui.theme.StashBackground
 import com.stash.core.ui.theme.StashBackgroundLight
@@ -47,6 +48,7 @@ import com.stash.core.ui.theme.StashTextSecondaryLight
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
+import com.stash.feature.settings.components.SettingsSegmented
 import com.stash.feature.settings.components.SettingsToggleRow
 
 /**
@@ -64,6 +66,7 @@ fun SettingsAppearanceScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val startTab by viewModel.startTab.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = "Appearance", onBack = onBack, modifier = modifier) {
         SettingsSectionLabel("Theme")
@@ -123,6 +126,20 @@ fun SettingsAppearanceScreen(
             subtitle = "Animated color wash behind Now Playing — switch off for a still backdrop that saves battery",
             checked = uiState.ambientAnimationEnabled,
             onCheckedChange = viewModel::onAmbientAnimationEnabledChanged,
+        )
+
+        Spacer(Modifier.height(20.dp))
+        SettingsSectionLabel("Open Stash on")
+        SettingsSegmented(
+            options = listOf("Home", "Library", "Search"), // StartTab order
+            selectedIndex = startTab.ordinal,
+            onSelect = { viewModel.onStartTabChanged(StartTab.entries[it]) },
+        )
+        Text(
+            text = "The tab Stash opens on when you start it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
         )
 
         Spacer(Modifier.height(20.dp))

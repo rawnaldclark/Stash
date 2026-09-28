@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.data.prefs.StartTab
 import com.stash.core.ui.theme.StashElevation
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -49,6 +50,9 @@ import com.stash.feature.nowplaying.MiniPlayer
 fun StashScaffold(
     pendingDeepLink: String? = null,
     onDeepLinkConsumed: () -> Unit = {},
+    startTab: StartTab? = null,
+    startTabArmed: Boolean = false,
+    onStartTabSettled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -157,6 +161,14 @@ fun StashScaffold(
         }
     }
 
+    // Open Stash on (#428). Home stays the NavHost's start destination; once the pref
+    // loads, an armed launch switches tabs the canonical way, so Back returns to Home.
+    // Keyed on the pref only: the first loaded value settles it, whatever it opened.
+    LaunchedEffect(startTab) {
+        startTabToOpen(startTabArmed, pendingDeepLink, startTab)?.let(::navigateToTab)
+        if (startTab != null) onStartTabSettled()
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         // Use Scaffold's default safe-drawing insets so screens automatically
@@ -231,6 +243,22 @@ fun StashScaffold(
         )
     }
 }
+
+/**
+ * Open Stash on (#428): the tab a launch switches to once the pref has loaded, or null to stay
+ * on Home. [armed] only on a plain cold launch (see MainActivity); a [pendingDeepLink] always
+ * wins; a null [startTab] is "not loaded yet", and the caller stays armed until it loads.
+ */
+internal fun startTabToOpen(armed: Boolean, pendingDeepLink: String?, startTab: StartTab?): TopLevelDestination? =
+    if (!armed || pendingDeepLink != null) {
+        null
+    } else {
+        when (startTab) {
+            null, StartTab.HOME -> null
+            StartTab.LIBRARY -> TopLevelDestination.LIBRARY
+            StartTab.SEARCH -> TopLevelDestination.SEARCH
+        }
+    }
 
 @Composable
 private fun StashBottomBar(

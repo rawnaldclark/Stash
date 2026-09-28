@@ -228,4 +228,5 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.okhttp)
+    testImplementation("junit:junit:4.13.2")
 }

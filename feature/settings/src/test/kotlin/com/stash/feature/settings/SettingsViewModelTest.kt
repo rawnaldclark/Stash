@@ -1,6 +1,8 @@
 package com.stash.feature.settings
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.prefs.HomeSectionsPreference
+import com.stash.core.data.prefs.StartTab
 import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
@@ -45,6 +47,7 @@ class SettingsViewModelTest {
     private val relayClient = mockk<LosslessRelayClient>(relaxed = true)
 
     private val autoplayRadioPreference = mockk<com.stash.core.data.prefs.AutoplayRadioPreference>(relaxed = true)
+    private val homeSectionsPreference = mockk<HomeSectionsPreference>(relaxed = true)
 
     private fun newVm(losslessConfigured: Boolean = true) = SettingsViewModel(
         appContext = mockk(relaxed = true),
@@ -88,7 +91,7 @@ class SettingsViewModelTest {
         sleepTimerController = mockk(relaxed = true),
         homeDiscoveryPreference = mockk(relaxed = true),
         nowPlayingPreference = mockk(relaxed = true),
-        homeSectionsPreference = mockk(relaxed = true),
+        homeSectionsPreference = homeSectionsPreference,
         listenBrainzPreference = mockk(relaxed = true),
         listenBrainzApiClient = mockk(relaxed = true),
         listenSinkCoordinator = mockk(relaxed = true),
@@ -242,5 +245,25 @@ class SettingsViewModelTest {
         newVm().onAutoplayRadioToggle(true)
         advanceUntilIdle()
         coVerify { autoplayRadioPreference.setEnabled(true) }
+    }
+
+    // -- Open Stash on (#428) ------------------------------------------------------------
+
+    @Test
+    fun `choosing a start tab stores it and the screen shows it`() = runTest {
+        val stored = MutableStateFlow(StartTab.HOME)
+        every { homeSectionsPreference.startTab } returns stored
+        coEvery { homeSectionsPreference.setStartTab(any()) } coAnswers { stored.value = firstArg() }
+        val vm = newVm()
+        val job = launch { vm.startTab.collect {} }
+        advanceUntilIdle()
+        assertThat(vm.startTab.value).isEqualTo(StartTab.HOME)
+
+        vm.onStartTabChanged(StartTab.LIBRARY)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { homeSectionsPreference.setStartTab(StartTab.LIBRARY) }
+        assertThat(vm.startTab.value).isEqualTo(StartTab.LIBRARY)
+        job.cancel()
     }
 }

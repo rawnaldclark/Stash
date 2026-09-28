@@ -19,6 +19,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.stash.app.navigation.StashScaffold
+import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.model.ThemeMode
 import com.stash.core.model.share.ShareLinks
@@ -56,6 +57,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var listenTogether: ListenTogetherController
 
+    @Inject
+    lateinit var homeSectionsPreference: HomeSectionsPreference
+
     /**
      * Pending deep-link target read from the launch / new-intent extras.
      * Compose observes this via [StashScaffold]'s `pendingDeepLink`
@@ -63,6 +67,14 @@ class MainActivity : ComponentActivity() {
      * [clearPendingDeepLink].
      */
     private val pendingDeepLink = mutableStateOf<String?>(null)
+
+    /**
+     * Open Stash on (#428): armed at the end of a plain cold-launch [onCreate] (no restore,
+     * no Recents relaunch, no deep link, no share), spent once the pref's first value
+     * arrives. [onNewIntent] disarms it. Composition starts only after [onCreate] returns,
+     * and the pref loads later still, so arming at the end is in time.
+     */
+    private val startTabArmed = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -73,6 +85,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by themeModeFlow.collectAsState(initial = ThemeMode.SYSTEM)
             val amoledDark by themePreference.amoledDark.collectAsState(initial = false)
+            val startTab by homeSectionsPreference.startTab.collectAsState(initial = null)
             val systemDark = isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
                 ThemeMode.LIGHT -> false
@@ -97,6 +110,9 @@ class MainActivity : ComponentActivity() {
                     StashScaffold(
                         pendingDeepLink = pendingDeepLink.value,
                         onDeepLinkConsumed = { pendingDeepLink.value = null },
+                        startTab = startTab,
+                        startTabArmed = startTabArmed.value,
+                        onStartTabSettled = { startTabArmed.value = false },
                     )
                 }
             }
@@ -109,14 +125,16 @@ class MainActivity : ComponentActivity() {
         val relaunch = savedInstanceState != null ||
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
         if (!relaunch) {
-            handleShareIntent(intent)
+            val shared = handleShareIntent(intent)
             handleDeepLinkIntent(intent)
+            startTabArmed.value = !shared && pendingDeepLink.value == null
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        startTabArmed.value = false
         handleShareIntent(intent)
         handleDeepLinkIntent(intent)
     }
@@ -162,10 +180,10 @@ class MainActivity : ComponentActivity() {
     /**
      * Extracts audio URIs from a share-sheet intent and hands them to the
      * [LocalImportCoordinator]. Silently ignores non-share intents so the
-     * normal launcher flow is untouched.
+     * normal launcher flow is untouched. True when it started an import.
      */
-    private fun handleShareIntent(intent: Intent?) {
-        if (intent == null) return
+    private fun handleShareIntent(intent: Intent?): Boolean {
+        if (intent == null) return false
         val uris: List<Uri> = when (intent.action) {
             Intent.ACTION_SEND -> {
                 IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
@@ -183,5 +201,6 @@ class MainActivity : ComponentActivity() {
         if (uris.isNotEmpty()) {
             localImportCoordinator.start(uris)
         }
+        return uris.isNotEmpty()
     }
 }
