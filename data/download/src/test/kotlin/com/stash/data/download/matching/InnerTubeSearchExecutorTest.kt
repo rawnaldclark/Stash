@@ -90,6 +90,32 @@ class InnerTubeSearchExecutorTest {
     }
 
     @Test
+    fun `a Video candidate's artist is its channel, without the view count`() = runTest {
+        // The live flat-search row "Video • Grimm's VGM(UC…) • 845 views" (2026-09-27).
+        // The executor reads musicShelfRenderer rows only, so the fixture wraps it
+        // in the shelf that carries the same Video rows in the Smooth Criminal capture.
+        val executor = executorFor("innertube_search_flat_video_row.json")
+
+        val video = executor.search("Mii Channel Theme Cover").single()
+
+        assertEquals("Grimm's VGM", video.uploader)
+        assertEquals("Grimm's VGM", video.channel)
+    }
+
+    @Test
+    fun `Song and Video candidates in the real Smooth Criminal shelf keep only the artist`() = runTest {
+        val results = executorFor("innertube_search_smooth_criminal.json")
+            .search("Michael Jackson Smooth Criminal", maxResults = 10)
+
+        // "Video • Lyrixa(UC…) • 937K views"
+        assertEquals("Lyrixa", results.single { it.id == "gV5SnMKpEqs" }.uploader)
+        // "Song • Michael Jackson(UC…)": unchanged, still flagged as a Topic-equivalent.
+        val song = results.single { it.id == "XzNWRmqibNE" }
+        assertEquals("Michael Jackson", song.uploader)
+        assertEquals("Michael Jackson - Topic", song.channel)
+    }
+
+    @Test
     fun `verifyVideo returns OMV musicVideoType for Smooth Criminal MV videoId`() = runTest {
         // Player-endpoint fixture for the Smooth Criminal OMV (videoId h_D3VFfhvs4).
         // `videoDetails.musicVideoType == "MUSIC_VIDEO_TYPE_OMV"` per the real

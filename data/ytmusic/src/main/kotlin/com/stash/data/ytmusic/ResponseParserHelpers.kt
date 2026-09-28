@@ -1,6 +1,7 @@
 package com.stash.data.ytmusic
 
 import com.stash.data.ytmusic.model.TrackSummary
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -71,6 +72,65 @@ private fun JsonObject.isArtistLink(): Boolean =
 internal val SONG_ROW_TYPE_LABELS = setOf("Song", "Video", "Music video", "Episode")
 
 /**
+ * What a list row's subtitle (`flexColumns[1]`) says once its runs are read by
+ * their browse ids rather than joined: no "Song"/"Video" label, view or play count.
+ */
+data class ListItemSubtitle(
+    /** Artist(s) joined with ", "; blank when the subtitle names none. */
+    val artist: String,
+    /** The album linked in the subtitle (the search "Songs" shelf), or null. */
+    val album: String?,
+    /** The subtitle's unlinked length ("3:52") in seconds; 0.0 when it has none. */
+    val durationSeconds: Double,
+)
+
+/**
+ * Reads a list row's subtitle runs (`flexColumns[1]...runs`). Its " • " groups
+ * vary by layout (live InnerTube, 2026-09-27):
+ * ```
+ *   flat search (#268):  "Song" • <artist>          | "Video" • <channel> • "845 views"
+ *   "Songs" shelf:       <artist(s)> • <album> • "5:13"
+ *   older / hand-built:  <artist> & <artist>        (length in fixedColumns)
+ * ```
+ * Joining every run made the artist "Grimm's VGM, 845 views". Public so the
+ * download matcher (`:data:download`) reads candidates the same way search does.
+ */
+fun parseListItemSubtitle(runs: JsonArray?): ListItemSubtitle {
+    val groups = mutableListOf(mutableListOf<JsonObject>())
+    runs?.mapNotNull { it.asObject() }?.forEach { run ->
+        if (run.runText() == SUBTITLE_GROUP_SEPARATOR) groups.add(mutableListOf())
+        else groups.last().add(run)
+    }
+    // Flat rows lead with a content-type label ("Song", "Video") the shelf omits.
+    if (groups.first().singleOrNull()?.runText() in SONG_ROW_TYPE_LABELS) groups.removeAt(0)
+
+    // Artist: the whole group holding the first artist link, so an unlinked
+    // co-artist in it is kept ("Yeahman, Hajna & Mina Shankha" links only two).
+    // No link: the first group, unless it links elsewhere or is a stat/year.
+    val artistGroup = groups.firstOrNull { group -> group.any { it.isArtistLink() } }
+        ?: groups.firstOrNull()?.takeIf { group ->
+            group.none { run ->
+                run.runBrowseId() != null ||
+                    run.runText().orEmpty().let { isRowStat(it) || it.matches(YEAR_REGEX) }
+            }
+        }
+    val artist = artistGroup.orEmpty()
+        .mapNotNull { it.runText() }
+        .filterNot { it in SUBTITLE_JOINERS }
+        .joinToString(", ")
+
+    val album = groups.flatten().firstOrNull { it.runBrowseId()?.startsWith("MPREb_") == true }?.runText()
+
+    // Only an unlinked group: a linked one is an album, even one titled like a
+    // length (JAY-Z "4:44").
+    val durationText = groups.firstNotNullOfOrNull { group ->
+        group.singleOrNull()?.takeIf { it.runBrowseId() == null }
+            ?.runText()?.takeIf { it.matches(DURATION_REGEX) }
+    }
+    return ListItemSubtitle(artist, album, parseDurationToSeconds(durationText))
+}
+
+/**
  * Parses a `musicResponsiveListItemRenderer` into a [TrackSummary].
  *
  * Expected shape:
@@ -114,46 +174,15 @@ internal fun parseTrackSummaryFromListItem(
         ?.get("text")?.asString()
         ?: return null
 
-    // flexColumns[1] is a " • "-separated subtitle whose groups vary by layout
-    // (live InnerTube, 2026-09-27):
-    //   flat search (#268):  "Song" • <artist>            | "Video" • <channel> • "845 views"
-    //   "Songs" shelf:       <artist(s)> • <album> • "5:13"
-    //   older / hand-built:  <artist> & <artist>          (duration in fixedColumns)
-    // Joining every run made the artist "Grimm's VGM, 845 views", so classify
-    // the runs by their browse ids instead (same rule as parseTopResultCard).
-    val subtitleGroups = mutableListOf(mutableListOf<JsonObject>())
-    flexColumns.getOrNull(1)?.asObject()
-        ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
-        ?.asArray()
-        ?.mapNotNull { it.asObject() }
-        ?.forEach { run ->
-            if (run.runText() == SUBTITLE_GROUP_SEPARATOR) subtitleGroups.add(mutableListOf())
-            else subtitleGroups.last().add(run)
-        }
-    // Flat rows lead with a content-type label ("Song", "Video") the shelf omits.
-    if (subtitleGroups.first().singleOrNull()?.runText() in SONG_ROW_TYPE_LABELS) {
-        subtitleGroups.removeAt(0)
-    }
-    val subtitleRuns = subtitleGroups.flatten()
-
-    // Artist: the whole group holding the first artist link, so an unlinked
-    // co-artist in it is kept ("Yeahman, Hajna & Mina Shankha" links only two).
-    // No link: the first group, unless it links elsewhere or is a stat/year.
+    val subtitle = parseListItemSubtitle(
+        flexColumns.getOrNull(1)?.asObject()
+            ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
+            ?.asArray(),
+    )
     // Rows that name no artist at all (the artist "Popular" shelf, album
     // tracklists) take the caller's fallbackArtist: lossless matching scores
     // on artist + title and finds nothing with a blank artist.
-    val artistGroup = subtitleGroups.firstOrNull { group -> group.any { it.isArtistLink() } }
-        ?: subtitleGroups.firstOrNull()?.takeIf { group ->
-            group.none { run ->
-                run.runBrowseId() != null ||
-                    run.runText().orEmpty().let { isRowStat(it) || it.matches(YEAR_REGEX) }
-            }
-        }
-    val artist = artistGroup.orEmpty()
-        .mapNotNull { it.runText() }
-        .filterNot { it in SUBTITLE_JOINERS }
-        .joinToString(", ")
-        .ifBlank { fallbackArtist.orEmpty() }
+    val artist = subtitle.artist.ifBlank { fallbackArtist.orEmpty() }
 
     // flexColumns[2] is the album on album-page tracklists but the PLAY COUNT
     // ("16M plays") on the search "Songs" shelf and artist "Popular" shelf —
@@ -164,8 +193,7 @@ internal fun parseTrackSummaryFromListItem(
         ?.firstArray()?.firstOrNull()?.asObject()
         ?.runText()
         ?.takeUnless(::isRowStat)
-    val album = albumColumn
-        ?: subtitleRuns.firstOrNull { it.runBrowseId()?.startsWith("MPREb_") == true }?.runText()
+    val album = albumColumn ?: subtitle.album
 
     val thumbnails = renderer.navigatePath(
         "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",
@@ -177,24 +205,19 @@ internal fun parseTrackSummaryFromListItem(
     )
 
     // Length: the fixed column (album pages, older shapes), else the "Songs"
-    // shelf's unlinked "5:13" subtitle group. A linked group is an album, even
-    // one titled like a length (JAY-Z "4:44"). Flat rows carry no length (0).
+    // shelf's "5:13" subtitle group. Flat rows carry no length at all (0).
     val durationText = renderer["fixedColumns"]?.asArray()
         ?.firstOrNull()?.asObject()
         ?.navigatePath("musicResponsiveListItemFixedColumnRenderer", "text", "runs")
         ?.firstArray()?.firstOrNull()?.asObject()
         ?.get("text")?.asString()
-        ?: subtitleGroups.firstNotNullOfOrNull { group ->
-            group.singleOrNull()?.takeIf { it.runBrowseId() == null }
-                ?.runText()?.takeIf { it.matches(DURATION_REGEX) }
-        }
 
     return TrackSummary(
         videoId = videoId,
         title = title,
         artist = artist,
         album = album,
-        durationSeconds = parseDurationToSeconds(durationText),
+        durationSeconds = durationText?.let(::parseDurationToSeconds) ?: subtitle.durationSeconds,
         thumbnailUrl = thumbnailUrl,
     )
 }
