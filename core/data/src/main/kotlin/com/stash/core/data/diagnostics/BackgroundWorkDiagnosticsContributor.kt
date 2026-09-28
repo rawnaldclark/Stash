@@ -1,5 +1,6 @@
 package com.stash.core.data.diagnostics
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -93,6 +94,9 @@ class BackgroundWorkDiagnosticsContributor @Inject constructor(
     }
 
     /** One work item's line. Reads WorkManager's own bookkeeping and the worker class name, nothing the worker wrote. */
+    // WorkInfo.stopReason is @RequiresApi(31) for lint, but it is a field WorkManager stores, not
+    // a platform call, so reading it is safe on every API level.
+    @SuppressLint("NewApi")
     internal fun describe(w: WorkInfo, now: Long): String = buildList {
         add(workerName(w))
         add(w.state.name)
