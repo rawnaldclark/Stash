@@ -409,7 +409,7 @@ class SyncViewModel @Inject constructor(
      * which cancels the work chain and any worker currently running — the
      * worker sees a cancellation exception and exits. In-progress track
      * downloads that finish before the cancellation is observed will still
-     * complete, but no new tracks are enqueued.
+     * complete, but no new tracks are enqueued. The daily schedule stays.
      */
     fun onStopSync() {
         syncScheduler.cancelSync()
@@ -491,7 +491,7 @@ class SyncViewModel @Inject constructor(
                     days = DayOfWeekSet(prefs.syncDays),
                 )
             } else {
-                syncScheduler.cancelSync()
+                syncScheduler.cancelDailySync()
             }
         }
     }
@@ -569,10 +569,23 @@ class SyncViewModel @Inject constructor(
         }
     }
 
-    /** Persists the days-of-week selection. UI passes the new bitmask. */
+    /**
+     * Persists the days-of-week selection and reschedules, so the first run
+     * lands on the next chosen day and a schedule that had no days (so no
+     * trigger) starts again. UI passes the new bitmask.
+     */
     fun onSyncDaysChanged(bitmask: Int) {
         viewModelScope.launch {
             syncPreferencesManager.setSyncDays(bitmask)
+            val prefs = _uiState.value.syncPreferences
+            if (prefs.autoSyncEnabled) {
+                syncScheduler.scheduleDailySync(
+                    prefs.syncHour,
+                    prefs.syncMinute,
+                    wifiOnly = prefs.wifiOnly,
+                    days = DayOfWeekSet(bitmask),
+                )
+            }
         }
     }
 

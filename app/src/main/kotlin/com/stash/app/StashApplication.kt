@@ -50,6 +50,7 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -229,6 +230,13 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var lyricsUpgradeTrigger: LyricsUpgradeTrigger
 
+    /** Both only for the startup check that Auto-sync has its daily trigger. */
+    @Inject
+    lateinit var syncScheduler: com.stash.core.data.sync.SyncScheduler
+
+    @Inject
+    lateinit var syncPreferencesManager: com.stash.core.data.sync.SyncPreferencesManager
+
     /** Application-scoped coroutine scope for one-shot startup tasks. */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -381,6 +389,13 @@ class StashApplication : Application(), Configuration.Provider {
         }
         YtDlpUpdateWorker.schedulePeriodicUpdate(this)
         UpdateCheckWorker.schedulePeriodicCheck(this)
+        // Auto-sync used to be one delayed chain that nothing re-armed, so an
+        // upgrading user with it on has no daily trigger yet. KEEP leaves an
+        // existing trigger's time alone.
+        applicationScope.launch {
+            runCatching { syncScheduler.ensureDailySync(syncPreferencesManager.preferences.first()) }
+                .onFailure { Log.w("StashStartup", "daily sync trigger check failed", it) }
+        }
 
         // Stash Mixes scheduling. Daily refresh for mix regeneration,
         // separate daily tag enrichment (unmetered+charging), separate

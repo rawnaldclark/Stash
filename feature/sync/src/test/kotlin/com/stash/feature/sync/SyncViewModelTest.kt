@@ -1,12 +1,15 @@
 package com.stash.feature.sync
 
 import com.stash.core.auth.model.AuthState
+import com.stash.core.data.sync.DayOfWeekSet
 import com.stash.core.data.sync.SyncPhase
+import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.model.MusicSource
 import com.stash.core.model.SyncMode
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -183,5 +186,39 @@ class SyncViewModelTest {
     fun `turning sync off unpins it`() {
         newVm().onTogglePlaylistSync(7L, enabled = false)
         coVerify { playlistDao.setSyncEnabledAndPin(7L, false, any()) }
+    }
+
+    // -- Auto-sync schedule (2026-09-28): Stop keeps it, Auto-sync off ends it ---------
+
+    @Test
+    fun `Stop cancels the running sync but keeps the daily schedule`() {
+        newVm().onStopSync()
+        verify { syncScheduler.cancelSync() }
+        verify(exactly = 0) { syncScheduler.cancelDailySync() }
+    }
+
+    @Test
+    fun `turning Auto-sync off cancels the daily schedule`() = runTest {
+        every { prefs.preferences } returns MutableStateFlow(SyncPreferences(autoSyncEnabled = true))
+        val vm = newVm()
+
+        vm.onToggleAutoSync()
+        advanceUntilIdle()
+
+        coVerify { prefs.setAutoSyncEnabled(false) }
+        verify { syncScheduler.cancelDailySync() }
+    }
+
+    @Test
+    fun `changing the days while Auto-sync is on reschedules`() = runTest {
+        every { prefs.preferences } returns MutableStateFlow(
+            SyncPreferences(autoSyncEnabled = true, syncHour = 7, syncMinute = 30, wifiOnly = false),
+        )
+        val vm = newVm()
+
+        vm.onSyncDaysChanged(DayOfWeekSet.WEEKENDS.bitmask)
+        advanceUntilIdle()
+
+        verify { syncScheduler.scheduleDailySync(7, 30, false, DayOfWeekSet.WEEKENDS) }
     }
 }
