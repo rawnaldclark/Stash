@@ -473,6 +473,13 @@ interface DownloadQueueDao {
     suspend fun resetToPendingRaw(ids: List<Long>)
 
     /**
+     * A download the user asked for by hand (#474): a tap on a song. A playlist's
+     * Download switch going off leaves such a row alone ([cancelWaitingForPlaylist]).
+     */
+    @Query("UPDATE download_queue SET user_requested = 1 WHERE id = :id")
+    suspend fun markUserRequested(id: Long)
+
+    /**
      * Chunked wrapper for [resetToPendingRaw]: a retry-all over a large failed
      * batch can exceed the bind cap, so chunk it (#337 class).
      */

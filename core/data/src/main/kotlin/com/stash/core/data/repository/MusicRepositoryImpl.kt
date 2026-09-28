@@ -576,7 +576,9 @@ class MusicRepositoryImpl @Inject constructor(
         // this a silent no-op: previously a stuck sync row (streaming-mode
         // PENDING / deferred WAITING_FOR_LOSSLESS) made every already-synced
         // track report "Couldn't queue download". Reset the row to PENDING so it
-        // downloads fresh.
+        // downloads fresh. Either way the row is the user's own request
+        // (user_requested), so a playlist's Download switch going off never
+        // deletes it (#474).
         val existing = downloadQueueDao.getByTrackId(trackId)
         val queueId = if (existing == null) {
             downloadQueueDao.insert(
@@ -585,10 +587,12 @@ class MusicRepositoryImpl @Inject constructor(
                     syncId = null,
                     searchQuery = "${entity.artist} - ${entity.title}",
                     youtubeUrl = entity.youtubeId?.let { "https://music.youtube.com/watch?v=$it" },
+                    userRequested = true,
                 )
             )
         } else {
             downloadQueueDao.resetToPending(listOf(existing.id))
+            downloadQueueDao.markUserRequested(existing.id)
             existing.id
         }
 

@@ -303,6 +303,24 @@ class MusicRepositoryQueuePlaylistTest {
         return Triple(stuck, failedOnce, otherPlaylists)
     }
 
+    // ── A tap is the user's own request (#474) ────────────────────────────
+
+    @Test fun `a song the user tapped keeps its row when its playlist's switch goes off`() = runTest {
+        val pid = playlist("Mix")
+        val tapped = member(pid, 0, track("Tapped"))
+        val retried = member(pid, 1, track("Tapped again after failing"))
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = retried, status = DownloadStatus.FAILED, retryCount = 3))
+        val repo = repo()
+        assertEquals(true, repo.queueDownload(tapped)) // a new row
+        assertEquals(true, repo.queueDownload(retried)) // the failed row, reused
+
+        repo.setPlaylistDownload(pid, on = true)
+        repo.setPlaylistDownload(pid, on = false)
+
+        val waiting = db.downloadQueueDao().pendingDiscoveryDownloads().map { it.trackId }
+        assertEquals(setOf(tapped, retried), waiting.toSet())
+    }
+
     private fun drains(): List<WorkInfo> =
         WorkManager.getInstance(context).getWorkInfosForUniqueWork(DiscoveryDownloadWorker.UNIQUE_WORK_NAME).get()
 
