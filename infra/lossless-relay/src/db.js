@@ -40,11 +40,14 @@ export function bumpQuotaStmt(db, day, key, ip = null) {
 /**
  * Spec §5.3 in one statement: pick the live, un-cooled account with the oldest
  * last_used_at that is under both caps, and stamp its counters in the same write.
+ * With `exclude` (the account that just refused a track), pick the most recently used
+ * other one instead: the likeliest to be healthy, so two refusing accounts don't pair
+ * up at the front of the rotation and hide each other.
  * SET expressions read the pre-update row, so `hour_key = ?2` on the right-hand
  * side compares the OLD key. Atomic under concurrent invocations because D1 runs
  * one statement at a time. Returns the label, or null when nothing is eligible.
  */
-export async function selectAccount(db, nowSec, caps) {
+export async function selectAccount(db, nowSec, caps, exclude = null) {
     const row = await db.prepare(`
 UPDATE accounts SET
   hour_n = CASE WHEN hour_key = ?2 THEN hour_n + 1 ELSE 1 END, hour_key = ?2,
@@ -55,8 +58,9 @@ WHERE label = (
   WHERE state = 'live' AND cooling_until <= ?1
     AND (hour_key != ?2 OR hour_n < ?4)
     AND (day_key  != ?3 OR day_n  < ?5)
-  ORDER BY last_used_at ASC, label ASC LIMIT 1)
-RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, caps.daily).first();
+    AND label IS NOT ?6
+  ORDER BY CASE WHEN ?6 IS NULL THEN last_used_at ELSE -last_used_at END ASC, label ASC LIMIT 1)
+RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, caps.daily, exclude).first();
     return row ? row.label : null;
 }
 
@@ -67,7 +71,12 @@ export async function ensureAccounts(db, labels) {
 }
 
 export async function coolAccount(db, label, untilSec) {
-    await db.prepare("UPDATE accounts SET cooling_until = ?2 WHERE label = ?1").bind(label, untilSec).run();
+    await coolAccountStmt(db, label, untilSec).run();
+}
+
+/** Statement (not executed) so the caller can batch it with the quota bumps. */
+export function coolAccountStmt(db, label, untilSec) {
+    return db.prepare("UPDATE accounts SET cooling_until = ?2 WHERE label = ?1").bind(label, untilSec);
 }
 
 export async function killAccount(db, label, reason) {

@@ -149,16 +149,71 @@ test("both accounts refusing with no code → 404 as before, quota spent once, n
     assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
 });
 
-test("a codeless refusal then a transient failure still answers 404, not 503", async () => {
+test("a codeless refusal then a transient failure still answers 404, not 503: quota once, the failing account cools 300 s", async () => {
     const e = env(); const q = qobuz([200, { format_id: 7 }], [500, ""]);
     assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+    assert.equal((await e.DB.prepare("SELECT cooling_until FROM accounts WHERE label = 'b'").first()).cooling_until, NOW + 300);
+    assert.equal((await e.DB.prepare("SELECT cooling_until FROM accounts WHERE label = 'a'").first()).cooling_until, 0);
+});
+
+test("a codeless refusal from the only account: no second call to it, 404 with quota once, not cooled", async () => {
+    const e = env({ QOBUZ_ACCOUNTS: JSON.stringify([ACCOUNTS[0]]) }); const q = qobuz([200, { ...GOOD, sample: true }], [200, GOOD]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+    assert.equal(q.calls.length, 1);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+    assert.equal((await e.DB.prepare("SELECT cooling_until FROM accounts WHERE label = 'a'").first()).cooling_until, 0);
+});
+
+test("a codeless refusal, then a dead second account: the dead one is retired, the answer is 404 with quota once", async () => {
+    const e = env(); const q = qobuz([200, { format_id: 7 }], [401, {}]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+    assert.equal((await e.DB.prepare("SELECT state FROM accounts WHERE label = 'b'").first()).state, "dead");
+    assert.equal((await e.DB.prepare("SELECT state FROM accounts WHERE label = 'a'").first()).state, "live");
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+});
+
+test("the account cooled by a cross-check sits out the next miss", async () => {
+    const e = env(); const q = qobuz([200, { ...GOOD, sample: true }], [200, GOOD], [200, { ...GOOD, url: "https://cdn.example/g.flac?etsp=" + (NOW + 3599) }]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 200);
+    assert.equal((await handle(mintReq(43, 27), e, q, NOW + 60)).status, 200);
+    assert.deepEqual(q.calls.map((c) => c.init.headers["X-User-Auth-Token"]), ["tok-a", "tok-b", "tok-b"]);
+});
+
+/** A fake Qobuz that answers by account: tokens in `expired` get a bare preview, the rest a full URL. */
+function qobuzByToken(expired) {
+    const calls = [];
+    const f = async (url, init) => {
+        calls.push({ url: String(url), init });
+        const tok = init.headers["X-User-Auth-Token"];
+        const body = expired.has(tok) ? { ...GOOD, sample: true } : { ...GOOD, url: `https://cdn.example/${calls.length}.flac?etsp=${NOW + 3599}` };
+        return new Response(JSON.stringify(body), { status: 200 });
+    };
+    f.calls = calls;
+    return f;
+}
+
+test("rotation with half the pool expired: both expired accounts end up cooled and the listener gets FLAC", async () => {
+    const four = ["a", "b", "c", "d"].map((l) => ({ label: l, token: "tok-" + l, app_id: "111111111", app_secret: "s-" + l }));
+    const e = env({ QOBUZ_ACCOUNTS: JSON.stringify(four) }); const q = qobuzByToken(new Set(["tok-a", "tok-b"]));
+    const statuses = [];
+    for (let i = 0; i < 20; i++) statuses.push((await handle(mintReq(100 + i, 27), e, q, NOW + i * 10)).status);
+    // Cold start: every last_used_at is 0, so the very first miss may pair the two expired accounts.
+    assert.ok(statuses.filter((s) => s === 404).length <= 1, String(statuses));
+    assert.deepEqual(statuses.slice(-15), Array(15).fill(200));
+    for (const l of ["a", "b"]) {
+        const row = await e.DB.prepare("SELECT state, cooling_until FROM accounts WHERE label = ?1").bind(l).first();
+        assert.equal(row.state, "live", l);
+        assert.ok(row.cooling_until > NOW, l);
+    }
 });
 
 test("refusalNamesTrack: catalog miss and Track/Sample/Format codes name the track; bare refusals and User codes don't", () => {
     for (const r of ["404", "no_url SampleRestrictedByRightHolders", "sample TrackRestrictedByRightHolders", "fmt_5 FormatRestrictedByFormatAvailability"]) {
         assert.equal(refusalNamesTrack(r), true, r);
     }
-    for (const r of ["sample", "no_url", "fmt_5", "sample UserUserSubscriptionRequired", undefined]) {
+    // UserUncredentialed: a weak account answering previews (device, 2026-07-04); a User code wins over a Format one.
+    for (const r of ["sample", "no_url", "fmt_5", "sample UserUncredentialed", "sample UserUncredentialed,FormatRestrictedByFormatAvailability", undefined]) {
         assert.equal(refusalNamesTrack(r), false, String(r));
     }
 });
