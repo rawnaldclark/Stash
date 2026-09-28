@@ -251,7 +251,8 @@ class AlbumMatchExecutor @Inject constructor(
      *
      * Checks two locations where album results can appear:
      * 1. **Top result card** (`musicCardShelfRenderer`) — the highlighted result
-     * 2. **Albums shelf** (`musicShelfRenderer` with title "Albums") — the dedicated section
+     * 2. **Albums shelf** (`musicShelfRenderer` with title "Albums") — the dedicated section,
+     *    or, signed out, album rows in the flat layout (one `itemSectionRenderer` per row)
      *
      * Each candidate is verified against the target album title (via Jaro-Winkler
      * similarity) and the target artist (via substring check in the subtitle).
@@ -261,7 +262,7 @@ class AlbumMatchExecutor @Inject constructor(
      * @param targetArtist  The artist name to verify against.
      * @return The browseId (e.g. "MPREb_...") of the matched album, or null.
      */
-    private fun extractAlbumBrowseId(
+    internal fun extractAlbumBrowseId( // internal for tests
         response: JsonObject,
         targetAlbum: String,
         targetArtist: String,
@@ -287,17 +288,19 @@ class AlbumMatchExecutor @Inject constructor(
             if (browseId != null) return browseId
         }
 
-        // Strategy 2: Check musicShelfRenderer with title "Albums"
+        // Strategy 2: the "Albums" shelf (signed in), or album rows in the flat layout
+        // signed-out searches return (one itemSectionRenderer per row, no titled shelves;
+        // live 2026-09-28). extractBrowseIdFromAlbumShelf only takes MPRE album links.
         for (section in sections) {
-            val shelf = section.jsonObject["musicShelfRenderer"]?.jsonObject
+            val sectionObj = section.jsonObject
+            val shelf = sectionObj["itemSectionRenderer"]?.jsonObject
+                ?: sectionObj["musicShelfRenderer"]?.jsonObject?.takeIf { shelf ->
+                    shelf.navigatePath("title", "runs")
+                        ?.jsonArray?.firstOrNull()
+                        ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
+                        .equals("Albums", ignoreCase = true)
+                }
                 ?: continue
-
-            val shelfTitle = shelf.navigatePath("title", "runs")
-                ?.jsonArray?.firstOrNull()
-                ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
-                ?: continue
-
-            if (!shelfTitle.equals("Albums", ignoreCase = true)) continue
 
             val browseId = extractBrowseIdFromAlbumShelf(shelf, targetAlbum, targetArtist)
             if (browseId != null) return browseId
