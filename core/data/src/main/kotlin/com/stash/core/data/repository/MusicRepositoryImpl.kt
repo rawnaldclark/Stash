@@ -606,14 +606,15 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun queueDownloadsForPlaylist(playlistId: Long): Int {
         val tracks = trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .first()
-        val candidates = tracks.filter { !it.isDownloaded }
+        // A match the user dismissed stays dismissed, and a track with a row
+        // already queued, failed or cancelled keeps that one row. That makes
+        // this safe to call after every sync (#474) without re-trying the same
+        // unmatchable songs, or piling duplicate rows into Failed downloads.
+        val candidates = tracks.filter { !it.isDownloaded && !it.matchDismissed }
         if (candidates.isEmpty()) return 0
 
         val entries = candidates.mapNotNull { entity ->
-            val existing = downloadQueueDao.getByTrackId(entity.id)
-            if (existing != null && existing.status in NON_TERMINAL_QUEUE_STATES) {
-                return@mapNotNull null
-            }
+            if (downloadQueueDao.hasRowToLeaveAlone(entity.id)) return@mapNotNull null
             com.stash.core.data.db.entity.DownloadQueueEntity(
                 trackId = entity.id,
                 syncId = null,
@@ -630,6 +631,30 @@ class MusicRepositoryImpl @Inject constructor(
             )
         }
         return entries.size
+    }
+
+    override suspend fun setPlaylistDownload(playlistId: Long, on: Boolean) {
+        playlistDao.setKeepOffline(playlistId, on)
+        if (on) {
+            queueDownloadsForPlaylist(playlistId)
+        } else if (!streamingPreference.current()) {
+            // Download mode: a synced playlist downloads through sync, so off
+            // has to turn that off too (what the Sync tab's switch does), or the
+            // switch would read off while sync kept downloading. No Home unpin.
+            playlistDao.setSyncEnabled(playlistId, false)
+        }
+        // Off never deletes: songs already downloaded stay (owner's call).
+    }
+
+    /** A playlist kept on the phone (#474) downloads what the user adds to it. Never fails the add. */
+    private suspend fun queueIfKeptOffline(playlistId: Long) {
+        try {
+            if (playlistDao.getById(playlistId)?.keepOffline == true) queueDownloadsForPlaylist(playlistId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("MusicRepository", "queueIfKeptOffline: playlist $playlistId failed", e)
+        }
     }
 
     override suspend fun removeDownloadsForPlaylist(playlistId: Long): Int {
@@ -704,6 +729,12 @@ class MusicRepositoryImpl @Inject constructor(
         )
 
     override suspend fun addTrackToPlaylist(trackId: Long, playlistId: Long) {
+        insertIntoPlaylist(trackId, playlistId)
+        queueIfKeptOffline(playlistId)
+    }
+
+    /** One add, without the keep-offline queue, so a batch queues once at the end. */
+    private suspend fun insertIntoPlaylist(trackId: Long, playlistId: Long) {
         // Issue #114: this previously inserted the cross-ref unconditionally
         // and crashed the app with SQLITE_CONSTRAINT_FOREIGNKEY when either
         // parent row was missing (track orphaned by cleanup, playlist deleted
@@ -761,13 +792,15 @@ class MusicRepositoryImpl @Inject constructor(
         // ponytail: no app-wide scope exists, so NonCancellable keeps the batch alive.
         withContext(NonCancellable) {
             trackIds.forEach { id ->
-                runCatching { addTrackToPlaylist(id, playlistId) }.onFailure { e ->
+                runCatching { insertIntoPlaylist(id, playlistId) }.onFailure { e ->
                     android.util.Log.w("MusicRepository", "addTracksToPlaylist: track $id failed", e)
                 }
             }
+            queueIfKeptOffline(playlistId)
         }
     }
 
+    // Queues through addTracksToPlaylist (a brand-new playlist is never kept offline, so it's a no-op today).
     override suspend fun createPlaylistWithTracks(name: String, trackIds: List<Long>): Long =
         withContext(NonCancellable) { createPlaylist(name).also { addTracksToPlaylist(trackIds, it) } }
 
@@ -1113,17 +1146,6 @@ class MusicRepositoryImpl @Inject constructor(
             "stash_tag_enrichment",
             "stash_track_info_enrichment",
             "discovery_download",
-        )
-
-        /**
-         * Queue statuses we treat as "still in flight" — if any of these
-         * already exists for a track, [queueDownload] / bulk variants
-         * short-circuit so rapid taps don't fan out into duplicate inserts.
-         */
-        private val NON_TERMINAL_QUEUE_STATES = setOf(
-            com.stash.core.model.DownloadStatus.PENDING,
-            com.stash.core.model.DownloadStatus.IN_PROGRESS,
-            com.stash.core.model.DownloadStatus.WAITING_FOR_LOSSLESS,
         )
     }
 }

@@ -107,6 +107,22 @@ interface DownloadQueueDao {
     @Query("SELECT * FROM download_queue WHERE track_id = :trackId LIMIT 1")
     suspend fun getByTrackId(trackId: Long): DownloadQueueEntity?
 
+    /**
+     * Whether [trackId] has a row a bulk "download this playlist" must leave
+     * alone: waiting or running, failed (its retries and the Failed downloads
+     * screen own it), or cancelled by the user. The rows [getUnqueuedTrackIds]
+     * already counts as queued, plus WAITING_FOR_LOSSLESS. Checks EVERY row:
+     * [getByTrackId]'s LIMIT 1 answers with the oldest, so one old FAILED row
+     * let a re-queue add a fresh row on every call (#474's per-sync sweep).
+     */
+    @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM download_queue WHERE track_id = :trackId
+              AND status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS', 'FAILED', 'SKIPPED')
+        )
+    """)
+    suspend fun hasRowToLeaveAlone(trackId: Long): Boolean
+
     /** Reactive count of tracks deferred because no lossless source could serve them. */
     @Query("SELECT COUNT(*) FROM download_queue WHERE status = 'WAITING_FOR_LOSSLESS'")
     fun waitingForLosslessCount(): Flow<Int>

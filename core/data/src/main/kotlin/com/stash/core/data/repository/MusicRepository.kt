@@ -235,6 +235,15 @@ interface MusicRepository {
     suspend fun queueDownloadsForPlaylist(playlistId: Long): Int
 
     /**
+     * The playlist page's Download switch (#474). On keeps [playlistId] on the
+     * phone in either mode: everything not yet downloaded is queued now, and
+     * every later sync (plus every add to it) queues what it gains. Off stops
+     * new downloads and deletes nothing; in Download mode it also turns the
+     * playlist's sync off, since a synced playlist downloads through sync.
+     */
+    suspend fun setPlaylistDownload(playlistId: Long, on: Boolean)
+
+    /**
      * Bulk removeDownload for every downloaded track in [playlistId].
      * Returns the number of tracks whose downloads were removed.
      */

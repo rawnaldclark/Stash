@@ -276,8 +276,11 @@ class DiffWorker @AssistedInject constructor(
                 // where nothing is switched on yet (defaultSyncEnabled). So mixes
                 // always link (Home shows them, Online streams them on tap), and
                 // in Online mode everything links. Offline mode keeps the skip for
-                // switched-off playlists.
+                // switched-off playlists, except one kept on the phone (#474): its
+                // Download switch needs what the playlist gained linked here, or the
+                // sweep below has nothing new to queue.
                 if (!localPlaylist.syncEnabled &&
+                    !localPlaylist.keepOffline &&
                     localPlaylist.type != PlaylistType.DAILY_MIX &&
                     !streamingMode
                 ) {
@@ -383,6 +386,22 @@ class DiffWorker @AssistedInject constructor(
             val cleaned = musicRepository.cleanOrphanedMixTracks()
             if (cleaned > 0) {
                 Log.i(TAG, "Cleaned $cleaned orphaned track(s) after diff")
+            }
+
+            // A playlist kept on the phone (#474) downloads what it gained this
+            // run, in either mode: new songs, and library songs newly linked to it
+            // (the existing-track path never queues). queueDownloadsForPlaylist
+            // leaves queued, failed and cancelled songs alone, so one pass per run
+            // is safe. Never fatal: the sync itself already worked.
+            runCatching {
+                val queued = playlistDao.getKeepOfflinePlaylistIds()
+                    .sumOf { musicRepository.queueDownloadsForPlaylist(it) }
+                if (queued > 0) {
+                    syncLog.info("Downloading $queued song${if (queued == 1) "" else "s"} for playlists kept on this phone")
+                }
+            }.onFailure { e ->
+                if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+                Log.w(TAG, "Keep-offline download sweep failed for sync $syncId", e)
             }
 
             Log.i(
