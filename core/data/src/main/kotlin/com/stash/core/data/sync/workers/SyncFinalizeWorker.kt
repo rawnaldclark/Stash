@@ -12,6 +12,7 @@ import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.model.SyncState
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 
 /**
  * Final worker in the sync chain. Updates the sync history record with
@@ -31,6 +32,9 @@ class SyncFinalizeWorker @AssistedInject constructor(
 
     companion object {
         private const val TAG = "SyncFinalizeWorker"
+
+        /** Snapshot rows older than this at a finished sync belong to a run that never finished. */
+        private const val ORPHAN_SNAPSHOT_AGE_MS = 24L * 60 * 60 * 1000
     }
 
     override suspend fun doWork(): Result {
@@ -65,6 +69,17 @@ class SyncFinalizeWorker @AssistedInject constructor(
 
             // Clean up snapshot tables for this sync run.
             remoteSnapshotDao.deleteAllSnapshotsBySyncId(syncId)
+            // And any run that never got here: a sync that failed, was stopped or was
+            // replaced keeps its snapshot rows (every playlist's tracks) forever
+            // otherwise. Only one sync chain runs at a time, so older rows are orphans.
+            // Never fails the sync, which already worked.
+            try {
+                remoteSnapshotDao.pruneOlderThan(System.currentTimeMillis() - ORPHAN_SNAPSHOT_AGE_MS)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Pruning old snapshots failed", e)
+            }
 
             // Cancel the ongoing progress notification.
             syncNotificationManager.cancelProgress()
