@@ -637,13 +637,19 @@ class MusicRepositoryImpl @Inject constructor(
         playlistDao.setKeepOffline(playlistId, on)
         if (on) {
             queueDownloadsForPlaylist(playlistId)
-        } else if (!streamingPreference.current()) {
-            // Download mode: a synced playlist downloads through sync, so off
-            // has to turn that off too (what the Sync tab's switch does), or the
-            // switch would read off while sync kept downloading. No Home unpin.
-            playlistDao.setSyncEnabled(playlistId, false)
+            return
         }
-        // Off never deletes: songs already downloaded stay (owner's call).
+        // Off stops what hasn't started: the songs still waiting go (a song
+        // running now finishes). Songs already downloaded stay (owner's call).
+        downloadQueueDao.cancelWaitingForPlaylist(playlistId)
+        if (!streamingPreference.current()) {
+            // Download mode: a synced playlist downloads through sync, so off
+            // has to turn that off too, exactly as the Sync tab's switch does:
+            // sync off, then drop sync-queued songs no synced playlist wants.
+            // No Home unpin.
+            playlistDao.setSyncEnabled(playlistId, false)
+            downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist()
+        }
     }
 
     /** A playlist kept on the phone (#474) downloads what the user adds to it. Never fails the add. */

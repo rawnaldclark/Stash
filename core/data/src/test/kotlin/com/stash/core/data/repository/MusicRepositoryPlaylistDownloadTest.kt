@@ -1,5 +1,6 @@
 package com.stash.core.data.repository
 
+import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SharedMixDao
 import com.stash.core.data.db.dao.TrackDao
@@ -28,6 +29,7 @@ class MusicRepositoryPlaylistDownloadTest {
     private val trackDao = mockk<TrackDao>(relaxed = true)
     private val playlistDao = mockk<PlaylistDao>(relaxed = true)
     private val sharedMixDao = mockk<SharedMixDao>(relaxed = true)
+    private val downloadQueueDao = mockk<DownloadQueueDao>(relaxed = true)
     private val streamingPreference = mockk<StreamingPreference>()
 
     init {
@@ -44,6 +46,15 @@ class MusicRepositoryPlaylistDownloadTest {
         coVerify { playlistDao.setKeepOffline(PLAIN, true) }
         coVerify(exactly = 1) { repo.queueDownloadsForPlaylist(PLAIN) }
         coVerify(exactly = 0) { playlistDao.setSyncEnabled(any(), any()) }
+        coVerify(exactly = 0) { downloadQueueDao.cancelWaitingForPlaylist(any()) }
+    }
+
+    @Test fun `off drops the playlist's songs still waiting, in either mode`() = runTest {
+        for (streamOnly in listOf(true, false)) {
+            coEvery { streamingPreference.current() } returns streamOnly
+            repo().setPlaylistDownload(KEPT, on = false)
+        }
+        coVerify(exactly = 2) { downloadQueueDao.cancelWaitingForPlaylist(KEPT) }
     }
 
     @Test fun `off clears the flag and deletes nothing`() = runTest {
@@ -62,12 +73,15 @@ class MusicRepositoryPlaylistDownloadTest {
         repo().setPlaylistDownload(KEPT, on = false)
         coVerify(exactly = 1) { playlistDao.setSyncEnabled(KEPT, false) }
         coVerify(exactly = 0) { playlistDao.setSyncEnabledAndPin(any(), any(), any()) }
+        // And, like the Sync tab's off, drops sync-queued songs no synced playlist wants.
+        coVerify(exactly = 1) { downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist() }
     }
 
     @Test fun `off in Stream-only mode leaves sync alone`() = runTest {
         coEvery { streamingPreference.current() } returns true
         repo().setPlaylistDownload(KEPT, on = false)
         coVerify(exactly = 0) { playlistDao.setSyncEnabled(any(), any()) }
+        coVerify(exactly = 0) { downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist() }
     }
 
     @Test fun `adding a song to a kept playlist queues it`() = runTest {
@@ -113,7 +127,7 @@ class MusicRepositoryPlaylistDownloadTest {
             trackDao = trackDao,
             playlistDao = playlistDao,
             syncHistoryDao = mockk(relaxed = true),
-            downloadQueueDao = mockk(relaxed = true),
+            downloadQueueDao = downloadQueueDao,
             discoveryQueueDao = mockk(relaxed = true),
             blocklistGuard = mockk(relaxed = true),
             trackMatcher = mockk(relaxed = true),

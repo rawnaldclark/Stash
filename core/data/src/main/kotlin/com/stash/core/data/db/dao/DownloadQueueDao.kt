@@ -584,6 +584,40 @@ interface DownloadQueueDao {
     )
     suspend fun cancelDownloadsWithNoEnabledPlaylist(): Int
 
+    /**
+     * The playlist page's Download switch turned off (#474): drop this playlist's
+     * downloads that haven't started. Discovery partition only (the switch's own
+     * rows); a row running or done is left alone. A song another playlist still
+     * keeps on the phone, or a followed mix still downloads, keeps its row.
+     *
+     * DELETE, not SKIPPED: a SKIPPED row counts as handled
+     * ([hasRowToLeaveAlone]), so it would stop a later On from queueing the song.
+     *
+     * @return Number of rows deleted.
+     */
+    @Query(
+        """
+        DELETE FROM download_queue
+        WHERE sync_id IS NULL
+          AND status IN ('PENDING', 'FAILED', 'WAITING_FOR_LOSSLESS')
+          AND track_id IN (
+              SELECT track_id FROM playlist_tracks
+              WHERE playlist_id = :playlistId AND removed_at IS NULL
+          )
+          AND track_id NOT IN (
+              SELECT pt.track_id FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.removed_at IS NULL
+                AND p.id != :playlistId
+                AND p.is_active = 1
+                -- Kept on the phone, or a followed mix with "Download this mix" on
+                -- (its switch is sync_enabled, and it downloads through these rows).
+                AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.source_id LIKE 'share:%'))
+          )
+        """
+    )
+    suspend fun cancelWaitingForPlaylist(playlistId: Long): Int
+
     // ── Cleanup ─────────────────────────────────────────────────────────
 
     /**
