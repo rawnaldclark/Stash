@@ -847,7 +847,7 @@ class MusicRepositoryImpl @Inject constructor(
     ): MusicRepository.CascadeRemovalSummary =
         removeAndMaybeDelete(trackId, fromPlaylistId, alsoBlacklist).also {
             // Every path detaches the track, so the Library card's count must follow.
-            // ponytail: a block also detaches it from other playlists; those keep a stale count until their next recount.
+            // A block also recounts every other playlist that held it (BlocklistGuard.block).
             val count = trackDao.getByPlaylist(fromPlaylistId, includeStreamable = true).first().size
             playlistDao.updateTrackCount(fromPlaylistId, count)
         }

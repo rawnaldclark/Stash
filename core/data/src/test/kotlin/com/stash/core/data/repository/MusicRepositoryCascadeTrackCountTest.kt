@@ -2,10 +2,12 @@ package com.stash.core.data.repository
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import io.mockk.mockk
@@ -57,6 +59,26 @@ class MusicRepositoryCascadeTrackCountTest {
         assertEquals(1, db.playlistDao().getById(playlistId)?.trackCount)
     }
 
+    @Test fun `blocking a song also updates every other playlist that held it`() = runTest {
+        val gym = db.playlistDao().insert(playlist("Gym", PlaylistType.CUSTOM, "gym").copy(trackCount = 2))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = gym, trackId = 1L, position = 0))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = gym, trackId = 2L, position = 1))
+        val guard = BlocklistGuard(
+            database = db,
+            blocklistDao = db.trackBlocklistDao(),
+            trackDao = db.trackDao(),
+            playlistDao = db.playlistDao(),
+            downloadQueueDao = db.downloadQueueDao(),
+            fileDeleter = mockk(relaxed = true),
+            matcher = TrackMatcher(),
+        )
+
+        repo(guard).removeTrackFromPlaylistAndMaybeDelete(2L, playlistId, alsoBlacklist = true)
+
+        assertEquals(1, db.playlistDao().getById(playlistId)?.trackCount)
+        assertEquals(1, db.playlistDao().getById(gym)?.trackCount)
+    }
+
     private fun track(id: Long) = TrackEntity(
         id = id, title = "T$id", artist = "A$id", source = MusicSource.SPOTIFY,
         canonicalTitle = "t$id", canonicalArtist = "a$id",
@@ -66,14 +88,14 @@ class MusicRepositoryCascadeTrackCountTest {
         name = name, source = MusicSource.BOTH, sourceId = sourceId, type = type,
     )
 
-    private fun repo() = MusicRepositoryImpl(
+    private fun repo(guard: BlocklistGuard = mockk(relaxed = true)) = MusicRepositoryImpl(
         context = mockk(relaxed = true),
         trackDao = db.trackDao(),
         playlistDao = db.playlistDao(),
         syncHistoryDao = mockk(relaxed = true),
         downloadQueueDao = mockk(relaxed = true),
         discoveryQueueDao = mockk(relaxed = true),
-        blocklistGuard = mockk(relaxed = true),
+        blocklistGuard = guard,
         trackMatcher = mockk(relaxed = true),
         stashMixRecipeDao = mockk(relaxed = true),
         downloadNetworkPreference = mockk(relaxed = true),

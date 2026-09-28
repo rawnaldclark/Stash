@@ -542,6 +542,10 @@ interface PlaylistDao {
     @Query("DELETE FROM playlist_tracks WHERE track_id = :trackId")
     suspend fun deleteAllCrossRefsForTrack(trackId: Long)
 
+    /** Every playlist holding [trackId], so a block can recount their song counts. */
+    @Query("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = :trackId")
+    suspend fun playlistIdsForTrack(trackId: Long): List<Long>
+
     /**
      * One-time cleanup: hard-delete all soft-deleted playlist_tracks entries.
      * These accumulate from daily mix rotations and serve no purpose after
