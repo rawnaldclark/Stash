@@ -103,6 +103,24 @@ class SongRowSubtitleParserTest {
         assertEquals("", parseTrackSummaryFromListItem(row)!!.artist)
     }
 
+    @Test fun `a first group that only links an album is never the artist`() {
+        // Hand-built (no live row has this today): "Song" • <album>@MPREb_ • "3:00".
+        val row = Json.parseToJsonElement(
+            """
+            {"playlistItemData":{"videoId":"handBuilt01"},"flexColumns":[
+              {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Someday"}]}}},
+              {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[
+                {"text":"Song"},{"text":" • "},
+                {"text":"Is This It","navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_handBuilt01"}}},
+                {"text":" • "},{"text":"3:00"}]}}}]}
+            """,
+        ).jsonObject
+        val t = parseTrackSummaryFromListItem(row, fallbackArtist = "The Strokes")!!
+        assertEquals("The Strokes", t.artist)
+        assertEquals("Is This It", t.album)
+        assertEquals(180.0, t.durationSeconds, 0.0)
+    }
+
     @Test fun `fixed-column row still reads its length from fixedColumns`() {
         val shelf = Json.parseToJsonElement(fixture("search_artist.json")).jsonObject
             .navigatePath("contents", "tabbedSearchResultsRenderer", "tabs")!!.jsonArray[0].jsonObject

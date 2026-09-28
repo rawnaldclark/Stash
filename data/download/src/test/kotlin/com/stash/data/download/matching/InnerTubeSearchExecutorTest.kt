@@ -116,6 +116,29 @@ class InnerTubeSearchExecutorTest {
     }
 
     @Test
+    fun `signed-out flat layout yields its Song and Video rows in order, skipping the card and albums`() = runTest {
+        // Live signed-out "The Strokes Someday" search (WEB_REMIX, 2026-09-28): a
+        // musicCardShelfRenderer, then one itemSectionRenderer per row and no
+        // musicShelfRenderer at all. Trimmed to the card, 3 Songs, an Album and a Video.
+        val results = executorFor("innertube_search_signed_out_flat.json")
+            .search("The Strokes Someday", maxResults = 10)
+
+        assertEquals(
+            listOf("eArVJFjd6S0", "6FnbPTaoahM", "Bn-lcvrMOlc", "5kRQm3k3CU8"),
+            results.map { it.id },
+        )
+        val song = results.first()
+        assertEquals("Someday", song.title)
+        assertEquals("The Strokes", song.uploader)
+        assertEquals("Song rows get the Topic-equivalent channel", "The Strokes - Topic", song.channel)
+        assertEquals(MusicVideoType.ATV, song.musicVideoType)
+        val video = results.last()
+        assertEquals("ToBe 카인드", video.uploader)
+        assertEquals("ToBe 카인드", video.channel)
+        assertEquals(MusicVideoType.UGC, video.musicVideoType)
+    }
+
+    @Test
     fun `verifyVideo returns OMV musicVideoType for Smooth Criminal MV videoId`() = runTest {
         // Player-endpoint fixture for the Smooth Criminal OMV (videoId h_D3VFfhvs4).
         // `videoDetails.musicVideoType == "MUSIC_VIDEO_TYPE_OMV"` per the real

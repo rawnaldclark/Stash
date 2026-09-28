@@ -25,7 +25,8 @@ import javax.inject.Singleton
  * The response structure for YouTube Music search is:
  * ```
  * contents.tabbedSearchResultsRenderer.tabs[0].tabRenderer.content
- *   .sectionListRenderer.contents[].musicShelfRenderer.contents[]
+ *   .sectionListRenderer.contents[].musicShelfRenderer.contents[]      (signed in)
+ *                                  .itemSectionRenderer.contents[]      (signed out)
  *     .musicResponsiveListItemRenderer
  * ```
  */
@@ -122,8 +123,9 @@ class InnerTubeSearchExecutor @Inject constructor(
      * Parses the top-level InnerTube search response into a flat list of results.
      *
      * Navigates through `tabbedSearchResultsRenderer` -> tabs -> sections ->
-     * `musicShelfRenderer` -> contents, extracting each
-     * `musicResponsiveListItemRenderer` item.
+     * `musicShelfRenderer` or `itemSectionRenderer` -> contents, extracting each
+     * `musicResponsiveListItemRenderer` item. Rows without a videoId (albums,
+     * artists, playlists, profiles) are dropped by [parseRenderer].
      */
     private fun parseSearchResults(response: JsonObject, maxResults: Int): List<YtDlpSearchResult> {
         val results = mutableListOf<YtDlpSearchResult>()
@@ -143,7 +145,12 @@ class InnerTubeSearchExecutor @Inject constructor(
             ?.jsonArray ?: return emptyList()
 
         for (section in sections) {
-            val shelf = section.jsonObject["musicShelfRenderer"]?.jsonObject ?: continue
+            // Signed-in: titled musicShelfRenderer shelves. Signed-out (live,
+            // 2026-09-28): one itemSectionRenderer per row, in rank order, and no
+            // shelf at all. The musicCardShelfRenderer top card is skipped either way.
+            val sectionObj = section.jsonObject
+            val shelf = (sectionObj["musicShelfRenderer"] ?: sectionObj["itemSectionRenderer"])
+                ?.jsonObject ?: continue
             val contents = shelf["contents"]?.jsonArray ?: continue
 
             for (item in contents) {

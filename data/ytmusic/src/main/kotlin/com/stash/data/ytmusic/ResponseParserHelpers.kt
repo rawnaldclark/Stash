@@ -13,8 +13,9 @@ import kotlinx.serialization.json.JsonObject
  * semantics — extracting a single helper avoids copy-pasting ~40 lines of
  * column-walking code into two places.
  *
- * Kept `internal` so it's a module-private contract: parser files in
- * `data.ytmusic` may use it; no other module should need it.
+ * Mostly `internal` (a module-private contract for the `data.ytmusic` parsers).
+ * The one exception is [parseListItemSubtitle], public so `:data:download`'s
+ * YouTube matcher reads a row's artist and length the same way search does.
  */
 
 /**
