@@ -69,6 +69,8 @@ fun StashNavHost(
     // The scaffold's canonical bottom-nav tab switch, for screens that trigger
     // one themselves (Home's Liked card → Library ▸ Liked).
     onNavigateToTab: (TopLevelDestination) -> Unit = {},
+    // Open Stash on (#428). Fixed for the activity's life; MainActivity saves it across recreation.
+    startDestination: Any = HomeRoute,
 ) {
     // Stash Community (spec 2026-09-26 §3): LocalPostToCommunity and the posting sheets sit over every screen.
     val posting = rememberCommunityPosting()
@@ -93,7 +95,7 @@ fun StashNavHost(
         },
         viewModel = host,
     ) {
-        StashNavGraph(navController, modifier, onSelectionModeChanged, onNavigateToTab, posting)
+        StashNavGraph(navController, modifier, onSelectionModeChanged, onNavigateToTab, posting, startDestination)
     }
 }
 
@@ -104,10 +106,11 @@ private fun StashNavGraph(
     onSelectionModeChanged: (Boolean) -> Unit,
     onNavigateToTab: (TopLevelDestination) -> Unit,
     posting: CommunityPosting,
+    startDestination: Any,
 ) {
     NavHost(
         navController = navController,
-        startDestination = HomeRoute,
+        startDestination = startDestination,
         modifier = modifier,
     ) {
         composable<HomeRoute> {

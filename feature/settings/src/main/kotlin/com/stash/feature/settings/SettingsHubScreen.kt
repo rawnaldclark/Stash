@@ -111,7 +111,7 @@ fun SettingsHubScreen(
             SettingsSearchItem(
                 title = "Appearance",
                 subtitle = "Theme, AMOLED, Home layout",
-                keywords = listOf("theme", "dark mode", "amoled", "appearance", "home layout", "community", "open on", "start", "launch", "tab"),
+                keywords = listOf("theme", "dark mode", "amoled", "appearance", "home layout", "community", "open stash on", "start tab", "launch"),
                 icon = Icons.Rounded.Palette,
                 onSelect = onOpenAppearance,
             ),

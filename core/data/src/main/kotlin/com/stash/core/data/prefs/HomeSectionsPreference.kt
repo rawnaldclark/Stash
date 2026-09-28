@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -88,7 +90,6 @@ class HomeSectionsPreference @Inject constructor(
     private val hiddenKey = stringPreferencesKey("home_sections_hidden")
     private val showLikedKey = booleanPreferencesKey("show_liked_on_home")
     private val communityOnKey = booleanPreferencesKey("community_on")
-    private val startTabKey = stringPreferencesKey("start_tab")
 
     /**
      * Show one Liked Songs card — the STASH_LIKED + LIKED_SONGS playlists
@@ -111,15 +112,24 @@ class HomeSectionsPreference @Inject constructor(
         prefs[communityOnKey] ?: false
     }.distinctUntilChanged().catch { emit(false) }
 
+    // Open Stash on (#428) lives in SharedPreferences, not the DataStore: launch reads it
+    // synchronously before the first frame. Waiting on a DataStore read there held the
+    // splash ~0.4 s longer on every cold start (Pixel 5, debug).
+    private val launchPrefs = context.getSharedPreferences(START_TAB_PREFS, Context.MODE_PRIVATE)
+    private val startTabState = MutableStateFlow(
+        StartTab.entries.firstOrNull { it.name == launchPrefs.getString(START_TAB_KEY, null) } ?: StartTab.HOME,
+    )
+
     /** Settings > Appearance > Open Stash on (#428). */
-    val startTab: Flow<StartTab> = context.homeSectionsDataStore.data.map { prefs ->
-        StartTab.entries.firstOrNull { it.name == prefs[startTabKey] } ?: StartTab.HOME
-    }.distinctUntilChanged().catch { emit(StartTab.HOME) }
+    val startTab: Flow<StartTab> = startTabState.asStateFlow()
+
+    /** The same, read synchronously: the tab this launch's NavHost starts on. */
+    val startTabNow: StartTab get() = startTabState.value
 
     /**
      * What Home actually renders: [order] minus [hidden], and minus Community while its switch is off.
      *
-     * All the flows here are deduped (the store re-emits on every unrelated
+     * All five flows here are deduped (the store re-emits on every unrelated
      * write) and catch to the same default the `map` already uses: they feed
      * `HomeViewModel`'s and `SettingsViewModel`'s `combine` directly, and a
      * DataStore IOException that terminated the chain would leave those screens
@@ -169,9 +179,15 @@ class HomeSectionsPreference @Inject constructor(
     }
 
     suspend fun setStartTab(tab: StartTab) {
-        context.homeSectionsDataStore.edit { prefs -> prefs[startTabKey] = tab.name }
+        launchPrefs.edit().putString(START_TAB_KEY, tab.name).apply()
+        startTabState.value = tab
     }
 
     private fun String?.toKeys(): List<String> =
         this?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+
+    internal companion object {
+        const val START_TAB_PREFS = "start_tab"
+        const val START_TAB_KEY = "start_tab"
+    }
 }

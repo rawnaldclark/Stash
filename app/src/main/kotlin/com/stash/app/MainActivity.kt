@@ -13,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.Lifecycle
@@ -68,14 +69,6 @@ class MainActivity : ComponentActivity() {
      */
     private val pendingDeepLink = mutableStateOf<String?>(null)
 
-    /**
-     * Open Stash on (#428): armed at the end of a plain cold-launch [onCreate] (no restore,
-     * no Recents relaunch, no deep link, no share), spent once the pref's first value
-     * arrives. [onNewIntent] disarms it. Composition starts only after [onCreate] returns,
-     * and the pref loads later still, so arming at the end is in time.
-     */
-    private val startTabArmed = mutableStateOf(false)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -85,7 +78,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by themeModeFlow.collectAsState(initial = ThemeMode.SYSTEM)
             val amoledDark by themePreference.amoledDark.collectAsState(initial = false)
-            val startTab by homeSectionsPreference.startTab.collectAsState(initial = null)
             val systemDark = isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
                 ThemeMode.LIGHT -> false
@@ -105,14 +97,15 @@ class MainActivity : ComponentActivity() {
                     listenTogether.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 }
             }
+            // Open Stash on (#428): the tab the NavHost starts on. Saved across recreation so a
+            // restored back stack always sits on the graph it was saved with.
+            val startTab = rememberSaveable { homeSectionsPreference.startTabNow }
             StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
                 CompositionLocalProvider(LocalListenTogetherRole provides role) {
                     StashScaffold(
                         pendingDeepLink = pendingDeepLink.value,
                         onDeepLinkConsumed = { pendingDeepLink.value = null },
                         startTab = startTab,
-                        startTabArmed = startTabArmed.value,
-                        onStartTabSettled = { startTabArmed.value = false },
                     )
                 }
             }
@@ -125,16 +118,14 @@ class MainActivity : ComponentActivity() {
         val relaunch = savedInstanceState != null ||
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
         if (!relaunch) {
-            val shared = handleShareIntent(intent)
+            handleShareIntent(intent)
             handleDeepLinkIntent(intent)
-            startTabArmed.value = !shared && pendingDeepLink.value == null
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        startTabArmed.value = false
         handleShareIntent(intent)
         handleDeepLinkIntent(intent)
     }
@@ -180,10 +171,10 @@ class MainActivity : ComponentActivity() {
     /**
      * Extracts audio URIs from a share-sheet intent and hands them to the
      * [LocalImportCoordinator]. Silently ignores non-share intents so the
-     * normal launcher flow is untouched. True when it started an import.
+     * normal launcher flow is untouched.
      */
-    private fun handleShareIntent(intent: Intent?): Boolean {
-        if (intent == null) return false
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null) return
         val uris: List<Uri> = when (intent.action) {
             Intent.ACTION_SEND -> {
                 IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
@@ -201,6 +192,5 @@ class MainActivity : ComponentActivity() {
         if (uris.isNotEmpty()) {
             localImportCoordinator.start(uris)
         }
-        return uris.isNotEmpty()
     }
 }

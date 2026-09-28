@@ -50,9 +50,7 @@ import com.stash.feature.nowplaying.MiniPlayer
 fun StashScaffold(
     pendingDeepLink: String? = null,
     onDeepLinkConsumed: () -> Unit = {},
-    startTab: StartTab? = null,
-    startTabArmed: Boolean = false,
-    onStartTabSettled: () -> Unit = {},
+    startTab: StartTab = StartTab.HOME,
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -82,9 +80,9 @@ fun StashScaffold(
     fun navigateToTab(dest: TopLevelDestination) {
         val destRoute = dest.route::class.qualifiedName
         // The "current tab" is the top-most top-level route in
-        // the live back stack (Home, the start dest, is always at
-        // the bottom; the active tab sits above it, with detail
-        // screens above that).
+        // the live back stack (the start tab, Home unless Open Stash
+        // on says otherwise, is always at the bottom; the active tab
+        // sits above it, with detail screens above that).
         val topLevelRoutes =
             TopLevelDestination.entries.map { it.route::class.qualifiedName }.toSet()
         val currentTabRoute = navController.currentBackStack.value
@@ -161,14 +159,6 @@ fun StashScaffold(
         }
     }
 
-    // Open Stash on (#428). Home stays the NavHost's start destination; once the pref
-    // loads, an armed launch switches tabs the canonical way, so Back returns to Home.
-    // Keyed on the pref only: the first loaded value settles it, whatever it opened.
-    LaunchedEffect(startTab) {
-        startTabToOpen(startTabArmed, pendingDeepLink, startTab)?.let(::navigateToTab)
-        if (startTab != null) onStartTabSettled()
-    }
-
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         // Use Scaffold's default safe-drawing insets so screens automatically
@@ -240,25 +230,14 @@ fun StashScaffold(
                 .consumeWindowInsets(innerPadding),
             onSelectionModeChanged = { selectionActive = it },
             onNavigateToTab = ::navigateToTab,
+            startDestination = when (startTab) {
+                StartTab.HOME -> HomeRoute
+                StartTab.LIBRARY -> LibraryRoute
+                StartTab.SEARCH -> SearchRoute
+            },
         )
     }
 }
-
-/**
- * Open Stash on (#428): the tab a launch switches to once the pref has loaded, or null to stay
- * on Home. [armed] only on a plain cold launch (see MainActivity); a [pendingDeepLink] always
- * wins; a null [startTab] is "not loaded yet", and the caller stays armed until it loads.
- */
-internal fun startTabToOpen(armed: Boolean, pendingDeepLink: String?, startTab: StartTab?): TopLevelDestination? =
-    if (!armed || pendingDeepLink != null) {
-        null
-    } else {
-        when (startTab) {
-            null, StartTab.HOME -> null
-            StartTab.LIBRARY -> TopLevelDestination.LIBRARY
-            StartTab.SEARCH -> TopLevelDestination.SEARCH
-        }
-    }
 
 @Composable
 private fun StashBottomBar(
