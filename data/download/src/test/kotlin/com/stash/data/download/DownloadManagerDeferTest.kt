@@ -23,6 +23,7 @@ import com.stash.data.download.matching.YtLibraryCanonicalizer
 import com.stash.data.download.prefs.QualityPreferencesManager
 import com.stash.data.download.shared.TrackFinalizer
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
@@ -39,8 +40,9 @@ import org.junit.Test
  * When the lossless registry returns null AND
  * [LosslessSourcePreferences.youtubeFallbackEnabledNow] is false, the
  * pipeline must short-circuit with [TrackDownloadResult.Deferred] rather
- * than falling through to yt-dlp. Stash-Mix tracks (force-lossless)
- * always bypass deferral so the curated rotating playlist never empties.
+ * than falling through to yt-dlp, for every track, Stash Mix included
+ * (#521). A Stash Mix track's one exemption is relay pacing: with the
+ * fallback on, it takes the lossy copy now instead of waiting for FLAC.
  *
  * Kept in its own file (not co-located with future DownloadManager tests)
  * to keep the test-fixture blast radius small for this single behavior
@@ -182,7 +184,7 @@ class DownloadManagerDeferTest {
         // Fallback off means NO opus/m4a from the YouTube path — period. A
         // genuinely YouTube-sourced track (source = YOUTUBE) used to fall
         // through to yt-dlp here via the youtubeOptIn carve-out; that carve-out
-        // is removed so it defers like every other non-Stash-Mix track,
+        // is removed so it defers like every other track,
         // matching SearchDownloadCoordinator's unconditional gate.
         coEvery { losslessPrefs.enabledNow() } returns true
         coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
@@ -201,21 +203,40 @@ class DownloadManagerDeferTest {
     }
 
     @Test
-    fun `registry-null + fallback-off + Stash Mix track does NOT defer`() = runTest {
-        // Stash-Mix tracks force lossless but should NOT defer when registry
-        // returns null — they fall through to yt-dlp so the curated mix never
-        // empties because of a transient source outage.
-        coEvery { losslessPrefs.enabledNow() } returns false  // global toggle off, but force-lossless still kicks in
+    fun `registry-null + fallback-off + Stash Mix track defers like any track`() = runTest {
+        // #521: "Lossy fallback" off means FLAC only, mix included. A Stash Mix
+        // track used to skip this gate and download lossy anyway. The search
+        // stubs keep a regression failing on the assertion, not inside yt-dlp.
+        coEvery { losslessPrefs.enabledNow() } returns true
         coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
         coEvery { losslessRegistry.resolve(any()) } returns null
-        coEvery { playlistDao.isTrackInStashMix(any()) } returns true  // forceLossless = true
+        coEvery { playlistDao.isTrackInStashMix(any()) } returns true
         coEvery { albumMatchExecutor.findTrackInAlbum(any(), any(), any(), any()) } returns null
         coEvery { searchExecutor.search(any(), any()) } returns emptyList()
         coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns emptyList()
 
         val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
 
-        assertFalse("Stash-Mix track must not defer, got $result", result is TrackDownloadResult.Deferred)
+        assertTrue("a Stash Mix track must defer when fallback off, got $result", result is TrackDownloadResult.Deferred)
+    }
+
+    @Test
+    fun `Lossless off + Stash Mix track makes no lossless attempt and goes lossy`() = runTest {
+        // #521: Lossless off, yet mix songs arrived as FLAC. The switch governs
+        // the mix too: no registry call, no mix lookup, straight to the lossy
+        // rungs (JioSaavn, then YouTube, whose empty search ends in Unmatched).
+        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessRegistry.resolve(any()) } returns null
+        coEvery { playlistDao.isTrackInStashMix(any()) } returns true
+        coEvery { albumMatchExecutor.findTrackInAlbum(any(), any(), any(), any()) } returns null
+        coEvery { searchExecutor.search(any(), any()) } returns emptyList()
+        coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns emptyList()
+
+        val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
+
+        coVerify(exactly = 0) { losslessRegistry.resolve(any()) }
+        coVerify(exactly = 0) { playlistDao.isTrackInStashMix(any()) }
+        assertTrue("expected the YouTube rung's Unmatched, got $result", result is TrackDownloadResult.Unmatched)
     }
 
     /** What the relay client does on a "paced" answer: note it on the caller's label, return no URL. */
