@@ -81,7 +81,7 @@ internal fun LosslessRoutingStatus(
         Text(
             // Never enumerate sources here: the rows above are the authority, and a
             // copy that names paths ends up crediting a user with ones they don't have.
-            text = "Lossless comes from the sources above. Misses try JioSaavn AAC 320 before " +
+            text = "Lossless comes from the sources above. Misses try JioSaavn before " +
                 "falling back to YouTube, shown as \"via YT\" while it plays.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

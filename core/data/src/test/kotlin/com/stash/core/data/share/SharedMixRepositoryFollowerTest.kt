@@ -4,7 +4,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
+import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.data.mapper.toEntity
 import com.stash.core.data.repository.MusicRepository
@@ -15,7 +17,11 @@ import com.stash.core.model.share.SharedTrack
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -96,6 +102,51 @@ class SharedMixRepositoryFollowerTest {
         repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 1L)
         coVerify(exactly = 1) { music.queueDownloadsForPlaylist(id, false) } // on enable: a tap
         coVerify(exactly = 1) { music.queueDownloadsForPlaylist(id, true) } // after the update: background
+    }
+
+    @Test fun `download off cancels the waiting songs, keeps downloaded ones, and spares a kept playlist's`() = runBlocking {
+        val id = repo.follow(doc(1, "Waiting", "Downloaded", "Also kept"))
+        val ids = db.playlistDao().getTracksForPlaylist(id).associate { it.title to it.id }
+        repo.setDownload(id, true)
+        // What the on queued (music is a mock): discovery rows, as queueDownloadsForPlaylist writes them.
+        for (t in listOf("Waiting", "Also kept")) db.downloadQueueDao().insert(DownloadQueueEntity(trackId = ids[t]!!, syncId = null))
+        db.openHelper.writableDatabase.execSQL("UPDATE tracks SET is_downloaded = 1, file_path = '/x.flac' WHERE id = ${ids["Downloaded"]}")
+        val kept = db.playlistDao().insert(
+            PlaylistEntity(name = "Mine", source = MusicSource.BOTH, sourceId = "custom_k", type = PlaylistType.CUSTOM, keepOffline = true),
+        )
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = kept, trackId = ids["Also kept"]!!, position = 0))
+
+        repo.setDownload(id, false)
+
+        assertThat(db.playlistDao().getById(id)!!.syncEnabled).isFalse()
+        assertThat(db.downloadQueueDao().getByTrackId(ids["Waiting"]!!)).isNull()
+        assertThat(db.downloadQueueDao().getByTrackId(ids["Also kept"]!!)).isNotNull() // the kept playlist still wants it
+        val downloaded = db.trackDao().getById(ids["Downloaded"]!!)!!
+        assertThat(downloaded.isDownloaded).isTrue()
+        assertThat(downloaded.filePath).isEqualTo("/x.flac")
+        coVerify(exactly = 0) { music.removeDownload(any()) }
+        coVerify(exactly = 0) { music.removeDownloadsForPlaylist(any()) }
+    }
+
+    @Test fun `an off right after an on still cancels what the on queues`() = runBlocking {
+        val id = repo.follow(doc(1, "One"))
+        val track = db.playlistDao().getTracksForPlaylist(id).single().id
+        val queueing = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        coEvery { music.queueDownloadsForPlaylist(id, false) } coAnswers {
+            queueing.complete(Unit)
+            release.await() // still checking each song when the off lands
+            db.downloadQueueDao().insert(DownloadQueueEntity(trackId = track, syncId = null))
+            1
+        }
+        val on = launch { repo.setDownload(id, true) }
+        queueing.await()
+        val off = launch { repo.setDownload(id, false) }
+        withTimeoutOrNull(500) { off.join() } // an off that didn't wait would be done here, before the on's row exists
+        release.complete(Unit)
+        joinAll(on, off)
+        assertThat(db.downloadQueueDao().getByTrackId(track)).isNull()
+        assertThat(db.playlistDao().getById(id)!!.syncEnabled).isFalse()
     }
 
     @Test fun `only 410 converts to an ordinary playlist, repeated 404s never do`() = runBlocking {

@@ -111,8 +111,8 @@ fun SettingsAudioQualityScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "JioSaavn fallback uses AAC 320 kbps when available. " +
-                            "This picker controls the final YouTube fallback.",
+                        text = "Sets YouTube downloads at the rates below, and JioSaavn at " +
+                            "96 kbps on Low and Normal, 160 on High, 320 on Best and Max.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -122,13 +122,14 @@ fun SettingsAudioQualityScreen(
                         onSelected = viewModel::onQualityChanged,
                     )
                     // Save Data lives here too: with lossless off it means "the lowest
-                    // YouTube audio quality", and the toggle must not vanish with the
-                    // lossless card — that is exactly the user it is for.
+                    // JioSaavn and YouTube audio quality", and the toggle must not vanish
+                    // with the lossless card — that is exactly the user it is for.
                     Spacer(modifier = Modifier.height(8.dp))
                     SettingsToggleRow(
                         title = "Save Data",
                         subtitle = "Streams YouTube at its lowest audio quality — about " +
-                            "2 MB per track instead of 5. Downloads are unaffected.",
+                            "2 MB per track instead of 5 — and JioSaavn at 96 kbps instead " +
+                            "of 320. Downloads are unaffected.",
                         checked = uiState.streamingSaveData,
                         onCheckedChange = viewModel::onStreamingSaveDataChanged,
                         titleTrailing = { BetaPill() },
@@ -360,11 +361,11 @@ fun SettingsAudioQualityScreen(
                                     title = "Save Data",
                                     // Lossless stays lossless: Save Data is the LOWEST lossless
                                     // tier, not a drop to lossy. Less than FLAC is the lossless
-                                    // toggle's job, and then this same switch trims YouTube.
+                                    // toggle's job, and then this same switch trims JioSaavn and YouTube.
                                     subtitle = "Streams CD quality instead of Hi-Res or Max on every " +
                                         "network — about 28 MB per track instead of 70 or 140. Tracks " +
-                                        "that fall to YouTube use its lowest audio quality. Downloads " +
-                                        "are unaffected.",
+                                        "that fall to JioSaavn or YouTube use their lowest audio quality. " +
+                                        "Downloads are unaffected.",
                                     checked = uiState.streamingSaveData,
                                     onCheckedChange = viewModel::onStreamingSaveDataChanged,
                                     titleTrailing = { BetaPill() },
@@ -435,8 +436,8 @@ fun SettingsAudioQualityScreen(
                                 if (uiState.youtubeFallbackEnabled) {
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "JioSaavn uses fixed AAC 320 kbps. " +
-                                            "The quality picker below applies to YouTube only.",
+                                        text = "Sets YouTube downloads at the rates below, and JioSaavn at " +
+                                            "96 kbps on Low and Normal, 160 on High, 320 on Best and Max.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )

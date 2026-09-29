@@ -27,6 +27,8 @@ import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class FollowCheck { UpToDate, Updated, Removed, Unreachable }
 
@@ -213,11 +215,27 @@ class SharedMixRepository @Inject constructor(
         trackDao.deleteUnclaimedTracks(memberIds)
     }
 
-    /** "Download this mix" is the playlist's sync_enabled (spec §6); enabling also starts downloading now. */
+    /**
+     * "Download this mix" is the playlist's sync_enabled (spec §6). On also starts downloading now.
+     * Off cancels the songs still waiting, exactly as a playlist's Download button does
+     * ([com.stash.core.data.db.dao.DownloadQueueDao.cancelWaitingForPlaylist]): a song downloading
+     * now finishes, downloaded songs stay, and a song another kept playlist or followed mix still
+     * wants keeps its row. The flag lands at once; the queue work runs one change at a time, so an
+     * off right after an on waits for the on's songs to be queued, then cancels them.
+     *
+     * ponytail: a follow update's background queueing ([applyUpdate]) doesn't take [downloadLock],
+     * so an off landing mid-update can let that update's new songs through. Take the lock there too,
+     * re-reading sync_enabled inside it, if that ever shows up.
+     */
     suspend fun setDownload(playlistId: Long, on: Boolean) {
         playlistDao.setSyncEnabled(playlistId, on)
-        if (on) musicRepository.queueDownloadsForPlaylist(playlistId)
+        downloadLock.withLock {
+            if (on) musicRepository.queueDownloadsForPlaylist(playlistId)
+            else database.downloadQueueDao().cancelWaitingForPlaylist(playlistId)
+        }
     }
+
+    private val downloadLock = Mutex()
 
     suspend fun checkForUpdate(row: SharedMixEntity, now: Long): FollowCheck {
         return when (val v = api.version(row.shareId)) {

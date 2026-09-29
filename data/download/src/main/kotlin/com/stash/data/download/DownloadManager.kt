@@ -14,6 +14,7 @@ import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
 import com.stash.data.download.lyrics.LyricsFetchTrigger
 import com.stash.data.download.jiosaavn.JioSaavnResolver
+import com.stash.data.download.jiosaavn.toJioSaavnKbps
 import com.stash.data.download.shared.TrackFinalizer
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.data.download.lossless.LosslessSourceHealthGate
@@ -162,7 +163,14 @@ class DownloadManager @Inject constructor(
          * (kennyy, squid, + headroom) so it can't spin.
          */
         internal const val MAX_LOSSLESS_FAILOVER_ATTEMPTS = 3
-        internal const val MIN_JIOSAAVN_BITRATE_KBPS = 256
+
+        /**
+         * The least a real JioSaavn file at [expectedKbps] measures: a fifth under
+         * its nominal rate (96 → 77, 160 → 128, 320 → 256); real files measure just
+         * over it. Rejects a lower variant or an error page. A 96 kbps preview
+         * passes this for a 96 request, so the length check is what rejects it.
+         */
+        internal fun minJioSaavnBitrateKbps(expectedKbps: Int): Int = expectedKbps - expectedKbps / 5
         private const val JIOSAAVN_DURATION_TOLERANCE_MS = 8_000L
         private const val JIOSAAVN_DURATION_TOLERANCE_FRACTION = 0.03
     }
@@ -198,11 +206,11 @@ class DownloadManager @Inject constructor(
     private suspend fun executeDownload(track: Track, preResolvedUrl: String?): TrackDownloadResult {
         emitProgress(track.id, 0f, DownloadStatus.MATCHING)
 
-        // Step 0: Lossless source attempt. Attempted whenever lossless
-        // is enabled (or the track belongs to a Stash Mix), regardless
-        // of whether the caller supplied a preResolvedUrl. Stash Mix
-        // tracks are a small curated surface where lossless is worth
-        // eating bandwidth even when the user hasn't opted in globally.
+        // Step 0: Lossless source attempt. Made only when the Lossless
+        // switch is on, for every track, regardless of whether the caller
+        // supplied a preResolvedUrl. Stash Mix tracks get no override: they
+        // used to try FLAC even with the switch off, which handed FLAC files
+        // to a user on Lossless off + Low quality (#521).
         //
         // Historical note: this block used to be wrapped in
         // `if (preResolvedUrl == null)`, which meant YT-Music synced
@@ -216,30 +224,30 @@ class DownloadManager @Inject constructor(
         // On success we short-circuit the YouTube pipeline. On null /
         // failure we fall through to the YouTube path (or defer when
         // fallback is off, per v0.9.17 strict-FLAC).
-        val forceLossless = isStashMixTrack(track.id)
-        if (forceLossless || losslessPrefs.enabledNow()) {
+        if (losslessPrefs.enabledNow()) {
             val purpose = LosslessDownloadPurpose()
-            val losslessResult = withContext(purpose) { tryLosslessDownload(track, forced = forceLossless) }
+            val losslessResult = withContext(purpose) { tryLosslessDownload(track) }
             if (losslessResult != null) return losslessResult
             // The relay paced this download: the pool is ahead of the day's pace and streams come
             // first. FLAC is coming for this track, just later — so wait for it even when the YouTube
-            // fallback is on; a lossy copy taken now would stay lossy. (Stash Mix tracks keep their
-            // exemption below: a rotating mix must not empty out while it waits.)
-            if (purpose.pacedRetryAfterSec != null && !forceLossless) {
+            // fallback is on; a lossy copy taken now would stay lossy. The one exemption is a Stash
+            // Mix track, so a rotating mix doesn't empty out while it waits. That overrides no
+            // setting: it still has to pass the fallback gate below, so it only picks "lossy now"
+            // over "FLAC later". The mix lookup runs only once pacing has happened.
+            if (purpose.pacedRetryAfterSec != null && !isStashMixTrack(track.id)) {
                 Log.i(TAG, "deferring '${track.artist} - ${track.title}': relay paced downloads for ${purpose.pacedRetryAfterSec}s")
                 return TrackDownloadResult.Deferred
             }
             // strict-FLAC: lossless returned null AND yt-dlp fallback is off,
             // so defer instead of pulling a lossy opus/m4a from the YouTube
             // path. Applies to EVERY track — including genuinely YouTube-
-            // sourced ones — so "fallback off" means no YouTube downloads at
-            // all, matching SearchDownloadCoordinator's unconditional gate.
-            // (Earlier a track.source==YOUTUBE carve-out let YT-native tracks
-            // fall through to yt-dlp here; that leaked opus/m4a downloads with
-            // fallback off, so it's removed.) The lone exemption is Stash-Mix
-            // tracks (forceLossless=true): the small curated rotating playlist
-            // would silently empty if its tracks got stuck in deferral.
-            if (!forceLossless && !losslessPrefs.youtubeFallbackEnabledNow()) {
+            // sourced ones and Stash Mix tracks — so "fallback off" means no
+            // YouTube downloads at all, matching SearchDownloadCoordinator's
+            // unconditional gate. (Earlier carve-outs let YT-native tracks and
+            // Stash Mix tracks fall through to yt-dlp here; both leaked lossy
+            // downloads with fallback off, so both are removed. The mix one
+            // was #521.)
+            if (!losslessPrefs.youtubeFallbackEnabledNow()) {
                 // A BUILD gate, not a runtime one: forceYoutubeFallbackOnDebugBuilds
                 // is BuildConfig.DEBUG. Debug/beta builds force the lossy chain
                 // (JioSaavn first, then YouTube); release builds keep real
@@ -408,10 +416,10 @@ class DownloadManager @Inject constructor(
      * `-c copy` is container-agnostic.
      */
     /**
-     * True when [trackId] appears in any active Stash Mix playlist.
-     * Returns false on any DB error — failure here should never block
-     * a download (we'd just lose the lossless override and fall back
-     * to global-toggle behaviour).
+     * True when [trackId] appears in any active Stash Mix playlist. Used
+     * only for the relay-pacing exemption in [executeDownload]. Returns
+     * false on any DB error: a failed lookup just means a paced track
+     * waits for FLAC like any other.
      */
     private suspend fun isStashMixTrack(trackId: Long): Boolean =
         runCatching { playlistDao.isTrackInStashMix(trackId) }
@@ -429,7 +437,8 @@ class DownloadManager @Inject constructor(
         )
 
         val match = try {
-            jioSaavnResolver.resolve(query)
+            // The Download quality picker sets the JioSaavn variant too.
+            jioSaavnResolver.resolve(query, qualityPrefs.qualityTier.first().toJioSaavnKbps())
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -461,12 +470,14 @@ class DownloadManager @Inject constructor(
         val durationValid = track.durationMs <= 0L ||
             (metadata != null && kotlin.math.abs(metadata.durationMs - track.durationMs) <= durationTolerance)
         val codecValid = metadata?.format == "aac"
-        val bitrateValid = metadata != null && metadata.bitrateKbps >= MIN_JIOSAAVN_BITRATE_KBPS
+        val bitrateValid = metadata != null &&
+            metadata.bitrateKbps >= minJioSaavnBitrateKbps(match.format.bitrateKbps)
         if (!codecValid || !bitrateValid || !durationValid) {
             Log.w(
                 TAG,
                 "JioSaavn media rejected for '${track.artist} - ${track.title}': " +
-                    "format=${metadata?.format}, bitrate=${metadata?.bitrateKbps}, " +
+                    "format=${metadata?.format}, bitrate=${metadata?.bitrateKbps} " +
+                    "(asked ${match.format.bitrateKbps}), " +
                     "duration=${metadata?.durationMs}, expected=${track.durationMs}",
             )
             runCatching { fetched.delete() }
@@ -549,7 +560,7 @@ class DownloadManager @Inject constructor(
             "lossless match: ${match.sourceId} for '${track.artist} - ${track.title}' " +
                 "(${match.format.codec} ${match.format.bitsPerSample}bit/${match.format.sampleRateHz}Hz, " +
                 "confidence=${"%.2f".format(match.confidence)}" +
-                if (forced) ", forced=stash-mix)" else ")",
+                if (forced) ", forced=upgrade)" else ")",
         )
 
         emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)

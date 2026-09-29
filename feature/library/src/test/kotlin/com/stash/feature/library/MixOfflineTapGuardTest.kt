@@ -305,6 +305,9 @@ class MixOfflineTapGuardTest {
             sharedMixRepository = mock {
                 on { observe(any()) } doReturn flowOf(null)
             },
+            downloadQueueDao = mock {
+                on { observeGivenUpTrackIds(any()) } doReturn flowOf(emptyList())
+            },
         )
     }
 }

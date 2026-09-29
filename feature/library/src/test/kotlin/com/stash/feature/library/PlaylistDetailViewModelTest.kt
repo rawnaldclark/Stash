@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -118,77 +119,135 @@ class PlaylistDetailViewModelTest {
         org.mockito.kotlin.verifyBlocking(shared, org.mockito.kotlin.times(1)) { consumeRemovedNotice(1L) }
     }
 
-    @Test fun `turning Download this mix on writes it through the repository`() = runTest {
-        val shared = mock<com.stash.core.data.share.SharedMixRepository> { on { observe(any()) } doReturn flowOf(null) }
-        val vm = buildVm(sharedMixRepository = shared)
-        vm.setFollowDownload(true)
-        runCurrent()
-        org.mockito.kotlin.verifyBlocking(shared) { setDownload(1L, true) }
-    }
+    // ── The page's Download button (#474) ──────────────────────────────
 
-    // ── The page's Download switch (#474) ──────────────────────────────
-
-    @Test fun `stream-only mode shows the switch on only for a kept playlist`() = runTest {
-        assertEquals(false, downloadState(playlist(syncEnabled = true), streamOnly = true))
-        assertEquals(true, downloadState(playlist(keepOffline = true), streamOnly = true))
+    @Test fun `stream-only mode shows the button on only for a kept playlist`() = runTest {
+        assertEquals(false, downloadButton(playlist(syncEnabled = true), streamOnly = true)?.on)
+        assertEquals(true, downloadButton(playlist(keepOffline = true), streamOnly = true)?.on)
     }
 
     @Test fun `download mode also shows on for a playlist the Sync tab downloads`() = runTest {
-        assertEquals(true, downloadState(playlist(syncEnabled = true), streamOnly = false))
-        assertEquals(true, downloadState(playlist(keepOffline = true), streamOnly = false))
-        assertEquals(false, downloadState(playlist(), streamOnly = false))
+        assertEquals(true, downloadButton(playlist(syncEnabled = true), streamOnly = false)?.on)
+        assertEquals(true, downloadButton(playlist(keepOffline = true), streamOnly = false)?.on)
+        assertEquals(false, downloadButton(playlist(), streamOnly = false)?.on)
     }
 
-    @Test fun `imported mixes and playlists get the switch, system mixes do not`() = runTest {
-        assertEquals(false, downloadState(playlist(type = com.stash.core.model.PlaylistType.DAILY_MIX)))
-        assertEquals(false, downloadState(playlist(type = com.stash.core.model.PlaylistType.CUSTOM)))
-        assertEquals(null, downloadState(playlist(type = com.stash.core.model.PlaylistType.STASH_MIX)))
-        assertEquals(null, downloadState(playlist(type = com.stash.core.model.PlaylistType.DOWNLOADS_MIX)))
-        assertEquals(null, downloadState(playlist(type = com.stash.core.model.PlaylistType.LIKED_SONGS)))
+    @Test fun `imported mixes and playlists get the button, system mixes do not`() = runTest {
+        assertEquals(false, downloadButton(playlist(type = com.stash.core.model.PlaylistType.DAILY_MIX))?.on)
+        assertEquals(false, downloadButton(playlist(type = com.stash.core.model.PlaylistType.CUSTOM))?.on)
+        assertEquals(null, downloadButton(playlist(type = com.stash.core.model.PlaylistType.STASH_MIX)))
+        assertEquals(null, downloadButton(playlist(type = com.stash.core.model.PlaylistType.DOWNLOADS_MIX)))
+        assertEquals(null, downloadButton(playlist(type = com.stash.core.model.PlaylistType.LIKED_SONGS)))
     }
 
-    @Test fun `a read-only followed mix keeps only its own switch`() = runTest {
+    @Test fun `a read-only followed mix has its button in the follow block, on with Download this mix`() = runTest {
         val follower = com.stash.core.data.db.entity.SharedMixEntity(
             1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient",
         )
-        assertEquals(null, downloadState(playlist(), shared = follower))
-        // Once the owner stops sharing it is an ordinary playlist, and gets the page's switch.
+        assertEquals(DownloadButtonState(on = false, downloaded = 0, total = 0, followed = true), downloadButton(playlist(), shared = follower))
+        // Its switch is sync_enabled, in Stream-only mode too.
+        assertEquals(true, downloadButton(playlist(syncEnabled = true), streamOnly = true, shared = follower)?.on)
+        // Once the owner stops sharing it is an ordinary playlist, with the page's own button.
         val removed = follower.copy(status = com.stash.core.data.db.entity.SharedMixEntity.STATUS_REMOVED)
-        assertEquals(false, downloadState(playlist(), shared = removed))
+        assertEquals(DownloadButtonState(on = false, downloaded = 0, total = 0, followed = false), downloadButton(playlist(), shared = removed))
     }
 
-    @Test fun `the switch follows the playlist row live`() = runTest {
+    @Test fun `the button says Download, then Downloading n of m, then Downloaded`() = runTest {
+        val someMissing = listOf(track(1L, downloaded = true), track(2L), track(3L))
+        assertEquals("Download", downloadButton(playlist(), tracks = someMissing)?.label)
+
+        val downloading = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = someMissing))
+        assertEquals(DownloadButtonState(on = true, downloaded = 1, total = 3), downloading)
+        assertEquals(false, downloading.complete)
+        assertEquals("Downloading 1 of 3", downloading.label)
+
+        val allThere = listOf(track(1L, downloaded = true), track(2L, downloaded = true))
+        val done = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = allThere))
+        assertEquals(true, done.complete)
+        assertEquals("Downloaded", done.label)
+    }
+
+    @Test fun `a song that won't download leaves the count, so a finished playlist says Downloaded`() = runTest {
+        // 12 songs: 11 downloaded, 1 given up (failed, cancelled or its match dismissed).
+        val tracks = (1L..12L).map { track(it, downloaded = it <= 11) }
+        val button = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = tracks, givenUp = listOf(12L)))
+        assertEquals(DownloadButtonState(on = true, downloaded = 11, total = 11), button)
+        assertEquals("Downloaded", button.label)
+    }
+
+    @Test fun `a given-up song leaves the total, a pending one still counts`() = runTest {
+        // 12 songs: 10 downloaded, 1 given up, 1 pending (say, waiting for Wi-Fi).
+        val tracks = (1L..12L).map { track(it, downloaded = it <= 10) }
+        val button = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = tracks, givenUp = listOf(11L)))
+        assertEquals("Downloading 10 of 11", button.label)
+    }
+
+    @Test fun `the counts cover the whole playlist while a search filter is active`() = runTest {
+        val music = musicRepoMock().stub {
+            on { getTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L), track(3L)))
+            onBlocking { getPlaylistWithTracks(1L) } doReturn playlist(keepOffline = true)
+        }
+        val vm = buildVm(musicRepository = music)
+        backgroundScope.launch { vm.uiState.collect {} }
+        backgroundScope.launch { vm.downloadButton.collect {} }
+        vm.toggleSearch()
+        vm.onSearchQueryChanged("Track 2")
+        advanceTimeBy(1_000) // past the filter's debounce
+        runCurrent()
+        assertEquals(listOf(2L), vm.uiState.value.tracks.map { it.id }) // the list is filtered...
+        assertEquals(DownloadButtonState(on = true, downloaded = 1, total = 3), vm.downloadButton.value) // ...the button is not
+    }
+
+    @Test fun `a tap turns a playlist's download on or off, and says what happened`() = runTest {
+        val someMissing = listOf(track(1L, downloaded = true), track(2L), track(3L))
+        val allThere = listOf(track(1L, downloaded = true))
+        // Off: on, with the number of songs still to come. On: off, keeping what's downloaded.
+        assertEquals(true to "Downloading 2 songs", tapPlaylist(playlist(), someMissing))
+        assertEquals(false to "Stopped. Downloaded songs stay on your phone.", tapPlaylist(playlist(keepOffline = true), someMissing))
+        assertEquals(true to "Every song is already on your phone.", tapPlaylist(playlist(), allThere))
+    }
+
+    @Test fun `a tap on a followed mix's button goes through the shared-mix repository`() = runTest {
+        val follower = com.stash.core.data.db.entity.SharedMixEntity(
+            1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient",
+        )
+        for (wasOn in listOf(false, true)) {
+            val shared = mock<com.stash.core.data.share.SharedMixRepository> { on { observe(any()) } doReturn flowOf(follower) }
+            val music = musicRepoMock().stub { onBlocking { getPlaylistWithTracks(1L) } doReturn playlist(syncEnabled = wasOn) }
+            val vm = buildVm(musicRepository = music, sharedMixRepository = shared)
+            backgroundScope.launch { vm.downloadButton.collect {} }
+            runCurrent()
+            vm.toggleDownload()
+            runCurrent()
+            org.mockito.kotlin.verifyBlocking(shared) { setDownload(1L, !wasOn) }
+            org.mockito.kotlin.verifyBlocking(music, org.mockito.kotlin.never()) { setPlaylistDownload(any(), any()) }
+        }
+    }
+
+    @Test fun `the button follows the playlist row live`() = runTest {
         val live = MutableStateFlow<com.stash.core.model.Playlist?>(null)
         val music = musicRepoMock().stub {
             on { observePlaylist(any()) } doReturn live
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist()
         }
         val vm = buildVm(musicRepository = music)
-        backgroundScope.launch { vm.download.collect {} }
+        backgroundScope.launch { vm.downloadButton.collect {} }
         runCurrent()
-        assertEquals(false, vm.download.value)
+        assertEquals(false, vm.downloadButton.value?.on)
         live.value = playlist(keepOffline = true)
         runCurrent()
-        assertEquals(true, vm.download.value)
+        assertEquals(true, vm.downloadButton.value?.on)
     }
 
-    @Test fun `toggling the switch writes it through the repository`() = runTest {
-        val music = musicRepoMock()
-        val vm = buildVm(musicRepository = music)
-        vm.setDownload(true)
-        vm.setDownload(false)
-        runCurrent()
-        org.mockito.kotlin.verifyBlocking(music) { setPlaylistDownload(1L, true) }
-        org.mockito.kotlin.verifyBlocking(music) { setPlaylistDownload(1L, false) }
-    }
-
-    @Test fun `a failed toggle says so`() = runTest {
+    @Test fun `a failed tap says so`() = runTest {
         val music = musicRepoMock().stub {
+            onBlocking { getPlaylistWithTracks(1L) } doReturn playlist()
             onBlocking { setPlaylistDownload(any(), any()) } doThrow RuntimeException("db")
         }
         val vm = buildVm(musicRepository = music)
+        backgroundScope.launch { vm.downloadButton.collect {} }
         val messages = collectMessages(vm)
-        vm.setDownload(true)
+        vm.toggleDownload()
         runCurrent()
         assertEquals(listOf("Couldn't change that. Try again."), messages)
     }
@@ -202,13 +261,21 @@ class PlaylistDetailViewModelTest {
         type = type, syncEnabled = syncEnabled, keepOffline = keepOffline,
     )
 
-    /** The page's switch for [playlist] in the given mode: null = no switch. */
-    private fun kotlinx.coroutines.test.TestScope.downloadState(
+    /**
+     * The page's button for [playlist] holding [tracks], in the given mode: null = no button.
+     * [givenUp]: the songs that won't download unless the user acts (failed, cancelled, dismissed).
+     */
+    private fun kotlinx.coroutines.test.TestScope.downloadButton(
         playlist: com.stash.core.model.Playlist,
         streamOnly: Boolean = true,
         shared: com.stash.core.data.db.entity.SharedMixEntity? = null,
-    ): Boolean? {
-        val music = musicRepoMock().stub { onBlocking { getPlaylistWithTracks(1L) } doReturn playlist }
+        tracks: List<Track> = emptyList(),
+        givenUp: List<Long> = emptyList(),
+    ): DownloadButtonState? {
+        val music = musicRepoMock().stub {
+            onBlocking { getPlaylistWithTracks(1L) } doReturn playlist
+            on { getTracksByPlaylist(any()) } doReturn flowOf(tracks)
+        }
         val vm = buildVm(
             musicRepository = music,
             streamingPreference = mock {
@@ -216,10 +283,30 @@ class PlaylistDetailViewModelTest {
                 on { enabled } doReturn flowOf(streamOnly)
             },
             sharedMixRepository = mock { on { observe(any()) } doReturn flowOf(shared) },
+            downloadQueueDao = mock { on { observeGivenUpTrackIds(1L) } doReturn flowOf(givenUp) },
         )
-        backgroundScope.launch { vm.download.collect {} }
+        backgroundScope.launch { vm.downloadButton.collect {} }
         runCurrent()
-        return vm.download.value
+        return vm.downloadButton.value
+    }
+
+    /** One tap on [playlist]'s button: the value it wrote through setPlaylistDownload, and the message. */
+    private fun kotlinx.coroutines.test.TestScope.tapPlaylist(
+        playlist: com.stash.core.model.Playlist,
+        tracks: List<Track>,
+    ): Pair<Boolean, String> {
+        val music = musicRepoMock().stub {
+            onBlocking { getPlaylistWithTracks(1L) } doReturn playlist
+            on { getTracksByPlaylist(any()) } doReturn flowOf(tracks)
+        }
+        val vm = buildVm(musicRepository = music)
+        backgroundScope.launch { vm.downloadButton.collect {} }
+        val messages = collectMessages(vm)
+        vm.toggleDownload()
+        runCurrent()
+        val written = org.mockito.kotlin.argumentCaptor<Boolean>()
+        org.mockito.kotlin.verifyBlocking(music) { setPlaylistDownload(eq(1L), written.capture()) }
+        return written.allValues.single() to messages.single()
     }
 
     @Test fun `unfollow runs onDone only when it succeeds`() = runTest {
@@ -449,7 +536,8 @@ class PlaylistDetailViewModelTest {
     // Helpers
     // ------------------------------------------------------------------
 
-    private fun track(id: Long) = Track(id = id, title = "Track $id", artist = "Artist")
+    private fun track(id: Long, downloaded: Boolean = false) =
+        Track(id = id, title = "Track $id", artist = "Artist", isDownloaded = downloaded)
 
     /**
      * Collects [PlaylistDetailViewModel.userMessages] into a list for the life
@@ -507,6 +595,9 @@ class PlaylistDetailViewModelTest {
         sharedMixRepository: com.stash.core.data.share.SharedMixRepository = mock {
             on { observe(any()) } doReturn flowOf(null)
         },
+        downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao = mock {
+            on { observeGivenUpTrackIds(any()) } doReturn flowOf(emptyList())
+        },
     ): PlaylistDetailViewModel = PlaylistDetailViewModel(
         savedStateHandle = savedStateHandle,
         musicRepository = musicRepository,
@@ -517,5 +608,6 @@ class PlaylistDetailViewModelTest {
         recipeDao = recipeDao,
         discoveryQueueDao = discoveryQueueDao,
         sharedMixRepository = sharedMixRepository,
+        downloadQueueDao = downloadQueueDao,
     )
 }

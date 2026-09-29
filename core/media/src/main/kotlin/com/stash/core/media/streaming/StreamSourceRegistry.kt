@@ -222,7 +222,7 @@ class StreamSourceRegistry internal constructor(
                 if (allowYtDlp && lossless) {
                     add("qbdlx" to qbdlx::resolve)
                 }
-                // Fixed-quality AAC 320 fallback. Foreground/next-up only: a
+                // AAC 320 fallback (96 under Save Data). Foreground/next-up only: a
                 // speculative full-queue fill must not turn into one metadata
                 // search + media probe per track. Any miss/outage continues to
                 // the existing YouTube fallback below.

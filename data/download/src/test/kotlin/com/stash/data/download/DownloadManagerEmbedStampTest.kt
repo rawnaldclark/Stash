@@ -5,6 +5,7 @@ import com.stash.core.data.audio.AudioMetadata
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
+import com.stash.core.model.QualityTier
 import com.stash.core.model.Track
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
@@ -28,6 +29,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -61,7 +63,9 @@ class DownloadManagerEmbedStampTest {
     private val matchScorer: MatchScorer = mockk(relaxed = true)
     private val duplicateDetection: DuplicateDetectionService = mockk(relaxed = true)
     private val fileOrganizer: FileOrganizer = mockk(relaxed = true)
-    private val qualityPrefs: QualityPreferencesManager = mockk(relaxed = true)
+    private val qualityPrefs: QualityPreferencesManager = mockk(relaxed = true) {
+        every { qualityTier } returns flowOf(QualityTier.MAX)
+    }
     private val ytLibraryCanonicalizer: YtLibraryCanonicalizer = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true)
     private val playlistDao: PlaylistDao = mockk(relaxed = true)
@@ -123,17 +127,70 @@ class DownloadManagerEmbedStampTest {
         confidence = 0.95f,
     )
 
-    private fun jioSaavnResult() = SourceResult(
+    private fun jioSaavnResult(kbps: Int = 320) = SourceResult(
         sourceId = JioSaavnResolver.SOURCE_ID,
-        downloadUrl = "https://aac.saavncdn.com/song_320.mp4",
+        downloadUrl = "https://aac.saavncdn.com/song_$kbps.mp4",
         format = AudioFormat(
             codec = "aac",
-            bitrateKbps = 320,
+            bitrateKbps = kbps,
             sampleRateHz = 44_100,
             fileExtension = "m4a",
         ),
         confidence = 0.94f,
     )
+
+    /**
+     * The user picked [tier]; JioSaavn answers at whatever kbps it is asked for,
+     * and the fetched file measures [measuredKbps] over [durationMs].
+     */
+    private fun arrangeJioSaavnVariant(tier: QualityTier, measuredKbps: Int, durationMs: Long = 200_000L) {
+        every { qualityPrefs.qualityTier } returns flowOf(tier)
+        coEvery { fileOrganizer.getTempDir() } returns File.createTempFile("tmp", "").apply { delete(); mkdirs() }
+        coEvery { jioSaavnResolver.resolve(any(), any()) } coAnswers { jioSaavnResult(secondArg()) }
+        coEvery { losslessUrlDownloader.download(any(), any(), any()) } answers {
+            Result.success(secondArg<File>().apply { writeText("fake-m4a-bytes") })
+        }
+        every { audioDurationExtractor.extract(any()) } returns AudioMetadata(
+            durationMs = durationMs,
+            bitrateKbps = measuredKbps,
+            format = "aac",
+            sampleRateHz = 44_100,
+        )
+        coEvery { trackFinalizer.finalizeFile(any(), any(), any()) } returns TrackFinalizer.FinalizeResult.Success(
+            FileOrganizer.CommittedTrack(filePath = "/library/Sample Artist/Sample.m4a", sizeBytes = 1234L),
+            meta = null,
+        )
+    }
+
+    @Test
+    fun `Normal quality asks JioSaavn for 96 kbps and keeps a 96 kbps file`() = runTest {
+        arrangeJioSaavnVariant(QualityTier.NORMAL, measuredKbps = 97)
+
+        val result = newSubject().tryJioSaavnDownload(stubTrack().copy(durationMs = 200_000L))
+
+        assertTrue("expected Success, got $result", result is TrackDownloadResult.Success)
+        coVerify { jioSaavnResolver.resolve(any(), 96) }
+    }
+
+    @Test
+    fun `a 96 kbps file is rejected when 320 was asked for`() = runTest {
+        arrangeJioSaavnVariant(QualityTier.MAX, measuredKbps = 97)
+
+        val result = newSubject().tryJioSaavnDownload(stubTrack().copy(durationMs = 200_000L))
+
+        assertEquals(null, result)
+        coVerify(exactly = 0) { trackFinalizer.finalizeFile(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a 30 second preview is rejected even at the 96 kbps asked for`() = runTest {
+        arrangeJioSaavnVariant(QualityTier.NORMAL, measuredKbps = 97, durationMs = 30_000L)
+
+        val result = newSubject().tryJioSaavnDownload(stubTrack().copy(durationMs = 200_000L))
+
+        assertEquals(null, result)
+        coVerify(exactly = 0) { trackFinalizer.finalizeFile(any(), any(), any()) }
+    }
 
     @Test
     fun `JioSaavn AAC 320 is committed as m4a before YouTube fallback`() = runTest {

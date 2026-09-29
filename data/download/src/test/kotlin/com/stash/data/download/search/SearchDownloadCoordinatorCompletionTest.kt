@@ -195,6 +195,35 @@ class SearchDownloadCoordinatorCompletionTest {
         } returns 1
     }
 
+    /**
+     * Lossless off and YouTube ready as the fallback; the user picked [tier];
+     * JioSaavn answers at whatever kbps it is asked for, and the fetched file
+     * measures [measuredKbps] over [durationMs].
+     */
+    private fun arrangeJioSaavnVariant(tier: QualityTier, measuredKbps: Int, durationMs: Long = 200_000L) {
+        arrangeFinalizedYtDlpDownload()
+        every { qualityPrefs.qualityTier } returns flowOf(tier)
+        coEvery { jioSaavnResolver.resolve(any(), any()) } coAnswers {
+            val kbps = secondArg<Int>()
+            SourceResult(
+                sourceId = JioSaavnResolver.SOURCE_ID,
+                downloadUrl = "https://aac.saavncdn.com/song_$kbps.mp4",
+                format = AudioFormat("aac", kbps, 44_100, fileExtension = "m4a"),
+                confidence = 0.97f,
+            )
+        }
+        coEvery { losslessUrlDownloader.download(any(), any(), any()) } coAnswers {
+            Result.success(arg<File>(1))
+        }
+        coEvery { audioDurationExtractor.extract(any()) } returns AudioMetadata(
+            durationMs = durationMs,
+            bitrateKbps = measuredKbps,
+            format = "aac",
+            sampleRateHz = 44_100,
+            bitsPerSample = 16,
+        )
+    }
+
     private fun assertFailedNeverCompleted(statuses: List<SearchDownloadStatus>) {
         assertTrue("terminal status must be Failed, got $statuses", statuses.last() is SearchDownloadStatus.Failed)
         assertFalse("Completed must never be emitted after persistence failure, got $statuses", statuses.any {
@@ -255,6 +284,38 @@ class SearchDownloadCoordinatorCompletionTest {
         assertTrue(statuses.last() is SearchDownloadStatus.Completed)
         coVerify(exactly = 1) { downloadExecutor.download(any(), any(), any(), any(), any()) }
         coVerify(exactly = 1) { trackFinalizer.finalizeFile(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `Normal quality downloads JioSaavn's 96 kbps variant and keeps it`() = runTest {
+        arrangeJioSaavnVariant(QualityTier.NORMAL, measuredKbps = 97)
+
+        val statuses = newSubject().download(track()).toList()
+
+        assertTrue(statuses.last() is SearchDownloadStatus.Completed)
+        assertTrue(SearchDownloadStatus.Downloading(SearchDownloadStatus.Source.JIOSAAVN) in statuses)
+        coVerify { jioSaavnResolver.resolve(any(), 96) }
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `a 96 kbps file fails a 320 request and falls through to YouTube`() = runTest {
+        arrangeJioSaavnVariant(QualityTier.MAX, measuredKbps = 97)
+
+        val statuses = newSubject().download(track()).toList()
+
+        assertTrue(SearchDownloadStatus.Downloading(SearchDownloadStatus.Source.YOUTUBE) in statuses)
+        coVerify(exactly = 1) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `a 30 second preview falls through to YouTube even at the 96 kbps asked for`() = runTest {
+        arrangeJioSaavnVariant(QualityTier.NORMAL, measuredKbps = 97, durationMs = 30_000L)
+
+        val statuses = newSubject().download(track()).toList()
+
+        assertTrue(SearchDownloadStatus.Downloading(SearchDownloadStatus.Source.YOUTUBE) in statuses)
+        coVerify(exactly = 1) { downloadExecutor.download(any(), any(), any(), any(), any()) }
     }
 
     @Test
