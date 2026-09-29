@@ -31,7 +31,7 @@ import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
@@ -58,6 +58,13 @@ class MusicRepositoryQueuePlaylistTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private lateinit var db: StashDatabase
 
+    /**
+     * What every stand-in drain waits on, and never gets. A field, so the test holds the waiting
+     * workers: nothing else holds a suspended worker strongly, and the garbage collector would fail
+     * it mid-test (FutureGarbageCollectedException), ending the RUNNING drain a test is holding.
+     */
+    private val neverDone = CompletableDeferred<ListenableWorker.Result>()
+
     @Before fun setUp() {
         // The real drain needs Hilt. This stand-in never finishes, so a test can hold a drain RUNNING.
         val neverFinishes = object : WorkerFactory() {
@@ -66,7 +73,7 @@ class MusicRepositoryQueuePlaylistTest {
                 workerClassName: String,
                 workerParameters: WorkerParameters,
             ): ListenableWorker = object : CoroutineWorker(appContext, workerParameters) {
-                override suspend fun doWork(): ListenableWorker.Result = awaitCancellation()
+                override suspend fun doWork(): ListenableWorker.Result = neverDone.await()
             }
         }
         WorkManagerTestInitHelper.initializeTestWorkManager(
