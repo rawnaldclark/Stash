@@ -37,6 +37,7 @@ import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.data.mix.TagPoolBuilder
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.sync.TrackMatcher
+import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import dagger.assisted.Assisted
@@ -98,8 +99,8 @@ class StashMixRefreshWorker @AssistedInject constructor(
         private const val TAG = "StashMixRefresh"
         private const val WORK_NAME = "stash_mix_refresh"
 
-        /** Serializes [materializeMix] across concurrent worker instances. */
-        private val materializeMutex = kotlinx.coroutines.sync.Mutex()
+        /** Serializes whole refresh runs across worker instances (see [doWork]). */
+        private val refreshMutex = kotlinx.coroutines.sync.Mutex()
         const val ONE_SHOT_WORK_NAME = "stash_mix_refresh_oneshot"
         private const val TOP_ARTISTS_LIMIT = 8
         private const val SIMILAR_REQUEST_INTERVAL_MS = 220L
@@ -219,7 +220,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
          * enough to not care. Discovery is opportunistic and tolerates
          * being skipped when the device is offline.
          */
-        fun schedulePeriodic(context: Context) {
+        suspend fun schedulePeriodic(context: Context) {
             val constraints = Constraints.Builder()
                 .setRequiresBatteryNotLow(true)
                 .build()
@@ -233,7 +234,8 @@ class StashMixRefreshWorker @AssistedInject constructor(
             // the current worker spec on the next cold start. KEEP previously meant
             // constraint changes / class changes were ignored across upgrades —
             // a credible cause of "periodic refresh hasn't fired in 3 days" reports.
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            // UPDATE can't revive a FAILED job, hence the reviving enqueue.
+            WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
                 work,
@@ -288,7 +290,19 @@ class StashMixRefreshWorker @AssistedInject constructor(
         }
     }
 
-    override suspend fun doWork(): Result {
+    /**
+     * One refresh at a time, per process. On first launch the one-shot and the
+     * periodic refresh start in the same millisecond (and a "Refresh this mix"
+     * tap or the post-drain re-link can overlap any run). Locking only the
+     * playlist write wasn't enough: each run reads its recipes BEFORE the
+     * lock, so the second still saw `playlistId = null`, inserted the mix a
+     * second time and threw on the UNIQUE source_id index, which failed the
+     * periodic job for good. Holding the lock for the whole run makes the
+     * second run read what the first one wrote.
+     */
+    override suspend fun doWork(): Result = refreshMutex.withLock { refresh() }
+
+    private suspend fun refresh(): Result {
         // Safety net: make sure default recipes exist. Normally seeded at
         // app startup; running here too means a fresh-install user gets
         // their first mixes even if the startup hook is racy with the
@@ -396,15 +410,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 continue
             }
 
-            // #287: serialize materialization across worker instances — the
-            // manual single-recipe refresh and the chained batch pass can run
-            // concurrently (separate WorkManager unique chains), and the
-            // clear-then-reinsert membership write is not atomic. Observed on
-            // device: two runs 10s apart interleaved and left Daily Discover
-            // with 25 of 39 rows (and a wrong count) — a torn playlist.
-            val result = materializeMutex.withLock {
-                materializeMix(recipe, tracks, now, excludeSnapshot, rotationSeed)
-            }
+            // #287: materialization must not interleave across worker
+            // instances (two runs 10s apart once left Daily Discover a torn
+            // playlist). doWork's refreshMutex now serializes the whole run.
+            val result = materializeMix(recipe, tracks, now, excludeSnapshot, rotationSeed)
             recipeDao.setPlaylistId(recipe.id, result.playlistId)
             recipeDao.setLastRefreshedAt(recipe.id, now)
 
@@ -514,9 +523,15 @@ class StashMixRefreshWorker @AssistedInject constructor(
     ): MaterializeResult {
         // Existing playlist: verify it's still there (could have been
         // deleted by the user). If gone, fall through to re-create.
+        // Else find the mix's row by source_id: a run that created it but
+        // died before recipeDao.setPlaylistId leaves the recipe pointing
+        // nowhere while the row exists, and re-inserting it would throw on
+        // the UNIQUE source_id index on every refresh after.
+        val sourceId = "stash_mix_${recipe.id}"
         val existing = recipe.playlistId
             ?.let { playlistDao.getById(it) }
             ?.takeIf { it.type == PlaylistType.STASH_MIX }
+            ?: playlistDao.findBySourceId(sourceId)?.takeIf { it.type == PlaylistType.STASH_MIX }
 
         // ── v0.9.42 idempotency backstop ──────────────────────────────────
         // Compute the discovery survivors (and therefore the FULL ordered
@@ -691,7 +706,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
             val newPlaylist = PlaylistEntity(
                 name = recipe.name,
                 source = MusicSource.BOTH,
-                sourceId = "stash_mix_${recipe.id}",
+                sourceId = sourceId,
                 type = PlaylistType.STASH_MIX,
                 trackCount = tracks.size,
                 artUrl = firstArt,

@@ -390,8 +390,13 @@ class StashApplication : Application(), Configuration.Provider {
                 ).execute().close()
             }
         }
-        YtDlpUpdateWorker.schedulePeriodicUpdate(this)
-        UpdateCheckWorker.schedulePeriodicCheck(this)
+        // Off the main thread: scheduling reads the job's state first, to
+        // re-enqueue one that has finished (a FAILED periodic job never runs again).
+        applicationScope.launch {
+            YtDlpUpdateWorker.schedulePeriodicUpdate(this@StashApplication)
+            UpdateCheckWorker.schedulePeriodicCheck(this@StashApplication)
+            LoudnessBackfillWorker.schedulePeriodic(this@StashApplication)
+        }
         // Auto-sync used to be one delayed chain that nothing re-armed, so an
         // upgrading user with it on has no daily trigger yet. KEEP leaves an
         // existing trigger's time alone; with Auto-sync off, a leftover is cleared.
@@ -449,7 +454,6 @@ class StashApplication : Application(), Configuration.Provider {
                 androidx.work.OneTimeWorkRequestBuilder<TrackInfoEnrichmentWorker>().build(),
             )
         }
-        LoudnessBackfillWorker.schedulePeriodic(this)
         // Repair missing album_art_url on tracks downloaded before 0.5.3 —
         // primarily Stash Discover candidates whose match pipeline surfaced
         // no thumbnail (see ArtBackfillWorker KDoc). KEEP policy means the

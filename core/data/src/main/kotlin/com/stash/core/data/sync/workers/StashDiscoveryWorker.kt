@@ -17,6 +17,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.sync.SyncNotificationManager
+import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.db.dao.TrackDao
@@ -125,14 +126,14 @@ class StashDiscoveryWorker @AssistedInject constructor(
          * preference — WorkManager snapshots constraints at enqueue time,
          * so the re-schedule is what makes a setting change take effect.
          */
-        fun schedulePeriodic(context: Context, mode: DownloadNetworkMode) {
+        suspend fun schedulePeriodic(context: Context, mode: DownloadNetworkMode) {
             val work = PeriodicWorkRequestBuilder<StashDiscoveryWorker>(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
             )
                 .setConstraints(constraintsFor(mode))
                 .build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
                 work,
