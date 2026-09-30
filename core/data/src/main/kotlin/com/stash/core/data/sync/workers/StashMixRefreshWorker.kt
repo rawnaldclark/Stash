@@ -99,8 +99,8 @@ class StashMixRefreshWorker @AssistedInject constructor(
         private const val TAG = "StashMixRefresh"
         private const val WORK_NAME = "stash_mix_refresh"
 
-        /** Serializes whole refresh runs across worker instances (see [doWork]). */
-        private val refreshMutex = kotlinx.coroutines.sync.Mutex()
+        /** Serializes [materializeMix] across concurrent worker instances. */
+        private val materializeMutex = kotlinx.coroutines.sync.Mutex()
         const val ONE_SHOT_WORK_NAME = "stash_mix_refresh_oneshot"
         private const val TOP_ARTISTS_LIMIT = 8
         private const val SIMILAR_REQUEST_INTERVAL_MS = 220L
@@ -290,19 +290,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
         }
     }
 
-    /**
-     * One refresh at a time, per process. On first launch the one-shot and the
-     * periodic refresh start in the same millisecond (and a "Refresh this mix"
-     * tap or the post-drain re-link can overlap any run). Locking only the
-     * playlist write wasn't enough: each run reads its recipes BEFORE the
-     * lock, so the second still saw `playlistId = null`, inserted the mix a
-     * second time and threw on the UNIQUE source_id index, which failed the
-     * periodic job for good. Holding the lock for the whole run makes the
-     * second run read what the first one wrote.
-     */
-    override suspend fun doWork(): Result = refreshMutex.withLock { refresh() }
-
-    private suspend fun refresh(): Result {
+    override suspend fun doWork(): Result {
         // Safety net: make sure default recipes exist. Normally seeded at
         // app startup; running here too means a fresh-install user gets
         // their first mixes even if the startup hook is racy with the
@@ -410,10 +398,19 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 continue
             }
 
-            // #287: materialization must not interleave across worker
-            // instances (two runs 10s apart once left Daily Discover a torn
-            // playlist). doWork's refreshMutex now serializes the whole run.
-            val result = materializeMix(recipe, tracks, now, excludeSnapshot, rotationSeed)
+            // #287: serialize materialization across worker instances — the
+            // manual single-recipe refresh and the chained batch pass can run
+            // concurrently (separate WorkManager unique chains), and the
+            // clear-then-reinsert membership write is not atomic. Observed on
+            // device: two runs 10s apart interleaved and left Daily Discover
+            // with 25 of 39 rows (and a wrong count) — a torn playlist.
+            // Only this write is locked, not the whole run: a full refresh
+            // spends most of its time on network calls, and a "Refresh this
+            // mix" tap shouldn't wait for them. `recipe` was read before the
+            // lock, so materializeMix also finds the playlist by its source id.
+            val result = materializeMutex.withLock {
+                materializeMix(recipe, tracks, now, excludeSnapshot, rotationSeed)
+            }
             recipeDao.setPlaylistId(recipe.id, result.playlistId)
             recipeDao.setLastRefreshedAt(recipe.id, now)
 
@@ -523,10 +520,13 @@ class StashMixRefreshWorker @AssistedInject constructor(
     ): MaterializeResult {
         // Existing playlist: verify it's still there (could have been
         // deleted by the user). If gone, fall through to re-create.
-        // Else find the mix's row by source_id: a run that created it but
-        // died before recipeDao.setPlaylistId leaves the recipe pointing
-        // nowhere while the row exists, and re-inserting it would throw on
-        // the UNIQUE source_id index on every refresh after.
+        // Else find the mix's row by source_id. Two cases leave the recipe
+        // without the id of a row that exists: two runs that started together
+        // (both read the recipe before either created the playlist; on first
+        // launch the one-shot and the daily refresh do exactly that), and a
+        // run that created the row but died before recipeDao.setPlaylistId.
+        // Inserting it again would throw on the UNIQUE source_id index, and a
+        // periodic run that throws is FAILED for good.
         val sourceId = "stash_mix_${recipe.id}"
         val existing = recipe.playlistId
             ?.let { playlistDao.getById(it) }
