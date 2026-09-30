@@ -31,6 +31,7 @@ class LyricsRepositoryTest {
 
     private fun appleEnabledPreference(): LyricsPreference = mockk {
         every { sourcePreference } returns flowOf(LyricsSourcePreference.APPLE_MUSIC)
+        coEvery { setTtmlUpgradeCursor(any()) } just Runs
     }
 
     @Test fun `success path - writes row, stamps, invokes sidecar`() = runTest {
@@ -242,6 +243,35 @@ class LyricsRepositoryTest {
 
         assertEquals(ManualFetchResult.SKIPPED, repo.fetchLyricsNow(7L))
         coVerify(exactly = 1) { preference.setBulkFetchCursor(7L) }
+    }
+
+    @Test fun `pending-TTML list resumes after the track the last upgrade pass reached`() = runTest {
+        val lyricsDao = mockk<LyricsDao> { coEvery { trackIdsPendingTtml() } returns listOf(1L, 2L, 3L, 4L, 5L) }
+        fun repoAt(cursor: Long) = LyricsRepository(
+            emptyList(), lyricsDao, mockk(relaxed = true), mockk(relaxed = true), clock,
+            mockk {
+                every { sourcePreference } returns flowOf(LyricsSourcePreference.APPLE_MUSIC)
+                every { ttmlUpgradeCursor } returns flowOf(cursor)
+            },
+        )
+
+        assertEquals(listOf(4L, 5L, 1L, 2L, 3L), repoAt(3L).trackIdsPendingTtml())
+        // Fresh install (0) and a cursor past every id both mean plain id order.
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), repoAt(0L).trackIdsPendingTtml())
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), repoAt(99L).trackIdsPendingTtml())
+    }
+
+    @Test fun `upgradeToTtml moves the cursor before anything else`() = runTest {
+        // LRC-only returns SKIPPED straight after the cursor write; the strict DAO mocks
+        // would throw if anything else ran first.
+        val preference = mockk<LyricsPreference> {
+            coEvery { setTtmlUpgradeCursor(any()) } just Runs
+            every { sourcePreference } returns flowOf(LyricsSourcePreference.LRC_ONLY)
+        }
+        val repo = LyricsRepository(emptyList(), mockk(), mockk(), mockk(), clock, preference)
+
+        assertEquals(TtmlUpgradeResult.SKIPPED, repo.upgradeToTtml(7L))
+        coVerify(exactly = 1) { preference.setTtmlUpgradeCursor(7L) }
     }
 
     private fun fakeSource(sourceId: String, result: LyricsResult?): LyricsSource = object : LyricsSource {

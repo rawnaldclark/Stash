@@ -44,6 +44,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
@@ -262,20 +265,27 @@ private fun LineItem(
 
     val line = item.line
     val description = remember(line) { line.lead.text }
+    // Direction comes from the line's own text, not the phone's locale.
+    val lineDirection = remember(line) {
+        val firstStrong = line.lead.text.firstOrNull { Character.isLetter(it) }
+        if (firstStrong != null && isRtlChar(firstStrong)) LayoutDirection.Rtl else LayoutDirection.Ltr
+    }
 
-    Column(
-        horizontalAlignment = if (line.oppositeAligned) Alignment.End else Alignment.Start,
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer { alpha = alphaAnim.value }
-            .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Rectangle) else Modifier)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap)
-            .padding(horizontal = 24.dp, vertical = 10.dp)
-            .clearAndSetSemantics { contentDescription = description },
-    ) {
-        GroupRow(line.lead, ctx, ctx.leadStyle, ctx.bright, ctx.dim, line.oppositeAligned)
-        line.background.forEach { adlib ->
-            GroupRow(adlib, ctx, ctx.bgStyle, ctx.bgBright, ctx.bgDim, line.oppositeAligned, Modifier.padding(top = 4.dp))
+    CompositionLocalProvider(LocalLayoutDirection provides lineDirection) {
+        Column(
+            horizontalAlignment = if (line.oppositeAligned) Alignment.End else Alignment.Start,
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { alpha = alphaAnim.value }
+                .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Rectangle) else Modifier)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap)
+                .padding(horizontal = 24.dp, vertical = 10.dp)
+                .clearAndSetSemantics { contentDescription = description },
+        ) {
+            GroupRow(line.lead, ctx, ctx.leadStyle, ctx.bright, ctx.dim, line.oppositeAligned)
+            line.background.forEach { adlib ->
+                GroupRow(adlib, ctx, ctx.bgStyle, ctx.bgBright, ctx.bgDim, line.oppositeAligned, Modifier.padding(top = 4.dp))
+            }
         }
     }
 }

@@ -50,6 +50,7 @@ class LyricsPreference @Inject constructor(
     private val liveBarKey = booleanPreferencesKey("live_bar_enabled")
     private val sourceKey = stringPreferencesKey("lyrics_source_preference")
     private val bulkFetchCursorKey = longPreferencesKey("bulk_fetch_cursor")
+    private val ttmlUpgradeCursorKey = longPreferencesKey("ttml_upgrade_cursor")
 
     val liveBarEnabled: Flow<Boolean> = context.lyricsDataStore.data.map { prefs ->
         prefs[liveBarKey] ?: false
@@ -74,5 +75,12 @@ class LyricsPreference @Inject constructor(
 
     suspend fun setBulkFetchCursor(trackId: Long) {
         context.lyricsDataStore.edit { it[bulkFetchCursorKey] = trackId }
+    }
+
+    /** Last track id the TTML upgrade pass reached; the next run starts just after it. */
+    val ttmlUpgradeCursor: Flow<Long> = context.lyricsDataStore.data.map { it[ttmlUpgradeCursorKey] ?: 0L }
+
+    suspend fun setTtmlUpgradeCursor(trackId: Long) {
+        context.lyricsDataStore.edit { it[ttmlUpgradeCursorKey] = trackId }
     }
 }

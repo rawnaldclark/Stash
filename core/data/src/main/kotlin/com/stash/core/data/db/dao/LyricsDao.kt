@@ -35,8 +35,12 @@ interface LyricsDao {
     @Query("DELETE FROM lyrics WHERE track_id = :trackId")
     suspend fun delete(trackId: Long)
 
-    /** Rows the TTML upgrade backfill still has to try: real lyrics, no TTML, never definitively missed. */
-    @Query("SELECT track_id FROM lyrics WHERE ttml IS NULL AND instrumental = 0 AND ttml_checked_at IS NULL")
+    /**
+     * Rows the TTML upgrade backfill still has to try: real lyrics, no TTML, never definitively
+     * missed. In track_id order: `LyricsRepository.trackIdsPendingTtml` resumes the pass from an
+     * id cursor the same way `trackIdsMissingLyrics` resumes the bulk fetch.
+     */
+    @Query("SELECT track_id FROM lyrics WHERE ttml IS NULL AND instrumental = 0 AND ttml_checked_at IS NULL ORDER BY track_id")
     suspend fun trackIdsPendingTtml(): List<Long>
 
     @Query("UPDATE lyrics SET ttml_checked_at = :at WHERE track_id = :trackId")

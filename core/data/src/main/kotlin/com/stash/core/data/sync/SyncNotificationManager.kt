@@ -59,6 +59,16 @@ class SyncNotificationManager @Inject constructor(
          *  summary so one never clobbers the other. */
         const val NOTIFICATION_ID_FLAC_SUMMARY = 9006
 
+        /** Foreground-progress ID for downloads outside a sync (a playlist's
+         *  Download button, a followed mix). Not [NOTIFICATION_ID_PROGRESS]:
+         *  the two run at once, and a shared ID made them overwrite each other. */
+        const val NOTIFICATION_ID_DOWNLOADS = 9007
+
+        /** Foreground ID for the "Building your mix" discovery run, which Android
+         *  11 and older show while it runs expedited. Its own ID for the same
+         *  reason as [NOTIFICATION_ID_DOWNLOADS]: it runs beside a sync. */
+        const val NOTIFICATION_ID_DISCOVERY = 9008
+
         /** Maximum value for the determinate progress bar. */
         private const val PROGRESS_MAX = 100
     }

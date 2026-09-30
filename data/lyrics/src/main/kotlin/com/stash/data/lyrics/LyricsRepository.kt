@@ -110,10 +110,19 @@ class LyricsRepository @Inject constructor(
 
     suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
 
-    /** Empty when the user has set LRC-only — nothing to upgrade if Apple is never consulted. */
+    /**
+     * Empty when the user has set LRC-only — nothing to upgrade if Apple is never consulted.
+     * Starts just after the id the last upgrade pass reached and wraps round, same reasoning as
+     * [trackIdsMissingLyrics]: a pass cut short by the consecutive-failure bail, Cancel, or the OS
+     * job cap otherwise re-asks the same head of the list — which stalled every prior instance of
+     * this pass when Apple's TTML source was down, since MAX_CONSECUTIVE_FAILURES bails out almost
+     * immediately on the same handful of tracks every single run.
+     */
     suspend fun trackIdsPendingTtml(): List<Long> {
         if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) return emptyList()
-        return lyricsDao.trackIdsPendingTtml()
+        val after = lyricsPreference.ttmlUpgradeCursor.first()
+        // ponytail: one resume point, not per-track state. Stable sort keeps id order in each half.
+        return lyricsDao.trackIdsPendingTtml().sortedBy { it <= after }
     }
 
     /**
@@ -185,6 +194,8 @@ class LyricsRepository @Inject constructor(
      * - no row / already TTML / instrumental / source not in chain -> SKIPPED
      */
     suspend fun upgradeToTtml(trackId: Long): TtmlUpgradeResult {
+        // First, before the network, so a kill mid-request still moves the next run on.
+        lyricsPreference.setTtmlUpgradeCursor(trackId)
         if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) {
             return TtmlUpgradeResult.SKIPPED
         }
