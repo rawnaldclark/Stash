@@ -68,24 +68,35 @@ class InnerTubeSearchExecutor @Inject constructor(
      * (ATV / OMV / UGC / …). It's the authoritative signal the matcher should
      * use instead of title-keyword heuristics; null when the player response
      * omits the field (rare — seen on some non-music videos and podcasts).
+     * [lengthSeconds] is the video's real length, which the download matcher
+     * checks a candidate against.
      */
     data class VideoVerification(
         val title: String,
         val isPlayable: Boolean,
         val musicVideoType: MusicVideoType?,
+        /**
+         * `videoDetails.lengthSeconds`, which the player sends as a string ("312");
+         * 0 when it leaves the length out or sends "0" (live streams). Search rows
+         * can carry no length, and the signed-out layout never does, so this is the
+         * length the download matcher checks them against (#533).
+         */
+        val lengthSeconds: Long = 0L,
     )
 
     /**
      * Verifies a video ID via the InnerTube player endpoint.
      *
-     * Returns the actual video title, playability status, AND YouTube Music's
-     * `musicVideoType` classification. InnerTube search results can return
-     * video IDs that are:
+     * Returns the actual video title, playability status, YouTube Music's
+     * `musicVideoType` classification, AND the video's length. InnerTube search
+     * results can return video IDs that are:
      * - **Metadata mismatch**: search says "Song A" but player says "Song B"
      * - **Unplayable**: correct metadata but video is unavailable/region-blocked,
      *   causing yt-dlp to download a substitute or fail silently
      * - **Wrong type**: the search heuristic said "Song" but the video is
      *   actually an OMV or UGC upload — `musicVideoType` closes that gap.
+     * - **Wrong cut**: a music video standing in for the song under the song's
+     *   title, on a search row with no length — the length closes that gap.
      *
      * @param videoId The YouTube video ID to verify.
      * @return Verification result, or null if the lookup failed entirely.
@@ -108,11 +119,18 @@ class InnerTubeSearchExecutor @Inject constructor(
             val musicVideoType = MusicVideoType.fromInnerTube(
                 videoDetails["musicVideoType"]?.jsonPrimitive?.contentOrNull,
             )
+            // A string ("312"). `as?` rather than `.jsonPrimitive`: a malformed value
+            // must read as unknown, not throw and void the title check with it.
+            val lengthSeconds = (videoDetails["lengthSeconds"] as? JsonPrimitive)
+                ?.contentOrNull?.toLongOrNull()?.takeIf { it > 0 } ?: 0L
             VideoVerification(
                 title = title,
                 isPlayable = isPlayable,
                 musicVideoType = musicVideoType,
+                lengthSeconds = lengthSeconds,
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Player lookup failed for $videoId", e)
             null
