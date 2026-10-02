@@ -19,9 +19,10 @@ data class ReconciliationResult(
 /**
  * The library-housekeeping pass previously inlined at the top of
  * [com.stash.core.data.sync.workers.TrackDownloadWorker.doWork]: sweeping
- * orphaned queue rows, resetting exhausted/stale retries, verifying that
- * every "downloaded" track's file still exists on disk, and re-queuing
- * undownloaded tracks with no active queue entry.
+ * orphaned queue rows and leftover downloads nobody asked for, resetting
+ * exhausted/stale retries, verifying that every "downloaded" track's file still
+ * exists on disk, and, for a sync, re-queuing undownloaded tracks with no active
+ * queue entry.
  *
  * Deliberately does NOT touch [com.stash.data.download.files.FileOrganizer]
  * or [com.stash.data.download.files.LibrarySizeHolder] directly — those
@@ -34,8 +35,9 @@ data class ReconciliationResult(
  * totals.
  *
  * Extracted so the same pass can run either as the first step of a full
- * sync (chain mode) or standalone from Library & Storage. Every step here
- * is sync-agnostic — none of the underlying queries key off a `syncId`.
+ * sync (chain mode) or standalone from Library & Storage. Every step but the
+ * requeue is sync-agnostic. The requeue runs only for a sync, whose rows carry
+ * its id and whose download step takes them (#532).
  *
  * @param onProgress Invoked after each step with (stepIndex, totalSteps).
  */
@@ -50,6 +52,8 @@ class LibraryReconciliationUseCase @Inject constructor(
     }
 
     /**
+     * @param syncId The sync this pass runs for, or null for Library Health's
+     *   Verify, which then queues nothing (the requeue step is skipped).
      * @param checkFileExists Returns whether the file at a stored
      *   `Track.filePath` still exists. Defaults to "always exists" (skips
      *   the disk check entirely) for callers that don't have file-system
@@ -80,7 +84,11 @@ class LibraryReconciliationUseCase @Inject constructor(
             add("BOTH")
         }
 
-        val sweptOrphans = downloadQueueDao.deleteOrphanedQueueEntries()
+        // Leftovers too (#532): Verify reports them as stale entries cleaned up, and
+        // a sync clears one before its requeue below, so the song it was hiding
+        // gets this sync's row in the same pass.
+        val sweptOrphans = downloadQueueDao.deleteOrphanedQueueEntries() +
+            downloadQueueDao.cancelLeftoverDiscoveryDownloads()
         onProgress(1, TOTAL_STEPS)
 
         downloadQueueDao.resetExhaustedRetries()
@@ -117,7 +125,12 @@ class LibraryReconciliationUseCase @Inject constructor(
         // queued for a full re-download in the same pass that recognizes it.
         val adopted = adoptExistingFiles()
 
-        val unqueuedTrackIds = downloadQueueDao.getUnqueuedTrackIds(connectedSources)
+        // Only a sync requeues: its rows carry its id, and its own download step
+        // takes them. A standalone run (Verify) has no download step. The rows it
+        // used to file had no sync id, so only the background drain took them, and
+        // since #474 it downloaded them unasked at every app start, Stream-only
+        // included (#532). They also hid their songs from the next sync's requeue.
+        val unqueuedTrackIds = if (syncId != null) downloadQueueDao.getUnqueuedTrackIds(connectedSources) else emptyList()
         if (unqueuedTrackIds.isNotEmpty()) {
             val newEntries = unqueuedTrackIds.map { trackId ->
                 com.stash.core.data.db.entity.DownloadQueueEntity(trackId = trackId, syncId = syncId)

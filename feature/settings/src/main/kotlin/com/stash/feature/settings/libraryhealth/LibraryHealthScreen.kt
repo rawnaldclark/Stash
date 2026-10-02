@@ -415,7 +415,6 @@ private fun VerifyLibrarySection(
                     val a = status.adoption
                     Text(
                         text = "Verified — ${r.filesMissing} missing file${if (r.filesMissing == 1) "" else "s"} found, " +
-                            "${r.unqueuedRequeued} track(s) requeued, " +
                             "${r.orphansSwept} stale entr${if (r.orphansSwept == 1) "y" else "ies"} cleaned up.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
