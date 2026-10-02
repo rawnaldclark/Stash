@@ -35,6 +35,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -201,14 +202,17 @@ class DownloadManagerMatchVerifyTest {
     private fun lookedUp(id: String, times: Int) =
         coVerify(exactly = times) { searchExecutor.verifyVideo(id) }
 
-    /** The id the real scorer ranks first for [patientZero]. */
-    private fun rankedFirst(vararg rows: YtDlpSearchResult): String = scorer.scoreResults(
+    /** The real scorer's ranking of [rows] for [patientZero], best first. */
+    private fun ranked(vararg rows: YtDlpSearchResult) = scorer.scoreResults(
         targetTitle = patientZero.title,
         targetArtist = patientZero.artist,
         targetDurationMs = patientZero.durationMs,
         results = rows.toList(),
         targetAlbum = patientZero.album,
-    ).first().videoId
+    )
+
+    /** The id the real scorer ranks first for [patientZero]. */
+    private fun rankedFirst(vararg rows: YtDlpSearchResult): String = ranked(*rows).first().videoId
 
     @Test
     fun `a percent sign in the song's name does not break its match`() = runTest {
@@ -339,6 +343,30 @@ class DownloadManagerMatchVerifyTest {
     }
 
     @Test
+    fun `a candidate under the score bar is not taken, even behind a rejected video`() = runTest {
+        // Only bestMatch's pick used to be checked, and bestMatch keeps the 0.60 bar.
+        // Lower candidates are checked now, so the loop has to keep the bar itself:
+        // the instrumental passes every gate (its title strips to the song's, and the
+        // player gives the song's length), and only its score marks the wrong cut.
+        val instrumental = ytmRow("inst", "Patient Zero (Instrumental)")
+        firstSearchReturns(ytmRow(MV), instrumental)
+        player(MV, MV_PLAYER_TITLE, 312)
+        player("inst", "Patient Zero (Instrumental)", 226)
+        val instrumentalScore = ranked(ytmRow(MV), instrumental).single { it.videoId == "inst" }.matchScore
+        assertTrue(
+            "premise: the instrumental scores under the bar, at $instrumentalScore",
+            instrumentalScore < MatchScorer.AUTO_ACCEPT_THRESHOLD,
+        )
+
+        val result = newSubject().downloadTrack(patientZero)
+
+        assertEquals(TrackDownloadResult.Unmatched(rejectedVideoId = MV), result)
+        downloaded("inst", times = 0)
+        lookedUp(MV, times = 1)
+        lookedUp("inst", times = 0)
+    }
+
+    @Test
     fun `when YouTube Music shows only the video, the yt-dlp search finds the song`() = runTest {
         everySearchReturns(ytmRow(MV))
         coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns listOf(
@@ -381,6 +409,48 @@ class DownloadManagerMatchVerifyTest {
 
         assertEquals(TrackDownloadResult.Unmatched(rejectedVideoId = MV), result)
         downloaded(MV, times = 0)
+    }
+
+    @Test
+    fun `the yt-dlp search takes and saves the song behind a video the player rejected`() = runTest {
+        // YouTube Music shows only the video, so every search there ends on its
+        // rejection. yt-dlp's rows can carry no length either, and the video's views
+        // rank it ahead of the song.
+        everySearchReturns(ytmRow(MV))
+        val videoRow = YtDlpSearchResult(
+            id = MV,
+            title = "Patient Zero (Official Music Video)",
+            uploader = "Taylor Swift",
+            channel = "Taylor Swift",
+            duration = 0.0,
+            viewCount = 900_000_000,
+            webpageUrl = watch(MV),
+        )
+        val songRow = YtDlpSearchResult(
+            id = AUDIO,
+            title = "Patient Zero",
+            uploader = "Taylor Swift",
+            channel = "Taylor Swift",
+            duration = 0.0,
+            viewCount = 1_000_000,
+            webpageUrl = watch(AUDIO),
+        )
+        coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns listOf(videoRow, songRow)
+        player(MV, MV_PLAYER_TITLE, 312)
+        player(AUDIO, "Patient Zero", 226)
+        assertEquals("premise: the video outranks the song", MV, rankedFirst(videoRow, songRow))
+
+        newSubject().downloadTrack(patientZero)
+
+        downloaded(AUDIO, times = 1)
+        downloaded(MV, times = 0)
+        // The accepted candidate's id is saved, not the search's top pick: a saved id
+        // is reused unchecked on the next download, which would fetch the video.
+        coVerify(exactly = 1) { trackDao.fillMissingMetadata(7L, any(), any(), any(), AUDIO) }
+        coVerify(exactly = 0) { trackDao.fillMissingMetadata(any(), any(), any(), any(), MV) }
+        // Rejected in the YouTube Music searches, and not looked up again by yt-dlp's.
+        lookedUp(MV, times = 1)
+        lookedUp(AUDIO, times = 1)
     }
 
     @Test
