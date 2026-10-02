@@ -12,9 +12,21 @@ Stash mirrors your Spotify and YouTube Music libraries to your Android phone. Yo
 There's no Stash account. No subscription. No ads. No analytics. Your credentials live on your phone — the Spotify, YouTube, and Discord tokens encrypted, the rest in app-private storage — and each one is only ever sent back to the service it came from. Spotify and YouTube aren't the only hosts Stash talks to, though — lyrics, scrobbling, artist metadata, Discord presence, and lossless all have their own. [The full list is below](#what-stash-talks-to).
 
 <p align="center">
-  <img src="docs/screenshots/home.png" width="280" alt="Home screen — Daily Mixes, sync stats, supporter pill">
-  <img src="docs/screenshots/now-playing.png" width="280" alt="Now Playing — FLAC 24/44 lossless">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/hero-dark.webp">
+    <img src="docs/screenshots/hero-light.webp" alt="Stash on three phones: Home with Daily Discover, Now Playing with a lossless FLAC track, and word-synced lyrics">
+  </picture>
 </p>
+
+
+## Screenshots
+
+Shown in your GitHub theme. Stash has dark, light and pure-black themes.
+
+<table>
+  <tr><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/home.webp"><img src="docs/screenshots/light/home.webp" alt="Home: Daily Discover, your mixes and radios"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/now-playing.webp"><img src="docs/screenshots/light/now-playing.webp" alt="Now Playing: the colour wash follows the album art"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/lyrics.webp"><img src="docs/screenshots/light/lyrics.webp" alt="Lyrics that light up word by word"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/library.webp"><img src="docs/screenshots/light/library.webp" alt="Library: songs from Spotify and YouTube, with their FLAC quality"></picture></td></tr>
+  <tr><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/playlist.webp"><img src="docs/screenshots/light/playlist.webp" alt="A playlist page with its Download button"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/artist.webp"><img src="docs/screenshots/light/artist.webp" alt="An artist page"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/album.webp"><img src="docs/screenshots/light/album.webp" alt="An album page"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/sync.webp"><img src="docs/screenshots/light/sync.webp" alt="Sync: your library at a glance"></picture></td></tr>
+</table>
 
 ---
 
