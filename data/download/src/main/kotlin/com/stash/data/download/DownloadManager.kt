@@ -918,7 +918,8 @@ class DownloadManager @Inject constructor(
             }
         }
 
-        Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} (artist=%.2f, verified=${verification != null})".format(artistSim))
+        // Only the number goes through format(): the title and query can hold a "%".
+        Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} (artist=${String.format("%.2f", artistSim)}, verified=${verification != null})")
         return best.youtubeUrl
     }
 
