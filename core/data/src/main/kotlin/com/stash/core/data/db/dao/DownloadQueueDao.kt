@@ -41,6 +41,34 @@ data class DownloadManagementRow(
 )
 
 /**
+ * A discovery row (no sync run) the user asked for, the only kind a background
+ * download takes (#532): a tap (`user_requested`: a song, an album's or a
+ * selection's Download, a Retry, Library Health's "Download N again"), or a song
+ * still in a playlist kept on the phone (`keep_offline`, the playlist page's
+ * Download button) or in a followed mix with "Download this mix" on
+ * (`sync_enabled` on its `share:<id>` playlist). Active playlists and live
+ * memberships only: the same "still wanted" rule
+ * [DownloadQueueDao.cancelWaitingForPlaylist] spares rows by.
+ *
+ * Any other discovery row is a leftover: one Library Health's Verify filed, a tap
+ * or a playlist download from before taps were marked (v0.9.110), a retired Stash
+ * Mix discovery, a song since taken out of its kept playlist. v0.9.110 downloaded
+ * those at every app start, Stream-only included.
+ *
+ * Every column inside the subquery is qualified, so the bare ones resolve to
+ * download_queue in the query this is pasted into.
+ */
+private const val ASKED_FOR = """
+    (user_requested = 1 OR track_id IN (
+        SELECT pt.track_id FROM playlist_tracks pt
+        INNER JOIN playlists p ON p.id = pt.playlist_id
+        WHERE pt.removed_at IS NULL
+          AND p.is_active = 1
+          AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.source_id LIKE 'share:%'))
+    ))
+"""
+
+/**
  * Data-access object for [DownloadQueueEntity].
  *
  * Manages the download work queue with insert, status updates,
@@ -129,7 +157,9 @@ interface DownloadQueueDao {
      * would wait forever. [hasRowToLeaveAlone] counts it as handled, so the
      * playlist's Download switch couldn't queue the song either. This hands those
      * rows to the discovery drain: the ones it would still pick up, PENDING or
-     * FAILED with retries left (the same rule as [pendingDiscoveryDownloads]).
+     * FAILED with retries left (the same status rule as [pendingDiscoveryDownloads]).
+     * They count as asked for there ([ASKED_FOR]): only a kept playlist or a
+     * followed mix with Download on queues through here.
      *
      * @return Number of rows moved.
      */
@@ -148,8 +178,21 @@ interface DownloadQueueDao {
     @Query("SELECT COUNT(*) FROM download_queue WHERE status = 'WAITING_FOR_LOSSLESS'")
     fun waitingForLosslessCount(): Flow<Int>
 
-    /** All deferred entries, for [LosslessRetryWorker] to re-resolve. */
-    @Query("SELECT * FROM download_queue WHERE status = 'WAITING_FOR_LOSSLESS' ORDER BY created_at ASC")
+    /**
+     * Deferred entries for [LosslessRetryWorker] to re-resolve, which downloads every
+     * one it resolves. A sync's own, or a discovery row the user asked for
+     * ([ASKED_FOR], #532): one that stopped being wanted while it waited (its song
+     * left a kept playlist, its mix was unfollowed) waits for
+     * [cancelLeftoverDiscoveryDownloads] instead of downloading.
+     */
+    @Query(
+        """
+        SELECT * FROM download_queue
+        WHERE status = 'WAITING_FOR_LOSSLESS'
+          AND (sync_id IS NOT NULL OR """ + ASKED_FOR + """)
+        ORDER BY created_at ASC
+        """
+    )
     suspend fun waitingForLosslessTracks(): List<DownloadQueueEntity>
 
     /** Retrieve all pending downloads for a specific sync run, ordered by creation time. */
@@ -274,12 +317,17 @@ interface DownloadQueueDao {
      *
      * Filtered to exclude WAITING_FOR_LOSSLESS (owned by LosslessRetryWorker)
      * and IN_PROGRESS / COMPLETED (already running or done).
+     *
+     * Only rows the user asked for ([ASKED_FOR], #532). Every start of the drain
+     * (a tap, a cold start, a sync, a followed mix's update) reads through here,
+     * so none of them can take a leftover.
      */
     @Query(
         """
         SELECT * FROM download_queue
         WHERE sync_id IS NULL
           AND (status = 'PENDING' OR (status = 'FAILED' AND retry_count < 3))
+          AND """ + ASKED_FOR + """
         ORDER BY created_at ASC
         """
     )
@@ -290,8 +338,11 @@ interface DownloadQueueDao {
      * rows retry whenever a drain runs for real work; starting one just for
      * them retried an unmatchable song at every app start and every sync, a
      * lossless attempt each time (#474).
+     *
+     * Same rule as [pendingDiscoveryDownloads] ([ASKED_FOR]), so a leftover alone
+     * starts nothing: the worker shows its notification before it reads the queue.
      */
-    @Query("SELECT EXISTS(SELECT 1 FROM download_queue WHERE sync_id IS NULL AND status = 'PENDING')")
+    @Query("SELECT EXISTS(SELECT 1 FROM download_queue WHERE sync_id IS NULL AND status = 'PENDING' AND " + ASKED_FOR + ")")
     suspend fun hasPendingDiscoveryDownload(): Boolean
 
     // ── Updates ─────────────────────────────────────────────────────────
@@ -438,10 +489,15 @@ interface DownloadQueueDao {
      * SKIPPED is accepted too: a user-cancelled row is otherwise a dead end
      * (nothing re-enqueues it — see [getUnqueuedTrackIds]), so "Retry" on a
      * cancelled download in the Downloads screen is the only way back.
+     *
+     * A Retry is a tap (#532): a discovery row counts as asked for from here on
+     * ([ASKED_FOR]), so a run that waits or gets cut short is still taken later,
+     * not cleaned up as a leftover. A sync's row keeps the sync's own rules.
      */
     @Query("""
         UPDATE download_queue
-           SET status = 'PENDING', error_message = NULL, failure_type = 'NONE'
+           SET status = 'PENDING', error_message = NULL, failure_type = 'NONE',
+               user_requested = CASE WHEN sync_id IS NULL THEN 1 ELSE user_requested END
          WHERE id = :queueId AND status IN ('FAILED', 'SKIPPED')
     """)
     suspend fun atomicallyClaimForRetry(queueId: Long): Int
@@ -454,16 +510,49 @@ interface DownloadQueueDao {
     @Query("SELECT id FROM download_queue WHERE status = 'FAILED' AND failure_type NOT IN ('NONE', 'NO_MATCH')")
     suspend fun selectAllNonMatchFailedIds(): List<Long>
 
-    /** Internal helper: bulk flip a known set of FAILED rows back to PENDING. */
-    @Query("UPDATE download_queue SET status='PENDING', error_message=NULL, failure_type='NONE' WHERE id IN (:ids)")
+    /**
+     * Internal helper: bulk flip a known set of FAILED rows back to PENDING, for
+     * Failed downloads' "Retry group" and "Retry all". A retry, so a discovery row
+     * counts as asked for, like [atomicallyClaimForRetry] (#532).
+     */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'PENDING', error_message = NULL, failure_type = 'NONE',
+               user_requested = CASE WHEN sync_id IS NULL THEN 1 ELSE user_requested END
+         WHERE id IN (:ids)
+    """)
     suspend fun resetToPendingRaw(ids: List<Long>)
 
     /**
-     * A download the user asked for by hand (#474): a tap on a song. A playlist's
-     * Download switch going off leaves such a row alone ([cancelWaitingForPlaylist]).
+     * A tap reuses the song's old row (#474): PENDING again, and a download the user
+     * asked for by hand, so a playlist's Download switch going off leaves it alone
+     * ([cancelWaitingForPlaylist]). One write: with two, the leftover cleanup
+     * ([cancelLeftoverDiscoveryDownloads]) could delete the row in between and the
+     * tap would download nothing (#532).
+     *
+     * @return 1, or 0 when the row is gone and the caller has to file a fresh one.
      */
-    @Query("UPDATE download_queue SET user_requested = 1 WHERE id = :id")
-    suspend fun markUserRequested(id: Long)
+    @Query("""
+        UPDATE download_queue
+           SET status = 'PENDING', error_message = NULL, failure_type = 'NONE', user_requested = 1
+         WHERE id = :id
+    """)
+    suspend fun requeueForTap(id: Long): Int
+
+    /**
+     * A search download (a tap) found no lossless source and waits on the song's
+     * row: WAITING_FOR_LOSSLESS, as [updateStatus] writes it, and in the same write
+     * a discovery row becomes the user's ask, so the leftover cleanup keeps it and
+     * [LosslessRetryWorker] takes it (#532). A sync's row keeps the sync's own rules.
+     */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'WAITING_FOR_LOSSLESS', error_message = NULL, completed_at = NULL,
+               failure_type = 'NONE', rejected_video_id = NULL,
+               user_requested = CASE WHEN sync_id IS NULL THEN 1 ELSE user_requested END
+         WHERE id = :id
+    """)
+    suspend fun deferForTap(id: Long)
 
     /**
      * Chunked wrapper for [resetToPendingRaw]: a retry-all over a large failed
@@ -632,6 +721,9 @@ interface DownloadQueueDao {
      * DELETE, not SKIPPED: a SKIPPED row counts as handled
      * ([hasRowToLeaveAlone]), so it would stop a later On from queueing the song.
      *
+     * "Still wanted" here is [ASKED_FOR], written out for the playlists other
+     * than this one.
+     *
      * @return Number of rows deleted.
      */
     @Query(
@@ -657,6 +749,38 @@ interface DownloadQueueDao {
         """
     )
     suspend fun cancelWaitingForPlaylist(playlistId: Long): Int
+
+    /**
+     * Drops the discovery rows nobody asked for (#532, see [ASKED_FOR]). Nothing
+     * takes them any more ([pendingDiscoveryDownloads], [waitingForLosslessTracks]),
+     * so they would sit in Downloads as queued forever.
+     *
+     * - PENDING and WAITING_FOR_LOSSLESS leftovers go. A waiting one would otherwise
+     *   download whenever a lossless source turned up, and relay pacing deferred
+     *   whole batches of v0.9.110's unasked downloads.
+     * - A FAILED leftover goes only when Verify filed it (no search query; every
+     *   other inserter writes "artist - title", and Library Health's "Download N
+     *   again" rows are asked for). Before v0.9.110 a tap left no mark, so any other
+     *   failed row may be the user's: nothing retries it unasked, and it keeps its
+     *   Retry on Failed downloads. Verify's would also hide its song from a sync's
+     *   requeue ([getUnqueuedTrackIds]) forever.
+     * - A song running now finishes (IN_PROGRESS); cancelled and finished rows are
+     *   history. Sync rows follow the sync's own sweeps.
+     *
+     * Not a one-off: a song taken out of a kept playlist, an unfollowed mix or a
+     * restored backup leaves leftovers the same way, so this runs before each
+     * background start and in every reconcile.
+     *
+     * @return Number of rows deleted.
+     */
+    @Query(
+        """
+        DELETE FROM download_queue
+        WHERE sync_id IS NULL
+          AND (status IN ('PENDING', 'WAITING_FOR_LOSSLESS') OR (status = 'FAILED' AND search_query = ''))
+          AND NOT """ + ASKED_FOR
+    )
+    suspend fun cancelLeftoverDiscoveryDownloads(): Int
 
     /**
      * [playlistId]'s songs that won't download unless the user acts (#474's Download button): a

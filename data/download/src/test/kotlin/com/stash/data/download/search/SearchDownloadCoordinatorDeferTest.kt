@@ -136,12 +136,9 @@ class SearchDownloadCoordinatorDeferTest {
             "expected a WaitingForLossless emission, got $statuses",
             statuses.any { it is SearchDownloadStatus.WaitingForLossless },
         )
-        coVerify {
-            downloadQueueDao.updateStatus(
-                id = 99L,
-                status = DownloadStatus.WAITING_FOR_LOSSLESS,
-            )
-        }
+        // WAITING_FOR_LOSSLESS, and marked as the user's ask in the same write, so the
+        // leftover cleanup keeps it and the lossless retry takes it (#532).
+        coVerify { downloadQueueDao.deferForTap(99L) }
     }
 
     @Test

@@ -232,6 +232,11 @@ interface MusicRepository {
      * Returns the number of tracks queued (those already downloaded are
      * skipped). Caller can show "Queued N tracks" snackbar.
      *
+     * Only for a playlist whose download switch is on: a followed mix with
+     * "Download this mix" on (a kept playlist goes through [setPlaylistDownload]).
+     * The rows are not marked as taps, so for any other playlist nothing downloads
+     * them and the next background start drops them as leftovers (#532).
+     *
      * [background] is for work nobody tapped (a followed mix's update): the
      * download then follows the Sync tab's "Wi-Fi only", like a sync's own
      * downloads, instead of starting on any network.
@@ -242,16 +247,18 @@ interface MusicRepository {
      * After a sync: queue what every playlist kept on the phone (#474) is
      * missing, then start ONE background download for all of it. Returns the
      * number of songs queued. [manualSync]: the user tapped "Sync now", so
-     * these download on any network, like that sync's own downloads.
+     * these download on any network, like that sync's own downloads. First drops
+     * the waiting downloads nobody asks for any more (#532).
      */
     suspend fun queueKeptPlaylists(manualSync: Boolean = false): Int
 
     /**
-     * Starts the download run for songs already waiting in the queue, and does
-     * nothing when none are. [tap]: the user just asked (Library Health's
-     * "Re-download missing"), so it goes on any network like a tap, still never
-     * cancelling a song in progress. Otherwise (cold start) it follows the Sync
-     * tab's Wi-Fi only.
+     * Starts the download run for songs the user asked for that are waiting in
+     * the queue, and does nothing when none are. [tap]: the user just asked
+     * (Library Health's "Re-download missing"), so it goes on any network like a
+     * tap, still never cancelling a song in progress. Otherwise (cold start) it
+     * follows the Sync tab's Wi-Fi only. First drops the waiting downloads nobody
+     * asked for (#532).
      */
     suspend fun resumeWaitingDownloads(tap: Boolean = false)
 

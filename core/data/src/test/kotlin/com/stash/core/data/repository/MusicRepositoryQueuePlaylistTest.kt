@@ -14,13 +14,16 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
@@ -29,6 +32,7 @@ import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
@@ -39,6 +43,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -95,7 +100,10 @@ class MusicRepositoryQueuePlaylistTest {
 
     @Test fun `queues only never-tried songs, and a second call adds nothing`() = runTest {
         val pid = db.playlistDao().insert(
-            PlaylistEntity(name = "Kept", source = MusicSource.BOTH, sourceId = "custom_1", type = PlaylistType.CUSTOM),
+            PlaylistEntity(
+                name = "Kept", source = MusicSource.BOTH, sourceId = "custom_1", type = PlaylistType.CUSTOM,
+                keepOffline = true,
+            ),
         )
         val fresh = member(pid, 0, track("Fresh"))
         val failed = member(pid, 1, track("Failed"))
@@ -197,7 +205,7 @@ class MusicRepositoryQueuePlaylistTest {
     }
 
     @Test fun `a sync with nothing new still restarts a drain for songs already waiting`() = runTest {
-        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting"))))
+        leftWaiting()
         assertEquals(0, repo().queueKeptPlaylists())
         assertEquals(listOf(WorkInfo.State.ENQUEUED to NetworkType.UNMETERED), liveDrains())
     }
@@ -214,7 +222,10 @@ class MusicRepositoryQueuePlaylistTest {
     /** Failed songs retry when a drain runs for real work, never on their own (relay quota, notification). */
     @Test fun `with only failed songs queued, neither a cold start nor a sync starts a drain`() = runTest {
         val failed = db.trackDao().insert(track("Unmatchable"))
-        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = failed, status = DownloadStatus.FAILED, retryCount = 1))
+        // Tapped, so it is a download the user asked for: only its status keeps the drain from starting.
+        db.downloadQueueDao().insert(
+            DownloadQueueEntity(trackId = failed, status = DownloadStatus.FAILED, retryCount = 1, userRequested = true),
+        )
         val repo = repo()
         repo.resumeWaitingDownloads()
         assertEquals(0, repo.queueKeptPlaylists())
@@ -224,7 +235,7 @@ class MusicRepositoryQueuePlaylistTest {
     // ── The network rule is read fresh (#474) ─────────────────────────────
 
     @Test fun `turning Wi-Fi only off replaces a run still waiting for Wi-Fi`() = runTest {
-        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting"))))
+        leftWaiting()
         repo(wifiOnly = true).resumeWaitingDownloads()
         repo(wifiOnly = false).resumeWaitingDownloads()
         // Nothing was running, so nothing was cancelled: the waiting run just stops waiting for Wi-Fi.
@@ -256,7 +267,7 @@ class MusicRepositoryQueuePlaylistTest {
 
     /** A cold start and a sync can both look for a waiting run at once; only one may start one. */
     @Test fun `two background starts at the same moment start one run`() = runTest {
-        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting"))))
+        leftWaiting()
         val coldStart = repo()
         val sync = repo()
         listOf(launch { coldStart.resumeWaitingDownloads() }, launch { sync.resumeWaitingDownloads() }).joinAll()
@@ -264,7 +275,7 @@ class MusicRepositoryQueuePlaylistTest {
     }
 
     @Test fun `resuming starts one background drain, and never stacks a second one`() = runTest {
-        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting"))))
+        leftWaiting()
         val repo = repo()
         repo.resumeWaitingDownloads()
         repo.resumeWaitingDownloads() // a second cold start while still off Wi-Fi
@@ -298,7 +309,7 @@ class MusicRepositoryQueuePlaylistTest {
     /** Sync rows for songs of the playlist named "Kept" (created first here) and of another playlist. */
     private suspend fun seedStuckSyncRows(): Triple<Long, Long, Long> {
         syncId = db.syncHistoryDao().insert(SyncHistoryEntity())
-        val kept = playlist("Kept")
+        val kept = playlist("Kept", keepOffline = true)
         val stuck = member(kept, 0, track("Stuck"))
         val failedOnce = member(kept, 1, track("Failed once"))
         val otherPlaylists = member(playlist("Other"), 0, track("Other"))
@@ -347,6 +358,102 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(setOf(tapped, retried), waiting.toSet())
     }
 
+    // ── Only what the user asked for downloads (#532) ─────────────────────
+
+    /**
+     * v0.9.110 resumed every row outside a sync at each cold start, Stream-only included:
+     * months-old leftovers started downloading on their own.
+     */
+    @Test fun `neither a cold start nor a sync starts a drain for leftovers nobody asked for`() = runTest {
+        verifyRow(member(playlist("Synced", syncEnabled = true), 0, track("Filed by Verify")))
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = db.trackDao().insert(track("Old discovery"))))
+        val repo = repo()
+
+        repo.resumeWaitingDownloads()
+        assertEquals(0, repo.queueKeptPlaylists())
+
+        assertEquals(emptyList<WorkInfo>(), drains())
+    }
+
+    @Test fun `a cold start cancels leftovers nobody asked for, and keeps what the user asked for`() = runTest {
+        val tapped = db.trackDao().insert(track("Tapped"))
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = tapped, userRequested = true))
+        val kept = member(playlist("Kept", keepOffline = true), 0, track("Kept"))
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = kept))
+        val verify = member(playlist("Synced", syncEnabled = true), 0, track("Filed by Verify"))
+        verifyRow(verify)
+        val discovery = db.trackDao().insert(track("Old discovery"))
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = discovery, searchQuery = "A - Old discovery"))
+
+        repo().resumeWaitingDownloads()
+
+        assertEquals(null, db.downloadQueueDao().getByTrackId(verify))
+        assertEquals(null, db.downloadQueueDao().getByTrackId(discovery))
+        assertEquals(setOf(tapped, kept), db.downloadQueueDao().pendingDiscoveryDownloads().map { it.trackId }.toSet())
+    }
+
+    /** A process can live for days; the sweep after each sync catches what lost its playlist since. */
+    @Test fun `a song taken out of a kept playlist loses its waiting download at the next sync`() = runTest {
+        val pid = playlist("Kept", keepOffline = true)
+        val song = member(pid, 0, track("Taken out"))
+        val repo = repo()
+        assertEquals(1, repo.queueKeptPlaylists())
+
+        repo.removeTrackFromPlaylist(song, pid)
+        repo.queueKeptPlaylists()
+
+        assertEquals(null, db.downloadQueueDao().getByTrackId(song))
+    }
+
+    @Test fun `deleting a kept playlist cancels its waiting downloads at once, by either delete`() = runTest {
+        val removed = playlist("Removed", keepOffline = true)
+        val removedSong = member(removed, 0, track("From Removed"))
+        val cascaded = playlist("Cascaded", keepOffline = true)
+        val cascadedSong = member(cascaded, 0, track("From Cascaded"))
+        // Liked Songs protects a track from the cascade, so its row would outlive the playlist.
+        val liked = playlist("Liked", type = PlaylistType.LIKED_SONGS)
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = liked, trackId = cascadedSong, position = 0))
+        val repo = repo()
+        assertEquals(2, repo.queueKeptPlaylists())
+
+        repo.removePlaylist(db.playlistDao().getById(removed)!!.toDomain())
+        repo.deletePlaylistWithCascade(cascaded, alsoBlacklist = false)
+
+        assertEquals(null, db.downloadQueueDao().getByTrackId(removedSong))
+        assertEquals(null, db.downloadQueueDao().getByTrackId(cascadedSong))
+    }
+
+    /** The sweep can delete the old row between a tap reading it and writing it (#532). */
+    @Test fun `a tap still files its download when the sweep removes the old row first`() = runTest {
+        val song = db.trackDao().insert(track("Tapped long ago"))
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = song, status = DownloadStatus.FAILED))
+        val real = db.downloadQueueDao()
+        val sweptMidTap = object : DownloadQueueDao by real {
+            override suspend fun getByTrackId(trackId: Long) = real.getByTrackId(trackId).also { real.deleteByTrackId(trackId) }
+        }
+        val enqueuer = mockk<SingleTrackDownloadEnqueuer>(relaxed = true)
+
+        assertEquals(true, repo(downloadQueueDao = sweptMidTap, enqueuer = enqueuer).queueDownload(song))
+
+        val row = real.getByTrackId(song)
+        assertNotNull("the tap must leave a row to download", row)
+        assertEquals(DownloadStatus.PENDING, row!!.status)
+        assertEquals(true, row.userRequested)
+        coVerify { enqueuer.enqueue(row.id) }
+    }
+
+    /** A tap whose single-song run was cut short: the user asked for it. */
+    private suspend fun leftWaiting() {
+        db.downloadQueueDao().insert(
+            DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting")), userRequested = true),
+        )
+    }
+
+    /** What Library Health's Verify filed: no sync run, no search query, not asked for. */
+    private suspend fun verifyRow(trackId: Long) {
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = trackId, searchQuery = ""))
+    }
+
     private fun drains(): List<WorkInfo> =
         WorkManager.getInstance(context).getWorkInfosForUniqueWork(DiscoveryDownloadWorker.UNIQUE_WORK_NAME).get()
 
@@ -359,11 +466,16 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(WorkInfo.State.RUNNING, drains().single { it.id == id }.state)
     }
 
-    private suspend fun playlist(name: String, keepOffline: Boolean = false): Long =
+    private suspend fun playlist(
+        name: String,
+        keepOffline: Boolean = false,
+        syncEnabled: Boolean = false,
+        type: PlaylistType = PlaylistType.CUSTOM,
+    ): Long =
         db.playlistDao().findBySourceId("custom_$name")?.id ?: db.playlistDao().insert(
             PlaylistEntity(
-                name = name, source = MusicSource.BOTH, sourceId = "custom_$name", type = PlaylistType.CUSTOM,
-                keepOffline = keepOffline,
+                name = name, source = MusicSource.BOTH, sourceId = "custom_$name", type = type,
+                keepOffline = keepOffline, syncEnabled = syncEnabled,
             ),
         )
 
@@ -378,7 +490,12 @@ class MusicRepositoryQueuePlaylistTest {
         return id
     }
 
-    private fun repo(streamOnly: Boolean = false, wifiOnly: Boolean = true): MusicRepositoryImpl {
+    private fun repo(
+        streamOnly: Boolean = false,
+        wifiOnly: Boolean = true,
+        downloadQueueDao: DownloadQueueDao = db.downloadQueueDao(),
+        enqueuer: SingleTrackDownloadEnqueuer = mockk(relaxed = true),
+    ): MusicRepositoryImpl {
         // "Run recommendations when" at its default: it must never reach a download.
         val network = mockk<DownloadNetworkPreference>()
         coEvery { network.current() } returns DownloadNetworkMode.WIFI_AND_CHARGING
@@ -392,7 +509,7 @@ class MusicRepositoryQueuePlaylistTest {
             trackDao = db.trackDao(),
             playlistDao = db.playlistDao(),
             syncHistoryDao = mockk(relaxed = true),
-            downloadQueueDao = db.downloadQueueDao(),
+            downloadQueueDao = downloadQueueDao,
             discoveryQueueDao = mockk(relaxed = true),
             blocklistGuard = mockk(relaxed = true),
             trackMatcher = mockk(relaxed = true),
@@ -401,7 +518,7 @@ class MusicRepositoryQueuePlaylistTest {
             streamingPreference = streaming,
             localFileOps = mockk(relaxed = true),
             syncPreferencesManager = sync,
-            singleTrackDownloadEnqueuer = mockk(relaxed = true),
+            singleTrackDownloadEnqueuer = enqueuer,
             lastFmRecommendationSource = mockk(relaxed = true),
             sharedMixDao = mockk(relaxed = true),
         )
