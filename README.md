@@ -12,20 +12,26 @@ Stash mirrors your Spotify and YouTube Music libraries to your Android phone. Yo
 There's no Stash account. No subscription. No ads. No analytics. Your credentials live on your phone — the Spotify, YouTube, and Discord tokens encrypted, the rest in app-private storage — and each one is only ever sent back to the service it came from. Spotify and YouTube aren't the only hosts Stash talks to, though — lyrics, scrobbling, artist metadata, Discord presence, and lossless all have their own. [The full list is below](#what-stash-talks-to).
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/hero-dark.webp">
-    <img src="docs/screenshots/hero-light.webp" alt="Stash on three phones: Home with Daily Discover, Now Playing with a lossless FLAC track, and word-synced lyrics">
-  </picture>
+  <img src="docs/screenshots/hero-dark.webp" alt="Stash on three phones: Home with Daily Discover, Now Playing with a lossless FLAC track, and word-synced lyrics">
 </p>
 
 
 ## Screenshots
 
-Shown in your GitHub theme. Stash has dark, light and pure-black themes.
+Stash has dark, light and pure-black themes.
+
+### Dark
 
 <table>
-  <tr><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/home.webp"><img src="docs/screenshots/light/home.webp" alt="Home: Daily Discover, your mixes and radios"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/now-playing.webp"><img src="docs/screenshots/light/now-playing.webp" alt="Now Playing: the colour wash follows the album art"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/lyrics.webp"><img src="docs/screenshots/light/lyrics.webp" alt="Lyrics that light up word by word"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/library.webp"><img src="docs/screenshots/light/library.webp" alt="Library: songs from Spotify and YouTube, with their FLAC quality"></picture></td></tr>
-  <tr><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/playlist.webp"><img src="docs/screenshots/light/playlist.webp" alt="A playlist page with its Download button"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/artist.webp"><img src="docs/screenshots/light/artist.webp" alt="An artist page"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/album.webp"><img src="docs/screenshots/light/album.webp" alt="An album page"></picture></td><td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/sync.webp"><img src="docs/screenshots/light/sync.webp" alt="Sync: your library at a glance"></picture></td></tr>
+  <tr><td><img src="docs/screenshots/dark/home.webp" alt="Home: Daily Discover, your mixes and radios (dark theme)"></td><td><img src="docs/screenshots/dark/now-playing.webp" alt="Now Playing: the colour wash follows the album art (dark theme)"></td><td><img src="docs/screenshots/dark/lyrics.webp" alt="Lyrics that light up word by word (dark theme)"></td><td><img src="docs/screenshots/dark/library.webp" alt="Library: songs from Spotify and YouTube, with their FLAC quality (dark theme)"></td></tr>
+  <tr><td><img src="docs/screenshots/dark/playlist.webp" alt="A playlist page with its Download button (dark theme)"></td><td><img src="docs/screenshots/dark/artist.webp" alt="An artist page (dark theme)"></td><td><img src="docs/screenshots/dark/album.webp" alt="An album page (dark theme)"></td><td><img src="docs/screenshots/dark/sync.webp" alt="Sync: your library at a glance (dark theme)"></td></tr>
+</table>
+
+### Light
+
+<table>
+  <tr><td><img src="docs/screenshots/light/home.webp" alt="Home: Daily Discover, your mixes and radios (light theme)"></td><td><img src="docs/screenshots/light/now-playing.webp" alt="Now Playing: the colour wash follows the album art (light theme)"></td><td><img src="docs/screenshots/light/lyrics.webp" alt="Lyrics that light up word by word (light theme)"></td><td><img src="docs/screenshots/light/library.webp" alt="Library: songs from Spotify and YouTube, with their FLAC quality (light theme)"></td></tr>
+  <tr><td><img src="docs/screenshots/light/playlist.webp" alt="A playlist page with its Download button (light theme)"></td><td><img src="docs/screenshots/light/artist.webp" alt="An artist page (light theme)"></td><td><img src="docs/screenshots/light/album.webp" alt="An album page (light theme)"></td><td><img src="docs/screenshots/light/sync.webp" alt="Sync: your library at a glance (light theme)"></td></tr>
 </table>
 
 ---
