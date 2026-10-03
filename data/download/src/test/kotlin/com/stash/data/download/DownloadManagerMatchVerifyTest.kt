@@ -367,6 +367,26 @@ class DownloadManagerMatchVerifyTest {
     }
 
     @Test
+    fun `a candidate behind a video an earlier search rejected still needs the player's answer`() = runTest {
+        // Every search returns the video ahead of a row whose lookup fails, yt-dlp's
+        // too. Later searches skip the rejected video, which leaves that row first in
+        // line, but it is still the lower candidate: taken on a failed lookup, it
+        // would be downloaded with no title or length check.
+        everySearchReturns(ytmRow(MV), ytmRow("unchecked"))
+        coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns listOf(ytmRow(MV), ytmRow("unchecked"))
+        player(MV, MV_PLAYER_TITLE, 312)
+        // No answer for "unchecked": its lookup fails every time.
+
+        val result = newSubject().downloadTrack(patientZero)
+
+        assertEquals(TrackDownloadResult.Unmatched(rejectedVideoId = MV), result)
+        downloaded("unchecked", times = 0)
+        lookedUp(MV, times = 1)
+        // Once per search: two on YouTube Music, then yt-dlp's.
+        lookedUp("unchecked", times = 3)
+    }
+
+    @Test
     fun `a candidate under the score bar is not taken, even behind a rejected video`() = runTest {
         // Only bestMatch's pick used to be checked, and bestMatch keeps the 0.60 bar.
         // Lower candidates are checked now, so the loop has to keep the bar itself:

@@ -848,6 +848,8 @@ class DownloadManager @Inject constructor(
         val aboveBar = scored
             .filter { it.matchScore >= MatchScorer.AUTO_ACCEPT_THRESHOLD }
             .distinctBy { it.videoId }
+        // Picked before the skips: the row behind a top pick an earlier search
+        // rejected is still a lower candidate, so it needs the player's answer.
         val topPick = aboveBar.firstOrNull() ?: return null
         val candidates = aboveBar
             .filterNot { it.videoId in playerRejected }
