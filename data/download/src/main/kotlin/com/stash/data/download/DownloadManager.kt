@@ -210,7 +210,9 @@ class DownloadManager @Inject constructor(
         // exactly that video. The lossless and JioSaavn lookups match by
         // title/artist/album and likely chose the wrong recording in the
         // first place; the canonicalizer would swap the pick for another
-        // video. "YouTube fallback off" still means no YouTube download.
+        // video. "YouTube fallback off" still means no YouTube download: the
+        // row waits until the user turns it on (LosslessRetryWorker leaves
+        // picked rows alone).
         val pickedUrl = track.youtubeId
             ?.takeIf { track.matchPickedAt != null && it.isNotBlank() }
             ?.let { "https://www.youtube.com/watch?v=$it" }

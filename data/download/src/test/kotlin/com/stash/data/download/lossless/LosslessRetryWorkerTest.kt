@@ -189,4 +189,25 @@ class LosslessRetryWorkerTest {
         format = AudioFormat(codec = "flac", bitrateKbps = 0),
         confidence = 0.99f,
     )
+
+    // -- #531 review ----------------------------------------------------------------
+
+    @Test
+    fun `a song whose audio the user picked never asks the relay`() = runTest {
+        coEvery { downloadQueueDao.waitingForLosslessTracks() } returns
+            listOf(entry(id = 100L, trackId = 1L), entry(id = 200L, trackId = 2L))
+        // Picked in Failed Matches: it downloads that video once Lossy
+        // fallback is on. A lookup by title finds the recording the user
+        // rejected, and spent the shared relay's quota on every trigger.
+        coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L).copy(matchPickedAt = 1_000L)
+        coEvery { trackDao.getById(2L) } returns stubTrackEntity(2L)
+        coEvery { registry.resolve(any()) } returns stubSourceResult()
+
+        newWorker().doWork()
+
+        coVerify(exactly = 0) { registry.resolve(match { it.title == "Track 1" }) }
+        coVerify(exactly = 0) { downloadQueueDao.updateStatus(id = 100L, status = any()) }
+        coVerify(exactly = 0) { enqueuer.enqueue(100L) }
+        coVerify(exactly = 1) { enqueuer.enqueue(200L) }
+    }
 }

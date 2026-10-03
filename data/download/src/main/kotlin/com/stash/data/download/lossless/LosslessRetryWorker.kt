@@ -71,6 +71,12 @@ class LosslessRetryWorker @AssistedInject constructor(
         val purpose = LosslessDownloadPurpose()
         for (entry in deferred) {
             val track = trackDao.getById(entry.trackId) ?: continue
+            // The user picked this song's audio in Failed Matches (#531). Its
+            // download is that video, waiting for Lossy fallback (turning it
+            // on requeues every waiting row). A lookup by title would find
+            // the recording they rejected, and asked the shared relay again
+            // on every trigger, only for the download to wait again.
+            if (track.matchPickedAt != null) continue
             // runCatching mirrors DownloadManager's defensive pattern:
             // a single bad source / network blip mustn't halt the whole
             // sweep. Sources are also expected to swallow their own
