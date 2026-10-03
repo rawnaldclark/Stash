@@ -324,8 +324,9 @@ class PlayerRepositoryImpl @Inject constructor(
      * a player that holds NO timeline: seeded from the persisted session on a cold
      * start after process death, or kept from the last state when the SERVICE stops
      * ([onSessionAliveChanged]). [play] rebuilds the queue from [PlaybackStateStore]
-     * when the timeline comes back empty. Cleared the moment the controller reports
-     * real items, or when the ghost's track is deleted.
+     * when the timeline comes back empty, and the queue sheet's tap, swipe and drag act
+     * on the ghost too (see [ghostQueueActive]). Cleared the moment the controller
+     * reports real items, or when the ghost's track is deleted.
      */
     @Volatile private var ghostSession = false
     override val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
@@ -742,11 +743,7 @@ class PlayerRepositoryImpl @Inject constructor(
                 // A new session started while the plan was being built: it owns the player now. Its own
                 // end restores again; the finally below still clears this restore's flag (`active` covers the gap).
                 if (!play && listenTogether?.active?.value == true) return
-                val tracks = plan.tracks.map { it.toDomain() }
-                val controller = ensureController()
-                controller?.shuffleModeEnabled = plan.isShuffled
-                controller?.repeatMode = plan.repeatMode.toPlayerRepeatMode()
-                setQueueInternal(tracks, plan.startIndex, plan.positionMs, plan.source, play)
+                loadPlan(plan, plan.startIndex, plan.positionMs, play)
                 return
             }
             if (!play) return // after a session with nothing saved, there is nothing to put back
@@ -764,6 +761,20 @@ class PlayerRepositoryImpl @Inject constructor(
             // The user's queue is back (or there was none): saving may resume. On every exit, so a throw can't jam the gate.
             if (!play) listenTogether?.restorePending = false
         }
+    }
+
+    /** Loads a persisted [plan] into the player with its shuffle, repeat and source, starting at [startIndex]. */
+    private suspend fun loadPlan(
+        plan: PlaybackResumer.ResumePlan,
+        startIndex: Int,
+        startPositionMs: Long,
+        play: Boolean,
+    ) {
+        val tracks = plan.tracks.map { it.toDomain() }
+        val controller = ensureController()
+        controller?.shuffleModeEnabled = plan.isShuffled
+        controller?.repeatMode = plan.repeatMode.toPlayerRepeatMode()
+        setQueueInternal(tracks, startIndex, startPositionMs, plan.source, play)
     }
 
     /**
@@ -1296,6 +1307,10 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun removeFromQueue(index: Int) {
+        if (ghostQueueActive()) {
+            removeFromGhostQueue(index)
+            return
+        }
         val controller = ensureController() ?: return
         shuffledDisplayIndices?.let { walk ->
             // #468: rows are in shuffle order - map the row back to its timeline slot.
@@ -1323,6 +1338,10 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun moveInQueue(from: Int, to: Int) {
+        if (ghostQueueActive()) {
+            moveInGhostQueue(from, to)
+            return
+        }
         val controller = ensureController() ?: return
         // #468: a MediaController cannot rewrite Media3's shuffle order, so a move
         // under shuffle would not change what plays next. The sheet hides the handle.
@@ -1366,6 +1385,10 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun skipToQueueIndex(index: Int) {
+        if (ghostQueueActive()) {
+            playGhostQueueFrom(index)
+            return
+        }
         val controller = ensureController() ?: return
         shuffledDisplayIndices?.let { walk ->
             // #468: rows are in shuffle order - seek to the timeline slot the row maps to.
@@ -1403,6 +1426,103 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     /**
+     * True while the queue sheet lists the #462 ghost over a player with no timeline. The
+     * index-based ops above can't reach a row there (they were silent no-ops: a tap closed the
+     * sheet and nothing played), so they act on the ghost and on the persisted queue that [play]
+     * rebuilds from. Not during a Listen Together session, which owns the player.
+     */
+    private fun ghostQueueActive(): Boolean =
+        ghostSession && !inListenTogether && (controllerDeferred?.mediaItemCount ?: 0) == 0
+
+    /**
+     * Serialises the ghost edits' read-modify-write of [PlaybackStateStore], and a ghost tap's
+     * read after them: two quick swipes must not start from the same saved queue, and a tap must
+     * rebuild without a row just swiped away.
+     */
+    private val ghostQueueMutex = Mutex()
+
+    /**
+     * A tap on the ghost's queue: the rebuild [play] does (persisted queue, shuffle, repeat,
+     * "Playing from"), but starting the tapped song from its beginning rather than the saved song
+     * at its saved position. The row is found by track id, not index: a ghost kept from a stopped
+     * service lists Media3's shuffle walk (#468), while the persisted queue is in timeline order.
+     */
+    private suspend fun playGhostQueueFrom(index: Int) {
+        val tapped = _playerState.value.queue.getOrNull(index) ?: return
+        val plan = ghostQueueMutex.withLock { playbackResumer.buildResumePlan() }
+        val start = plan?.tracks?.indexOfFirst { it.id == tapped.id } ?: -1
+        if (plan == null || start < 0) {
+            // No library row behind it (a radio discovery has none): no resume path can rebuild it, play() included.
+            Log.i(TAG, "ghost queue tap: track ${tapped.id} is not in the saved queue")
+            return
+        }
+        loadPlan(plan, start, startPositionMs = 0L, play = true)
+    }
+
+    /**
+     * A swipe on the ghost's queue: the row leaves the screen and the persisted queue, so the next
+     * rebuild (a tap, Play, Android Auto) comes back without it. Nothing loads or plays.
+     */
+    private suspend fun removeFromGhostQueue(index: Int) {
+        val ghost = _playerState.value
+        val removed = ghost.queue.getOrNull(index) ?: return
+        if (index == ghost.currentIndex) return // the paused song stays; the sheet only offers the rows after it
+        _playerState.value = ghost.copy(
+            queue = ghost.queue.filterIndexed { i, _ -> i != index },
+            currentIndex = if (index < ghost.currentIndex) ghost.currentIndex - 1 else ghost.currentIndex,
+        )
+        // The persisted queue may be in another order (timeline order under a shuffle-walk ghost),
+        // so drop the same copy of the song rather than the same position.
+        val copy = ghost.queue.subList(0, index).count { it.id == removed.id }
+        persistGhostQueue { ids ->
+            val at = ids.withIndex().filter { it.value == removed.id }.getOrNull(copy)?.index
+            if (at == null) ids else ids.filterIndexed { i, _ -> i != at }
+        }
+    }
+
+    /**
+     * A drag on the ghost's queue: reorders the rows and the persisted queue. Nothing loads or
+     * plays. Under shuffle a no-op, like the live queue's (#468); the sheet hides the handle there.
+     */
+    private suspend fun moveInGhostQueue(from: Int, to: Int) {
+        val ghost = _playerState.value
+        if (ghost.isShuffleEnabled) return
+        if (from !in ghost.queue.indices || to !in ghost.queue.indices || from == to) return
+        val queue = ghost.queue.toMutableList().apply { add(to, removeAt(from)) }
+        val current = ghost.currentIndex
+        _playerState.value = ghost.copy(
+            queue = queue,
+            currentIndex = when {
+                from == current -> to
+                from < current && to >= current -> current - 1
+                from > current && to <= current -> current + 1
+                else -> current
+            },
+        )
+        // Shuffle off: the ghost lists the queue in its persisted order, so the new rows are the queue.
+        persistGhostQueue { queue.map { it.id } }
+    }
+
+    /** Rewrites the persisted queue's ids through [edit], keeping its shuffle, repeat and source. */
+    private suspend fun persistGhostQueue(edit: (List<Long>) -> List<Long>) {
+        try {
+            ghostQueueMutex.withLock {
+                val saved = playbackStateStore.getLastPlaybackState() ?: return
+                val ids = edit(saved.queueTrackIds)
+                if (ids.isEmpty() || ids == saved.queueTrackIds) return
+                playbackStateStore.saveQueue(ids, saved.isShuffled, saved.repeatMode, saved.source)
+                // updateState's "already saved" check must compare against what is stored now.
+                lastSavedQueueIds = ids
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The edit is on screen already; failing to keep it must not crash the swipe.
+            Log.w(TAG, "ghost queue: saving the edited queue failed", e)
+        }
+    }
+
+    /**
      * Called by the MusicRepository.trackDeletions collector. Removes every
      * queue entry whose Media3 extras carry [deletedTrackId]. Operates
      * high-to-low so earlier indices stay valid while the loop runs.
@@ -1416,9 +1536,19 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     private fun evictTrackFromQueue(deletedTrackId: Long) {
         // The ghost is state only — a deleted ghost track must not linger on screen.
-        if (ghostSession && _playerState.value.currentTrack?.id == deletedTrackId) {
-            ghostSession = false
-            _playerState.value = PlayerState()
+        if (ghostSession) {
+            val ghost = _playerState.value
+            if (ghost.currentTrack?.id == deletedTrackId) {
+                ghostSession = false
+                _playerState.value = PlayerState()
+            } else if (ghost.queue.any { it.id == deletedTrackId }) {
+                // Nor in its queue: a tap on the row would find no library row to rebuild from.
+                val above = ghost.queue.take(ghost.currentIndex).count { it.id == deletedTrackId }
+                _playerState.value = ghost.copy(
+                    queue = ghost.queue.filterNot { it.id == deletedTrackId },
+                    currentIndex = ghost.currentIndex - above,
+                )
+            }
         }
         val controller = controllerDeferred ?: return
         currentQueueTracks = currentQueueTracks.filterNot { it.id == deletedTrackId }
