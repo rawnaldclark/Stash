@@ -112,7 +112,7 @@ class DownloadQueueDaoAskedForTest {
         playlists()
         val keptWait = queued("Kept", DownloadStatus.WAITING_FOR_LOSSLESS, kept)
         val tappedWait = queued("Tapped", DownloadStatus.WAITING_FOR_LOSSLESS, userRequested = true)
-        val syncWait = queued("Sync's", DownloadStatus.WAITING_FOR_LOSSLESS, syncId = syncRun())
+        val syncWait = queued("Sync's", DownloadStatus.WAITING_FOR_LOSSLESS, synced, syncId = syncRun())
         queued("Old playlist download", DownloadStatus.WAITING_FOR_LOSSLESS)
         queued("Verify's", DownloadStatus.WAITING_FOR_LOSSLESS, synced, searchQuery = "")
         queued("Owner stopped sharing", DownloadStatus.WAITING_FOR_LOSSLESS, stoppedSharing)
@@ -142,6 +142,45 @@ class DownloadQueueDaoAskedForTest {
             .containsExactly(keptSyncWait, followedSyncWait, tappedSyncWait, keptWait)
         assertThat(dao.waitingForLosslessTracks(streamOnly = false).map { it.trackId })
             .containsExactly(keptSyncWait, followedSyncWait, tappedSyncWait, keptWait, syncedOnly)
+    }
+
+    /**
+     * Download mode: a sync's wait comes back only while a playlist the sync downloads still holds
+     * the song, the rule the sync's own pickup uses. Switching a playlist off (the Sync tab, or the
+     * page's Download) drops only its queued songs, so its waits stayed, and the lossless retry
+     * downloaded them anyway.
+     */
+    @Test fun `in Download mode the lossless retry skips a sync's wait whose playlist was switched off`() = runTest {
+        playlists()
+        val goingOff = playlist("Synced, then switched off", "custom_going_off", syncEnabled = true)
+        val hiddenSynced = playlist("Synced, but hidden", "custom_hidden_synced", syncEnabled = true, isActive = false)
+        val queuedSong = queued("Queued", DownloadStatus.PENDING, goingOff, syncId = syncRun())
+        val waiting = queued("Waiting", DownloadStatus.WAITING_FOR_LOSSLESS, goingOff, syncId = syncRun())
+        val alsoSynced = queued(
+            "Waiting, also in Synced", DownloadStatus.WAITING_FOR_LOSSLESS, goingOff, synced, syncId = syncRun(),
+        )
+        val alsoKept = queued("Waiting, also kept", DownloadStatus.WAITING_FOR_LOSSLESS, goingOff, kept, syncId = syncRun())
+        val tapped = queued(
+            "Waiting, tapped", DownloadStatus.WAITING_FOR_LOSSLESS, goingOff, syncId = syncRun(), userRequested = true,
+        )
+        // In no playlist the sync downloads.
+        queued(
+            "Taken out of Synced", DownloadStatus.WAITING_FOR_LOSSLESS, synced, syncId = syncRun(), removedFromFirst = true,
+        )
+        queued("Stash Mix's", DownloadStatus.WAITING_FOR_LOSSLESS, stashMix, syncId = syncRun())
+        queued("Hidden playlist's", DownloadStatus.WAITING_FOR_LOSSLESS, hiddenSynced, syncId = syncRun())
+        queued("In no playlist", DownloadStatus.WAITING_FOR_LOSSLESS, syncId = syncRun())
+
+        assertThat(dao.waitingForLosslessTracks(streamOnly = false).map { it.trackId })
+            .containsExactly(waiting, alsoSynced, alsoKept, tapped)
+
+        // The Sync tab's switch: sync off, then drop the sync's queued songs no synced playlist wants.
+        db.playlistDao().setSyncEnabled(goingOff, false)
+        assertThat(dao.cancelDownloadsWithNoEnabledPlaylist()).isEqualTo(1)
+        assertThat(dao.getByTrackId(queuedSong)).isNull()
+        // Its waits stay, and come back only while something else still asks for the song.
+        assertThat(dao.waitingForLosslessTracks(streamOnly = false).map { it.trackId })
+            .containsExactly(alsoSynced, alsoKept, tapped)
     }
 
     /**

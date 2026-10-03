@@ -25,9 +25,10 @@ import dagger.assisted.AssistedInject
  * Does not download — it re-resolves, re-queues, and hands each re-queued
  * row to [SingleTrackDownloadEnqueuer] so it downloads now rather than at
  * the next sync. Never writes COMPLETED or FAILED; the download worker owns
- * that once status is PENDING. That download runs in either mode, so in
- * Stream-only mode the sweep takes a sync's row only when the user asked for
- * the song (#532); the others wait for Download mode.
+ * that once status is PENDING. That download runs in either mode, so the
+ * sweep takes a sync's row only while the song should still download (#532):
+ * in Download mode while a playlist the sync downloads still holds it, in
+ * Stream-only mode only when the user asked for it. The others keep waiting.
  *
  * Runs as a download ([LosslessDownloadPurpose]): when the relay paces
  * downloads, the sweep stops at that row — every row after it would be paced
@@ -61,9 +62,10 @@ class LosslessRetryWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        // Stream-only mode downloads no sync's songs (#474), and every row resolved here
-        // downloads at once: a sync's row nobody asked for is left out before it costs a
-        // lookup, still waiting for Download mode.
+        // Every row resolved here downloads at once, so a sync's row that shouldn't
+        // download now is left out before it costs a lookup, still waiting: in Stream-only
+        // mode one nobody asked for (#474), in Download mode one whose playlist was
+        // switched off.
         val deferred = downloadQueueDao.waitingForLosslessTracks(streamOnly = streamingPreference.current())
         if (deferred.isEmpty()) {
             return Result.success(
@@ -121,8 +123,8 @@ class LosslessRetryWorker @AssistedInject constructor(
         const val KEY_RESOLVED = "lossless_retry_resolved"
 
         /**
-         * Output-data key: how many WAITING_FOR_LOSSLESS rows the sweep took when it started. In
-         * Stream-only mode a sync's rows nobody asked for aren't among them (see [doWork]).
+         * Output-data key: how many WAITING_FOR_LOSSLESS rows the sweep took when it started. A
+         * sync's rows that shouldn't download now aren't among them (see [doWork]).
          */
         const val KEY_TOTAL = "lossless_retry_total"
     }

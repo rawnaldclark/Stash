@@ -198,22 +198,35 @@ interface DownloadQueueDao {
 
     /**
      * Deferred entries for [LosslessRetryWorker] to re-resolve, which downloads every
-     * one it resolves. A sync's own, or a discovery row the user asked for
-     * ([ASKED_FOR], #532): one that stopped being wanted while it waited (its song
-     * left a kept playlist, its mix was unfollowed) waits for
-     * [cancelLeftoverDiscoveryDownloads] instead of downloading.
+     * one it resolves. A sync's own while a playlist the sync downloads still holds the
+     * song (the rule [getAllPendingBySources] picks up by), or a row the user asked for
+     * ([ASKED_FOR], #532). Switching a playlist off drops only the sync's PENDING rows
+     * ([cancelDownloadsWithNoEnabledPlaylist]), so its waits stay until the next
+     * reconcile ([deleteOrphanedQueueEntries]), without downloading. A discovery row
+     * that stopped being wanted while it waited (its song left a kept playlist, its mix
+     * was unfollowed) waits for [cancelLeftoverDiscoveryDownloads] the same way.
      *
      * [streamOnly]: Stream-only mode downloads no sync's songs (#474; the sync's own
      * download step refuses them there), so a sync's row comes back only when the user
-     * asked for the song too: a tap, or a song a kept playlist or a followed mix
-     * downloads, which download in either mode. The others keep waiting, for Download
-     * mode.
+     * asked for the song too: a tap (a Retry, a search download left waiting), or a song
+     * a kept playlist or a followed mix downloads, which download in either mode. The
+     * others keep waiting, for Download mode.
      */
     @Query(
         """
         SELECT * FROM download_queue
         WHERE status = 'WAITING_FOR_LOSSLESS'
-          AND ((sync_id IS NOT NULL AND :streamOnly = 0) OR """ + ASKED_FOR + """)
+          AND (
+            (sync_id IS NOT NULL AND :streamOnly = 0 AND track_id IN (
+                SELECT pt.track_id FROM playlist_tracks pt
+                INNER JOIN playlists p ON p.id = pt.playlist_id
+                WHERE pt.removed_at IS NULL
+                  AND p.sync_enabled = 1
+                  AND p.is_active = 1
+                  AND p.type != 'STASH_MIX'
+            ))
+            OR """ + ASKED_FOR + """
+          )
         ORDER BY created_at ASC
         """
     )
