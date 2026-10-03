@@ -514,19 +514,20 @@ interface DownloadQueueDao {
      * (nothing re-enqueues it — see [getUnqueuedTrackIds]), so "Retry" on a
      * cancelled download in the Downloads screen is the only way back.
      *
-     * A Retry is a tap (#532): a discovery row counts as asked for from here on
+     * A Retry is a tap (#532): the row counts as asked for from here on
      * ([ASKED_FOR]), so a run that waits or gets cut short is still taken later,
-     * not cleaned up as a leftover. Not a song a playlist downloads
+     * not cleaned up as a leftover. A sync's row too: the retry runs in either mode,
+     * and in Stream-only mode only an ask brings a sync's waiting song back
+     * ([waitingForLosslessTracks]). Not a song a playlist downloads
      * ([WANTED_BY_A_PLAYLIST]): that one is asked for through its playlist already,
      * and stays the playlist's, so turning its Download off still stops it
-     * ([cancelWaitingForPlaylist] spares a tap, #474). A sync's row keeps the sync's
-     * own rules.
+     * ([cancelWaitingForPlaylist] spares a tap, #474).
      */
     @Query(
         """
         UPDATE download_queue
            SET status = 'PENDING', error_message = NULL, failure_type = 'NONE',
-               user_requested = CASE WHEN sync_id IS NULL AND NOT """ + WANTED_BY_A_PLAYLIST + """
+               user_requested = CASE WHEN NOT """ + WANTED_BY_A_PLAYLIST + """
                    THEN 1 ELSE user_requested END
          WHERE id = :queueId AND status IN ('FAILED', 'SKIPPED')
         """
@@ -543,15 +544,15 @@ interface DownloadQueueDao {
 
     /**
      * Internal helper: bulk flip a known set of FAILED rows back to PENDING, for
-     * Failed downloads' "Retry group" and "Retry all". A retry, so a discovery row
-     * counts as asked for, and a song a playlist downloads stays the playlist's,
+     * Failed downloads' "Retry group" and "Retry all". A retry, so a row counts as
+     * asked for, a sync's too, and a song a playlist downloads stays the playlist's,
      * like [atomicallyClaimForRetry] (#532).
      */
     @Query(
         """
         UPDATE download_queue
            SET status = 'PENDING', error_message = NULL, failure_type = 'NONE',
-               user_requested = CASE WHEN sync_id IS NULL AND NOT """ + WANTED_BY_A_PLAYLIST + """
+               user_requested = CASE WHEN NOT """ + WANTED_BY_A_PLAYLIST + """
                    THEN 1 ELSE user_requested END
          WHERE id IN (:ids)
         """
@@ -577,14 +578,15 @@ interface DownloadQueueDao {
     /**
      * A search download (a tap) found no lossless source and waits on the song's
      * row: WAITING_FOR_LOSSLESS, as [updateStatus] writes it, and in the same write
-     * a discovery row becomes the user's ask, so the leftover cleanup keeps it and
-     * [LosslessRetryWorker] takes it (#532). A sync's row keeps the sync's own rules.
+     * the row becomes the user's ask, as [requeueForTap] marks it: the leftover
+     * cleanup keeps it, and [LosslessRetryWorker] takes it in either mode (#532). A
+     * sync's row too, the one this usually finds: in Stream-only mode only an ask
+     * brings a sync's waiting song back ([waitingForLosslessTracks]).
      */
     @Query("""
         UPDATE download_queue
            SET status = 'WAITING_FOR_LOSSLESS', error_message = NULL, completed_at = NULL,
-               failure_type = 'NONE', rejected_video_id = NULL,
-               user_requested = CASE WHEN sync_id IS NULL THEN 1 ELSE user_requested END
+               failure_type = 'NONE', rejected_video_id = NULL, user_requested = 1
          WHERE id = :id
     """)
     suspend fun deferForTap(id: Long)
