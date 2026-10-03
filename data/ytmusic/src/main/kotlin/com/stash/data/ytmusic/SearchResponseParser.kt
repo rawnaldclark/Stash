@@ -154,6 +154,64 @@ internal fun parseTopResultCard(shelf: JsonObject): TopResultItem? {
 }
 
 /**
+ * Parses the "Top result" card (`musicCardShelfRenderer`) when it is an ALBUM,
+ * the kind [parseTopResultCard] leaves out of the Search tab's top slot: its
+ * title run browses to a `MUSIC_PAGE_TYPE_ALBUM` page. The subtitle runs read
+ * like an Albums-shelf card's (["Album", " • ", "<artist>", " • ", "<year>"])
+ * and are read the same way as [parseAlbumsShelf] reads them.
+ *
+ * #481: for a new release this card is often the only place a search names the
+ * album (the rows below are its songs and the artist's other albums), so
+ * [YTMusicApiClient.resolveAlbum] looks here first.
+ *
+ * @return The album, or null when the card is any other kind.
+ */
+internal fun parseAlbumTopCard(shelf: JsonObject): AlbumSummary? {
+    val titleRun = shelf.navigatePath("title", "runs")?.firstArray()
+        ?.firstOrNull()?.asObject()
+        ?: return null
+    val title = titleRun["text"]?.asString() ?: return null
+    val browseEndpoint = titleRun.navigatePath("navigationEndpoint", "browseEndpoint")?.asObject()
+        ?: return null
+    val pageType = browseEndpoint.navigatePath(
+        "browseEndpointContextSupportedConfigs",
+        "browseEndpointContextMusicConfig",
+        "pageType",
+    )?.asString()
+    if (pageType != "MUSIC_PAGE_TYPE_ALBUM") return null
+    val id = browseEndpoint["browseId"]?.asString() ?: return null
+
+    val subtitleTexts = shelf.navigatePath("subtitle", "runs")?.asArray()
+        ?.mapNotNull { it.asObject()?.get("text")?.asString() }
+        ?.filterNot { it == " • " || it == " & " || it == ", " || it == " x " }
+        ?: emptyList()
+    // Drop the type label ("Album"/"EP"/"Single") if present.
+    val dataTokens = if (
+        subtitleTexts.firstOrNull()?.let { ALBUM_TYPE_LABELS.contains(it) } == true
+    ) subtitleTexts.drop(1) else subtitleTexts
+    val year = dataTokens.firstOrNull { it.matches(YEAR_REGEX) }
+    val artist = dataTokens.firstOrNull { !it.matches(YEAR_REGEX) } ?: ""
+
+    val thumbnails = shelf.navigatePath(
+        "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",
+    )?.firstArray()
+    val thumbnailUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
+        thumbnails?.maxByOrNull {
+            it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0
+        }?.asObject()?.get("url")?.asString()
+    )
+
+    return AlbumSummary(
+        id = id,
+        title = title,
+        artist = artist,
+        thumbnailUrl = thumbnailUrl,
+        year = year,
+        releaseType = subtitleTexts.firstOrNull()?.takeIf { it in ALBUM_TYPE_LABELS },
+    )
+}
+
+/**
  * Parses the "Songs" shelf — a vertical list of `musicResponsiveListItemRenderer`
  * items with videoId, title, artists, album, and duration.
  *
@@ -263,6 +321,7 @@ internal fun parseAlbumsShelf(shelfRenderer: JsonObject): List<AlbumSummary> {
                 artist = artist,
                 thumbnailUrl = thumbnailUrl,
                 year = year,
+                releaseType = subtitleTexts.firstOrNull()?.takeIf { it in ALBUM_TYPE_LABELS },
             ),
         )
     }

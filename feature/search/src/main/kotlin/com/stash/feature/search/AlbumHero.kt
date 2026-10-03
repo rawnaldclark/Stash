@@ -102,6 +102,9 @@ fun AlbumHero(
     /** #304: "Save" keeps the album in the library without downloading it. */
     onSave: () -> Unit = {},
     isSaved: Boolean = false,
+    // False while there are no tracks (still loading, or the album couldn't be
+    // loaded): Play, Queue, Save and Download all would do nothing, so they say so.
+    actionsEnabled: Boolean = true,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -244,6 +247,7 @@ fun AlbumHero(
             ) {
                 Button(
                     onClick = onPlayAlbum,
+                    enabled = actionsEnabled,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                     shape = RoundedCornerShape(12.dp),
                 ) {
@@ -260,6 +264,7 @@ fun AlbumHero(
                 }
                 OutlinedButton(
                     onClick = onAddToQueue,
+                    enabled = actionsEnabled,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                     shape = RoundedCornerShape(12.dp),
                 ) {
@@ -276,6 +281,7 @@ fun AlbumHero(
                 }
                 OutlinedButton(
                     onClick = onSave,
+                    enabled = actionsEnabled,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                     shape = RoundedCornerShape(12.dp),
                 ) {
@@ -311,6 +317,7 @@ fun AlbumHero(
                 if (downloadSupported) {
                     OutlinedButton(
                         onClick = onDownloadAll,
+                        enabled = actionsEnabled,
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                         shape = RoundedCornerShape(12.dp),
                     ) {

@@ -293,7 +293,7 @@ class InnerTubeClient @Inject constructor(
     }
 
     /**
-     * Internal representation of an HTTP outcome that carries both the parsed
+     * Representation of an HTTP outcome that carries both the parsed
      * body (if any) and the HTTP status code. Status code is needed by callers
      * that retry on 5xx but not on 4xx (e.g. [YTMusicApiClient.paginateBrowse]).
      *
@@ -301,7 +301,7 @@ class InnerTubeClient @Inject constructor(
      * @property statusCode HTTP status code, or [STATUS_NETWORK_ERROR] if the
      *                      call threw before completing.
      */
-    internal data class RequestOutcome(val body: JsonObject?, val statusCode: Int) {
+    data class RequestOutcome(val body: JsonObject?, val statusCode: Int) {
         companion object {
             const val STATUS_NETWORK_ERROR = -1
         }
@@ -420,9 +420,10 @@ class InnerTubeClient @Inject constructor(
      * tell "the API answered but found nothing" apart from "the API did not
      * answer" (network failure, 4xx/5xx, rate limit) — the distinction the
      * artist-photo backfill needs to decide between a permanent "no photo"
-     * sentinel and a transient retry.
+     * sentinel and a transient retry, and the album screen's YouTube Music
+     * fallback between "not available here" and "try again" (#481).
      */
-    internal suspend fun searchWithStatus(query: String, params: String? = null): RequestOutcome =
+    suspend fun searchWithStatus(query: String, params: String? = null): RequestOutcome =
         withContext(Dispatchers.IO) {
             val cookie = tokenManager.getYouTubeCookie()
             val variant = InnerTubeVariant.WEB_REMIX

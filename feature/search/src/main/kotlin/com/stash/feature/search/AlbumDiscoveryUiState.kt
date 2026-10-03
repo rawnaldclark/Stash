@@ -28,13 +28,15 @@ data class AlbumHeroState(
  *  - [Loading] — initial state; hero shows nav-arg values, tracklist empty.
  *  - [Fresh] — [com.stash.core.data.cache.AlbumCache.get] returned a detail
  *    and the VM has folded it into state.
- *  - [Error] — cache threw (cold miss + network failure). Screen renders an
- *    error card with a Retry button that flips back to [Loading].
+ *  - [Error] — the album couldn't be loaded. [Error.message] is plain words
+ *    for the user, never an exception's text. The error card offers Retry
+ *    (back to [Loading]) only when [Error.canRetry]: a dropped connection can
+ *    be retried, an album that isn't sold in the user's country can't (#481).
  */
 sealed interface AlbumDiscoveryStatus {
     data object Loading : AlbumDiscoveryStatus
     data object Fresh : AlbumDiscoveryStatus
-    data class Error(val message: String) : AlbumDiscoveryStatus
+    data class Error(val message: String, val canRetry: Boolean = true) : AlbumDiscoveryStatus
 }
 
 /**

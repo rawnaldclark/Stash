@@ -73,6 +73,10 @@ data class SearchAlbumRoute(
     // Defaulted so any pre-update back-stack entry still deserializes.
     val source: com.stash.data.ytmusic.model.AlbumSource =
         com.stash.data.ytmusic.model.AlbumSource.YOUTUBE,
+    // #481: the Qobuz release's track count when the card knew it (Home's Qobuz
+    // rows, the artist page's Qobuz albums). Qobuz sends no release type, so this
+    // tells a single from an album. Defaulted like [source].
+    val qobuzTrackCount: Int? = null,
 )
 
 /** "See all" Qobuz-playlist browse, filtered by the [genre] chip label ("All" = none). */

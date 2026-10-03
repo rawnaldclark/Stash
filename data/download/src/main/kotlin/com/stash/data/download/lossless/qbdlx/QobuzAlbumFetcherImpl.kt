@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless.qbdlx
 
 import com.stash.core.data.discography.QobuzAlbumFetcher
+import com.stash.core.data.discography.QobuzAlbumUnavailableException
 import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.TrackSummary
 import javax.inject.Inject
@@ -20,7 +21,14 @@ class QobuzAlbumFetcherImpl @Inject constructor(
     private val apiClient: QbdlxApiClient,
 ) : QobuzAlbumFetcher {
     override suspend fun getAlbum(qobuzAlbumId: String): AlbumDetail {
-        val r = apiClient.getAlbum(qobuzAlbumId)
+        val r = try {
+            apiClient.getAlbum(qobuzAlbumId)
+        } catch (e: QbdlxApiException) {
+            // #481: a 404 here means Qobuz doesn't sell this album where the user is.
+            // Anything else (5xx, rate limit) stays a failure a retry can fix.
+            if (e.status == 404) throw QobuzAlbumUnavailableException(qobuzAlbumId, e)
+            throw e
+        }
         val artistName = r.artist?.name.orEmpty()
         val cover = r.image?.large ?: r.image?.small ?: r.image?.thumbnail
         return AlbumDetail(

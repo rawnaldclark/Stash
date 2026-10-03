@@ -65,6 +65,19 @@ class QobuzDiscographyProviderTest {
             .containsExactly(AlbumSource.QOBUZ, AlbumSource.YOUTUBE).inOrder()
     }
 
+    /** #481: a gap-filled album carries its track count to the album screen. */
+    @Test
+    fun `a gap-filled Qobuz album carries its track count`() = runTest {
+        coEvery { apiClient.searchArtists(any(), any()) } returns
+            listOf(QbdlxArtistItem(1, "My Bloody Valentine"))
+        coEvery { apiClient.getArtistAlbums(any(), any()) } returns
+            listOf(qAlbum("Loveless", "1991"), qAlbum("m b v", "2013", tracksCount = 9))
+
+        val out = provider().mergeInto("My Bloody Valentine", listOf(ytAlbum("Loveless", "1991")), emptyList())
+
+        assertThat(out.albums.single { it.source == AlbumSource.QOBUZ }.trackCount).isEqualTo(9)
+    }
+
     // (c2) cover-album filter ──────────────────────────────────────────────
     @Test
     fun `cover albums credited to other artists are filtered out`() = runTest {

@@ -32,6 +32,22 @@ class HomeDiscoveryRepositoryImplTest {
         assertThat(out.single().thumbnailUrl).isEqualTo("L")
     }
 
+    /**
+     * #481: Top Albums lists singles too (live 2026-10-03: six of 50 best-sellers had
+     * one or two tracks), and Qobuz sends no release type. The track count is how the
+     * album screen tells a single from an album.
+     */
+    @Test fun `rows carry the release's track count, and none when Qobuz sends none`() = runTest {
+        coEvery { client.getFeaturedAlbums("best-sellers", null, any()) } returns listOf(
+            QbdlxAlbumItem(id = "s1", title = "Good Luck, Babe!", artist = QbdlxPerformer(name = "Chappell Roan"), tracks_count = 1),
+            QbdlxAlbumItem(id = "a1", title = "T", artist = QbdlxPerformer(name = "AR")),
+        )
+
+        val out = repo.topAlbums(genreId = null)
+
+        assertThat(out.map { it.trackCount }).containsExactly(1, null).inOrder()
+    }
+
     @Test fun `second call within TTL is served from cache`() = runTest {
         coEvery { client.getFeaturedAlbums(any(), any(), any()) } returns emptyList()
         repo.topAlbums(null); repo.topAlbums(null)

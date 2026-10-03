@@ -6,6 +6,7 @@ import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.AlbumSource
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -47,7 +48,14 @@ open class AlbumCache @Inject constructor(
             val fresh = when (source) {
                 AlbumSource.QOBUZ -> qobuzFetcher.getAlbum(id)
                 AlbumSource.QOBUZ_PLAYLIST -> qobuzFetcher.getPlaylist(id)
-                AlbumSource.YOUTUBE -> api.getAlbum(id)
+                AlbumSource.YOUTUBE -> api.getAlbum(id).also {
+                    // getAlbum answers a browse that didn't come back with a blank,
+                    // track-less album. Kept, that was an empty page with no Retry
+                    // for TTL_MS; it is a failed load, so the next get asks again.
+                    if (it.title.isBlank() && it.tracks.isEmpty()) {
+                        throw IOException("YouTube Music didn't return album $id")
+                    }
+                }
             }
             entries[key] = Entry(fresh, now())
             fresh

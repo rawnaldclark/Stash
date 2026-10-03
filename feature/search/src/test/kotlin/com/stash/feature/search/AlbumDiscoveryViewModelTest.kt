@@ -97,6 +97,7 @@ class AlbumDiscoveryViewModelTest {
             ),
         ),
         albumCache = cache,
+        ytMusicApiClient = mock(),
         prefetcher = prefetcher,
         playerRepository = playerRepository,
         musicRepository = musicRepository,
@@ -197,9 +198,11 @@ class AlbumDiscoveryViewModelTest {
             assertEquals("Couldn't load album — tap Retry.", awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
-        val status = vm.uiState.value.status
-        assertTrue(status is AlbumDiscoveryStatus.Error)
-        assertEquals("network down", (status as AlbumDiscoveryStatus.Error).message)
+        // #481: plain words with a Retry — never the exception's own text.
+        assertEquals(
+            AlbumDiscoveryStatus.Error("Check your connection and try again.", canRetry = true),
+            vm.uiState.value.status,
+        )
     }
 
     @Test
