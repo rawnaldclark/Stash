@@ -16,6 +16,7 @@ import com.stash.core.model.TrackItem
 import com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.AlbumDetail
+import com.stash.data.ytmusic.model.AlbumSearch
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,8 +37,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.text.Normalizer
 import javax.inject.Inject
+import kotlin.math.abs
 
 /**
  * ViewModel for the Album Discovery screen.
@@ -108,6 +111,8 @@ class AlbumDiscoveryViewModel @Inject constructor(
             source = savedStateHandle["source"] ?: AlbumSource.YOUTUBE,
         ),
     )
+    /** The album the nav args named, kept for its library key after a #481 switch. */
+    private val navAlbum: AlbumRef = album.value
     private val browseId: String get() = album.value.id
 
     /** Which catalog this album came from — routes the cache load + play path. */
@@ -146,10 +151,15 @@ class AlbumDiscoveryViewModel @Inject constructor(
     val userPlaylists: StateFlow<List<Playlist>> =
         delegate.userPlaylists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** #304: true once this album sits in the library as a saved playlist. */
+    /**
+     * #304: true once this album sits in the library as a saved playlist, under the
+     * album on screen or, after a #481 switch, under the Qobuz album it replaced
+     * (saved in a country Qobuz sells in, or over a VPN), so Save doesn't file it twice.
+     */
     val isSaved: StateFlow<Boolean> =
-        combine(userPlaylists, album) { lists, ref -> lists.any { it.sourceId == ref.savedSourceId } }
-            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+        combine(userPlaylists, album) { lists, ref ->
+            lists.any { it.sourceId == ref.savedSourceId || it.sourceId == navAlbum.savedSourceId }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** youtubeId of the currently-playing track, for the SongRow now-playing indicator. */
     val currentPlayingYoutubeId: StateFlow<String?> =
@@ -508,7 +518,9 @@ class AlbumDiscoveryViewModel @Inject constructor(
      * one of them. Playback never needed Qobuz, only the track list did, so the
      * same album from YouTube Music is a whole album page. The status stays
      * Loading throughout, so the 404 never flashes up as an error. Rethrows the
-     * [QobuzAlbumUnavailableException] when there's no confident copy.
+     * [QobuzAlbumUnavailableException] when there's no confident copy, and throws
+     * an IOException when YouTube didn't answer or its album page didn't load
+     * (both retryable).
      */
     private suspend fun loadAlbum(): AlbumDetail {
         val ref = album.value
@@ -523,15 +535,21 @@ class AlbumDiscoveryViewModel @Inject constructor(
     }
 
     /**
-     * #481: this album on YouTube Music, or null unless it is confidently the same
-     * album. [YTMusicApiClient.resolveAlbum] falls back to its first hit, so its
-     * answer only counts when [isSameAlbum] agrees.
+     * #481: this album on YouTube Music: the first candidate the search turns up (its
+     * top-result card, then the Albums shelf) that [isSameAlbum] agrees is this album,
+     * or null when none is. Throws when YouTube didn't answer at all, so the screen
+     * offers a Retry instead of saying the album isn't available.
      */
     private suspend fun findYouTubeCopy(): AlbumSummary? {
-        val candidate = ytMusicApiClient.resolveAlbum(initialTitle, initialArtist)
-        if (candidate == null || isSameAlbum(candidate, initialTitle, initialArtist)) return candidate
-        Log.i(TAG, "YouTube Music's '${candidate.title}' by '${candidate.artist}' isn't '$initialTitle' by '$initialArtist'")
-        return null
+        val candidates = when (val search = ytMusicApiClient.searchAlbums(initialTitle, initialArtist)) {
+            AlbumSearch.Failed -> throw IOException("YouTube Music didn't answer the search for '$initialTitle'")
+            is AlbumSearch.Answered -> search.albums
+        }
+        val copy = candidates.firstOrNull { isSameAlbum(it, initialTitle, initialArtist, initialYear) }
+        if (copy == null) {
+            Log.i(TAG, "none of ${candidates.size} YouTube Music albums is '$initialTitle' by '$initialArtist' ($initialYear)")
+        }
+        return copy
     }
 
     /** Which album the screen shows: a catalog id and the catalog it belongs to. */
@@ -552,21 +570,77 @@ class AlbumDiscoveryViewModel @Inject constructor(
 }
 
 /**
- * #481: whether [candidate] is the album [title] by [artist], meaning the same title
- * and the same artist once both are normalized (case, punctuation, accents, a
- * bracketed edition like "(Deluxe)"). Strict on purpose: a near miss is a different
- * album, and opening the wrong album is worse than saying this one isn't available.
+ * #481: whether [candidate] is the album [title] by [artist] from [year]. Strict on
+ * purpose, because opening the wrong album is worse than saying this one isn't
+ * available. It has to have:
+ *  - the same artist, and the same title once case, punctuation, accents and an
+ *    edition or featured credit ("(Super Deluxe)", "- 2009 Remaster", "(feat. X)")
+ *    are set aside. Anything else in brackets, "(Live)", "(Remixes)",
+ *    "(Instrumental)", "(Sped Up)", "(Vol. 2)", makes it a different release;
+ *  - not the "Single" label: a single that shares an album's title is its title track;
+ *  - a release year within one of [year], when both are known.
  */
-internal fun isSameAlbum(candidate: AlbumSummary, title: String, artist: String): Boolean {
-    val wantTitle = matchKey(title)
+internal fun isSameAlbum(candidate: AlbumSummary, title: String, artist: String, year: String? = null): Boolean {
+    val wantTitle = albumTitleKey(title)
     val wantArtist = matchKey(artist)
     return wantTitle.isNotEmpty() && wantArtist.isNotEmpty() &&
-        matchKey(candidate.title) == wantTitle &&
-        matchKey(candidate.artist) == wantArtist
+        !candidate.releaseType.equals("Single", ignoreCase = true) &&
+        albumTitleKey(candidate.title) == wantTitle &&
+        matchKey(candidate.artist) == wantArtist &&
+        yearsAgree(candidate.year, year)
 }
 
-/** [QobuzCandidateMatcher.normalize], blind to accents too: Qobuz writes "Victoria Monet", YouTube "Victoria Monét". */
-private fun matchKey(s: String): String =
-    QobuzCandidateMatcher.normalize(Normalizer.normalize(s, Normalizer.Form.NFD).replace(COMBINING_MARKS, ""))
+/** [QobuzCandidateMatcher.normalize] after [foldForMatch]. */
+private fun matchKey(s: String): String = QobuzCandidateMatcher.normalize(foldForMatch(s))
+
+/**
+ * An album title as a match key. [QobuzCandidateMatcher.normalize] drops every
+ * bracket, so "Loveless (Live)" would equal "Loveless"; here a bracketed or " - "
+ * part only drops out when it names an edition or featured artists
+ * ([isEditionOrCredit]), and its words stay in the key otherwise.
+ */
+private fun albumTitleKey(title: String): String {
+    val bracketsSettled = BRACKETED.replace(foldForMatch(title)) { group ->
+        val inside = group.value.substring(1, group.value.length - 1)
+        if (isEditionOrCredit(inside)) " " else " $inside "
+    }
+    val dashSettled = DASH_SUFFIX.replace(bracketsSettled) { suffix ->
+        if (isEditionOrCredit(suffix.groupValues[1])) " " else suffix.value
+    }
+    return QobuzCandidateMatcher.normalize(dashSettled)
+}
+
+/** "Super Deluxe", "2009 Remaster", "20th Anniversary Edition", or "feat. Bill Frisell". */
+private fun isEditionOrCredit(part: String): Boolean {
+    val words = part.lowercase().replace("'", "").split(NON_WORD).filter { it.isNotEmpty() }
+    if (words.isEmpty()) return true
+    if (words.first() in CREDIT_WORDS) return true
+    return words.all { it in EDITION_WORDS || NUMBERING.matches(it) }
+}
+
+/** Within a year of each other, or unknown on either side. Qobuz may send "1991-11-04". */
+private fun yearsAgree(candidate: String?, wanted: String?): Boolean {
+    val a = candidate?.let { YEAR.find(it) }?.value?.toInt() ?: return true
+    val b = wanted?.let { YEAR.find(it) }?.value?.toInt() ?: return true
+    return abs(a - b) <= 1
+}
+
+/** No accents or curly quotes: Qobuz writes "Victoria Monet", YouTube "Monét"; one writes "Don’t", the other "Don't". */
+private fun foldForMatch(s: String): String =
+    Normalizer.normalize(s, Normalizer.Form.NFD).replace(COMBINING_MARKS, "").replace(CURLY_QUOTES, "'")
 
 private val COMBINING_MARKS = Regex("\\p{Mn}+")
+private val CURLY_QUOTES = Regex("[\u2018\u2019]")
+private val BRACKETED = Regex("""\([^()]*\)|\[[^\[\]]*]""")
+private val DASH_SUFFIX = Regex("""\s[-\u2013\u2014]\s(.*)$""")
+private val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
+private val NUMBERING = Regex("\\d{4}|\\d+(st|nd|rd|th)")
+private val YEAR = Regex("\\d{4}")
+private val CREDIT_WORDS = setOf("feat", "ft", "featuring")
+
+/** Words that name an edition of an album, not a different recording of it. */
+private val EDITION_WORDS = setOf(
+    "deluxe", "super", "expanded", "edition", "remaster", "remastered", "anniversary", "version",
+    "bonus", "track", "tracks", "special", "collector", "collectors", "limited", "legacy",
+    "platinum", "reissue", "standard", "complete", "the", "and",
+)

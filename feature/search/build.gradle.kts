@@ -42,4 +42,6 @@ dependencies {
     // Robolectric — Android env for the DataStore-backed RecentSearchesStoreTest.
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // AlbumRegionFallbackWiringTest hands the real YTMusicApiClient InnerTube JSON.
+    testImplementation(libs.kotlinx.serialization.json)
 }
