@@ -340,6 +340,20 @@ class DownloadManagerMatchVerifyTest {
     }
 
     @Test
+    fun `a video the player says is another song does not use up the next search's checks`() = runTest {
+        // Both searches return three videos the player names as another song, ahead of
+        // the song. Their length is the song's, so only the title check rejects them.
+        everySearchReturns(ytmRow("x1"), ytmRow("x2"), ytmRow("x3"), ytmRow(AUDIO))
+        listOf("x1", "x2", "x3").forEach { player(it, "Something Else Entirely", 226) }
+        player(AUDIO, "Patient Zero", 226)
+
+        newSubject().downloadTrack(patientZero)
+
+        downloaded(AUDIO, times = 1)
+        listOf("x1", "x2", "x3").forEach { lookedUp(it, times = 1) }
+    }
+
+    @Test
     fun `a lower candidate is taken only when the player answered for it`() = runTest {
         firstSearchReturns(ytmRow(MV), ytmRow("unchecked"), ytmRow(AUDIO))
         player(MV, MV_PLAYER_TITLE, 312)
