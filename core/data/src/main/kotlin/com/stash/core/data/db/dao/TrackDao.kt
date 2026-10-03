@@ -393,19 +393,25 @@ interface TrackDao {
     """)
     suspend fun getFirstPlaylistNameForTrack(trackId: Long): String?
 
-    /** Reverts tracks whose file no longer exists on disk back to
+    /** Reverts a track whose file no longer exists on disk back to
     *  "needs download" — clears is_downloaded, file_path, and the stale
-    *  size so LibrarySizeHolder's next walk doesn't count phantom bytes. */
+    *  size so LibrarySizeHolder's next walk doesn't count phantom bytes —
+    *  but only while it still points at [checkedPath], the path found
+    *  missing. A swap or download can record a new file between the check
+    *  and this write (#531 review), and resetting by id alone wiped it. */
     @Query("""
         UPDATE tracks
         SET is_downloaded = 0, file_path = NULL, file_size_bytes = 0,
             download_missing_at = :now
-        WHERE id IN (:ids)
+        WHERE id = :trackId AND file_path = :checkedPath
     """)
-    suspend fun resetMissingFilesRaw(ids: List<Long>, now: Long)
+    suspend fun resetMissingFile(trackId: Long, checkedPath: String, now: Long): Int
 
-    suspend fun resetMissingFiles(ids: List<Long>, now: Long = System.currentTimeMillis()) =
-        ids.chunkedForBindWrite { resetMissingFilesRaw(it, now) }
+    /** [resetMissingFile] for every checked track (id to the path found missing), in one transaction. */
+    @Transaction
+    suspend fun resetMissingFiles(checked: Map<Long, String>, now: Long = System.currentTimeMillis()) {
+        for ((trackId, checkedPath) in checked) resetMissingFile(trackId, checkedPath, now)
+    }
 
     /**
      * How many tracks the library had downloaded and no longer has on disk.

@@ -14,6 +14,7 @@ import com.stash.core.model.PlaylistType
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -65,11 +66,15 @@ class TrackDaoRestorableDownloadsTest {
         ),
     )
 
+    /** What library reconciliation does: reset each row by the path it found missing. */
+    private suspend fun resetMissing(vararg ids: Long, now: Long) =
+        tracks.resetMissingFiles(ids.associateWith { tracks.getById(it)!!.filePath!! }, now)
+
     @Test fun `a vanished file becomes restorable, and re-downloading clears it`() = runTest {
         val id = downloadedTrack("gone")
         assertEquals(0, tracks.countRestorableDownloads())
 
-        tracks.resetMissingFiles(listOf(id), now = 5_000L)
+        resetMissing(id, now = 5_000L)
         assertEquals(1, tracks.countRestorableDownloads())
         assertEquals(listOf(id), tracks.restorableDownloadIds())
 
@@ -91,7 +96,7 @@ class TrackDaoRestorableDownloadsTest {
         val exhausted = downloadedTrack("exhausted") // failed for good: the user may ask again
         val legacy = downloadedTrack("legacy")       // manual row the worker never picks up
         val lost = downloadedTrack("lost")
-        tracks.resetMissingFiles(listOf(requeued, running, retrying, exhausted, legacy, lost), now = 1L)
+        resetMissing(requeued, running, retrying, exhausted, legacy, lost, now = 1L)
         queue.insert(DownloadQueueEntity(trackId = requeued, syncId = run))
         queue.insert(DownloadQueueEntity(trackId = running, status = DownloadStatus.IN_PROGRESS))
         queue.insert(DownloadQueueEntity(trackId = retrying, userRequested = true, status = DownloadStatus.FAILED, retryCount = 1))
@@ -109,7 +114,7 @@ class TrackDaoRestorableDownloadsTest {
 
     @Test fun `a track the user asked for is downloadable with no playlist at all`() = runTest {
         val orphan = downloadedTrack("orphan")
-        tracks.resetMissingFiles(listOf(orphan), now = 1L)
+        resetMissing(orphan, now = 1L)
         queue.insert(DownloadQueueEntity(trackId = orphan, userRequested = true))
 
         val pending = queue.getAllPendingBySources(listOf("SPOTIFY", "BOTH"))
@@ -118,14 +123,14 @@ class TrackDaoRestorableDownloadsTest {
 
     @Test fun `without that flag an orphan is still skipped, and a sync run still works`() = runTest {
         val orphan = downloadedTrack("orphan")
-        tracks.resetMissingFiles(listOf(orphan), now = 1L)
+        resetMissing(orphan, now = 1L)
         queue.insert(DownloadQueueEntity(trackId = orphan))
         assertEquals(emptyList<Long>(), queue.getAllPendingBySources(listOf("SPOTIFY", "BOTH")).map { it.trackId })
 
         // The untouched path: a sync run queued it AND it sits in a synced,
         // non-mix playlist. Both halves are still required together.
         val inPlaylist = downloadedTrack("member")
-        tracks.resetMissingFiles(listOf(inPlaylist), now = 1L)
+        resetMissing(inPlaylist, now = 1L)
         val pl = playlists.insert(
             PlaylistEntity(
                 name = "Road trip",
@@ -145,5 +150,23 @@ class TrackDaoRestorableDownloadsTest {
         val queuedOrphan = downloadedTrack("queued-orphan")
         queue.insert(DownloadQueueEntity(trackId = queuedOrphan, syncId = run))
         assertEquals(listOf(inPlaylist), queue.getAllPendingBySources(listOf("SPOTIFY", "BOTH")).map { it.trackId })
+    }
+
+    /**
+     * #531 review: reconciliation checks a row's file, and only later resets
+     * the rows it found missing. A swap or download that recorded a new file in
+     * between must not be wiped (the swap's set-aside window makes the old path
+     * briefly missing).
+     */
+    @Test fun `a missing-file reset leaves a track that has moved to a new file alone`() = runTest {
+        val id = downloadedTrack("moved")
+        val checkedPath = tracks.getById(id)!!.filePath!!
+        tracks.markAsDownloaded(id, "/music/moved-new.opus", 4321)
+
+        tracks.resetMissingFiles(mapOf(id to checkedPath), now = 1L)
+
+        val row = tracks.getById(id)!!
+        assertTrue(row.isDownloaded)
+        assertEquals("/music/moved-new.opus", row.filePath)
     }
 }
