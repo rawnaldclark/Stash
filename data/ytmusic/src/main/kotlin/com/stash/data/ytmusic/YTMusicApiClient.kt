@@ -612,7 +612,8 @@ class YTMusicApiClient @Inject constructor(
      *
      *  1. YouTube's top-result card when it is an album by [artist] — for a new
      *     release often the only place the search names the album (#481). A card
-     *     naming no artist doesn't count (a blank name "contains" every artist).
+     *     naming no artist doesn't count (a blank name "contains" every artist), and
+     *     a card that is a Single gives way to an album of the same title on the shelf.
      *  2. Otherwise prefer an Albums-shelf result whose artist field matches
      *     [artist] (case-insensitive contains, either direction) — guards against
      *     a same-named album by a different artist ranking first.
@@ -627,9 +628,20 @@ class YTMusicApiClient @Inject constructor(
      */
     suspend fun resolveAlbum(album: String, artist: String): AlbumSummary? {
         val found = searchAlbums(album, artist) as? AlbumSearch.Answered ?: return null
-        found.topAlbum
-            ?.takeIf { it.artist.isNotBlank() && artistsOverlap(it.artist, artist) }
-            ?.let { return it }
+        val top = found.topAlbum?.takeIf { it.artist.isNotBlank() && artistsOverlap(it.artist, artist) }
+        if (top != null) {
+            // An album named after its lead single (Lover, After Hours): the top card is
+            // often the single. Open the album when the shelf has it; a track tagged with
+            // the single's own title still opens the single.
+            if (top.releaseType.equals("Single", ignoreCase = true)) {
+                found.shelf.firstOrNull {
+                    !it.releaseType.equals("Single", ignoreCase = true) &&
+                        it.title.equals(top.title, ignoreCase = true) &&
+                        artistsOverlap(it.artist, artist)
+                }?.let { return it }
+            }
+            return top
+        }
         val albums = found.shelf
         if (albums.isEmpty()) return null
         return albums.firstOrNull { artistsOverlap(it.artist, artist) } ?: albums.first()

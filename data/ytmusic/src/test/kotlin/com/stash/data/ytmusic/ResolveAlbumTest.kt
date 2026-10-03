@@ -172,6 +172,30 @@ class ResolveAlbumTest {
         assertNull(clientAnswering(response).resolveAlbum("Lithic", "Laura Misch"))
     }
 
+    /**
+     * An album named after its lead single (Lover, Future Nostalgia, After Hours): YouTube's
+     * top card is often the single. "View Album" on a track from the album must open the
+     * album when the shelf has it.
+     */
+    @Test fun `a top-card single gives way to the same-titled album on the shelf`() = runTest {
+        val response = searchResponse(
+            albumTopCard("MPREb_single", "Lithic", "Single", "Laura Misch", "2026"),
+            flatAlbumRow("MPREb_lithic", "Lithic", "Album", "Laura Misch", "2026"),
+        )
+
+        assertEquals("MPREb_lithic", clientAnswering(response).resolveAlbum("Lithic", "Laura Misch")?.id)
+    }
+
+    /** A track tagged with the single's own title still opens the single. */
+    @Test fun `a top-card single with no same-titled album is still the answer`() = runTest {
+        val response = searchResponse(
+            albumTopCard("MPREb_single", "Lithic", "Single", "Laura Misch", "2026"),
+            flatAlbumRow("MPREb_WeEzlnB9TOI", "Sample The Sky", "Album", "Laura Misch", "2023"),
+        )
+
+        assertEquals("MPREb_single", clientAnswering(response).resolveAlbum("Lithic", "Laura Misch")?.id)
+    }
+
     /** A blank artist "contains" every name, so a card naming no artist must not count as a match. */
     @Test fun `a top card naming no artist is passed over for the shelf, as before`() = runTest {
         val response = searchResponse(
