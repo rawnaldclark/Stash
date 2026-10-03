@@ -207,6 +207,7 @@ internal fun parseAlbumTopCard(shelf: JsonObject): AlbumSummary? {
         artist = artist,
         thumbnailUrl = thumbnailUrl,
         year = year,
+        releaseType = subtitleTexts.firstOrNull()?.takeIf { it in ALBUM_TYPE_LABELS },
     )
 }
 
@@ -320,6 +321,7 @@ internal fun parseAlbumsShelf(shelfRenderer: JsonObject): List<AlbumSummary> {
                 artist = artist,
                 thumbnailUrl = thumbnailUrl,
                 year = year,
+                releaseType = subtitleTexts.firstOrNull()?.takeIf { it in ALBUM_TYPE_LABELS },
             ),
         )
     }

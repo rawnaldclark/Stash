@@ -64,7 +64,13 @@ data class ArtistSummary(
 @Serializable
 enum class AlbumSource { YOUTUBE, QOBUZ, QOBUZ_PLAYLIST }
 
-/** Minimal album identity for horizontal album rows and discography grids. */
+/**
+ * Minimal album identity for horizontal album rows and discography grids.
+ *
+ * [releaseType] is YouTube's label from a search result ("Album", "Single",
+ * "EP"...), null where the source doesn't say. #481: a single that shares an
+ * album's title is a different release.
+ */
 @Serializable
 data class AlbumSummary(
     val id: String,
@@ -73,6 +79,7 @@ data class AlbumSummary(
     val thumbnailUrl: String?,
     val year: String?,
     val source: AlbumSource = AlbumSource.YOUTUBE,
+    val releaseType: String? = null,
 )
 
 /** Minimal playlist identity for the Home discovery playlist row. */

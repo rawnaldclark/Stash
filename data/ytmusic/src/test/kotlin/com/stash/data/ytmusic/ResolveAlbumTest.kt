@@ -1,5 +1,6 @@
 package com.stash.data.ytmusic
 
+import com.stash.data.ytmusic.model.AlbumSearch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -17,12 +18,13 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 
 /**
- * #481: [YTMusicApiClient.resolveAlbum] is how the album screen finds the YouTube
- * Music copy of an album Qobuz doesn't sell in the user's country. Live probe
- * 2026-10-03: for 12 of 13 new releases it missed, YouTube had put the album in
- * its top-result card, which the search parser skipped (Search's top slot shows
- * artists and tracks only), while the flat rows below named only the artist's
- * other albums. [albumTopCardResponse] mirrors that live shape.
+ * #481: [YTMusicApiClient.searchAlbums] is how the album screen finds the YouTube
+ * Music copy of an album Qobuz doesn't sell in the user's country, and
+ * [YTMusicApiClient.resolveAlbum] is Now Playing's and Library's "View Album".
+ * Live probe 2026-10-03: for 12 of 13 new releases the old lookup missed, YouTube
+ * had put the album in its top-result card, which the search parser skipped
+ * (Search's top slot shows artists and tracks only), while the flat rows below
+ * named only the artist's other albums. [albumTopCardResponse] mirrors that shape.
  */
 class ResolveAlbumTest {
     private fun loadFixture(name: String): String =
@@ -32,8 +34,12 @@ class ResolveAlbumTest {
     private fun clientAnswering(responseJson: String): YTMusicApiClient {
         val inner = mock<InnerTubeClient>()
         val parsed = Json.parseToJsonElement(responseJson).jsonObject
-        // anyOrNull() for params: searchAll omits it, and the typed any() doesn't match null.
-        runBlocking { whenever(inner.search(any(), anyOrNull())).thenReturn(parsed) }
+        // anyOrNull() for params: callers omit it, and the typed any() doesn't match null.
+        runBlocking {
+            whenever(inner.search(any(), anyOrNull())).thenReturn(parsed)
+            whenever(inner.searchWithStatus(any(), anyOrNull()))
+                .thenReturn(InnerTubeClient.RequestOutcome(body = parsed, statusCode = 200))
+        }
         return YTMusicApiClient(inner)
     }
 
@@ -50,21 +56,39 @@ class ResolveAlbumTest {
               {"url":"https://yt3.googleusercontent.com/lithic=w60-h60","width":60},
               {"url":"https://yt3.googleusercontent.com/lithic=w544-h544","width":544}]}}}
           }},
-          {"itemSectionRenderer":{"contents":[
-            {"musicResponsiveListItemRenderer":{
-              "navigationEndpoint":{"browseEndpoint":{
-                "browseId":"MPREb_WeEzlnB9TOI",
-                "browseEndpointContextSupportedConfigs":{"browseEndpointContextMusicConfig":{
-                  "pageType":"MUSIC_PAGE_TYPE_ALBUM"}}}},
-              "flexColumns":[
-                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Sample The Sky"}]}}},
-                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[
-                  {"text":"Album"},{"text":" • "},{"text":"Laura Misch"},{"text":" • "},{"text":"2023"}]}}}
-              ]
-            }}
-          ]}}
+          ${flatAlbumRow("MPREb_WeEzlnB9TOI", "Sample The Sky", "Album", "Laura Misch", "2023")}
         ]}}}}]}}}
     """.trimIndent()
+
+    /** A search response made of [shelves] (top card first, then rows). */
+    private fun searchResponse(vararg shelves: String) =
+        """{"contents":{"tabbedSearchResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{"contents":[""" +
+            shelves.joinToString(",") + "]}}}}]}}}"
+
+    /** An album top card; [subtitle] are its runs' texts without the " • " separators. */
+    private fun albumTopCard(id: String, title: String, vararg subtitle: String) = """
+        {"musicCardShelfRenderer":{
+          "title":{"runs":[{"text":"$title","navigationEndpoint":{"browseEndpoint":{"browseId":"$id",
+            "browseEndpointContextSupportedConfigs":{"browseEndpointContextMusicConfig":{
+              "pageType":"MUSIC_PAGE_TYPE_ALBUM"}}}}}]},
+          "subtitle":{"runs":[${runs(subtitle)}]}
+        }}
+    """.trimIndent()
+
+    /** A flat search row for an album, as unauthenticated searches return them. */
+    private fun flatAlbumRow(id: String, title: String, vararg subtitle: String) = """
+        {"itemSectionRenderer":{"contents":[{"musicResponsiveListItemRenderer":{
+          "navigationEndpoint":{"browseEndpoint":{"browseId":"$id",
+            "browseEndpointContextSupportedConfigs":{"browseEndpointContextMusicConfig":{
+              "pageType":"MUSIC_PAGE_TYPE_ALBUM"}}}},
+          "flexColumns":[
+            {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"$title"}]}}},
+            {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[${runs(subtitle)}]}}}
+          ]}}]}}
+    """.trimIndent()
+
+    private fun runs(texts: Array<out String>) =
+        texts.joinToString(""",{"text":" • "},""") { """{"text":"$it"}""" }
 
     @Test fun `an album in YouTube's top-result card is the answer`() = runTest {
         val album = clientAnswering(albumTopCardResponse).resolveAlbum("Lithic", "Laura Misch")
@@ -94,6 +118,7 @@ class ResolveAlbumTest {
     @Test fun `a cancelled search is not swallowed into null`() = runTest {
         val inner = mock<InnerTubeClient>()
         whenever(inner.search(any(), anyOrNull())).doSuspendableAnswer { throw CancellationException("screen closed") }
+        whenever(inner.searchWithStatus(any(), anyOrNull())).doSuspendableAnswer { throw CancellationException("screen closed") }
 
         try {
             YTMusicApiClient(inner).resolveAlbum("Lithic", "Laura Misch")
@@ -101,5 +126,59 @@ class ResolveAlbumTest {
         } catch (e: CancellationException) {
             assertEquals("screen closed", e.message)
         }
+    }
+
+    // ── searchAlbums: every candidate, and whether YouTube answered at all ──
+
+    /** No connection, a timeout, a 429 or a 5xx is not "no such album": the caller can retry. */
+    @Test fun `a search that doesn't answer is Failed, not an empty answer`() = runTest {
+        val inner = mock<InnerTubeClient>()
+        whenever(inner.searchWithStatus(any(), anyOrNull())).thenReturn(
+            InnerTubeClient.RequestOutcome(body = null, statusCode = InnerTubeClient.RequestOutcome.STATUS_NETWORK_ERROR),
+        )
+
+        assertEquals(AlbumSearch.Failed, YTMusicApiClient(inner).searchAlbums("Lithic", "Laura Misch"))
+    }
+
+    @Test fun `an answer naming no album is an empty answer, not a failure`() = runTest {
+        val found = clientAnswering(searchResponse()).searchAlbums("Lithic", "Laura Misch")
+
+        assertEquals(AlbumSearch.Answered(topAlbum = null, shelf = emptyList()), found)
+    }
+
+    @Test fun `searchAlbums lists the top card first, then the shelf, each with its type label`() = runTest {
+        val found = clientAnswering(albumTopCardResponse).searchAlbums("Lithic", "Laura Misch") as AlbumSearch.Answered
+
+        assertEquals(listOf("MPREb_PB8kLguH9cS", "MPREb_WeEzlnB9TOI"), found.albums.map { it.id })
+        assertEquals(listOf("Album", "Album"), found.albums.map { it.releaseType })
+    }
+
+    /** A single often shares its album's title; the label is how the album screen tells them apart. */
+    @Test fun `a top card labelled Single carries the label`() = runTest {
+        val response = searchResponse(albumTopCard("MPREb_single", "Lithic", "Single", "Laura Misch", "2026"))
+
+        val found = clientAnswering(response).searchAlbums("Lithic", "Laura Misch") as AlbumSearch.Answered
+
+        assertEquals("Single", found.topAlbum?.releaseType)
+        assertEquals("Laura Misch", found.topAlbum?.artist)
+    }
+
+    // ── resolveAlbum ("View Album") keeps its old answers when the top card doesn't fit ──
+
+    /** With no shelf the old lookup found nothing. It must not now open another artist's album. */
+    @Test fun `an album top card by another artist, with no shelf, finds nothing`() = runTest {
+        val response = searchResponse(albumTopCard("MPREb_other", "Lithic", "Album", "Someone Else", "2026"))
+
+        assertNull(clientAnswering(response).resolveAlbum("Lithic", "Laura Misch"))
+    }
+
+    /** A blank artist "contains" every name, so a card naming no artist must not count as a match. */
+    @Test fun `a top card naming no artist is passed over for the shelf, as before`() = runTest {
+        val response = searchResponse(
+            albumTopCard("MPREb_noartist", "Lithic", "Album", "2026"),
+            flatAlbumRow("MPREb_WeEzlnB9TOI", "Sample The Sky", "Album", "Laura Misch", "2023"),
+        )
+
+        assertEquals("MPREb_WeEzlnB9TOI", clientAnswering(response).resolveAlbum("Lithic", "Laura Misch")?.id)
     }
 }
