@@ -511,7 +511,7 @@ class SwapCoordinatorTest {
     fun `a swap cut short after setting the old file aside is put back at the next start`() = runTest {
         val song = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
         val backup = localFileOps.setAside(song.absolutePath)!!
-        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup))
+        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup, newVideoId = "vid123"))
         song.writeText("unrecorded replacement") // the save ran; the app died before the record
         coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = true)
 
@@ -526,10 +526,11 @@ class SwapCoordinatorTest {
     fun `a set-aside copy left after a finished swap is removed at the next start`() = runTest {
         val song = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
         val backup = localFileOps.setAside(song.absolutePath)!!
-        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup))
+        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup, newVideoId = "vid123"))
         song.writeText("recorded replacement")
-        // completeSwap cleared the flag: the swap finished, only the cleanup didn't.
-        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = false)
+        // completeSwap wrote the new video with the new file: the swap finished,
+        // only the cleanup didn't.
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = false).copy(youtubeId = "vid123")
 
         coordinator.recoverInterruptedSwaps()
 
@@ -710,5 +711,144 @@ class SwapCoordinatorTest {
         gate.complete(Unit)
         coordinator.running.first { it.isEmpty() }
         coVerify(exactly = 1) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    // -- #531 review: recovery decides by the video, and only restores where safe --
+
+    /** The old file set aside and written down, as a swap of [videoId] leaves it. */
+    private fun setAsideFor(song: File, videoId: String? = "vid123"): String {
+        val backup = localFileOps.setAside(song.absolutePath)!!
+        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup, newVideoId = videoId))
+        return backup
+    }
+
+    @Test
+    fun `a swap the user unflagged before the app was killed is put back at the next start`() = runTest {
+        val song = tmp.newFile("lacrymosa.m4a").apply { writeText("the audio the user kept") }
+        val backup = setAsideFor(song)
+        song.writeText("unrecorded replacement")
+        // Unflagged mid-swap, then killed before completeSwap: still the old video.
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = false)
+
+        coordinator.recoverInterruptedSwaps()
+
+        // The flag said "finished" and the backup was deleted: the very audio
+        // the user chose to keep.
+        assertEquals("the audio the user kept", song.readText())
+        assertFalse(File(backup).exists())
+        assertTrue(journal.pending().isEmpty())
+    }
+
+    @Test
+    fun `a finished swap is told apart by its video, even when the row is flagged again`() = runTest {
+        val song = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
+        val backup = setAsideFor(song)
+        song.writeText("recorded replacement")
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = true).copy(youtubeId = "vid123")
+
+        coordinator.recoverInterruptedSwaps()
+
+        assertEquals("recorded replacement", song.readText())
+        assertFalse(File(backup).exists())
+    }
+
+    @Test
+    fun `an entry from the previous version falls back to the flag`() = runTest {
+        val song = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
+        setAsideFor(song, videoId = null)
+        song.writeText("unrecorded replacement")
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = true)
+
+        coordinator.recoverInterruptedSwaps()
+
+        assertEquals("original audio", song.readText())
+    }
+
+    @Test
+    fun `a backup is kept when the track no longer points at its original file`() = runTest {
+        val song = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
+        val backup = setAsideFor(song)
+        // Reconciliation found the old path empty during the set-aside and reset the row.
+        coEvery { trackDao.getById(7L) } returns row(filePath = null, flagged = true)
+
+        coordinator.recoverInterruptedSwaps()
+
+        assertFalse("nothing is written where no track expects it", song.exists())
+        assertEquals("the audio is kept", "original audio", File(backup).readText())
+        assertTrue(journal.pending().isEmpty())
+    }
+
+    @Test
+    fun `a backup is kept when another track now uses its original path`() = runTest {
+        val song = tmp.newFile("evanescence-lacrymosa.m4a").apply { writeText("original audio") }
+        val backup = setAsideFor(song)
+        song.writeText("the other recording's file")
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = true)
+        coEvery { trackDao.countOtherTracksWithFilePath(song.absolutePath, 7L) } returns 1
+
+        coordinator.recoverInterruptedSwaps()
+
+        assertEquals("the other track's file is untouched", "the other recording's file", song.readText())
+        assertEquals("original audio", File(backup).readText())
+    }
+
+    @Test
+    fun `a backup that is the track's own current file is never deleted`() = runTest {
+        // A SAF provider with stable document ids keeps the URI through the
+        // rename, so the backup can be the very file the track points at.
+        val song = tmp.newFile("lacrymosa.m4a").apply { writeText("the only copy") }
+        journal.record(SwapJournal.Entry(7L, song.absolutePath, song.absolutePath, newVideoId = "vid123"))
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = false).copy(youtubeId = "vid123")
+
+        coordinator.recoverInterruptedSwaps()
+
+        assertTrue(song.exists())
+    }
+
+    // -- #531 review: the journal --------------------------------------------------
+
+    @Test
+    fun `the set-aside is written down before the old file moves`() = runTest {
+        val oldFile = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
+        givenRow(filePath = oldFile.absolutePath)
+        stubSuccessfulDownload()
+        destinationIs(oldFile.absolutePath)
+        stubCommitOverwriting(oldFile)
+        every { localFileOps.setAside(any(), any()) } answers {
+            check(journal.has(7L)) { "the move came before the journal entry" }
+            callOriginal()
+        }
+        val outcomes = collectOutcomes()
+
+        swap()
+
+        assertEquals(listOf(SwapOutcome.Swapped(7L, "vid123", "Title")), outcomes)
+    }
+
+    @Test
+    fun `a new swap of a track that still has a set-aside file waits`() = runTest {
+        journal.record(SwapJournal.Entry(7L, "/music/lacrymosa.m4a", "/music/lacrymosa.m4a.swapbak", newVideoId = "old"))
+        val outcomes = collectOutcomes()
+
+        swap()
+
+        // A second set-aside could bury the user's original audio; the next
+        // start's recovery handles the first one.
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
+    }
+
+    @Test
+    fun `the journal keeps the entry while the backup can't be deleted`() = runTest {
+        val oldFile = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
+        givenRow(filePath = oldFile.absolutePath)
+        stubSuccessfulDownload()
+        destinationIs(oldFile.absolutePath)
+        stubCommitOverwriting(oldFile)
+        every { localFileOps.delete(match { it.endsWith(".swapbak") }) } returns false
+
+        swap()
+
+        assertEquals(1, journal.pending().size)
     }
 }

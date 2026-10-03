@@ -137,16 +137,36 @@ class LocalFileOps @Inject constructor(
         return false
     }
 
-    /** Best-effort delete of the file behind [path]. No-op on null/blank/missing. */
-    fun delete(path: String?) {
-        if (path.isNullOrBlank()) return
-        runCatching {
+    /**
+     * Best-effort delete of the file behind [path]. True when a file was
+     * deleted; false for null/blank/missing paths and failed deletes.
+     */
+    fun delete(path: String?): Boolean {
+        if (path.isNullOrBlank()) return false
+        return runCatching {
             if (path.startsWith("content://")) {
-                DocumentFile.fromSingleUri(context, path.toUri())?.delete()
+                DocumentFile.fromSingleUri(context, path.toUri())?.delete() == true
             } else {
                 File(plainPath(path)).delete()
             }
+        }.getOrDefault(false)
+    }
+
+    /**
+     * The name [setAside] would move the plain file at [path] to:
+     * `<name>.swapbak`, or with a counter when that is taken. Known ahead so
+     * the move can be written down before it happens. Null for a SAF
+     * document: the provider picks the name when it renames.
+     */
+    fun backupPathFor(path: String): String? {
+        if (path.startsWith("content://")) return null
+        val file = File(plainPath(path))
+        var backup = File(file.parentFile, file.name + BACKUP_SUFFIX)
+        var counter = 1
+        while (backup.exists()) {
+            backup = File(file.parentFile, "${file.name}.${counter++}$BACKUP_SUFFIX")
         }
+        return backup.path
     }
 
     /** True when a file is at [path]: checked on disk, or asked of the SAF provider. */
@@ -169,10 +189,12 @@ class LocalFileOps @Inject constructor(
      * renamed document's URI, or null when nothing was moved: no file there,
      * or the move failed. Never over an earlier backup: one a failed restore
      * left behind still holds someone's original audio, so a taken name gets
-     * a counter (a SAF provider picks its own unique name). Put it back with
-     * [restoreSetAside]; [delete] it once it isn't needed.
+     * a counter (a SAF provider picks its own unique name). [backupPath],
+     * from [backupPathFor], moves a plain file there, so the caller could
+     * write the name down first. Put it back with [restoreSetAside]; [delete]
+     * it once it isn't needed.
      */
-    fun setAside(path: String): String? = runCatching {
+    fun setAside(path: String, backupPath: String? = null): String? = runCatching {
         if (path.startsWith("content://")) {
             val uri = path.toUri()
             val name = DocumentFile.fromSingleUri(context, uri)?.takeIf { it.exists() }?.name
@@ -181,11 +203,8 @@ class LocalFileOps @Inject constructor(
         } else {
             val file = File(plainPath(path))
             if (!file.exists()) return null
-            var backup = File(file.parentFile, file.name + BACKUP_SUFFIX)
-            var counter = 1
-            while (backup.exists()) {
-                backup = File(file.parentFile, "${file.name}.${counter++}$BACKUP_SUFFIX")
-            }
+            val backup = File(backupPath ?: backupPathFor(path) ?: return null)
+            if (backup.exists()) return null
             // No REPLACE_EXISTING: if the name was taken meanwhile, fail rather
             // than overwrite.
             Files.move(file.toPath(), backup.toPath())

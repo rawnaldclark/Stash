@@ -55,4 +55,34 @@ class SwapJournalTest {
             journal.pending(),
         )
     }
+
+    // -- #531 review --------------------------------------------------------------
+
+    @Test
+    fun `an entry carries the video the swap was for`() {
+        val entry = SwapJournal.Entry(7L, "/a.opus", "/a.opus.swapbak", newVideoId = "vid123")
+        SwapJournal(context).record(entry)
+
+        assertEquals(listOf(entry), SwapJournal(context).pending())
+        assertTrue(SwapJournal(context).has(7L))
+    }
+
+    @Test
+    fun `an entry written by the previous version still reads, without a video`() {
+        val dir = java.io.File(context.noBackupFilesDir, "swap-journal").apply { mkdirs() }
+        java.io.File(dir, "7").writeText("/a.opus\n/a.opus.swapbak")
+
+        assertEquals(listOf(SwapJournal.Entry(7L, "/a.opus", "/a.opus.swapbak", newVideoId = null)), SwapJournal(context).pending())
+    }
+
+    @Test
+    fun `unreadable entries and leftover temp files are cleared away`() {
+        val dir = java.io.File(context.noBackupFilesDir, "swap-journal").apply { mkdirs() }
+        val leftoverTemp = java.io.File(dir, "7.tmp").apply { writeText("/a.opus\n/a.opus.swapbak") }
+        val halfWritten = java.io.File(dir, "8").apply { writeText("/b.opus") }
+
+        assertTrue(SwapJournal(context).pending().isEmpty())
+        assertTrue("a crash mid-write leaves a temp file", !leftoverTemp.exists())
+        assertTrue(!halfWritten.exists())
+    }
 }

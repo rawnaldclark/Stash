@@ -798,15 +798,18 @@ private fun FlaggedTrackListItem(
             }
         }
 
-        IconButton(
-            onClick = onUnflag,
-            modifier = Modifier.size(40.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Unflag (keep current match)",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        // No unflag while it swaps: the swap clears the flag when it is done.
+        if (!isSwapping) {
+            IconButton(
+                onClick = onUnflag,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Unflag (keep current match)",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

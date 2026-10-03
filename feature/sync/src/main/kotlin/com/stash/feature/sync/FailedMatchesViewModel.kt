@@ -803,6 +803,10 @@ class FailedMatchesViewModel @Inject constructor(
      * normally for this row.
      */
     fun unflagTrack(trackId: Long) {
+        // Not while it swaps: the swap clears the flag itself when it is done,
+        // and unflagging mid-swap made a swap cut short by the app dying look
+        // finished to the startup repair (#531 review).
+        if (trackId in swapCoordinator.running.value || trackId in _pendingSwaps.value) return
         viewModelScope.launch {
             musicRepository.setMatchFlagged(trackId, false)
             _resyncCandidates.update { it - trackId }

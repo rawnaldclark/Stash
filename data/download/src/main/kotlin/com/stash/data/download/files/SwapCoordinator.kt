@@ -253,33 +253,68 @@ class SwapCoordinator @Inject constructor(
 
     /**
      * Repairs swaps cut short by the app being killed between moving the old
-     * file aside and finishing (#531 review). A track still flagged never got
-     * its final write (completeSwap clears the flag in it), so its old file
-     * goes back; otherwise the set-aside copy is no longer needed. Runs once
-     * at app start, before any swap.
+     * file aside and finishing (#531 review). Runs once at app start.
+     *
+     * A swap finished when the track has its video: the final write sets it
+     * with the new file. (The flag can't tell: the user may unflag a row mid-
+     * swap. Entries from before the video was written down fall back to it.)
+     * A finished swap's set-aside copy is deleted, never when it is the very
+     * file the track points at (a SAF provider with stable document ids keeps
+     * the URI through the rename). An unfinished swap's old file goes back,
+     * but only while the track still expects it there and no other track uses
+     * that path; otherwise the copy stays on disk and is logged.
      */
     suspend fun recoverInterruptedSwaps() {
         for (entry in journal.pending()) {
             if (entry.trackId in _running.value) continue // a live swap owns its entry
             try {
-                val track = trackDao.getById(entry.trackId)
-                val unfinished = track != null && track.matchFlagged
-                val handled = if (unfinished) {
-                    localFileOps.restoreSetAside(entry.backupPath, entry.originalPath)
-                } else {
-                    localFileOps.delete(entry.backupPath)
-                    true
-                }
-                if (handled) journal.clear(entry.trackId)
-                Log.i(
-                    TAG,
-                    "recovered an interrupted swap of trackId=${entry.trackId}: " +
-                        if (unfinished) "old file put back ($handled)" else "set-aside copy removed",
-                )
+                recover(entry)
             } catch (e: Exception) {
                 rethrowIfCancelled(e)
                 Log.w(TAG, "couldn't recover the interrupted swap of trackId=${entry.trackId}", e)
             }
+        }
+    }
+
+    private suspend fun recover(entry: SwapJournal.Entry) {
+        val trackId = entry.trackId
+        val backup = entry.backupPath
+        if (!localFileOps.exists(backup)) {
+            // Cut short before the move, or already handled.
+            journal.clear(trackId)
+            return
+        }
+        val track = trackDao.getById(trackId)
+        val finished = when {
+            track == null -> true // the track is gone; its old file is of no use
+            entry.newVideoId != null -> track.youtubeId == entry.newVideoId
+            else -> !track.matchFlagged
+        }
+        if (finished) {
+            if (localFileOps.isSameFile(backup, track?.filePath)) {
+                Log.w(TAG, "recovery: $backup is trackId=$trackId's current file; keeping it")
+                journal.clear(trackId)
+            } else if (localFileOps.delete(backup)) {
+                journal.clear(trackId)
+                Log.i(TAG, "recovery: removed the set-aside copy of trackId=$trackId")
+            } else {
+                Log.w(TAG, "recovery: couldn't delete $backup; trying again next start")
+            }
+            return
+        }
+        val original = entry.originalPath
+        val stillExpected = localFileOps.isSameFile(track?.filePath, original) &&
+            trackDao.countOtherTracksWithFilePath(original, trackId) == 0
+        if (!stillExpected) {
+            Log.w(TAG, "recovery: trackId=$trackId no longer expects $original; keeping its old audio at $backup")
+            journal.clear(trackId)
+            return
+        }
+        if (localFileOps.restoreSetAside(backup, original)) {
+            journal.clear(trackId)
+            Log.i(TAG, "recovery: put trackId=$trackId's old file back")
+        } else {
+            Log.w(TAG, "recovery: couldn't put $original back from $backup; trying again next start")
         }
     }
 
@@ -296,6 +331,14 @@ class SwapCoordinator @Inject constructor(
         val track = trackDao.getById(trackId)
             ?: return SwapOutcome.DownloadFailed(trackId, newVideoId, title = "")
         val title = track.title
+
+        // An earlier swap of this track left its old file set aside (a
+        // restore failed, or the app died). The next start's recovery deals
+        // with it; a second set-aside now could bury the user's original audio.
+        if (journal.has(trackId)) {
+            Log.w(TAG, "swap: trackId=$trackId still has a set-aside file; not swapping until it is handled")
+            return SwapOutcome.SaveFailed(trackId, newVideoId, title)
+        }
 
         // v0.9.15: Reject blocklisted identities. A swap on a blocked
         // track would re-mark it downloaded and resurrect the file.
@@ -423,16 +466,26 @@ class SwapCoordinator @Inject constructor(
             // Saving onto the old file's own path deletes it before writing
             // (File.copyTo overwrite; the SAF write deletes the document
             // first), so a failed save would leave the row on a missing or
-            // half-written file. Move it aside first, and write that down so a
-            // swap cut short by the app dying can be repaired at the next start.
+            // half-written file. Move it aside first, written down so a swap
+            // cut short by the app dying can be repaired at the next start:
+            // before the move for a plain file, whose backup name is known
+            // ahead; right after it on SAF, where the rename picks the name.
             if (oldPath != null && destinationExisted && localFileOps.isSameFile(planned, oldPath)) {
-                val movedTo = localFileOps.setAside(oldPath)
+                val plannedBackup = localFileOps.backupPathFor(oldPath)
+                if (plannedBackup != null) {
+                    journal.record(SwapJournal.Entry(trackId, oldPath, plannedBackup, newVideoId))
+                }
+                val movedTo = localFileOps.setAside(oldPath, plannedBackup)
                 if (movedTo == null) {
+                    if (plannedBackup != null) journal.clear(trackId)
                     Log.w(TAG, "swap: couldn't move $oldPath aside; not saving over it")
                     return Save.Failed
                 }
+                // Known to the undo before the SAF record, which can throw.
                 backup = movedTo
-                journal.record(SwapJournal.Entry(trackId, oldPath, movedTo))
+                if (plannedBackup == null) {
+                    journal.record(SwapJournal.Entry(trackId, oldPath, movedTo, newVideoId))
+                }
             }
 
             val committed = fileOrganizer.commitDownload(
@@ -485,8 +538,12 @@ class SwapCoordinator @Inject constructor(
         val done = result as? Save.Done ?: return result
         when {
             backup != null -> {
-                localFileOps.delete(backup)
-                journal.clear(trackId)
+                // Cleared only once the copy is gone: the next start retries.
+                if (localFileOps.delete(backup)) {
+                    journal.clear(trackId)
+                } else {
+                    Log.w(TAG, "swap: couldn't delete the set-aside copy $backup; the next start tries again")
+                }
             }
             oldPath != null && !oldShared && !localFileOps.isSameFile(oldPath, done.path) -> {
                 localFileOps.delete(oldPath)

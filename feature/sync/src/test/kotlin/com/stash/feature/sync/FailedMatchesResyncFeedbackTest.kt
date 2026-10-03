@@ -574,4 +574,15 @@ class FailedMatchesResyncFeedbackTest {
 
         assertEquals("right", vm.uiState.value.resyncCandidates[7L]?.videoId)
     }
+
+    @Test fun `unflagging a row that is swapping does nothing`() = runTest {
+        val (vm, _) = approveFlaggedSwap()
+
+        vm.unflagTrack(7L)
+        advanceUntilIdle()
+
+        // Unflagging mid-swap made the startup repair treat a killed swap as
+        // finished and delete the audio the user chose to keep.
+        coVerify(exactly = 0) { musicRepository.setMatchFlagged(any(), any()) }
+    }
 }

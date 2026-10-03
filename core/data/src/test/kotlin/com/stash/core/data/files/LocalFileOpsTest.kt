@@ -163,4 +163,22 @@ class LocalFileOpsTest {
         assertEquals("the song now", File(backup!!).readText())
         assertTrue(File(backup).absolutePath != earlier.absolutePath)
     }
+
+    @Test fun `the backup name is known before the move, and the set-aside uses it`() {
+        val dir = tmp.newFolder()
+        val song = File(dir, "lacrymosa.opus").apply { writeText("the song") }
+
+        // So the swap can write it down before anything moves.
+        val planned = ops.backupPathFor(song.absolutePath)
+        val backup = ops.setAside(song.absolutePath, planned)
+
+        assertEquals(planned, backup)
+        assertEquals("the song", File(backup!!).readText())
+    }
+
+    @Test fun `delete says whether it deleted`() {
+        val f = File.createTempFile("stash-del", ".opus")
+        assertTrue(ops.delete(f.absolutePath))
+        assertFalse(ops.delete(f.absolutePath))
+    }
 }
