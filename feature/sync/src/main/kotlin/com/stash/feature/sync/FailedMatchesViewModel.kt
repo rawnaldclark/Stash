@@ -16,11 +16,14 @@ import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.SwapCoordinator
+import com.stash.data.download.files.SwapOutcome
+import com.stash.data.download.matching.AlbumMatchExecutor
 import com.stash.data.download.matching.HybridSearchExecutor
 import com.stash.data.download.prefs.QualityPreferencesManager
 import com.stash.data.download.prefs.toYtDlpArgs
 import com.stash.data.download.preview.NoFastStreamException
 import com.stash.data.download.preview.PreviewUrlExtractor
+import com.stash.data.download.ytdlp.YtDlpSearchResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -71,11 +74,15 @@ data class ResyncCandidate(
  * @property title            Original Spotify / YouTube metadata title.
  * @property artist           Original metadata artist.
  * @property albumArtUrl      Original album art, used as a visual anchor.
- * @property currentYoutubeId The currently-associated YT video (wrong one).
+ * @property currentYoutubeId The currently-associated YT video (wrong one). Often
+ *                           null: a lossless download never writes one.
  * @property currentFilePath  On-disk file to delete when the swap is approved.
- * @property searchQuery      "<artist> - <title>" — what the resync feeds into YT search.
- * @property album            The track's album ("" = unknown). The swap files the
- *                           replacement under it, like a sync download.
+ * @property searchQuery      "<artist> - <title>" — the plain resync search.
+ * @property album            The track's album ("" = unknown). Resync looks in this
+ *                           album's tracklist and names it in the search, so a song
+ *                           recorded twice (an original and a re-recording) finds
+ *                           the right recording; the swap files the file under it.
+ * @property durationMs       The track's length, for matching within the album.
  */
 data class FlaggedTrackRow(
     val trackId: Long,
@@ -86,6 +93,7 @@ data class FlaggedTrackRow(
     val currentFilePath: String?,
     val searchQuery: String,
     val album: String = "",
+    val durationMs: Long = 0L,
 )
 
 /**
@@ -134,6 +142,7 @@ class FailedMatchesViewModel @Inject constructor(
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val localFileOps: com.stash.core.data.files.LocalFileOps,
     private val trackIdentityEvents: TrackIdentityEvents,
+    private val albumMatchExecutor: AlbumMatchExecutor,
 ) : ViewModel() {
 
     companion object {
@@ -175,6 +184,13 @@ class FailedMatchesViewModel @Inject constructor(
     private var resyncJob: Job? = null
 
     /**
+     * Candidates of swaps still running, by trackId: one swap per track at a
+     * time, and a failed swap puts its candidate back for a one-tap retry
+     * (#531). Main-thread only.
+     */
+    private val pendingSwaps = mutableMapOf<Long, ResyncCandidate>()
+
+    /**
      * Cache of pre-extracted stream URLs, keyed by videoId.
      * Populated in the background after resync completes.
      */
@@ -204,6 +220,9 @@ class FailedMatchesViewModel @Inject constructor(
                 onPreviewPlayerError(event.videoId, event.attemptId, event.error)
             }
         }
+        viewModelScope.launch {
+            swapCoordinator.outcomes.collect { outcome -> onSwapOutcome(outcome) }
+        }
     }
 
     // -- Combined UI state --------------------------------------------------
@@ -225,6 +244,7 @@ class FailedMatchesViewModel @Inject constructor(
                     currentFilePath = t.filePath,
                     searchQuery = "${t.artist} - ${t.title}",
                     album = t.album,
+                    durationMs = t.durationMs,
                 )
             }
         }
@@ -287,17 +307,32 @@ class FailedMatchesViewModel @Inject constructor(
                 val query = it.searchQuery.ifBlank { "${it.artist} - ${it.title}" }
                 ResyncSearch(
                     trackId = it.trackId,
-                    query = query,
+                    queries = listOf(query),
                     excludeVideoId = it.rejectedVideoId,
                     allowExcludedFallback = true,
                 )
             }
-            val flagged = flaggedRowsSnapshot.map {
+            // #531: a flagged track's wrong file is often the OTHER recording
+            // of the same song (Evanescence's Lacrymosa exists on its original
+            // album and on Synthesis). "artist - title" alone lands both on
+            // the same top hit, so look in the track's own album first, then
+            // search with the album named, then plainly.
+            val flagged = flaggedRowsSnapshot.map { row ->
+                val album = row.album.takeIf { it.isNotBlank() }
                 ResyncSearch(
-                    trackId = it.trackId,
-                    query = it.searchQuery,
-                    excludeVideoId = it.currentYoutubeId,
+                    trackId = row.trackId,
+                    queries = listOfNotNull(album?.let { "${row.searchQuery} $it" }, row.searchQuery),
+                    excludeVideoId = row.currentYoutubeId,
                     allowExcludedFallback = false,
+                    albumTarget = album?.let {
+                        AlbumTarget(
+                            title = row.title,
+                            artist = row.artist,
+                            album = it,
+                            durationMs = row.durationMs,
+                        )
+                    },
+                    skipVideosOwnedByOtherTracks = true,
                 )
             }
             val jobs = unmatched + flagged
@@ -310,34 +345,7 @@ class FailedMatchesViewModel @Inject constructor(
                 launch {
                     semaphore.acquire()
                     try {
-                        val results = searchExecutor.search(request.query, maxResults = 5)
-                        // For flagged tracks, skip the currently-associated
-                        // (wrong) video — surfacing it as the candidate would
-                        // just swap the track with itself.
-                        var best = results.firstOrNull {
-                            request.excludeVideoId == null || it.id != request.excludeVideoId
-                        }
-
-                        // #19/#143: search() is InnerTube-first and only falls
-                        // back to yt-dlp when YT Music returns *zero* results.
-                        // When YT Music returns results but none are usable —
-                        // it's empty, or only the rejected/wrong video came back
-                        // — broaden to a full-YouTube yt-dlp search, which
-                        // surfaces tracks that exist on YouTube but not YouTube
-                        // Music (and genuine alternatives to a wrong match).
-                        if (best == null) {
-                            val direct = searchExecutor.searchYtDlpDirect(request.query, maxResults = 5)
-                            best = direct.firstOrNull {
-                                request.excludeVideoId == null || it.id != request.excludeVideoId
-                            }
-                        }
-
-                        // Last resort: surface the top result even if it's the
-                        // excluded one, so an unmatched track still gets *a*
-                        // candidate to preview rather than nothing.
-                        if (best == null && request.allowExcludedFallback) {
-                            best = results.firstOrNull()
-                        }
+                        val best = findReplacement(request)
                         if (best != null) {
                             _resyncCandidates.update { current ->
                                 current + (request.trackId to ResyncCandidate(
@@ -349,8 +357,10 @@ class FailedMatchesViewModel @Inject constructor(
                                 ))
                             }
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        Log.w(TAG, "Resync search failed for '${request.query}': ${e.message}")
+                        Log.w(TAG, "Resync search failed for ${request.queries}: ${e.message}")
                     } finally {
                         semaphore.release()
                         val done = completed.incrementAndGet()
@@ -376,6 +386,74 @@ class FailedMatchesViewModel @Inject constructor(
             // Pre-extract stream URLs for instant audio previews
             preExtractStreamUrls(_resyncCandidates.value)
         }
+    }
+
+    /**
+     * Finds the best replacement for one track, most specific source first:
+     *  1. The album's own tracklist (flagged rows with a known album) — sync's
+     *     first strategy too (DownloadManager.resolveUrl), and the one that
+     *     tells two recordings of a song apart.
+     *  2. Each query on YouTube Music: the album-named one, then "artist - title".
+     *  3. #19/#143: the same queries on full YouTube. search() is
+     *     InnerTube-first and only falls back to yt-dlp when YT Music returns
+     *     *zero* results; when everything it returns is unusable (the
+     *     rejected/wrong video, or videos other tracks own), a full-YouTube
+     *     search surfaces tracks YouTube Music doesn't have and genuine
+     *     alternatives to a wrong match.
+     *  4. Unmatched rows only: the top result even if it's the excluded one,
+     *     so the track still gets *a* candidate to preview rather than nothing.
+     */
+    private suspend fun findReplacement(request: ResyncSearch): YtDlpSearchResult? {
+        request.albumTarget?.let { target ->
+            val fromAlbum = albumMatchExecutor.findTrackInAlbum(
+                targetTitle = target.title,
+                targetArtist = target.artist,
+                targetAlbum = target.album,
+                targetDurationMs = target.durationMs,
+            )
+            if (fromAlbum != null) firstUsable(listOf(fromAlbum), request)?.let { return it }
+        }
+
+        var topResults: List<YtDlpSearchResult> = emptyList()
+        for ((index, query) in request.queries.withIndex()) {
+            val results = searchExecutor.search(query, maxResults = 5)
+            if (index == 0) topResults = results
+            firstUsable(results, request)?.let { return it }
+        }
+
+        for (query in request.queries) {
+            val direct = searchExecutor.searchYtDlpDirect(query, maxResults = 5)
+            firstUsable(direct, request)?.let { return it }
+        }
+
+        return if (request.allowExcludedFallback) topResults.firstOrNull() else null
+    }
+
+    /**
+     * The first result this track may switch to. Never its own current video
+     * (surfacing it would swap the track with itself). For a flagged row, also
+     * never a video another track owns: tracks.youtube_id is UNIQUE, so
+     * approving one could only fail with "Can't swap — already linked" (#531).
+     * The row's own youtube_id is often null, so excluding "its own" video
+     * alone skipped nothing.
+     */
+    private suspend fun firstUsable(
+        results: List<YtDlpSearchResult>,
+        request: ResyncSearch,
+    ): YtDlpSearchResult? {
+        val open = results.filter { request.excludeVideoId == null || it.id != request.excludeVideoId }
+        if (!request.skipVideosOwnedByOtherTracks || open.isEmpty()) return open.firstOrNull()
+        val ownedElsewhere = musicRepository.findByYoutubeIds(open.map { it.id }.distinct())
+            .filter { it.id != request.trackId }
+            .mapNotNullTo(HashSet()) { it.youtubeId }
+        if (ownedElsewhere.isNotEmpty()) {
+            Log.d(
+                TAG,
+                "resync: skipping ${ownedElsewhere.size} video(s) already linked to other " +
+                    "tracks for trackId=${request.trackId}",
+            )
+        }
+        return open.firstOrNull { it.id !in ownedElsewhere }
     }
 
     // -- Pre-extract preview URLs in background --------------------------------
@@ -541,53 +619,120 @@ class FailedMatchesViewModel @Inject constructor(
      * Approves a replacement candidate for a user-flagged (wrong-match)
      * track. [SwapCoordinator] downloads and validates the replacement before
      * atomically changing identity/file state, then removes the old file.
+     * How it ended comes back through [onSwapOutcome].
      */
     fun approveSwap(row: FlaggedTrackRow, candidate: ResyncCandidate) {
+        // One swap per track at a time. The row only disappears once the flag
+        // write lands, so a quick double tap could start a second download of
+        // the same video, and that one failing would undo the first one's swap.
+        if (row.trackId in pendingSwaps) return
+        pendingSwaps[row.trackId] = candidate
         viewModelScope.launch {
-            // Defense in depth: candidates normally pass the resync exclusion
-            // above, but stale UI state or an external caller must not self-swap.
-            if (candidate.videoId == row.currentYoutubeId) {
-                _userMessages.tryEmit("Choose a different replacement for this track.")
-                return@launch
-            }
-
-            // Guard: another track already owns this videoId — swapping would
-            // violate the UNIQUE(youtube_id) constraint and blow up silently.
-            val existing = trackDao.findByYoutubeId(candidate.videoId)
-            if (existing != null && existing.id != row.trackId) {
-                _userMessages.tryEmit(
-                    "Can't swap — '${candidate.title}' is already linked to " +
-                        "${existing.artist} — ${existing.title}.",
-                )
-                return@launch
-            }
-
-            // Optimistically clear the flag + remove from candidates so the
-            // row disappears from the Failed Matches screen immediately.
+            var handedOff = false
             try {
-                musicRepository.setMatchFlagged(row.trackId, false)
-                _resyncCandidates.update { it - row.trackId }
-            } catch (e: Exception) {
-                Log.e(TAG, "approveSwap pre-download update failed", e)
-                _userMessages.tryEmit("Couldn't approve this swap. Please try again.")
-                return@launch
-            }
+                // Defense in depth: candidates normally pass the resync exclusion
+                // above, but stale UI state or an external caller must not self-swap.
+                if (candidate.videoId == row.currentYoutubeId) {
+                    _userMessages.tryEmit("Choose a different replacement for this track.")
+                    return@launch
+                }
 
-            // Hand the download + commit + DB update off to SwapCoordinator's
-            // application-scope so it survives the user leaving this screen.
-            // Pre-Phase-5b this was an inline `launch {}` on viewModelScope,
-            // which got cancelled the instant the user navigated away — they
-            // ended up with the DB pointing at a deleted file while the new
-            // audio never actually landed.
-            swapCoordinator.swap(
-                trackId = row.trackId,
-                oldFilePath = row.currentFilePath,
-                artist = row.artist,
-                title = row.title,
-                album = row.album,
-                newVideoId = candidate.videoId,
-            )
+                // Guard: another track already owns this videoId — swapping would
+                // violate the UNIQUE(youtube_id) constraint and blow up silently.
+                val existing = trackDao.findByYoutubeId(candidate.videoId)
+                if (existing != null && existing.id != row.trackId) {
+                    _userMessages.tryEmit(
+                        alreadyLinkedMessage(candidate.title, existing.artist, existing.title, existing.album),
+                    )
+                    return@launch
+                }
+
+                // Optimistically clear the flag + remove from candidates so the
+                // row disappears from the Failed Matches screen immediately.
+                try {
+                    musicRepository.setMatchFlagged(row.trackId, false)
+                    _resyncCandidates.update { it - row.trackId }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "approveSwap pre-download update failed", e)
+                    _userMessages.tryEmit("Couldn't approve this swap. Please try again.")
+                    return@launch
+                }
+
+                // Hand the download + commit + DB update off to SwapCoordinator's
+                // application-scope so it survives the user leaving this screen.
+                // Pre-Phase-5b this was an inline `launch {}` on viewModelScope,
+                // which got cancelled the instant the user navigated away — they
+                // ended up with the DB pointing at a deleted file while the new
+                // audio never actually landed.
+                swapCoordinator.swap(
+                    trackId = row.trackId,
+                    oldFilePath = row.currentFilePath,
+                    artist = row.artist,
+                    title = row.title,
+                    album = row.album,
+                    newVideoId = candidate.videoId,
+                )
+                handedOff = true
+            } finally {
+                // Handed off, the entry lives until the swap reports back.
+                if (!handedOff) pendingSwaps.remove(row.trackId)
+            }
         }
+    }
+
+    /**
+     * Tells the user how a swap ended (#531: a failed swap used to put the
+     * row back with no candidate and no word, so approving looked like it
+     * did nothing). A failure that can be retried puts the candidate back.
+     * Swaps this screen didn't start (it was recreated mid-swap) still get
+     * their message.
+     */
+    private fun onSwapOutcome(outcome: SwapOutcome) {
+        val candidate = pendingSwaps[outcome.trackId]?.takeIf { it.videoId == outcome.newVideoId }
+        if (candidate != null) pendingSwaps.remove(outcome.trackId)
+        val message = when (outcome) {
+            is SwapOutcome.Swapped ->
+                "Swapped — '${outcome.title}' now plays the version you picked."
+            is SwapOutcome.Failed -> {
+                if (candidate != null) {
+                    // A resync that ran meanwhile may have found a newer one.
+                    _resyncCandidates.update { current ->
+                        if (outcome.trackId in current) current else current + (outcome.trackId to candidate)
+                    }
+                }
+                "Couldn't download the replacement for '${outcome.title}' — try again."
+            }
+            is SwapOutcome.AlreadyLinked -> alreadyLinkedMessage(
+                candidateTitle = candidate?.title ?: outcome.title,
+                ownerArtist = outcome.ownerArtist,
+                ownerTitle = outcome.ownerTitle,
+                ownerAlbum = outcome.ownerAlbum,
+            )
+            is SwapOutcome.Blocked -> "Can't swap — this song is on your blocklist."
+        }
+        _userMessages.tryEmit(message)
+    }
+
+    /**
+     * "Can't swap — 'X' is already linked to Artist — Title (Album)." The
+     * album shows the other track is a different recording rather than the
+     * track blocking itself (#531: "'Lacrymosa' is already linked to
+     * Evanescence — Lacrymosa").
+     */
+    private fun alreadyLinkedMessage(
+        candidateTitle: String,
+        ownerArtist: String,
+        ownerTitle: String,
+        ownerAlbum: String,
+    ): String {
+        val owner = if (ownerAlbum.isBlank()) {
+            "$ownerArtist — $ownerTitle"
+        } else {
+            "$ownerArtist — $ownerTitle ($ownerAlbum)"
+        }
+        return "Can't swap — '$candidateTitle' is already linked to $owner."
     }
 
     /**
@@ -853,8 +998,20 @@ class FailedMatchesViewModel @Inject constructor(
 
     private data class ResyncSearch(
         val trackId: Long,
-        val query: String,
+        /** Most specific first. The first one's results back the unmatched last resort. */
+        val queries: List<String>,
         val excludeVideoId: String?,
         val allowExcludedFallback: Boolean,
+        /** Flagged rows with a known album: look in that album's tracklist first. */
+        val albumTarget: AlbumTarget? = null,
+        /** Flagged rows: skip videos other tracks own; they can't be swapped in. */
+        val skipVideosOwnedByOtherTracks: Boolean = false,
+    )
+
+    private data class AlbumTarget(
+        val title: String,
+        val artist: String,
+        val album: String,
+        val durationMs: Long,
     )
 }

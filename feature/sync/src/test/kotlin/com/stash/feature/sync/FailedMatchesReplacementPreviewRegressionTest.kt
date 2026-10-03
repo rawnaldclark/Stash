@@ -3,6 +3,7 @@ package com.stash.feature.sync
 import androidx.media3.common.PlaybackException
 import com.stash.core.data.db.dao.UnmatchedTrackView
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.model.Track
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.media.preview.PreviewErrorEvent
@@ -11,6 +12,8 @@ import com.stash.core.media.preview.PreviewState
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.SwapCoordinator
+import com.stash.data.download.files.SwapOutcome
+import com.stash.data.download.matching.AlbumMatchExecutor
 import com.stash.data.download.matching.HybridSearchExecutor
 import com.stash.data.download.prefs.QualityPreferencesManager
 import com.stash.data.download.preview.NoFastStreamException
@@ -38,6 +41,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -67,6 +71,7 @@ class FailedMatchesReplacementPreviewRegressionTest {
     private val blocklistGuard = mockk<com.stash.core.data.blocklist.BlocklistGuard>(relaxed = true)
     private val localFileOps = mockk<com.stash.core.data.files.LocalFileOps>(relaxed = true)
     private val trackIdentityEvents = mockk<TrackIdentityEvents>(relaxed = true)
+    private val albumMatchExecutor = mockk<AlbumMatchExecutor>()
 
     private lateinit var playerErrors: MutableSharedFlow<PreviewErrorEvent>
     private lateinit var previewState: MutableStateFlow<PreviewState>
@@ -84,6 +89,8 @@ class FailedMatchesReplacementPreviewRegressionTest {
         nextAttemptId = 0L
         every { previewPlayer.playerErrors } returns playerErrors
         every { previewPlayer.previewState } returns previewState
+        every { swapCoordinator.outcomes } returns MutableSharedFlow<SwapOutcome>()
+        coEvery { albumMatchExecutor.findTrackInAlbum(any(), any(), any(), any()) } returns null
         every { previewPlayer.claimRequest() } answers {
             currentRequestId = ++requestSequence
             currentRequestId
@@ -142,6 +149,7 @@ class FailedMatchesReplacementPreviewRegressionTest {
             blocklistGuard = blocklistGuard,
             localFileOps = localFileOps,
             trackIdentityEvents = trackIdentityEvents,
+            albumMatchExecutor = albumMatchExecutor,
         )
     }
 
@@ -587,6 +595,81 @@ class FailedMatchesReplacementPreviewRegressionTest {
         coVerify(exactly = 1) { searchExecutor.search(any(), any()) }
     }
 
+    /**
+     * #531: Evanescence recorded Lacrymosa twice. The other recording's row
+     * already owns the top search hit, and tracks.youtube_id is UNIQUE, so
+     * offering it could only end in "Can't swap — already linked".
+     */
+    @Test
+    fun `flagged resync skips a video another track already owns`() = runTest {
+        val flagged = TrackEntity(
+            id = 7L,
+            title = "Lacrymosa",
+            artist = "Evanescence",
+            youtubeId = "wrong-video",
+            matchFlagged = true,
+            isDownloaded = true,
+            filePath = "/music/evanescence/singles/lacrymosa.opus",
+        )
+        coEvery { searchExecutor.search(any(), any()) } returns listOf(
+            YtDlpSearchResult(id = "open-door-video", title = "Lacrymosa"),
+            YtDlpSearchResult(id = "synthesis-video", title = "Lacrymosa"),
+        )
+        coEvery { musicRepository.findByYoutubeIds(any()) } answers {
+            firstArg<Collection<String>>()
+                .filter { it == "open-door-video" }
+                .map { Track(id = 8L, title = "Lacrymosa", artist = "Evanescence", youtubeId = it) }
+        }
+        val vm = makeVm(flagged = listOf(flagged))
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+        vm.resync()
+        advanceUntilIdle()
+
+        assertEquals("synthesis-video", vm.uiState.value.resyncCandidates[flagged.id]?.videoId)
+    }
+
+    /**
+     * #531: a flagged row's own youtube_id is often NULL (a lossless download
+     * never writes one; the YouTube path's write fails on the UNIQUE index
+     * when a sibling owns the video), so excluding "its own" video skipped
+     * nothing and resync offered the sibling's video again.
+     */
+    @Test
+    fun `a flagged row with no youtube id still skips its sibling's video`() = runTest {
+        val flagged = TrackEntity(
+            id = 7L,
+            title = "Lacrymosa",
+            artist = "Evanescence",
+            youtubeId = null,
+            matchFlagged = true,
+            isDownloaded = true,
+            filePath = "/music/evanescence/singles/lacrymosa.flac",
+        )
+        coEvery { searchExecutor.search(any(), any()) } returns listOf(
+            YtDlpSearchResult(id = "open-door-video", title = "Lacrymosa"),
+        )
+        coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns listOf(
+            YtDlpSearchResult(id = "open-door-video", title = "Lacrymosa"),
+        )
+        coEvery { musicRepository.findByYoutubeIds(any()) } returns listOf(
+            Track(id = 8L, title = "Lacrymosa", artist = "Evanescence", youtubeId = "open-door-video"),
+        )
+        val vm = makeVm(flagged = listOf(flagged))
+        val messages = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.userMessages.collect(messages::add) }
+
+        vm.resync()
+        advanceUntilIdle()
+
+        assertNull(vm.uiState.value.resyncCandidates[flagged.id])
+        assertTrue(
+            "nothing usable left must read as no new matches, got $messages",
+            messages.any { it.contains("No new matches") },
+        )
+    }
+
     @Test
     fun `approval boundary rejects a self swap`() = runTest {
         val vm = makeVm()
@@ -615,5 +698,51 @@ class FailedMatchesReplacementPreviewRegressionTest {
         verify(exactly = 0) {
             swapCoordinator.swap(any(), any(), any(), any(), any(), any())
         }
+    }
+
+    /**
+     * #531: "Can't swap — 'Lacrymosa' is already linked to Evanescence —
+     * Lacrymosa" read like the track blocking itself. Naming the other
+     * recording's album shows it is a different track.
+     */
+    @Test
+    fun `the can't-swap message names the album of the track that owns the video`() = runTest {
+        coEvery { trackDao.findByYoutubeId("open-door-video") } returns TrackEntity(
+            id = 8L,
+            title = "Lacrymosa",
+            artist = "Evanescence",
+            album = "The Open Door",
+            youtubeId = "open-door-video",
+        )
+        val vm = makeVm()
+        val messages = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.userMessages.collect(messages::add) }
+        val row = FlaggedTrackRow(
+            trackId = 7L,
+            title = "Lacrymosa",
+            artist = "Evanescence",
+            albumArtUrl = null,
+            currentYoutubeId = null,
+            currentFilePath = "/music/evanescence/synthesis/lacrymosa.opus",
+            searchQuery = "Evanescence - Lacrymosa",
+            album = "Synthesis",
+        )
+        val candidate = ResyncCandidate(
+            videoId = "open-door-video",
+            title = "Lacrymosa",
+            artist = "Evanescence",
+            thumbnailUrl = null,
+            durationSeconds = 230.0,
+        )
+
+        vm.approveSwap(row, candidate)
+        advanceUntilIdle()
+
+        assertTrue(
+            "got $messages",
+            messages.any { it.contains("already linked") && it.contains("The Open Door") },
+        )
+        coVerify(exactly = 0) { musicRepository.setMatchFlagged(any(), any()) }
+        verify(exactly = 0) { swapCoordinator.swap(any(), any(), any(), any(), any(), any()) }
     }
 }
