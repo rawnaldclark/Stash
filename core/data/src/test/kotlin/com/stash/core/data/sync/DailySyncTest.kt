@@ -356,7 +356,7 @@ class DailySyncTest {
 
     // -- App start --------------------------------------------------------------------------
 
-    @Test fun `the startup check clears a leftover trigger while Auto-sync is off`() {
+    @Test fun `the startup check clears a leftover trigger while Auto-sync is off`() = runBlocking {
         scheduler.scheduleDailySync(6, 0)
 
         scheduler.ensureDailySync(SyncPreferences(autoSyncEnabled = false))
@@ -364,7 +364,7 @@ class DailySyncTest {
         assertNull(trigger())
     }
 
-    @Test fun `the startup check adds the trigger when Auto-sync is on, and keeps an existing one's time`() {
+    @Test fun `the startup check adds the trigger when Auto-sync is on, and keeps an existing one's time`() = runBlocking {
         scheduler.ensureDailySync(SyncPreferences(autoSyncEnabled = true, syncHour = 6, syncMinute = 0))
         val first = trigger()!!
         assertAbout(scheduler.computeDelayToNextSync(6, 0)!!, first.initialDelayMillis)

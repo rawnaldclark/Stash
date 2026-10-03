@@ -37,6 +37,7 @@ import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.data.mix.TagPoolBuilder
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.sync.TrackMatcher
+import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import dagger.assisted.Assisted
@@ -219,7 +220,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
          * enough to not care. Discovery is opportunistic and tolerates
          * being skipped when the device is offline.
          */
-        fun schedulePeriodic(context: Context) {
+        suspend fun schedulePeriodic(context: Context) {
             val constraints = Constraints.Builder()
                 .setRequiresBatteryNotLow(true)
                 .build()
@@ -233,7 +234,8 @@ class StashMixRefreshWorker @AssistedInject constructor(
             // the current worker spec on the next cold start. KEEP previously meant
             // constraint changes / class changes were ignored across upgrades —
             // a credible cause of "periodic refresh hasn't fired in 3 days" reports.
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            // UPDATE can't revive a FAILED job, hence the reviving enqueue.
+            WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
                 work,
@@ -402,6 +404,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
             // clear-then-reinsert membership write is not atomic. Observed on
             // device: two runs 10s apart interleaved and left Daily Discover
             // with 25 of 39 rows (and a wrong count) — a torn playlist.
+            // Only this write is locked, not the whole run: a full refresh
+            // spends most of its time on network calls, and a "Refresh this
+            // mix" tap shouldn't wait for them. `recipe` was read before the
+            // lock, so materializeMix also finds the playlist by its source id.
             val result = materializeMutex.withLock {
                 materializeMix(recipe, tracks, now, excludeSnapshot, rotationSeed)
             }
@@ -514,9 +520,18 @@ class StashMixRefreshWorker @AssistedInject constructor(
     ): MaterializeResult {
         // Existing playlist: verify it's still there (could have been
         // deleted by the user). If gone, fall through to re-create.
+        // Else find the mix's row by source_id. Two cases leave the recipe
+        // without the id of a row that exists: two runs that started together
+        // (both read the recipe before either created the playlist; on first
+        // launch the one-shot and the daily refresh do exactly that), and a
+        // run that created the row but died before recipeDao.setPlaylistId.
+        // Inserting it again would throw on the UNIQUE source_id index, and a
+        // periodic run that throws is FAILED for good.
+        val sourceId = "stash_mix_${recipe.id}"
         val existing = recipe.playlistId
             ?.let { playlistDao.getById(it) }
             ?.takeIf { it.type == PlaylistType.STASH_MIX }
+            ?: playlistDao.findBySourceId(sourceId)?.takeIf { it.type == PlaylistType.STASH_MIX }
 
         // ── v0.9.42 idempotency backstop ──────────────────────────────────
         // Compute the discovery survivors (and therefore the FULL ordered
@@ -691,7 +706,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
             val newPlaylist = PlaylistEntity(
                 name = recipe.name,
                 source = MusicSource.BOTH,
-                sourceId = "stash_mix_${recipe.id}",
+                sourceId = sourceId,
                 type = PlaylistType.STASH_MIX,
                 trackCount = tracks.size,
                 artUrl = firstArt,

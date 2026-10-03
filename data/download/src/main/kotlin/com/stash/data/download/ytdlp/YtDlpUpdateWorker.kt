@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
@@ -40,9 +41,10 @@ class YtDlpUpdateWorker @AssistedInject constructor(
 
         /**
          * Enqueues a periodic update job that runs every 24 hours.
-         * Uses [ExistingPeriodicWorkPolicy.KEEP] so re-scheduling is idempotent.
+         * Uses [ExistingPeriodicWorkPolicy.KEEP] so re-scheduling is idempotent;
+         * a finished (e.g. FAILED) job is enqueued again.
          */
-        fun schedulePeriodicUpdate(context: Context) {
+        suspend fun schedulePeriodicUpdate(context: Context) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
@@ -51,7 +53,7 @@ class YtDlpUpdateWorker @AssistedInject constructor(
                 .setConstraints(constraints)
                 .build()
 
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 UNIQUE_WORK_NAME,
                 ExistingPeriodicWorkPolicy.KEEP,
                 request,

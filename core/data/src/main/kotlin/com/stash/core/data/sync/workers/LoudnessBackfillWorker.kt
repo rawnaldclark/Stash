@@ -13,6 +13,7 @@ import androidx.work.workDataOf
 import com.stash.core.data.audio.LoudnessMeasurer
 import com.stash.core.data.audio.LoudnessProgressStore
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
@@ -162,9 +163,10 @@ open class LoudnessBackfillWorker @AssistedInject constructor(
          * Schedule the 6-hour periodic backfill. Idempotent — uses
          * [ExistingPeriodicWorkPolicy.KEEP] so re-calls (e.g. on every cold
          * start from `StashApplication.onCreate`) don't reset the next-run
-         * timer or clobber an in-flight execution.
+         * timer or clobber an in-flight execution. A finished (e.g. FAILED)
+         * job is enqueued again.
          */
-        fun schedulePeriodic(context: Context) {
+        suspend fun schedulePeriodic(context: Context) {
             val constraints = Constraints.Builder()
                 .setRequiresCharging(true)
                 .setRequiresDeviceIdle(true)
@@ -176,7 +178,7 @@ open class LoudnessBackfillWorker @AssistedInject constructor(
             )
                 .setConstraints(constraints)
                 .build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.KEEP,
                 request,

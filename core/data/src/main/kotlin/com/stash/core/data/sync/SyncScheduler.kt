@@ -104,10 +104,11 @@ class SyncScheduler @Inject constructor(
      * user has no trigger yet. [ExistingPeriodicWorkPolicy.KEEP] leaves an
      * existing trigger's time alone. The old delayed chain may still be queued:
      * it runs once, and the trigger skips a day's sync while it's queued or
-     * running ([startScheduledSync]). With Auto-sync off (or no days), cancels
-     * a leftover trigger, which would only wake the app to do nothing.
+     * running ([startScheduledSync]). A finished (e.g. FAILED) trigger never
+     * runs again, so it is enqueued afresh. With Auto-sync off (or no days),
+     * cancels a leftover trigger, which would only wake the app to do nothing.
      */
-    fun ensureDailySync(prefs: SyncPreferences) {
+    suspend fun ensureDailySync(prefs: SyncPreferences) {
         val delayMs = if (prefs.autoSyncEnabled) {
             computeDelayToNextSync(prefs.syncHour, prefs.syncMinute, DayOfWeekSet(prefs.syncDays))
         } else {
@@ -117,9 +118,11 @@ class SyncScheduler @Inject constructor(
             workManager.cancelUniqueWork(TRIGGER_WORK_NAME)
             return
         }
-        enqueueTrigger(ExistingPeriodicWorkPolicy.KEEP) {
-            setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
-        }
+        workManager.enqueueUniquePeriodicWorkReviving(
+            TRIGGER_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            triggerRequest { setInitialDelay(delayMs, TimeUnit.MILLISECONDS) },
+        )
         Log.d(TAG, "Daily sync trigger ensured (KEEP, first run in ${delayMs}ms if new)")
     }
 
@@ -309,14 +312,13 @@ class SyncScheduler @Inject constructor(
         policy: ExistingPeriodicWorkPolicy,
         configure: PeriodicWorkRequest.Builder.() -> Unit,
     ) {
-        workManager.enqueueUniquePeriodicWork(
-            TRIGGER_WORK_NAME,
-            policy,
-            PeriodicWorkRequestBuilder<DailySyncTriggerWorker>(24, TimeUnit.HOURS)
-                .apply(configure)
-                .build(),
-        )
+        workManager.enqueueUniquePeriodicWork(TRIGGER_WORK_NAME, policy, triggerRequest(configure))
     }
+
+    private fun triggerRequest(configure: PeriodicWorkRequest.Builder.() -> Unit): PeriodicWorkRequest =
+        PeriodicWorkRequestBuilder<DailySyncTriggerWorker>(24, TimeUnit.HOURS)
+            .apply(configure)
+            .build()
 
     /**
      * Builds and enqueues the four-worker chain: Fetch -> Diff -> Download -> Finalize.
