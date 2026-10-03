@@ -201,4 +201,57 @@ class FlacUpgradeWorkerTest {
         assertEquals(0, dao.countByStatus(FlacUpgradeStatus.PENDING))
         verify { syncNotificationManager.showFlacUpgradeSummary(upgraded = 1, noMatch = 0, failed = 0) }
     }
+
+    // -- #531 review: a song the user picked is left alone -----------------------
+
+    /** Upgrader fake that records which tracks it was asked to upgrade. */
+    private fun recordingUpgrader(asked: MutableList<Long>): LosslessUpgrader = object : LosslessUpgrader {
+        override suspend fun upgradeToLossless(track: Track, sweep: Boolean): UpgradeResult {
+            asked += track.id
+            return UpgradeResult.Upgraded
+        }
+
+        override suspend fun isLosslessEnabled(): Boolean = true
+    }
+
+    /** What a finished wrong-match swap leaves on the row. */
+    private suspend fun pick(trackId: Long) {
+        db.trackDao().completeSwap(
+            trackId = trackId,
+            filePath = "/music/x/t$trackId.opus",
+            fileSizeBytes = 1L,
+            sampleRateHz = 48_000,
+            bitsPerSample = null,
+            pickedAt = 1_000L,
+            downloadedAt = 1_000L,
+        )
+    }
+
+    @Test fun `an automatic sweep skips a song the user picked after it was queued`() = runBlocking {
+        val (picked, other) = seedTracks(2)
+        db.flacUpgradeQueueDao().startBatch(listOf(picked, other))
+        // The sweep can run hours after it was queued (relay pacing); the
+        // swap finished in between.
+        pick(picked)
+        val asked = mutableListOf<Long>()
+
+        val result = buildWorker(recordingUpgrader(asked), autoSweep = true).doWork()
+
+        assertTrue(result is ListenableWorker.Result.Success)
+        // Upgrading it would re-run the lossless lookup that likely chose the
+        // wrong recording, and write that FLAC over the user's pick.
+        assertEquals(listOf(other), asked)
+        assertEquals(0, db.flacUpgradeQueueDao().countByStatus(FlacUpgradeStatus.PENDING))
+    }
+
+    @Test fun `a batch the user chose still upgrades a song they picked`() = runBlocking {
+        val (picked) = seedTracks(1)
+        db.flacUpgradeQueueDao().startBatch(listOf(picked))
+        pick(picked)
+        val asked = mutableListOf<Long>()
+
+        buildWorker(recordingUpgrader(asked), autoSweep = false).doWork()
+
+        assertEquals(listOf(picked), asked)
+    }
 }

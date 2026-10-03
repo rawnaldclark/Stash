@@ -206,6 +206,25 @@ class DownloadManager @Inject constructor(
     private suspend fun executeDownload(track: Track, preResolvedUrl: String?): TrackDownloadResult {
         emitProgress(track.id, 0f, DownloadStatus.MATCHING)
 
+        // A track whose audio the user picked in Failed Matches (#531) gets
+        // exactly that video. The lossless and JioSaavn lookups match by
+        // title/artist/album and likely chose the wrong recording in the
+        // first place; the canonicalizer would swap the pick for another
+        // video. "YouTube fallback off" still means no YouTube download.
+        val pickedUrl = track.youtubeId
+            ?.takeIf { track.matchPickedAt != null && it.isNotBlank() }
+            ?.let { "https://www.youtube.com/watch?v=$it" }
+        if (pickedUrl != null) {
+            if (losslessPrefs.enabledNow() &&
+                !losslessPrefs.youtubeFallbackEnabledNow() &&
+                !forceYoutubeFallbackOnDebugBuilds
+            ) {
+                Log.i(TAG, "deferring picked '${track.artist} - ${track.title}': fallback off")
+                return TrackDownloadResult.Deferred
+            }
+            return downloadFromYouTube(track, ResolveResult(url = pickedUrl))
+        }
+
         // Step 0: Lossless source attempt. Made only when the Lossless
         // switch is on, for every track, regardless of whether the caller
         // supplied a preResolvedUrl. Stash Mix tracks get no override: they
@@ -282,6 +301,11 @@ class DownloadManager @Inject constructor(
 
         // Step 2: Resolve YouTube URL
         val resolveResult = if (preResolvedUrl != null) ResolveResult(url = preResolvedUrl) else resolveUrl(track)
+        return downloadFromYouTube(track, resolveResult)
+    }
+
+    /** The YouTube rung: download [resolveResult]'s URL with yt-dlp, tag it, and file it. */
+    private suspend fun downloadFromYouTube(track: Track, resolveResult: ResolveResult): TrackDownloadResult {
         if (resolveResult.url == null) {
             emitProgress(track.id, 0f, DownloadStatus.UNMATCHED)
             return TrackDownloadResult.Unmatched(rejectedVideoId = resolveResult.rejectedVideoId)

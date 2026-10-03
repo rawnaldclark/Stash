@@ -109,4 +109,11 @@ data class Track(
      * Mirrors `tracks.lyrics_fetched_at` (v27 → v28 migration).
      */
     val lyricsFetchedAt: Long? = null,
+    /**
+     * When the user picked this track's audio themselves (Failed Matches,
+     * #531). Mirrors `tracks.match_picked_at`. While set, nothing automatic
+     * replaces the audio with a lossless or "canonical" match: a re-download
+     * fetches the picked video.
+     */
+    val matchPickedAt: Long? = null,
 )
