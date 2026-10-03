@@ -312,18 +312,27 @@ class SwapCoordinator @Inject constructor(
             return giveBackClaim(trackId, newVideoId, before.youtubeId, title)
         }
 
-        try {
-            trackDao.markAsDownloaded(
+        // One write: the new file, its quality (bit depth included, null for
+        // lossy), loudness cleared, the flag cleared, and the user's pick
+        // recorded so the automatic FLAC upgrade leaves it alone.
+        val recorded = try {
+            val now = System.currentTimeMillis()
+            trackDao.completeSwap(
                 trackId = trackId,
                 filePath = committed.filePath,
                 fileSizeBytes = committed.sizeBytes,
                 sampleRateHz = meta?.sampleRateHz,
                 bitsPerSample = meta?.bitsPerSample,
-            )
+                pickedAt = now,
+                downloadedAt = now,
+            ) == 1
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "swap: couldn't record the replacement for trackId=$trackId", e)
+            false
+        }
+        if (!recorded) {
             // The row still points at its old file; a new file elsewhere
             // would only be an orphan.
             if (committed.filePath != oldFilePath) localFileOps.delete(committed.filePath)

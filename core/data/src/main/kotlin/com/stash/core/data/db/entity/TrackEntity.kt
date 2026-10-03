@@ -123,6 +123,17 @@ data class TrackEntity(
     val matchFlagged: Boolean = false,
 
     /**
+     * When the user picked this track's audio themselves, by approving a
+     * replacement for a flagged wrong match (#531). Null = chosen
+     * automatically. While set, the automatic FLAC upgrade leaves the audio
+     * alone (it would re-run the lookup that chose the wrong recording in
+     * the first place), and resync doesn't treat the row's youtube_id as the
+     * wrong video.
+     */
+    @ColumnInfo(name = "match_picked_at")
+    val matchPickedAt: Long? = null,
+
+    /**
      * International Standard Recording Code — per-master unique identifier
      * from Spotify's `external_ids.isrc`. Null for YouTube-sourced tracks
      * and for legacy Spotify rows inserted before the matcher started

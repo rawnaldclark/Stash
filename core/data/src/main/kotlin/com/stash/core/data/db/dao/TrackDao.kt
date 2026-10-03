@@ -289,6 +289,11 @@ interface TrackDao {
     * against (not the full lossless codec set used by getFlacCount/-StorageBytes)
     * because Stash's lossless sources (Qobuz) only ever deliver FLAC;
     * ALAC/WAV/APE/etc. never appear from any source Stash downloads through.
+    *
+    * Leaves out songs whose audio the user picked themselves (#531,
+    * `match_picked_at`): the upgrade re-runs the lossless lookup, which is
+    * most likely what chose the wrong recording in the first place, and
+    * would write that FLAC over the user's pick.
     */
     @Query(
         """
@@ -300,6 +305,7 @@ interface TrackDao {
         WHERE t.is_downloaded = 1
         AND t.file_path IS NOT NULL
         AND LOWER(t.file_format) != 'flac'
+        AND t.match_picked_at IS NULL
         AND bl.canonical_key IS NULL
         """
     )
@@ -791,6 +797,45 @@ interface TrackDao {
         downloadedAt: Long = System.currentTimeMillis(),
         sampleRateHz: Int? = null,
         bitsPerSample: Int? = null,
+    ): Int
+
+    /**
+     * The one write that finishes a wrong-match swap (#531). The row points at
+     * the replacement file with that file's quality columns written outright,
+     * nulls included: [markAsDownloaded]'s COALESCE would keep a replaced
+     * FLAC's 24-bit depth on lossy audio. Loudness is cleared so the
+     * background pass measures the new recording. It clears the wrong-match
+     * flag, and [TrackEntity.matchPickedAt] records that the user picked this
+     * audio.
+     *
+     * @return rows updated: 1, or 0 when the track is gone.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET is_downloaded = 1,
+            file_path = :filePath,
+            file_size_bytes = :fileSizeBytes,
+            date_added = :downloadedAt,
+            download_missing_at = NULL,
+            sample_rate_hz = :sampleRateHz,
+            bits_per_sample = :bitsPerSample,
+            loudness_lufs = NULL,
+            true_peak_dbfs = NULL,
+            loudness_measured_at = NULL,
+            match_flagged = 0,
+            match_picked_at = :pickedAt
+        WHERE id = :trackId
+        """
+    )
+    suspend fun completeSwap(
+        trackId: Long,
+        filePath: String,
+        fileSizeBytes: Long,
+        sampleRateHz: Int?,
+        bitsPerSample: Int?,
+        pickedAt: Long,
+        downloadedAt: Long,
     ): Int
 
     /**

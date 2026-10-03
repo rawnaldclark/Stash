@@ -98,7 +98,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         ArtistImageEntity::class,
         SharedMixEntity::class,
     ],
-    version = 51,
+    version = 52,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1385,6 +1385,16 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v51 -> v52: `tracks.match_picked_at`, set when the user picks a
+         * track's audio in Failed Matches (#531). NULL on every existing row.
+         */
+        val MIGRATION_51_52 = object : Migration(51, 52) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN match_picked_at INTEGER")
+            }
+        }
+
+        /**
          * The complete migration chain, shared by every builder of a
          * [StashDatabase]: the DI singleton in
          * [com.stash.core.data.di.DatabaseModule] AND the throwaway instance
@@ -1448,6 +1458,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_48_49,
                 MIGRATION_49_50,
                 MIGRATION_50_51,
+                MIGRATION_51_52,
             )
         }
     }

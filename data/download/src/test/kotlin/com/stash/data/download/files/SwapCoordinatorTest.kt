@@ -67,6 +67,7 @@ class SwapCoordinatorTest {
             durationMs = 200_000L,
         )
         coEvery { trackDao.updateYoutubeIdIfUnclaimed(7L, "vid123") } returns 1
+        coEvery { trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any()) } returns 1
         coordinator = SwapCoordinator(
             downloadExecutor = downloadExecutor,
             fileOrganizer = fileOrganizer,
@@ -165,7 +166,7 @@ class SwapCoordinatorTest {
         // The identity write is the guarded one: it can never take a video
         // another track owns (tracks.youtube_id is UNIQUE).
         coVerify { trackDao.updateYoutubeIdIfUnclaimed(7L, "vid123") }
-        coVerify { trackDao.markAsDownloaded(7L, committedPath, 123L, any(), any(), any()) }
+        coVerify { trackDao.completeSwap(7L, committedPath, 123L, any(), any(), any(), any()) }
         assertFalse("old file should be deleted only after a successful swap", oldFile.exists())
         coVerify(exactly = 0) { trackDao.updateMatchFlagged(7L, true) }
     }
@@ -202,6 +203,7 @@ class SwapCoordinatorTest {
 
         coVerify(exactly = 0) { fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any()) }
         assertEquals("the user's audio must be untouched", "original audio", oldFile.readText())
+        coVerify(exactly = 0) { trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any()) }
         coVerify { trackDao.updateMatchFlagged(7L, true) }
         assertFalse("the unused download must be cleaned up", newTemp.exists())
@@ -249,8 +251,11 @@ class SwapCoordinatorTest {
 
         swap()
 
+        // Bit depth is written outright, null included: markAsDownloaded's
+        // COALESCE kept a replaced FLAC's 24 bits ("OPUS · 24-bit/48.0 kHz").
+        coVerify { trackDao.completeSwap(7L, committedPath, 123L, 48_000, null, any(), any()) }
+        coVerify(exactly = 0) { trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any()) }
         // Without this a swap over a FLAC kept saying 'flac' on lossy audio.
-        coVerify { trackDao.markAsDownloaded(7L, committedPath, 123L, any(), 48_000, null) }
         coVerify { trackDao.setFormatAndQuality(7L, "opus", 160) }
         // 201 s against the row's 200 s is within 10%: the row's length stays.
         coVerify(exactly = 0) { trackDao.setDuration(any(), any()) }

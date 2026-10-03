@@ -670,6 +670,75 @@ class FailedMatchesReplacementPreviewRegressionTest {
         )
     }
 
+    /**
+     * #531 review: a swap the user approved records that they picked the
+     * audio, and the row keeps that video as its youtube_id. If the file is
+     * later replaced (the automatic FLAC upgrade used to do this), flagging it
+     * again must be able to offer the pick back, not skip it as the "current
+     * wrong" video.
+     */
+    @Test
+    fun `resync can offer a picked row its own video again`() = runTest {
+        val flagged = TrackEntity(
+            id = 7L,
+            title = "Lacrymosa",
+            artist = "Evanescence",
+            youtubeId = "picked-video",
+            matchPickedAt = 1_000L,
+            matchFlagged = true,
+            isDownloaded = true,
+            filePath = "/music/evanescence/synthesis/lacrymosa.flac",
+        )
+        coEvery { searchExecutor.search(any(), any()) } returns listOf(
+            YtDlpSearchResult(id = "picked-video", title = "Lacrymosa"),
+        )
+        // The only owner of the picked video is the flagged row itself.
+        coEvery { musicRepository.findByYoutubeIds(any()) } returns listOf(
+            Track(id = 7L, title = "Lacrymosa", artist = "Evanescence", youtubeId = "picked-video"),
+        )
+        val vm = makeVm(flagged = listOf(flagged))
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+        vm.resync()
+        advanceUntilIdle()
+
+        assertEquals("picked-video", vm.uiState.value.resyncCandidates[flagged.id]?.videoId)
+    }
+
+    @Test
+    fun `approving a picked row's own video again downloads it`() = runTest {
+        coEvery { trackDao.findByYoutubeId("picked-video") } returns TrackEntity(
+            id = 7L,
+            title = "Lacrymosa",
+            artist = "Evanescence",
+            youtubeId = "picked-video",
+            matchPickedAt = 1_000L,
+        )
+        val vm = makeVm()
+        val row = FlaggedTrackRow(
+            trackId = 7L,
+            title = "Lacrymosa",
+            artist = "Evanescence",
+            albumArtUrl = null,
+            currentYoutubeId = "picked-video",
+            currentFilePath = "/music/evanescence/synthesis/lacrymosa.flac",
+            searchQuery = "Evanescence - Lacrymosa",
+            pickedByUser = true,
+        )
+        val candidate = ResyncCandidate(
+            videoId = "picked-video",
+            title = "Lacrymosa",
+            artist = "Evanescence",
+            thumbnailUrl = null,
+            durationSeconds = 230.0,
+        )
+
+        vm.approveSwap(row, candidate)
+        advanceUntilIdle()
+
+        verify(exactly = 1) { swapCoordinator.swap(any(), any(), any(), any(), any(), any()) }
+    }
+
     @Test
     fun `approval boundary rejects a self swap`() = runTest {
         val vm = makeVm()
