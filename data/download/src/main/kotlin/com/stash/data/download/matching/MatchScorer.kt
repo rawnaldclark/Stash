@@ -176,8 +176,12 @@ class MatchScorer @Inject constructor(
     fun bestMatch(results: List<MatchResult>): MatchResult? {
         val best = results.firstOrNull()
         if (best != null && best.matchScore < AUTO_ACCEPT_THRESHOLD) {
-            Log.w("MatchScorer", "Best match rejected: ${best.title} score=%.2f (threshold=%.2f)".format(
-                best.matchScore, AUTO_ACCEPT_THRESHOLD))
+            // Only the numbers go through format(): a title can hold a "%".
+            Log.w(
+                "MatchScorer",
+                "Best match rejected: ${best.title} score=${"%.2f".format(best.matchScore)} " +
+                    "(threshold=${"%.2f".format(AUTO_ACCEPT_THRESHOLD)})",
+            )
         }
         return results.firstOrNull { it.matchScore >= AUTO_ACCEPT_THRESHOLD }
     }

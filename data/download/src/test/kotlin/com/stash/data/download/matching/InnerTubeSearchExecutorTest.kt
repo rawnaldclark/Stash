@@ -2,6 +2,7 @@ package com.stash.data.download.matching
 
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.model.MusicVideoType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -158,5 +159,56 @@ class InnerTubeSearchExecutorTest {
             MusicVideoType.OMV,
             verification!!.musicVideoType,
         )
+    }
+
+    /** An executor whose player endpoint answers [playerJson]. */
+    private fun playerExecutorFor(playerJson: String): InnerTubeSearchExecutor {
+        val inner = mock<InnerTubeClient>()
+        val parsed = Json.parseToJsonElement(playerJson).jsonObject
+        runBlocking { whenever(inner.player(any(), any(), anyOrNull())).thenReturn(parsed) }
+        return InnerTubeSearchExecutor(inner)
+    }
+
+    @Test
+    fun `verifyVideo carries the player's length`() = runTest {
+        // The captured Smooth Criminal MV response: "lengthSeconds": "566".
+        val verification = playerExecutorFor(loadFixture("innertube_player_smooth_criminal_omv.json"))
+            .verifyVideo("h_D3VFfhvs4")
+
+        assertEquals(566L, verification!!.lengthSeconds)
+    }
+
+    @Test
+    fun `verifyVideo reads a length sent as a number`() = runTest {
+        val verification = playerExecutorFor(
+            """{"playabilityStatus":{"status":"OK"},"videoDetails":{"title":"Some Song","lengthSeconds":312}}""",
+        ).verifyVideo("abc")
+
+        assertEquals(312L, verification!!.lengthSeconds)
+    }
+
+    @Test
+    fun `verifyVideo reports 0 for a missing or unusable length and keeps the title`() = runTest {
+        // A bad length must not void the whole answer: the title check still needs it.
+        for (length in listOf(null, "\"0\"", "\"abc\"", "{\"x\":1}")) {
+            val lengthField = length?.let { ""","lengthSeconds":$it""" } ?: ""
+            val verification = playerExecutorFor(
+                """{"playabilityStatus":{"status":"OK"},"videoDetails":{"title":"Some Song"$lengthField}}""",
+            ).verifyVideo("abc")
+
+            assertNotNull("lengthSeconds=$length must still yield a verification", verification)
+            assertEquals("lengthSeconds=$length", 0L, verification!!.lengthSeconds)
+            assertEquals("Some Song", verification.title)
+        }
+    }
+
+    @Test(expected = CancellationException::class)
+    fun `verifyVideo lets a stopped download cancel instead of reporting a failed lookup`() {
+        val inner = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(inner.player(any(), any(), anyOrNull())).thenAnswer { throw CancellationException("stopped") }
+        }
+
+        runBlocking { InnerTubeSearchExecutor(inner).verifyVideo("abc") }
     }
 }

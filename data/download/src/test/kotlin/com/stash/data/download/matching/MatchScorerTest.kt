@@ -438,4 +438,29 @@ class MatchScorerTest {
             scorer.bestMatch(results) != null,
         )
     }
+
+    // ── bestMatch's reject line ──────────────────────────────────────────
+
+    @Test
+    fun `bestMatch rejects an under-bar row whose title holds a percent sign`() {
+        // The reject line's format() pattern held the title, so "% P" threw instead
+        // of returning null, and the caller's search stopped there.
+        val results = scorer.scoreResults(
+            targetTitle = "100% Pure Love",
+            targetArtist = "Crystal Waters",
+            targetDurationMs = 0,
+            results = listOf(
+                candidate(id = "karaoke", title = "100% Pure Love (Karaoke)", artist = "Crystal Waters"),
+            ),
+        )
+        assertTrue(
+            "premise: the karaoke cut scores under the bar",
+            results.single().matchScore < MatchScorer.AUTO_ACCEPT_THRESHOLD,
+        )
+
+        assertTrue(
+            "an under-bar row must be rejected, not throw, when its title holds a %",
+            scorer.bestMatch(results) == null,
+        )
+    }
 }

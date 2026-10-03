@@ -173,6 +173,14 @@ class DownloadManager @Inject constructor(
         internal fun minJioSaavnBitrateKbps(expectedKbps: Int): Int = expectedKbps - expectedKbps / 5
         private const val JIOSAAVN_DURATION_TOLERANCE_MS = 8_000L
         private const val JIOSAAVN_DURATION_TOLERANCE_FRACTION = 0.03
+
+        /**
+         * Candidates [resolveUrl] verifies per search, best first. Only the top one
+         * used to be, so a music video rejected on its length ended that search with
+         * the song's audio right behind it (#533). Each verification makes at most
+         * one player lookup, so this also caps those per search.
+         */
+        private const val MAX_VERIFIED_CANDIDATES_PER_QUERY = 3
     }
 
     /**
@@ -199,6 +207,9 @@ class DownloadManager @Inject constructor(
      * rejected candidate's video ID for user preview on the unmatched screen.
      */
     private data class ResolveResult(val url: String?, val rejectedVideoId: String? = null)
+
+    /** A search candidate that passed [verifyMatch], and the URL it passed with. */
+    private data class VerifiedMatch(val match: com.stash.data.download.model.MatchResult, val url: String)
 
     /**
      * Executes the download pipeline for a single track.
@@ -703,6 +714,10 @@ class DownloadManager @Inject constructor(
      * 3. Without remaster/deluxe suffixes: "Artist Title"
      * 4. With dash separator: "Artist - Title"
      *
+     * Each search verifies up to [MAX_VERIFIED_CANDIDATES_PER_QUERY] candidates
+     * above the auto-accept threshold, best first, and stops at the first that
+     * passes [verifyMatch].
+     *
      * @return A [ResolveResult] with the best-matching YouTube URL, or null URL
      *         with the best rejected candidate's video ID if no match was accepted.
      */
@@ -761,6 +776,8 @@ class DownloadManager @Inject constructor(
 
         // ── Fallback: Track-level search strategies ──
         val strategies = buildSearchQueries(track)
+        // Videos the player showed to be wrong (title or length), for every search below.
+        val playerRejected = mutableSetOf<String>()
 
         for (query in strategies) {
             if (query.isBlank()) continue
@@ -777,10 +794,10 @@ class DownloadManager @Inject constructor(
             )
 
             val best = matchScorer.bestMatch(scored) ?: continue
-            val verified = verifyMatch(track, best, query)
+            val verified = firstVerifiedMatch(track, scored, query, playerRejected)
             if (verified != null) {
-                persistMatchMetadata(track, best)
-                return ResolveResult(url = verified)
+                persistMatchMetadata(track, verified.match)
+                return ResolveResult(url = verified.url)
             }
             bestRejectedVideoId = best.videoId  // Save the closest rejected match
         }
@@ -800,10 +817,10 @@ class DownloadManager @Inject constructor(
             )
             val best = matchScorer.bestMatch(scored)
             if (best != null) {
-                val verified = verifyMatch(track, best, ytDlpQuery)
+                val verified = firstVerifiedMatch(track, scored, ytDlpQuery, playerRejected)
                 if (verified != null) {
-                    persistMatchMetadata(track, best)
-                    return ResolveResult(url = verified)
+                    persistMatchMetadata(track, verified.match)
+                    return ResolveResult(url = verified.url)
                 }
                 bestRejectedVideoId = best.videoId  // Save the closest rejected match
             }
@@ -814,9 +831,46 @@ class DownloadManager @Inject constructor(
     }
 
     /**
+     * Verifies up to [MAX_VERIFIED_CANDIDATES_PER_QUERY] of one search's
+     * above-threshold candidates, best first, and returns the first that passes
+     * [verifyMatch]. A video in [playerRejected] is skipped without a lookup: the
+     * player gates read only its answer and the track, so it would fail again,
+     * and it shouldn't take a new candidate's place. Only the search's top pick
+     * is taken when its lookup fails, as before; a lower one needs the player's
+     * answer.
+     */
+    private suspend fun firstVerifiedMatch(
+        track: Track,
+        scored: List<com.stash.data.download.model.MatchResult>,
+        query: String,
+        playerRejected: MutableSet<String>,
+    ): VerifiedMatch? {
+        val aboveBar = scored
+            .filter { it.matchScore >= MatchScorer.AUTO_ACCEPT_THRESHOLD }
+            .distinctBy { it.videoId }
+        // Picked before the skips: the row behind a top pick an earlier search
+        // rejected is still a lower candidate, so it needs the player's answer.
+        val topPick = aboveBar.firstOrNull() ?: return null
+        val candidates = aboveBar
+            .filterNot { it.videoId in playerRejected }
+            .take(MAX_VERIFIED_CANDIDATES_PER_QUERY)
+        for (candidate in candidates) {
+            val url = verifyMatch(
+                track = track,
+                best = candidate,
+                query = query,
+                playerRejected = playerRejected,
+                requirePlayerCheck = candidate.videoId != topPick.videoId,
+            ) ?: continue
+            return VerifiedMatch(candidate, url)
+        }
+        return null
+    }
+
+    /**
      * Runs all verification gates on a match candidate.
      *
-     * Four-level verification:
+     * Five-level verification:
      * 1. **Title similarity** >= 0.6, OR the candidate contains the target title
      *    as a contiguous token run (rescues decorated / CJK / dual-script titles)
      * 2. **Short title containment** — for titles <= 5 chars, candidate must
@@ -825,13 +879,21 @@ class DownloadManager @Inject constructor(
      *    (rescues bilingual slash-joined uploaders); prevents wrong artist
      * 4. **Video ID verification** — InnerTube player endpoint confirms the actual
      *    video title matches (catches InnerTube metadata/ID mismatches)
+     * 5. **Player length** — the player's `lengthSeconds` within
+     *    ±[MatchScorer.DURATION_HARD_GATE_SEC] of the target (catches a music video
+     *    standing in for the song on a search row with no length)
      *
+     * @param playerRejected Gets [best]'s video id when gate 4 or 5 rejects it.
+     * @param requirePlayerCheck Rejects [best] when its player lookup fails,
+     *        instead of skipping gates 4 and 5.
      * @return The YouTube URL if all gates pass, null if rejected.
      */
     private suspend fun verifyMatch(
         track: Track,
         best: com.stash.data.download.model.MatchResult,
         query: String,
+        playerRejected: MutableSet<String>,
+        requirePlayerCheck: Boolean,
     ): String? {
         // Gate 0: Duration hard gate. A candidate more than ±15s off the
         // target duration is structurally the wrong recording (extended
@@ -906,19 +968,51 @@ class DownloadManager @Inject constructor(
         // Gate 4: Video ID verification via InnerTube player endpoint
         // The player returns the actual video title even for "unplayable" videos
         // (WEB_REMIX client lacks playback auth, but yt-dlp handles that separately).
-        // We only check the title — if InnerTube search says "Song A" but the video
-        // is actually "Song B", we reject it.
+        // We check the title here and the length below — if InnerTube search says
+        // "Song A" but the video is actually "Song B", we reject it.
         val verification = searchExecutor.verifyVideo(best.videoId)
         if (verification != null) {
             val actualTitleSim = matchScorer.titleSimilarity(track.title, verification.title)
             if (actualTitleSim < 0.6f && !matchScorer.titleContainsTarget(track.title, verification.title)) {
                 Log.w(TAG, "resolveUrl: VIDEO ID MISMATCH for '${track.title}' — " +
                     "search said '${best.title}' but player says '${verification.title}' (sim=${String.format("%.2f", actualTitleSim)})")
+                playerRejected += best.videoId
                 return null
             }
+
+            // Gate 5: Gate 0's ±15s, against the player's own length. YouTube Music
+            // search rows can carry no length (the signed-out layout never does), so
+            // Gate 0 passed them blind and a music video 86s longer than the song was
+            // taken (#533). Unknown on either side passes, as in Gate 0. This assumes
+            // track.durationMs is the source's length: a download that drifted over
+            // 10% overwrites it with the file's (TrackDownloadWorker), so re-matching
+            // a downloaded track must restore Spotify's length first, or pass 0 as
+            // YtLibraryCanonicalizer does.
+            if (!matchScorer.durationPassesHardGate(track.durationMs, verification.lengthSeconds)) {
+                Log.i(
+                    TAG,
+                    "resolveUrl: length check rejects ${best.videoId} for track ${track.id}: player " +
+                        "${verification.lengthSeconds}s vs target ${track.durationMs / 1000}s " +
+                        "(gate ±${MatchScorer.DURATION_HARD_GATE_SEC}s)",
+                )
+                playerRejected += best.videoId
+                return null
+            }
+        } else if (requirePlayerCheck) {
+            // A failed lookup has always let a search's top pick through. A lower
+            // candidate is only tried because a better one failed, so it isn't
+            // taken unchecked.
+            Log.w(TAG, "resolveUrl: skipping ${best.videoId} for track ${track.id}: no player answer for a lower candidate")
+            return null
         }
 
-        Log.d(TAG, "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} (artist=%.2f, verified=${verification != null})".format(artistSim))
+        // Only the number goes through format(): the title and query can hold a "%".
+        Log.d(
+            TAG,
+            "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} " +
+                "(artist=${String.format("%.2f", artistSim)}, verified=${verification != null}, " +
+                "len=${verification?.lengthSeconds ?: 0}s target=${track.durationMs / 1000}s)",
+        )
         return best.youtubeUrl
     }
 
