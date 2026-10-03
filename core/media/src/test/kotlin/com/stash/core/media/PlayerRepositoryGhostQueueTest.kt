@@ -173,6 +173,16 @@ class PlayerRepositoryGhostQueueTest {
     private val timelineItems = mutableListOf<MediaItem>()
     private var timelineCurrent = 0
 
+    /**
+     * When set, the fake player reports each timeline change to this listener during the call that
+     * made it, the way a MediaController applies its own changes locally and notifies at once.
+     */
+    private var timelineListener: Player.Listener? = null
+
+    private fun notifyTimeline() {
+        timelineListener?.onTimelineChanged(Timeline.EMPTY, Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED)
+    }
+
     private fun livePlayer() {
         every { controller.mediaItemCount } answers { timelineItems.size }
         every { controller.getMediaItemAt(any()) } answers { timelineItems[firstArg()] }
@@ -182,12 +192,20 @@ class PlayerRepositoryGhostQueueTest {
             timelineItems.clear()
             timelineItems.addAll(firstArg<List<MediaItem>>())
             timelineCurrent = secondArg()
+            notifyTimeline()
         }
         every { controller.addMediaItem(any<Int>(), any()) } answers {
             timelineItems.add(minOf(firstArg<Int>(), timelineItems.size), secondArg())
+            notifyTimeline()
         }
-        every { controller.addMediaItem(any<MediaItem>()) } answers { timelineItems.add(firstArg()) }
-        every { controller.addMediaItems(any<List<MediaItem>>()) } answers { timelineItems.addAll(firstArg<List<MediaItem>>()) }
+        every { controller.addMediaItem(any<MediaItem>()) } answers {
+            timelineItems.add(firstArg())
+            notifyTimeline()
+        }
+        every { controller.addMediaItems(any<List<MediaItem>>()) } answers {
+            timelineItems.addAll(firstArg<List<MediaItem>>())
+            notifyTimeline()
+        }
         every { controller.nextMediaItemIndex } returns C.INDEX_UNSET // no next-up prefetch to resolve
     }
 
@@ -581,6 +599,19 @@ class PlayerRepositoryGhostQueueTest {
     }
 
     @Test
+    fun `a station's next batch shows in the queue as soon as it is added`() = runTest {
+        livePlayer()
+        val repo = build() // nothing saved: no ghost
+        timelineListener = repo.playerListener
+        repo.startRadio(RadioSeed.Artist("Radiohead"), keepCurrent = false)
+
+        repo.growRadio()
+
+        assertThat(repo.playerState.value.queue.map { it.id })
+            .containsExactly(101L, 102L, 103L, 104L, 105L, 106L, 200L).inOrder()
+    }
+
+    @Test
     fun `the station never grows an empty player`() = runTest {
         val repo = radioGhost()
 
@@ -619,6 +650,7 @@ class PlayerRepositoryGhostQueueTest {
     @Test
     fun `Play next on the ghost queues the song after the paused one, in the saved session`() = runTest {
         val repo = coldStartGhost()
+        timelineListener = repo.playerListener
 
         assertThat(repo.addNext(videotape)).isTrue()
 
@@ -630,25 +662,44 @@ class PlayerRepositoryGhostQueueTest {
         }
         verify(exactly = 0) { controller.prepare() }
         verify(exactly = 0) { controller.play() }
-        repo.updateState(controller)
-        shadowOf(Looper.getMainLooper()).idle() // the refresh's saves land
-        assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(2L)
-        assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(1L, 2L, 9L, 3L, 4L).inOrder()
+        // Shown at once, from the insert's own refresh: a paused, unprepared player may send nothing more.
+        val state = repo.playerState.value
+        assertThat(state.currentTrack?.id).isEqualTo(2L)
+        assertThat(state.isPlaying).isFalse()
+        assertThat(state.queue.map { it.id }).containsExactly(1L, 2L, 9L, 3L, 4L).inOrder()
+        assertThat(state.currentIndex).isEqualTo(1)
+        shadowOf(Looper.getMainLooper()).idle() // that refresh's saves land
         assertThat(stored?.queueTrackIds).containsExactly(1L, 2L, 9L, 3L, 4L).inOrder()
     }
 
     @Test
     fun `Add to queue on the ghost appends the song to the saved session`() = runTest {
         val repo = coldStartGhost()
+        timelineListener = repo.playerListener
 
         assertThat(repo.addToQueue(videotape)).isTrue()
 
         verify { controller.setMediaItems(match<List<MediaItem>> { ids(it) == listOf(1L, 2L, 3L, 4L) }, 1, 44_000L) }
         verify(exactly = 0) { controller.play() }
-        repo.updateState(controller)
-        shadowOf(Looper.getMainLooper()).idle() // the refresh's saves land
+        // Shown at once, from the insert's own refresh.
         assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(1L, 2L, 3L, 4L, 9L).inOrder()
+        shadowOf(Looper.getMainLooper()).idle() // that refresh's saves land
         assertThat(stored?.queueTrackIds).containsExactly(1L, 2L, 3L, 4L, 9L).inOrder()
+    }
+
+    @Test
+    fun `in a normal paused session too, Play next and Add to queue show at once`() = runTest {
+        livePlayer()
+        val repo = build() // nothing saved: no ghost
+        timelineListener = repo.playerListener
+        repo.setQueue((1L..4L).map { library.getValue(it).toDomain() }, startIndex = 1, source = source)
+        val jigsaw = Track(id = 8L, title = "Jigsaw Falling Into Place", artist = "Radiohead", isStreamable = true)
+
+        repo.addNext(videotape)
+        assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(1L, 2L, 9L, 3L, 4L).inOrder()
+
+        repo.addToQueue(jigsaw)
+        assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(1L, 2L, 9L, 3L, 4L, 8L).inOrder()
     }
 
     // ---- Deletions and Listen Together ----

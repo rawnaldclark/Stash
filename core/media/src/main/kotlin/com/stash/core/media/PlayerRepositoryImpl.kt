@@ -1076,9 +1076,10 @@ class PlayerRepositoryImpl @Inject constructor(
                 stopRadio()
                 return
             }
-            // Streaming tracks → stash-resolve:// placeholders (see startRadio).
-            controller.addMediaItems(batch.map { it.toQueueMediaItem() })
+            // Streaming tracks → stash-resolve:// placeholders (see startRadio). The logical queue
+            // first, as in addNext: the add is reported, and the queue published, during the call.
             currentQueueTracks = currentQueueTracks + batch
+            controller.addMediaItems(batch.map { it.toQueueMediaItem() })
         }
     }
 
@@ -1114,8 +1115,8 @@ class PlayerRepositoryImpl @Inject constructor(
             val toAppend = pool.shuffled().take(LIBRARY_SHUFFLE_GROW_BATCH)
             if (toAppend.isEmpty()) return
 
+            currentQueueTracks = currentQueueTracks + toAppend // first, as in growRadio
             controller.addMediaItems(toAppend.map { it.toMediaItem() })
-            currentQueueTracks = currentQueueTracks + toAppend
         }
     }
 
@@ -1153,14 +1154,12 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         restoreGhostPaused()
         val wasEmpty = controller.mediaItemCount == 0
-        // Instant add: stream tracks enter as stash-resolve:// placeholders
-        // (resolved at play time), so the queue grows immediately instead of
-        // waiting out a slow resolve.
-        val insertIndex = controller.currentMediaItemIndex + 1
-        controller.addMediaItem(insertIndex, queueTrack.toQueueMediaItem())
         // Mirror into the logical queue right after the playing track's
         // logical position (falling back to append) so the queue sheet
-        // shows the Play-Next insert where it will actually play.
+        // shows the Play-Next insert where it will actually play. Before the
+        // timeline insert: the controller reports that insert, and the queue
+        // published from it, during addMediaItem itself, and a paused player
+        // may send nothing afterwards to correct a stale one.
         val currentId = controller.currentMediaItem?.mediaMetadata?.extras
             ?.getLong(EXTRA_TRACK_ID, -1L) ?: -1L
         val logicalPos = currentQueueTracks.indexOfFirst { it.id == currentId }
@@ -1170,6 +1169,11 @@ class PlayerRepositoryImpl @Inject constructor(
                 .apply { add(logicalPos + 1, queueTrack) }
             else -> currentQueueTracks + queueTrack
         }
+        // Instant add: stream tracks enter as stash-resolve:// placeholders
+        // (resolved at play time), so the queue grows immediately instead of
+        // waiting out a slow resolve.
+        val insertIndex = controller.currentMediaItemIndex + 1
+        controller.addMediaItem(insertIndex, queueTrack.toQueueMediaItem())
         // If the queue was empty, the user tapped "Play next" with nothing
         // playing — they expect the song to actually start, not just sit
         // silently in a queue they can't see. Prepare and play.
@@ -1196,8 +1200,9 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         restoreGhostPaused()
         val wasEmpty = controller.mediaItemCount == 0
-        controller.addMediaItem(queueTrack.toQueueMediaItem())
+        // The logical queue first, as in addNext: the add is reported during addMediaItem.
         currentQueueTracks = if (wasEmpty) listOf(queueTrack) else currentQueueTracks + queueTrack
+        controller.addMediaItem(queueTrack.toQueueMediaItem())
         if (wasEmpty) {
             controller.prepare()
             controller.play()
