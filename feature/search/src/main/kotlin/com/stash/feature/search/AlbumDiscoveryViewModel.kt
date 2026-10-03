@@ -580,14 +580,17 @@ class AlbumDiscoveryViewModel @Inject constructor(
  * #481: whether [candidate] is the album [title] by [artist] from [year]. Strict on
  * purpose, because opening the wrong album is worse than saying this one isn't
  * available. It has to have:
- *  - the same artist, and the same title once case, punctuation, accents and an
- *    edition or featured credit ("(Super Deluxe)", "- 2009 Remaster", "(feat. X)")
- *    are set aside. Anything else in brackets, "(Live)", "(Remixes)",
+ *  - the same artist ([sameArtist]), and the same title once case, punctuation,
+ *    accents, a featured credit ("feat. X") and an edition ("(Super Deluxe)",
+ *    "- 2009 Remaster") are set aside. Anything else, "(Live)", "(Remixes)",
  *    "(Instrumental)", "(Sped Up)", "(Vol. 2)", makes it a different release;
  *  - the "Single" label only when the Qobuz release is known to be a single too
  *    ([qobuzTrackCount] 1 to 3). For an album, or when the length is unknown, a
  *    single that shares the title is its title track;
- *  - a release year within one of [year], when both are known.
+ *  - a release year within one of [year], when both are known, unless an edition
+ *    was set aside on either side: the two catalogs date a remaster differently
+ *    (YouTube calls "Abbey Road (Remastered 2009)" 1969, Qobuz calls "Rumours
+ *    (2004 Remaster)" 1977).
  */
 internal fun isSameAlbum(
     candidate: AlbumSummary,
@@ -596,20 +599,18 @@ internal fun isSameAlbum(
     year: String? = null,
     qobuzTrackCount: Int? = null,
 ): Boolean {
-    val wantTitle = albumTitleKey(title)
-    val wantArtist = matchKey(artist)
-    return wantTitle.isNotEmpty() && wantArtist.isNotEmpty() &&
+    val want = albumTitleKey(title)
+    val got = albumTitleKey(candidate.title)
+    return want.key.isNotEmpty() && got.key == want.key &&
+        sameArtist(candidate.artist, artist) &&
         (!candidate.releaseType.equals("Single", ignoreCase = true) || isSingleLength(qobuzTrackCount)) &&
-        albumTitleKey(candidate.title) == wantTitle &&
-        matchKey(candidate.artist) == wantArtist &&
-        yearsAgree(candidate.year, year)
+        (want.dropsEdition || got.dropsEdition || yearsAgree(candidate.year, year))
 }
 
 /**
  * #481: the YouTube Music copy of a Qobuz release among [candidates] (YouTube's best
- * guess first): the first that [isSameAlbum] accepts, or null. For a Qobuz single,
- * YouTube's Single or EP comes first. The single's song is on its album too, so a
- * same-titled Album only stands in when YouTube has no single.
+ * guess first): of the ones [isSameAlbum] accepts, the one whose label suits the Qobuz
+ * release best ([labelRank]), first in YouTube's order among equals; null when none is.
  */
 internal fun pickYouTubeCopy(
     candidates: List<AlbumSummary>,
@@ -617,41 +618,89 @@ internal fun pickYouTubeCopy(
     artist: String,
     year: String?,
     qobuzTrackCount: Int?,
-): AlbumSummary? {
-    val matches = candidates.filter { isSameAlbum(it, title, artist, year, qobuzTrackCount) }
-    if (!isSingleLength(qobuzTrackCount)) return matches.firstOrNull()
-    return matches.firstOrNull { !it.releaseType.equals("Album", ignoreCase = true) } ?: matches.firstOrNull()
+): AlbumSummary? = candidates
+    .filter { isSameAlbum(it, title, artist, year, qobuzTrackCount) }
+    .sortedBy { labelRank(it.releaseType, qobuzTrackCount) } // a stable sort keeps YouTube's order
+    .firstOrNull()
+
+/**
+ * Which label to take first when several candidates are this album. A Qobuz single
+ * takes YouTube's Single or EP, then an unlabelled release, then the album it's on
+ * (its song is on that too). A Qobuz album takes the Album before an EP of the same
+ * name. With the length unknown, YouTube's order stands.
+ */
+private fun labelRank(label: String?, qobuzTrackCount: Int?): Int {
+    if (qobuzTrackCount == null || qobuzTrackCount <= 0) return 0
+    val type = label?.lowercase()
+    return if (isSingleLength(qobuzTrackCount)) {
+        when (type) {
+            "single", "ep" -> 0
+            "album" -> 2
+            else -> 1
+        }
+    } else {
+        if (type == "album") 0 else 1
+    }
 }
 
 /** Qobuz sends no release type, so its track count says: 1 to 3 tracks is a single. */
 private fun isSingleLength(trackCount: Int?): Boolean = trackCount != null && trackCount in 1..3
 
+/**
+ * The same artist as each catalog writes it. "and" counts as "&" ("Echo And The
+ * Bunnymen" is "Echo & the Bunnymen"), and since YouTube's search results name only a
+ * collaboration's first artist, [candidate] may match the first one Qobuz credits
+ * ("Jay Z and Kanye West", live 2026-10-03: "Watch The Throne").
+ */
+private fun sameArtist(candidate: String, qobuz: String): Boolean {
+    val got = artistKey(candidate)
+    return got.isNotEmpty() && (got == artistKey(qobuz) || got == artistKey(firstCredited(qobuz)))
+}
+
+private fun artistKey(name: String): String = matchKey(AND.replace(name, " & "))
+
+private fun firstCredited(artist: String): String = COLLAB_SEPARATOR.split(artist, limit = 2).first()
+
 /** [QobuzCandidateMatcher.normalize] after [foldForMatch]. */
 private fun matchKey(s: String): String = QobuzCandidateMatcher.normalize(foldForMatch(s))
 
+/** An album title as a match key, and whether an edition was set aside to get it. */
+private class TitleKey(val key: String, val dropsEdition: Boolean)
+
 /**
- * An album title as a match key. [QobuzCandidateMatcher.normalize] drops every
- * bracket, so "Loveless (Live)" would equal "Loveless"; here a bracketed or " - "
- * part only drops out when it names an edition or featured artists
- * ([isEditionOrCredit]), and its words stay in the key otherwise.
+ * An album title as a match key. [QobuzCandidateMatcher.normalize] drops every bracket
+ * and everything after a "feat.", so "Loveless (Live)" and "Loveless feat. X (Live)"
+ * would both equal "Loveless". Here a featured credit is cut only up to the next
+ * bracket or " - " ([CREDIT]), and a bracketed or " - " part only drops out when it
+ * names an edition ([isEdition]); its words stay in the key otherwise.
  */
-private fun albumTitleKey(title: String): String {
-    val bracketsSettled = BRACKETED.replace(foldForMatch(title)) { group ->
+private fun albumTitleKey(title: String): TitleKey {
+    var dropsEdition = false
+    val creditsCut = CREDIT.replace(foldForMatch(title), " ")
+    val bracketsSettled = BRACKETED.replace(creditsCut) { group ->
         val inside = group.value.substring(1, group.value.length - 1)
-        if (isEditionOrCredit(inside)) " " else " $inside "
+        if (isEdition(inside)) {
+            dropsEdition = true
+            " "
+        } else {
+            " $inside "
+        }
     }
     val dashSettled = DASH_SUFFIX.replace(bracketsSettled) { suffix ->
-        if (isEditionOrCredit(suffix.groupValues[1])) " " else suffix.value
+        if (isEdition(suffix.groupValues[1])) {
+            dropsEdition = true
+            " "
+        } else {
+            suffix.value
+        }
     }
-    return QobuzCandidateMatcher.normalize(dashSettled)
+    return TitleKey(QobuzCandidateMatcher.normalize(dashSettled), dropsEdition)
 }
 
-/** "Super Deluxe", "2009 Remaster", "20th Anniversary Edition", or "feat. Bill Frisell". */
-private fun isEditionOrCredit(part: String): Boolean {
+/** "Super Deluxe", "2009 Remaster", "20th Anniversary Edition". */
+private fun isEdition(part: String): Boolean {
     val words = part.lowercase().replace("'", "").split(NON_WORD).filter { it.isNotEmpty() }
-    if (words.isEmpty()) return true
-    if (words.first() in CREDIT_WORDS) return true
-    return words.all { it in EDITION_WORDS || NUMBERING.matches(it) }
+    return words.isNotEmpty() && words.all { it in EDITION_WORDS || NUMBERING.matches(it) }
 }
 
 /** Within a year of each other, or unknown on either side. Qobuz may send "1991-11-04". */
@@ -669,10 +718,17 @@ private val COMBINING_MARKS = Regex("\\p{Mn}+")
 private val CURLY_QUOTES = Regex("[\u2018\u2019]")
 private val BRACKETED = Regex("""\([^()]*\)|\[[^\[\]]*]""")
 private val DASH_SUFFIX = Regex("""\s[-\u2013\u2014]\s(.*)$""")
+
+/** A featured credit, cut up to the next bracket or " - ": "Title feat. X (Live)" keeps "(Live)". */
+private val CREDIT = Regex(
+    """\b(?:feat|ft|featuring)\b\.?[^()\[\]]*?(?=\s*[()\[\]]|\s[-\u2013\u2014]\s|$)""",
+    RegexOption.IGNORE_CASE,
+)
 private val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
 private val NUMBERING = Regex("\\d{4}|\\d+(st|nd|rd|th)")
 private val YEAR = Regex("\\d{4}")
-private val CREDIT_WORDS = setOf("feat", "ft", "featuring")
+private val AND = Regex("\\s+and\\s+", RegexOption.IGNORE_CASE)
+private val COLLAB_SEPARATOR = Regex("\\s+(?:&|x|and|with)\\s+|,\\s+", RegexOption.IGNORE_CASE)
 
 /** Words that name an edition of an album, not a different recording of it. */
 private val EDITION_WORDS = setOf(
