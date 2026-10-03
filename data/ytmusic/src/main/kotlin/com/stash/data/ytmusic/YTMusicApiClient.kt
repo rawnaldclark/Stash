@@ -17,6 +17,7 @@ import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TrackSummary
 import com.stash.data.ytmusic.model.YTMusicPlaylist
 import com.stash.data.ytmusic.model.YTMusicTrack
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -522,11 +523,11 @@ class YTMusicApiClient @Inject constructor(
         val sections = mutableListOf<SearchResultSection>()
 
         // 1. Top result — musicCardShelfRenderer appears at most once, usually first.
-        shelves.asSequence()
+        val topCard = shelves.asSequence()
             .mapNotNull { it.asObject() }
             .firstOrNull { it.containsKey("musicCardShelfRenderer") }
             ?.get("musicCardShelfRenderer")?.asObject()
-            ?.let { parseTopResultCard(it) }
+        topCard?.let { parseTopResultCard(it) }
             ?.let { sections.add(SearchResultSection.Top(it)) }
 
         // 2..4. Named musicShelfRenderer shelves, dispatched by their title text.
@@ -561,7 +562,7 @@ class YTMusicApiClient @Inject constructor(
         }
 
         Log.d(TAG, "searchAll('$query'): ${sections.size} sections")
-        return SearchAllResults(sections)
+        return SearchAllResults(sections, topAlbum = topCard?.let { parseAlbumTopCard(it) })
     }
 
     /**
@@ -569,34 +570,41 @@ class YTMusicApiClient @Inject constructor(
      * search + the existing Albums-shelf parser ([parseAlbumsShelf], reused
      * by [searchAll]). Unlike [resolveArtist] this has no dedicated filter
      * param — an ALBUMS_FILTER-equivalent isn't wired up — so this runs an
-     * unfiltered search and picks the best Albums-shelf match:
+     * unfiltered search and picks the best album match. Candidates are
+     * YouTube's top-result card when it is an album ([SearchAllResults.topAlbum]
+     * — for a new release often the only place the search names the album,
+     * #481), then the Albums shelf:
      *
      *  1. Prefer a result whose artist field matches [artist] (case-
      *     insensitive contains, either direction) — guards against a
      *     same-named album by a different artist ranking first.
-     *  2. Otherwise take the first Albums-shelf result.
+     *  2. Otherwise take the first result.
      *
      * Used by the Now Playing / Library "View Album" actions, which open
      * the real remote album page — distinct from the local Albums library
-     * tab, which just filters downloaded tracks.
+     * tab, which just filters downloaded tracks — and by the album screen's
+     * YouTube Music fallback for albums Qobuz doesn't sell in the user's
+     * country (#481), which only takes the answer on a strict match.
      *
-     * Returns null when [album] is blank, the search returns no Albums
-     * shelf, or on failure.
+     * Returns null when [album] is blank, the search names no album, or on
+     * failure. A cancellation propagates.
      */
     suspend fun resolveAlbum(album: String, artist: String): AlbumSummary? {
         if (album.isBlank()) return null
         val query = if (artist.isBlank()) album else "$album $artist"
         val results = try {
             searchAll(query)
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             Log.w(TAG, "resolveAlbum: search failed for '$query'", t)
             return null
         }
-        val albums = results.sections
+        val albums = listOfNotNull(results.topAlbum) + results.sections
             .filterIsInstance<SearchResultSection.Albums>()
             .firstOrNull()
             ?.albums
-            ?: return null
+            .orEmpty()
         if (albums.isEmpty()) return null
 
         return albums.firstOrNull {

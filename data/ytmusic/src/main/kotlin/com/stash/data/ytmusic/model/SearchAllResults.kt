@@ -41,8 +41,16 @@ sealed interface TopResultItem {
  *
  * An empty [sections] list signals "no results"; the UI should render an
  * appropriate empty-state rather than a blank list.
+ *
+ * [topAlbum] is YouTube's top-result card when that card is an album. Search's
+ * top slot shows artists and tracks only, so it rides alongside the sections
+ * for [com.stash.data.ytmusic.YTMusicApiClient.resolveAlbum]: for a new release
+ * the card is often the only place a search names the album (#481).
  */
-data class SearchAllResults(val sections: List<SearchResultSection>)
+data class SearchAllResults(
+    val sections: List<SearchResultSection>,
+    val topAlbum: AlbumSummary? = null,
+)
 
 /** Minimal artist identity for cards, top-result, and related-artists rows. */
 @Serializable
