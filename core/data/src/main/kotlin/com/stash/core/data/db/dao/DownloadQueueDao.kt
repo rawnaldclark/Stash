@@ -41,25 +41,17 @@ data class DownloadManagementRow(
 )
 
 /**
- * A discovery row (no sync run) the user asked for, the only kind a background
- * download takes (#532): a tap (`user_requested`: a song, an album's or a
- * selection's Download, a Retry, Library Health's "Download N again"), or a song
- * still in a playlist kept on the phone (`keep_offline`, the playlist page's
- * Download button) or in a followed mix with "Download this mix" on
- * (`sync_enabled` on its `share:<id>` playlist). Active playlists and live
+ * A song still in a playlist that downloads it: kept on the phone (`keep_offline`,
+ * the playlist page's Download button) or a followed mix with "Download this mix"
+ * on (`sync_enabled` on its `share:<id>` playlist). Active playlists and live
  * memberships only: the same "still wanted" rule
  * [DownloadQueueDao.cancelWaitingForPlaylist] spares rows by.
  *
- * Any other discovery row is a leftover: one Library Health's Verify filed, a tap
- * or a playlist download from before taps were marked (v0.9.110), a retired Stash
- * Mix discovery, a song since taken out of its kept playlist. v0.9.110 downloaded
- * those at every app start, Stream-only included.
- *
- * Every column inside the subquery is qualified, so the bare ones resolve to
- * download_queue in the query this is pasted into.
+ * Every column inside the subquery is qualified, so the bare `track_id` resolves
+ * to download_queue in the query this is pasted into.
  */
-private const val ASKED_FOR = """
-    (user_requested = 1 OR track_id IN (
+private const val WANTED_BY_A_PLAYLIST = """
+    (track_id IN (
         SELECT pt.track_id FROM playlist_tracks pt
         INNER JOIN playlists p ON p.id = pt.playlist_id
         WHERE pt.removed_at IS NULL
@@ -67,6 +59,19 @@ private const val ASKED_FOR = """
           AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.source_id LIKE 'share:%'))
     ))
 """
+
+/**
+ * A discovery row (no sync run) the user asked for, the only kind a background
+ * download takes (#532): a tap (`user_requested`: a song, an album's or a
+ * selection's Download, a Retry, Library Health's "Download N again"), or a song
+ * a playlist downloads ([WANTED_BY_A_PLAYLIST]).
+ *
+ * Any other discovery row is a leftover: one Library Health's Verify filed, a tap
+ * or a playlist download from before taps were marked (v0.9.110), a retired Stash
+ * Mix discovery, a song since taken out of its kept playlist. v0.9.110 downloaded
+ * those at every app start, Stream-only included.
+ */
+private const val ASKED_FOR = "(user_requested = 1 OR " + WANTED_BY_A_PLAYLIST + ")"
 
 /**
  * Data-access object for [DownloadQueueEntity].
@@ -492,14 +497,21 @@ interface DownloadQueueDao {
      *
      * A Retry is a tap (#532): a discovery row counts as asked for from here on
      * ([ASKED_FOR]), so a run that waits or gets cut short is still taken later,
-     * not cleaned up as a leftover. A sync's row keeps the sync's own rules.
+     * not cleaned up as a leftover. Not a song a playlist downloads
+     * ([WANTED_BY_A_PLAYLIST]): that one is asked for through its playlist already,
+     * and stays the playlist's, so turning its Download off still stops it
+     * ([cancelWaitingForPlaylist] spares a tap, #474). A sync's row keeps the sync's
+     * own rules.
      */
-    @Query("""
+    @Query(
+        """
         UPDATE download_queue
            SET status = 'PENDING', error_message = NULL, failure_type = 'NONE',
-               user_requested = CASE WHEN sync_id IS NULL THEN 1 ELSE user_requested END
+               user_requested = CASE WHEN sync_id IS NULL AND NOT """ + WANTED_BY_A_PLAYLIST + """
+                   THEN 1 ELSE user_requested END
          WHERE id = :queueId AND status IN ('FAILED', 'SKIPPED')
-    """)
+        """
+    )
     suspend fun atomicallyClaimForRetry(queueId: Long): Int
 
     /** Internal helper for [atomicallyClaimGroupForRetry]. */
@@ -513,14 +525,18 @@ interface DownloadQueueDao {
     /**
      * Internal helper: bulk flip a known set of FAILED rows back to PENDING, for
      * Failed downloads' "Retry group" and "Retry all". A retry, so a discovery row
-     * counts as asked for, like [atomicallyClaimForRetry] (#532).
+     * counts as asked for, and a song a playlist downloads stays the playlist's,
+     * like [atomicallyClaimForRetry] (#532).
      */
-    @Query("""
+    @Query(
+        """
         UPDATE download_queue
            SET status = 'PENDING', error_message = NULL, failure_type = 'NONE',
-               user_requested = CASE WHEN sync_id IS NULL THEN 1 ELSE user_requested END
+               user_requested = CASE WHEN sync_id IS NULL AND NOT """ + WANTED_BY_A_PLAYLIST + """
+                   THEN 1 ELSE user_requested END
          WHERE id IN (:ids)
-    """)
+        """
+    )
     suspend fun resetToPendingRaw(ids: List<Long>)
 
     /**
@@ -713,16 +729,18 @@ interface DownloadQueueDao {
     /**
      * The playlist page's Download switch turned off (#474): drop this playlist's
      * downloads that haven't started. Discovery partition only (the switch's own
-     * rows); a row running or done is left alone, and so is a Library Health
-     * "Re-download missing" row (`user_requested`), which the user asked for on
-     * its own. A song another playlist still keeps on the phone, or a followed
-     * mix still downloads, keeps its row.
+     * rows); a row running or done is left alone, and so is a tap
+     * (`user_requested`: Library Health's "Re-download missing", a song tapped or
+     * retried on its own), which the user asked for apart from the playlist. A
+     * Retry of one of the playlist's songs stays the playlist's, so it goes too
+     * ([atomicallyClaimForRetry]). A song another playlist still keeps on the
+     * phone, or a followed mix still downloads, keeps its row.
      *
      * DELETE, not SKIPPED: a SKIPPED row counts as handled
      * ([hasRowToLeaveAlone]), so it would stop a later On from queueing the song.
      *
-     * "Still wanted" here is [ASKED_FOR], written out for the playlists other
-     * than this one.
+     * "Still wanted" here is [WANTED_BY_A_PLAYLIST], written out for the playlists
+     * other than this one.
      *
      * @return Number of rows deleted.
      */

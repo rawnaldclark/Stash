@@ -66,8 +66,9 @@ data class DownloadQueueEntity(
 
     /**
      * True when the user explicitly asked for this download: a tap on a song
-     * (since v0.9.110), a Retry, a search download left waiting for lossless,
-     * Library & Storage -> "Re-download" (#474, #532). The automatic requeue
+     * (since v0.9.110), a Retry of a song no kept playlist or followed mix
+     * downloads, a search download left waiting for lossless, Library &
+     * Storage -> "Re-download" (#474, #532). The automatic requeue
      * only takes tracks inside a sync-enabled, non-mix playlist, on purpose
      * (#368). A track the user pointed at has no such requirement, so the pickup
      * queries let this flag stand in for that membership. Outside a sync it is

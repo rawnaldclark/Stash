@@ -128,6 +128,36 @@ class DownloadQueueDaoAskedForTest {
         assertThat(dao.pendingDiscoveryDownloads().map { it.trackId }).containsExactly(cancelled, failed)
     }
 
+    /**
+     * A Retry of a song a kept playlist or a followed mix downloads stays that playlist's (#474):
+     * turning its Download off still stops it, like a song that never failed. Marked as a tap, it
+     * kept downloading, and retrying, after the page said "Stopped".
+     */
+    @Test fun `a retried song a playlist downloads still stops when the playlist's Download goes off`() = runTest {
+        playlists()
+        val keptRetried = queued("Kept, retried", DownloadStatus.FAILED, kept, failureType = DownloadFailureType.NETWORK)
+        val followedRetried = queued(
+            "Followed, retried", DownloadStatus.FAILED, followedOn, failureType = DownloadFailureType.NETWORK,
+        )
+        val keptRetryAll = queued("Kept, Retry all", DownloadStatus.FAILED, kept, failureType = DownloadFailureType.NETWORK)
+        val loose = queued("In no playlist", DownloadStatus.FAILED, failureType = DownloadFailureType.NETWORK)
+
+        assertThat(dao.atomicallyClaimForRetry(rowOf(keptRetried).id)).isEqualTo(1)
+        assertThat(dao.atomicallyClaimForRetry(rowOf(followedRetried).id)).isEqualTo(1)
+        assertThat(dao.atomicallyClaimAllForRetry()).containsExactly(rowOf(keptRetryAll).id, rowOf(loose).id)
+
+        // Asked for through their playlists, so the cleanup keeps them and the drain takes them...
+        assertThat(dao.cancelLeftoverDiscoveryDownloads()).isEqualTo(0)
+        assertThat(dao.pendingDiscoveryDownloads().map { it.trackId })
+            .containsExactly(keptRetried, followedRetried, keptRetryAll, loose)
+        // ...until the switch goes off. The song in no playlist is the user's own ask, and stays.
+        db.playlistDao().setKeepOffline(kept, false)
+        assertThat(dao.cancelWaitingForPlaylist(kept)).isEqualTo(2)
+        db.playlistDao().setSyncEnabled(followedOn, false)
+        assertThat(dao.cancelWaitingForPlaylist(followedOn)).isEqualTo(1)
+        assertThat(dao.pendingDiscoveryDownloads().map { it.trackId }).containsExactly(loose)
+    }
+
     @Test fun `the cleanup cancels leftovers and nothing the user asked for`() = runTest {
         playlists()
         val askedFor = listOf(
