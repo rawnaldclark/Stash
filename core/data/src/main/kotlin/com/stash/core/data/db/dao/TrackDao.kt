@@ -414,6 +414,14 @@ interface TrackDao {
     }
 
     /**
+     * Forgets that the user picked this track's audio in Failed Matches
+     * (#531): a FLAC upgrade they asked for replaced the pick, and a later
+     * re-download should get the FLAC again, not the picked video.
+     */
+    @Query("UPDATE tracks SET match_picked_at = NULL WHERE id = :trackId AND match_picked_at IS NOT NULL")
+    suspend fun clearMatchPick(trackId: Long)
+
+    /**
      * How many tracks the library had downloaded and no longer has on disk.
      * On a restored backup this is the whole download collection: the rows
      * survive in the database, the audio does not.

@@ -37,7 +37,7 @@ import kotlinx.coroutines.withContext
  * entirely, leaving Now Playing reading a stale `'opus'` row while the new
  * FLAC sat orphaned on disk. The post-Success block here mirrors the worker's
  * canonical sequence: `markAsDownloaded` → `setFormatAndQuality` → conditional
- * `setDuration` → best-effort old-file delete.
+ * `setDuration` → best-effort old-file delete, plus `clearMatchPick` (#531).
  */
 @Singleton
 class LosslessUpgraderImpl @Inject constructor(
@@ -101,6 +101,13 @@ class LosslessUpgraderImpl @Inject constructor(
                 bitsPerSample = meta?.bitsPerSample,
             )
         }.onFailure { e -> Log.w(TAG, "markAsDownloaded failed for ${track.id}", e) }
+
+        // A song whose audio the user picked in Failed Matches (#531) now
+        // plays the FLAC: forget the pick, or a later re-download would fetch
+        // the picked video again. Automatic sweeps skip picked songs, so every
+        // saved upgrade of one was asked for (Now Playing, or a Library batch).
+        runCatching { trackDao.clearMatchPick(track.id) }
+            .onFailure { e -> Log.w(TAG, "clearMatchPick failed for ${track.id}", e) }
 
         if (meta != null && meta.format != "unknown") {
             runCatching {

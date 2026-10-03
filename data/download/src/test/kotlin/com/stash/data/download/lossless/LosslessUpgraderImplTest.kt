@@ -165,4 +165,25 @@ class LosslessUpgraderImplTest {
         filePath = filePath,
         fileFormat = fileFormat,
     )
+
+    // -- #531 review ----------------------------------------------------------------
+
+    @Test fun `saving an upgrade the user asked for forgets their pick`() = runTest {
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns
+            TrackDownloadResult.Success(filePath = "/path/to/file.flac")
+        coEvery { audioExtractor.extract(any()) } returns null
+
+        subject.upgradeToLossless(stubTrack())
+
+        // Kept, a later re-download would fetch the lossy pick instead of the FLAC.
+        coVerify { trackDao.clearMatchPick(1L) }
+    }
+
+    @Test fun `an upgrade that found nothing keeps the pick`() = runTest {
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns null
+
+        subject.upgradeToLossless(stubTrack())
+
+        coVerify(exactly = 0) { trackDao.clearMatchPick(any()) }
+    }
 }

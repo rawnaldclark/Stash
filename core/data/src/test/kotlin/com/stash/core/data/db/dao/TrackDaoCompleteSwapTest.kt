@@ -200,4 +200,17 @@ class TrackDaoCompleteSwapTest {
 
         assertEquals(2_000L, dao.getById(id)!!.matchPickedAt)
     }
+
+    @Test
+    fun `clearing the pick leaves the rest of the row alone`() = runTest {
+        val id = insertFlaggedFlac()
+        swapToOpus(id)
+
+        dao.clearMatchPick(id)
+
+        val row = dao.getById(id)!!
+        assertNull(row.matchPickedAt)
+        assertEquals("synthesis-video", row.youtubeId)
+        assertTrue(row.isDownloaded)
+    }
 }
