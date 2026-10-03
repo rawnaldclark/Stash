@@ -27,14 +27,12 @@ import com.stash.data.download.ytdlp.YtDlpSearchResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
@@ -109,6 +107,7 @@ data class FlaggedTrackRow(
  * @property resyncCandidates Map of trackId -> best candidate found during resync.
  * @property isResyncing      True while a resync operation is running.
  * @property resyncProgress   Human-readable progress string (e.g. "3 of 12").
+ * @property swappingTrackIds Flagged tracks whose approved swap is still running.
  */
 data class FailedMatchesUiState(
     val tracks: List<UnmatchedTrackView> = emptyList(),
@@ -118,6 +117,7 @@ data class FailedMatchesUiState(
     val resyncCandidates: Map<Long, ResyncCandidate> = emptyMap(),
     val isResyncing: Boolean = false,
     val resyncProgress: String = "",
+    val swappingTrackIds: Set<Long> = emptySet(),
 )
 
 /**
@@ -163,6 +163,10 @@ class FailedMatchesViewModel @Inject constructor(
         private const val PREVIEW_FAILURE_MESSAGE =
             "Couldn't load that preview. Try again, or approve to hear the full track."
 
+        private val BRACKETED = Regex("""[\(\[][^)\]]*[\)\]]""")
+        private val NOT_A_WORD = Regex("""[^\p{L}\p{N}]+""")
+        private val SPACES = Regex("""\s+""")
+
     }
 
     /** Observable preview playback state for the UI to highlight the active row. */
@@ -175,23 +179,26 @@ class FailedMatchesViewModel @Inject constructor(
     private val _isResyncing = MutableStateFlow(false)
     private val _resyncProgress = MutableStateFlow("")
 
-    private val _userMessages = MutableSharedFlow<String>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
+    /**
+     * Queued, not conflated: each snackbar holds the screen for a few seconds,
+     * and a buffer of one dropped the older message whenever two more arrived
+     * meanwhile, so a "Couldn't download…" could vanish behind another row's
+     * "Swapped" (#531 review).
+     */
+    private val _userMessages = Channel<String>(Channel.UNLIMITED)
 
-    /** One-shot user-facing messages (e.g. Snackbar text). */
-    val userMessages: SharedFlow<String> = _userMessages.asSharedFlow()
+    /** One-shot user-facing messages (e.g. Snackbar text), shown one after another. */
+    val userMessages: Flow<String> = _userMessages.receiveAsFlow()
 
     /** Active resync job reference so it can be cancelled on new resync or cleanup. */
     private var resyncJob: Job? = null
 
     /**
      * Candidates of swaps still running, by trackId: one swap per track at a
-     * time, and a failed swap puts its candidate back for a one-tap retry
-     * (#531). Main-thread only.
+     * time, the row shows "Swapping…" meanwhile, and a failed swap keeps its
+     * candidate for a one-tap retry (#531). Main-thread only.
      */
-    private val pendingSwaps = mutableMapOf<Long, ResyncCandidate>()
+    private val _pendingSwaps = MutableStateFlow<Map<Long, ResyncCandidate>>(emptyMap())
 
     /**
      * Cache of pre-extracted stream URLs, keyed by videoId.
@@ -259,16 +266,17 @@ class FailedMatchesViewModel @Inject constructor(
             flaggedRows,
             _previewLoading,
             _resyncCandidates,
-            combine(_isResyncing, _resyncProgress) { r, p -> r to p },
-        ) { tracks, flagged, loading, candidates, resyncState ->
+            combine(_isResyncing, _resyncProgress, _pendingSwaps) { r, p, swaps -> Triple(r, p, swaps.keys) },
+        ) { tracks, flagged, loading, candidates, progress ->
             FailedMatchesUiState(
                 tracks = tracks,
                 flaggedTracks = flagged,
                 isLoading = false,
                 previewLoading = loading,
                 resyncCandidates = candidates,
-                isResyncing = resyncState.first,
-                resyncProgress = resyncState.second,
+                isResyncing = progress.first,
+                resyncProgress = progress.second,
+                swappingTrackIds = progress.third,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -325,7 +333,8 @@ class FailedMatchesViewModel @Inject constructor(
                 val album = row.album.takeIf { it.isNotBlank() }
                 ResyncSearch(
                     trackId = row.trackId,
-                    queries = listOfNotNull(album?.let { "${row.searchQuery} $it" }, row.searchQuery),
+                    queries = listOf(row.searchQuery),
+                    albumQuery = album?.let { "${row.searchQuery} $it" },
                     // A youtube_id the user picked is not the wrong video: if
                     // its file was replaced later, the pick must stay on offer.
                     excludeVideoId = row.currentYoutubeId.takeUnless { row.pickedByUser },
@@ -381,7 +390,7 @@ class FailedMatchesViewModel @Inject constructor(
             // indistinguishable from a button that did nothing. Always report
             // the outcome so the user knows the pass actually ran.
             val found = _resyncCandidates.value.size
-            _userMessages.tryEmit(
+            _userMessages.trySend(
                 when (found) {
                     0 -> "No new matches found."
                     1 -> "Found 1 replacement."
@@ -399,7 +408,9 @@ class FailedMatchesViewModel @Inject constructor(
      *  1. The album's own tracklist (flagged rows with a known album) — sync's
      *     first strategy too (DownloadManager.resolveUrl), and the one that
      *     tells two recordings of a song apart.
-     *  2. Each query on YouTube Music: the album-named one, then "artist - title".
+     *  2. Each query on YouTube Music: the album-named one (only results with
+     *     the song's title, those on the track's album first), then
+     *     "artist - title".
      *  3. #19/#143: the same queries on full YouTube. search() is
      *     InnerTube-first and only falls back to yt-dlp when YT Music returns
      *     *zero* results; when everything it returns is unusable (the
@@ -420,6 +431,10 @@ class FailedMatchesViewModel @Inject constructor(
             if (fromAlbum != null) firstUsable(listOf(fromAlbum), request)?.let { return it }
         }
 
+        request.albumQuery?.let { query ->
+            val results = searchExecutor.search(query, maxResults = 5)
+            firstUsable(thisSong(results, request), request)?.let { return it }
+        }
         var topResults: List<YtDlpSearchResult> = emptyList()
         for ((index, query) in request.queries.withIndex()) {
             val results = searchExecutor.search(query, maxResults = 5)
@@ -427,6 +442,10 @@ class FailedMatchesViewModel @Inject constructor(
             firstUsable(results, request)?.let { return it }
         }
 
+        request.albumQuery?.let { query ->
+            val direct = searchExecutor.searchYtDlpDirect(query, maxResults = 5)
+            firstUsable(thisSong(direct, request), request)?.let { return it }
+        }
         for (query in request.queries) {
             val direct = searchExecutor.searchYtDlpDirect(query, maxResults = 5)
             firstUsable(direct, request)?.let { return it }
@@ -434,6 +453,32 @@ class FailedMatchesViewModel @Inject constructor(
 
         return if (request.allowExcludedFallback) topResults.firstOrNull() else null
     }
+
+    /**
+     * Results of the album-named search that carry the song's title, those
+     * on the track's album first. Naming the album can rank another song
+     * from that album above the one wanted (#531 review).
+     */
+    private fun thisSong(results: List<YtDlpSearchResult>, request: ResyncSearch): List<YtDlpSearchResult> {
+        val target = request.albumTarget ?: return results
+        val wanted = normalized(target.title)
+        val album = normalized(target.album)
+        val titled = results.filter { wanted.isEmpty() || " ${normalized(it.title)} ".contains(" $wanted ") }
+        val (onAlbum, elsewhere) = titled.partition { normalized(it.album.orEmpty()) == album }
+        return onAlbum + elsewhere
+    }
+
+    /**
+     * Lowercase words with bracketed parts dropped: "Lacrymosa (Synthesis)"
+     * and "lacrymosa" compare equal, and a title can be found inside "Lacrymosa
+     * - Synthesis Version".
+     */
+    private fun normalized(text: String): String =
+        text.lowercase()
+            .replace(BRACKETED, " ")
+            .replace(NOT_A_WORD, " ")
+            .trim()
+            .replace(SPACES, " ")
 
     /**
      * The first result this track may switch to. Never its own current video
@@ -521,13 +566,13 @@ class FailedMatchesViewModel @Inject constructor(
             // for a track the user already blocked would re-mark it
             // downloaded and resurrect the file.
             if (blocklistGuard.isBlockedByTrackId(trackId)) {
-                _userMessages.tryEmit("Can't approve — this track is on your blocklist.")
+                _userMessages.trySend("Can't approve — this track is on your blocklist.")
                 return@launch
             }
 
             val existing = trackDao.findByYoutubeId(candidate.videoId)
             if (existing != null && existing.id != trackId) {
-                _userMessages.tryEmit(
+                _userMessages.trySend(
                     "Can't approve \u2014 '${candidate.title}' is already linked to " +
                         "${existing.artist} \u2014 ${existing.title}. Try Dismiss instead.",
                 )
@@ -549,7 +594,7 @@ class FailedMatchesViewModel @Inject constructor(
                 _resyncCandidates.update { it - trackId }
             } catch (e: Exception) {
                 Log.e(TAG, "Approve failed for trackId=$trackId", e)
-                _userMessages.tryEmit("Couldn't approve this match. Please try again.")
+                _userMessages.trySend("Couldn't approve this match. Please try again.")
                 return@launch
             }
 
@@ -628,11 +673,11 @@ class FailedMatchesViewModel @Inject constructor(
      * How it ended comes back through [onSwapOutcome].
      */
     fun approveSwap(row: FlaggedTrackRow, candidate: ResyncCandidate) {
-        // One swap per track at a time. The row only disappears once the flag
-        // write lands, so a quick double tap could start a second download of
-        // the same video, and that one failing would undo the first one's swap.
-        if (row.trackId in pendingSwaps) return
-        pendingSwaps[row.trackId] = candidate
+        // One swap per track at a time. A quick double tap, before the row
+        // redraws as "Swapping…", could start a second download of the same
+        // video, and that one failing would undo the first one's swap.
+        if (row.trackId in _pendingSwaps.value) return
+        _pendingSwaps.update { it + (row.trackId to candidate) }
         viewModelScope.launch {
             var handedOff = false
             try {
@@ -641,7 +686,7 @@ class FailedMatchesViewModel @Inject constructor(
                 // The one exception is the user's own earlier pick: approving it
                 // again downloads it again.
                 if (candidate.videoId == row.currentYoutubeId && !row.pickedByUser) {
-                    _userMessages.tryEmit("Choose a different replacement for this track.")
+                    _userMessages.trySend("Choose a different replacement for this track.")
                     return@launch
                 }
 
@@ -649,24 +694,17 @@ class FailedMatchesViewModel @Inject constructor(
                 // violate the UNIQUE(youtube_id) constraint and blow up silently.
                 val existing = trackDao.findByYoutubeId(candidate.videoId)
                 if (existing != null && existing.id != row.trackId) {
-                    _userMessages.tryEmit(
+                    _userMessages.trySend(
                         alreadyLinkedMessage(candidate.title, existing.artist, existing.title, existing.album),
                     )
                     return@launch
                 }
 
-                // Optimistically clear the flag + remove from candidates so the
-                // row disappears from the Failed Matches screen immediately.
-                try {
-                    musicRepository.setMatchFlagged(row.trackId, false)
-                    _resyncCandidates.update { it - row.trackId }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Log.e(TAG, "approveSwap pre-download update failed", e)
-                    _userMessages.tryEmit("Couldn't approve this swap. Please try again.")
-                    return@launch
-                }
+                // The row stays flagged, and shows "Swapping…", until the swap
+                // is done: the coordinator clears the flag in the same write
+                // that records the new file. Clearing it here made the row
+                // vanish and pop back on failure, and an app that died
+                // mid-download lost the track with its wrong audio.
 
                 // Hand the download + commit + DB update off to SwapCoordinator's
                 // application-scope so it survives the user leaving this screen.
@@ -678,42 +716,61 @@ class FailedMatchesViewModel @Inject constructor(
                 handedOff = true
             } finally {
                 // Handed off, the entry lives until the swap reports back.
-                if (!handedOff) pendingSwaps.remove(row.trackId)
+                if (!handedOff) _pendingSwaps.update { it - row.trackId }
             }
         }
     }
 
     /**
-     * Tells the user how a swap ended (#531: a failed swap used to put the
-     * row back with no candidate and no word, so approving looked like it
-     * did nothing). A failure that can be retried puts the candidate back.
-     * Swaps this screen didn't start (it was recreated mid-swap) still get
-     * their message.
+     * Tells the user how a swap ended (#531: a failed swap used to put the row
+     * back with no word, so approving looked like it did nothing). A failure
+     * that can be retried keeps the candidate; a video that can't be used
+     * drops it. Swaps this screen didn't start (it was recreated mid-swap)
+     * still get their message.
      */
     private fun onSwapOutcome(outcome: SwapOutcome) {
-        val candidate = pendingSwaps[outcome.trackId]?.takeIf { it.videoId == outcome.newVideoId }
-        if (candidate != null) pendingSwaps.remove(outcome.trackId)
+        val candidate = _pendingSwaps.value[outcome.trackId]
+        _pendingSwaps.update { it - outcome.trackId }
+        val song = outcome.title.ifBlank { null }?.let { " for '$it'" } ?: ""
         val message = when (outcome) {
-            is SwapOutcome.Swapped ->
+            is SwapOutcome.Swapped -> {
+                _resyncCandidates.update { it - outcome.trackId }
                 "Swapped — '${outcome.title}' now plays the version you picked."
-            is SwapOutcome.Failed -> {
-                if (candidate != null) {
-                    // A resync that ran meanwhile may have found a newer one.
-                    _resyncCandidates.update { current ->
-                        if (outcome.trackId in current) current else current + (outcome.trackId to candidate)
-                    }
-                }
-                "Couldn't download the replacement for '${outcome.title}' — try again."
             }
-            is SwapOutcome.AlreadyLinked -> alreadyLinkedMessage(
-                candidateTitle = candidate?.title ?: outcome.title,
-                ownerArtist = outcome.ownerArtist,
-                ownerTitle = outcome.ownerTitle,
-                ownerAlbum = outcome.ownerAlbum,
-            )
-            is SwapOutcome.Blocked -> "Can't swap — this song is on your blocklist."
+            is SwapOutcome.DownloadFailed -> {
+                keepCandidate(outcome.trackId, candidate)
+                "Couldn't download the replacement$song — try again."
+            }
+            is SwapOutcome.SaveFailed -> {
+                keepCandidate(outcome.trackId, candidate)
+                "Couldn't save the replacement$song — check your storage, then try again."
+            }
+            is SwapOutcome.AlreadyLinked -> {
+                _resyncCandidates.update { it - outcome.trackId }
+                alreadyLinkedMessage(
+                    candidateTitle = candidate?.title ?: outcome.title,
+                    ownerArtist = outcome.ownerArtist,
+                    ownerTitle = outcome.ownerTitle,
+                    ownerAlbum = outcome.ownerAlbum,
+                )
+            }
+            is SwapOutcome.Blocked -> {
+                _resyncCandidates.update { it - outcome.trackId }
+                "Can't swap — this song is on your blocklist."
+            }
         }
-        _userMessages.tryEmit(message)
+        _userMessages.trySend(message)
+    }
+
+    /**
+     * Keeps a failed swap's candidate on its row for a one-tap retry, unless
+     * a resync that ran meanwhile found another one.
+     */
+    private fun keepCandidate(trackId: Long, candidate: ResyncCandidate?) {
+        if (candidate == null) return
+        _resyncCandidates.update { current ->
+            if (trackId in current) current else current + (trackId to candidate)
+        }
     }
 
     /**
@@ -953,7 +1010,7 @@ class FailedMatchesViewModel @Inject constructor(
         activePreviewAttemptId = null
         if (_previewLoading.value == videoId) _previewLoading.value = null
         previewPlayer.stopIfCurrent(ownedAttemptId)
-        _userMessages.tryEmit(PREVIEW_FAILURE_MESSAGE)
+        _userMessages.trySend(PREVIEW_FAILURE_MESSAGE)
     }
 
     private fun isIoError(error: PlaybackException): Boolean =
@@ -999,8 +1056,10 @@ class FailedMatchesViewModel @Inject constructor(
 
     private data class ResyncSearch(
         val trackId: Long,
-        /** Most specific first. The first one's results back the unmatched last resort. */
+        /** Plain queries. The first one's results back the unmatched last resort. */
         val queries: List<String>,
+        /** Flagged rows with a known album: "artist - title album", searched first and title-checked. */
+        val albumQuery: String? = null,
         val excludeVideoId: String?,
         val allowExcludedFallback: Boolean,
         /** Flagged rows with a known album: look in that album's tracklist first. */

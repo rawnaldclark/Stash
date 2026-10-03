@@ -252,6 +252,7 @@ fun FailedMatchesScreen(
                             FlaggedTrackListItem(
                                 row = row,
                                 candidate = candidate,
+                                isSwapping = row.trackId in state.swappingTrackIds,
                                 resyncAttempted = state.resyncProgress.isNotEmpty(),
                                 isPreviewPlaying = isPreviewPlaying,
                                 isPreviewLoading = isPreviewLoading,
@@ -652,12 +653,14 @@ private fun UnmatchedTrackRow(
  * [UnmatchedTrackRow] but with a distinct approve/unflag surface — the track
  * already has an audio file on disk, so "approve" triggers a swap rather than
  * a fresh download, and "unflag" clears the wrong-match flag without entering
- * the permanent-dismiss lane.
+ * the permanent-dismiss lane. While an approved swap runs ([isSwapping]) the
+ * row stays put and says so; it leaves the list once the swap is done.
  */
 @Composable
 private fun FlaggedTrackListItem(
     row: FlaggedTrackRow,
     candidate: ResyncCandidate?,
+    isSwapping: Boolean,
     resyncAttempted: Boolean,
     isPreviewPlaying: Boolean,
     isPreviewLoading: Boolean,
@@ -717,7 +720,14 @@ private fun FlaggedTrackListItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (candidate != null) {
+            if (isSwapping) {
+                Text(
+                    text = "Swapping\u2026",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                )
+            } else if (candidate != null) {
                 Text(
                     text = "\u2192 ${candidate.title} \u2014 ${candidate.artist}",
                     style = MaterialTheme.typography.bodySmall,
@@ -742,7 +752,14 @@ private fun FlaggedTrackListItem(
             }
         }
 
-        if (candidate != null) {
+        if (isSwapping) {
+            Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+        } else if (candidate != null) {
             IconButton(
                 onClick = if (isPreviewPlaying) onStopPreview else {
                     { onPreview(candidate.videoId) }
@@ -768,7 +785,7 @@ private fun FlaggedTrackListItem(
             }
         }
 
-        if (candidate != null) {
+        if (candidate != null && !isSwapping) {
             IconButton(
                 onClick = onApprove,
                 modifier = Modifier.size(40.dp),

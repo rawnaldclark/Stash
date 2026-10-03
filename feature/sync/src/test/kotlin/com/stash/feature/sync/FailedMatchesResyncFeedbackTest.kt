@@ -24,12 +24,15 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -313,7 +316,7 @@ class FailedMatchesResyncFeedbackTest {
     @Test fun `a failed swap keeps the candidate and tells the user`() = runTest {
         val (vm, messages) = approveFlaggedSwap()
 
-        swapOutcomes.emit(SwapOutcome.Failed(trackId = 7L, newVideoId = "right-video", title = "Lacrymosa"))
+        swapOutcomes.emit(SwapOutcome.DownloadFailed(trackId = 7L, newVideoId = "right-video", title = "Lacrymosa"))
         advanceUntilIdle()
 
         assertEquals(
@@ -383,7 +386,7 @@ class FailedMatchesResyncFeedbackTest {
 
     @Test fun `a failed swap can be approved again`() = runTest {
         val (vm, _) = approveFlaggedSwap()
-        swapOutcomes.emit(SwapOutcome.Failed(trackId = 7L, newVideoId = "right-video", title = "Lacrymosa"))
+        swapOutcomes.emit(SwapOutcome.DownloadFailed(trackId = 7L, newVideoId = "right-video", title = "Lacrymosa"))
         advanceUntilIdle()
 
         val row = vm.uiState.value.flaggedTracks.single()
@@ -392,5 +395,112 @@ class FailedMatchesResyncFeedbackTest {
         advanceUntilIdle()
 
         verify(exactly = 2) { swapCoordinator.swap(7L, "right-video") }
+    }
+
+    // -- #531 review: the row stays put until the swap is done ---------------
+
+    @Test fun `approving a swap keeps the row flagged, shows it swapping and keeps the replacement`() = runTest {
+        val (vm, _) = approveFlaggedSwap()
+
+        // Clearing the flag first made the row vanish (or the screen read "All
+        // caught up!") and pop back on failure; if the app died mid-download
+        // the track was lost with its wrong audio and no word.
+        coVerify(exactly = 0) { musicRepository.setMatchFlagged(any(), any()) }
+        assertTrue(7L in vm.uiState.value.swappingTrackIds)
+        assertEquals("right-video", vm.uiState.value.resyncCandidates[7L]?.videoId)
+    }
+
+    @Test fun `the row stops showing swapping once the swap reports back`() = runTest {
+        val (vm, _) = approveFlaggedSwap()
+        assertTrue(7L in vm.uiState.value.swappingTrackIds)
+
+        swapOutcomes.emit(SwapOutcome.DownloadFailed(trackId = 7L, newVideoId = "right-video", title = "Lacrymosa"))
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.swappingTrackIds.isEmpty())
+    }
+
+    @Test fun `every outcome message is shown, even while a snackbar is up`() = runTest {
+        val vm = makeVm(tracks = emptyList())
+        val messages = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+        // Like the screen: each message holds the snackbar for a few seconds.
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            vm.userMessages.collect {
+                messages.add(it)
+                delay(4_000)
+            }
+        }
+
+        swapOutcomes.emit(SwapOutcome.DownloadFailed(trackId = 7L, newVideoId = "a", title = "Lacrymosa"))
+        swapOutcomes.emit(SwapOutcome.Swapped(trackId = 8L, newVideoId = "b", title = "Your Star"))
+        swapOutcomes.emit(SwapOutcome.Swapped(trackId = 9L, newVideoId = "c", title = "My Immortal"))
+        // advanceUntilIdle() doesn't wait on background work; let three
+        // snackbars' worth of time pass.
+        advanceTimeBy(15_000)
+        runCurrent()
+
+        assertEquals("got $messages", 3, messages.size)
+        assertTrue(messages[0].contains("Couldn't download the replacement for 'Lacrymosa'"))
+        assertTrue(messages[1].contains("Your Star"))
+        assertTrue(messages[2].contains("My Immortal"))
+    }
+
+    @Test fun `a failed save says to check storage, not to download again`() = runTest {
+        val (vm, messages) = approveFlaggedSwap()
+
+        swapOutcomes.emit(SwapOutcome.SaveFailed(trackId = 7L, newVideoId = "right-video", title = "Lacrymosa"))
+        advanceUntilIdle()
+
+        val message = messages.single()
+        assertTrue(message, message.contains("Couldn't save the replacement for 'Lacrymosa'"))
+        assertTrue(message, message.contains("storage"))
+        assertEquals("right-video", vm.uiState.value.resyncCandidates[7L]?.videoId)
+    }
+
+    // -- #531 review: the album-named search is title-checked ----------------
+
+    @Test fun `the album-named search only takes a result with the song's title`() = runTest {
+        coEvery { searchExecutor.search(match { it.contains("Synthesis") }, any()) } returns listOf(
+            YtDlpSearchResult(id = "other-song", title = "Bring Me to Life", album = "Synthesis"),
+            YtDlpSearchResult(id = "right", title = "Lacrymosa (Synthesis)", album = "Synthesis"),
+        )
+        val vm = makeVm(tracks = emptyList(), flagged = listOf(flaggedLacrymosa()))
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+        vm.resync()
+        advanceUntilIdle()
+
+        assertEquals("right", vm.uiState.value.resyncCandidates[7L]?.videoId)
+    }
+
+    @Test fun `the album-named search prefers a result on the track's album`() = runTest {
+        coEvery { searchExecutor.search(match { it.contains("Synthesis") }, any()) } returns listOf(
+            YtDlpSearchResult(id = "live", title = "Lacrymosa", album = "Live from Rome"),
+            YtDlpSearchResult(id = "synthesis", title = "Lacrymosa", album = "Synthesis"),
+        )
+        val vm = makeVm(tracks = emptyList(), flagged = listOf(flaggedLacrymosa()))
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+        vm.resync()
+        advanceUntilIdle()
+
+        assertEquals("synthesis", vm.uiState.value.resyncCandidates[7L]?.videoId)
+    }
+
+    @Test fun `with no album-named result titled like the song, the plain search decides`() = runTest {
+        coEvery { searchExecutor.search(match { it.contains("Synthesis") }, any()) } returns listOf(
+            YtDlpSearchResult(id = "other-song", title = "Bring Me to Life", album = "Synthesis"),
+        )
+        coEvery { searchExecutor.search("Evanescence - Lacrymosa", any()) } returns listOf(
+            YtDlpSearchResult(id = "plain-hit", title = "Lacrymosa"),
+        )
+        val vm = makeVm(tracks = emptyList(), flagged = listOf(flaggedLacrymosa()))
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+        vm.resync()
+        advanceUntilIdle()
+
+        assertEquals("plain-hit", vm.uiState.value.resyncCandidates[7L]?.videoId)
     }
 }

@@ -163,7 +163,7 @@ class SwapCoordinatorTest {
     }
 
     @Test
-    fun `failed download re-flags the track so the row reappears`() = runTest {
+    fun `a failed download leaves the flag alone, so the row stays where it was`() = runTest {
         givenRow(filePath = tmp.newFile("old2.m4a").absolutePath)
         coEvery {
             downloadExecutor.download(any(), any(), any(), any(), any())
@@ -171,7 +171,9 @@ class SwapCoordinatorTest {
 
         swap()
 
-        coVerify { trackDao.updateMatchFlagged(7L, true) }
+        // The flag is cleared only by the write that records a finished swap
+        // (completeSwap), so a failure has nothing to put back (#36, #531).
+        coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
     }
 
     @Test
@@ -227,7 +229,7 @@ class SwapCoordinatorTest {
         assertEquals("the user's audio must be untouched", "original audio", oldFile.readText())
         coVerify(exactly = 0) { trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any()) }
-        coVerify { trackDao.updateMatchFlagged(7L, true) }
+        coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
         assertFalse("the unused download must be cleaned up", newTemp.exists())
         assertEquals(
             listOf(
@@ -258,7 +260,7 @@ class SwapCoordinatorTest {
         assertEquals("the user's audio must be untouched", "original audio", oldFile.readText())
         coVerify(exactly = 0) { fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { trackDao.updateYoutubeIdIfUnclaimed(any(), any()) }
-        coVerify { trackDao.updateMatchFlagged(7L, true) }
+        coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
     }
 
     @Test
@@ -312,9 +314,10 @@ class SwapCoordinatorTest {
         swap()
 
         coVerify { trackDao.restoreYoutubeIdIfClaimed(7L, "vid123", "wrong-video") }
-        coVerify { trackDao.updateMatchFlagged(7L, true) }
+        coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
         assertEquals("original audio", oldFile.readText())
-        assertEquals(listOf(SwapOutcome.Failed(7L, "vid123", "Title")), outcomes)
+        // Not "download again": retrying only helps once storage is sorted out.
+        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
     }
 
     // -- A save onto the old file's own path (album folders make it the norm) --
@@ -342,7 +345,7 @@ class SwapCoordinatorTest {
         assertFalse("no backup is left behind", File(oldFile.path + ".swapbak").exists())
         coVerify { trackDao.restoreYoutubeIdIfClaimed(7L, "vid123", "wrong-video") }
         coVerify(exactly = 0) { trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any()) }
-        assertEquals(listOf(SwapOutcome.Failed(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
     }
 
     @Test
@@ -476,9 +479,10 @@ class SwapCoordinatorTest {
 
         swap()
 
-        // It used to return silently with the flag already cleared, so the
-        // row vanished and the track kept its wrong audio.
-        coVerify { trackDao.updateMatchFlagged(7L, true) }
+        // It used to return silently after the screen had already cleared the
+        // flag, so the row vanished and the track kept its wrong audio. Now
+        // nothing cleared the flag, and the outcome says why.
+        coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
         coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
         assertEquals(listOf(SwapOutcome.Blocked(7L, "vid123", "Title")), outcomes)
     }
@@ -492,6 +496,25 @@ class SwapCoordinatorTest {
 
         swap()
 
-        assertEquals(listOf(SwapOutcome.Failed(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.DownloadFailed(7L, "vid123", "Title")), outcomes)
+    }
+
+    @Test
+    fun `a stray CancellationException from the save is still reported and undone`() = runTest {
+        val oldFile = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
+        givenRow(filePath = oldFile.absolutePath)
+        stubSuccessfulDownload()
+        coEvery { fileOrganizer.plannedPath(any(), any(), any(), any(), any(), any()) } returns oldFile.absolutePath
+        // A callee's timeout, not this swap being cancelled.
+        coEvery {
+            fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any())
+        } throws kotlinx.coroutines.CancellationException("timed out")
+        val outcomes = collectOutcomes()
+
+        swap()
+
+        assertEquals("original audio", oldFile.readText())
+        coVerify { trackDao.restoreYoutubeIdIfClaimed(7L, "vid123", "wrong-video") }
+        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
     }
 }

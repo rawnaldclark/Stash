@@ -15,10 +15,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -29,8 +31,8 @@ import kotlin.math.abs
 /**
  * How one wrong-match swap ended, so the screen that asked for it can say so.
  * A failed swap used to put the row back with no word at all (#531). Every
- * outcome except [Swapped] leaves the track's audio and identity as they were
- * and puts its row back in Failed Matches.
+ * outcome except [Swapped] leaves the track's audio, identity and flag as
+ * they were, so its row stays in Failed Matches.
  */
 sealed interface SwapOutcome {
     val trackId: Long
@@ -47,16 +49,6 @@ sealed interface SwapOutcome {
     ) : SwapOutcome
 
     /**
-     * Downloading or saving the replacement failed. Nothing changed, so the
-     * same replacement can be tried again.
-     */
-    data class Failed(
-        override val trackId: Long,
-        override val newVideoId: String,
-        override val title: String,
-    ) : SwapOutcome
-
-    /**
      * Another track took this video while it downloaded (`tracks.youtube_id`
      * is UNIQUE). Nothing was written, and this video can't be swapped in.
      */
@@ -67,6 +59,27 @@ sealed interface SwapOutcome {
         val ownerArtist: String,
         val ownerTitle: String,
         val ownerAlbum: String,
+    ) : SwapOutcome
+
+    /**
+     * The replacement didn't download (or downloaded as junk). Nothing
+     * changed; trying again may well work.
+     */
+    data class DownloadFailed(
+        override val trackId: Long,
+        override val newVideoId: String,
+        override val title: String,
+    ) : SwapOutcome
+
+    /**
+     * The replacement downloaded but couldn't be saved or recorded: storage
+     * full, the music folder gone, a database error. Nothing changed, and
+     * retrying only helps once that is sorted out.
+     */
+    data class SaveFailed(
+        override val trackId: Long,
+        override val newVideoId: String,
+        override val title: String,
     ) : SwapOutcome
 
     /** The track or the replacement video is on the blocklist. Nothing was written. */
@@ -116,9 +129,11 @@ sealed interface SwapOutcome {
  *   7. Delete the old file, or its set-aside copy, unless another track
  *      still uses it or it is the file just written.
  *
- * Any failure re-flags the track and leaves the old audio as it was: a
- * set-aside file is put back, a half-written one removed, and the claim given
- * back so the same replacement can be tried again.
+ * The wrong-match flag is cleared only by the write that records a finished
+ * swap, so a failure, or the app dying mid-download, leaves the row in Failed
+ * Matches. Any failure also leaves the old audio as it was: a set-aside file
+ * is put back, a half-written one removed, and the claim given back so the
+ * same replacement can be tried again.
  */
 @Singleton
 class SwapCoordinator @Inject constructor(
@@ -146,8 +161,8 @@ class SwapCoordinator @Inject constructor(
     /**
      * Suspending emit, never dropping (same reasoning as
      * [TrackIdentityEvents]): an outcome is the only way the user learns a
-     * swap failed. With no screen collecting, nothing is buffered; the
-     * re-flagged row already shows the swap didn't happen.
+     * swap failed. With no screen collecting, nothing is buffered; the row,
+     * still flagged, already shows the swap didn't happen.
      */
     private val _outcomes = MutableSharedFlow<SwapOutcome>(extraBufferCapacity = 16)
 
@@ -179,19 +194,26 @@ class SwapCoordinator @Inject constructor(
     internal suspend fun performSwap(trackId: Long, newVideoId: String) {
         val outcome = try {
             runSwap(trackId, newVideoId)
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             Log.w(TAG, "swap: unexpected error for videoId=$newVideoId", e)
-            reFlagAfterFailure(trackId)
-            SwapOutcome.Failed(trackId, newVideoId, title = "")
+            SwapOutcome.DownloadFailed(trackId, newVideoId, title = "")
         }
         _outcomes.emit(outcome)
     }
 
+    /**
+     * Rethrows [e] only when this coroutine really is cancelled. A
+     * CancellationException can also come out of a callee (a timeout); then
+     * the swap must still be undone and reported, not silently dropped.
+     */
+    private suspend fun rethrowIfCancelled(e: Exception) {
+        if (e is CancellationException && !currentCoroutineContext().isActive) throw e
+    }
+
     private suspend fun runSwap(trackId: Long, newVideoId: String): SwapOutcome {
         val track = trackDao.getById(trackId)
-            ?: return SwapOutcome.Failed(trackId, newVideoId, title = "")
+            ?: return SwapOutcome.DownloadFailed(trackId, newVideoId, title = "")
         val title = track.title
 
         // v0.9.15: Reject blocklisted identities. A swap on a blocked
@@ -201,7 +223,6 @@ class SwapCoordinator @Inject constructor(
                 spotifyUri = null, youtubeId = newVideoId,
             )) {
             Log.d(TAG, "Refused swap of blocked: ${track.artist} - $title")
-            reFlagAfterFailure(trackId)
             return SwapOutcome.Blocked(trackId, newVideoId, title)
         }
 
@@ -210,8 +231,7 @@ class SwapCoordinator @Inject constructor(
 
         // #36: download + commit the replacement BEFORE touching the old
         // file. The previous order deleted the user's existing audio up
-        // front, so a failed download left them with nothing AND a row
-        // silently gone (the flag was already cleared in the VM).
+        // front, so a failed download left them with nothing.
         val result = downloadExecutor.download(
             url = url,
             outputDir = fileOrganizer.getTempDir(),
@@ -221,12 +241,8 @@ class SwapCoordinator @Inject constructor(
             qualityArgs = qualityArgs,
         )
         if (result !is DownloadResult.Success) {
-            // The optimistic flag-clear in the VM made the row disappear.
-            // Re-flag so it reappears in Failed Matches (#36); the old file
-            // is untouched.
             Log.w(TAG, "swap: download failed for videoId=$newVideoId: $result")
-            reFlagAfterFailure(trackId)
-            return SwapOutcome.Failed(trackId, newVideoId, title)
+            return SwapOutcome.DownloadFailed(trackId, newVideoId, title)
         }
         val tempFile = result.file
 
@@ -236,8 +252,7 @@ class SwapCoordinator @Inject constructor(
         // would delete the user's audio. acceptDownloadOrDelete deletes it.
         if (!localFileOps.acceptDownloadOrDelete(tempFile.absolutePath)) {
             Log.w(TAG, "swap: discarded too-small download for trackId=$trackId: ${tempFile.name}")
-            reFlagAfterFailure(trackId)
-            return SwapOutcome.Failed(trackId, newVideoId, title)
+            return SwapOutcome.DownloadFailed(trackId, newVideoId, title)
         }
 
         // Re-read: a reorganize or reconciliation can move the file during
@@ -247,7 +262,7 @@ class SwapCoordinator @Inject constructor(
         if (before == null) {
             Log.w(TAG, "swap: trackId=$trackId was deleted during the download; dropping it")
             deleteTempFile(tempFile)
-            return SwapOutcome.Failed(trackId, newVideoId, title)
+            return SwapOutcome.DownloadFailed(trackId, newVideoId, title)
         }
 
         // Claim the video right before the first write. The approve-time
@@ -255,7 +270,6 @@ class SwapCoordinator @Inject constructor(
         // can't lose to a track that took the video meanwhile.
         if (trackDao.updateYoutubeIdIfUnclaimed(trackId, newVideoId) == 0) {
             deleteTempFile(tempFile)
-            reFlagAfterFailure(trackId)
             val owner = trackDao.findByYoutubeId(newVideoId)?.takeIf { it.id != trackId }
             Log.w(
                 TAG,
@@ -272,7 +286,7 @@ class SwapCoordinator @Inject constructor(
                     ownerAlbum = owner.album,
                 )
             } else {
-                SwapOutcome.Failed(trackId, newVideoId, title)
+                SwapOutcome.DownloadFailed(trackId, newVideoId, title)
             }
         }
 
@@ -349,9 +363,8 @@ class SwapCoordinator @Inject constructor(
                 downloadedAt = now,
             ) == 1
             if (!recorded) Log.w(TAG, "swap: trackId=$trackId is gone; not recording the replacement")
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             Log.w(TAG, "swap: couldn't save the replacement for trackId=$trackId", e)
         } finally {
             if (!recorded) {
@@ -447,9 +460,8 @@ class SwapCoordinator @Inject constructor(
         if (meta.format != "unknown") {
             try {
                 trackDao.setFormatAndQuality(trackId, meta.format, meta.bitrateKbps)
-            } catch (e: CancellationException) {
-                throw e
             } catch (e: Exception) {
+                rethrowIfCancelled(e)
                 Log.w(TAG, "swap: setFormatAndQuality failed for trackId=$trackId", e)
             }
         }
@@ -462,9 +474,8 @@ class SwapCoordinator @Inject constructor(
             if (drift > DURATION_DRIFT_TOLERANCE) {
                 try {
                     trackDao.setDuration(trackId, meta.durationMs)
-                } catch (e: CancellationException) {
-                    throw e
                 } catch (e: Exception) {
+                    rethrowIfCancelled(e)
                     Log.w(TAG, "swap: setDuration failed for trackId=$trackId", e)
                 }
             }
@@ -472,10 +483,9 @@ class SwapCoordinator @Inject constructor(
     }
 
     /**
-     * Undoes the claim after a failed save and puts the row back. Restoring
-     * the previous youtube_id matters for the retry: left on the new video,
-     * the row would treat the replacement as its own "current" video and
-     * refuse it.
+     * Undoes the claim after a failed save. Restoring the previous youtube_id
+     * matters for the retry: left on the new video, the row would treat the
+     * replacement as its own "current" video and refuse it.
      */
     private suspend fun giveBackClaim(
         trackId: Long,
@@ -485,40 +495,22 @@ class SwapCoordinator @Inject constructor(
     ): SwapOutcome {
         try {
             trackDao.restoreYoutubeIdIfClaimed(trackId, claimed, previous)
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             // Another track took the previous id meanwhile (UNIQUE): clear it.
             Log.w(TAG, "swap: couldn't restore youtube_id=$previous on trackId=$trackId; clearing it", e)
             try {
                 trackDao.restoreYoutubeIdIfClaimed(trackId, claimed, null)
-            } catch (e: CancellationException) {
-                throw e
             } catch (e: Exception) {
+                rethrowIfCancelled(e)
                 Log.w(TAG, "swap: couldn't release videoId=$claimed from trackId=$trackId", e)
             }
         }
-        reFlagAfterFailure(trackId)
-        return SwapOutcome.Failed(trackId, claimed, title)
+        return SwapOutcome.SaveFailed(trackId, claimed, title)
     }
 
     private fun deleteTempFile(file: File) {
         runCatching { file.delete() }
             .onFailure { e -> Log.w(TAG, "swap: couldn't delete temp file ${file.name}", e) }
-    }
-
-    /**
-     * Restores the wrong-match flag after a failed swap so the row returns to
-     * the Failed Matches screen. Best-effort: a failure to re-flag is logged
-     * but not propagated (the swap already failed; nothing more to do here).
-     */
-    private suspend fun reFlagAfterFailure(trackId: Long) {
-        try {
-            trackDao.updateMatchFlagged(trackId, true)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "swap: failed to re-flag trackId=$trackId after failure", e)
-        }
     }
 }
