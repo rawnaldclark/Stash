@@ -2,11 +2,14 @@ package com.stash.core.data.files
 
 import android.content.Context
 import android.os.Environment
+import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.stash.core.common.constants.StashConstants
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -144,6 +147,97 @@ class LocalFileOps @Inject constructor(
                 File(plainPath(path)).delete()
             }
         }
+    }
+
+    /** True when a file is at [path]: checked on disk, or asked of the SAF provider. */
+    fun exists(path: String?): Boolean {
+        if (path.isNullOrBlank()) return false
+        return runCatching {
+            if (path.startsWith("content://")) {
+                DocumentFile.fromSingleUri(context, path.toUri())?.exists() == true
+            } else {
+                File(plainPath(path)).exists()
+            }
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Moves the file at [path] aside, to `<name>.swapbak` next to it, so that
+     * writing to [path] can't destroy it (#531: a wrong-match swap usually
+     * saves onto the old file's own path, and the save deletes what is there
+     * before writing). Returns where the backup is, a plain path or the
+     * renamed document's URI, or null when nothing was moved: no file there,
+     * or the move failed. Put it back with [restoreSetAside]; [delete] it
+     * once it isn't needed.
+     */
+    fun setAside(path: String): String? = runCatching {
+        if (path.startsWith("content://")) {
+            val uri = path.toUri()
+            val name = DocumentFile.fromSingleUri(context, uri)?.takeIf { it.exists() }?.name
+                ?: return null
+            DocumentsContract.renameDocument(context.contentResolver, uri, name + BACKUP_SUFFIX)?.toString()
+        } else {
+            val file = File(plainPath(path))
+            if (!file.exists()) return null
+            val backup = File(file.parentFile, file.name + BACKUP_SUFFIX)
+            Files.move(file.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            backup.path
+        }
+    }.getOrNull()
+
+    /**
+     * Puts a [setAside] backup back at [originalPath], replacing whatever a
+     * failed write left there. True when the backup is back in place.
+     */
+    fun restoreSetAside(backup: String, originalPath: String): Boolean = runCatching {
+        if (backup.startsWith("content://")) {
+            val backupUri = backup.toUri()
+            val name = DocumentFile.fromSingleUri(context, backupUri)?.name?.removeSuffix(BACKUP_SUFFIX)
+                ?: return false
+            // A failed write can leave a document under the original name (with
+            // path-based document ids the original URI now resolves to it).
+            // Clear it first, or the rename would land on "name (1)".
+            if (!isSameFile(backup, originalPath)) {
+                DocumentFile.fromSingleUri(context, originalPath.toUri())?.takeIf { it.exists() }?.delete()
+            }
+            DocumentsContract.renameDocument(context.contentResolver, backupUri, name) != null
+        } else {
+            Files.move(
+                File(plainPath(backup)).toPath(),
+                File(plainPath(originalPath)).toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+            true
+        }
+    }.getOrDefault(false)
+
+    /**
+     * True when [a] and [b] are the same file: the same normalized plain path,
+     * or the same SAF document. Documents compare by document id, so a tree
+     * URI and a single-document URI for one file match.
+     */
+    fun isSameFile(a: String?, b: String?): Boolean {
+        if (a.isNullOrBlank() || b.isNullOrBlank()) return false
+        if (a == b) return true
+        val aIsDocument = a.startsWith("content://")
+        if (aIsDocument != b.startsWith("content://")) return false
+        return if (aIsDocument) {
+            val aId = documentId(a)
+            aId != null && aId == documentId(b)
+        } else {
+            File(plainPath(a)).absoluteFile.normalize() == File(plainPath(b)).absoluteFile.normalize()
+        }
+    }
+
+    /** The (still encoded) document id of a SAF document URI, or null without one. */
+    private fun documentId(uri: String): String? =
+        uri.substringAfterLast("/document/", missingDelimiterValue = "")
+            .substringBefore('?')
+            .ifEmpty { null }
+
+    private companion object {
+        /** Name suffix of a file [setAside] moved out of the way. */
+        const val BACKUP_SUFFIX = ".swapbak"
     }
 
     private fun plainPath(path: String): String =

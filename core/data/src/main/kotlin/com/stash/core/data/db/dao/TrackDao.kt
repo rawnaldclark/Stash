@@ -1879,6 +1879,16 @@ interface TrackDao {
     @Query("UPDATE tracks SET youtube_id = :previous WHERE id = :trackId AND youtube_id = :claimed")
     suspend fun restoreYoutubeIdIfClaimed(trackId: Long, claimed: String, previous: String?): Int
 
+    /**
+     * How many OTHER tracks record [filePath] as their file. Two recordings of
+     * one song can share a file (Single-folder and Per-playlist layouts name
+     * files `<artist>-<title>`, and same or blank albums collide under
+     * Artist/Album), and a swap must never write over or delete a file another
+     * track still plays from (#531).
+     */
+    @Query("SELECT COUNT(*) FROM tracks WHERE file_path = :filePath AND id != :trackId")
+    suspend fun countOtherTracksWithFilePath(filePath: String, trackId: Long): Int
+
     @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId")
     suspend fun updateYoutubeId(trackId: Long, youtubeId: String)
 

@@ -3,7 +3,11 @@ package com.stash.core.data.files
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
@@ -16,6 +20,8 @@ import java.io.File
 class LocalFileOpsTest {
 
     private val ops = LocalFileOps(mockk(relaxed = true))
+
+    @get:Rule val tmp = TemporaryFolder()
 
     @Test fun `sizeBytes returns the file length`() {
         val f = File.createTempFile("stash-junk", ".webm").apply {
@@ -98,5 +104,50 @@ class LocalFileOpsTest {
             LocalFileState.MISSING,
             ops.classify("/data/user/0/com.stash.app/files/music/nope/missing.flac", floor),
         )
+    }
+
+    // -- #531: the wrong-match swap's file safety -------------------------------
+
+    @Test fun `exists reports a plain file`() {
+        val f = File.createTempFile("stash-exists", ".opus").apply { deleteOnExit() }
+        assertTrue(ops.exists(f.absolutePath))
+        assertFalse(ops.exists(f.absolutePath + ".gone"))
+        assertFalse(ops.exists(null))
+    }
+
+    @Test fun `a file set aside survives a failed write and comes back over the leftover`() {
+        val dir = tmp.newFolder()
+        val song = File(dir, "lacrymosa.opus").apply { writeText("the old song") }
+
+        val backup = ops.setAside(song.absolutePath)
+
+        assertFalse("the spot is free for the new file", song.exists())
+        assertEquals("the old song", File(backup!!).readText())
+        song.writeText("half a replacement") // what a failed save leaves behind
+        assertTrue(ops.restoreSetAside(backup, song.absolutePath))
+        assertEquals("the old song", song.readText())
+        assertFalse("no backup is left lying around", File(backup).exists())
+    }
+
+    @Test fun `setAside returns null when there is no file`() {
+        assertNull(ops.setAside(File(tmp.newFolder(), "missing.opus").absolutePath))
+    }
+
+    @Test fun `isSameFile compares normalized plain paths`() {
+        val dir = tmp.newFolder()
+        assertTrue(ops.isSameFile(File(dir, "a/../b.opus").path, File(dir, "b.opus").absolutePath))
+        assertFalse(ops.isSameFile(File(dir, "a.opus").path, File(dir, "b.opus").path))
+        assertFalse(ops.isSameFile(null, File(dir, "b.opus").path))
+    }
+
+    @Test fun `isSameFile compares SAF documents by document id`() {
+        val inTree = "content://com.android.externalstorage.documents/tree/primary%3AMusic" +
+            "/document/primary%3AMusic%2Fevanescence%2Flacrymosa.opus"
+        val single = "content://com.android.externalstorage.documents" +
+            "/document/primary%3AMusic%2Fevanescence%2Flacrymosa.opus"
+        val other = "content://com.android.externalstorage.documents/tree/primary%3AMusic" +
+            "/document/primary%3AMusic%2Fevanescence%2Fmy-immortal.opus"
+        assertTrue(ops.isSameFile(inTree, single))
+        assertFalse(ops.isSameFile(inTree, other))
     }
 }

@@ -302,19 +302,12 @@ class FailedMatchesResyncFeedbackTest {
         return vm to messages
     }
 
-    @Test fun `an approved swap is filed under the track's album`() = runTest {
+    @Test fun `an approved swap hands the coordinator the track and the video`() = runTest {
         approveFlaggedSwap()
 
-        verify {
-            swapCoordinator.swap(
-                7L,
-                "/music/evanescence/synthesis/lacrymosa.opus",
-                "Evanescence",
-                "Lacrymosa",
-                "Synthesis",
-                "right-video",
-            )
-        }
+        // The coordinator reads the track's album, file and title itself, so
+        // a stale screen snapshot can't steer where the file goes.
+        verify { swapCoordinator.swap(7L, "right-video") }
     }
 
     @Test fun `a failed swap keeps the candidate and tells the user`() = runTest {
@@ -385,7 +378,7 @@ class FailedMatchesResyncFeedbackTest {
         vm.approveSwap(row, sameCandidate)
         advanceUntilIdle()
 
-        verify(exactly = 1) { swapCoordinator.swap(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 1) { swapCoordinator.swap(any(), any()) }
     }
 
     @Test fun `a failed swap can be approved again`() = runTest {
@@ -398,6 +391,6 @@ class FailedMatchesResyncFeedbackTest {
         vm.approveSwap(row, candidate)
         advanceUntilIdle()
 
-        verify(exactly = 2) { swapCoordinator.swap(7L, any(), any(), any(), any(), "right-video") }
+        verify(exactly = 2) { swapCoordinator.swap(7L, "right-video") }
     }
 }

@@ -108,4 +108,33 @@ class FileOrganizerExistenceSessionTest {
 
         assertThat(hit).isSameInstanceAs(ourFile)
     }
+
+    /**
+     * #531: a swap can give a track a distinct file name when another track
+     * already uses the canonical one. The canonical-name lookup would then
+     * heal this row onto the OTHER track's file, so a row whose own document
+     * is still in the tree is kept as it is.
+     */
+    @Test
+    fun `a SAF row whose own document is still in the tree is not healed onto a same-named file`() = runTest {
+        val stored = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/" +
+            "primary%3AMusic%2Fevanescence%2Fsynthesis%2Flacrymosa-7.opus"
+        val siblingsFile: androidx.documentfile.provider.DocumentFile = mockk(relaxed = true)
+        val spied = spyk(organizer(treeUri = mockk(relaxed = true)))
+        io.mockk.coEvery { spied.buildSafIndex() } returns FileOrganizer.SafIndex(
+            byDirKey = mapOf(
+                "evanescence/synthesis" to FileOrganizer.AlbumIndex(
+                    mockk(relaxed = true),
+                    mapOf("lacrymosa.opus" to siblingsFile),
+                ),
+            ),
+            byFileName = mapOf("lacrymosa.opus" to listOf(siblingsFile)),
+            documentUris = setOf(stored),
+        )
+
+        val result = spied.existenceSession().exists(7L, "Evanescence", "Synthesis", "Lacrymosa", stored)
+
+        assertThat(result.exists).isTrue()
+        assertThat(result.resolvedFilePath).isNull()
+    }
 }

@@ -674,14 +674,7 @@ class FailedMatchesViewModel @Inject constructor(
                 // which got cancelled the instant the user navigated away — they
                 // ended up with the DB pointing at a deleted file while the new
                 // audio never actually landed.
-                swapCoordinator.swap(
-                    trackId = row.trackId,
-                    oldFilePath = row.currentFilePath,
-                    artist = row.artist,
-                    title = row.title,
-                    album = row.album,
-                    newVideoId = candidate.videoId,
-                )
+                swapCoordinator.swap(trackId = row.trackId, newVideoId = candidate.videoId)
                 handedOff = true
             } finally {
                 // Handed off, the entry lives until the swap reports back.
