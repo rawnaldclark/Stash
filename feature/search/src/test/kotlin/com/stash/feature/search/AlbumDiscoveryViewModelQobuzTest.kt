@@ -327,6 +327,8 @@ class AlbumDiscoveryViewModelQobuzTest {
         )
         advanceUntilIdle()
 
+        // The screen did switch: the YouTube copy is what's showing.
+        assertEquals(listOf("yv1", "yv2"), vm.uiState.value.tracks.map { it.videoId })
         assertTrue(vm.isSaved.value)
         vm.userMessages.test {
             vm.saveAlbum()
@@ -382,12 +384,14 @@ class AlbumDiscoveryViewModelQobuzTest {
         )
         for (nearMiss in nearMisses) {
             val cache = notSoldHereCache()
+            val yt = ytAnswering(nearMiss)
             val vm = vm(
-                AlbumSource.QOBUZ, cache, yt = ytAnswering(nearMiss),
+                AlbumSource.QOBUZ, cache, yt = yt,
                 title = "Loveless", artist = "MBV", year = "1991",
             )
             advanceUntilIdle()
 
+            verify(yt).searchAlbums("Loveless", "MBV") // it was offered, and turned down
             assertEquals("for $nearMiss", notAvailable, vm.uiState.value.status)
             verify(cache, never()).get(eq(nearMiss.id), any())
         }
