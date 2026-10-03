@@ -497,7 +497,7 @@ class FileOrganizer @Inject constructor(
      * (#198/#104); when the layout is Per-playlist and [trackId] is known,
      * the owning playlist is looked up so the file lands in its folder.
      * [nameSuffix] gives the file a distinct name at that spot (see
-     * [plannedPath]).
+     * [plannedPaths]).
      */
     suspend fun commitDownload(
         tempFile: File,
