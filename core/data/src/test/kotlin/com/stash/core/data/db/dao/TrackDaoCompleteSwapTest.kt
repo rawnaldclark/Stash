@@ -127,4 +127,30 @@ class TrackDaoCompleteSwapTest {
     fun `completing a swap on a deleted track updates nothing`() = runTest {
         assertEquals(0, swapToOpus(42L))
     }
+
+    // -- #531 review: flagging a swapped song again ----------------------------
+
+    @Test
+    fun `flagging a swapped song again forgets the pick`() = runTest {
+        val id = insertFlaggedFlac()
+        swapToOpus(id)
+
+        dao.updateMatchFlagged(id, true)
+
+        val row = dao.getById(id)!!
+        assertTrue(row.matchFlagged)
+        // The user is saying the pick is wrong too: resync must treat its
+        // video as the wrong one again instead of offering it back.
+        assertNull(row.matchPickedAt)
+    }
+
+    @Test
+    fun `unflagging keeps the pick`() = runTest {
+        val id = insertFlaggedFlac()
+        swapToOpus(id)
+
+        dao.updateMatchFlagged(id, false)
+
+        assertEquals(2_000L, dao.getById(id)!!.matchPickedAt)
+    }
 }

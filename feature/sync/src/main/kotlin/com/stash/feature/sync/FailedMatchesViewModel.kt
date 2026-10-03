@@ -81,8 +81,6 @@ data class ResyncCandidate(
  *                           recorded twice (an original and a re-recording) finds
  *                           the right recording; the swap files the file under it.
  * @property durationMs       The track's length, for matching within the album.
- * @property pickedByUser     The user picked this track's audio in an earlier swap,
- *                           so its youtube_id is their pick, not the wrong video.
  */
 data class FlaggedTrackRow(
     val trackId: Long,
@@ -94,7 +92,6 @@ data class FlaggedTrackRow(
     val searchQuery: String,
     val album: String = "",
     val durationMs: Long = 0L,
-    val pickedByUser: Boolean = false,
 )
 
 /**
@@ -255,7 +252,6 @@ class FailedMatchesViewModel @Inject constructor(
                     searchQuery = "${t.artist} - ${t.title}",
                     album = t.album,
                     durationMs = t.durationMs,
-                    pickedByUser = t.matchPickedAt != null,
                 )
             }
         }
@@ -335,9 +331,10 @@ class FailedMatchesViewModel @Inject constructor(
                     trackId = row.trackId,
                     queries = listOf(row.searchQuery),
                     albumQuery = album?.let { "${row.searchQuery} $it" },
-                    // A youtube_id the user picked is not the wrong video: if
-                    // its file was replaced later, the pick must stay on offer.
-                    excludeVideoId = row.currentYoutubeId.takeUnless { row.pickedByUser },
+                    // Its current video is the wrong one, even if the user
+                    // picked it in an earlier swap: flagging again says the
+                    // pick is wrong too (#531 review).
+                    excludeVideoId = row.currentYoutubeId,
                     allowExcludedFallback = false,
                     albumTarget = album?.let {
                         AlbumTarget(
@@ -683,9 +680,7 @@ class FailedMatchesViewModel @Inject constructor(
             try {
                 // Defense in depth: candidates normally pass the resync exclusion
                 // above, but stale UI state or an external caller must not self-swap.
-                // The one exception is the user's own earlier pick: approving it
-                // again downloads it again.
-                if (candidate.videoId == row.currentYoutubeId && !row.pickedByUser) {
+                if (candidate.videoId == row.currentYoutubeId) {
                     _userMessages.trySend("Choose a different replacement for this track.")
                     return@launch
                 }

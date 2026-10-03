@@ -2376,8 +2376,20 @@ interface TrackDao {
      * Playing overflow menu when the user realises the downloaded audio
      * doesn't match the Spotify metadata. Flagged tracks surface in the
      * Failed Matches screen so the resync flow can offer alternatives.
+     *
+     * Flagging also forgets that the user picked the audio
+     * ([TrackEntity.matchPickedAt], #531): they are saying the pick is wrong
+     * too, so resync treats its video as the wrong one again instead of
+     * offering it back. Unflagging keeps the pick.
      */
-    @Query("UPDATE tracks SET match_flagged = :flagged WHERE id = :trackId")
+    @Query(
+        """
+        UPDATE tracks
+        SET match_flagged = :flagged,
+            match_picked_at = CASE WHEN :flagged THEN NULL ELSE match_picked_at END
+        WHERE id = :trackId
+        """
+    )
     suspend fun updateMatchFlagged(trackId: Long, flagged: Boolean)
 
     /**
