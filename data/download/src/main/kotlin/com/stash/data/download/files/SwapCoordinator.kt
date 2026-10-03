@@ -5,6 +5,7 @@ import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.audio.AudioMetadata
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
@@ -49,8 +50,8 @@ sealed interface SwapOutcome {
     ) : SwapOutcome
 
     /**
-     * Another track took this video while it downloaded (`tracks.youtube_id`
-     * is UNIQUE). Nothing was written, and this video can't be swapped in.
+     * Another track has this video (`tracks.youtube_id` is UNIQUE). Nothing
+     * was written, and this video can't be swapped in.
      */
     data class AlreadyLinked(
         override val trackId: Long,
@@ -116,24 +117,24 @@ sealed interface SwapOutcome {
  *   2. Reject a junk download (a failed yt-dlp run's tiny error body) while
  *      it is still a temp file.
  *   3. Re-read the track, whose file may have moved during the download, and
- *      claim the videoId for it with one guarded UPDATE. The screen checked
- *      ownership when the user approved, but the download takes seconds; if
- *      another track took the video meanwhile, stop here, before any file is
- *      touched.
- *   4. Name the file: the canonical name under the track's artist/album,
- *      unless another track already uses the file there (see
- *      [pickNameSuffix]).
- *   5. If the save would land on the old file's own path, move the old file
- *      aside first: the save deletes what is there before writing.
- *   6. Save through [FileOrganizer] and record it ([TrackDao.completeSwap]).
- *   7. Delete the old file, or its set-aside copy, unless another track
+ *      stop if another track has taken the video meanwhile, before any file
+ *      is touched.
+ *   4. Tag the file with Stash's own tags and cover, as a sync download is.
+ *   5. Name the file: the canonical name under the track's artist/album,
+ *      unless another track already uses the file there (see [pickName]).
+ *   6. If the save would land on the old file's own path, move the old file
+ *      aside first (the save deletes what is there before writing), and write
+ *      that down in [SwapJournal].
+ *   7. Save through [FileOrganizer] and record everything in one guarded
+ *      write ([TrackDao.completeSwap]): the video id, the file, its format,
+ *      quality and length, the cleared flag and the user's pick. Nothing about
+ *      the track changes before that write.
+ *   8. Delete the old file, or its set-aside copy, unless another track
  *      still uses it or it is the file just written.
  *
- * The wrong-match flag is cleared only by the write that records a finished
- * swap, so a failure, or the app dying mid-download, leaves the row in Failed
- * Matches. Any failure also leaves the old audio as it was: a set-aside file
- * is put back, a half-written one removed, and the claim given back so the
- * same replacement can be tried again.
+ * A failure, or the app dying mid-swap, leaves the track as it was: still
+ * flagged, on its old video, with its old audio. A set-aside file is put back
+ * right away, or at the next start by [recoverInterruptedSwaps].
  */
 @Singleton
 class SwapCoordinator @Inject constructor(
@@ -145,6 +146,9 @@ class SwapCoordinator @Inject constructor(
     private val localFileOps: com.stash.core.data.files.LocalFileOps,
     private val trackIdentityEvents: TrackIdentityEvents,
     private val audioExtractor: AudioDurationExtractor,
+    private val metadataEmbedder: MetadataEmbedder,
+    private val albumArtCache: AlbumArtCache,
+    private val journal: SwapJournal,
 ) {
     companion object {
         private const val TAG = "SwapCoordinator"
@@ -168,6 +172,16 @@ class SwapCoordinator @Inject constructor(
 
     /** How each swap ended. Collected by the Failed Matches screen. */
     val outcomes: SharedFlow<SwapOutcome> = _outcomes.asSharedFlow()
+
+    /** How [saveReplacement] ended. */
+    private sealed interface Save {
+        data class Done(val path: String) : Save
+
+        /** The final write found the video taken by another track (or the track gone). */
+        data object VideoTaken : Save
+
+        data object Failed : Save
+    }
 
     /**
      * Fire-and-forget swap. Returns immediately; the download continues
@@ -200,6 +214,37 @@ class SwapCoordinator @Inject constructor(
             SwapOutcome.DownloadFailed(trackId, newVideoId, title = "")
         }
         _outcomes.emit(outcome)
+    }
+
+    /**
+     * Repairs swaps cut short by the app being killed between moving the old
+     * file aside and finishing (#531 review). A track still flagged never got
+     * its final write (completeSwap clears the flag in it), so its old file
+     * goes back; otherwise the set-aside copy is no longer needed. Runs once
+     * at app start, before any swap.
+     */
+    suspend fun recoverInterruptedSwaps() {
+        for (entry in journal.pending()) {
+            try {
+                val track = trackDao.getById(entry.trackId)
+                val unfinished = track != null && track.matchFlagged
+                val handled = if (unfinished) {
+                    localFileOps.restoreSetAside(entry.backupPath, entry.originalPath)
+                } else {
+                    localFileOps.delete(entry.backupPath)
+                    true
+                }
+                if (handled) journal.clear(entry.trackId)
+                Log.i(
+                    TAG,
+                    "recovered an interrupted swap of trackId=${entry.trackId}: " +
+                        if (unfinished) "old file put back ($handled)" else "set-aside copy removed",
+                )
+            } catch (e: Exception) {
+                rethrowIfCancelled(e)
+                Log.w(TAG, "couldn't recover the interrupted swap of trackId=${entry.trackId}", e)
+            }
+        }
     }
 
     /**
@@ -265,147 +310,174 @@ class SwapCoordinator @Inject constructor(
             return SwapOutcome.DownloadFailed(trackId, newVideoId, title)
         }
 
-        // Claim the video right before the first write. The approve-time
-        // check ran before a download that takes seconds; a guarded UPDATE
-        // can't lose to a track that took the video meanwhile.
-        if (trackDao.updateYoutubeIdIfUnclaimed(trackId, newVideoId) == 0) {
+        // The approve-time ownership check ran before a download that takes
+        // seconds. Check again before touching any file; the final write
+        // checks once more, atomically.
+        alreadyLinked(trackId, newVideoId, title)?.let { taken ->
             deleteTempFile(tempFile)
-            val owner = trackDao.findByYoutubeId(newVideoId)?.takeIf { it.id != trackId }
-            Log.w(
-                TAG,
-                "swap: videoId=$newVideoId is linked to trackId=${owner?.id}; " +
-                    "nothing written for trackId=$trackId",
-            )
-            return if (owner != null) {
-                SwapOutcome.AlreadyLinked(
-                    trackId = trackId,
-                    newVideoId = newVideoId,
-                    title = title,
-                    ownerArtist = owner.artist,
-                    ownerTitle = owner.title,
-                    ownerAlbum = owner.album,
-                )
-            } else {
-                SwapOutcome.DownloadFailed(trackId, newVideoId, title)
-            }
+            return taken
         }
 
+        val tagged = embedTags(tempFile, before)
         // Read off the temp copy: a plain path even when the library is a
         // SAF tree, and the same bytes the commit writes.
         val meta = readAudioMetadata(tempFile)
-        val savedPath = saveReplacement(before, tempFile, meta)
-            ?: return giveBackClaim(trackId, newVideoId, before.youtubeId, title)
-        persistFormatAndLength(trackId, meta, before.durationMs)
+        return when (val saved = saveReplacement(before, newVideoId, tempFile, meta, tagged)) {
+            is Save.Done -> {
+                // The cached StreamUrl was resolved against the OLD youtubeId —
+                // without evicting it, buildMediaItemForTrack keeps serving the
+                // stale (possibly-expired, definitely wrong-song) URL after a swap.
+                trackIdentityEvents.emitIdentityChanged(trackId)
+                Log.i(TAG, "swap: completed trackId=$trackId → videoId=$newVideoId path=${saved.path}")
+                SwapOutcome.Swapped(trackId, newVideoId, title)
+            }
+            Save.VideoTaken ->
+                alreadyLinked(trackId, newVideoId, title) ?: SwapOutcome.SaveFailed(trackId, newVideoId, title)
+            Save.Failed -> SwapOutcome.SaveFailed(trackId, newVideoId, title)
+        }
+    }
 
-        // The cached StreamUrl was resolved against the OLD youtubeId —
-        // without evicting it, buildMediaItemForTrack keeps serving the
-        // stale (possibly-expired, definitely wrong-song) URL after a swap.
-        trackIdentityEvents.emitIdentityChanged(trackId)
-
-        Log.i(TAG, "swap: completed trackId=$trackId → videoId=$newVideoId path=$savedPath")
-        return SwapOutcome.Swapped(trackId, newVideoId, title)
+    /** [SwapOutcome.AlreadyLinked] when another track has [videoId]; null when it is free. */
+    private suspend fun alreadyLinked(trackId: Long, videoId: String, title: String): SwapOutcome.AlreadyLinked? {
+        val owner = trackDao.findByYoutubeId(videoId)?.takeIf { it.id != trackId } ?: return null
+        Log.w(TAG, "swap: videoId=$videoId is linked to trackId=${owner.id}; nothing written for trackId=$trackId")
+        return SwapOutcome.AlreadyLinked(
+            trackId = trackId,
+            newVideoId = videoId,
+            title = title,
+            ownerArtist = owner.artist,
+            ownerTitle = owner.title,
+            ownerAlbum = owner.album,
+        )
     }
 
     /**
-     * Saves [tempFile] as [track]'s file and records it. Returns the saved
-     * path, or null when that failed, with the user's old file where it was.
+     * Saves [tempFile] as [track]'s file and records the swap in one guarded
+     * write. On any failure the track and its old file are left as they were.
      */
-    private suspend fun saveReplacement(track: TrackEntity, tempFile: File, meta: AudioMetadata?): String? {
+    private suspend fun saveReplacement(
+        track: TrackEntity,
+        newVideoId: String,
+        tempFile: File,
+        meta: AudioMetadata?,
+        tagged: Boolean,
+    ): Save {
         val trackId = track.id
         // Same path derivation as a sync download, album included. album =
         // null filed every swap under <artist>/singles/<title>, so swapping
         // two same-titled tracks wrote both into one file (#531).
         val album = track.album.takeIf { it.isNotBlank() }
-        val format = tempFile.extension
+        val extension = tempFile.extension
         val oldPath = track.filePath
-        val oldShared = oldPath != null && trackDao.countOtherTracksWithFilePath(oldPath, trackId) > 0
-        val nameSuffix = pickNameSuffix(track, album, format)
-        val destination = fileOrganizer.plannedPath(track.artist, album, track.title, format, trackId, nameSuffix)
-        val destinationExisted = destination != null && localFileOps.exists(destination)
-
-        // Saving onto the old file's own path deletes it before writing (File.copyTo
-        // overwrite, and the SAF write deletes the document first), so a failed save
-        // would leave the row on a missing or half-written file. Move it aside first.
-        val backup = if (oldPath != null && destinationExisted && localFileOps.isSameFile(destination, oldPath)) {
-            localFileOps.setAside(oldPath) ?: run {
-                Log.w(TAG, "swap: couldn't move $oldPath aside; not saving over it")
-                deleteTempFile(tempFile)
-                return null
-            }
-        } else {
-            null
-        }
-
+        var oldShared = false
+        var destination: String? = null
+        var destinationExisted = false
+        var backup: String? = null
         var committedPath: String? = null
-        var recorded = false
+        var result: Save = Save.Failed
         try {
+            oldShared = oldPath != null && trackDao.countOtherTracksWithFilePath(oldPath, trackId) > 0
+            val (nameSuffix, planned) = pickName(track, album, extension)
+            destination = planned
+            // A SAF destination is only planned when the folder listing found
+            // it; asking SAF exists() again can wrongly say no.
+            destinationExisted = planned != null &&
+                (planned.startsWith("content://") || localFileOps.exists(planned))
+
+            // Saving onto the old file's own path deletes it before writing
+            // (File.copyTo overwrite; the SAF write deletes the document
+            // first), so a failed save would leave the row on a missing or
+            // half-written file. Move it aside first, and write that down so a
+            // swap cut short by the app dying can be repaired at the next start.
+            if (oldPath != null && destinationExisted && localFileOps.isSameFile(planned, oldPath)) {
+                val movedTo = localFileOps.setAside(oldPath)
+                if (movedTo == null) {
+                    Log.w(TAG, "swap: couldn't move $oldPath aside; not saving over it")
+                    return Save.Failed
+                }
+                backup = movedTo
+                journal.record(SwapJournal.Entry(trackId, oldPath, movedTo))
+            }
+
             val committed = fileOrganizer.commitDownload(
                 tempFile = tempFile,
                 artist = track.artist,
                 album = album,
                 title = track.title,
-                format = format,
+                format = extension,
                 trackId = trackId,
                 nameSuffix = nameSuffix,
             )
             committedPath = committed.filePath
-            // One write: the new file, its quality (bit depth included, null
-            // for lossy), loudness cleared, the flag cleared, and the user's
-            // pick recorded so the automatic FLAC upgrade leaves it alone.
             val now = System.currentTimeMillis()
-            recorded = trackDao.completeSwap(
+            val recorded = trackDao.completeSwap(
                 trackId = trackId,
+                youtubeId = newVideoId,
                 filePath = committed.filePath,
                 fileSizeBytes = committed.sizeBytes,
+                fileFormat = meta?.format?.takeIf { it != "unknown" } ?: formatOf(extension),
+                qualityKbps = meta?.bitrateKbps ?: 0,
                 sampleRateHz = meta?.sampleRateHz,
                 bitsPerSample = meta?.bitsPerSample,
+                durationMs = newLength(meta, track.durationMs),
+                metadataEmbeddedAt = if (tagged) now else null,
                 pickedAt = now,
                 downloadedAt = now,
             ) == 1
-            if (!recorded) Log.w(TAG, "swap: trackId=$trackId is gone; not recording the replacement")
+            result = if (recorded) {
+                Save.Done(committed.filePath)
+            } else {
+                Log.w(TAG, "swap: the final write for trackId=$trackId found the video taken or the track gone")
+                Save.VideoTaken
+            }
         } catch (e: Exception) {
             rethrowIfCancelled(e)
             Log.w(TAG, "swap: couldn't save the replacement for trackId=$trackId", e)
         } finally {
-            if (!recorded) {
+            if (result !is Save.Done) {
                 withContext(NonCancellable) {
-                    undoSave(tempFile, committedPath, destination, destinationExisted, backup, oldPath)
+                    undoSave(trackId, tempFile, committedPath, destination, destinationExisted, backup, oldPath)
                 }
             }
         }
-        val savedPath = committedPath?.takeIf { recorded } ?: return null
 
         // The old file goes only now: its set-aside copy when the new file
         // took its place; otherwise the old path itself, unless another track
         // still plays from it or it is the very file just written (SAF paths
         // compare by document id). localFileOps.delete handles content://
         // paths, which File.delete never did.
+        val done = result as? Save.Done ?: return result
         when {
-            backup != null -> localFileOps.delete(backup)
-            oldPath != null && !oldShared && !localFileOps.isSameFile(oldPath, savedPath) -> {
+            backup != null -> {
+                localFileOps.delete(backup)
+                journal.clear(trackId)
+            }
+            oldPath != null && !oldShared && !localFileOps.isSameFile(oldPath, done.path) -> {
                 localFileOps.delete(oldPath)
                 Log.d(TAG, "swap: deleted the old file $oldPath")
             }
         }
-        return savedPath
+        return done
     }
 
     /**
-     * The file name for the replacement: null for the canonical name, unless
-     * another track already uses the file there. Single-folder and
-     * Per-playlist layouts name files `<artist>-<title>`, and same or blank
-     * albums collide under Artist/Album, so two recordings of one song (#531)
-     * would share a file: saving would write over the other track's audio.
-     * Then the album name is added, then the track id.
+     * The name suffix and planned path for the replacement: no suffix (the
+     * canonical name), unless another track already uses the file there.
+     * Single-folder and Per-playlist layouts name files `<artist>-<title>`,
+     * and same or blank albums collide under Artist/Album, so two recordings
+     * of one song (#531) would share a file: saving would write over the
+     * other track's audio. Then the album name is added, then the track id.
+     * One [FileOrganizer.plannedPaths] call answers every candidate (on SAF,
+     * one listing of the folder).
      */
-    private suspend fun pickNameSuffix(track: TrackEntity, album: String?, format: String): String? {
+    private suspend fun pickName(track: TrackEntity, album: String?, extension: String): Pair<String?, String?> {
         val withId = listOfNotNull(album, track.id.toString()).joinToString("-")
         val choices = (listOf<String?>(null) + listOfNotNull(album) + withId).distinct()
-        for (suffix in choices) {
-            val planned = fileOrganizer.plannedPath(track.artist, album, track.title, format, track.id, suffix)
-            if (planned == null || trackDao.countOtherTracksWithFilePath(planned, track.id) == 0) return suffix
+        val planned = fileOrganizer.plannedPaths(track.artist, album, track.title, extension, track.id, choices)
+        for ((suffix, path) in choices.zip(planned)) {
+            if (path == null || trackDao.countOtherTracksWithFilePath(path, track.id) == 0) return suffix to path
         }
-        return choices.last()
+        return choices.last() to planned.last()
     }
 
     /**
@@ -414,6 +486,7 @@ class SwapCoordinator @Inject constructor(
      * that was at the destination before the save is never deleted here.
      */
     private fun undoSave(
+        trackId: Long,
         tempFile: File,
         committedPath: String?,
         destination: String?,
@@ -426,8 +499,10 @@ class SwapCoordinator @Inject constructor(
             if (committedPath != null && !localFileOps.isSameFile(committedPath, oldPath)) {
                 localFileOps.delete(committedPath)
             }
-            if (!localFileOps.restoreSetAside(backup, oldPath)) {
-                Log.e(TAG, "swap: couldn't put $oldPath back; the old audio is at $backup")
+            if (localFileOps.restoreSetAside(backup, oldPath)) {
+                journal.clear(trackId)
+            } else {
+                Log.e(TAG, "swap: couldn't put $oldPath back; it is at $backup, and the next start tries again")
             }
             return
         }
@@ -436,6 +511,27 @@ class SwapCoordinator @Inject constructor(
             destination != null && !destinationExisted && localFileOps.exists(destination) ->
                 localFileOps.delete(destination)
         }
+    }
+
+    /**
+     * Stash's own tags and cover, as a sync download gets them (yt-dlp's tags
+     * are YouTube's). True when written. Best-effort: an untagged file still
+     * plays, and its stamp stays empty for a later tag pass.
+     */
+    private suspend fun embedTags(file: File, track: TrackEntity): Boolean = try {
+        val domain = track.toDomain()
+        val art = try {
+            albumArtCache.resolveArt(domain)
+        } catch (e: Exception) {
+            rethrowIfCancelled(e)
+            null
+        }
+        metadataEmbedder.embedMetadata(file, domain, art)
+        true
+    } catch (e: Exception) {
+        rethrowIfCancelled(e)
+        Log.w(TAG, "swap: couldn't tag the replacement for trackId=${track.id}", e)
+        false
     }
 
     /**
@@ -450,63 +546,22 @@ class SwapCoordinator @Inject constructor(
     }
 
     /**
-     * Mirrors `LosslessUpgraderImpl.persistUpgrade`: the file is the truth
-     * for format and quality — a swap over a FLAC kept saying 'flac' on the
-     * lossy replacement — and for length when the row's is missing or more
-     * than 10% off. Best-effort: the swap itself already succeeded.
+     * The file's length when the row's is missing or more than 10% off: the
+     * file is the truth, as in sync. Null keeps the row's length.
      */
-    private suspend fun persistFormatAndLength(trackId: Long, meta: AudioMetadata?, rowDurationMs: Long) {
-        if (meta == null) return
-        if (meta.format != "unknown") {
-            try {
-                trackDao.setFormatAndQuality(trackId, meta.format, meta.bitrateKbps)
-            } catch (e: Exception) {
-                rethrowIfCancelled(e)
-                Log.w(TAG, "swap: setFormatAndQuality failed for trackId=$trackId", e)
-            }
-        }
-        if (meta.durationMs > 0) {
-            val drift = if (rowDurationMs > 0) {
-                abs(meta.durationMs - rowDurationMs).toDouble() / meta.durationMs.toDouble()
-            } else {
-                1.0
-            }
-            if (drift > DURATION_DRIFT_TOLERANCE) {
-                try {
-                    trackDao.setDuration(trackId, meta.durationMs)
-                } catch (e: Exception) {
-                    rethrowIfCancelled(e)
-                    Log.w(TAG, "swap: setDuration failed for trackId=$trackId", e)
-                }
-            }
-        }
+    private fun newLength(meta: AudioMetadata?, rowDurationMs: Long): Long? {
+        val fileMs = meta?.durationMs?.takeIf { it > 0 } ?: return null
+        if (rowDurationMs <= 0) return fileMs
+        val drift = abs(fileMs - rowDurationMs).toDouble() / fileMs.toDouble()
+        return fileMs.takeIf { drift > DURATION_DRIFT_TOLERANCE }
     }
 
-    /**
-     * Undoes the claim after a failed save. Restoring the previous youtube_id
-     * matters for the retry: left on the new video, the row would treat the
-     * replacement as its own "current" video and refuse it.
-     */
-    private suspend fun giveBackClaim(
-        trackId: Long,
-        claimed: String,
-        previous: String?,
-        title: String,
-    ): SwapOutcome {
-        try {
-            trackDao.restoreYoutubeIdIfClaimed(trackId, claimed, previous)
-        } catch (e: Exception) {
-            rethrowIfCancelled(e)
-            // Another track took the previous id meanwhile (UNIQUE): clear it.
-            Log.w(TAG, "swap: couldn't restore youtube_id=$previous on trackId=$trackId; clearing it", e)
-            try {
-                trackDao.restoreYoutubeIdIfClaimed(trackId, claimed, null)
-            } catch (e: Exception) {
-                rethrowIfCancelled(e)
-                Log.w(TAG, "swap: couldn't release videoId=$claimed from trackId=$trackId", e)
-            }
-        }
-        return SwapOutcome.SaveFailed(trackId, claimed, title)
+    /** The stored format of a file whose codec couldn't be read, from its extension. */
+    private fun formatOf(extension: String): String = when (val ext = extension.lowercase()) {
+        "m4a", "mp4", "aac" -> "aac"
+        "opus", "webm" -> "opus"
+        "ogg" -> "vorbis"
+        else -> ext
     }
 
     private fun deleteTempFile(file: File) {

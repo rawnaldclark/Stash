@@ -800,15 +800,20 @@ interface TrackDao {
     ): Int
 
     /**
-     * The one write that finishes a wrong-match swap (#531). The row points at
-     * the replacement file with that file's quality columns written outright,
-     * nulls included: [markAsDownloaded]'s COALESCE would keep a replaced
-     * FLAC's 24-bit depth on lossy audio. Loudness is cleared so the
-     * background pass measures the new recording. It clears the wrong-match
-     * flag, and [TrackEntity.matchPickedAt] records that the user picked this
-     * audio.
+     * The one write that finishes a wrong-match swap (#531): nothing about the
+     * track changes before it, so a failure or the app dying mid-swap leaves
+     * the track as it was. It sets the new video id, guarded like
+     * [updateYoutubeIdIfUnclaimed] so it can't take a video another track got
+     * meanwhile, and the replacement file with its format, bitrate, length
+     * (null [durationMs] keeps the row's) and quality columns written
+     * outright, nulls included: [markAsDownloaded]'s COALESCE would keep a
+     * replaced FLAC's 24-bit depth on lossy audio. Loudness is cleared so the
+     * background pass measures the new recording, [metadataEmbeddedAt] says
+     * whether Stash's tags were written, the wrong-match flag is cleared, and
+     * [TrackEntity.matchPickedAt] records that the user picked this audio.
      *
-     * @return rows updated: 1, or 0 when the track is gone.
+     * @return rows updated: 1, or 0 when another track has the video or the
+     *   track is gone (and nothing was written).
      */
     @Query(
         """
@@ -824,16 +829,29 @@ interface TrackDao {
             true_peak_dbfs = NULL,
             loudness_measured_at = NULL,
             match_flagged = 0,
-            match_picked_at = :pickedAt
+            match_picked_at = :pickedAt,
+            youtube_id = :youtubeId,
+            file_format = :fileFormat,
+            quality_kbps = :qualityKbps,
+            duration_ms = COALESCE(:durationMs, duration_ms),
+            metadata_embedded_at = :metadataEmbeddedAt
         WHERE id = :trackId
+          AND NOT EXISTS (
+              SELECT 1 FROM tracks WHERE youtube_id = :youtubeId AND id != :trackId
+          )
         """
     )
     suspend fun completeSwap(
         trackId: Long,
+        youtubeId: String,
         filePath: String,
         fileSizeBytes: Long,
+        fileFormat: String,
+        qualityKbps: Int,
         sampleRateHz: Int?,
         bitsPerSample: Int?,
+        durationMs: Long?,
+        metadataEmbeddedAt: Long?,
         pickedAt: Long,
         downloadedAt: Long,
     ): Int
@@ -1866,18 +1884,6 @@ interface TrackDao {
         """
     )
     suspend fun updateYoutubeIdIfUnclaimed(trackId: Long, youtubeId: String): Int
-
-    /**
-     * Gives back a youtube_id claimed with [updateYoutubeIdIfUnclaimed] when
-     * the step after the claim failed (the wrong-match swap claims the new
-     * video before it writes any file). Puts [previous] back — null clears
-     * the column — but only while the row still holds [claimed], so a newer
-     * write is never undone. Returns 1 when restored, 0 when the row moved
-     * on or is gone. Throws on the UNIQUE index if another track took
-     * [previous] in the meantime; the caller then clears it instead.
-     */
-    @Query("UPDATE tracks SET youtube_id = :previous WHERE id = :trackId AND youtube_id = :claimed")
-    suspend fun restoreYoutubeIdIfClaimed(trackId: Long, claimed: String, previous: String?): Int
 
     /**
      * How many OTHER tracks record [filePath] as their file. Two recordings of

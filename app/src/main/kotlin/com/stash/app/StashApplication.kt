@@ -118,6 +118,9 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var trackDao: TrackDao
 
     @Inject
+    lateinit var swapCoordinator: com.stash.data.download.files.SwapCoordinator
+
+    @Inject
     lateinit var audioExtractor: com.stash.core.data.audio.AudioDurationExtractor
 
     @Inject
@@ -333,6 +336,12 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch {
             runCatching { musicRepository.ensureDownloadsMixSeeded() }
                 .onFailure { Log.w("StashStartup", "ensureDownloadsMixSeeded failed", it) }
+        }
+        // A wrong-match swap cut short by the app being killed (#531): put the
+        // old file back, or drop its set-aside copy, before any swap runs.
+        applicationScope.launch {
+            runCatching { swapCoordinator.recoverInterruptedSwaps() }
+                .onFailure { Log.w("StashStartup", "interrupted swap recovery failed", it) }
         }
         // One-shot repair (2026-07-05): pre-v0.9.73 lyrics fetches stamped
         // transient failures (timeouts/429s/DNS during bulk bursts) as

@@ -1,5 +1,6 @@
 package com.stash.data.download.files
 
+import android.content.Context
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.audio.AudioMetadata
 import com.stash.core.data.blocklist.BlocklistGuard
@@ -35,14 +36,14 @@ import java.io.IOException
 
 /**
  * Regression tests for the wrong-match swap (#36, #531): a failed swap must
- * not destroy the user's existing file or silently vanish the flagged row, a
+ * not destroy the user's existing file or leave the track half-changed, a
  * successful swap must commit the new audio before touching the old file, no
  * swap may write over or delete another track's file, and every swap must
  * tell the screen how it went.
  *
  * File moves run for real ([LocalFileOps] is a spy over the real class; its
  * plain-path branch needs no Android), so "the old bytes survive" is checked
- * on disk.
+ * on disk. The journal of set-aside files is real too.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SwapCoordinatorTest {
@@ -57,20 +58,28 @@ class SwapCoordinatorTest {
     private val localFileOps = spyk(LocalFileOps(mockk(relaxed = true)))
     private val trackIdentityEvents = mockk<TrackIdentityEvents>(relaxed = true)
     private val audioExtractor = mockk<AudioDurationExtractor>()
+    private val metadataEmbedder = mockk<MetadataEmbedder>(relaxed = true)
+    private val albumArtCache = mockk<AlbumArtCache>(relaxed = true)
+    private lateinit var journal: SwapJournal
 
     private lateinit var coordinator: SwapCoordinator
+
+    /** plannedPaths' name-suffix list (lastArg() of a suspend fun is its continuation). */
+    private val SUFFIXES = 5
 
     @Before
     fun setUp() {
         every { qualityPrefs.qualityTier } returns flowOf(QualityTier.MAX)
         every { fileOrganizer.getTempDir() } returns tmp.newFolder("temp")
-        // Nothing at the destination yet, unless a test says otherwise.
-        coEvery { fileOrganizer.plannedPath(any(), any(), any(), any(), any(), any()) } returns null
+        destinationIs(null) // nothing at the destination yet, unless a test says otherwise
         every { localFileOps.acceptDownloadOrDelete(any()) } returns true
         every { audioExtractor.extract(any()) } returns null
         givenRow()
-        coEvery { trackDao.updateYoutubeIdIfUnclaimed(7L, "vid123") } returns 1
-        coEvery { trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any()) } returns 1
+        // No other track has the video (a relaxed mock would return a dummy row).
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
+        coEvery { trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 1
+        val context = mockk<Context> { every { noBackupFilesDir } returns tmp.newFolder("no-backup") }
+        journal = SwapJournal(context)
         coordinator = SwapCoordinator(
             downloadExecutor = downloadExecutor,
             fileOrganizer = fileOrganizer,
@@ -80,7 +89,17 @@ class SwapCoordinatorTest {
             localFileOps = localFileOps,
             trackIdentityEvents = trackIdentityEvents,
             audioExtractor = audioExtractor,
+            metadataEmbedder = metadataEmbedder,
+            albumArtCache = albumArtCache,
+            journal = journal,
         )
+    }
+
+    /** Where the save would land, for every candidate name. */
+    private fun destinationIs(path: String?) {
+        coEvery { fileOrganizer.plannedPaths(any(), any(), any(), any(), any(), any()) } answers {
+            List(arg<List<String?>>(SUFFIXES).size) { path }
+        }
     }
 
     /** The flagged track as the coordinator reads it. */
@@ -98,6 +117,7 @@ class SwapCoordinatorTest {
         artist: String = "Artist",
         title: String = "Title",
         album: String = "Album",
+        flagged: Boolean = true,
     ) = TrackEntity(
         id = 7L,
         title = title,
@@ -107,7 +127,7 @@ class SwapCoordinatorTest {
         youtubeId = "wrong-video",
         durationMs = 200_000L,
         isDownloaded = filePath != null,
-        matchFlagged = true,
+        matchFlagged = flagged,
     )
 
     /** A download that lands [content] in a temp file, committed to [committedPath]. */
@@ -147,6 +167,15 @@ class SwapCoordinatorTest {
 
     private suspend fun swap() = coordinator.performSwap(trackId = 7L, newVideoId = "vid123")
 
+    private fun neverWroteTheVideo() {
+        // The video id is written only by the final write (completeSwap).
+        coVerify(exactly = 0) { trackDao.updateYoutubeIdIfUnclaimed(any(), any()) }
+        coVerify(exactly = 0) { trackDao.updateYoutubeId(any(), any()) }
+        coVerify(exactly = 0) {
+            trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+        }
+    }
+
     @Test
     fun `failed download keeps the old file on disk`() = runTest {
         val oldFile = tmp.newFile("old.m4a").apply { writeText("original audio") }
@@ -158,8 +187,7 @@ class SwapCoordinatorTest {
         swap()
 
         assertTrue("old file must survive a failed swap", oldFile.exists())
-        coVerify(exactly = 0) { trackDao.updateYoutubeIdIfUnclaimed(any(), any()) }
-        coVerify(exactly = 0) { trackDao.updateYoutubeId(any(), any()) }
+        neverWroteTheVideo()
     }
 
     @Test
@@ -185,12 +213,27 @@ class SwapCoordinatorTest {
 
         swap()
 
-        // The identity write is the guarded one: it can never take a video
-        // another track owns (tracks.youtube_id is UNIQUE).
-        coVerify { trackDao.updateYoutubeIdIfUnclaimed(7L, "vid123") }
-        coVerify { trackDao.completeSwap(7L, committedPath, 123L, any(), any(), any(), any()) }
+        // One guarded write records the new video with the new file: it can
+        // never take a video another track owns (tracks.youtube_id is UNIQUE).
+        coVerify {
+            trackDao.completeSwap(
+                trackId = 7L,
+                youtubeId = "vid123",
+                filePath = committedPath,
+                fileSizeBytes = 123L,
+                fileFormat = any(),
+                qualityKbps = any(),
+                sampleRateHz = any(),
+                bitsPerSample = any(),
+                durationMs = any(),
+                metadataEmbeddedAt = any(),
+                pickedAt = any(),
+                downloadedAt = any(),
+            )
+        }
+        coVerify(exactly = 0) { trackDao.updateYoutubeIdIfUnclaimed(any(), any()) }
         assertFalse("old file should be deleted only after a successful swap", oldFile.exists())
-        coVerify(exactly = 0) { trackDao.updateMatchFlagged(7L, true) }
+        coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
     }
 
     @Test
@@ -208,12 +251,28 @@ class SwapCoordinatorTest {
     }
 
     @Test
-    fun `a video another track claimed during the download stops the swap without touching any file`() = runTest {
+    fun `the replacement gets Stash's tags before it is saved`() = runTest {
+        val newTemp = stubSuccessfulDownload()
+
+        swap()
+
+        // yt-dlp's tags are YouTube's; a sync download embeds Stash's own.
+        coVerify { metadataEmbedder.embedMetadata(newTemp, any(), any()) }
+        coVerify {
+            trackDao.completeSwap(
+                trackId = 7L, youtubeId = any(), filePath = any(), fileSizeBytes = any(),
+                fileFormat = any(), qualityKbps = any(), sampleRateHz = any(), bitsPerSample = any(),
+                durationMs = any(), metadataEmbeddedAt = match { it != null }, pickedAt = any(), downloadedAt = any(),
+            )
+        }
+    }
+
+    @Test
+    fun `a video another track took during the download stops the swap before touching any file`() = runTest {
         val oldFile = tmp.newFile("old-claimed.m4a").apply { writeText("original audio") }
         givenRow(filePath = oldFile.absolutePath, title = "Lacrymosa")
         val newTemp = stubSuccessfulDownload()
         stubCommitOverwriting(oldFile)
-        coEvery { trackDao.updateYoutubeIdIfUnclaimed(7L, "vid123") } returns 0
         coEvery { trackDao.findByYoutubeId("vid123") } returns TrackEntity(
             id = 8L,
             title = "Lacrymosa",
@@ -227,8 +286,7 @@ class SwapCoordinatorTest {
 
         coVerify(exactly = 0) { fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any()) }
         assertEquals("the user's audio must be untouched", "original audio", oldFile.readText())
-        coVerify(exactly = 0) { trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any()) }
-        coVerify(exactly = 0) { trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any()) }
+        neverWroteTheVideo()
         coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
         assertFalse("the unused download must be cleaned up", newTemp.exists())
         assertEquals(
@@ -247,24 +305,64 @@ class SwapCoordinatorTest {
     }
 
     @Test
+    fun `a video another track takes during the save is caught by the final write and undone`() = runTest {
+        val oldFile = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
+        givenRow(filePath = oldFile.absolutePath, title = "Lacrymosa")
+        stubSuccessfulDownload()
+        destinationIs(oldFile.absolutePath)
+        stubCommitOverwriting(oldFile)
+        val owner = TrackEntity(id = 8L, title = "Lacrymosa", artist = "Evanescence", album = "The Open Door", youtubeId = "vid123")
+        coEvery { trackDao.findByYoutubeId("vid123") } returnsMany listOf(null, owner)
+        // The guarded write finds the video taken: nothing is written.
+        coEvery {
+            trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+        } returns 0
+        val outcomes = collectOutcomes()
+
+        swap()
+
+        assertEquals("original audio", oldFile.readText())
+        assertEquals(1, outcomes.size)
+        assertTrue("got ${outcomes.single()}", outcomes.single() is SwapOutcome.AlreadyLinked)
+        assertTrue(journal.pending().isEmpty())
+    }
+
+    @Test
+    fun `an error before the save leaves the track's video untouched`() = runTest {
+        val oldFile = tmp.newFile("old-error.m4a").apply { writeText("original audio") }
+        givenRow(filePath = oldFile.absolutePath)
+        stubSuccessfulDownload()
+        coEvery { trackDao.countOtherTracksWithFilePath(any(), any()) } throws IllegalStateException("database is locked")
+        val outcomes = collectOutcomes()
+
+        swap()
+
+        // Writing the video first left the row on the new video with its old
+        // file: resync then excluded the right video as "the wrong one".
+        neverWroteTheVideo()
+        assertEquals("original audio", oldFile.readText())
+        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
+    }
+
+    @Test
     fun `a junk download never touches the old file even when it would land on the same path`() = runTest {
         val oldFile = tmp.newFile("same-path.m4a").apply { writeText("original audio") }
         givenRow(filePath = oldFile.absolutePath)
         stubSuccessfulDownload(content = "x")
         stubCommitOverwriting(oldFile)
-        coEvery { fileOrganizer.plannedPath(any(), any(), any(), any(), any(), any()) } returns oldFile.absolutePath
+        destinationIs(oldFile.absolutePath)
         every { localFileOps.acceptDownloadOrDelete(any()) } returns false
 
         swap()
 
         assertEquals("the user's audio must be untouched", "original audio", oldFile.readText())
         coVerify(exactly = 0) { fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any()) }
-        coVerify(exactly = 0) { trackDao.updateYoutubeIdIfUnclaimed(any(), any()) }
+        neverWroteTheVideo()
         coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
     }
 
     @Test
-    fun `format and quality of the new file are written to the track`() = runTest {
+    fun `format, quality and length go in the same write as the new file`() = runTest {
         val committedPath = File(tmp.root, "Artist/Album/Title.opus").absolutePath
         stubSuccessfulDownload(committedPath = committedPath)
         every { audioExtractor.extract(any()) } returns AudioMetadata(
@@ -277,13 +375,29 @@ class SwapCoordinatorTest {
 
         swap()
 
-        // Bit depth is written outright, null included: markAsDownloaded's
+        // Bit depth written outright, null included: markAsDownloaded's
         // COALESCE kept a replaced FLAC's 24 bits ("OPUS · 24-bit/48.0 kHz").
-        coVerify { trackDao.completeSwap(7L, committedPath, 123L, 48_000, null, any(), any()) }
+        // Format and bitrate in the same write: a crash can't leave 'flac' on
+        // opus audio. 201 s against the row's 200 s is within 10%, so the
+        // row's length stays (null = keep).
+        coVerify {
+            trackDao.completeSwap(
+                trackId = 7L,
+                youtubeId = "vid123",
+                filePath = committedPath,
+                fileSizeBytes = 123L,
+                fileFormat = "opus",
+                qualityKbps = 160,
+                sampleRateHz = 48_000,
+                bitsPerSample = null,
+                durationMs = null,
+                metadataEmbeddedAt = any(),
+                pickedAt = any(),
+                downloadedAt = any(),
+            )
+        }
         coVerify(exactly = 0) { trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any()) }
-        // Without this a swap over a FLAC kept saying 'flac' on lossy audio.
-        coVerify { trackDao.setFormatAndQuality(7L, "opus", 160) }
-        // 201 s against the row's 200 s is within 10%: the row's length stays.
+        coVerify(exactly = 0) { trackDao.setFormatAndQuality(any(), any(), any()) }
         coVerify(exactly = 0) { trackDao.setDuration(any(), any()) }
     }
 
@@ -298,11 +412,17 @@ class SwapCoordinatorTest {
 
         swap()
 
-        coVerify { trackDao.setDuration(7L, 260_000L) }
+        coVerify {
+            trackDao.completeSwap(
+                trackId = 7L, youtubeId = any(), filePath = any(), fileSizeBytes = any(),
+                fileFormat = "aac", qualityKbps = 128, sampleRateHz = any(), bitsPerSample = any(),
+                durationMs = 260_000L, metadataEmbeddedAt = any(), pickedAt = any(), downloadedAt = any(),
+            )
+        }
     }
 
     @Test
-    fun `a save failure after the claim gives the video back so the same replacement can be retried`() = runTest {
+    fun `a save failure leaves the track's video as it was, so the same replacement can be retried`() = runTest {
         val oldFile = tmp.newFile("old-save-fail.m4a").apply { writeText("original audio") }
         givenRow(filePath = oldFile.absolutePath)
         stubSuccessfulDownload()
@@ -313,7 +433,7 @@ class SwapCoordinatorTest {
 
         swap()
 
-        coVerify { trackDao.restoreYoutubeIdIfClaimed(7L, "vid123", "wrong-video") }
+        neverWroteTheVideo()
         coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
         assertEquals("original audio", oldFile.readText())
         // Not "download again": retrying only helps once storage is sorted out.
@@ -327,7 +447,7 @@ class SwapCoordinatorTest {
         val oldFile = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
         givenRow(filePath = oldFile.absolutePath)
         stubSuccessfulDownload()
-        coEvery { fileOrganizer.plannedPath(any(), any(), any(), any(), any(), any()) } returns oldFile.absolutePath
+        destinationIs(oldFile.absolutePath)
         // Behaves like File.copyTo(overwrite = true): deletes the target,
         // starts writing, then fails part-way.
         coEvery {
@@ -342,9 +462,9 @@ class SwapCoordinatorTest {
         swap()
 
         assertEquals("original audio", oldFile.readText())
-        assertFalse("no backup is left behind", File(oldFile.path + ".swapbak").exists())
-        coVerify { trackDao.restoreYoutubeIdIfClaimed(7L, "vid123", "wrong-video") }
-        coVerify(exactly = 0) { trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any()) }
+        assertTrue("no backup is left behind", oldFile.parentFile!!.listFiles()!!.none { it.name.endsWith(".swapbak") })
+        assertTrue(journal.pending().isEmpty())
+        neverWroteTheVideo()
         assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
     }
 
@@ -353,17 +473,17 @@ class SwapCoordinatorTest {
         val oldFile = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
         givenRow(filePath = oldFile.absolutePath)
         stubSuccessfulDownload()
-        coEvery { fileOrganizer.plannedPath(any(), any(), any(), any(), any(), any()) } returns oldFile.absolutePath
+        destinationIs(oldFile.absolutePath)
         stubCommitOverwriting(oldFile)
         coEvery {
-            trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any())
+            trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
         } throws IllegalStateException("database is locked")
 
         swap()
 
         assertEquals("the row still points here, so its old audio must be here", "original audio", oldFile.readText())
-        assertFalse(File(oldFile.path + ".swapbak").exists())
-        coVerify { trackDao.restoreYoutubeIdIfClaimed(7L, "vid123", "wrong-video") }
+        assertTrue(oldFile.parentFile!!.listFiles()!!.none { it.name.endsWith(".swapbak") })
+        assertTrue(journal.pending().isEmpty())
     }
 
     @Test
@@ -371,15 +491,49 @@ class SwapCoordinatorTest {
         val oldFile = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
         givenRow(filePath = oldFile.absolutePath)
         stubSuccessfulDownload(content = "replacement")
-        coEvery { fileOrganizer.plannedPath(any(), any(), any(), any(), any(), any()) } returns oldFile.absolutePath
+        destinationIs(oldFile.absolutePath)
         stubCommitOverwriting(oldFile)
         val outcomes = collectOutcomes()
 
         swap()
 
         assertEquals("replacement", oldFile.readText())
-        assertFalse("the backup goes once the swap is recorded", File(oldFile.path + ".swapbak").exists())
+        assertTrue("the backup goes once the swap is recorded", oldFile.parentFile!!.listFiles()!!.none { it.name.endsWith(".swapbak") })
+        assertTrue(journal.pending().isEmpty())
         assertEquals(listOf(SwapOutcome.Swapped(7L, "vid123", "Title")), outcomes)
+    }
+
+    // -- A swap cut short by the app being killed --------------------------------
+
+    @Test
+    fun `a swap cut short after setting the old file aside is put back at the next start`() = runTest {
+        val song = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
+        val backup = localFileOps.setAside(song.absolutePath)!!
+        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup))
+        song.writeText("unrecorded replacement") // the save ran; the app died before the record
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = true)
+
+        coordinator.recoverInterruptedSwaps()
+
+        assertEquals("original audio", song.readText())
+        assertFalse(File(backup).exists())
+        assertTrue(journal.pending().isEmpty())
+    }
+
+    @Test
+    fun `a set-aside copy left after a finished swap is removed at the next start`() = runTest {
+        val song = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
+        val backup = localFileOps.setAside(song.absolutePath)!!
+        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup))
+        song.writeText("recorded replacement")
+        // completeSwap cleared the flag: the swap finished, only the cleanup didn't.
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = false)
+
+        coordinator.recoverInterruptedSwaps()
+
+        assertEquals("recorded replacement", song.readText())
+        assertFalse(File(backup).exists())
+        assertTrue(journal.pending().isEmpty())
     }
 
     // -- Files other tracks use (Single folder / Per playlist / same album) -----
@@ -401,8 +555,9 @@ class SwapCoordinatorTest {
         val siblingsPath = File(tmp.root, "evanescence-lacrymosa.m4a").absolutePath
         val distinctPath = File(tmp.root, "evanescence-lacrymosa-album.m4a").absolutePath
         stubSuccessfulDownload(committedPath = distinctPath)
-        coEvery { fileOrganizer.plannedPath(any(), any(), any(), any(), any(), isNull()) } returns siblingsPath
-        coEvery { fileOrganizer.plannedPath(any(), any(), any(), any(), any(), "Album") } returns distinctPath
+        coEvery { fileOrganizer.plannedPaths(any(), any(), any(), any(), any(), any()) } answers {
+            arg<List<String?>>(SUFFIXES).map { suffix -> if (suffix == null) siblingsPath else distinctPath }
+        }
         coEvery { trackDao.countOtherTracksWithFilePath(siblingsPath, 7L) } returns 1
 
         swap()
@@ -442,6 +597,21 @@ class SwapCoordinatorTest {
 
         verify(exactly = 0) { localFileOps.delete(old) }
         verify(exactly = 0) { localFileOps.delete(sameDocument) }
+    }
+
+    @Test
+    fun `on SAF a destination the folder listing found counts as there, so the old file is set aside`() = runTest {
+        val old = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/" +
+            "primary%3AMusic%2Fartist%2Falbum%2Ftitle.m4a"
+        givenRow(filePath = old)
+        stubSuccessfulDownload(committedPath = old)
+        destinationIs(old)
+
+        swap()
+
+        // SAF exists() can wrongly say no; a false negative skipped the
+        // set-aside and let the save delete the old document first.
+        verify { localFileOps.setAside(old) }
     }
 
     @Test
@@ -504,7 +674,7 @@ class SwapCoordinatorTest {
         val oldFile = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
         givenRow(filePath = oldFile.absolutePath)
         stubSuccessfulDownload()
-        coEvery { fileOrganizer.plannedPath(any(), any(), any(), any(), any(), any()) } returns oldFile.absolutePath
+        destinationIs(oldFile.absolutePath)
         // A callee's timeout, not this swap being cancelled.
         coEvery {
             fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any())
@@ -514,7 +684,7 @@ class SwapCoordinatorTest {
         swap()
 
         assertEquals("original audio", oldFile.readText())
-        coVerify { trackDao.restoreYoutubeIdIfClaimed(7L, "vid123", "wrong-video") }
+        neverWroteTheVideo()
         assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
     }
 }

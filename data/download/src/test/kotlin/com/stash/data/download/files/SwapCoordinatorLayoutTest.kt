@@ -58,15 +58,30 @@ class SwapCoordinatorLayoutTest {
         val filesDir = tmp.newFolder("files")
         every { context.filesDir } returns filesDir
         every { context.cacheDir } returns tmp.newFolder("cache")
+        every { context.noBackupFilesDir } returns tmp.newFolder("no-backup")
         every { storagePreference.externalTreeUri } returns flowOf(null)
         musicDir = File(filesDir, "music")
         every { qualityPrefs.qualityTier } returns flowOf(QualityTier.MAX)
         every { localFileOps.acceptDownloadOrDelete(any()) } returns true
         every { audioExtractor.extract(any()) } returns null
         coEvery { trackDao.getFirstPlaylistNameForTrack(any()) } returns "Gothic"
-        coEvery { trackDao.updateYoutubeIdIfUnclaimed(7L, "vid123") } returns 1
+        // No other track has the video (a relaxed mock would return a dummy row).
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
         coEvery {
-            trackDao.completeSwap(7L, capture(saved), any(), any(), any(), any(), any())
+            trackDao.completeSwap(
+                trackId = 7L,
+                youtubeId = any(),
+                filePath = capture(saved),
+                fileSizeBytes = any(),
+                fileFormat = any(),
+                qualityKbps = any(),
+                sampleRateHz = any(),
+                bitsPerSample = any(),
+                durationMs = any(),
+                metadataEmbeddedAt = any(),
+                pickedAt = any(),
+                downloadedAt = any(),
+            )
         } returns 1
         coEvery { downloadExecutor.download(any(), any(), any(), any(), any()) } answers {
             val dir = secondArg<File>()
@@ -86,6 +101,9 @@ class SwapCoordinatorLayoutTest {
             localFileOps = localFileOps,
             trackIdentityEvents = trackIdentityEvents,
             audioExtractor = audioExtractor,
+            metadataEmbedder = mockk(relaxed = true),
+            albumArtCache = mockk(relaxed = true),
+            journal = SwapJournal(context),
         )
     }
 

@@ -54,7 +54,7 @@ class FileOrganizerPlannedPathTest {
         for (layout in LibraryLayout.entries) {
             val organizer = organizer(layout)
             for (suffix in listOf(null, "Synthesis")) {
-                val planned = organizer.plannedPath("Evanescence", "Synthesis", "Lacrymosa", "opus", 7L, suffix)
+                val planned = organizer.plannedPaths("Evanescence", "Synthesis", "Lacrymosa", "opus", 7L, listOf(suffix)).single()
                 val committed = organizer.commitDownload(
                     temp("swap_${layout}_$suffix.opus"), "Evanescence", "Synthesis", "Lacrymosa", "opus", 7L, suffix,
                 )
@@ -73,8 +73,8 @@ class FileOrganizerPlannedPathTest {
         for ((layout, canonical) in expectedCanonical) {
             val organizer = organizer(layout)
             // Blank album: the Artist/Album layout files it under singles/.
-            val plain = organizer.plannedPath("Evanescence", null, "Lacrymosa", "opus", 7L)
-            val suffixed = organizer.plannedPath("Evanescence", null, "Lacrymosa", "opus", 7L, "7")
+            // One call answers every candidate name (on SAF: one folder listing).
+            val (plain, suffixed) = organizer.plannedPaths("Evanescence", null, "Lacrymosa", "opus", 7L, listOf(null, "7"))
             assertEquals("$layout canonical", canonical.absolutePath, plain)
             assertNotEquals("$layout suffixed", plain, suffixed)
             assertEquals("$layout suffixed stays in the same folder", File(plain!!).parent, File(suffixed!!).parent)

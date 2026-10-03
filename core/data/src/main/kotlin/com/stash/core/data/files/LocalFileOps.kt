@@ -167,8 +167,10 @@ class LocalFileOps @Inject constructor(
      * saves onto the old file's own path, and the save deletes what is there
      * before writing). Returns where the backup is, a plain path or the
      * renamed document's URI, or null when nothing was moved: no file there,
-     * or the move failed. Put it back with [restoreSetAside]; [delete] it
-     * once it isn't needed.
+     * or the move failed. Never over an earlier backup: one a failed restore
+     * left behind still holds someone's original audio, so a taken name gets
+     * a counter (a SAF provider picks its own unique name). Put it back with
+     * [restoreSetAside]; [delete] it once it isn't needed.
      */
     fun setAside(path: String): String? = runCatching {
         if (path.startsWith("content://")) {
@@ -179,8 +181,14 @@ class LocalFileOps @Inject constructor(
         } else {
             val file = File(plainPath(path))
             if (!file.exists()) return null
-            val backup = File(file.parentFile, file.name + BACKUP_SUFFIX)
-            Files.move(file.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            var backup = File(file.parentFile, file.name + BACKUP_SUFFIX)
+            var counter = 1
+            while (backup.exists()) {
+                backup = File(file.parentFile, "${file.name}.${counter++}$BACKUP_SUFFIX")
+            }
+            // No REPLACE_EXISTING: if the name was taken meanwhile, fail rather
+            // than overwrite.
+            Files.move(file.toPath(), backup.toPath())
             backup.path
         }
     }.getOrNull()
@@ -192,7 +200,7 @@ class LocalFileOps @Inject constructor(
     fun restoreSetAside(backup: String, originalPath: String): Boolean = runCatching {
         if (backup.startsWith("content://")) {
             val backupUri = backup.toUri()
-            val name = DocumentFile.fromSingleUri(context, backupUri)?.name?.removeSuffix(BACKUP_SUFFIX)
+            val name = DocumentFile.fromSingleUri(context, backupUri)?.name?.let(::originalNameOf)
                 ?: return false
             // A failed write can leave a document under the original name (with
             // path-based document ids the original URI now resolves to it).
@@ -229,6 +237,13 @@ class LocalFileOps @Inject constructor(
         }
     }
 
+    /**
+     * The name a backup was set aside from: without [BACKUP_SUFFIX] and a
+     * counter, ours (`.1`) or a SAF provider's (` (1)`).
+     */
+    private fun originalNameOf(backupName: String): String =
+        backupName.removeSuffix(BACKUP_SUFFIX).replace(BACKUP_COUNTER, "")
+
     /** The (still encoded) document id of a SAF document URI, or null without one. */
     private fun documentId(uri: String): String? =
         uri.substringAfterLast("/document/", missingDelimiterValue = "")
@@ -238,6 +253,9 @@ class LocalFileOps @Inject constructor(
     private companion object {
         /** Name suffix of a file [setAside] moved out of the way. */
         const val BACKUP_SUFFIX = ".swapbak"
+
+        /** A counter added to a backup name that was taken. */
+        val BACKUP_COUNTER = Regex("""( \(\d+\)|\.\d+)$""")
     }
 
     private fun plainPath(path: String): String =

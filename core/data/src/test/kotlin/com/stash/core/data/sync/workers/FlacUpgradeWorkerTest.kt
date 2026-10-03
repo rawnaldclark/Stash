@@ -218,10 +218,15 @@ class FlacUpgradeWorkerTest {
     private suspend fun pick(trackId: Long) {
         db.trackDao().completeSwap(
             trackId = trackId,
+            youtubeId = "picked-$trackId",
             filePath = "/music/x/t$trackId.opus",
             fileSizeBytes = 1L,
+            fileFormat = "opus",
+            qualityKbps = 160,
             sampleRateHz = 48_000,
             bitsPerSample = null,
+            durationMs = null,
+            metadataEmbeddedAt = null,
             pickedAt = 1_000L,
             downloadedAt = 1_000L,
         )

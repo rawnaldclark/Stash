@@ -114,23 +114,25 @@ class FileOrganizer @Inject constructor(
     }
 
     /**
-     * Where [commitDownload] would put this track right now. For internal
+     * Where [commitDownload] would put this track right now, once per name
+     * suffix in [nameSuffixes] (null = the canonical name). For internal
      * storage, the absolute path, whether or not a file is there yet. For a
      * SAF tree, the URI of the document already at that spot, or null when
      * the spot is empty: a SAF URI only exists once its document does. The
-     * wrong-match swap asks this before saving, to keep the user's old file
-     * safe and to stay off a file another track uses (#531).
+     * folder is listed once for all the names; findFile per name re-lists it
+     * each time. The wrong-match swap asks this before saving, to keep the
+     * user's old file safe and to stay off a file another track uses (#531).
      */
-    suspend fun plannedPath(
+    suspend fun plannedPaths(
         artist: String,
         album: String?,
         title: String,
         format: String,
         trackId: Long?,
-        nameSuffix: String? = null,
-    ): String? {
+        nameSuffixes: List<String?>,
+    ): List<String?> {
         val location = resolveLocation(artist, album, title, trackId)
-        val fileName = fileNameFor(location, format, nameSuffix)
+        val names = nameSuffixes.map { fileNameFor(location, format, it) }
         val externalTree = storagePreference.externalTreeUri.first()
         if (externalTree == null) {
             val dir = if (location.segments.isEmpty()) {
@@ -138,15 +140,16 @@ class FileOrganizer @Inject constructor(
             } else {
                 File(musicDir, location.segments.joinToString("/"))
             }
-            return File(dir, fileName).absolutePath
+            return names.map { File(dir, it).absolutePath }
         }
-        return runCatching {
-            var cursor = DocumentFile.fromTreeUri(context, externalTree) ?: return null
+        val listing: Map<String, String> = runCatching {
+            var cursor = DocumentFile.fromTreeUri(context, externalTree) ?: return@runCatching emptyMap()
             for (segment in location.segments) {
-                cursor = cursor.findFile(segment)?.takeIf { it.isDirectory } ?: return null
+                cursor = cursor.findFile(segment)?.takeIf { it.isDirectory } ?: return@runCatching emptyMap()
             }
-            cursor.findFile(fileName)?.uri?.toString()
-        }.getOrNull()
+            cursor.listFiles().mapNotNull { doc -> doc.name?.let { name -> name to doc.uri.toString() } }.toMap()
+        }.getOrDefault(emptyMap())
+        return names.map { listing[it] }
     }
 
     /**

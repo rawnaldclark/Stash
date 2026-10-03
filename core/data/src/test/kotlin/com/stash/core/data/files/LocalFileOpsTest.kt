@@ -150,4 +150,17 @@ class LocalFileOpsTest {
         assertTrue(ops.isSameFile(inTree, single))
         assertFalse(ops.isSameFile(inTree, other))
     }
+
+    @Test fun `setting a file aside never overwrites an earlier backup`() {
+        val dir = tmp.newFolder()
+        val song = File(dir, "lacrymosa.opus").apply { writeText("the song now") }
+        // Left by an earlier swap whose restore failed: the user's original audio.
+        val earlier = File(dir, "lacrymosa.opus.swapbak").apply { writeText("the original audio") }
+
+        val backup = ops.setAside(song.absolutePath)
+
+        assertEquals("the original audio", earlier.readText())
+        assertEquals("the song now", File(backup!!).readText())
+        assertTrue(File(backup).absolutePath != earlier.absolutePath)
+    }
 }

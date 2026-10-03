@@ -61,12 +61,17 @@ class TrackDaoCompleteSwapTest {
         ),
     )
 
-    private suspend fun swapToOpus(id: Long) = dao.completeSwap(
+    private suspend fun swapToOpus(id: Long, youtubeId: String = "synthesis-video") = dao.completeSwap(
         trackId = id,
+        youtubeId = youtubeId,
         filePath = "/music/evanescence/synthesis/lacrymosa.opus",
         fileSizeBytes = 4_000_000L,
+        fileFormat = "opus",
+        qualityKbps = 160,
         sampleRateHz = 48_000,
         bitsPerSample = null,
+        durationMs = 231_000L,
+        metadataEmbeddedAt = 2_000L,
         pickedAt = 2_000L,
         downloadedAt = 2_000L,
     )
@@ -126,6 +131,48 @@ class TrackDaoCompleteSwapTest {
     @Test
     fun `completing a swap on a deleted track updates nothing`() = runTest {
         assertEquals(0, swapToOpus(42L))
+    }
+
+    /**
+     * #531 review: the video id used to be written before the save, so an
+     * error or the app dying mid-save left the row on the new video with its
+     * old file. It is now written in this same write, with format, quality,
+     * length and the tag stamp: a crash can't leave 'flac' on opus audio.
+     */
+    @Test
+    fun `a swap records the new video, format, quality, length and tags in one write`() = runTest {
+        val id = insertFlaggedFlac()
+
+        swapToOpus(id)
+
+        val row = dao.getById(id)!!
+        assertEquals("synthesis-video", row.youtubeId)
+        assertEquals("opus", row.fileFormat)
+        assertEquals(160, row.qualityKbps)
+        assertEquals(231_000L, row.durationMs)
+        assertEquals(2_000L, row.metadataEmbeddedAt)
+    }
+
+    @Test
+    fun `a swap whose video another track took meanwhile writes nothing`() = runTest {
+        val id = insertFlaggedFlac()
+        dao.insert(
+            TrackEntity(
+                id = 8L,
+                title = "Lacrymosa",
+                artist = "Evanescence",
+                album = "The Open Door",
+                youtubeId = "synthesis-video",
+                canonicalTitle = "lacrymosa",
+                canonicalArtist = "evanescence",
+            ),
+        )
+
+        assertEquals(0, swapToOpus(id, youtubeId = "synthesis-video"))
+        val row = dao.getById(id)!!
+        assertEquals("/music/evanescence/synthesis/lacrymosa.flac", row.filePath)
+        assertTrue("still flagged: the swap didn't happen", row.matchFlagged)
+        assertNull(row.matchPickedAt)
     }
 
     // -- #531 review: flagging a swapped song again ----------------------------

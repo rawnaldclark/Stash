@@ -15,11 +15,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The wrong-match swap (#531) claims the replacement video before it writes
- * any file, and gives the claim back if saving the file fails. These pin the
- * two queries that make that safe: the claim never takes a video another
- * track owns (tracks.youtube_id is UNIQUE), and the give-back only undoes the
- * swap's own claim.
+ * [TrackDao.updateYoutubeIdIfUnclaimed] never takes a video another track
+ * owns (tracks.youtube_id is UNIQUE). The wrong-match swap's final write
+ * (completeSwap, #531) is guarded the same way.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -72,35 +70,5 @@ class TrackDaoYoutubeIdClaimTest {
 
         assertEquals(1, applied)
         assertEquals("synthesis-video", dao.getById(flagged)!!.youtubeId)
-    }
-
-    @Test
-    fun `giving the claim back restores the previous video`() = runTest {
-        val flagged = insert(id = 2L, album = "Synthesis", youtubeId = "synthesis-video")
-
-        val restored = dao.restoreYoutubeIdIfClaimed(flagged, claimed = "synthesis-video", previous = "wrong-video")
-
-        assertEquals(1, restored)
-        assertEquals("wrong-video", dao.getById(flagged)!!.youtubeId)
-    }
-
-    @Test
-    fun `giving the claim back to a row that had no video clears it`() = runTest {
-        val flagged = insert(id = 2L, album = "Synthesis", youtubeId = "synthesis-video")
-
-        val restored = dao.restoreYoutubeIdIfClaimed(flagged, claimed = "synthesis-video", previous = null)
-
-        assertEquals(1, restored)
-        assertNull(dao.getById(flagged)!!.youtubeId)
-    }
-
-    @Test
-    fun `giving the claim back leaves a newer video alone`() = runTest {
-        val flagged = insert(id = 2L, album = "Synthesis", youtubeId = "newer-video")
-
-        val restored = dao.restoreYoutubeIdIfClaimed(flagged, claimed = "synthesis-video", previous = "wrong-video")
-
-        assertEquals(0, restored)
-        assertEquals("newer-video", dao.getById(flagged)!!.youtubeId)
     }
 }
