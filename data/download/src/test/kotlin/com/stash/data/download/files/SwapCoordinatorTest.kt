@@ -18,7 +18,9 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -686,5 +688,27 @@ class SwapCoordinatorTest {
         assertEquals("original audio", oldFile.readText())
         neverWroteTheVideo()
         assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
+    }
+
+    // -- One swap per track (#531 review) ------------------------------------------
+
+    @Test
+    fun `a second swap of a track whose swap is running is refused`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        coEvery { downloadExecutor.download(any(), any(), any(), any(), any()) } coAnswers {
+            gate.await()
+            DownloadResult.Error("stopped")
+        }
+
+        assertTrue(coordinator.swap(7L, "vid123"))
+        // Approve, leave, come back and approve again: the screen's own guard
+        // is gone with the old screen, so the coordinator must refuse. Two
+        // swaps would interleave set-aside, save and undo.
+        assertEquals(setOf(7L), coordinator.running.value)
+        assertFalse(coordinator.swap(7L, "vid456"))
+
+        gate.complete(Unit)
+        coordinator.running.first { it.isEmpty() }
+        coVerify(exactly = 1) { downloadExecutor.download(any(), any(), any(), any(), any()) }
     }
 }

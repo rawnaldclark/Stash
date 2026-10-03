@@ -18,9 +18,13 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -173,6 +177,14 @@ class SwapCoordinator @Inject constructor(
     /** How each swap ended. Collected by the Failed Matches screen. */
     val outcomes: SharedFlow<SwapOutcome> = _outcomes.asSharedFlow()
 
+    private val _running = MutableStateFlow<Set<Long>>(emptySet())
+
+    /**
+     * Tracks whose swap is running now: the screen shows them as "Swapping…",
+     * a re-created screen included. One swap per track (see [swap]).
+     */
+    val running: StateFlow<Set<Long>> = _running.asStateFlow()
+
     /** How [saveReplacement] ended. */
     private sealed interface Save {
         data class Done(val path: String) : Save
@@ -191,12 +203,32 @@ class SwapCoordinator @Inject constructor(
      * database, not passed in, so a stale screen can't steer where the file
      * goes or which file is replaced.
      *
+     * Returns false, starting nothing, when a swap of [trackId] is already
+     * running. The screen's own guard goes with the screen (approve, leave,
+     * come back, approve again), and two swaps at once would interleave the
+     * set-aside, save and undo, and could leave the track on a missing file.
+     *
      * @param trackId    Primary key of the track to update.
      * @param newVideoId YouTube video ID of the approved candidate.
      */
-    fun swap(trackId: Long, newVideoId: String) {
+    fun swap(trackId: Long, newVideoId: String): Boolean {
+        if (!tryStart(trackId)) return false
         scope.launch {
-            performSwap(trackId, newVideoId)
+            try {
+                performSwap(trackId, newVideoId)
+            } finally {
+                _running.update { it - trackId }
+            }
+        }
+        return true
+    }
+
+    /** Adds [trackId] to [running] unless it is there already; true when added. */
+    private fun tryStart(trackId: Long): Boolean {
+        while (true) {
+            val current = _running.value
+            if (trackId in current) return false
+            if (_running.compareAndSet(current, current + trackId)) return true
         }
     }
 
@@ -213,6 +245,9 @@ class SwapCoordinator @Inject constructor(
             Log.w(TAG, "swap: unexpected error for videoId=$newVideoId", e)
             SwapOutcome.DownloadFailed(trackId, newVideoId, title = "")
         }
+        // Done before the report, so the screen no longer shows "Swapping…"
+        // when the message arrives.
+        _running.update { it - trackId }
         _outcomes.emit(outcome)
     }
 
@@ -225,6 +260,7 @@ class SwapCoordinator @Inject constructor(
      */
     suspend fun recoverInterruptedSwaps() {
         for (entry in journal.pending()) {
+            if (entry.trackId in _running.value) continue // a live swap owns its entry
             try {
                 val track = trackDao.getById(entry.trackId)
                 val unfinished = track != null && track.matchFlagged

@@ -90,6 +90,8 @@ class FailedMatchesReplacementPreviewRegressionTest {
         every { previewPlayer.playerErrors } returns playerErrors
         every { previewPlayer.previewState } returns previewState
         every { swapCoordinator.outcomes } returns MutableSharedFlow<SwapOutcome>()
+        every { swapCoordinator.running } returns MutableStateFlow(emptySet())
+        every { swapCoordinator.swap(any(), any()) } returns true
         coEvery { albumMatchExecutor.findTrackInAlbum(any(), any(), any(), any()) } returns null
         every { previewPlayer.claimRequest() } answers {
             currentRequestId = ++requestSequence

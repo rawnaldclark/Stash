@@ -262,7 +262,11 @@ class FailedMatchesViewModel @Inject constructor(
             flaggedRows,
             _previewLoading,
             _resyncCandidates,
-            combine(_isResyncing, _resyncProgress, _pendingSwaps) { r, p, swaps -> Triple(r, p, swaps.keys) },
+            // Swapping: what the coordinator runs (a swap outlives the screen
+            // that started it) plus taps still on their way to it.
+            combine(_isResyncing, _resyncProgress, _pendingSwaps, swapCoordinator.running) { r, p, pending, running ->
+                Triple(r, p, running + pending.keys)
+            },
         ) { tracks, flagged, loading, candidates, progress ->
             FailedMatchesUiState(
                 tracks = tracks,
@@ -454,11 +458,13 @@ class FailedMatchesViewModel @Inject constructor(
     /**
      * Results of the album-named search that carry the song's title, those
      * on the track's album first. Naming the album can rank another song
-     * from that album above the one wanted (#531 review).
+     * from that album above the one wanted (#531 review). An edition suffix
+     * on the track's title ("Song - Remastered 2011") is dropped first:
+     * results usually carry the plain title.
      */
     private fun thisSong(results: List<YtDlpSearchResult>, request: ResyncSearch): List<YtDlpSearchResult> {
         val target = request.albumTarget ?: return results
-        val wanted = normalized(target.title)
+        val wanted = normalized(target.title.substringBefore(" - "))
         val album = normalized(target.album)
         val titled = results.filter { wanted.isEmpty() || " ${normalized(it.title)} ".contains(" $wanted ") }
         val (onAlbum, elsewhere) = titled.partition { normalized(it.album.orEmpty()) == album }
@@ -670,10 +676,9 @@ class FailedMatchesViewModel @Inject constructor(
      * How it ended comes back through [onSwapOutcome].
      */
     fun approveSwap(row: FlaggedTrackRow, candidate: ResyncCandidate) {
-        // One swap per track at a time. A quick double tap, before the row
-        // redraws as "Swapping…", could start a second download of the same
-        // video, and that one failing would undo the first one's swap.
-        if (row.trackId in _pendingSwaps.value) return
+        // One swap per track at a time; the coordinator enforces it, this
+        // skips the work for a quick double tap or a row already swapping.
+        if (row.trackId in _pendingSwaps.value || row.trackId in swapCoordinator.running.value) return
         _pendingSwaps.update { it + (row.trackId to candidate) }
         viewModelScope.launch {
             var handedOff = false
@@ -707,8 +712,8 @@ class FailedMatchesViewModel @Inject constructor(
                 // which got cancelled the instant the user navigated away — they
                 // ended up with the DB pointing at a deleted file while the new
                 // audio never actually landed.
-                swapCoordinator.swap(trackId = row.trackId, newVideoId = candidate.videoId)
-                handedOff = true
+                handedOff = swapCoordinator.swap(trackId = row.trackId, newVideoId = candidate.videoId)
+                if (!handedOff) Log.i(TAG, "a swap of trackId=${row.trackId} is already running")
             } finally {
                 // Handed off, the entry lives until the swap reports back.
                 if (!handedOff) _pendingSwaps.update { it - row.trackId }
@@ -724,7 +729,9 @@ class FailedMatchesViewModel @Inject constructor(
      * still get their message.
      */
     private fun onSwapOutcome(outcome: SwapOutcome) {
-        val candidate = _pendingSwaps.value[outcome.trackId]
+        // Only this swap's own candidate comes back. The coordinator runs one
+        // swap per track, so any pending entry for the track is done either way.
+        val candidate = _pendingSwaps.value[outcome.trackId]?.takeIf { it.videoId == outcome.newVideoId }
         _pendingSwaps.update { it - outcome.trackId }
         val song = outcome.title.ifBlank { null }?.let { " for '$it'" } ?: ""
         val message = when (outcome) {
