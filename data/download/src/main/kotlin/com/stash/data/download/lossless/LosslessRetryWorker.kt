@@ -120,7 +120,10 @@ class LosslessRetryWorker @AssistedInject constructor(
         /** Output-data key: how many WAITING_FOR_LOSSLESS rows were flipped to PENDING this sweep. */
         const val KEY_RESOLVED = "lossless_retry_resolved"
 
-        /** Output-data key: how many WAITING_FOR_LOSSLESS rows existed when the sweep started. */
+        /**
+         * Output-data key: how many WAITING_FOR_LOSSLESS rows the sweep took when it started. In
+         * Stream-only mode a sync's rows nobody asked for aren't among them (see [doWork]).
+         */
         const val KEY_TOTAL = "lossless_retry_total"
     }
 }
