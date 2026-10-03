@@ -39,9 +39,12 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 
 /**
- * Drains `download_queue` rows outside any sync (`sync_id IS NULL`): a
- * playlist's Download switch and the songs it gains (#474), a followed mix's
- * "Download this mix", Library Health repairs. Parallels
+ * Drains `download_queue` rows outside any sync (`sync_id IS NULL`) that the user
+ * asked for: a playlist's Download switch and the songs it gains (#474), a
+ * followed mix's "Download this mix", taps, Library Health's "Download N again".
+ * Only those: [DownloadQueueDao.pendingDiscoveryDownloads] leaves out leftovers
+ * nobody asked for (#532). No Stream-only check, on purpose: those downloads
+ * happen in either mode (#474). Parallels
  * [TrackDownloadWorker]'s per-track flow (blocklist guard ->
  * [TrackDownloader.downloadTrack] -> mark COMPLETED with isDownloaded=true +
  * filePath, or FAILED with retry accounting) without the sync-history

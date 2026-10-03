@@ -46,7 +46,9 @@ class LibraryReconciliationAdoptionTest {
             emptyList()
         }
 
-        useCase().reconcile(adoptExistingFiles = { adopted = true; 42 })
+        // A sync's reconcile: only a sync requeues (#532), and the sync's download step
+        // (TrackDownloadWorker, the one caller with an adopter) always passes its run.
+        useCase().reconcile(syncId = 1L, adoptExistingFiles = { adopted = true; 42 })
 
         coVerifyOrder {
             trackDao.getDownloadedTrackRefs()

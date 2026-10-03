@@ -139,13 +139,14 @@ class MusicRepositoryDownloadsMixTest {
         every { existing.id } returns 88L
         every { existing.status } returns DownloadStatus.WAITING_FOR_LOSSLESS
         coEvery { dq.getByTrackId(5L) } returns existing
+        coEvery { dq.requeueForTap(88L) } returns 1
         val enqueuer = mockk<SingleTrackDownloadEnqueuer>(relaxed = true)
 
         val repo = buildRepo(trackDao = trackDao, downloadQueueDao = dq, singleTrackDownloadEnqueuer = enqueuer)
         val result = repo.queueDownload(5L)
 
         assertEquals(true, result)
-        coVerify { dq.resetToPending(listOf(88L)) }
+        coVerify { dq.requeueForTap(88L) }
         coVerify { enqueuer.enqueue(88L) }
         coVerify(exactly = 0) { dq.insert(any()) }
     }

@@ -578,10 +578,11 @@ class MusicRepositoryImpl @Inject constructor(
         // track report "Couldn't queue download". Reset the row to PENDING so it
         // downloads fresh. Either way the row is the user's own request
         // (user_requested), so a playlist's Download switch going off never
-        // deletes it (#474).
-        val existing = downloadQueueDao.getByTrackId(trackId)
-        val queueId = if (existing == null) {
-            downloadQueueDao.insert(
+        // deletes it (#474). The reset is one write that reports a row the
+        // leftover cleanup deleted after the read (#532): then a fresh row is filed.
+        val queueId = downloadQueueDao.getByTrackId(trackId)?.id
+            ?.takeIf { downloadQueueDao.requeueForTap(it) == 1 }
+            ?: downloadQueueDao.insert(
                 com.stash.core.data.db.entity.DownloadQueueEntity(
                     trackId = trackId,
                     syncId = null,
@@ -590,11 +591,6 @@ class MusicRepositoryImpl @Inject constructor(
                     userRequested = true,
                 )
             )
-        } else {
-            downloadQueueDao.resetToPending(listOf(existing.id))
-            downloadQueueDao.markUserRequested(existing.id)
-            existing.id
-        }
 
         // Drive THIS row through TrackDownloadWorker single-track mode, which
         // downloads regardless of streaming mode and the sync/discovery
@@ -624,6 +620,10 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun queueKeptPlaylists(manualSync: Boolean): Int {
+        // After every sync, in either mode: what stopped being wanted since the
+        // last one (a song taken out of a kept playlist, say) goes now, not at
+        // the next app start, which can be days away.
+        dropLeftoverDownloads()
         // Every playlist's rows first, then one drain: a drain per playlist
         // would restart it each time and cancel the song in progress.
         val queued = playlistDao.getKeepOfflinePlaylistIds().sumOf { insertKeptPlaylist(it) }
@@ -639,15 +639,37 @@ class MusicRepositoryImpl @Inject constructor(
     /**
      * Starts a drain when a download is waiting for one, and never otherwise:
      * the worker shows its notification before it looks at the queue, so an
-     * empty start would flash it. Every download row the drain reads comes from
-     * something the user asked for (a tap, a kept playlist, a followed mix, a
-     * Library Health repair), so cold start calls this too: a run that was
-     * cancelled or cut short picks up again under the background constraints.
-     * Waiting means PENDING: failed songs retry when a drain runs for real
-     * work, not on their own at every start.
+     * empty start would flash it. The drain reads only rows the user asked for
+     * (a tap, a kept playlist, a followed mix with Download on:
+     * [com.stash.core.data.db.dao.DownloadQueueDao.pendingDiscoveryDownloads], #532),
+     * so cold start calls this too: a run that was cancelled or cut short picks
+     * up again under the background constraints. Waiting means PENDING: failed
+     * songs retry when a drain runs for real work, not on their own at every start.
+     *
+     * Leftovers nobody asked for are dropped first, at cold start right after the
+     * stale IN_PROGRESS reset, so none is left counted as queued.
      */
     override suspend fun resumeWaitingDownloads(tap: Boolean) {
+        dropLeftoverDownloads()
         if (downloadQueueDao.hasPendingDiscoveryDownload()) startDiscoveryDrain(background = !tap)
+    }
+
+    /**
+     * Drops the download rows nobody asked for (#532): no drain takes them any
+     * more, so they would sit in Downloads as queued forever. Never fails its
+     * caller: the start that follows matters more than the cleanup.
+     */
+    private suspend fun dropLeftoverDownloads() {
+        try {
+            val dropped = downloadQueueDao.cancelLeftoverDiscoveryDownloads()
+            if (dropped > 0) {
+                android.util.Log.i("MusicRepository", "cancelled $dropped leftover download(s) nobody asked for")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("MusicRepository", "cancelling leftover downloads failed", e)
+        }
     }
 
     /**
@@ -823,7 +845,28 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun removePlaylist(playlist: Playlist) {
         takeDownSharedLinkIfOwned(playlist.id)
-        playlistDao.delete(playlist.toEntity())
+        // A playlist that downloads its songs takes its downloads that haven't started
+        // with it, now (#532): the queue has no link to playlists, and an unfollowed mix
+        // still downloading would otherwise leave its songs listed as queued until the
+        // next cleanup. Under the switch's lock, so a kept playlist's queueing can't add
+        // rows between the two.
+        KEEP_OFFLINE_LOCK.withLock {
+            if (downloadsItsSongs(playlist.id)) downloadQueueDao.cancelWaitingForPlaylist(playlist.id)
+            playlistDao.delete(playlist.toEntity())
+        }
+    }
+
+    /**
+     * Whether [playlistId]'s own switch downloads its songs (#474): kept on the phone, or a
+     * followed mix with "Download this mix" on. Only then does removing it cancel anything
+     * (#532): removing any other playlist changes nothing the user asked for, and cancelling
+     * there deleted failed taps from before v0.9.110 that the leftover cleanup keeps for their
+     * Retry. A followed mix is told by its source id, not its follow: unfollow deletes the
+     * follow before the playlist. Read from the database: the caller's copy can be stale.
+     */
+    private suspend fun downloadsItsSongs(playlistId: Long): Boolean {
+        val playlist = playlistDao.getById(playlistId) ?: return false
+        return playlist.keepOffline || (playlist.syncEnabled && playlist.sourceId.startsWith("share:"))
     }
 
     /**
@@ -1114,6 +1157,17 @@ class MusicRepositoryImpl @Inject constructor(
         val trackIds = playlistDao.getPlaylistWithTracks(playlistId)?.tracks
             ?.map { it.id }
             ?: emptyList()
+        // Its downloads that haven't started go now, as in removePlaylist (#532). Before
+        // the loop, which unlinks each song: a song kept by another playlist keeps its row.
+        // Switched off first, under the switch's lock: a sync's sweep (queueKeptPlaylists)
+        // reads the switch again inside that lock, so during the loop it can't queue the
+        // songs not unlinked yet, which would outlive the playlist.
+        KEEP_OFFLINE_LOCK.withLock {
+            if (downloadsItsSongs(playlistId)) {
+                playlistDao.setKeepOffline(playlistId, false)
+                downloadQueueDao.cancelWaitingForPlaylist(playlistId)
+            }
+        }
 
         var deleted = 0
         var keptProtected = 0
@@ -1307,7 +1361,8 @@ class MusicRepositoryImpl @Inject constructor(
             "stash_discovery",
             "stash_tag_enrichment",
             "stash_track_info_enrichment",
-            // Not "discovery_download": every row it drains is a download the user asked for (#474).
+            // Not "discovery_download": every row it drains is a download the user asked for
+            // (#474), which its query enforces since #532.
         )
     }
 }
