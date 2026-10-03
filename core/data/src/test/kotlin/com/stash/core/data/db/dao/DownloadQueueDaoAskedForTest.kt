@@ -7,6 +7,7 @@ import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.DownloadFailureType
@@ -48,14 +49,21 @@ class DownloadQueueDaoAskedForTest {
     private var kept = 0L
     private var followedOn = 0L
     private var followedOff = 0L
+    private var stoppedSharing = 0L
     private var synced = 0L
     private var stashMix = 0L
     private var hiddenKept = 0L
 
     private suspend fun playlists() {
         kept = playlist("Kept", "custom_kept", keepOffline = true)
-        followedOn = playlist("Followed, Download on", "share:on", syncEnabled = true)
-        followedOff = playlist("Followed, Download off", "share:off")
+        followedOn = playlist(
+            "Followed, Download on", "share:on", syncEnabled = true, follow = SharedMixEntity.STATUS_ACTIVE,
+        )
+        followedOff = playlist("Followed, Download off", "share:off", follow = SharedMixEntity.STATUS_ACTIVE)
+        // The owner stopped sharing: an ordinary playlist now, with the page's own Download button.
+        stoppedSharing = playlist(
+            "Owner stopped sharing", "share:gone", syncEnabled = true, follow = SharedMixEntity.STATUS_REMOVED,
+        )
         // A user's own playlist is created with sync on; that is not a download switch.
         synced = playlist("Synced, not kept", "custom_synced", syncEnabled = true)
         stashMix = playlist("Stash Mix", "stash_mix_1", syncEnabled = true, type = PlaylistType.STASH_MIX)
@@ -74,6 +82,7 @@ class DownloadQueueDaoAskedForTest {
         queued("Verify's", DownloadStatus.PENDING, synced, searchQuery = "")
         queued("Stash Mix's", DownloadStatus.PENDING, stashMix)
         queued("Followed, Download off", DownloadStatus.PENDING, followedOff)
+        queued("Owner stopped sharing", DownloadStatus.PENDING, stoppedSharing)
         queued("Kept, but hidden", DownloadStatus.PENDING, hiddenKept)
         queued("Taken out of Kept", DownloadStatus.PENDING, kept, removedFromFirst = true)
         queued("Tapped before v0.9.110, failed", DownloadStatus.FAILED, retryCount = 1)
@@ -106,6 +115,7 @@ class DownloadQueueDaoAskedForTest {
         val syncWait = queued("Sync's", DownloadStatus.WAITING_FOR_LOSSLESS, syncId = syncRun())
         queued("Old playlist download", DownloadStatus.WAITING_FOR_LOSSLESS)
         queued("Verify's", DownloadStatus.WAITING_FOR_LOSSLESS, synced, searchQuery = "")
+        queued("Owner stopped sharing", DownloadStatus.WAITING_FOR_LOSSLESS, stoppedSharing)
 
         assertThat(dao.waitingForLosslessTracks().map { it.trackId })
             .containsExactly(keptWait, tappedWait, syncWait)
@@ -175,6 +185,7 @@ class DownloadQueueDaoAskedForTest {
             queued("Verify's", DownloadStatus.PENDING, synced, searchQuery = ""),
             queued("Stash Mix's", DownloadStatus.PENDING, stashMix),
             queued("Followed, Download off", DownloadStatus.PENDING, followedOff),
+            queued("Owner stopped sharing", DownloadStatus.PENDING, stoppedSharing),
             queued("Kept, but hidden", DownloadStatus.PENDING, hiddenKept),
             queued("Taken out of Kept", DownloadStatus.PENDING, kept, removedFromFirst = true),
             // The lossless retry would download it later (relay pacing defers whole batches).
@@ -250,6 +261,7 @@ class DownloadQueueDaoAskedForTest {
 
     private suspend fun syncRun(): Long = db.syncHistoryDao().insert(SyncHistoryEntity())
 
+    /** [follow]: a followed mix's status. follow() writes its row with the playlist, in one transaction. */
     private suspend fun playlist(
         name: String,
         sourceId: String,
@@ -257,12 +269,22 @@ class DownloadQueueDaoAskedForTest {
         syncEnabled: Boolean = false,
         isActive: Boolean = true,
         type: PlaylistType = PlaylistType.CUSTOM,
+        follow: String? = null,
     ): Long = db.playlistDao().insert(
         PlaylistEntity(
             name = name, source = MusicSource.BOTH, sourceId = sourceId, type = type,
             keepOffline = keepOffline, syncEnabled = syncEnabled, isActive = isActive,
         )
-    )
+    ).also { id ->
+        if (follow != null) {
+            db.sharedMixDao().insert(
+                SharedMixEntity(
+                    playlistId = id, shareId = sourceId.removePrefix("share:"), role = SharedMixEntity.ROLE_FOLLOWER,
+                    name = name, status = follow,
+                )
+            )
+        }
+    }
 
     /**
      * A song in [playlistIds] with one download row, returning the song's id.

@@ -41,11 +41,25 @@ data class DownloadManagementRow(
 )
 
 /**
- * A song still in a playlist that downloads it: kept on the phone (`keep_offline`,
- * the playlist page's Download button) or a followed mix with "Download this mix"
- * on (`sync_enabled` on its `share:<id>` playlist). Active playlists and live
- * memberships only: the same "still wanted" rule
- * [DownloadQueueDao.cancelWaitingForPlaylist] spares rows by.
+ * A playlist `p` that downloads its own songs, outside any sync: kept on the phone
+ * (`keep_offline`, the playlist page's Download button), or a followed mix with
+ * "Download this mix" on (`sync_enabled`, while the follow is ACTIVE: the page shows
+ * that switch only then). Once the owner stops sharing, the mix is an ordinary
+ * playlist with the page's own button, and its `sync_enabled` downloads only through
+ * a sync, like any playlist's (#532). Active playlists only. The subquery's columns
+ * are qualified, like [WANTED_BY_A_PLAYLIST]'s.
+ */
+private const val DOWNLOADS_ITS_SONGS = """
+    p.is_active = 1
+    AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.id IN (
+        SELECT sm.playlist_id FROM shared_mixes sm WHERE sm.role = 'FOLLOWER' AND sm.status = 'ACTIVE'
+    )))
+"""
+
+/**
+ * A song still in a playlist that downloads it ([DOWNLOADS_ITS_SONGS]), by a live
+ * membership: the same "still wanted" rule [DownloadQueueDao.cancelWaitingForPlaylist]
+ * spares rows by.
  *
  * Every column inside the subquery is qualified, so the bare `track_id` resolves
  * to download_queue in the query this is pasted into.
@@ -55,8 +69,7 @@ private const val WANTED_BY_A_PLAYLIST = """
         SELECT pt.track_id FROM playlist_tracks pt
         INNER JOIN playlists p ON p.id = pt.playlist_id
         WHERE pt.removed_at IS NULL
-          AND p.is_active = 1
-          AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.source_id LIKE 'share:%'))
+          AND """ + DOWNLOADS_ITS_SONGS + """
     ))
 """
 
@@ -759,10 +772,7 @@ interface DownloadQueueDao {
               INNER JOIN playlists p ON p.id = pt.playlist_id
               WHERE pt.removed_at IS NULL
                 AND p.id != :playlistId
-                AND p.is_active = 1
-                -- Kept on the phone, or a followed mix with "Download this mix" on
-                -- (its switch is sync_enabled, and it downloads through these rows).
-                AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.source_id LIKE 'share:%'))
+                AND """ + DOWNLOADS_ITS_SONGS + """
           )
         """
     )
