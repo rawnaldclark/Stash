@@ -997,4 +997,19 @@ class PlayerRepositoryFullTimelineTest {
         verify { controller.prepare() }
         verify { controller.play() }
     }
+
+    @Test
+    fun `setQueue starts at the tapped copy of a song queued twice`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        val a = Track(id = 1L, title = "A", artist = "a")
+        // A confirmed-unavailable row first, so the start also has to map through the playable filter.
+        val gone = Track(id = 5L, title = "Gone", artist = "a", isStreamableCheckedAt = 1L)
+        val tracks = listOf(gone, a, Track(id = 2L, title = "B", artist = "a"), a, Track(id = 3L, title = "C", artist = "a"))
+
+        repo.setQueue(tracks, startIndex = 3) // the second A
+
+        verify {
+            controller.setMediaItems(match<List<MediaItem>> { items -> items.map { it.mediaId } == listOf("1", "2", "1", "3") }, 2, 0L)
+        }
+    }
 }
