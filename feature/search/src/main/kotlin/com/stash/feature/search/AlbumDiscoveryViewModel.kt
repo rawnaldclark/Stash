@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.cache.AlbumCache
+import com.stash.core.data.discography.QobuzAlbumUnavailableException
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
@@ -12,7 +13,11 @@ import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import com.stash.core.model.TrackItem
+import com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher
+import com.stash.data.ytmusic.YTMusicApiClient
+import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.AlbumSource
+import com.stash.data.ytmusic.model.AlbumSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -24,12 +29,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.Normalizer
 import javax.inject.Inject
 
 /**
@@ -51,8 +58,11 @@ import javax.inject.Inject
  *    [TrackActionsDelegate.refreshDownloadedIds] so already-downloaded rows
  *    paint with the green checkmark.
  *  - On a cache failure (cold miss + network error), transition to
- *    [AlbumDiscoveryStatus.Error] and emit a Snackbar-bound userMessage;
- *    [retry] flips back to Loading and re-runs the fetch.
+ *    [AlbumDiscoveryStatus.Error] in plain words and emit a Snackbar-bound
+ *    userMessage; [retry] flips back to Loading and re-runs the fetch.
+ *  - #481: open a Qobuz album that isn't sold in the user's country from
+ *    YouTube Music instead ([loadAlbum]), or say it isn't available, with no
+ *    Retry, when there's no confident YouTube Music copy.
  *  - Snapshot non-downloaded tracks into [AlbumDiscoveryUiState.downloadConfirmQueue]
  *    when the user taps "Download all" so the confirm step enqueues exactly
  *    what the user saw in the dialog, not a racy re-read of the delegate's
@@ -70,6 +80,7 @@ import javax.inject.Inject
 class AlbumDiscoveryViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val albumCache: AlbumCache,
+    private val ytMusicApiClient: YTMusicApiClient,
     private val prefetcher: PreviewPrefetcher,
     private val playerRepository: PlayerRepository,
     private val musicRepository: MusicRepository,
@@ -78,17 +89,29 @@ class AlbumDiscoveryViewModel @Inject constructor(
     val losslessPrefetcher: LosslessUrlPrefetcher,
 ) : ViewModel() {
 
-    private val browseId: String = requireNotNull(savedStateHandle["browseId"]) {
-        "SearchAlbumRoute requires a non-null browseId nav arg"
-    }
     private val initialTitle: String = savedStateHandle["title"] ?: ""
     private val initialArtist: String = savedStateHandle["artist"] ?: ""
     private val initialThumb: String? = savedStateHandle["thumbnailUrl"]
     private val initialYear: String? = savedStateHandle["year"]
 
+    /**
+     * The album on screen: the nav args' browse id and catalog, until #481 swaps a
+     * Qobuz album that isn't sold in the user's country for its YouTube Music copy.
+     * State rather than vals, so everything keyed on them follows the swap: the
+     * cache load, the saved-album key, download support, the YouTube-only steps.
+     */
+    private val album = MutableStateFlow(
+        AlbumRef(
+            id = requireNotNull(savedStateHandle["browseId"]) {
+                "SearchAlbumRoute requires a non-null browseId nav arg"
+            },
+            source = savedStateHandle["source"] ?: AlbumSource.YOUTUBE,
+        ),
+    )
+    private val browseId: String get() = album.value.id
+
     /** Which catalog this album came from — routes the cache load + play path. */
-    private val albumSource: AlbumSource =
-        savedStateHandle["source"] ?: AlbumSource.YOUTUBE
+    private val albumSource: AlbumSource get() = album.value.source
 
     private val _uiState = MutableStateFlow(
         AlbumDiscoveryUiState(
@@ -123,13 +146,9 @@ class AlbumDiscoveryViewModel @Inject constructor(
     val userPlaylists: StateFlow<List<Playlist>> =
         delegate.userPlaylists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** The library playlist that stands for this album: one per source + browse id. */
-    private val savedAlbumSourceId: String
-        get() = "album:${albumSource.name.lowercase()}:$browseId"
-
     /** #304: true once this album sits in the library as a saved playlist. */
     val isSaved: StateFlow<Boolean> =
-        userPlaylists.map { lists -> lists.any { it.sourceId == savedAlbumSourceId } }
+        combine(userPlaylists, album) { lists, ref -> lists.any { it.sourceId == ref.savedSourceId } }
             .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** youtubeId of the currently-playing track, for the SongRow now-playing indicator. */
@@ -322,7 +341,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
             withContext(NonCancellable) {
                 val playlistId = musicRepository.ensureCustomPlaylist(
                     name = hero.title,
-                    sourceId = savedAlbumSourceId,
+                    sourceId = album.value.savedSourceId,
                     artUrl = hero.thumbnailUrl,
                 )
                 musicRepository.addTracksToPlaylist(ids, playlistId)
@@ -409,7 +428,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
 
     private suspend fun observeAlbum() {
         try {
-            val detail = albumCache.get(browseId, albumSource)
+            val detail = loadAlbum()
             val totalMs = detail.tracks.sumOf { (it.durationSeconds * 1000).toLong() }
             _uiState.update {
                 it.copy(
@@ -466,19 +485,88 @@ class AlbumDiscoveryViewModel @Inject constructor(
             }
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
-            Log.e(TAG, "album fetch failed for $browseId", t)
-            _uiState.update {
-                it.copy(
-                    status = AlbumDiscoveryStatus.Error(
-                        t.message ?: "Something went wrong.",
-                    ),
-                )
+            if (t is QobuzAlbumUnavailableException) {
+                // Not sold here and no YouTube Music copy. Retry can't change that,
+                // so the card offers none, and there's nothing to snackbar about.
+                Log.i(TAG, "album $browseId isn't sold in this country and has no YouTube Music copy")
+                _uiState.update {
+                    it.copy(status = AlbumDiscoveryStatus.Error(NOT_AVAILABLE, canRetry = false))
+                }
+                return
             }
+            Log.e(TAG, "album fetch failed for $browseId", t)
+            // Plain words: the exception's text can be Qobuz's raw JSON reply (#481).
+            _uiState.update { it.copy(status = AlbumDiscoveryStatus.Error(LOAD_FAILED)) }
             _userMessages.emit("Couldn't load album — tap Retry.")
         }
     }
 
+    /**
+     * Loads [album], or its YouTube Music copy when Qobuz doesn't sell it in the
+     * user's country (#481). Qobuz picks its store from the caller's IP: where it
+     * doesn't sell, Home still lists its new releases, but album/get 404s for every
+     * one of them. Playback never needed Qobuz, only the track list did, so the
+     * same album from YouTube Music is a whole album page. The status stays
+     * Loading throughout, so the 404 never flashes up as an error. Rethrows the
+     * [QobuzAlbumUnavailableException] when there's no confident copy.
+     */
+    private suspend fun loadAlbum(): AlbumDetail {
+        val ref = album.value
+        return try {
+            albumCache.get(ref.id, ref.source)
+        } catch (e: QobuzAlbumUnavailableException) {
+            val copy = findYouTubeCopy() ?: throw e
+            Log.i(TAG, "Qobuz album ${ref.id} isn't sold here; opening its YouTube Music copy ${copy.id}")
+            album.value = AlbumRef(copy.id, AlbumSource.YOUTUBE)
+            albumCache.get(copy.id, AlbumSource.YOUTUBE)
+        }
+    }
+
+    /**
+     * #481: this album on YouTube Music, or null unless it is confidently the same
+     * album. [YTMusicApiClient.resolveAlbum] falls back to its first hit, so its
+     * answer only counts when [isSameAlbum] agrees.
+     */
+    private suspend fun findYouTubeCopy(): AlbumSummary? {
+        val candidate = ytMusicApiClient.resolveAlbum(initialTitle, initialArtist)
+        if (candidate == null || isSameAlbum(candidate, initialTitle, initialArtist)) return candidate
+        Log.i(TAG, "YouTube Music's '${candidate.title}' by '${candidate.artist}' isn't '$initialTitle' by '$initialArtist'")
+        return null
+    }
+
+    /** Which album the screen shows: a catalog id and the catalog it belongs to. */
+    private data class AlbumRef(val id: String, val source: AlbumSource) {
+        /** The library playlist that stands for this album: one per source + browse id. */
+        val savedSourceId: String get() = "album:${source.name.lowercase()}:$id"
+    }
+
     companion object {
         private const val TAG = "AlbumDiscoveryVM"
+
+        /** A failure Retry can fix. Plain words, whatever the exception said. */
+        internal const val LOAD_FAILED = "Check your connection and try again."
+
+        /** #481: not sold in the user's country, and no YouTube Music copy. */
+        internal const val NOT_AVAILABLE = "This album isn't available in your country."
     }
 }
+
+/**
+ * #481: whether [candidate] is the album [title] by [artist], meaning the same title
+ * and the same artist once both are normalized (case, punctuation, accents, a
+ * bracketed edition like "(Deluxe)"). Strict on purpose: a near miss is a different
+ * album, and opening the wrong album is worse than saying this one isn't available.
+ */
+internal fun isSameAlbum(candidate: AlbumSummary, title: String, artist: String): Boolean {
+    val wantTitle = matchKey(title)
+    val wantArtist = matchKey(artist)
+    return wantTitle.isNotEmpty() && wantArtist.isNotEmpty() &&
+        matchKey(candidate.title) == wantTitle &&
+        matchKey(candidate.artist) == wantArtist
+}
+
+/** [QobuzCandidateMatcher.normalize], blind to accents too: Qobuz writes "Victoria Monet", YouTube "Victoria Monét". */
+private fun matchKey(s: String): String =
+    QobuzCandidateMatcher.normalize(Normalizer.normalize(s, Normalizer.Form.NFD).replace(COMBINING_MARKS, ""))
+
+private val COMBINING_MARKS = Regex("\\p{Mn}+")

@@ -49,7 +49,7 @@ import kotlinx.coroutines.flow.merge
  *  2. Body, gated on [AlbumDiscoveryStatus]:
  *     - [AlbumDiscoveryStatus.Loading] — centred [CircularProgressIndicator].
  *     - [AlbumDiscoveryStatus.Error]   — [DiscoveryErrorCard] with a Retry
- *       button (passes a screen-specific title to match
+ *       button when a retry can help (passes a screen-specific title to match
  *       [ArtistProfileScreen]).
  *     - [AlbumDiscoveryStatus.Fresh]   — tracklist of [PreviewDownloadRow]s
  *       (one per [com.stash.data.ytmusic.model.TrackSummary]) followed by a
@@ -124,6 +124,7 @@ fun AlbumDiscoveryScreen(
                     streamingEnabled = streamingEnabled,
                     onStreamingClick = { showStreamingSheet = true },
                     downloadSupported = vm.downloadSupported,
+                    actionsEnabled = state.tracks.isNotEmpty(),
                 )
             }
 
@@ -140,9 +141,10 @@ fun AlbumDiscoveryScreen(
                 }
                 is AlbumDiscoveryStatus.Error -> item {
                     DiscoveryErrorCard(
-                        title = "Couldn't load album",
+                        title = if (status.canRetry) "Couldn't load album" else "Album unavailable",
                         message = status.message,
-                        onRetry = vm::retry,
+                        // #481: Retry can't make an album appear in a country it isn't sold in.
+                        onRetry = if (status.canRetry) vm::retry else null,
                     )
                 }
                 AlbumDiscoveryStatus.Fresh -> {
