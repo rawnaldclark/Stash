@@ -74,6 +74,8 @@ data class ResyncCandidate(
  * @property currentYoutubeId The currently-associated YT video (wrong one).
  * @property currentFilePath  On-disk file to delete when the swap is approved.
  * @property searchQuery      "<artist> - <title>" — what the resync feeds into YT search.
+ * @property album            The track's album ("" = unknown). The swap files the
+ *                           replacement under it, like a sync download.
  */
 data class FlaggedTrackRow(
     val trackId: Long,
@@ -83,6 +85,7 @@ data class FlaggedTrackRow(
     val currentYoutubeId: String?,
     val currentFilePath: String?,
     val searchQuery: String,
+    val album: String = "",
 )
 
 /**
@@ -221,6 +224,7 @@ class FailedMatchesViewModel @Inject constructor(
                     currentYoutubeId = t.youtubeId,
                     currentFilePath = t.filePath,
                     searchQuery = "${t.artist} - ${t.title}",
+                    album = t.album,
                 )
             }
         }
@@ -580,6 +584,7 @@ class FailedMatchesViewModel @Inject constructor(
                 oldFilePath = row.currentFilePath,
                 artist = row.artist,
                 title = row.title,
+                album = row.album,
                 newVideoId = candidate.videoId,
             )
         }

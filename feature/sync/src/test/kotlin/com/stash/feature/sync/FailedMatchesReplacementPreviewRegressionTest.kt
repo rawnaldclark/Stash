@@ -613,7 +613,7 @@ class FailedMatchesReplacementPreviewRegressionTest {
         coVerify(exactly = 0) { trackDao.findByYoutubeId(any()) }
         coVerify(exactly = 0) { musicRepository.setMatchFlagged(any(), any()) }
         verify(exactly = 0) {
-            swapCoordinator.swap(any(), any(), any(), any(), any())
+            swapCoordinator.swap(any(), any(), any(), any(), any(), any())
         }
     }
 }

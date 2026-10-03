@@ -1822,6 +1822,18 @@ interface TrackDao {
     )
     suspend fun updateYoutubeIdIfUnclaimed(trackId: Long, youtubeId: String): Int
 
+    /**
+     * Gives back a youtube_id claimed with [updateYoutubeIdIfUnclaimed] when
+     * the step after the claim failed (the wrong-match swap claims the new
+     * video before it writes any file). Puts [previous] back — null clears
+     * the column — but only while the row still holds [claimed], so a newer
+     * write is never undone. Returns 1 when restored, 0 when the row moved
+     * on or is gone. Throws on the UNIQUE index if another track took
+     * [previous] in the meantime; the caller then clears it instead.
+     */
+    @Query("UPDATE tracks SET youtube_id = :previous WHERE id = :trackId AND youtube_id = :claimed")
+    suspend fun restoreYoutubeIdIfClaimed(trackId: Long, claimed: String, previous: String?): Int
+
     @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId")
     suspend fun updateYoutubeId(trackId: Long, youtubeId: String)
 
