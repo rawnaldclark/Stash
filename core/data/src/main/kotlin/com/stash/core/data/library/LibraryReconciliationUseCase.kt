@@ -108,9 +108,9 @@ class LibraryReconciliationUseCase @Inject constructor(
                 result.resolvedFilePath != null -> trackDao.healFilePath(t.id, result.resolvedFilePath)
             }
         }
-        if (missing.isNotEmpty()) {
-            trackDao.resetMissingFiles(missing)
-        }
+        // What was reset, not what was checked: a track that moved to a new
+        // file between the check and the reset isn't missing.
+        val filesMissing = if (missing.isEmpty()) 0 else trackDao.resetMissingFiles(missing)
         onProgress(4, TOTAL_STEPS)
 
         // Adopt files already on disk BEFORE the requeue query below: an adopted
@@ -131,7 +131,7 @@ class LibraryReconciliationUseCase @Inject constructor(
         return ReconciliationResult(
             orphansSwept = sweptOrphans,
             staleResumed = resetInProgress,
-            filesMissing = missing.size,
+            filesMissing = filesMissing,
             unqueuedRequeued = unqueuedTrackIds.size,
             filesAdopted = adopted,
         )

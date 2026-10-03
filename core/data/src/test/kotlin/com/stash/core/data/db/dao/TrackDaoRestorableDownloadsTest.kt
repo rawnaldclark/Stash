@@ -169,4 +169,14 @@ class TrackDaoRestorableDownloadsTest {
         assertTrue(row.isDownloaded)
         assertEquals("/music/moved-new.opus", row.filePath)
     }
+
+    @Test fun `a missing-file reset counts only the tracks it reset`() = runTest {
+        val gone = downloadedTrack("gone")
+        val moved = downloadedTrack("moved")
+        val checked = listOf(gone, moved).associateWith { tracks.getById(it)!!.filePath!! }
+        tracks.markAsDownloaded(moved, "/music/moved-new.opus", 4321)
+
+        // Library Health shows this as "N missing files found".
+        assertEquals(1, tracks.resetMissingFiles(checked, now = 1L))
+    }
 }

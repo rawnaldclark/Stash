@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.auth.TokenManager
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.TrackExistenceRef
 import io.mockk.coEvery
 import io.mockk.coVerifyOrder
 import io.mockk.mockk
@@ -65,5 +66,19 @@ class LibraryReconciliationAdoptionTest {
     fun `default adopter is a no-op`() = runTest {
         val result = useCase().reconcile()
         assertThat(result.filesAdopted).isEqualTo(0)
+    }
+
+    @Test
+    fun `the missing count is the tracks the reset actually reset`() = runTest {
+        coEvery { trackDao.getDownloadedTrackRefs() } returns listOf(
+            TrackExistenceRef(1L, "Evanescence", "Fallen", "Lacrymosa", "/music/one.opus"),
+            TrackExistenceRef(2L, "Evanescence", "Synthesis", "Lacrymosa", "/music/two.opus"),
+        )
+        // Track 2 moved to a new file between the check and the reset.
+        coEvery { trackDao.resetMissingFiles(any(), any()) } returns 1
+
+        val result = useCase().reconcile(checkFileExists = { _, _, _, _, _ -> FileExistenceResult(exists = false) })
+
+        assertThat(result.filesMissing).isEqualTo(1)
     }
 }

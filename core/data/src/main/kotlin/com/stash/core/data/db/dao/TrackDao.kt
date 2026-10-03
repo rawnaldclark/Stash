@@ -407,10 +407,16 @@ interface TrackDao {
     """)
     suspend fun resetMissingFile(trackId: Long, checkedPath: String, now: Long): Int
 
-    /** [resetMissingFile] for every checked track (id to the path found missing), in one transaction. */
+    /**
+     * [resetMissingFile] for every checked track (id to the path found
+     * missing), in one transaction. Returns how many rows it reset: a track
+     * that moved to a new file meanwhile is skipped and not counted.
+     */
     @Transaction
-    suspend fun resetMissingFiles(checked: Map<Long, String>, now: Long = System.currentTimeMillis()) {
-        for ((trackId, checkedPath) in checked) resetMissingFile(trackId, checkedPath, now)
+    suspend fun resetMissingFiles(checked: Map<Long, String>, now: Long = System.currentTimeMillis()): Int {
+        var reset = 0
+        for ((trackId, checkedPath) in checked) reset += resetMissingFile(trackId, checkedPath, now)
+        return reset
     }
 
     /**
