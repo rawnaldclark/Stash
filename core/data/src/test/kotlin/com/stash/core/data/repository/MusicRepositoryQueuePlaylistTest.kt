@@ -15,6 +15,7 @@ import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
@@ -453,6 +454,40 @@ class MusicRepositoryQueuePlaylistTest {
         assertNotNull("Delete Playlist & Songs deleted a failed tap", db.downloadQueueDao().getByTrackId(cascadedSong))
     }
 
+    /**
+     * A sync's keep-offline sweep can land while Delete Playlist & Songs unlinks a kept playlist
+     * song by song (#532). It must not queue the songs the loop hasn't reached yet: they would
+     * download after the playlist is gone, Stream-only included.
+     */
+    @Test fun `a sync's sweep in the middle of a cascade delete queues nothing from the playlist`() = runTest {
+        val kept = playlist("Kept", keepOffline = true)
+        val songs = listOf(member(kept, 0, track("First")), member(kept, 1, track("Second")))
+        // Liked Songs keeps both songs from being deleted, so a row filed for either outlives the playlist.
+        val liked = playlist("Liked", type = PlaylistType.LIKED_SONGS)
+        for (song in songs) {
+            db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = liked, trackId = song, position = 0))
+        }
+        val real = db.playlistDao()
+        lateinit var repo: MusicRepositoryImpl
+        var swept = false
+        val sweptMidCascade = object : PlaylistDao by real {
+            override suspend fun removeTrackFromPlaylist(playlistId: Long, trackId: Long) {
+                real.removeTrackFromPlaylist(playlistId, trackId)
+                if (!swept) {
+                    swept = true
+                    repo.queueKeptPlaylists() // right after the cascade unlinks its first song
+                }
+            }
+        }
+        repo = repo(playlistDao = sweptMidCascade)
+
+        repo.deletePlaylistWithCascade(kept, alsoBlacklist = false)
+
+        assertEquals(true, swept)
+        assertEquals(listOf(null, null), songs.map { db.downloadQueueDao().getByTrackId(it) })
+        assertEquals(emptyList<WorkInfo>(), drains())
+    }
+
     /** Unfollow deletes the follow's row before the playlist, so the removal can't ask the follow (#532). */
     @Test fun `unfollowing a mix with Download on cancels its waiting downloads, and its songs go`() = runTest {
         val mix = db.playlistDao().insert(
@@ -559,6 +594,7 @@ class MusicRepositoryQueuePlaylistTest {
         wifiOnly: Boolean = true,
         downloadQueueDao: DownloadQueueDao = db.downloadQueueDao(),
         enqueuer: SingleTrackDownloadEnqueuer = mockk(relaxed = true),
+        playlistDao: PlaylistDao = db.playlistDao(),
     ): MusicRepositoryImpl {
         // "Run recommendations when" at its default: it must never reach a download.
         val network = mockk<DownloadNetworkPreference>()
@@ -571,7 +607,7 @@ class MusicRepositoryQueuePlaylistTest {
         return MusicRepositoryImpl(
             context = context,
             trackDao = db.trackDao(),
-            playlistDao = db.playlistDao(),
+            playlistDao = playlistDao,
             syncHistoryDao = mockk(relaxed = true),
             downloadQueueDao = downloadQueueDao,
             discoveryQueueDao = mockk(relaxed = true),
