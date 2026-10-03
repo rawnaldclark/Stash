@@ -845,14 +845,28 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun removePlaylist(playlist: Playlist) {
         takeDownSharedLinkIfOwned(playlist.id)
-        // Its downloads that haven't started go with it, now (#532): the queue has no
-        // link to playlists, and an unfollowed mix still downloading would otherwise
-        // leave its songs listed as queued until the next cleanup. Under the switch's
-        // lock, so a kept playlist's queueing can't add rows between the two.
+        // A playlist that downloads its songs takes its downloads that haven't started
+        // with it, now (#532): the queue has no link to playlists, and an unfollowed mix
+        // still downloading would otherwise leave its songs listed as queued until the
+        // next cleanup. Under the switch's lock, so a kept playlist's queueing can't add
+        // rows between the two.
         KEEP_OFFLINE_LOCK.withLock {
-            downloadQueueDao.cancelWaitingForPlaylist(playlist.id)
+            if (downloadsItsSongs(playlist.id)) downloadQueueDao.cancelWaitingForPlaylist(playlist.id)
             playlistDao.delete(playlist.toEntity())
         }
+    }
+
+    /**
+     * Whether [playlistId]'s own switch downloads its songs (#474): kept on the phone, or a
+     * followed mix with "Download this mix" on. Only then does removing it cancel anything
+     * (#532): removing any other playlist changes nothing the user asked for, and cancelling
+     * there deleted failed taps from before v0.9.110 that the leftover cleanup keeps for their
+     * Retry. A followed mix is told by its source id, not its follow: unfollow deletes the
+     * follow before the playlist. Read from the database: the caller's copy can be stale.
+     */
+    private suspend fun downloadsItsSongs(playlistId: Long): Boolean {
+        val playlist = playlistDao.getById(playlistId) ?: return false
+        return playlist.keepOffline || (playlist.syncEnabled && playlist.sourceId.startsWith("share:"))
     }
 
     /**
@@ -1145,7 +1159,7 @@ class MusicRepositoryImpl @Inject constructor(
             ?: emptyList()
         // Its downloads that haven't started go now, as in removePlaylist (#532). Before
         // the loop, which unlinks each song: a song kept by another playlist keeps its row.
-        downloadQueueDao.cancelWaitingForPlaylist(playlistId)
+        if (downloadsItsSongs(playlistId)) downloadQueueDao.cancelWaitingForPlaylist(playlistId)
 
         var deleted = 0
         var keptProtected = 0

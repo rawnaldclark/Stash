@@ -18,15 +18,19 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.data.share.ShareApiClient
+import com.stash.core.data.share.SharedMixRepository
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
+import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
@@ -41,6 +45,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -423,6 +428,55 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(null, db.downloadQueueDao().getByTrackId(cascadedSong))
     }
 
+    /**
+     * Before v0.9.110 a tap left no mark, so a failed one looks like any other row, and the
+     * leftover cleanup keeps it with its Retry. Removing a playlist that downloads nothing of
+     * its own changes nobody's ask, so it must not delete that row either.
+     */
+    @Test fun `removing a playlist that downloads nothing keeps a failed tap's Retry, by either delete`() = runTest {
+        // A user's own playlist is created with sync on; that is not a download switch.
+        val removed = playlist("Removed", syncEnabled = true)
+        val removedSong = member(removed, 0, track("From Removed"))
+        val cascaded = playlist("Cascaded")
+        val cascadedSong = member(cascaded, 0, track("From Cascaded"))
+        // Liked Songs keeps the cascaded song from being deleted, and with it its row.
+        val liked = playlist("Liked", type = PlaylistType.LIKED_SONGS)
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = liked, trackId = cascadedSong, position = 0))
+        failedOldTap(removedSong)
+        failedOldTap(cascadedSong)
+        val repo = repo()
+
+        repo.removePlaylist(db.playlistDao().getById(removed)!!.toDomain())
+        repo.deletePlaylistWithCascade(cascaded, alsoBlacklist = false)
+
+        assertNotNull("Remove Playlist deleted a failed tap", db.downloadQueueDao().getByTrackId(removedSong))
+        assertNotNull("Delete Playlist & Songs deleted a failed tap", db.downloadQueueDao().getByTrackId(cascadedSong))
+    }
+
+    /** Unfollow deletes the follow's row before the playlist, so the removal can't ask the follow (#532). */
+    @Test fun `unfollowing a mix with Download on cancels its waiting downloads, and its songs go`() = runTest {
+        val mix = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Followed", source = MusicSource.BOTH, sourceId = "share:abc", type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            ),
+        )
+        db.sharedMixDao().insert(
+            SharedMixEntity(playlistId = mix, shareId = "abc", role = SharedMixEntity.ROLE_FOLLOWER, name = "Followed"),
+        )
+        val song = member(mix, 0, track("Waiting"))
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = song, searchQuery = "A - Waiting"))
+        val shares = SharedMixRepository(
+            db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), repo(), ShareApiClient(OkHttpClient()), context,
+        )
+
+        shares.unfollow(mix)
+
+        // A waiting row would have kept the song in the library, still downloading.
+        assertEquals(null, db.downloadQueueDao().getByTrackId(song))
+        assertEquals(null, db.trackDao().getById(song))
+    }
+
     /** The sweep can delete the old row between a tap reading it and writing it (#532). */
     @Test fun `a tap still files its download when the sweep removes the old row first`() = runTest {
         val song = db.trackDao().insert(track("Tapped long ago"))
@@ -446,6 +500,16 @@ class MusicRepositoryQueuePlaylistTest {
     private suspend fun leftWaiting() {
         db.downloadQueueDao().insert(
             DownloadQueueEntity(trackId = db.trackDao().insert(track("Left waiting")), userRequested = true),
+        )
+    }
+
+    /** A tap from before taps were marked (v0.9.110) that failed: no sync run, a search query, not asked for. */
+    private suspend fun failedOldTap(trackId: Long) {
+        db.downloadQueueDao().insert(
+            DownloadQueueEntity(
+                trackId = trackId, status = DownloadStatus.FAILED, searchQuery = "A - Song",
+                failureType = DownloadFailureType.NETWORK,
+            ),
         )
     }
 
