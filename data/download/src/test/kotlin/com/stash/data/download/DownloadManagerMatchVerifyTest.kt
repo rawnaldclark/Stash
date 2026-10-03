@@ -216,15 +216,25 @@ class DownloadManagerMatchVerifyTest {
 
     @Test
     fun `a percent sign in the song's name does not break its match`() = runTest {
-        // The accept line's log text went through format() with the title inside it,
-        // so "% P" read as a format conversion and threw.
+        // Two log lines handed format() a pattern with a title inside it, so "% P" read
+        // as a format conversion and threw: the accept line, and bestMatch's line for a
+        // search whose best row is under the bar, which left every later search unrun.
         val track = Track(id = 9L, title = "100% Pure Love", artist = "Crystal Waters")
-        coEvery { searchExecutor.search(any(), any()) } returns
+        // YouTube Music shows only a karaoke cut, and yt-dlp's search finds the song.
+        val karaoke = ytmRow("karaoke", "100% Pure Love (Karaoke)", "Crystal Waters")
+        everySearchReturns(karaoke)
+        coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns
             listOf(ytmRow("pct", "100% Pure Love", "Crystal Waters"))
+        val karaokeScore = scorer.scoreResults(track.title, track.artist, track.durationMs, listOf(karaoke))
+            .single().matchScore
+        assertTrue(
+            "premise: the karaoke cut scores under the bar, at $karaokeScore",
+            karaokeScore < MatchScorer.AUTO_ACCEPT_THRESHOLD,
+        )
 
         newSubject().downloadTrack(track)
 
-        coVerify(exactly = 1) { downloadExecutor.download(watch("pct"), any(), any(), any(), any()) }
+        downloaded("pct", times = 1)
     }
 
     @Test
