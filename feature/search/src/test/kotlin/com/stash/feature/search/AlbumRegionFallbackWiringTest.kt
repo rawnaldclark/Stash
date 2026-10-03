@@ -65,8 +65,8 @@ class AlbumRegionFallbackWiringTest {
 
     @After fun tear() { Dispatchers.resetMain() }
 
-    /** The Home card for Laura Misch's "Lithic", a Qobuz new release. */
-    private fun vm(): AlbumDiscoveryViewModel {
+    /** The Home card for Laura Misch's "Lithic", a Qobuz new release ([qobuzTrackCount] tracks, when known). */
+    private fun vm(qobuzTrackCount: Int? = null): AlbumDiscoveryViewModel {
         val yt = YTMusicApiClient(innerTube)
         return AlbumDiscoveryViewModel(
             savedStateHandle = SavedStateHandle(
@@ -77,6 +77,7 @@ class AlbumRegionFallbackWiringTest {
                     "thumbnailUrl" to null,
                     "year" to "2026",
                     "source" to AlbumSource.QOBUZ,
+                    "qobuzTrackCount" to qobuzTrackCount,
                 ),
             ),
             albumCache = AlbumCache(yt, QobuzAlbumFetcherImpl(qobuz)),
@@ -262,5 +263,18 @@ class AlbumRegionFallbackWiringTest {
 
         assertEquals(notAvailable, vm.uiState.value.status)
         verify(innerTube, never()).browse(any(), anyOrNull())
+    }
+
+    /** The Home card was a one-track Qobuz single (Top Albums lists those): YouTube's single is its copy. */
+    @Test fun `a Qobuz single opens YouTube's single`() = runTest {
+        whenever(innerTube.searchWithStatus(any(), anyOrNull())).thenReturn(
+            answer(searchResponse(albumTopCard("MPREb_single", "Lithic", "Single", "Laura Misch", "2026"))),
+        )
+        whenever(innerTube.browse(eq("MPREb_single"), anyOrNull())).thenReturn(lithicPage)
+        val vm = vm(qobuzTrackCount = 1)
+        advanceUntilIdle()
+
+        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
+        verify(innerTube).browse(eq("MPREb_single"), anyOrNull())
     }
 }

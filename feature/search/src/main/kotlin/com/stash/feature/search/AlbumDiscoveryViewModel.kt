@@ -98,6 +98,13 @@ class AlbumDiscoveryViewModel @Inject constructor(
     private val initialYear: String? = savedStateHandle["year"]
 
     /**
+     * The Qobuz release's track count, when the card that opened this screen knew it
+     * (Home's Qobuz rows, the artist page's Qobuz albums). Qobuz sends no release
+     * type, so this is how a Qobuz single is told from an album (#481).
+     */
+    private val qobuzTrackCount: Int? = savedStateHandle["qobuzTrackCount"]
+
+    /**
      * The album on screen: the nav args' browse id and catalog, until #481 swaps a
      * Qobuz album that isn't sold in the user's country for its YouTube Music copy.
      * State rather than vals, so everything keyed on them follows the swap: the
@@ -535,17 +542,17 @@ class AlbumDiscoveryViewModel @Inject constructor(
     }
 
     /**
-     * #481: this album on YouTube Music: the first candidate the search turns up (its
-     * top-result card, then the Albums shelf) that [isSameAlbum] agrees is this album,
-     * or null when none is. Throws when YouTube didn't answer at all, so the screen
-     * offers a Retry instead of saying the album isn't available.
+     * #481: this album on YouTube Music, picked by [pickYouTubeCopy] from what the
+     * search turns up (its top-result card, then the Albums shelf), or null when none
+     * is this album. Throws when YouTube didn't answer at all, so the screen offers a
+     * Retry instead of saying the album isn't available.
      */
     private suspend fun findYouTubeCopy(): AlbumSummary? {
         val candidates = when (val search = ytMusicApiClient.searchAlbums(initialTitle, initialArtist)) {
             AlbumSearch.Failed -> throw IOException("YouTube Music didn't answer the search for '$initialTitle'")
             is AlbumSearch.Answered -> search.albums
         }
-        val copy = candidates.firstOrNull { isSameAlbum(it, initialTitle, initialArtist, initialYear) }
+        val copy = pickYouTubeCopy(candidates, initialTitle, initialArtist, initialYear, qobuzTrackCount)
         if (copy == null) {
             Log.i(TAG, "none of ${candidates.size} YouTube Music albums is '$initialTitle' by '$initialArtist' ($initialYear)")
         }
@@ -577,18 +584,47 @@ class AlbumDiscoveryViewModel @Inject constructor(
  *    edition or featured credit ("(Super Deluxe)", "- 2009 Remaster", "(feat. X)")
  *    are set aside. Anything else in brackets, "(Live)", "(Remixes)",
  *    "(Instrumental)", "(Sped Up)", "(Vol. 2)", makes it a different release;
- *  - not the "Single" label: a single that shares an album's title is its title track;
+ *  - the "Single" label only when the Qobuz release is known to be a single too
+ *    ([qobuzTrackCount] 1 to 3). For an album, or when the length is unknown, a
+ *    single that shares the title is its title track;
  *  - a release year within one of [year], when both are known.
  */
-internal fun isSameAlbum(candidate: AlbumSummary, title: String, artist: String, year: String? = null): Boolean {
+internal fun isSameAlbum(
+    candidate: AlbumSummary,
+    title: String,
+    artist: String,
+    year: String? = null,
+    qobuzTrackCount: Int? = null,
+): Boolean {
     val wantTitle = albumTitleKey(title)
     val wantArtist = matchKey(artist)
     return wantTitle.isNotEmpty() && wantArtist.isNotEmpty() &&
-        !candidate.releaseType.equals("Single", ignoreCase = true) &&
+        (!candidate.releaseType.equals("Single", ignoreCase = true) || isSingleLength(qobuzTrackCount)) &&
         albumTitleKey(candidate.title) == wantTitle &&
         matchKey(candidate.artist) == wantArtist &&
         yearsAgree(candidate.year, year)
 }
+
+/**
+ * #481: the YouTube Music copy of a Qobuz release among [candidates] (YouTube's best
+ * guess first): the first that [isSameAlbum] accepts, or null. For a Qobuz single,
+ * YouTube's Single or EP comes first. The single's song is on its album too, so a
+ * same-titled Album only stands in when YouTube has no single.
+ */
+internal fun pickYouTubeCopy(
+    candidates: List<AlbumSummary>,
+    title: String,
+    artist: String,
+    year: String?,
+    qobuzTrackCount: Int?,
+): AlbumSummary? {
+    val matches = candidates.filter { isSameAlbum(it, title, artist, year, qobuzTrackCount) }
+    if (!isSingleLength(qobuzTrackCount)) return matches.firstOrNull()
+    return matches.firstOrNull { !it.releaseType.equals("Album", ignoreCase = true) } ?: matches.firstOrNull()
+}
+
+/** Qobuz sends no release type, so its track count says: 1 to 3 tracks is a single. */
+private fun isSingleLength(trackCount: Int?): Boolean = trackCount != null && trackCount in 1..3
 
 /** [QobuzCandidateMatcher.normalize] after [foldForMatch]. */
 private fun matchKey(s: String): String = QobuzCandidateMatcher.normalize(foldForMatch(s))

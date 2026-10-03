@@ -69,7 +69,9 @@ enum class AlbumSource { YOUTUBE, QOBUZ, QOBUZ_PLAYLIST }
  *
  * [releaseType] is YouTube's label from a search result ("Album", "Single",
  * "EP"...), null where the source doesn't say. #481: a single that shares an
- * album's title is a different release.
+ * album's title is a different release. [trackCount] is how many tracks the
+ * release has where the source lists it (Qobuz's rows do, and send no release
+ * type, so it is how a Qobuz single is told from an album); null otherwise.
  */
 @Serializable
 data class AlbumSummary(
@@ -80,6 +82,7 @@ data class AlbumSummary(
     val year: String?,
     val source: AlbumSource = AlbumSource.YOUTUBE,
     val releaseType: String? = null,
+    val trackCount: Int? = null,
 )
 
 /** Minimal playlist identity for the Home discovery playlist row. */

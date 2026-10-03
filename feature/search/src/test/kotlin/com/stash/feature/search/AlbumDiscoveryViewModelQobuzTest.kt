@@ -94,6 +94,7 @@ class AlbumDiscoveryViewModelQobuzTest {
         title: String = "T",
         artist: String = "A",
         year: String? = null,
+        qobuzTrackCount: Int? = null,
     ) = AlbumDiscoveryViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -103,6 +104,7 @@ class AlbumDiscoveryViewModelQobuzTest {
                 "thumbnailUrl" to null,
                 "year" to year,
                 "source" to source,
+                "qobuzTrackCount" to qobuzTrackCount,
             ),
         ),
         albumCache = cache,
@@ -408,6 +410,65 @@ class AlbumDiscoveryViewModelQobuzTest {
         verify(cache, never()).get(eq("MPREb_other_album"), any())
     }
 
+    // ── A Qobuz single (Qobuz sends no release type: 1 to 3 tracks is a single) ──
+
+    @Test fun `a Qobuz single opens YouTube's single`() = runTest {
+        val cache = notSoldHereCache()
+        whenever(cache.get(eq("MPREb_single"), eq(AlbumSource.YOUTUBE))).thenReturn(ytLoveless())
+        val yt = ytAnswering(ytCopy(id = "MPREb_single", releaseType = "Single"))
+        val vm = vm(AlbumSource.QOBUZ, cache, yt = yt, title = "Loveless", artist = "MBV", qobuzTrackCount = 1)
+        advanceUntilIdle()
+
+        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
+        verify(cache).get(eq("MPREb_single"), eq(AlbumSource.YOUTUBE))
+    }
+
+    @Test fun `a Qobuz album with only a same-titled YouTube single is still not available`() = runTest {
+        val yt = ytAnswering(ytCopy(id = "MPREb_single", releaseType = "Single"))
+        val vm = vm(AlbumSource.QOBUZ, notSoldHereCache(), yt = yt, title = "Loveless", artist = "MBV", qobuzTrackCount = 11)
+        advanceUntilIdle()
+
+        assertEquals(notAvailable, vm.uiState.value.status)
+    }
+
+    /** Unknown length: the title track's single is the likelier match, so nothing changes. */
+    @Test fun `without a track count a YouTube single is still not taken`() = runTest {
+        val yt = ytAnswering(ytCopy(id = "MPREb_single", releaseType = "Single"))
+        val vm = vm(AlbumSource.QOBUZ, notSoldHereCache(), yt = yt, title = "Loveless", artist = "MBV", qobuzTrackCount = null)
+        advanceUntilIdle()
+
+        assertEquals(notAvailable, vm.uiState.value.status)
+    }
+
+    /** YouTube lists the album the single comes from first; the single itself is the copy. */
+    @Test fun `a Qobuz single takes YouTube's single over the album it comes from`() = runTest {
+        val cache = notSoldHereCache()
+        whenever(cache.get(eq("MPREb_single"), eq(AlbumSource.YOUTUBE))).thenReturn(ytLoveless())
+        val yt = ytAnswering(
+            ytCopy(id = "MPREb_album", releaseType = "Album"),
+            ytCopy(id = "MPREb_single", releaseType = "Single"),
+        )
+        val vm = vm(AlbumSource.QOBUZ, cache, yt = yt, title = "Loveless", artist = "MBV", qobuzTrackCount = 2)
+        advanceUntilIdle()
+
+        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
+        verify(cache).get(eq("MPREb_single"), eq(AlbumSource.YOUTUBE))
+        verify(cache, never()).get(eq("MPREb_album"), any())
+    }
+
+    /** A single's song is on its album too, so with no single on YouTube the album still opens (as before). */
+    @Test fun `a Qobuz single opens the album it is on when YouTube has no single`() = runTest {
+        val cache = notSoldHereCache()
+        val vm = vm(
+            AlbumSource.QOBUZ, cache, yt = ytAnswering(ytCopy(releaseType = "Album")),
+            title = "Loveless", artist = "MBV", qobuzTrackCount = 1,
+        )
+        advanceUntilIdle()
+
+        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
+        verify(cache).get(eq("MPREb_yt"), eq(AlbumSource.YOUTUBE))
+    }
+
     /** Only "not sold here" looks elsewhere; a dropped connection or a Qobuz hiccup can be retried. */
     @Test fun `a network or server failure still offers Retry, in plain words`() = runTest {
         val failures = listOf(
@@ -509,6 +570,15 @@ class AlbumDiscoveryViewModelQobuzTest {
         assertFalse(isSameAlbum(ytCopy(releaseType = "Single"), title = "Loveless", artist = "MBV"))
         assertTrue(isSameAlbum(ytCopy(releaseType = "EP"), title = "Loveless", artist = "MBV"))
         assertTrue(isSameAlbum(ytCopy(releaseType = null), title = "Loveless", artist = "MBV"))
+    }
+
+    @Test fun `a single matches only a Qobuz release known to be a single`() {
+        val single = ytCopy(releaseType = "Single")
+        assertTrue(isSameAlbum(single, title = "Loveless", artist = "MBV", qobuzTrackCount = 1))
+        assertTrue(isSameAlbum(single, title = "Loveless", artist = "MBV", qobuzTrackCount = 3))
+        assertFalse(isSameAlbum(single, title = "Loveless", artist = "MBV", qobuzTrackCount = 4))
+        assertFalse(isSameAlbum(single, title = "Loveless", artist = "MBV", qobuzTrackCount = 0))
+        assertFalse(isSameAlbum(single, title = "Loveless", artist = "MBV", qobuzTrackCount = null))
     }
 
     @Test fun `the match needs a title and an artist on both sides`() {
