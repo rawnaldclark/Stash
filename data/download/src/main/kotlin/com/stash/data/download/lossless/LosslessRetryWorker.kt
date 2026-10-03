@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.model.DownloadStatus
 import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
@@ -24,7 +25,9 @@ import dagger.assisted.AssistedInject
  * Does not download — it re-resolves, re-queues, and hands each re-queued
  * row to [SingleTrackDownloadEnqueuer] so it downloads now rather than at
  * the next sync. Never writes COMPLETED or FAILED; the download worker owns
- * that once status is PENDING.
+ * that once status is PENDING. That download runs in either mode, so in
+ * Stream-only mode the sweep takes a sync's row only when the user asked for
+ * the song (#532); the others wait for Download mode.
  *
  * Runs as a download ([LosslessDownloadPurpose]): when the relay paces
  * downloads, the sweep stops at that row — every row after it would be paced
@@ -54,10 +57,14 @@ class LosslessRetryWorker @AssistedInject constructor(
     private val trackDao: TrackDao,
     private val registry: LosslessSourceRegistry,
     private val singleTrackDownloadEnqueuer: SingleTrackDownloadEnqueuer,
+    private val streamingPreference: StreamingPreference,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        val deferred = downloadQueueDao.waitingForLosslessTracks()
+        // Stream-only mode downloads no sync's songs (#474), and every row resolved here
+        // downloads at once: a sync's row nobody asked for is left out before it costs a
+        // lookup, still waiting for Download mode.
+        val deferred = downloadQueueDao.waitingForLosslessTracks(streamOnly = streamingPreference.current())
         if (deferred.isEmpty()) {
             return Result.success(
                 workDataOf(

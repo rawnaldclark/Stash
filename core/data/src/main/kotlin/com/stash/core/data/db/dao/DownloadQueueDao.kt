@@ -202,16 +202,22 @@ interface DownloadQueueDao {
      * ([ASKED_FOR], #532): one that stopped being wanted while it waited (its song
      * left a kept playlist, its mix was unfollowed) waits for
      * [cancelLeftoverDiscoveryDownloads] instead of downloading.
+     *
+     * [streamOnly]: Stream-only mode downloads no sync's songs (#474; the sync's own
+     * download step refuses them there), so a sync's row comes back only when the user
+     * asked for the song too: a tap, or a song a kept playlist or a followed mix
+     * downloads, which download in either mode. The others keep waiting, for Download
+     * mode.
      */
     @Query(
         """
         SELECT * FROM download_queue
         WHERE status = 'WAITING_FOR_LOSSLESS'
-          AND (sync_id IS NOT NULL OR """ + ASKED_FOR + """)
+          AND ((sync_id IS NOT NULL AND :streamOnly = 0) OR """ + ASKED_FOR + """)
         ORDER BY created_at ASC
         """
     )
-    suspend fun waitingForLosslessTracks(): List<DownloadQueueEntity>
+    suspend fun waitingForLosslessTracks(streamOnly: Boolean): List<DownloadQueueEntity>
 
     /** Retrieve all pending downloads for a specific sync run, ordered by creation time. */
     @Query("SELECT * FROM download_queue WHERE sync_id = :syncId AND status = 'PENDING' ORDER BY created_at ASC")

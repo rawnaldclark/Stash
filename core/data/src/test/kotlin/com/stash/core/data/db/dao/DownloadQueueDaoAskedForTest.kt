@@ -117,8 +117,31 @@ class DownloadQueueDaoAskedForTest {
         queued("Verify's", DownloadStatus.WAITING_FOR_LOSSLESS, synced, searchQuery = "")
         queued("Owner stopped sharing", DownloadStatus.WAITING_FOR_LOSSLESS, stoppedSharing)
 
-        assertThat(dao.waitingForLosslessTracks().map { it.trackId })
+        assertThat(dao.waitingForLosslessTracks(streamOnly = false).map { it.trackId })
             .containsExactly(keptWait, tappedWait, syncWait)
+    }
+
+    /**
+     * Stream-only mode downloads no sync's songs (#474), and the lossless retry downloads every
+     * row it resolves: there it takes a sync's row only when the user asked for the song. The
+     * others keep waiting, for Download mode.
+     */
+    @Test fun `in Stream-only the lossless retry takes a sync's wait only if the user asked for the song`() = runTest {
+        playlists()
+        val keptSyncWait = queued("Kept, a sync's", DownloadStatus.WAITING_FOR_LOSSLESS, kept, syncId = syncRun())
+        val followedSyncWait = queued(
+            "Followed, a sync's", DownloadStatus.WAITING_FOR_LOSSLESS, followedOn, syncId = syncRun(),
+        )
+        val tappedSyncWait = queued(
+            "Tapped, a sync's", DownloadStatus.WAITING_FOR_LOSSLESS, synced, syncId = syncRun(), userRequested = true,
+        )
+        val keptWait = queued("Kept", DownloadStatus.WAITING_FOR_LOSSLESS, kept)
+        val syncedOnly = queued("Synced only", DownloadStatus.WAITING_FOR_LOSSLESS, synced, syncId = syncRun())
+
+        assertThat(dao.waitingForLosslessTracks(streamOnly = true).map { it.trackId })
+            .containsExactly(keptSyncWait, followedSyncWait, tappedSyncWait, keptWait)
+        assertThat(dao.waitingForLosslessTracks(streamOnly = false).map { it.trackId })
+            .containsExactly(keptSyncWait, followedSyncWait, tappedSyncWait, keptWait, syncedOnly)
     }
 
     /** Retry, on the Downloads or Failed downloads screen, is a tap (#532). */
@@ -254,7 +277,7 @@ class DownloadQueueDaoAskedForTest {
         assertThat(rowOf(syncRow).userRequested).isFalse()
         assertThat(rowOf(syncRow).failureType).isEqualTo(DownloadFailureType.NONE)
         assertThat(dao.cancelLeftoverDiscoveryDownloads()).isEqualTo(0)
-        assertThat(dao.waitingForLosslessTracks().map { it.trackId }).containsExactly(oldRow, syncRow)
+        assertThat(dao.waitingForLosslessTracks(streamOnly = false).map { it.trackId }).containsExactly(oldRow, syncRow)
     }
 
     private suspend fun rowOf(trackId: Long): DownloadQueueEntity = dao.getByTrackId(trackId)!!
