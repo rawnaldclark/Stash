@@ -112,7 +112,7 @@ class FlacUpgradeWorkerTest {
         assertEquals(1, dao.countByStatus(FlacUpgradeStatus.NO_MATCH))
         assertEquals(1, dao.countByStatus(FlacUpgradeStatus.FAILED))
         assertEquals(0, dao.countByStatus(FlacUpgradeStatus.PENDING))
-        verify { syncNotificationManager.showFlacUpgradeSummary(upgraded = 1, noMatch = 1, failed = 1) }
+        verify { syncNotificationManager.showFlacUpgradeSummary(upgraded = 1, noMatch = 1, failed = 1, skipped = 0) }
     }
 
     @Test fun `a paced sweep stops, leaves the rest pending, and retries later`() = runBlocking {
@@ -178,7 +178,7 @@ class FlacUpgradeWorkerTest {
         assertEquals(0, upgradeCalls.get())
         assertEquals(0, dao.countAll())
         verify(exactly = 0) {
-            syncNotificationManager.showFlacUpgradeSummary(any(), any(), any())
+            syncNotificationManager.showFlacUpgradeSummary(any(), any(), any(), any())
         }
     }
 
@@ -199,7 +199,7 @@ class FlacUpgradeWorkerTest {
         assertTrue(result is ListenableWorker.Result.Success)
         assertEquals(1, dao.countByStatus(FlacUpgradeStatus.DONE))
         assertEquals(0, dao.countByStatus(FlacUpgradeStatus.PENDING))
-        verify { syncNotificationManager.showFlacUpgradeSummary(upgraded = 1, noMatch = 0, failed = 0) }
+        verify { syncNotificationManager.showFlacUpgradeSummary(upgraded = 1, noMatch = 0, failed = 0, skipped = 0) }
     }
 
     // -- #531 review: a song the user picked is left alone -----------------------
@@ -247,6 +247,8 @@ class FlacUpgradeWorkerTest {
         // wrong recording, and write that FLAC over the user's pick.
         assertEquals(listOf(other), asked)
         assertEquals(0, db.flacUpgradeQueueDao().countByStatus(FlacUpgradeStatus.PENDING))
+        // The summary says why one song wasn't upgraded.
+        verify { syncNotificationManager.showFlacUpgradeSummary(upgraded = 1, noMatch = 0, failed = 0, skipped = 1) }
     }
 
     @Test fun `a batch the user chose still upgrades a song they picked`() = runBlocking {

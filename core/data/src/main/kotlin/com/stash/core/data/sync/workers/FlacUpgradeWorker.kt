@@ -69,6 +69,7 @@ class FlacUpgradeWorker @AssistedInject constructor(
         var upgraded = 0
         var noMatch = 0
         var failed = 0
+        var skipped = 0
         try {
             pending.forEachIndexed { index, trackId ->
                 val track = trackDao.getById(trackId)?.toDomain()
@@ -84,6 +85,7 @@ class FlacUpgradeWorker @AssistedInject constructor(
                     // it over their pick. A batch the user chose still runs.
                     Log.i(TAG, "skipping track $trackId: the user picked its audio")
                     queueDao.setStatus(trackId, FlacUpgradeStatus.NO_MATCH)
+                    skipped++
                 } else {
                     val status = when (losslessUpgrader.upgradeToLossless(track, sweep = true)) {
                         UpgradeResult.Upgraded -> { upgraded++; FlacUpgradeStatus.DONE }
@@ -116,7 +118,7 @@ class FlacUpgradeWorker @AssistedInject constructor(
         }
 
         syncNotificationManager.showFlacUpgradeSummary(
-            upgraded = upgraded, noMatch = noMatch, failed = failed,
+            upgraded = upgraded, noMatch = noMatch, failed = failed, skipped = skipped,
         )
         return Result.success(
             workDataOf(KEY_UPGRADED to upgraded, KEY_NO_MATCH to noMatch, KEY_FAILED to failed),

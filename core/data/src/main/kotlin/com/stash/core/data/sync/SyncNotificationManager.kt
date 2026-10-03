@@ -246,11 +246,13 @@ class SyncNotificationManager @Inject constructor(
     }
 
     /** Summary for a finished batch FLAC upgrade (spec 2026-07-22 §3). */
-    fun showFlacUpgradeSummary(upgraded: Int, noMatch: Int, failed: Int) {
+    fun showFlacUpgradeSummary(upgraded: Int, noMatch: Int, failed: Int, skipped: Int) {
         val text = buildList {
             add("$upgraded upgraded")
             if (noMatch > 0) add("$noMatch no FLAC found")
             if (failed > 0) add("$failed failed")
+            // Songs whose audio the user picked in Failed Matches (#531).
+            if (skipped > 0) add("$skipped kept the version you picked")
         }.joinToString(" · ")
         val notification = NotificationCompat.Builder(context, CHANNEL_SYNC_SUMMARY)
             .setContentTitle("FLAC upgrade complete")
