@@ -48,6 +48,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -256,7 +257,9 @@ class PlayerRepositoryImpl @Inject constructor(
         // finite and predictable.
         scope.launch {
             playerState.collect { state ->
-                if (!libraryShuffleActive || listenTogetherOwnsQueue) return@collect
+                // Not from the #462 ghost: its queue is a picture of a stopped session, and a grow would
+                // load the batch into the empty player as a new queue, saved over the user's.
+                if (!libraryShuffleActive || listenTogetherOwnsQueue || ghostSession) return@collect
                 val remaining = state.queue.size - state.currentIndex - 1
                 if (remaining in 0 until LIBRARY_SHUFFLE_GROW_THRESHOLD) {
                     growLibraryShuffle()
@@ -268,7 +271,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // station is armed and the queue nears the tail, append the next batch.
         scope.launch {
             playerState.collect { state ->
-                if (!radioActive || listenTogetherOwnsQueue) return@collect
+                if (!radioActive || listenTogetherOwnsQueue || ghostSession) return@collect // see the grower above
                 val remaining = state.queue.size - state.currentIndex - 1
                 if (remaining in 0 until RADIO_GROW_THRESHOLD) growRadio()
             }
@@ -324,9 +327,10 @@ class PlayerRepositoryImpl @Inject constructor(
      * a player that holds NO timeline: seeded from the persisted session on a cold
      * start after process death, or kept from the last state when the SERVICE stops
      * ([onSessionAliveChanged]). [play] rebuilds the queue from [PlaybackStateStore]
-     * when the timeline comes back empty, and the queue sheet's tap, swipe and drag act
-     * on the ghost too (see [ghostQueueActive]). Cleared the moment the controller
-     * reports real items, or when the ghost's track is deleted.
+     * when the timeline comes back empty; the queue sheet's tap, swipe and drag act on
+     * the ghost too, and Play next / Add to queue load it first (see [ghostQueueActive]).
+     * Cleared the moment the controller reports real items, or when the ghost's track
+     * is deleted.
      */
     @Volatile private var ghostSession = false
     override val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
@@ -643,22 +647,22 @@ class PlayerRepositoryImpl @Inject constructor(
             tracks.mapIndexedNotNull { index, track ->
                 track.toInitialQueueMediaItem(
                     validateLocalFile = index == safeStart,
-                )?.let { track to it }
+                )?.let { Triple(index, track, it) }
             }
         }
         // Every built item is accepted: streaming is always allowed, so a
         // stash-resolve:// placeholder is as legitimate a queue entry as a
         // file:// one. (Until 2026-09-17 Offline mode dropped the placeholders.)
         val acceptedItems = builtItems
-        val playable = acceptedItems.map { it.first }
-        val items = acceptedItems.map { it.second }
+        val playable = acceptedItems.map { it.second }
+        val items = acceptedItems.map { it.third }
         if (items.isEmpty()) {
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return
         }
-        // startIndex maps through the playable filter by track id.
-        val startId = tracks[safeStart].id
-        val startInPlayable = playable.indexOfFirst { it.id == startId }
+        // startIndex maps through the playable filter by position, not by track
+        // id: a song queued twice starts at the copy that was tapped.
+        val startInPlayable = acceptedItems.indexOfFirst { it.first == safeStart }
         if (startInPlayable < 0) {
             _userMessages.tryEmit("That song isn't available offline right now.")
             // Don't fall back to track 0 — bail rather than silently substitute.
@@ -737,29 +741,40 @@ class PlayerRepositoryImpl @Inject constructor(
 
     /** Restores the persisted queue: playing ([resumeLastQueue]) or paused and unprepared (after Listen Together). */
     private suspend fun resumeQueue(play: Boolean) {
-        try {
-            val plan = playbackResumer.buildResumePlan()
-            if (plan != null) {
-                // A new session started while the plan was being built: it owns the player now. Its own
-                // end restores again; the finally below still clears this restore's flag (`active` covers the gap).
-                if (!play && listenTogether?.active?.value == true) return
-                loadPlan(plan, plan.startIndex, plan.positionMs, play)
-                return
+        restoreMutex.withLock {
+            try {
+                // A tap on the #462 ghost loaded the session while this waited: play it, rather than put
+                // the saved song back over the one just tapped.
+                if (play && !inListenTogether) {
+                    val loaded = controllerDeferred?.takeIf { it.isConnected && it.mediaItemCount > 0 }
+                    if (loaded != null) {
+                        loaded.play()
+                        return
+                    }
+                }
+                val plan = playbackResumer.buildResumePlan()
+                if (plan != null) {
+                    // A new session started while the plan was being built: it owns the player now. Its own
+                    // end restores again; the finally below still clears this restore's flag (`active` covers the gap).
+                    if (!play && listenTogether?.active?.value == true) return
+                    loadPlan(plan, plan.startIndex, plan.positionMs, play)
+                    return
+                }
+                if (!play) return // after a session with nothing saved, there is nothing to put back
+                // No persisted queue yet — fall back to the most recently played
+                // (or most recently added) single track, matching the service's
+                // onPlaybackResumption fallback.
+                val fallback = trackDao.getLastPlayedTrack()
+                    ?: trackDao.getRecentlyAdded(1).first().firstOrNull()
+                if (fallback != null) {
+                    setQueueInternal(listOf(fallback.toDomain()), startIndex = 0, startPositionMs = 0L)
+                } else {
+                    Log.i(TAG, "resumeLastQueue: nothing to resume")
+                }
+            } finally {
+                // The user's queue is back (or there was none): saving may resume. On every exit, so a throw can't jam the gate.
+                if (!play) listenTogether?.restorePending = false
             }
-            if (!play) return // after a session with nothing saved, there is nothing to put back
-            // No persisted queue yet — fall back to the most recently played
-            // (or most recently added) single track, matching the service's
-            // onPlaybackResumption fallback.
-            val fallback = trackDao.getLastPlayedTrack()
-                ?: trackDao.getRecentlyAdded(1).first().firstOrNull()
-            if (fallback != null) {
-                setQueueInternal(listOf(fallback.toDomain()), startIndex = 0, startPositionMs = 0L)
-            } else {
-                Log.i(TAG, "resumeLastQueue: nothing to resume")
-            }
-        } finally {
-            // The user's queue is back (or there was none): saving may resume. On every exit, so a throw can't jam the gate.
-            if (!play) listenTogether?.restorePending = false
         }
     }
 
@@ -1052,7 +1067,8 @@ class PlayerRepositoryImpl @Inject constructor(
     internal suspend fun growRadio() {
         radioGrowMutex.withLock {
             if (!radioActive) return
-            val controller = controllerDeferred ?: return
+            // An empty player has no station queue to extend: appending would make the batch a new queue.
+            val controller = controllerDeferred?.takeIf { it.mediaItemCount > 0 } ?: return
             val session = radioSession ?: return
             val batch = radioGenerator.nextBatch(session)
             if (batch.isEmpty()) return
@@ -1080,7 +1096,7 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     private suspend fun growLibraryShuffle() {
         growMutex.withLock {
-            val controller = controllerDeferred ?: return
+            val controller = controllerDeferred?.takeIf { it.mediaItemCount > 0 } ?: return // as in growRadio
             val snapshot = librarySnapshot
             if (snapshot.isEmpty()) return
 
@@ -1135,6 +1151,7 @@ class PlayerRepositoryImpl @Inject constructor(
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
         }
+        restoreGhostPaused()
         val wasEmpty = controller.mediaItemCount == 0
         // Instant add: stream tracks enter as stash-resolve:// placeholders
         // (resolved at play time), so the queue grows immediately instead of
@@ -1177,6 +1194,7 @@ class PlayerRepositoryImpl @Inject constructor(
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
         }
+        restoreGhostPaused()
         val wasEmpty = controller.mediaItemCount == 0
         controller.addMediaItem(queueTrack.toQueueMediaItem())
         currentQueueTracks = if (wasEmpty) listOf(queueTrack) else currentQueueTracks + queueTrack
@@ -1206,6 +1224,7 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         val queueTracks = acceptedItems.map { it.first }
         val items = acceptedItems.map { it.second }
+        restoreGhostPaused()
         val wasEmpty = controller.mediaItemCount == 0
         // Instant batch add: every track becomes a MediaItem now (placeholders
         // for streams), preserving tap order — no resolve fan-out, no dropped
@@ -1429,35 +1448,94 @@ class PlayerRepositoryImpl @Inject constructor(
      * True while the queue sheet lists the #462 ghost over a player with no timeline. The
      * index-based ops above can't reach a row there (they were silent no-ops: a tap closed the
      * sheet and nothing played), so they act on the ghost and on the persisted queue that [play]
-     * rebuilds from. Not during a Listen Together session, which owns the player.
+     * rebuilds from. Not while Listen Together owns the player, its restore included.
      */
     private fun ghostQueueActive(): Boolean =
-        ghostSession && !inListenTogether && (controllerDeferred?.mediaItemCount ?: 0) == 0
+        ghostSession && !listenTogetherOwnsQueue && (controllerDeferred?.mediaItemCount ?: 0) == 0
 
     /**
-     * Serialises the ghost edits' read-modify-write of [PlaybackStateStore], and a ghost tap's
-     * read after them: two quick swipes must not start from the same saved queue, and a tap must
-     * rebuild without a row just swiped away.
+     * Serialises everything that loads the saved session or rewrites it: [resumeQueue], a ghost
+     * tap, Play next or Add to queue, and a ghost edit's save. Two quick swipes must not start from
+     * the same saved queue, a tap must rebuild without a row just swiped away, and Play pressed
+     * during a tap's rebuild must not load the saved song over the tapped one.
      */
-    private val ghostQueueMutex = Mutex()
+    private val restoreMutex = Mutex()
 
     /**
-     * A tap on the ghost's queue: the rebuild [play] does (persisted queue, shuffle, repeat,
-     * "Playing from"), but starting the tapped song from its beginning rather than the saved song
-     * at its saved position. The row is found by track id, not index: a ghost kept from a stopped
-     * service lists Media3's shuffle walk (#468), while the persisted queue is in timeline order.
+     * A tap on the ghost's queue: loads its session ([loadGhost]) from the tapped song's beginning.
+     * The screen can't cancel it, so backing out of Now Playing during the reconnect doesn't drop
+     * the tap. If the ghost retired meanwhile (Play, a media button), the tap goes to the same song
+     * in the live queue instead.
      */
     private suspend fun playGhostQueueFrom(index: Int) {
-        val tapped = _playerState.value.queue.getOrNull(index) ?: return
-        val plan = ghostQueueMutex.withLock { playbackResumer.buildResumePlan() }
-        val start = plan?.tracks?.indexOfFirst { it.id == tapped.id } ?: -1
-        if (plan == null || start < 0) {
-            // No library row behind it (a radio discovery has none): no resume path can rebuild it, play() included.
-            Log.i(TAG, "ghost queue tap: track ${tapped.id} is not in the saved queue")
-            return
+        val rows = _playerState.value.queue
+        val tapped = rows.getOrNull(index) ?: return
+        val copy = rows.subList(0, index).count { it.id == tapped.id }
+        cascadeGuard.onUserTransport() // a deliberate pick, like Play
+        val loaded = withContext(NonCancellable) {
+            restoreMutex.withLock { ghostQueueActive() && loadGhost(tapped.id, copy, play = true) }
         }
-        loadPlan(plan, start, startPositionMs = 0L, play = true)
+        if (loaded || listenTogetherOwnsQueue) return
+        val live = _playerState.value.queue.map { it.id }.indexOfCopy(tapped.id, copy) ?: return
+        skipToQueueIndex(live)
     }
+
+    /**
+     * Loads the session the ghost shows into the player: from the [tappedCopy]-th copy of
+     * [tappedId] at its beginning, or, with no tap, at the paused song and position. Uses the saved
+     * queue when it can rebuild every row on screen: the rebuild [play] does, in the saved order
+     * (with shuffle on, a ghost kept from a stopped service lists Media3's walk instead, #468).
+     * Otherwise it loads the ghost's own rows, filled in from the library and the logical queue: a
+     * radio discovery has no library row, so no saved plan can bring it back, but as a stream
+     * placeholder it resolves from its YouTube id, title and artist. Returns false, loading
+     * nothing, when the ghost retired while the saved queue was read. Called under [restoreMutex].
+     */
+    private suspend fun loadGhost(tappedId: Long?, tappedCopy: Int, play: Boolean): Boolean {
+        val plan = playbackResumer.buildResumePlan()
+        if (!ghostQueueActive()) return false
+        val ghost = _playerState.value
+        val planIds = plan?.tracks?.map { it.id }.orEmpty()
+        val planIdSet = planIds.toHashSet()
+        if (plan != null && ghost.queue.all { it.id in planIdSet }) {
+            val start = tappedId?.let { planIds.indexOfCopy(it, tappedCopy) ?: planIds.indexOf(it) } ?: plan.startIndex
+            loadPlan(plan, start, if (tappedId == null) plan.positionMs else 0L, play)
+            return true
+        }
+        val start = if (tappedId == null) {
+            ghost.currentIndex
+        } else {
+            ghost.queue.map { it.id }.indexOfCopy(tappedId, tappedCopy) ?: return true // the row has gone
+        }
+        val library = plan?.tracks.orEmpty().associate { it.id to it.toDomain() }
+        val logical = currentQueueTracks.associateBy { it.id }
+        val controller = ensureController()
+        controller?.shuffleModeEnabled = ghost.isShuffleEnabled
+        controller?.repeatMode = ghost.repeatMode.toPlayerRepeatMode()
+        setQueueInternal(
+            tracks = ghost.queue.map { library[it.id] ?: logical[it.id] ?: it },
+            startIndex = start,
+            startPositionMs = if (tappedId == null) ghost.positionMs else 0L,
+            source = ghost.source,
+            play = play,
+        )
+        return true
+    }
+
+    /**
+     * Play next and Add to queue on the ghost: load its session paused first, so the song joins
+     * the queue on screen instead of starting alone in the empty player, with the next refresh
+     * saving that one song over the user's queue. Not cancellable by the screen, like a tap.
+     */
+    private suspend fun restoreGhostPaused() {
+        if (!ghostQueueActive()) return
+        withContext(NonCancellable) {
+            restoreMutex.withLock { if (ghostQueueActive()) loadGhost(tappedId = null, tappedCopy = 0, play = false) }
+        }
+    }
+
+    /** Position of the [copy]-th (0-based) occurrence of [id] in these ids, or null when there are fewer copies. */
+    private fun List<Long>.indexOfCopy(id: Long, copy: Int): Int? =
+        withIndex().filter { it.value == id }.getOrNull(copy)?.index
 
     /**
      * A swipe on the ghost's queue: the row leaves the screen and the persisted queue, so the next
@@ -1475,7 +1553,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // so drop the same copy of the song rather than the same position.
         val copy = ghost.queue.subList(0, index).count { it.id == removed.id }
         persistGhostQueue { ids ->
-            val at = ids.withIndex().filter { it.value == removed.id }.getOrNull(copy)?.index
+            val at = ids.indexOfCopy(removed.id, copy)
             if (at == null) ids else ids.filterIndexed { i, _ -> i != at }
         }
     }
@@ -1503,16 +1581,24 @@ class PlayerRepositoryImpl @Inject constructor(
         persistGhostQueue { queue.map { it.id } }
     }
 
-    /** Rewrites the persisted queue's ids through [edit], keeping its shuffle, repeat and source. */
+    /**
+     * Rewrites the persisted queue's ids through [edit], keeping its shuffle, repeat and source.
+     * Not cancellable by the screen: the edit is on screen already. Skipped once the ghost has
+     * retired, when the live queue's own saves own the store.
+     */
     private suspend fun persistGhostQueue(edit: (List<Long>) -> List<Long>) {
         try {
-            ghostQueueMutex.withLock {
-                val saved = playbackStateStore.getLastPlaybackState() ?: return
-                val ids = edit(saved.queueTrackIds)
-                if (ids.isEmpty() || ids == saved.queueTrackIds) return
-                playbackStateStore.saveQueue(ids, saved.isShuffled, saved.repeatMode, saved.source)
-                // updateState's "already saved" check must compare against what is stored now.
-                lastSavedQueueIds = ids
+            withContext(NonCancellable) {
+                restoreMutex.withLock {
+                    if (!ghostQueueActive()) return@withLock
+                    val saved = playbackStateStore.getLastPlaybackState() ?: return@withLock
+                    if (!ghostQueueActive()) return@withLock // it retired during the read
+                    val ids = edit(saved.queueTrackIds)
+                    if (ids.isEmpty() || ids == saved.queueTrackIds) return@withLock
+                    playbackStateStore.saveQueue(ids, saved.isShuffled, saved.repeatMode, saved.source)
+                    // updateState's "already saved" check must compare against what is stored now.
+                    lastSavedQueueIds = ids
+                }
             }
         } catch (e: CancellationException) {
             throw e

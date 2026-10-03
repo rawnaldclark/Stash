@@ -210,6 +210,7 @@ class PlayerRepositoryRadioTest {
         coEvery { radioGenerator.start(any()) } returns (session to listOf(track(1)))
         coEvery { radioGenerator.nextBatch(session) } returns listOf(track(2), track(3))
         repo.startRadio(RadioSeed.Artist("MBV", "id"))
+        every { controller.mediaItemCount } returns 1 // the station's first song, loaded by startRadio
 
         repo.growRadio()
 
@@ -225,6 +226,7 @@ class PlayerRepositoryRadioTest {
         coEvery { radioGenerator.start(any()) } returns (session to listOf(track(1)))
         coEvery { radioGenerator.nextBatch(session) } returns listOf(track(2))
         repo.startRadio(RadioSeed.Artist("MBV", "id"))
+        every { controller.mediaItemCount } returns 1 // the station's first song, loaded by startRadio
         coEvery { streamingPreference.current() } returns false
 
         repo.growRadio()

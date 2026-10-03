@@ -5,6 +5,7 @@ import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
@@ -13,6 +14,9 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.mapper.toDomain
+import com.stash.core.data.radio.RadioSeed
+import com.stash.core.data.radio.RadioSession
+import com.stash.core.data.radio.RadioStationGenerator
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.media.listen.ListenTogetherController
@@ -20,13 +24,20 @@ import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_I
 import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.RepeatMode
+import com.stash.core.model.Track
 import io.mockk.clearMocks
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import io.mockk.verifyOrder
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,12 +51,19 @@ import org.robolectric.Shadows.shadowOf
  * played until the user pressed Play once.
  *
  * Pinned here: a tap rebuilds the saved queue the way play() does (shuffle, repeat and "Playing
- * from" included) but starts the tapped song from its beginning, and with shuffle on it is the song
- * on the tapped ROW: a ghost kept from a stopped service lists Media3's shuffle walk, while the saved
- * queue is in timeline order. A swipe or a drag changes what the ghost shows and what is saved, and
- * never starts playback. The resume plan is the real [PlaybackResumer] over an in-memory store, so
- * what an edit saves is exactly what the next rebuild reads.
+ * from" included) but starts the tapped song, the tapped copy of it, from its beginning; with
+ * shuffle on it is the song on the tapped ROW (a ghost kept from a stopped service lists Media3's
+ * shuffle walk, while the saved queue is in timeline order); and a radio song no saved queue can
+ * rebuild still plays from the ghost's own rows. A swipe or a drag changes what the ghost shows and
+ * what is saved, and never starts playback nor grows a radio station into the empty player. Play
+ * next and Add to queue join the saved session instead of replacing it. Taps, swipes and Play are
+ * serialised, and leaving the screen cancels none of them.
+ *
+ * The resume plan is the real [PlaybackResumer] over an in-memory store, so what an edit saves is
+ * exactly what the next rebuild reads, and the controller is a small fake player whose timeline
+ * follows the loads and inserts the code makes.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class PlayerRepositoryGhostQueueTest {
 
@@ -65,11 +83,30 @@ class PlayerRepositoryGhostQueueTest {
         )
     }
 
+    private val videotape = Track(id = 9L, title = "Videotape", artist = "Radiohead", durationMs = 280_000L, isStreamable = true)
+
+    /** A station's first batch as RadioStationGenerator makes it: discoveries with synthetic ids and no library row. */
+    private val station = (1L..6L).map { n ->
+        Track(id = 100L + n, title = "R$n", artist = "Thom Yorke", youtubeId = "yt$n", durationMs = 200_000L, isStreamable = true)
+    }
+
+    private val streamError = PlaybackException("boom", null, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+
     /** PlaybackStateStore's DataStore, in memory: what the repository saves is what a resume plan reads back. */
     private var stored: SavedPlaybackState? = null
+
+    /**
+     * While set, a store read returns what was stored when it was made, but only once this completes:
+     * the window in which two read-modify-writes could both start from the same saved queue.
+     */
+    private var readGate: CompletableDeferred<Unit>? = null
     private val blank = SavedPlaybackState(0L, 0L, 0, emptyList(), false, RepeatMode.OFF, PlaybackSource.Unknown)
     private val playbackStateStore: PlaybackStateStore = mockk {
-        coEvery { getLastPlaybackState() } answers { stored }
+        coEvery { getLastPlaybackState() } coAnswers {
+            val snapshot = stored
+            readGate?.await()
+            snapshot
+        }
         coEvery { savePosition(any(), any(), any()) } answers {
             stored = (stored ?: blank).copy(trackId = firstArg(), positionMs = secondArg(), queueIndex = thirdArg())
         }
@@ -88,6 +125,11 @@ class PlayerRepositoryGhostQueueTest {
     private val trackDeletions = MutableSharedFlow<Long>(extraBufferCapacity = 1)
     private val musicRepository: MusicRepository = mockk {
         every { this@mockk.trackDeletions } returns this@PlayerRepositoryGhostQueueTest.trackDeletions
+    }
+    private val radioGenerator: RadioStationGenerator = mockk {
+        coEvery { start(any()) } returns (mockk<RadioSession>() to station)
+        coEvery { nextBatch(any()) } returns
+            listOf(Track(id = 200L, title = "R7", artist = "Thom Yorke", youtubeId = "yt7", isStreamable = true))
     }
     private val streamUrlCache: StreamUrlCache =
         mockk<StreamUrlCache>(relaxUnitFun = true).also { every { it.get(any()) } returns null }
@@ -127,12 +169,44 @@ class PlayerRepositoryGhostQueueTest {
 
     private fun ids(items: List<MediaItem>): List<Long> = items.map { it.mediaId.toLong() }
 
-    /** The controller holds tracks 1-4 in timeline order with [current] playing. */
+    /** The controller's timeline as a tiny player: loads, inserts and the current item follow the calls made to it. */
+    private val timelineItems = mutableListOf<MediaItem>()
+    private var timelineCurrent = 0
+
+    private fun livePlayer() {
+        every { controller.mediaItemCount } answers { timelineItems.size }
+        every { controller.getMediaItemAt(any()) } answers { timelineItems[firstArg()] }
+        every { controller.currentMediaItemIndex } answers { timelineCurrent }
+        every { controller.currentMediaItem } answers { timelineItems.getOrNull(timelineCurrent) }
+        every { controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>()) } answers {
+            timelineItems.clear()
+            timelineItems.addAll(firstArg<List<MediaItem>>())
+            timelineCurrent = secondArg()
+        }
+        every { controller.addMediaItem(any<Int>(), any()) } answers {
+            timelineItems.add(minOf(firstArg<Int>(), timelineItems.size), secondArg())
+        }
+        every { controller.addMediaItem(any<MediaItem>()) } answers { timelineItems.add(firstArg()) }
+        every { controller.addMediaItems(any<List<MediaItem>>()) } answers { timelineItems.addAll(firstArg<List<MediaItem>>()) }
+        every { controller.nextMediaItemIndex } returns C.INDEX_UNSET // no next-up prefetch to resolve
+    }
+
+    /** The controller holds tracks 1-4 in timeline order with [current] playing (a fixed picture, not [livePlayer]). */
     private fun holding(current: Long) {
         every { controller.mediaItemCount } returns 4
         for (i in 0 until 4) every { controller.getMediaItemAt(i) } returns item(i + 1L)
         every { controller.currentMediaItem } returns item(current)
         every { controller.currentMediaItemIndex } returns (current - 1).toInt()
+    }
+
+    /** Runs the main looper (the repository's own scope) until its work, Dispatchers.IO hops included, settles. */
+    private fun idleMain(ms: Long = 300) {
+        val deadline = System.currentTimeMillis() + ms
+        do {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(10)
+        } while (System.currentTimeMillis() < deadline)
+        shadowOf(Looper.getMainLooper()).idle()
     }
 
     private fun build(together: ListenTogetherController? = null): PlayerRepositoryImpl {
@@ -146,7 +220,7 @@ class PlayerRepositoryGhostQueueTest {
             connectivity = mockk(relaxed = true),
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
-            radioGenerator = mockk(relaxed = true),
+            radioGenerator = radioGenerator,
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = PlaybackSessionBus(),
             listenTogether = together,
@@ -160,20 +234,24 @@ class PlayerRepositoryGhostQueueTest {
     }
 
     /** Process death, then a cold start: the player is empty and the saved session shows as a paused ghost. */
-    private fun coldStartGhost(shuffled: Boolean = false, together: ListenTogetherController? = null): PlayerRepositoryImpl {
+    private fun coldStartGhost(
+        ids: List<Long> = listOf(1L, 2L, 3L, 4L),
+        current: Long = 2L,
+        shuffled: Boolean = false,
+        together: ListenTogetherController? = null,
+    ): PlayerRepositoryImpl {
         stored = SavedPlaybackState(
-            trackId = 2L,
+            trackId = current,
             positionMs = 44_000L,
-            queueIndex = 1,
-            queueTrackIds = listOf(1L, 2L, 3L, 4L),
+            queueIndex = ids.indexOf(current),
+            queueTrackIds = ids,
             isShuffled = shuffled,
             repeatMode = RepeatMode.ALL,
             source = source,
         )
-        every { controller.mediaItemCount } returns 0
-        every { controller.currentMediaItem } returns null
+        livePlayer() // the new service's player: empty
         val repo = build(together)
-        assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(2L) // Bodysnatchers, paused at 0:44
+        assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(current) // the ghost, paused at 0:44
         clearMocks(controller, playbackStateStore, answers = false)
         return repo
     }
@@ -192,14 +270,32 @@ class PlayerRepositoryGhostQueueTest {
         every { controller.shuffleModeEnabled } returns shuffled
         every { controller.repeatMode } returns Player.REPEAT_MODE_ALL
         every { controller.currentPosition } returns 44_000L
-        every { controller.nextMediaItemIndex } returns C.INDEX_UNSET // no next-up prefetch to resolve
+        every { controller.nextMediaItemIndex } returns C.INDEX_UNSET
         repo.updateState(controller)
         shadowOf(Looper.getMainLooper()).idle() // the queue and position saves land
         repo.onSessionAliveChanged(false) // the idle-stop
-        every { controller.mediaItemCount } returns 0
-        every { controller.currentMediaItem } returns null
+        timelineItems.clear()
+        livePlayer()
         repo.controllerDeferred = controller // the foreground reconnect: a new, empty service
         clearMocks(controller, playbackStateStore, answers = false)
+        return repo
+    }
+
+    /**
+     * A radio station playing R1 with five discoveries after it, one more than the grow threshold,
+     * then the idle-stop: the ghost keeps the station's queue, and the station stays armed.
+     */
+    private suspend fun radioGhost(withLibrarySong: Boolean = false): PlayerRepositoryImpl {
+        livePlayer()
+        val repo = build() // nothing saved yet: no cold-start ghost
+        repo.startRadio(RadioSeed.Artist("Radiohead"), keepCurrent = false)
+        if (withLibrarySong) assertThat(repo.addToQueue(library.getValue(1L).toDomain())).isTrue()
+        repo.updateState(controller)
+        shadowOf(Looper.getMainLooper()).idle() // the queue and position saves land
+        repo.onSessionAliveChanged(false) // the idle-stop
+        timelineItems.clear()
+        repo.controllerDeferred = controller // the foreground reconnect: a new, empty service
+        clearMocks(controller, playbackStateStore, radioGenerator, answers = false)
         return repo
     }
 
@@ -208,6 +304,8 @@ class PlayerRepositoryGhostQueueTest {
         verify(exactly = 0) { controller.prepare() }
         verify(exactly = 0) { controller.play() }
     }
+
+    // ---- Taps ----
 
     @Test
     fun `a tap on the cold-start ghost's queue plays that song from its start`() = runTest {
@@ -222,8 +320,7 @@ class PlayerRepositoryGhostQueueTest {
             controller.prepare()
             controller.play()
         }
-        // The rebuilt queue still says where it is playing from.
-        holding(current = 4L)
+        // The player now holds what was loaded: its first refresh shows the tapped song, from the playlist.
         repo.updateState(controller)
         assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(4L)
         assertThat(repo.playerState.value.source).isEqualTo(source)
@@ -232,8 +329,6 @@ class PlayerRepositoryGhostQueueTest {
     @Test
     fun `with shuffle on, a tap on the cold-start ghost plays the tapped song with shuffle kept`() = runTest {
         val repo = coldStartGhost(shuffled = true)
-        // Nothing saves the shuffle walk, so a cold-start ghost lists the saved (timeline) order.
-        assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(1L, 2L, 3L, 4L).inOrder()
 
         repo.skipToQueueIndex(2) // Nude
 
@@ -277,6 +372,119 @@ class PlayerRepositoryGhostQueueTest {
     }
 
     @Test
+    fun `a tap on the second copy of a song in the ghost starts at that copy`() = runTest {
+        val repo = coldStartGhost(ids = listOf(1L, 2L, 3L, 1L, 4L), current = 2L)
+
+        repo.skipToQueueIndex(3) // 15 Step again: the copy just before Weird Fishes
+
+        verify { controller.setMediaItems(match<List<MediaItem>> { ids(it) == listOf(1L, 2L, 3L, 1L, 4L) }, 3, 0L) }
+    }
+
+    @Test
+    fun `a tap on a radio song in the ghost plays it, though no saved queue can rebuild it`() = runTest {
+        val repo = radioGhost()
+
+        repo.skipToQueueIndex(3) // R4: a discovery with no library row
+
+        verify { controller.setMediaItems(match<List<MediaItem>> { ids(it) == (101L..106L).toList() }, 3, 0L) }
+        verify { controller.play() }
+        repo.updateState(controller)
+        assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(104L)
+        assertThat(repo.playerState.value.source).isEqualTo(PlaybackSource.Radio("Radiohead"))
+    }
+
+    @Test
+    fun `a tap on a library song in a ghost with radio songs keeps the radio songs`() = runTest {
+        val repo = radioGhost(withLibrarySong = true)
+
+        repo.skipToQueueIndex(6) // 15 Step, queued after the station's songs: the only one the saved queue can rebuild
+
+        verify {
+            controller.setMediaItems(match<List<MediaItem>> { ids(it) == (101L..106L).toList() + 1L }, 6, 0L)
+        }
+    }
+
+    @Test
+    fun `a tap on the ghost re-arms the streaming error guard, like Play`() = runTest {
+        val repo = serviceStopGhost(shuffled = false)
+        // Before the pause Weird Fishes failed three times: a retry in place, then two skips. One more
+        // failure in a row would halt streaming.
+        every { controller.currentMediaItem } returns item(4L)
+        repeat(3) { repo.playerListener.onPlayerError(streamError) }
+        every { controller.currentMediaItem } answers { timelineItems.getOrNull(timelineCurrent) }
+
+        repo.skipToQueueIndex(3) // Weird Fishes, picked on purpose
+        repo.playerListener.onPlayerError(streamError) // and it fails once more
+
+        assertThat(repo.streamingHaltedEvents.replayCache).isEmpty() // retried in place, not halted
+    }
+
+    @Test
+    fun `Play pressed while a tap's rebuild is loading keeps the tapped song`() = runTest {
+        val repo = coldStartGhost()
+        val gate = CompletableDeferred<Unit>().also { readGate = it }
+        val tap = launch { repo.skipToQueueIndex(3) } // Weird Fishes
+        runCurrent() // the tap is reading the saved queue
+
+        repo.play() // nothing has loaded yet, so Play takes the rebuild path too
+        idleMain()
+        gate.complete(Unit)
+        tap.join()
+        idleMain() // Play's rebuild gets its turn
+
+        verify(exactly = 1) { controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>()) }
+        verify { controller.setMediaItems(any<List<MediaItem>>(), 3, 0L) }
+    }
+
+    @Test
+    fun `a tap whose ghost retires while it reads the saved queue seeks in the live queue instead`() = runTest {
+        val repo = coldStartGhost()
+        val gate = CompletableDeferred<Unit>().also { readGate = it }
+        val tap = launch { repo.skipToQueueIndex(3) } // Weird Fishes
+        runCurrent() // the tap is reading the saved queue
+
+        // Meanwhile a media button brings the session back on the service, and its first refresh lands.
+        timelineItems.addAll((1L..4L).map { item(it) })
+        timelineCurrent = 1
+        repo.updateState(controller)
+        gate.complete(Unit)
+        tap.join()
+
+        verify(exactly = 0) { controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>()) }
+        verify(exactly = 1) { controller.seekToDefaultPosition(3) }
+    }
+
+    @Test
+    fun `leaving Now Playing while a tap's rebuild waits does not cancel it`() = runTest {
+        val repo = coldStartGhost()
+        val gate = CompletableDeferred<Unit>().also { readGate = it }
+        val tap = launch { repo.skipToQueueIndex(3) } // Weird Fishes
+        runCurrent() // the tap is reading the saved queue
+
+        tap.cancel() // the ViewModel's scope goes with the screen
+        gate.complete(Unit)
+        tap.join()
+
+        verify { controller.setMediaItems(match<List<MediaItem>> { ids(it) == listOf(1L, 2L, 3L, 4L) }, 3, 0L) }
+        verify { controller.play() }
+    }
+
+    @Test
+    fun `a ghost over a player that already holds items lets a tap seek the live queue`() = runTest {
+        val repo = coldStartGhost()
+        // A media button loaded the queue on the service, and no refresh has reached the ghost yet.
+        timelineItems.addAll((1L..4L).map { item(it) })
+        timelineCurrent = 1
+
+        repo.skipToQueueIndex(3)
+
+        verify(exactly = 1) { controller.seekToDefaultPosition(3) }
+        verify(exactly = 0) { controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>()) }
+    }
+
+    // ---- Swipes and drags ----
+
+    @Test
     fun `a swipe on the ghost's queue drops the row from the screen and the saved queue, and plays nothing`() = runTest {
         val repo = coldStartGhost()
 
@@ -292,6 +500,16 @@ class PlayerRepositoryGhostQueueTest {
         assertThat(stored?.source).isEqualTo(source)
         verifyNothingLoaded()
         verify(exactly = 0) { controller.removeMediaItem(any()) }
+    }
+
+    @Test
+    fun `a swipe on the second copy of a song drops that copy from the saved queue`() = runTest {
+        val repo = coldStartGhost(ids = listOf(1L, 2L, 3L, 2L, 4L), current = 1L)
+
+        repo.removeFromQueue(3) // Bodysnatchers again: the copy just before Weird Fishes
+
+        assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(1L, 2L, 3L, 4L).inOrder()
+        assertThat(stored?.queueTrackIds).containsExactly(1L, 2L, 3L, 4L).inOrder()
     }
 
     @Test
@@ -319,6 +537,60 @@ class PlayerRepositoryGhostQueueTest {
     }
 
     @Test
+    fun `two quick swipes on the ghost both stick`() = runTest {
+        val repo = coldStartGhost()
+        val gate = CompletableDeferred<Unit>().also { readGate = it }
+        val first = launch { repo.removeFromQueue(2) } // Nude
+        runCurrent() // its save is reading the stored queue
+        val second = launch { repo.removeFromQueue(2) } // then Weird Fishes, third by now
+        runCurrent()
+
+        gate.complete(Unit)
+        joinAll(first, second)
+
+        assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(1L, 2L).inOrder()
+        assertThat(stored?.queueTrackIds).containsExactly(1L, 2L).inOrder()
+    }
+
+    @Test
+    fun `leaving Now Playing while a swipe is being saved still saves it`() = runTest {
+        val repo = coldStartGhost()
+        val gate = CompletableDeferred<Unit>().also { readGate = it }
+        val swipe = launch { repo.removeFromQueue(2) } // Nude
+        runCurrent() // its save is reading the stored queue
+
+        swipe.cancel() // the ViewModel's scope goes with the screen
+        gate.complete(Unit)
+        swipe.join()
+
+        assertThat(stored?.queueTrackIds).containsExactly(1L, 2L, 4L).inOrder()
+    }
+
+    @Test
+    fun `a swipe on a radio ghost's queue never grows the station into the empty player`() = runTest {
+        val repo = radioGhost()
+
+        repo.removeFromQueue(1) // R2: four songs left after the paused one, under the grow threshold
+        shadowOf(Looper.getMainLooper()).idle() // the station's grow watcher sees the new queue
+
+        coVerify(exactly = 0) { radioGenerator.nextBatch(any()) }
+        verify(exactly = 0) { controller.addMediaItems(any<List<MediaItem>>()) }
+        assertThat(timelineItems).isEmpty()
+        assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(101L)
+        assertThat(stored?.queueTrackIds).containsExactly(101L, 103L, 104L, 105L, 106L).inOrder()
+    }
+
+    @Test
+    fun `the station never grows an empty player`() = runTest {
+        val repo = radioGhost()
+
+        repo.growRadio() // whatever asks: an empty player has no queue to extend
+
+        coVerify(exactly = 0) { radioGenerator.nextBatch(any()) }
+        verify(exactly = 0) { controller.addMediaItems(any<List<MediaItem>>()) }
+    }
+
+    @Test
     fun `a drag on the ghost's queue reorders the rows and the saved queue, and plays nothing`() = runTest {
         val repo = coldStartGhost()
 
@@ -341,6 +613,45 @@ class PlayerRepositoryGhostQueueTest {
         assertThat(repo.playerState.value).isEqualTo(before)
         assertThat(stored?.queueTrackIds).containsExactly(1L, 2L, 3L, 4L).inOrder()
     }
+
+    // ---- Play next and Add to queue ----
+
+    @Test
+    fun `Play next on the ghost queues the song after the paused one, in the saved session`() = runTest {
+        val repo = coldStartGhost()
+
+        assertThat(repo.addNext(videotape)).isTrue()
+
+        // The saved session comes back paused at 0:44 of Bodysnatchers, and Videotape goes in after it.
+        verifyOrder {
+            controller.playWhenReady = false
+            controller.setMediaItems(match<List<MediaItem>> { ids(it) == listOf(1L, 2L, 3L, 4L) }, 1, 44_000L)
+            controller.addMediaItem(2, match { it.mediaId == "9" })
+        }
+        verify(exactly = 0) { controller.prepare() }
+        verify(exactly = 0) { controller.play() }
+        repo.updateState(controller)
+        shadowOf(Looper.getMainLooper()).idle() // the refresh's saves land
+        assertThat(repo.playerState.value.currentTrack?.id).isEqualTo(2L)
+        assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(1L, 2L, 9L, 3L, 4L).inOrder()
+        assertThat(stored?.queueTrackIds).containsExactly(1L, 2L, 9L, 3L, 4L).inOrder()
+    }
+
+    @Test
+    fun `Add to queue on the ghost appends the song to the saved session`() = runTest {
+        val repo = coldStartGhost()
+
+        assertThat(repo.addToQueue(videotape)).isTrue()
+
+        verify { controller.setMediaItems(match<List<MediaItem>> { ids(it) == listOf(1L, 2L, 3L, 4L) }, 1, 44_000L) }
+        verify(exactly = 0) { controller.play() }
+        repo.updateState(controller)
+        shadowOf(Looper.getMainLooper()).idle() // the refresh's saves land
+        assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(1L, 2L, 3L, 4L, 9L).inOrder()
+        assertThat(stored?.queueTrackIds).containsExactly(1L, 2L, 3L, 4L, 9L).inOrder()
+    }
+
+    // ---- Deletions and Listen Together ----
 
     @Test
     fun `a song deleted from the library leaves the ghost's queue`() = runTest {
@@ -367,14 +678,17 @@ class PlayerRepositoryGhostQueueTest {
     }
 
     @Test
-    fun `once the player holds the queue, a tap seeks in it and rebuilds nothing`() = runTest {
-        val repo = coldStartGhost()
-        holding(current = 2L)
-        repo.updateState(controller) // the first refresh with real items retires the ghost
+    fun `while a Listen Together restore is pending the ghost's queue stays untouched`() = runTest {
+        val together = ListenTogetherController(ApplicationProvider.getApplicationContext())
+        val repo = coldStartGhost(together = together)
+        together.restorePending = true // a session just ended: its restore owns the player until it lands
+        val before = repo.playerState.value
 
         repo.skipToQueueIndex(3)
+        repo.removeFromQueue(2)
 
-        verify(exactly = 1) { controller.seekToDefaultPosition(3) }
-        verify(exactly = 0) { controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>()) }
+        verifyNothingLoaded()
+        assertThat(repo.playerState.value).isEqualTo(before)
+        assertThat(stored?.queueTrackIds).containsExactly(1L, 2L, 3L, 4L).inOrder()
     }
 }
