@@ -132,12 +132,12 @@
     "GOAL_CENTS": "10000",
     // Where sign-in codes come from (the send_email binding above allows only this address).
     "EMAIL_FROM": "access@stashfm.app",
-    // TODO(owner): the Cloudflare Access application that guards stashfm.app/admin
-    // (web/README.md, "Early access", step 3). Until both are real, /admin refuses everyone.
-    // Your Zero Trust team domain, like https://<team>.cloudflareaccess.com
-    "ACCESS_TEAM_DOMAIN": "https://TODO-team-name.cloudflareaccess.com",
-    // The application's AUD tag: Zero Trust > Access > Applications > (the app) > Additional settings.
-    "ACCESS_AUD": "TODO-application-audience-tag"
+    // The Cloudflare Access application "Stash admin" that guards stashfm.app/admin (set up 2026-10-04).
+    // If either value is a placeholder, /admin refuses everyone. Both can be read without the dashboard:
+    // `curl -sI https://stashfm.app/admin` redirects to https://<team>.cloudflareaccess.com/...?kid=<AUD>.
+    "ACCESS_TEAM_DOMAIN": "https://stashfm.cloudflareaccess.com",
+    // The application's AUD tag (Zero Trust > Access > Applications > Stash admin; also the login URL's kid).
+    "ACCESS_AUD": "e569cd58af6d149fff38da84f0cb87dadd90caf02d47a00fe680dd9d68c2e4d2"
   },
 
   // Secrets, set with `npx wrangler secret put <NAME>` (never in this file):
