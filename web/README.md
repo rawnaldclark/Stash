@@ -287,10 +287,9 @@ The site is a Worker named `stashfm-site`: `dist/` served with Workers Static As
 `public/_headers`, a 404 page), plus the early-access Worker in `worker/`. Nothing is set up yet. The plan:
 
 0. **Early access, before the site goes live**, in this order:
-   1. **Create the early-access namespace**, once: `npx wrangler kv namespace create stash-early-access`.
-      Paste the id it prints into `infra/tipjar-worker/wrangler.toml` (the `ACCESS_KV` binding) and
-      `web/wrangler.jsonc` (the same binding), replacing `REPLACE_WITH_STASH_EARLY_ACCESS_NAMESPACE_ID`,
-      and commit that. Until then, deploying either Worker fails, on purpose.
+   1. **The early-access namespace** (done 2026-10-04): `stash-early-access`, id
+      `9c1524fb52d64900b5ae05cca64efca3`, bound as `ACCESS_KV` in `infra/tipjar-worker/wrangler.toml` and
+      `web/wrangler.jsonc`. If it's ever recreated, update both files.
    2. **Pick an email pepper** (required): a long random value, e.g. `openssl rand -base64 48`, kept in
       your password manager. Set it on the tip jar now (`npx wrangler secret put EMAIL_PEPPER` in
       `infra/tipjar-worker`), on the site in step 6, and in the environment when you run the import.

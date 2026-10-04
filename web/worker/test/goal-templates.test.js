@@ -146,7 +146,7 @@ test("every Worker route is in run_worker_first, and the public files aren't", (
     // Least privilege: the early-access namespace only, never the tip jar's STASH_KV (the app's supporters list, the relay config).
     assert.deepEqual(config.kv_namespaces.map((k) => k.binding), ["ACCESS_KV"]);
     assert.doesNotMatch(raw, /fca1bc38b42741e6a8cac11f54de5abd/, "STASH_KV's id must not appear");
-    assert.match(config.kv_namespaces[0].id, /^REPLACE_WITH_/, "a placeholder until the owner creates the namespace");
+    assert.match(config.kv_namespaces[0].id, /^[0-9a-f]{32}$/, "the stash-early-access namespace id");
     // Previews get nothing but assets: no production KV or email (Cloudflare's Previews don't inherit bindings).
     assert.deepEqual(config.previews, {});
     assert.equal(config.vars.GOAL_CENTS, "10000");
