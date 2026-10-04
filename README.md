@@ -285,7 +285,7 @@ Stash is GPL-3.0. You can use, copy, modify, and redistribute it freely. If you 
 
 ## Support Stash
 
-Stash is free, open source, and has no ads or telemetry. If it replaced a subscription for you and you want to throw a few bucks at the project:
+Stash is free, open source, and has no ads or analytics. If you'd like to chip in:
 
 **rawnaldclark (rawn)** — Owner, main dev<br>
 <a href="https://ko-fi.com/rawnald"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support on Ko-fi" height="36"></a>
