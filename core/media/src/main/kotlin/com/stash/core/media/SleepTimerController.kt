@@ -77,7 +77,9 @@ class SleepTimerController @VisibleForTesting internal constructor(
                     this.coroutineContext.job.cancel()
                     return@collect
                 }
-                val remaining = current.durationMs - positionMs
+                // The fade runs on the wall clock and the song at the chosen speed: at 2x the last
+                // 7 s of it are over in 3.5 s, and a fade timed in song time lets the next one start.
+                val remaining = mediaToWallMs(current.durationMs - positionMs, playerRepository.playbackSpeed.value)
                 if (current.durationMs > 0 && remaining <= fadeOutMs) {
                     fadeOutAndPause(remaining.coerceAtLeast(0))
                     _state.value = State.Off

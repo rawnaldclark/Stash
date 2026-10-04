@@ -20,6 +20,7 @@ class SleepTimerControllerTest {
     private val playerState = MutableStateFlow(PlayerState(currentTrack = track(1)))
     private val playerRepository: PlayerRepository = mockk(relaxed = true) {
         every { this@mockk.playerState } returns this@SleepTimerControllerTest.playerState
+        every { playbackSpeed } returns MutableStateFlow(1f)
         coEvery { pause() } returns Unit
     }
 
@@ -109,6 +110,29 @@ class SleepTimerControllerTest {
         runCurrent()
 
         coVerify(exactly = 0) { playerRepository.pause() }
+        assertThat(timer.state.value).isEqualTo(SleepTimerController.State.Off)
+    }
+
+    @Test
+    fun `end of track at 2x pauses before the next song starts`() = runTest {
+        val position = MutableStateFlow(0L)
+        every { playerRepository.currentPosition } returns position
+        every { playerRepository.playbackSpeed } returns MutableStateFlow(2f)
+        playerState.value = PlayerState(currentTrack = track(1), durationMs = 100_000L)
+
+        val timer = SleepTimerController(playerRepository, backgroundScope)
+        timer.stopAtEndOfTrack(fadeOutMs = 10_000L)
+        runCurrent()
+
+        // 16 s of song left is 8 s at 2x: already inside the 10 s fade.
+        position.value = 84_000L
+        runCurrent()
+
+        // The song runs out 8 s from now, so the pause must land by then (not 16 s from now,
+        // by which point the next song has been playing for 8 s).
+        advanceTimeBy(8_000L)
+        runCurrent()
+        coVerify(exactly = 1) { playerRepository.pause() }
         assertThat(timer.state.value).isEqualTo(SleepTimerController.State.Off)
     }
 
