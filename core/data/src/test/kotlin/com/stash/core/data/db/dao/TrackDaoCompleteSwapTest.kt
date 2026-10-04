@@ -125,7 +125,7 @@ class TrackDaoCompleteSwapTest {
 
         // The upgrade would re-run the lossless lookup that most likely chose
         // the wrong recording, then write that FLAC over the user's pick.
-        assertEquals(listOf(other), dao.getLosslessUpgradeCandidates().map { it.id })
+        assertEquals(listOf(other), dao.getLosslessUpgradeCandidates(retryBefore = 0L).map { it.id })
     }
 
     @Test
