@@ -94,7 +94,7 @@
   // A deploy fails until the placeholder is replaced, on purpose.
   // `wrangler dev --local` uses a local copy; only a deploy touches the real one.
   "kv_namespaces": [
-    { "binding": "ACCESS_KV", "id": "REPLACE_WITH_STASH_EARLY_ACCESS_NAMESPACE_ID" }
+    { "binding": "ACCESS_KV", "id": "9c1524fb52d64900b5ae05cca64efca3" }
   ],
 
   // Sign-in codes and "You're in" emails, through Cloudflare Email Service, only

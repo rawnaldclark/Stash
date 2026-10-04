@@ -15,7 +15,7 @@ id = "fca1bc38b42741e6a8cac11f54de5abd"
 # A deploy fails until the placeholder is replaced, on purpose.
 [[kv_namespaces]]
 binding = "ACCESS_KV"
-id = "REPLACE_WITH_STASH_EARLY_ACCESS_NAMESPACE_ID"
+id = "9c1524fb52d64900b5ae05cca64efca3"
 
 # Secret: KOFI_VERIFICATION_TOKEN
 # Set via `wrangler secret put KOFI_VERIFICATION_TOKEN` (paste from
