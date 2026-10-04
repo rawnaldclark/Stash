@@ -296,24 +296,31 @@ internal class EmphasisMotion(letterCount: Int, initialProgress: Float) {
 
 /**
  * Smooth playback clock. The VM polls position every 250ms; between ticks this extrapolates with
- * real time. While [isPlaying] is false it holds exactly at the last tick (no drift on pause).
+ * real time at the playback [speed]. While [isPlaying] is false it holds exactly at the last tick (no drift on pause).
  * Extrapolation is also capped at [MAX_EXTRAPOLATION_MS] so a stalled/buffering player can't run ahead.
  */
 @Composable
-internal fun rememberSmoothPositionMs(positionMs: Long, isPlaying: Boolean = true): State<Long> {
+internal fun rememberSmoothPositionMs(positionMs: Long, isPlaying: Boolean = true, speed: Float = 1f): State<Long> {
     val smooth = remember { mutableLongStateOf(positionMs) }
-    LaunchedEffect(positionMs, isPlaying) {
+    LaunchedEffect(positionMs, isPlaying, speed) {
         smooth.longValue = positionMs
         if (!isPlaying) return@LaunchedEffect
         val base = System.nanoTime()
         while (true) {
             withFrameNanos { }                                   // pacing only; time comes from nanoTime
             val elapsedMs = ((System.nanoTime() - base) / 1_000_000L).coerceIn(0L, MAX_EXTRAPOLATION_MS)
-            smooth.longValue = positionMs + elapsedMs
+            smooth.longValue = extrapolatedPositionMs(positionMs, elapsedMs, speed)
             if (elapsedMs >= MAX_EXTRAPOLATION_MS) break
         }
     }
     return smooth
 }
+
+/**
+ * Where the song is [elapsedMs] of real time after a [positionMs] tick. At 1x a 0.5x song would
+ * run ahead and snap back every tick, and a 2x one lag and jump: the words flicker.
+ */
+internal fun extrapolatedPositionMs(positionMs: Long, elapsedMs: Long, speed: Float): Long =
+    positionMs + (elapsedMs * speed).toLong()
 
 private const val MAX_EXTRAPOLATION_MS = 400L

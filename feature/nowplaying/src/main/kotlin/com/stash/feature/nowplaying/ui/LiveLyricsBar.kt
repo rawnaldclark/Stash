@@ -91,6 +91,7 @@ fun LiveLyricsBar(
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
     isPlaying: Boolean = true,
+    playbackSpeed: Float = 1f,
 ) {
     // remember(state, liveEnabled): the 250ms position ticks recompose this
     // composable every tick; without the cache each tick would re-allocate
@@ -133,6 +134,7 @@ fun LiveLyricsBar(
                         currentPositionMs = currentPositionMs,
                         isPlaying = isPlaying,
                         accent = animAccent,
+                        playbackSpeed = playbackSpeed,
                     )
                 } else {
                     val index = remember(mode.lines, currentPositionMs) {

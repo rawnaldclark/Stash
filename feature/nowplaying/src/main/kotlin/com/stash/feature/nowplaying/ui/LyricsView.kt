@@ -68,9 +68,11 @@ fun LyricsSyncedRenderer(
     syllables: TtmlLyrics? = null,
     /** Playback state, so the word-synced clock stops extrapolating while paused/buffering. */
     isPlaying: Boolean = true,
+    /** So the word-synced clock runs at the song's pace between position ticks. */
+    playbackSpeed: Float = 1f,
 ) {
     if (syllables != null) {
-        LyricsSyllableRenderer(syllables, currentPositionMs, onLineTap, modifier, isPlaying)
+        LyricsSyllableRenderer(syllables, currentPositionMs, onLineTap, modifier, isPlaying, playbackSpeed)
     } else {
         LyricsLineRenderer(lines, currentPositionMs, onLineTap, modifier)
     }

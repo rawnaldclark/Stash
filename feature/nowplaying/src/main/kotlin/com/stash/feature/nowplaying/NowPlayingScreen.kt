@@ -314,6 +314,7 @@ fun NowPlayingScreen(
             liveLyricsEnabled = liveLyricsEnabled,
             onLiveLyricsToggle = viewModel::setLiveLyricsBarEnabled,
             isPlaying = uiState.isPlaying && !uiState.isBuffering,
+            playbackSpeed = playbackSpeed,
             onSeek = { if (!isListener) viewModel.onLyricsLineSeek(it) }, // a listener follows the room
             canSaveToFile = track?.isDownloaded == true,
             savingToFile = exportingLyricsTrackId != null,
@@ -830,6 +831,7 @@ fun NowPlayingScreen(
                 liveEnabled = liveLyricsEnabled,
                 onTap = viewModel::onShowLyrics,
                 isPlaying = uiState.isPlaying && !uiState.isBuffering,
+                playbackSpeed = playbackSpeed,
             )
         }
         if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize())
