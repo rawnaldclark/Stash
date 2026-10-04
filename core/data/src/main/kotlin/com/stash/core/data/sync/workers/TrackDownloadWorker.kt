@@ -70,8 +70,8 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val fileExistenceSessionFactory: com.stash.core.data.library.FileExistenceSessionFactory,
     private val fileAdopter: com.stash.core.data.library.FileAdopter,
     private val syncLog: com.stash.core.data.sync.SyncLog,
-    private val flacUpgradeQueueDao: com.stash.core.data.db.dao.FlacUpgradeQueueDao,
-    private val losslessUpgrader: com.stash.core.data.lossless.LosslessUpgrader,
+    private val flacUpgradeSweeper: com.stash.core.data.lossless.FlacUpgradeSweeper,
+    private val autoFlacUpgradePreference: com.stash.core.data.prefs.AutoFlacUpgradePreference,
     private val downloadJobs: DownloadJobRegistry,
 ) : CoroutineWorker(appContext, params) {
 
@@ -644,7 +644,11 @@ class TrackDownloadWorker @AssistedInject constructor(
                 )
             }
 
-            runLosslessUpgradeSweep(downloadedTrackIds)
+            if (autoFlacUpgradePreference.current()) {
+                runLosslessUpgradeSweep(downloadedTrackIds)
+            } else {
+                Log.i(TAG, "Auto FLAC upgrade is off: skipping sweep (run it from Library Health)")
+            }
 
             return Result.success(
                 workDataOf(
@@ -926,39 +930,13 @@ class TrackDownloadWorker @AssistedInject constructor(
      * been cleared out from under it.
      */
     private suspend fun runLosslessUpgradeSweep(recentlyDownloadedTrackIds: Set<Long>) {
-        if (streamingPreference.current()) {
-            Log.i(TAG, "Streaming mode: skipping FLAC upgrade sweep")
-            return
-        }
-        if (!losslessUpgrader.isLosslessEnabled()) {
-            Log.i(TAG, "Lossless disabled in Settings: skipping FLAC upgrade sweep")
-            return
-        }
-
-        val candidates = trackDao.getLosslessUpgradeCandidates()
-            // The primary download path already attempted lossless resolution
-            // for tracks completed during this run. Retrying them immediately
-            // wastes bandwidth and can hammer rate-limited sources.
-            .filterNot { it.id in recentlyDownloadedTrackIds }
-        if (candidates.isEmpty()) return
-
-        flacUpgradeQueueDao.startBatch(candidates.map { it.id })
-
-        WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-            com.stash.core.data.sync.workers.FlacUpgradeWorker.UNIQUE_WORK_NAME,
-            androidx.work.ExistingWorkPolicy.REPLACE,
-            OneTimeWorkRequestBuilder<com.stash.core.data.sync.workers.FlacUpgradeWorker>()
-                // Tag the AUTOMATIC batch: the worker's consent re-check must
-                // apply only to sweep-produced batches — the user's explicit
-                // "Upgrade to FLAC" selection (FlacUpgradeEnqueuer) is a
-                // manual override that runs regardless of the master toggle.
-                .setInputData(
-                    workDataOf(com.stash.core.data.sync.workers.FlacUpgradeWorker.KEY_AUTO_SWEEP to true),
-                )
-                .build(),
+        // The primary download path already attempted lossless resolution for tracks
+        // completed during this run, so they're excluded here.
+        val result = flacUpgradeSweeper.enqueue(
+            exclude = recentlyDownloadedTrackIds,
+            autoSweep = true,
         )
-
-        Log.i(TAG, "FLAC upgrade sweep: enqueued ${candidates.size} candidate(s) to FlacUpgradeWorker")
+        Log.i(TAG, "FLAC upgrade sweep: $result")
     }
 
     /**
