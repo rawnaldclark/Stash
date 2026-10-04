@@ -134,6 +134,16 @@ class LosslessUpgraderImplTest {
         assertEquals(UpgradeResult.Error, subject.upgradeToLossless(stubTrack()))
     }
 
+    @Test fun `a cancelled upgrade is rethrown, not reported as Error`() = runTest {
+        // Cancel on the FLAC upgrade notification: the worker's cancel handler has to see it.
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } throws
+            kotlinx.coroutines.CancellationException("worker stopped")
+
+        val thrown = runCatching { subject.upgradeToLossless(stubTrack(), sweep = true) }.exceptionOrNull()
+
+        assertEquals(true, thrown is kotlinx.coroutines.CancellationException)
+    }
+
     @Test fun `passes forced = true to bypass global lossless toggle`() = runTest {
         val track = stubTrack()
         coEvery { losslessPrefs.enabledNow() } returns false

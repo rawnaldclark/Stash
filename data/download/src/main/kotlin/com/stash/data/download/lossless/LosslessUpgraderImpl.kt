@@ -81,6 +81,9 @@ class LosslessUpgraderImpl @Inject constructor(
             TrackDownloadResult.Deferred -> UpgradeResult.NoMatch
         }
     }.getOrElse { e ->
+        // A stop is not a failed lookup: the caller (the FLAC upgrade worker's cancel
+        // handler) has to see it.
+        if (e is kotlinx.coroutines.CancellationException) throw e
         Log.w(TAG, "upgradeToLossless threw for ${track.id}", e)
         UpgradeResult.Error
     }
