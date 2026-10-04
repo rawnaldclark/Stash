@@ -125,8 +125,10 @@ jobs:
       - name: Rename APK for release
         id: rename_apk
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          NEW_NAME="Stash-${TAG}.apk"
+          # A fixed name, so https://github.com/rawnaldclark/Stash/releases/latest/download/Stash.apk
+          # always downloads the newest release (the website's Download button uses it).
+          # One APK per release: tools like Obtainium ask which file to take when there are two.
+          NEW_NAME="Stash.apk"
           cp "${{ steps.find_apk.outputs.apk_path }}" "$RUNNER_TEMP/$NEW_NAME"
           echo "release_apk=$RUNNER_TEMP/$NEW_NAME" >> "$GITHUB_OUTPUT"
           echo "release_name=$NEW_NAME" >> "$GITHUB_OUTPUT"
@@ -172,7 +174,7 @@ jobs:
 
             ## Install
 
-            Download the `.apk` below and open it on your Android device. If you've got a previous Stash release installed, this upgrades in place — your library, sync history, and settings are preserved.
+            Download `Stash.apk` below and open it on your Android device. If you've got a previous Stash release installed, this upgrades in place — your library, sync history, and settings are preserved.
 
             **Requires:** Android 8.0 (API 26) or newer.
 

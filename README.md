@@ -134,7 +134,7 @@ Three paths. Pick whichever you'd actually use.
 ### Direct APK
 
 1. On your Android device, open the [Releases page](https://github.com/rawnaldclark/Stash/releases).
-2. Download the latest `Stash-v*.apk`.
+2. Download `Stash.apk` from the latest release (releases before v0.9.111 name it `Stash-v*.apk`).
 3. Open it. If Android warns about installs from unknown sources, allow it for the browser and try again.
 4. Tap **Install**.
 
