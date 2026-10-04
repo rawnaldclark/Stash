@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.model.Track
 import com.stash.core.model.UpgradeResult
@@ -163,8 +164,9 @@ class LosslessUpgraderImpl @Inject constructor(
         // same filename) — skip the delete in that case, otherwise we'd be
         // deleting the file we just wrote. Null oldPath = the row had no
         // prior file (defensive; shouldn't happen for a track currently
-        // playing).
-        if (!oldPath.isNullOrEmpty() && oldPath != newPath) {
+        // playing). A file another song still plays from stays (two rows can
+        // share one).
+        if (!oldPath.isNullOrEmpty() && oldPath != newPath && !trackDao.fileUsedByAnotherTrack(oldPath, track.id)) {
             deleteTrackFile(oldPath)
         }
     }

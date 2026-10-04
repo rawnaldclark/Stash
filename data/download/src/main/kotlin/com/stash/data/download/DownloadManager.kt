@@ -3,6 +3,7 @@ package com.stash.data.download
 import android.util.Log
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.mapper.toDomain
@@ -410,9 +411,10 @@ class DownloadManager @Inject constructor(
         // track (new title → new derived file path). Without this the
         // old OMV-titled file lingers as an orphan consuming disk. Only
         // delete when paths genuinely differ — for a plain re-download
-        // commitDownload already overwrote the same path.
+        // commitDownload already overwrote the same path — and when no other
+        // song still plays from the old file (two rows can share one).
         val oldPath = track.filePath
-        if (oldPath != null && oldPath != committed.filePath) {
+        if (oldPath != null && oldPath != committed.filePath && !trackDao.fileUsedByAnotherTrack(oldPath, track.id)) {
             runCatching {
                 val deleted = File(oldPath).delete()
                 Log.d(TAG, "executeDownload: deleted orphaned old file path=$oldPath deleted=$deleted")

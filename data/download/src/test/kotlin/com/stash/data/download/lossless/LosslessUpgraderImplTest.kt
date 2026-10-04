@@ -203,6 +203,38 @@ class LosslessUpgraderImplTest {
         }
     }
 
+    /**
+     * Two rows can share a file (an import that took a downloaded song's file
+     * before imports picked a name of their own). Upgrading one must not
+     * delete the old file the other still plays from.
+     */
+    @Test fun `an upgrade keeps an old file another song still plays from`() = runTest {
+        val old = java.io.File.createTempFile("shared", ".m4a").apply { deleteOnExit() }
+        val track = stubTrack(filePath = old.absolutePath)
+        coEvery { downloadManager.tryLosslessDownload(track, forced = true) } returns
+            TrackDownloadResult.Success(filePath = "/new/Artist - Song.flac")
+        coEvery { audioExtractor.extract(any()) } returns null
+        coEvery { trackDao.countOtherTracksWithFilePath(old.absolutePath, track.id) } returns 1
+
+        assertEquals(UpgradeResult.Upgraded, subject.upgradeToLossless(track))
+
+        assertEquals(true, old.exists())
+        old.delete()
+    }
+
+    @Test fun `an upgrade deletes an old file only it records`() = runTest {
+        val old = java.io.File.createTempFile("own", ".m4a").apply { deleteOnExit() }
+        val track = stubTrack(filePath = old.absolutePath)
+        coEvery { downloadManager.tryLosslessDownload(track, forced = true) } returns
+            TrackDownloadResult.Success(filePath = "/new/Artist - Song.flac")
+        coEvery { audioExtractor.extract(any()) } returns null
+        coEvery { trackDao.countOtherTracksWithFilePath(old.absolutePath, track.id) } returns 0
+
+        assertEquals(UpgradeResult.Upgraded, subject.upgradeToLossless(track))
+
+        assertEquals(false, old.exists())
+    }
+
     @Test fun `NoMatch does not call markAsDownloaded`() = runTest {
         coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns null
         subject.upgradeToLossless(stubTrack())

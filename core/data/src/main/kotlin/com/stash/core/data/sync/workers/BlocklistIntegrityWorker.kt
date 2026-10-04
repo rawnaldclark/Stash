@@ -13,6 +13,7 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -64,8 +65,10 @@ class BlocklistIntegrityWorker @AssistedInject constructor(
             if (key !in keys) continue
 
             // Off-transaction file deletes (slow I/O), then atomic row
-            // teardown. Mirrors BlocklistGuard.block's ordering.
-            fileDeleter.delete(t.filePath)
+            // teardown. Mirrors BlocklistGuard.block's ordering. A file another
+            // song still plays from stays (two rows can share one); it goes
+            // with the last of them.
+            t.filePath?.takeUnless { trackDao.fileUsedByAnotherTrack(it, t.id) }?.let(fileDeleter::delete)
             fileDeleter.delete(t.albumArtPath)
             database.withTransaction {
                 playlistDao.deleteAllCrossRefsForTrack(t.id)

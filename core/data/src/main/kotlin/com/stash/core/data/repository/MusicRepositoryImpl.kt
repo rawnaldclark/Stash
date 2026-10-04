@@ -43,6 +43,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import androidx.core.net.toUri
+import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 
 /**
  * Default [MusicRepository] implementation backed by Room DAOs.
@@ -121,6 +122,17 @@ class MusicRepositoryImpl @Inject constructor(
             java.io.File(plainPath).delete()
         }
     }.getOrDefault(false)
+
+    /**
+     * Deletes [trackId]'s audio file at [path], unless another track still
+     * records it (see [fileUsedByAnotherTrack]): rows that came to share one
+     * file keep it until the last of them lets it go. The caller clears or
+     * removes the row either way.
+     */
+    private suspend fun deleteTrackAudio(trackId: Long, path: String) {
+        if (trackDao.fileUsedByAnotherTrack(path, trackId)) return
+        deleteTrackFile(path)
+    }
 
     /** Startup fixups — resets exhausted retries, purges seeder data, and
      *  clears interrupted sync records. */
@@ -549,7 +561,7 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun deleteTrack(track: Track): Boolean {
         // Best-effort file deletion -- the file may already be gone.
-        track.filePath?.let { deleteTrackFile(it) }
+        track.filePath?.let { deleteTrackAudio(track.id, it) }
         // Album art lives in the app cache (internal only) but route it
         // through the same helper so a future SAF-backed art cache would
         // work without another code change.
@@ -602,7 +614,7 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun removeDownload(trackId: Long) {
         val entity = trackDao.getById(trackId) ?: return
-        entity.filePath?.let { deleteTrackFile(it) }
+        entity.filePath?.let { deleteTrackAudio(trackId, it) }
         // Drop pending/in-flight queue entries so a fresh download can't
         // immediately repopulate the file we just removed.
         downloadQueueDao.deleteByTrackId(trackId)
@@ -836,7 +848,9 @@ class MusicRepositoryImpl @Inject constructor(
             .first()
         val downloaded = tracks.filter { it.isDownloaded }
         for (entity in downloaded) {
-            entity.filePath?.let { deleteTrackFile(it) }
+            // Two of the playlist's songs on one file: it goes with the second,
+            // once the first's row no longer records it.
+            entity.filePath?.let { deleteTrackAudio(entity.id, it) }
             downloadQueueDao.deleteByTrackId(entity.id)
             trackDao.clearDownloadState(entity.id)
         }
@@ -1139,7 +1153,7 @@ class MusicRepositoryImpl @Inject constructor(
         val track = trackDao.getById(trackId) ?: return MusicRepository.CascadeRemovalSummary(
             deleted = 0, keptProtected = 0, keptElsewhere = 0, blacklisted = 0,
         )
-        track.filePath?.let { deleteTrackFile(it) }
+        track.filePath?.let { deleteTrackAudio(trackId, it) }
         track.albumArtPath?.let { deleteTrackFile(it) }
         trackDao.delete(track)
         _trackDeletions.emit(trackId)
@@ -1282,8 +1296,9 @@ class MusicRepositoryImpl @Inject constructor(
         if (deleted.isEmpty()) return 0
 
         for (track in deleted) {
-            // Delete the audio file from disk (SAF-aware — see deleteTrackFile).
-            track.filePath?.let { deleteTrackFile(it) }
+            // Delete the audio file from disk (SAF-aware — see deleteTrackFile),
+            // unless a song that is not an orphan still plays from it.
+            track.filePath?.let { deleteTrackAudio(track.id, it) }
             // Delete locally-stored album art if present.
             track.albumArtPath?.let { deleteTrackFile(it) }
             _trackDeletions.emit(track.id)
