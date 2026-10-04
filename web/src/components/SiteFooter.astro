@@ -1,0 +1,229 @@
+---
+/**
+ * The footer: links, the README's legal disclaimer, and the licence.
+ * The disclaimer is the README's "Legal disclaimer" section; keep the two in step.
+ * It names every service the site and its privacy page mention, and it has no
+ * "for personal use only", which the GPL grant doesn't allow as a restriction.
+ *
+ * The licence is GPL version 3 or later (LICENSE, plus README.md's "either
+ * version 3 of the License, or (at your option) any later version"). Name it the
+ * same way everywhere: "GNU General Public License, version 3 or later".
+ *
+ * `minimal` (the early-access pages) drops the FAQ link, which only signed-in visitors can open.
+ * `signedIn` (the home page, which only signed-in visitors see) adds a Sign out button.
+ */
+import Wordmark from './Wordmark.astro';
+import { LINKS } from '../data/site';
+
+interface Props {
+  minimal?: boolean;
+  signedIn?: boolean;
+}
+
+const { minimal = false, signedIn = false } = Astro.props;
+
+const columns = [
+  {
+    title: 'Stash',
+    links: [
+      { href: LINKS.download, label: 'Download' },
+      { href: LINKS.releases, label: 'All releases' },
+      ...(minimal ? [] : [{ href: '/#faq', label: 'FAQ' }]),
+      { href: '/privacy', label: 'Privacy' },
+    ],
+  },
+  {
+    title: 'Community',
+    links: [
+      { href: LINKS.discord, label: 'Discord' },
+      { href: LINKS.github, label: 'GitHub' },
+      { href: LINKS.issues, label: 'Report a bug' },
+      { href: LINKS.crowdin, label: 'Translate Stash' },
+    ],
+  },
+  {
+    title: 'Support',
+    links: [
+      { href: LINKS.kofi, label: 'Ko-fi' },
+      { href: LINKS.paypal, label: 'PayPal' },
+      { href: LINKS.sponsors, label: 'GitHub Sponsors' },
+      { href: LINKS.security, label: 'Report a security issue' },
+    ],
+  },
+];
+---
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="top">
+      <div class="about">
+        <a class="brand" href="/" aria-label="Stash, home"><Wordmark height="22px" /></a>
+        <p>Stash mirrors your Spotify and YouTube Music libraries to your Android phone. Free and open source.</p>
+      </div>
+
+      {
+        columns.map((column) => (
+          <nav class="column" aria-label={column.title}>
+            <h2>{column.title}</h2>
+            <ul role="list">
+              {column.links.map((link) => (
+                <li>
+                  <a href={link.href}>{link.label}</a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        ))
+      }
+    </div>
+
+    <div class="legal">
+      <p>
+        Stash is an independent, unofficial project. It is <strong>not affiliated with, endorsed by, or
+        sponsored by Spotify, YouTube, Google, Qobuz, Apple, Deezer, Discord, Last.fm, ListenBrainz,
+        MusicBrainz, JioSaavn, KuGou, LRCLIB, or any other service it connects to.</strong> Third-party names
+        and logos on this site are used only to identify the services they belong to, and all trademarks belong
+        to their respective owners.
+      </p>
+      <p>
+        Stash is a tool for managing your own music library. You're responsible for complying with the Terms
+        of Service of any music service you use Stash with. Downloading copyrighted content without a license
+        may be illegal in your jurisdiction. The Stash project accepts no responsibility for misuse.
+      </p>
+      <p>
+        Rights holders, service operators, and anyone else with a takedown or abuse report: email
+        <a href="mailto:legal@stashfm.app">legal@stashfm.app</a>, which reaches the maintainer directly. You can
+        also open an issue on <a href={LINKS.issues}>GitHub Issues</a> or, if the report shouldn't be public, file a
+        <a href={LINKS.securityAdvisory}>private security advisory</a>. Reports are read, and a source can be
+        removed from the app in a release.
+      </p>
+    </div>
+
+    <div class="bottom">
+      <p>
+        Copyright © 2026 Rawnald Clark. Stash is free software under the
+        <a href={LINKS.license}>GNU General Public License, version 3</a> or later.
+      </p>
+      <p>This site runs no analytics and loads nothing from anyone else. Its one cookie keeps you signed in.</p>
+      {
+        signedIn && (
+          <form class="signout" method="post" action="/signout">
+            <button type="submit">Sign out</button>
+          </form>
+        )
+      }
+    </div>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    position: relative;
+    margin-top: clamp(40px, 6vw, 80px);
+    padding-block: 64px 40px;
+    border-top: 1px solid var(--glass-border);
+    background: linear-gradient(to bottom, transparent, var(--glass) 70%);
+    font-size: 0.9375rem;
+  }
+
+  .top {
+    display: grid;
+    grid-template-columns: 1.6fr repeat(3, 1fr);
+    gap: 40px;
+  }
+
+  .brand {
+    display: inline-block;
+    border-radius: var(--radius-sm);
+  }
+
+  .about p {
+    margin-top: 16px;
+    max-width: 34ch;
+    color: var(--text-2);
+  }
+
+  .column h2 {
+    margin-bottom: 14px;
+    font-family: var(--font-body);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+
+  .column ul {
+    display: grid;
+    gap: 10px;
+  }
+
+  .column a {
+    color: var(--text-2);
+    text-decoration: none;
+  }
+
+  .column a:hover {
+    color: var(--text);
+    text-decoration: underline;
+  }
+
+  .legal {
+    display: grid;
+    gap: 10px;
+    margin-top: 48px;
+    padding-top: 28px;
+    border-top: 1px solid var(--glass-border);
+    color: var(--text-2);
+    font-size: 0.8125rem;
+    line-height: 1.65;
+  }
+
+  .legal p {
+    max-width: 110ch;
+  }
+
+  .bottom {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 32px;
+    margin-top: 28px;
+    color: var(--text-2);
+    font-size: 0.8125rem;
+  }
+
+  .signout button {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--link);
+    font-size: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+    cursor: pointer;
+  }
+
+  .signout button:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  @media (max-width: 860px) {
+    .top {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .about {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (max-width: 520px) {
+    .top {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 32px 24px;
+    }
+  }
+</style>

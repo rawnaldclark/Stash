@@ -1,0 +1,20 @@
+---
+/** After POST /request: the same page for everyone, on the list or not. */
+import GateShell from '../../components/gate/GateShell.astro';
+import Icon from '../../components/Icon.astro';
+---
+
+<GateShell title="Request sent" path="/gate/requested">
+  <div class="gate-card glass">
+    <span class="icon-bubble"><Icon name="check" size="24px" /></span>
+    <h1>Request sent</h1>
+    <p>Thanks. Requests are read by hand, so it can take a few days. If you get access, we'll email you.</p>
+    <p class="gate-small">Already a supporter? <a href="/">Sign in</a>.</p>
+  </div>
+</GateShell>
+
+<style>
+  h1 {
+    margin-top: 20px;
+  }
+</style>

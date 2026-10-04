@@ -2,6 +2,23 @@ name = "stash-share"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
+# Two hosts, one Worker (stashfm.app contract 2026-10-03). Every link is built from the request's own origin:
+# stashfm.app requests get stashfm.app links, and stash-share.rawnaldclark.workers.dev keeps serving (and
+# answering with) workers.dev links forever, for links already shared and for older app versions.
+workers_dev = true
+# The route needs a proxied DNS record for stashfm.app before it serves anything (README "Deploy").
+# When the stashfm.app website ships, the site takes `stashfm.app/*` and this Worker keeps only its own paths:
+#   stashfm.app/m/*  stashfm.app/t*  stashfm.app/l/*  stashfm.app/v1/*  stashfm.app/.well-known/assetlinks.json
+# (`/t*` also catches any site page starting with /t; if that matters, use `stashfm.app/t` plus `stashfm.app/t/*`,
+# after checking that `stashfm.app/t` still matches `/t?…` links, since route patterns can't carry a query.)
+routes = [
+  { pattern = "stashfm.app/m/*", zone_name = "stashfm.app" },
+  { pattern = "stashfm.app/t*", zone_name = "stashfm.app" },
+  { pattern = "stashfm.app/l/*", zone_name = "stashfm.app" },
+  { pattern = "stashfm.app/v1/*", zone_name = "stashfm.app" },
+  { pattern = "stashfm.app/.well-known/assetlinks.json", zone_name = "stashfm.app" },
+]
+
 # Created in Task 23: `npx wrangler kv namespace create SHARE_KV`, then paste the id.
 [[kv_namespaces]]
 binding = "SHARE_KV"
@@ -17,6 +34,19 @@ simple = { limit = 5, period = 60 }
 name = "WRITE_RL"
 namespace_id = "2002"
 simple = { limit = 30, period = 60 }
+
+# POST /v1/tracks, short song links (contract 2026-10-03). Higher than CREATE_RL: sharing songs is quick and frequent.
+[[ratelimits]]
+name = "TRACK_RL"
+namespace_id = "2008"
+simple = { limit = 30, period = 60 }
+
+# Song pages' album-art lookups (Spotify oEmbed, Deezer) per IP, so the Worker can't be used to hammer them. Over it,
+# a page shows YouTube's hqdefault, or no image, instead. Only real lookups count: stored and cached art don't.
+[[ratelimits]]
+name = "ART_RL"
+namespace_id = "2009"
+simple = { limit = 60, period = 60 }
 
 # Listen Together (spec 2026-09-24 §2): one Durable Object per room, reached over WebSockets.
 [[durable_objects.bindings]]

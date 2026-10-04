@@ -1,0 +1,41 @@
+---
+/**
+ * The home page. Each section is its own component in src/components/home/,
+ * in the order they appear. To add a section, make a component there and
+ * place it below.
+ *
+ * Only signed-in visitors see it: the Worker (worker/index.js) serves the
+ * early-access page (pages/gate/front.astro) at / to everyone else.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Hero from '../components/home/Hero.astro';
+import Trust from '../components/home/Trust.astro';
+import HowItWorks from '../components/home/HowItWorks.astro';
+import Modes from '../components/home/Modes.astro';
+import Library from '../components/home/Library.astro';
+import Listening from '../components/home/Listening.astro';
+import Lossless from '../components/home/Lossless.astro';
+import Together from '../components/home/Together.astro';
+import Gallery from '../components/home/Gallery.astro';
+import Faq from '../components/home/Faq.astro';
+import Community from '../components/home/Community.astro';
+import FinalCta from '../components/home/FinalCta.astro';
+import { SITE } from '../data/site';
+---
+
+<BaseLayout title={`${SITE.name}: ${SITE.tagline}`} description={SITE.description} path="/" signedIn>
+  <Hero />
+  <Trust />
+  <div id="features">
+    <HowItWorks />
+    <Modes />
+    <Library />
+    <Listening />
+    <Lossless />
+    <Together />
+    <Gallery />
+  </div>
+  <Faq />
+  <Community />
+  <FinalCta />
+</BaseLayout>

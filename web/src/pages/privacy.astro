@@ -1,0 +1,344 @@
+---
+/**
+ * /privacy. The words live in src/content/privacy.md (Markdown, so it's easy
+ * to keep in step with the README); this file only lays the page out.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
+import { Content, frontmatter, getHeadings } from '../content/privacy.md';
+
+// `updated: 2026-10-03` arrives as a Date or an ISO string; both mean midnight UTC.
+const updatedAt = new Date(frontmatter.updated);
+const updated = updatedAt.toLocaleDateString('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+const contents = getHeadings().filter((heading) => heading.depth <= 3);
+---
+
+<BaseLayout
+  title="Privacy"
+  description="What the Stash app sends, to which hosts, and why. No Stash account, no analytics, and each credential only ever goes back to the service it came from."
+  path="/privacy"
+>
+  <header class="page-head">
+    <div class="glow" aria-hidden="true"></div>
+    <div class="container">
+      <p class="overline"><Icon name="shield" size="18px" />Privacy</p>
+      {/* The no-break space keeps "talks to" together: the 16ch cap used to end a line on "talks". */}
+      <h1>What Stash talks&nbsp;to, and why</h1>
+      <p class="lead">
+        Stash has no account server, but it isn't a two-service app either. Here is every host the app can reach,
+        what each one is sent, and when.
+      </p>
+      <p class="updated">Last updated {updated}</p>
+    </div>
+  </header>
+
+  <div class="container layout">
+    <nav class="toc" aria-labelledby="toc-title">
+      <h2 id="toc-title">On this page</h2>
+      <ol role="list">
+        {
+          contents.map((heading) => (
+            <li class={`depth-${heading.depth}`}>
+              <a href={`#${heading.slug}`}>{heading.text}</a>
+            </li>
+          ))
+        }
+      </ol>
+    </nav>
+
+    {/* Phones and tablets: the same list, folded away. Wide screens get the sticky sidebar instead. */}
+    <details class="toc-mobile">
+      <summary>On this page <Icon name="chevron-down" size="22px" class="chevron" /></summary>
+      <nav aria-label="On this page">
+        <ol role="list">
+          {
+            contents.map((heading) => (
+              <li class={`depth-${heading.depth}`}>
+                <a href={`#${heading.slug}`}>{heading.text}</a>
+              </li>
+            ))
+          }
+        </ol>
+      </nav>
+    </details>
+
+    <article class="prose">
+      <Content />
+    </article>
+  </div>
+</BaseLayout>
+
+<style>
+  .page-head {
+    position: relative;
+    padding-block: clamp(56px, 9vw, 112px) clamp(40px, 6vw, 64px);
+    isolation: isolate;
+  }
+
+  .glow {
+    position: absolute;
+    inset: -64px 0 0;
+    z-index: -1;
+    background:
+      radial-gradient(40% 70% at 15% 20%, var(--glow-purple), transparent 70%),
+      radial-gradient(30% 60% at 85% 10%, var(--glow-cyan), transparent 70%);
+    pointer-events: none;
+  }
+
+  h1 {
+    max-width: 16ch;
+    font-size: clamp(2.5rem, 1.5rem + 4vw, 4.25rem);
+    line-height: 1.04;
+    letter-spacing: -0.04em;
+  }
+
+  .lead {
+    margin-top: 20px;
+    max-width: 60ch;
+    color: var(--text-2);
+    font-size: clamp(1.0625rem, 1rem + 0.4vw, 1.25rem);
+  }
+
+  .updated {
+    margin-top: 16px;
+    color: var(--text-2);
+    font-size: 0.875rem;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: clamp(32px, 5vw, 72px);
+    align-items: start;
+    padding-bottom: clamp(48px, 8vw, 96px);
+  }
+
+  .toc {
+    position: sticky;
+    top: 96px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    padding: 4px 4px 4px 0;
+  }
+
+  .toc h2 {
+    margin-bottom: 12px;
+    color: var(--text-2);
+    font-family: var(--font-body);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .toc ol {
+    display: grid;
+    gap: 2px;
+    border-left: 1px solid var(--glass-border-bright);
+  }
+
+  .toc a {
+    display: block;
+    padding: 5px 0 5px 16px;
+    margin-left: -1px;
+    border-left: 1px solid transparent;
+    color: var(--text-2);
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    text-decoration: none;
+  }
+
+  .toc .depth-3 a {
+    padding-left: 30px;
+    font-size: 0.875rem;
+  }
+
+  .toc a:hover {
+    color: var(--text);
+    border-left-color: var(--purple);
+  }
+
+  /* The folded contents list for narrow screens. Shown only below 960px. */
+  .toc-mobile {
+    display: none;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border-bright);
+    background: var(--glass);
+  }
+
+  .toc-mobile summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+    padding: 12px 20px;
+    border-radius: var(--radius-lg);
+    color: var(--text);
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .toc-mobile summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .toc-mobile summary :global(.chevron) {
+    color: var(--text-2);
+    transition: transform 0.2s ease;
+  }
+
+  .toc-mobile[open] summary :global(.chevron) {
+    transform: rotate(180deg);
+  }
+
+  .toc-mobile ol {
+    display: grid;
+    gap: 2px;
+    padding: 0 20px 14px;
+  }
+
+  .toc-mobile a {
+    display: block;
+    padding: 8px 0;
+    color: var(--text-2);
+    line-height: 1.4;
+    text-decoration: none;
+  }
+
+  .toc-mobile .depth-3 a {
+    padding-left: 16px;
+    font-size: 0.9375rem;
+  }
+
+  .toc-mobile a:hover {
+    color: var(--text);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toc-mobile summary :global(.chevron) {
+      transition: none;
+    }
+  }
+
+  /* The Markdown content. */
+  .prose {
+    max-width: 780px;
+    color: var(--text-2);
+    font-size: 1.0625rem;
+  }
+
+  /* No scroll-margin-top here: html's scroll-padding-top (global.css) already
+     clears the sticky header, and adding both left headings 184px down. */
+  .prose :global(h2) {
+    margin-top: 72px;
+    margin-bottom: 20px;
+    font-size: clamp(1.75rem, 1.4rem + 1.4vw, 2.375rem);
+    letter-spacing: -0.03em;
+  }
+
+  .prose :global(h2:first-child) {
+    margin-top: 0;
+  }
+
+  .prose :global(h3) {
+    margin-top: 44px;
+    margin-bottom: 14px;
+    font-size: 1.3125rem;
+  }
+
+  .prose :global(p) {
+    margin-top: 14px;
+    max-width: 72ch;
+  }
+
+  .prose :global(h2 + p),
+  .prose :global(h3 + p) {
+    margin-top: 0;
+  }
+
+  /* Every list item is a small glass card: one host or one promise each. */
+  .prose :global(ul) {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .prose :global(li) {
+    padding: 16px 20px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+
+  .prose :global(li > p:first-child) {
+    margin-top: 0;
+  }
+
+  .prose :global(li strong) {
+    color: var(--text);
+  }
+
+  /* "The short version": the first list, as one highlighted card. */
+  .prose :global(h2:first-child + ul) {
+    gap: 0;
+    padding: 8px 24px;
+    border-radius: var(--radius-2xl);
+    border: 1px solid var(--glass-border-bright);
+    background:
+      linear-gradient(135deg, rgb(139 92 246 / 0.14), transparent 60%),
+      var(--glass);
+  }
+
+  .prose :global(h2:first-child + ul li) {
+    position: relative;
+    padding: 16px 0 16px 36px;
+    border: 0;
+    border-bottom: 1px solid var(--glass-border);
+    border-radius: 0;
+    background: none;
+    color: var(--text);
+  }
+
+  .prose :global(h2:first-child + ul li:last-child) {
+    border-bottom: 0;
+  }
+
+  .prose :global(h2:first-child + ul li)::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 19px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background:
+      no-repeat center / 14px
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960' fill='white'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E"),
+      var(--button-bg);
+  }
+
+  @media (max-width: 960px) {
+    .layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .toc {
+      display: none;
+    }
+
+    .toc-mobile {
+      display: block;
+    }
+  }
+</style>

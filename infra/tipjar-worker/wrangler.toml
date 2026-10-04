@@ -8,6 +8,23 @@ compatibility_date = "2026-05-01"
 binding = "STASH_KV"
 id = "fca1bc38b42741e6a8cac11f54de5abd"
 
+# stashfm.app early access (src/access.js): the access list and the monthly goal.
+# Its own namespace, so the website Worker (web/wrangler.jsonc binds the same one)
+# never gets STASH_KV. TODO(owner): create it once and paste its id here AND in
+# web/wrangler.jsonc:  npx wrangler kv namespace create stash-early-access
+# A deploy fails until the placeholder is replaced, on purpose.
+[[kv_namespaces]]
+binding = "ACCESS_KV"
+id = "9c1524fb52d64900b5ae05cca64efca3"
+
 # Secret: KOFI_VERIFICATION_TOKEN
 # Set via `wrangler secret put KOFI_VERIFICATION_TOKEN` (paste from
 # https://ko-fi.com/manage/webhooks). NOT committed.
+
+# Required secret: EMAIL_PEPPER (stashfm.app early access, src/access.js).
+# Keys the email hash in access:<hash>, so the list can't be checked against a
+# guessed email without it. Set the SAME value on the website Worker
+# (web/wrangler.jsonc; its sign-in refuses to run without one) and in the
+# EMAIL_PEPPER environment variable when you run scripts/import-kofi-csv.mjs, and
+# set it before any access:* entry exists: changing it later locks every
+# supporter out until they're re-imported.

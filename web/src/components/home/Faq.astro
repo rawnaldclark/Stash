@@ -1,0 +1,236 @@
+---
+/**
+ * Frequently asked questions, from the README (Install, Requirements, Lossless,
+ * Privacy, "Why Stash isn't on the Play Store", "When background sync stops
+ * working") and checked against the app's code; keep them in step.
+ *
+ * The free, Play Store, lossless and requirements answers were corrected
+ * against the app in October 2026, and the README with them. When the README
+ * and the app disagree, the app's code is right.
+ *
+ * Each answer has an id (faq-*) so other pages can link straight to it;
+ * browsers open the question when its answer is linked.
+ */
+import Icon from '../Icon.astro';
+import { LINKS } from '../../data/site';
+---
+
+<section class="section faq" id="faq" aria-labelledby="faq-title">
+  <div class="container layout">
+    <div class="intro">
+      <p class="overline">FAQ</p>
+      <h2 id="faq-title" class="section-title">Questions, answered</h2>
+      <p class="section-intro">Didn't find yours? The Discord is the place to ask, and answers come fast.</p>
+      <a class="button button-secondary ask" href={LINKS.discord}>
+        <Icon name="discord" size="20px" />
+        Ask on Discord
+      </a>
+    </div>
+
+    <div class="list">
+      <details>
+        <summary>Is Stash free?<Icon name="chevron-down" class="chevron" /></summary>
+        <div class="answer" id="faq-free">
+          <p>
+            Yes. Stash is free and open source under the
+            <a href={LINKS.license}>GNU General Public License, version 3</a> or later. There's no Stash account to
+            make, but to sync a library you need your own Spotify and/or YouTube Music account.
+          </p>
+          <p>If you'd like to help keep Stash going, you can <a href="#community">support the project</a>.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Why isn't Stash on the Play Store?<Icon name="chevron-down" class="chevron" /></summary>
+        <div class="answer" id="faq-play-store">
+          <p>Google Play doesn't allow apps that save audio from YouTube, so Stash is published on GitHub instead.</p>
+          <p>
+            Stash never downloads audio from Spotify. It reads your Spotify library with your own login and finds
+            each song's audio elsewhere, as the <a href="/privacy#what-stash-talks-to">privacy page</a> lists. Stash
+            isn't affiliated with or endorsed by any of the services it connects to, and you're responsible for how
+            you use it.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>How do I install it?<Icon name="chevron-down" class="chevron" /></summary>
+        <div class="answer" id="faq-install">
+          <p>
+            On your phone, open the <a href={LINKS.latestRelease}>latest release</a> and download the
+            <code>.apk</code> file. Open it, and if Android warns about installs from unknown sources, allow them
+            for your browser and try again. Then tap Install.
+          </p>
+          <p>
+            Stash checks GitHub for new releases and lets you know when one is out. To get updates through
+            <a href={LINKS.obtainium}>Obtainium</a>, add <code>https://github.com/rawnaldclark/Stash</code> to it.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Where does lossless come from?<Icon name="chevron-down" class="chevron" /></summary>
+        <div class="answer" id="faq-lossless">
+          <p>There's no Qobuz account or token inside the app. FLAC can come from:</p>
+          <ul>
+            <li>
+              <strong>Your own Qobuz account</strong>, connected in Settings › Audio &amp; Quality. Your email
+              and password are sent once to Qobuz to mint a token; Stash keeps the token, not the password.
+            </li>
+            <li><strong>Your own relay endpoint</strong>, if you run one, set under Advanced on the same screen.</li>
+            <li>
+              <strong>Stash's relay</strong>, in official release builds only, when nothing of your own is connected
+              or working. The <a href="/privacy#lossless-and-fallback-audio">privacy page</a> says what it's sent.
+            </li>
+          </ul>
+          <p>
+            When no lossless source can serve a song, it streams in AAC or Opus instead, and Now Playing shows where
+            it came from. Downloads wait for FLAC by default and show as "Waiting for lossless". To take an AAC or
+            Opus copy instead, turn on Lossy fallback in Settings › Audio &amp; Quality.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Is my data safe?<Icon name="chevron-down" class="chevron" /></summary>
+        <div class="answer" id="faq-privacy">
+          <p>
+            Stash has no account server, no analytics and no third-party crash reporters. Your credentials live on
+            your phone, with the Spotify, YouTube and Discord tokens encrypted (AES-256-GCM, via Google's
+            <a href={LINKS.tink}>Tink</a>), and each one is only ever sent back to the service it came from. No
+            host the project runs ever sees one.
+          </p>
+          <p>
+            Lyrics, scrobbling, artist info and lossless have hosts of their own. The
+            <a href="/privacy">privacy page</a> lists everything Stash can reach, and what each one is sent. Found
+            a security issue? Please <a href={LINKS.security}>report it privately</a>.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>What do I need?<Icon name="chevron-down" class="chevron" /></summary>
+        <div class="answer" id="faq-requirements">
+          <p>
+            A phone running Android 8.0 or later, and a Spotify and/or YouTube Music account. With Download on, you
+            also need room for your music. FLAC files are large: a four-minute song is about 28 MB in CD quality and
+            about 70 MB in Hi-Res, and you can pick the quality in Settings › Audio &amp; Quality. Stream only needs
+            almost nothing.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Sync stops in the background. What can I do?<Icon name="chevron-down" class="chevron" /></summary>
+        <div class="answer" id="faq-background-sync">
+          <p>
+            Some phones, especially from Samsung, Xiaomi, OnePlus and Huawei, close background apps aggressively
+            to save battery. If a sync fails partway with a foreground-service error, open your phone's Settings ›
+            Apps › Stash › Battery and set it to Unrestricted. You only need to do this once.
+          </p>
+          <p>
+            If that's not enough on your phone, <a href={LINKS.dontKillMyApp}>dontkillmyapp.com</a> has steps for
+            each manufacturer.
+          </p>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<style>
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: clamp(40px, 6vw, 96px);
+    align-items: start;
+  }
+
+  .intro {
+    position: sticky;
+    top: 112px;
+  }
+
+  .ask {
+    margin-top: 28px;
+  }
+
+  .list {
+    display: grid;
+    gap: 12px;
+  }
+
+  details {
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    transition:
+      background-color 200ms ease,
+      border-color 200ms ease;
+  }
+
+  details:hover,
+  details[open] {
+    border-color: var(--glass-border-bright);
+  }
+
+  details[open] {
+    background: var(--glass-hover);
+  }
+
+  summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 22px;
+    border-radius: var(--radius-xl);
+    font-family: var(--font-display);
+    font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
+    font-weight: 500;
+    line-height: 1.3;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  summary :global(.chevron) {
+    color: var(--text-2);
+    transition: transform 200ms ease;
+  }
+
+  details[open] summary :global(.chevron) {
+    transform: rotate(180deg);
+  }
+
+  .answer {
+    display: grid;
+    gap: 12px;
+    padding: 0 22px 22px;
+    color: var(--text-2);
+    scroll-margin-top: 160px;
+  }
+
+  .answer ul {
+    display: grid;
+    gap: 8px;
+    padding-left: 1.2em;
+  }
+
+  .answer li::marker {
+    color: var(--purple);
+  }
+
+  @media (max-width: 900px) {
+    .layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .intro {
+      position: static;
+    }
+  }
+</style>

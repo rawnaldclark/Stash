@@ -1,0 +1,72 @@
+name: Website
+
+# Type-checks, builds and tests the stashfm.app website (web/) whenever it changes.
+# Cloudflare Workers Builds deploys the site, but it makes no preview for pull
+# requests from forks, so without this check a fork's pull request that breaks
+# the build would show nothing until a failed deploy after merging.
+# tests.yml skips web/**, so a website-only change runs only this.
+
+on:
+  push:
+    # Branches only: path filters don't apply to tag pushes, so without this
+    # every release tag would run the website check too.
+    branches: ['**']
+    paths: ['web/**', '.github/workflows/web.yml']
+  pull_request:
+    paths: ['web/**', '.github/workflows/web.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Check and build the site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # astro.config.mjs turns this off too; set here as well so no Astro command in CI reports usage.
+      ASTRO_TELEMETRY_DISABLED: '1'
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.node-version
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx astro check
+
+      - name: Build
+        run: npm run build
+
+      # The early-access Worker (worker/): sign-in, codes, the goal, /admin. After the build, so the
+      # test that checks the built pages still have every blank the Worker fills runs too.
+      - name: Test the Worker
+        run: npm test
+
+      # public/_headers sets `script-src 'none'`, so a script would be blocked in
+      # production. Catch it here instead. (JSON-LD data blocks don't run, so they pass.)
+      - name: Check that no page has a script
+        run: |
+          if grep -rIil --include='*.html' -P '<script(?![^>]*type="application/ld\+json")' dist; then
+            echo "::error::A built page has a <script>, which the site's Content-Security-Policy blocks. If it's really needed, allow it by its hash in web/public/_headers, then update this check."
+            exit 1
+          fi

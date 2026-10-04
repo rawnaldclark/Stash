@@ -1,0 +1,98 @@
+---
+/**
+ * Every page's <html>: meta tags, fonts, header and footer.
+ *
+ * Usage:
+ *   <BaseLayout title="Privacy" description="..." path="/privacy">...</BaseLayout>
+ *
+ * The early-access pages use it through components/gate/GateShell.astro.
+ */
+import { Font } from 'astro:assets';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { SITE } from '../data/site';
+import '../styles/global.css';
+
+interface Props {
+  /** Page title. Pages other than the home page get " · Stash" added. */
+  title: string;
+  description: string;
+  /** The page's path, for its canonical URL, e.g. "/privacy". */
+  path: string;
+  /** Keeps a page out of search results (the 404 page). */
+  noindex?: boolean;
+  /**
+   * The early-access pages (src/pages/gate/): no links into the signed-in site, such as Features and FAQ,
+   * which would only lead back to the early-access page.
+   */
+  minimal?: boolean;
+  /** Pages only signed-in visitors see (the home page): the footer gets a Sign out button. */
+  signedIn?: boolean;
+}
+
+const { title, description, path, noindex = false, minimal = false, signedIn = false } = Astro.props;
+const isHome = path === '/';
+const fullTitle = isHome ? title : `${title} · ${SITE.name}`;
+const canonical = new URL(path, SITE.url).href;
+// The link-preview card: public/social-preview.jpg, 1200 × 630 (the usual size for link previews).
+// If you replace it, keep og:image:width and og:image:height below in step with the file.
+const socialImage = new URL(SITE.socialImage, SITE.url).href;
+---
+
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
+
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#06060c" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6f3ff" media="(prefers-color-scheme: light)" />
+
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={SITE.name} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={socialImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={SITE.socialImageAlt} />
+    <meta property="og:locale" content="en_US" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImage} />
+    <meta name="twitter:image:alt" content={SITE.socialImageAlt} />
+
+    <Font cssVariable="--font-inter" preload={[{ weight: '400' }, { weight: '600' }]} />
+    <Font cssVariable="--font-space-grotesk" preload={[{ weight: '700' }]} />
+    <slot name="head" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <SiteHeader minimal={minimal} />
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <SiteFooter minimal={minimal} signedIn={signedIn} />
+  </body>
+</html>
+
+<style>
+  main {
+    display: block;
+  }
+
+  main:focus {
+    outline: none;
+  }
+</style>

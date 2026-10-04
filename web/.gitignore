@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build output and caches
+dist/
+.astro/
+.wrangler/
+
+# Local environment
+.env
+.env.*
+.dev.vars*
+
+# Logs and editor droppings
+npm-debug.log*
+.DS_Store
+Thumbs.db

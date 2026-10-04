@@ -1,0 +1,20 @@
+---
+/** After POST /access: the same page whether or not the email is on the list. */
+import GateShell from '../../components/gate/GateShell.astro';
+import CodeForm from '../../components/gate/CodeForm.astro';
+---
+
+<GateShell title="Check your email" path="/gate/sent">
+  <div class="gate-card glass">
+    <p class="overline">Early access</p>
+    <h1>Check your email</h1>
+    <p>
+      If <strong data-fill="email">that email</strong> has early access, a code is on its way. It works for 10 minutes.
+    </p>
+    <CodeForm />
+    <p class="gate-small">
+      Nothing after a few minutes? Check your spam folder, or <a href="/">try again</a>. Not on the list?
+      <a href="/request">Request access</a>.
+    </p>
+  </div>
+</GateShell>

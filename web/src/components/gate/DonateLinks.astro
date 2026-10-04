@@ -1,0 +1,61 @@
+---
+/** Where to give: Ko-fi and GitHub Sponsors go to rawn (the owner), PayPal to Evo (co-developer), as in the README. */
+import Icon from '../Icon.astro';
+import { LINKS } from '../../data/site';
+---
+
+<div class="donate">
+  <ul role="list" class="links">
+    <li>
+      <a class="button button-small kofi" href={LINKS.kofi}><Icon name="kofi" size="18px" />Ko-fi</a>
+    </li>
+    <li>
+      <a class="button button-small sponsors" href={LINKS.sponsors}><Icon name="github-sponsors" size="18px" />GitHub Sponsors</a>
+    </li>
+    <li>
+      <a class="button button-small paypal" href={LINKS.paypal}><Icon name="paypal" size="18px" />PayPal</a>
+    </li>
+  </ul>
+  <p class="who">Ko-fi and GitHub Sponsors go to rawn, who makes Stash. PayPal goes to Evo, who co-develops it.</p>
+</div>
+
+<style>
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .kofi {
+    background: #72a4f2; /* Ko-fi blue, as on the home page */
+    color: #0b1a33;
+  }
+
+  .sponsors {
+    background: var(--glass);
+    border-color: var(--glass-border-bright);
+    color: var(--text);
+  }
+
+  .sponsors :global(.icon) {
+    color: #db61a2; /* GitHub Sponsors pink */
+  }
+
+  .paypal {
+    background: #00457c; /* PayPal blue, as in the README badge */
+    color: #fff;
+  }
+
+  .kofi:hover,
+  .sponsors:hover,
+  .paypal:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.08);
+  }
+
+  .who {
+    margin-top: 14px;
+    color: var(--text-2);
+    font-size: 0.875rem;
+  }
+</style>

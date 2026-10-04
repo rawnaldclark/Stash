@@ -1,0 +1,38 @@
+---
+/**
+ * Lossless. FLAC depends on a lossless source being able to serve the song:
+ * the user's own Qobuz account or relay, or, in official builds, the project's
+ * relay (QbdlxFileUrlRouter tries them in that order). Don't promise or pitch
+ * free lossless here: the project's relay gets one neutral sentence that points
+ * to the privacy page, which says what it's sent.
+ *
+ * Downloads wait for FLAC unless Lossy fallback is on (off by default,
+ * LosslessSourcePreferences; DownloadManager defers instead). Streams fall back
+ * to JioSaavn (AAC) or YouTube (Opus), and Now Playing shows "via JioSaavn" /
+ * "via YT".
+ */
+import FeatureRow from '../FeatureRow.astro';
+import Icon from '../Icon.astro';
+---
+
+<FeatureRow id="lossless" icon="graphic-eq" overline="Lossless" title="FLAC, when a source has it" screens={['queue']} reverse>
+  <p>When a lossless source has a song, Stash streams and downloads it as FLAC and shows its quality as it plays.</p>
+  <p>
+    The source can be your own Qobuz account or your own relay, both set up in Settings › Audio &amp; Quality.
+    Official builds can also use a relay the project runs, which the
+    <a href="/privacy#lossless-and-fallback-audio">privacy page</a> describes.
+  </p>
+  <p>
+    When no lossless source has a song, it streams in AAC or Opus instead, and Now Playing shows where it came from.
+    Downloads wait for FLAC unless you turn on Lossy fallback.
+  </p>
+  <p class="more">
+    <a class="arrow-link" href="#faq-lossless">Where lossless comes from <Icon name="arrow-forward" size="18px" /></a>
+  </p>
+</FeatureRow>
+
+<style>
+  .more {
+    margin-top: 24px;
+  }
+</style>

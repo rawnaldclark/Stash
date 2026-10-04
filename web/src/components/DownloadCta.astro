@@ -1,0 +1,124 @@
+---
+/**
+ * "Download for Android", "View on GitHub", and the line under them with the
+ * Android requirement. No version number: the site is only rebuilt when it
+ * changes, so a number would go stale. The Download button always fetches the
+ * newest release's Stash.apk.
+ */
+import Icon from './Icon.astro';
+import { LINKS, SITE } from '../data/site';
+
+interface Props {
+  /** Center the buttons (hero, closing call to action) or align them left. */
+  align?: 'center' | 'start';
+}
+
+const { align = 'center' } = Astro.props;
+---
+
+<div class:list={['cta', `align-${align}`]}>
+  <div class="buttons">
+    <a class="button button-primary download" href={LINKS.download}>
+      <Icon name="download" size="22px" />
+      Download for Android
+    </a>
+    <a class="button button-secondary" href={LINKS.github}>
+      <Icon name="github" size="20px" />
+      View on GitHub
+    </a>
+  </div>
+  <p class="meta">
+    <span>{SITE.minAndroid}</span>
+    <span class="sep last-sep" aria-hidden="true">·</span>
+    <span class="last">Free and open source</span>
+  </p>
+</div>
+
+<style>
+  .cta {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .align-center {
+    align-items: center;
+    text-align: center;
+  }
+
+  .align-start {
+    align-items: flex-start;
+  }
+
+  .buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: inherit;
+  }
+
+  .align-center .buttons {
+    justify-content: center;
+  }
+
+  .download {
+    min-height: 56px;
+    padding-inline: 30px;
+    font-size: 1.0625rem;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px 10px;
+    color: var(--text-2);
+    font-size: 0.875rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .align-start .meta {
+    justify-content: flex-start;
+  }
+
+  .sep {
+    color: var(--text-3);
+  }
+
+  @media (max-width: 480px) {
+    .last-sep {
+      display: none;
+    }
+
+    .last {
+      flex-basis: 100%;
+    }
+
+    .align-center .last {
+      text-align: center;
+    }
+
+    .buttons {
+      flex-direction: column;
+      align-self: stretch;
+    }
+
+    .buttons .button {
+      width: 100%;
+    }
+  }
+
+  /*
+   * Small phones: if a button is still wider than the space it has (the closing
+   * panel trims its own, see FinalCta), let the label wrap inside it rather than
+   * spill past the edge.
+   */
+  @media (max-width: 360px) {
+    .buttons .button {
+      white-space: normal;
+      text-align: center;
+    }
+  }
+</style>

@@ -1,0 +1,15 @@
+---
+/** Anything else that stops a form: the Worker fills in the title and message (data-fill). */
+import GateShell from '../../components/gate/GateShell.astro';
+import Icon from '../../components/Icon.astro';
+---
+
+<GateShell title="Something went wrong" path="/gate/problem">
+  <div class="gate-card glass">
+    <h1 data-fill="title">Something went wrong</h1>
+    <p data-fill="message">Go back and try again.</p>
+    <div class="gate-back">
+      <a class="button button-secondary" href="/"><Icon name="home" size="20px" />Back to stashfm.app</a>
+    </div>
+  </div>
+</GateShell>

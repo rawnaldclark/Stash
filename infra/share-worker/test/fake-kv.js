@@ -22,6 +22,8 @@ export function env(over = {}) {
         WRITE_RL: { limit: async () => ({ success: true }) },
         ROOM_RL: { limit: async () => ({ success: true }) },
         JOIN_RL: { limit: async () => ({ success: true }) },
+        TRACK_RL: { limit: async () => ({ success: true }) },
+        ART_RL: { limit: async () => ({ success: true }) },
         ROOMS: roomsNamespace(),
         COMMUNITY_DB: fakeD1(),
         COMMUNITY_SALT: "test-salt",
