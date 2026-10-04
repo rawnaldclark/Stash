@@ -239,10 +239,7 @@ fun NowPlayingScreen(
     // link rows never appeared when this read uiState.currentTrack.
     shareTrack?.let { full ->
         com.stash.core.ui.components.ShareTrackSheet(
-            title = full.title,
-            artist = full.artist,
-            spotifyUri = full.spotifyUri,
-            youtubeId = full.youtubeId,
+            track = full,
             onDismiss = viewModel::onShareDismissed,
         )
     }

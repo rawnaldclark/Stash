@@ -802,10 +802,7 @@ private fun LikedTab(
     var trackToShare by remember { mutableStateOf<Track?>(null) }
     trackToShare?.let { t ->
         com.stash.core.ui.components.ShareTrackSheet(
-            title = t.title,
-            artist = t.artist,
-            spotifyUri = t.spotifyUri,
-            youtubeId = t.youtubeId,
+            track = t,
             onDismiss = { trackToShare = null },
         )
     }
@@ -1506,10 +1503,7 @@ private fun TracksTab(
     var trackToShare by remember { mutableStateOf<Track?>(null) }
     trackToShare?.let { t ->
         com.stash.core.ui.components.ShareTrackSheet(
-            title = t.title,
-            artist = t.artist,
-            spotifyUri = t.spotifyUri,
-            youtubeId = t.youtubeId,
+            track = t,
             onDismiss = { trackToShare = null },
         )
     }

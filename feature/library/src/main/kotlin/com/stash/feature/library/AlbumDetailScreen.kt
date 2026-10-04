@@ -312,10 +312,7 @@ fun AlbumDetailScreen(
     // -- Share links sheet --
     trackToShare?.let { t ->
         com.stash.core.ui.components.ShareTrackSheet(
-            title = t.title,
-            artist = t.artist,
-            spotifyUri = t.spotifyUri,
-            youtubeId = t.youtubeId,
+            track = t,
             onDismiss = { trackToShare = null },
         )
     }

@@ -3,6 +3,7 @@ package com.stash.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -22,11 +23,15 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.stash.app.navigation.StashScaffold
 import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.ThemePreference
+import com.stash.core.data.share.ShareApiClient
+import com.stash.core.data.share.ShareResult
 import com.stash.core.model.ThemeMode
 import com.stash.core.model.share.ShareLinks
+import com.stash.core.model.share.SharedTrack
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.ui.components.ListenTogetherRole
+import com.stash.core.ui.components.LocalCreateTrackLink
 import com.stash.core.ui.components.LocalListenTogetherRole
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
@@ -60,6 +65,20 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var homeSectionsPreference: HomeSectionsPreference
+
+    @Inject
+    lateinit var shareApiClient: ShareApiClient
+
+    /**
+     * What every song Share sheet's "Stash link" uses to make a short link (via [LocalCreateTrackLink]). Null on any
+     * failure: the sheet then shares the long link, so sharing still works.
+     */
+    private val createTrackLink: suspend (SharedTrack) -> String? = { track ->
+        when (val r = shareApiClient.createTrackLink(track)) {
+            is ShareResult.Ok -> r.value.url
+            else -> { Log.w("ShareTrack", "short link failed ($r); sharing the long link"); null }
+        }
+    }
 
     /**
      * Pending deep-link target read from the launch / new-intent extras.
@@ -101,7 +120,10 @@ class MainActivity : ComponentActivity() {
             // restored back stack always sits on the graph it was saved with.
             val startTab = rememberSaveable { homeSectionsPreference.startTabNow }
             StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
-                CompositionLocalProvider(LocalListenTogetherRole provides role) {
+                CompositionLocalProvider(
+                    LocalListenTogetherRole provides role,
+                    LocalCreateTrackLink provides createTrackLink,
+                ) {
                     StashScaffold(
                         pendingDeepLink = pendingDeepLink.value,
                         onDeepLinkConsumed = { pendingDeepLink.value = null },
