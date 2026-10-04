@@ -159,6 +159,8 @@ class CrossfadeEngine(
         spare.clearMediaItems()
         spare.playWhenReady = false
         spare.volume = 0f
+        // At the master's speed, so the next song doesn't change tempo when it takes over.
+        spare.playbackParameters = playerA.playbackParameters
         spare.setMediaItem(item)
         spare.prepare()
         spare.seekTo(0)
@@ -205,6 +207,7 @@ class CrossfadeEngine(
                 "transition start: out=${tag(outgoing)} in=${tag(incoming)} fadeMs=$fadeMs",
             )
             incoming.volume = 0f
+            incoming.playbackParameters = outgoing.playbackParameters
             incoming.playWhenReady = true
             incoming.play()
             // Wait for the incoming to actually produce audio (bounded).
@@ -216,6 +219,10 @@ class CrossfadeEngine(
                 val (out, inc) = equalPowerVolumes(elapsed.toFloat() / fadeMs)
                 outgoing.volume = out
                 incoming.volume = inc
+                // A speed picked mid-fade lands on the outgoing master (the session's player);
+                // the incoming follows within a step instead of jumping at the swap.
+                val speed = outgoing.playbackParameters
+                if (incoming.playbackParameters != speed) incoming.playbackParameters = speed
                 if (elapsed % 1000L < STEP_MS) {
                     android.util.Log.i(
                         "Crossfade",
