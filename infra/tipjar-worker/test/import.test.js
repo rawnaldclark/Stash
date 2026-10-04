@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { buildBulk, findColumns, hashEmail, parseCsv } from "../scripts/import-kofi-csv.mjs";
 
 const CSV = [
@@ -46,7 +46,14 @@ test("buildBulk: one entry per supporter (donations and subscriptions only), fir
 
 test("--all-types includes every row with an email; no email column is an error that lists the columns", () => {
     assert.equal(buildBulk(parseCsv(CSV), { allTypes: true }).counts.supporters, 3);
-    assert.throws(() => buildBulk(parseCsv("From,Amount\nA,1")), /No email column\. The columns are: From, Amount/);
+    assert.throws(() => buildBulk(parseCsv("From,Amount\nA,1")), /No email column/);
+});
+
+test("with no header row, the error never prints the first row (it can be an email)", () => {
+    assert.throws(
+        () => buildBulk(parseCsv("2025-01-03,Jo,secret.person@example.com,5.00\n")),
+        (err) => /No email column/.test(err.message) && !err.message.includes("secret.person") && !err.message.includes("Jo"),
+    );
 });
 
 test("the pepper changes every hash", () => {
@@ -54,6 +61,20 @@ test("the pepper changes every hash", () => {
     const peppered = buildBulk(parseCsv(CSV), { pepper: "test-pepper" }).entries.map((e) => e.key);
     assert.ok(peppered.includes(`access:${hashEmail("mia@example.com", "test-pepper")}`));
     assert.equal(plain.filter((k) => peppered.includes(k) && k !== "meta:hashcheck").length, 0);
+});
+
+test("by default the CLI writes to a new private temp folder, and never over an existing file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "stash-import-"));
+    const csv = join(dir, "export.csv");
+    writeFileSync(csv, CSV);
+    const printed = execFileSync(process.execPath, ["scripts/import-kofi-csv.mjs", csv], { encoding: "utf8", env: { ...process.env, EMAIL_PEPPER: "" } });
+    const out = /Wrote \d+ entries to (.+)$/m.exec(printed)[1].trim();
+    assert.ok(existsSync(out));
+    assert.notEqual(dirname(out), tmpdir(), "a folder of its own, not the shared temp folder");
+    if (process.platform !== "win32") assert.equal(statSync(out).mode & 0o777, 0o600);
+    assert.match(printed, /--binding ACCESS_KV --remote/);
+    // --out to a file that exists is refused rather than overwritten.
+    assert.throws(() => execFileSync(process.execPath, ["scripts/import-kofi-csv.mjs", csv, "--out", out], { encoding: "utf8", stdio: "pipe" }), /already exists/);
 });
 
 test("the CLI writes the bulk file and never prints an email", () => {

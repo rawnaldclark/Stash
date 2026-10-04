@@ -8,10 +8,13 @@
  * holds only hashes.
  *
  *   node scripts/import-kofi-csv.mjs <ko-fi-export.csv> [--out <file.json>] [--all-types]
- *   npx wrangler kv bulk put <file.json> --binding STASH_KV --remote
+ *   npx wrangler kv bulk put <file.json> --binding ACCESS_KV --remote
  *
- * If the Workers have an EMAIL_PEPPER secret, set the same value in the EMAIL_PEPPER
+ * If the Workers have an EMAIL_PEPPER secret (recommended), set the same value in the EMAIL_PEPPER
  * environment variable for this script, or the hashes won't match.
+ *
+ * The file goes in a new folder of its own in your temp folder, readable only by you (or wherever
+ * --out says). It is never written over an existing file.
  *
  * Rows count when their type column says Donation, Subscription, Membership or Tip (shop
  * orders and commissions don't), or every row with an email when the export has no type
@@ -22,7 +25,7 @@
  * Safe to re-run: each supporter's entry is rewritten with the same hash.
  */
 import { createHash, createHmac } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -98,7 +101,8 @@ export function buildBulk(rows, { pepper, allTypes = false, now = new Date() } =
     const [header, ...data] = rows;
     if (!header) throw new Error("The CSV is empty.");
     const col = findColumns(header);
-    if (col.email === -1) throw new Error(`No email column. The columns are: ${header.map((h) => h.trim()).join(", ")}`);
+    // Only the count: with no header row, the first row is a supporter's data, maybe their email.
+    if (col.email === -1) throw new Error(`No email column among the ${header.length} columns of the first row. Is the first row a header? Ko-fi's export has one with an "Email" column.`);
     const filterByType = !allTypes && col.type !== -1;
     const seen = new Map();
     const counts = { rows: data.length, used: 0, noEmail: 0, otherType: 0 };
@@ -135,10 +139,16 @@ function main(argv) {
         console.error("Usage: node scripts/import-kofi-csv.mjs <ko-fi-export.csv> [--out <file.json>] [--all-types]");
         process.exit(2);
     }
-    const out = resolve(outArg || join(tmpdir(), "stash-access-bulk.json"));
+    const out = resolve(outArg || join(mkdtempSync(join(tmpdir(), "stash-access-")), "stash-access-bulk.json"));
     const pepper = process.env.EMAIL_PEPPER || "";
     const { entries, counts, filteredByType } = buildBulk(parseCsv(readFileSync(csvPath, "utf8")), { pepper, allTypes });
-    writeFileSync(out, JSON.stringify(entries, null, 1));
+    try {
+        writeFileSync(out, JSON.stringify(entries, null, 1), { flag: "wx", mode: 0o600 });
+    } catch (err) {
+        if (err.code !== "EEXIST") throw err;
+        console.error(`${out} already exists. Delete it, or pass another --out.`);
+        process.exit(1);
+    }
     console.log(`Rows read:            ${counts.rows}`);
     console.log(`Rows used:            ${counts.used}`);
     console.log(`Skipped, no email:    ${counts.noEmail}`);
@@ -148,7 +158,7 @@ function main(argv) {
     console.log(`Wrote ${entries.length} entries to ${out}`);
     console.log("");
     console.log("Next, from infra/tipjar-worker:");
-    console.log(`  npx wrangler kv bulk put "${out}" --binding STASH_KV --remote`);
+    console.log(`  npx wrangler kv bulk put "${out}" --binding ACCESS_KV --remote`);
     console.log("Then delete that file and the CSV export.");
 }
 
