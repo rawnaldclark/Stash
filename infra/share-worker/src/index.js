@@ -1,11 +1,14 @@
 /**
  * Stash Share: Cloudflare Worker (spec docs/superpowers/specs/2026-09-23-shared-mixes-design.md §4).
  * One KV document per shared mix; updates and deletes are authorised by a per-mix edit key whose
- * SHA-256 is all we store.
+ * SHA-256 is all we store. Short song links (src/tracks.js) and their preview art (src/art.js) follow the
+ * stashfm.app contract of 2026-10-03.
  */
-import { cleanDoc, validateDoc, validEditKey, MAX_BODY_BYTES } from "./validate.js";
+import { cleanDoc, cleanTrackLink, validateDoc, validateTrackLink, validEditKey, MAX_BODY_BYTES, MAX_TRACK_BODY_BYTES } from "./validate.js";
 import { freeId, readMix, sameHex, sha256Hex, writeMix, writeTombstone } from "./store.js";
-import { assetLinks, messagePage, mixPage, roomPage, trackPage } from "./pages.js";
+import { assetLinks, landingPage, messagePage, mixPage, roomPage, songPage } from "./pages.js";
+import { legacyTrackUrl, readTrack, saveTrack, trackFromQuery, writeTrack } from "./tracks.js";
+import { findArt, legacyArt } from "./art.js";
 import { base64url, randomCode } from "./listen-room.js";
 import { ip, json, limitKey } from "./http.js";
 import { cleanup, communityRoute } from "./community.js";
@@ -14,6 +17,10 @@ export { limitKey }; // test/hardening.test.js imports it from here
 export { ListenRoom } from "./listen-room.js";
 
 const MIX_API = /^\/v1\/mixes\/([A-Za-z0-9]{8})(\/version)?$/;
+const TRACK_API = /^\/v1\/tracks\/([A-Za-z0-9]{8})$/;
+const TRACK_PAGE = /^\/t\/([A-Za-z0-9]{8})$/;
+/** The canonical host since 2026-10-03. Its `/` is a placeholder landing page; workers.dev's `/` stays a 404. */
+const SITE_HOST = "stashfm.app";
 
 /** Room codes: 8 of the 32 unambiguous symbols in listen-room.js (no 0/O, 1/I). */
 const ROOM_API = /^\/v1\/rooms\/([A-HJ-NP-Z2-9]{8})(\/ws)?$/;
@@ -23,9 +30,9 @@ const upperCode = (path) => path.replace(/^(\/v1\/rooms\/|\/l\/)([^/]+)/, (_, he
 
 export default {
     /** Any throw (a KV write 429, freeId giving up) becomes a retryable 503, not a bare 500. */
-    async fetch(request, env) {
+    async fetch(request, env, ctx) {
         try {
-            return await handle(request, env);
+            return await handle(request, env, ctx);
         } catch (e) {
             console.error(e); // visible in `wrangler tail`
             return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
@@ -37,10 +44,16 @@ export default {
     },
 };
 
-export async function handle(request, env) {
+/**
+ * Every URL a response carries is built from the request's own origin, so stashfm.app requests get stashfm.app
+ * links and workers.dev ones (old app versions) keep getting workers.dev links.
+ */
+export async function handle(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method === "HEAD" ? "GET" : request.method;
+    // Art write-backs run after the response when there's a ctx; tests have none, so there they finish first.
+    const later = (p) => (ctx ? ctx.waitUntil(p) : p);
 
     if (path === "/v1/mixes") return method === "POST" ? createMix(request, env, url) : methodNotAllowed();
     const m = MIX_API.exec(path);
@@ -52,6 +65,9 @@ export async function handle(request, env) {
         if (method === "DELETE") return deleteMix(request, env, id);
         return methodNotAllowed();
     }
+    if (path === "/v1/tracks") return method === "POST" ? createTrack(request, env, url) : methodNotAllowed();
+    const track = TRACK_API.exec(path);
+    if (track) return method === "GET" ? getTrack(env, track[1]) : methodNotAllowed();
     if (path === "/v1/rooms") return method === "POST" ? createRoom(request, env, url) : methodNotAllowed();
     const room = ROOM_API.exec(upperCode(path));
     if (room) {
@@ -66,20 +82,29 @@ export async function handle(request, env) {
     }
     if (path.startsWith("/v1/community/")) return communityRoute(request, env, path, method);
     if (method === "GET" && path === "/.well-known/assetlinks.json") return json(assetLinks(), 200, { "cache-control": "public, max-age=3600" });
-    if (method === "GET" && path === "/t") return html(trackPage(url.searchParams, url.href));
+    if (method === "GET" && path === "/t") {
+        const song = trackFromQuery(url.searchParams);
+        return html(songPage(song, { pageUrl: legacyTrackUrl(url.origin, song), image: await legacyArt(url.origin, song, later) }));
+    }
+    const short = TRACK_PAGE.exec(path);
+    if (method === "GET" && short) return songLinkPage(env, url, short[1], later);
+    // Page URLs drop the query (`?fbclid=…`), so a preview's og:url and canonical are the link itself.
+    const here = `${url.origin}${url.pathname}`;
     const page = /^\/m\/([A-Za-z0-9]{8})$/.exec(path);
     if (method === "GET" && page) {
         const record = await readMix(env.SHARE_KV, page[1]);
-        if (record === null) return html(messagePage("Mix not found", "This link doesn't point to a mix."), 404);
-        if (record.deleted) return html(messagePage("No longer shared", "This mix is no longer shared."), 410);
-        return html(mixPage(record.doc, url.href));
+        if (record === null) return html(messagePage("Mix not found", "This link doesn't point to a mix.", here), 404);
+        if (record.deleted) return html(messagePage("No longer shared", "This mix is no longer shared.", here), 410);
+        return html(mixPage(record.doc, here));
     }
     const invite = ROOM_PAGE.exec(upperCode(path));
     if (method === "GET" && invite) {
-        if (!(await joinAllowed(request, env))) return html(messagePage("Slow down", "Too many requests. Try again in a minute."), 429);
+        const inviteUrl = `${url.origin}/l/${invite[1]}`;
+        if (!(await joinAllowed(request, env))) return html(messagePage("Slow down", "Too many requests. Try again in a minute.", inviteUrl), 429);
         const pv = await roomPreview(env.ROOMS.get(env.ROOMS.idFromName(invite[1])));
-        return pv ? html(roomPage(pv, url.href)) : html(messagePage("Session ended", "This listening session has ended."), 404);
+        return pv ? html(roomPage(pv, inviteUrl)) : html(messagePage("Session ended", "This listening session has ended.", inviteUrl), 404);
     }
+    if (method === "GET" && path === "/" && url.hostname === SITE_HOST) return html(landingPage(`${url.origin}/`));
     return json({ error: "not_found" }, 404);
 }
 
@@ -91,10 +116,10 @@ const HTML_HEADERS = {
 const html = (body, status = 200) => new Response(body, { status, headers: HTML_HEADERS });
 const methodNotAllowed = () => json({ error: "method_not_allowed" }, 405);
 
-async function readBody(request) {
-    if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) return { tooBig: true };
+async function readBody(request, max = MAX_BODY_BYTES) {
+    if (Number(request.headers.get("content-length")) > max) return { tooBig: true };
     const buf = await request.arrayBuffer();
-    if (buf.byteLength > MAX_BODY_BYTES) return { tooBig: true };
+    if (buf.byteLength > max) return { tooBig: true };
     try { return { body: JSON.parse(new TextDecoder().decode(buf)) }; } catch { return { body: null }; }
 }
 
@@ -109,6 +134,44 @@ async function createMix(request, env, url) {
     const doc = { ...cleanDoc(body.doc), id, version: 1, updatedAt: Math.floor(Date.now() / 1000) };
     await writeMix(env.SHARE_KV, id, { doc, keyHash: await sha256Hex(body.editKey), deleted: false });
     return json({ id, version: 1, url: `${url.origin}/m/${id}` }, 201);
+}
+
+/**
+ * POST /v1/tracks (contract 2026-10-03): a short link for one song. The id comes from the song, so a song shared
+ * before answers 200 with its existing link, and a new one 201.
+ */
+async function createTrack(request, env, url) {
+    if (!(await env.TRACK_RL.limit({ key: ip(request) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+    const { body, tooBig } = await readBody(request, MAX_TRACK_BODY_BYTES);
+    if (tooBig) return json({ error: "too_large" }, 413);
+    const problem = validateTrackLink(body);
+    if (problem) return json({ error: "bad_request", message: problem }, 400);
+    const { id, created } = await saveTrack(env.SHARE_KV, cleanTrackLink(body));
+    return json({ id, url: `${url.origin}/t/${id}` }, created ? 201 : 200);
+}
+
+/**
+ * GET /v1/tracks/{id}. A 404 isn't cacheable: KV can take a minute to show a new link in another region, and a
+ * friend opening it that soon mustn't be told "not found" for five minutes.
+ */
+async function getTrack(env, id) {
+    const record = await readTrack(env.SHARE_KV, id);
+    if (record === null) return json({ error: "not_found" }, 404, { "cache-control": "no-store" });
+    return json({ track: record.track }, 200, { "cache-control": "public, max-age=300" });
+}
+
+/** GET /t/{id}: the short song page. Looked-up art is written back, so later views and GET /v1/tracks skip the lookup. */
+async function songLinkPage(env, url, id, later) {
+    const pageUrl = `${url.origin}/t/${id}`;
+    const record = await readTrack(env.SHARE_KV, id);
+    if (record === null) return html(messagePage("Song not found", "This link doesn't point to a song.", pageUrl), 404);
+    const { url: image, looked } = await findArt(record.track);
+    if (looked) {
+        // KV takes one write a second per key and chat apps fetch a fresh link several times at once, so a write can
+        // fail; that only costs a lookup on the next view, never the page.
+        await later(writeTrack(env.SHARE_KV, id, { ...record, track: { ...record.track, art: image } }).catch((e) => console.error(e)));
+    }
+    return html(songPage(record.track, { pageUrl, image }));
 }
 
 /** Loads a mix: { record } when live, else a ready 404/410 response. */

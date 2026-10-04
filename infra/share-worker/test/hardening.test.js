@@ -101,7 +101,7 @@ test("HTML pages carry CSP and nosniff", async () => {
 test("track page caps values at 500 chars and drops the dot with no artist", async () => {
     const long = await (await handle(req("GET", `/t?t=${"x".repeat(900)}&a=${"y".repeat(900)}`), env())).text();
     assert.ok(long.includes(`<h1>${"x".repeat(500)}</h1>`));
-    assert.ok(long.includes(`<p class="muted">${"y".repeat(500)}</p>`));
+    assert.ok(long.includes(`<p class="artist">${"y".repeat(500)}</p>`));
     const solo = await (await handle(req("GET", "/t?t=Song"), env())).text();
     assert.match(solo, /<title>Song<\/title>/);
 });

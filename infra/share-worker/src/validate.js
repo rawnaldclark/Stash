@@ -11,6 +11,9 @@ export const COVER_HOSTS = [
     "i.ytimg.com", "lh3.googleusercontent.com", "yt3.googleusercontent.com", "yt3.ggpht.com", // YouTube
     "lastfm.freetls.fastly.net", "lastfm-img.freetls.fastly.net", // Last.fm
     "static.qobuz.com", "c.saavncdn.com", // Qobuz, JioSaavn
+    // Deezer: api.deezer.com's album.cover_xl is on cdn-images (checked 2026-10-03); e-cdns-images is its older name,
+    // still serving the same paths. Song-link previews fall back to Deezer by ISRC (src/art.js).
+    "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net",
 ];
 
 /** True for an https URL whose host is on [COVER_HOSTS] (exactly, or as a subdomain). */
@@ -62,6 +65,43 @@ const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefin
 
 /** base64url of 32 random bytes = 43 chars. */
 export const validEditKey = (k) => typeof k === "string" && /^[A-Za-z0-9_-]{43}$/.test(k);
+
+/** Ids that build lookup and listen URLs (src/art.js, the song page): anything else would be spliced into a URL as is. */
+export const isSpotifyId = (v) => typeof v === "string" && /^[A-Za-z0-9]{22}$/.test(v);
+export const isYouTubeId = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{11}$/.test(v);
+/** An ISRC in the 12-character form Deezer looks up (hyphens and case forgiven), or null. */
+export function isrcCode(v) {
+    const code = typeof v === "string" ? v.replace(/-/g, "").toUpperCase() : "";
+    return /^[A-Z0-9]{12}$/.test(code) ? code : null;
+}
+
+/** Biggest POST /v1/tracks body: three 500-char fields fully escaped as \uXXXX, plus art, is about 15 KB. */
+export const MAX_TRACK_BODY_BYTES = 32_768;
+const TRACK_TEXT = { al: 500, isrc: 20, sp: 40, yt: 20 };
+const absent = (v) => v === undefined || v === null;
+
+/** POST /v1/tracks (contract 2026-10-03), with a mix track's limits. Returns an error string, or null when valid. */
+export function validateTrackLink(b) {
+    if (!b || typeof b !== "object" || Array.isArray(b)) return "body missing";
+    if (!str(b.t, 1, 500) || !str(b.a, 1, 500)) return "bad title or artist";
+    for (const [k, max] of Object.entries(TRACK_TEXT)) if (!optStr(b[k], max)) return `bad ${k}`;
+    if (!absent(b.d) && !(Number.isSafeInteger(b.d) && b.d > 0)) return "bad duration";
+    return null;
+}
+
+/**
+ * The song as stored: trimmed text, blank and unknown fields gone. Art is kept only from a known cover host,
+ * like a mix's covers: dropped, not rejected, since the app's local art can come from anywhere.
+ */
+export function cleanTrackLink(b) {
+    const track = { t: b.t.trim(), a: b.a.trim() };
+    for (const k of ["al", "d", "isrc", "sp", "yt"]) {
+        const v = typeof b[k] === "string" ? b[k].trim() : b[k];
+        if (!absent(v) && v !== "") track[k] = v;
+    }
+    if (typeof b.art === "string" && b.art.length <= 1000 && allowedCover(b.art)) track.art = b.art;
+    return track;
+}
 
 /** One song descriptor (the same fields and limits as a mix track), cleaned; null when invalid. Used by Listen Together. */
 export function cleanTrack(t) {
