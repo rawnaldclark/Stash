@@ -72,7 +72,7 @@ class DownloadManagerOldFileTest {
         title = "Lacrymosa",
         artist = "Evanescence",
         album = "Synthesis",
-        youtubeId = "picked-video",
+        youtubeId = "pickedVideo",
         source = MusicSource.SPOTIFY,
         matchPickedAt = 1_000L,
         filePath = oldPath,

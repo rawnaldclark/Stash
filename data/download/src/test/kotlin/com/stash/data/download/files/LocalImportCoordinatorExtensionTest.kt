@@ -65,7 +65,10 @@ class LocalImportCoordinatorExtensionTest {
         every { context.packageName } returns OWN_PACKAGE
         every { fileOrganizer.getTempDir() } returns tempDir
         every { fileOrganizer.getAlbumArtDir() } returns tmp.newFolder("albumart")
-        coEvery { fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any()) } answers {
+        // Every parameter has a matcher here and in the verifies below: one left
+        // to its default would match only that default (asNewFile = false), not
+        // the import's commit.
+        coEvery { fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any(), any()) } answers {
             committedFormats += arg<String>(4)
             val temp = firstArg<File>()
             val size = temp.length()
@@ -280,7 +283,7 @@ class LocalImportCoordinatorExtensionTest {
 
         assertEquals(LocalImportState.Done(imported = 0, failed = own.size), done)
         own.forEach { uri -> verify(exactly = 0) { contentResolver.openInputStream(uri) } }
-        coVerify(exactly = 0) { fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -309,7 +312,7 @@ class LocalImportCoordinatorExtensionTest {
 
         assertEquals(LocalImportState.Done(imported = 0, failed = 1), done)
         verify(exactly = 0) { contentResolver.openInputStream(uri) }
-        coVerify(exactly = 0) { fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { fileOrganizer.commitDownload(any(), any(), any(), any(), any(), any(), any(), any()) }
     }
 
     private companion object {

@@ -71,6 +71,8 @@ class LocalImportCoordinatorTest {
         cacheDir = tmp.newFolder("cache")
         every { context.cacheDir } returns cacheDir
         every { context.contentResolver } returns resolver
+        every { context.packageName } returns "com.stash.app"
+        sharedFromAnotherApp(source, id = 1)
         every { resolver.getType(source) } returns null
         every { resolver.openInputStream(source) } answers { ByteArrayInputStream(IMPORTED) }
         every { storagePreference.libraryLayout } returns flowOf(LibraryLayout.ARTIST_ALBUM)
@@ -215,6 +217,7 @@ class LocalImportCoordinatorTest {
     private val second = mockk<Uri>()
 
     private fun stubSecondFile() {
+        sharedFromAnotherApp(second, id = 2)
         every { resolver.getType(second) } returns null
         every { resolver.openInputStream(second) } answers { ByteArrayInputStream(IMPORTED) }
         val shared = mockk<DocumentFile> { every { name } returns "Evanescence - Lacrymosa.flac" }
@@ -300,6 +303,13 @@ class LocalImportCoordinatorTest {
     private fun libraryFiles(): List<File> = musicDir.walkTopDown().filter { it.isFile }.toList()
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    /** Makes [uri] a content:// document of another app's provider, as the picker hands over. */
+    private fun sharedFromAnotherApp(uri: Uri, id: Int) {
+        every { uri.scheme } returns "content"
+        every { uri.authority } returns "com.android.providers.media.documents"
+        every { uri.toString() } returns "content://com.android.providers.media.documents/document/audio%3A$id"
+    }
 
     private fun coordinator() =
         LocalImportCoordinator(context, FileOrganizer(context, storagePreference, trackDao), musicRepository)
