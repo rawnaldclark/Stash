@@ -1,25 +1,31 @@
 /**
- * Album art for a song page's link preview (stashfm.app contract 2026-10-03), in order: the stored art, Spotify's
+ * Album art for a song page's link preview (stashfm.app contract 2026-10-03), in order: the sharer's art, Spotify's
  * oEmbed, Deezer by ISRC, YouTube's hqdefault, else none. Every lookup is time-boxed and can only fail to "nothing",
- * so a slow or broken service never breaks a page.
+ * so a slow or broken service never breaks a page. Art is `{ url, width?, height? }`; the size is set only when known.
  */
-import { allowedCover, isrcCode, isSpotifyId, isYouTubeId } from "./validate.js";
+import { cleanCover, isrcCode, isSpotify640, isSpotifyId, isYouTubeId, spotifyCover } from "./validate.js";
 
 export const LOOKUP_TIMEOUT_MS = 2000;
-const CACHE_TTL_S = 86_400;
+/** A lookup that found nothing isn't repeated for 6 h: every view of a song no service knows would ask again. */
+export const RETRY_AFTER_MISS_MS = 6 * 3_600_000;
+const FOUND_TTL_S = 86_400;
+const MISS_TTL_S = 21_600;
+
+/** True when there's an id a lookup can use; otherwise only the YouTube fallback is possible. */
+export const canLookUp = (track) => isSpotifyId(track.sp) || isrcCode(track.isrc) !== null;
 
 /**
- * { url, looked }: [looked] is true when the URL came from a network lookup, the only kind worth keeping.
- * Stored art is already kept, and hqdefault costs nothing to rebuild; keeping it after a lookup timed out would
- * lock in a worse image than the real cover a later view may find.
+ * Spotify and Deezer asked at once, so the wait is at most one timeout (~2 s) rather than two; Spotify's answer wins
+ * when both have one. Null when neither does.
  */
-export async function findArt(track, { timeoutMs = LOOKUP_TIMEOUT_MS } = {}) {
-    if (typeof track.art === "string" && allowedCover(track.art)) return { url: track.art, looked: false };
-    const found = (await spotifyArt(track.sp, timeoutMs)) ?? (await deezerArt(track.isrc, timeoutMs));
-    return found ? { url: found, looked: true } : { url: youtubeArt(track.yt), looked: false };
+export async function lookUpArt(track, { timeoutMs = LOOKUP_TIMEOUT_MS } = {}) {
+    const spotify = spotifyArt(track.sp, timeoutMs);
+    const deezer = deezerArt(track.isrc, timeoutMs);
+    return (await spotify) ?? (await deezer);
 }
 
-export const resolveArt = async (track, opts) => (await findArt(track, opts)).url;
+/** hqdefault exists for every video (sddefault and maxresdefault often 404). It's 4:3 with letterbox bars. */
+export const youtubeArt = (yt) => (isYouTubeId(yt) ? { url: `https://i.ytimg.com/vi/${yt}/hqdefault.jpg`, width: 480, height: 360 } : null);
 
 /**
  * GET + JSON with a hard deadline, null on any failure. Aborting frees the connection; the race also covers
@@ -40,57 +46,70 @@ async function lookupJson(url, timeoutMs) {
     }
 }
 
-/**
- * oEmbed's thumbnail_url is on image-cdn-*.spotifycdn.com (2026-10-03). The same image id is served by i.scdn.co,
- * which both allowlists already carry, so the URL moves there instead of a new host joining the lists. The id's
- * prefix names its size: ab67616d00001e02 is a 300 px album cover, ab67616d0000b273 the 640 px one previews want.
- */
-export function spotifyCover(thumb) {
-    let u;
-    try { u = new URL(thumb); } catch { return null; }
-    const id = /^\/image\/([0-9a-f]{24,64})$/.exec(u.pathname)?.[1];
-    const fromSpotify = u.hostname === "i.scdn.co" || u.hostname.endsWith(".spotifycdn.com");
-    if (u.protocol !== "https:" || !id || !fromSpotify) return null;
-    return `https://i.scdn.co/image/${id.replace(/^ab67616d00001e02/, "ab67616d0000b273")}`;
-}
-
+/** oEmbed's thumbnail_url, moved to i.scdn.co at 640 px (validate.js spotifyCover). */
 async function spotifyArt(sp, timeoutMs) {
     if (!isSpotifyId(sp)) return null;
     const track = `https://open.spotify.com/track/${sp}`;
-    return spotifyCover((await lookupJson(`https://open.spotify.com/oembed?url=${encodeURIComponent(track)}`, timeoutMs))?.thumbnail_url);
+    const url = spotifyCover((await lookupJson(`https://open.spotify.com/oembed?url=${encodeURIComponent(track)}`, timeoutMs))?.thumbnail_url);
+    if (!url) return null;
+    return isSpotify640(url) ? { url, width: 640, height: 640 } : { url };
 }
 
-/** An unknown ISRC is a 200 with `{ error }`, so the shape is checked rather than the status. */
+/**
+ * Deezer's album.cover_xl, sized from its path. An unknown ISRC is a 200 with `{ error }`, and an album with no art has
+ * an empty image id (`/images/cover//1000x1000-…`, a placeholder), so a 32-hex id is required.
+ */
+const DEEZER_COVER = /^\/images\/cover\/[0-9a-f]{32}\/(\d+)x(\d+)-/;
 async function deezerArt(isrc, timeoutMs) {
     const code = isrcCode(isrc);
     if (!code) return null;
-    const cover = (await lookupJson(`https://api.deezer.com/track/isrc:${code}`, timeoutMs))?.album?.cover_xl;
-    return typeof cover === "string" && allowedCover(cover) ? cover : null;
+    const url = cleanCover((await lookupJson(`https://api.deezer.com/track/isrc:${code}`, timeoutMs))?.album?.cover_xl);
+    const size = url && DEEZER_COVER.exec(new URL(url).pathname);
+    return size ? { url, width: Number(size[1]), height: Number(size[2]) } : null;
 }
 
-/** hqdefault exists for every video; sddefault and maxresdefault often 404. */
-const youtubeArt = (yt) => (isYouTubeId(yt) ? `https://i.ytimg.com/vi/${yt}/hqdefault.jpg` : null);
+/**
+ * A short link's art: { art, patch }. The sharer's art first (it's part of the link's identity), then art found before,
+ * then a lookup, unless one found nothing in the last 6 h or [allowLookup] (ART_RL) says no, then hqdefault.
+ * [patch] is what to write back into the KV doc: `found` (trusted, it came from Spotify or Deezer) or `artTriedAt`.
+ */
+export async function songLinkArt(record, { now = Date.now(), allowLookup = async () => true, timeoutMs } = {}) {
+    const own = cleanCover(record.track.art);
+    if (own) return { art: { url: own }, patch: null };
+    const found = cleanCover(record.found?.url);
+    if (found) return { art: { ...record.found, url: found }, patch: null };
+    const fallback = youtubeArt(record.track.yt);
+    const triedLately = record.artTriedAt > now - RETRY_AFTER_MISS_MS;
+    if (!canLookUp(record.track) || triedLately || !(await allowLookup())) return { art: fallback, patch: null };
+    const art = await lookUpArt(record.track, { timeoutMs });
+    return art ? { art, patch: { found: art } } : { art: fallback, patch: { artTriedAt: now } };
+}
 
 /**
- * Art for a legacy long link, which has no stored doc to write art back to: a looked-up URL is kept a day in the
- * Cache API under the ids it came from (any title, any parameter order). The Cache API is absent in Node and does
- * nothing on workers.dev, so there every view just looks up again. [later] runs the write off the response's path.
+ * Art for a legacy long link, which has no stored doc: what a lookup gave is kept in the Cache API under the ids it came
+ * from (any title, any parameter order), a find for a day and a miss for 6 h. The Cache API is absent in Node and does
+ * nothing on workers.dev, so there every view looks up again (ART_RL still applies). [later] runs the write off the
+ * response's path.
  */
-export async function legacyArt(origin, track, later) {
-    const sp = isSpotifyId(track.sp) ? track.sp : "";
-    const isrc = isrcCode(track.isrc) ?? "";
+export async function legacyArt(origin, track, { later, allowLookup = async () => true }) {
+    const fallback = youtubeArt(track.yt);
+    if (!canLookUp(track)) return fallback;
     const cache = globalThis.caches?.default;
-    if (!cache || !(sp || isrc)) return resolveArt(track);
-    const key = new Request(`${origin}/__art?${new URLSearchParams({ sp, isrc })}`);
-    const hit = await cache.match(key).catch(() => undefined);
-    if (hit) {
-        const url = await hit.text();
-        if (allowedCover(url)) return url;
+    const ids = new URLSearchParams({ sp: isSpotifyId(track.sp) ? track.sp : "", isrc: isrcCode(track.isrc) ?? "" });
+    const key = new Request(`${origin}/__art?${ids}`);
+    const kept = cache ? await cache.match(key).then((r) => r?.json()).catch(() => undefined) : undefined;
+    if (kept && typeof kept === "object") {
+        const url = cleanCover(kept.url);
+        if (url) return { ...kept, url };
+        if (kept.url === undefined) return fallback; // a recent lookup found nothing
     }
-    const { url, looked } = await findArt(track);
-    if (looked) {
-        const res = new Response(url, { headers: { "cache-control": `public, max-age=${CACHE_TTL_S}` } });
+    if (!(await allowLookup())) return fallback;
+    const art = await lookUpArt(track);
+    if (cache) {
+        const res = new Response(JSON.stringify(art ?? {}), {
+            headers: { "content-type": "application/json", "cache-control": `public, max-age=${art ? FOUND_TTL_S : MISS_TTL_S}` },
+        });
         await later(cache.put(key, res).catch((e) => console.error(e)));
     }
-    return url;
+    return art ?? fallback;
 }

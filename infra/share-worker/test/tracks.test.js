@@ -29,27 +29,36 @@ test("POST /v1/tracks answers 201 with a short link on the request's host and st
     assert.deepEqual(stored.track, song({ d: 213000, isrc: "GBARL9300135", sp: "4uLU6hMCjMI75M1A2tKUQC", yt: "dQw4w9WgXcQ" }));
 });
 
-test("the same song shared twice gets the same link, 200 the second time; case, spaces, art and duration don't change it", async () => {
+test("the same song shared twice gets the same link, 200 the second time; case, spaces and duration don't change it", async () => {
     const e = env();
     const first = await post(song({ d: 213000 }), e);
     assert.equal(first.status, 201);
     const { id } = await first.json();
-    const again = await post({ t: "  never gonna give you UP ", a: "RICK ASTLEY", al: "whenever you need somebody", d: 999, art: "https://i.scdn.co/image/x" }, e);
+    const again = await post({ t: "  never gonna give you UP ", a: "RICK ASTLEY", al: "whenever you need somebody", d: 999 }, e);
     assert.equal(again.status, 200);
     assert.deepEqual(await again.json(), { id, url: `${SITE}/t/${id}` });
     assert.equal(e.SHARE_KV.map.size, 1);
+});
+
+test("Unicode spelled two ways (composed é, or e plus an accent) is the same song", async () => {
+    const e = env();
+    const { id } = await (await post({ t: "Halo", a: "Beyoncé" }, e)).json();
+    const again = await post({ t: "Halo", a: "Beyoncé" }, e);
+    assert.equal(again.status, 200);
+    assert.equal((await again.json()).id, id);
 });
 
 test("a different song gets a different link", async () => {
     const e = env();
     const ids = new Set();
     for (const s of [song(), song({ t: "Together Forever" }), song({ a: "Someone Else" }), song({ al: undefined }),
-        song({ isrc: "GBARL9300135" }), song({ sp: "4uLU6hMCjMI75M1A2tKUQC" }), song({ yt: "dQw4w9WgXcQ" })]) {
+        song({ isrc: "GBARL9300135" }), song({ sp: "4uLU6hMCjMI75M1A2tKUQC" }), song({ yt: "dQw4w9WgXcQ" }),
+        song({ art: "https://i.scdn.co/image/a" })]) {
         const r = await post(s, e);
         assert.equal(r.status, 201, JSON.stringify(s));
         ids.add((await r.json()).id);
     }
-    assert.equal(ids.size, 7);
+    assert.equal(ids.size, 8);
 });
 
 test("the id is the first 8 characters of the identity hash, and the next 8 when another song holds them", async () => {
@@ -68,14 +77,15 @@ test("the id is the first 8 characters of the identity hash, and the next 8 when
     assert.equal(JSON.parse(e.SHARE_KV.map.get(`t:${ids[0]}`).value).track.t, "Other", "the other song is untouched");
 });
 
-test("when every candidate id holds another song the request fails as a retryable 503", async () => {
+test("when every candidate id holds another song the request fails with a plain 503: retrying can't help", async () => {
     const e = env();
     for (const id of await candidateIds(trackIdentity(song()))) {
         await e.SHARE_KV.put(`t:${id}`, JSON.stringify({ v: 1, track: { t: "Other", a: id }, createdAt: 1 }));
     }
     const r = await worker.fetch(new Request(`${SITE}/v1/tracks`, { method: "POST", body: JSON.stringify(song()) }), e);
     assert.equal(r.status, 503);
-    assert.equal(r.headers.get("Retry-After"), "2");
+    assert.equal(r.headers.get("Retry-After"), null);
+    assert.deepEqual(await r.json(), { error: "unavailable" });
 });
 
 test("invalid bodies are 400 and store nothing", async () => {
@@ -116,18 +126,57 @@ test("unknown fields are ignored, nulls count as absent, and off-list art is dro
     }
 });
 
-test("an allowed cover is kept, and a later share adds art to a song stored without it but never replaces it", async () => {
+test("an attacker's link made first can't change the cover anyone else's share of that song gets", async () => {
     const e = env();
-    const { id } = await (await post(song(), e)).json();
-    const withArt = await post(song({ art: "https://cdn-images.dzcdn.net/images/cover/abc/1000x1000-000000-80-0-0.jpg" }), e);
-    assert.equal(withArt.status, 200);
-    assert.equal((await withArt.json()).id, id);
-    const stored = () => JSON.parse(e.SHARE_KV.map.get(`t:${id}`).value);
-    assert.equal(stored().track.art, "https://cdn-images.dzcdn.net/images/cover/abc/1000x1000-000000-80-0-0.jpg");
-    const createdAt = stored().createdAt;
+    const EVIL = "https://lh3.googleusercontent.com/attacker-upload";
+    const attacker = await (await post(song({ art: EVIL }), e)).json();
+    // A real share later: with no art, and with the sharer's own art.
+    const plain = await post(song(), e);
+    assert.equal(plain.status, 201, "a new link, not the attacker's");
+    const plainId = (await plain.json()).id;
+    const own = await post(song({ art: "https://i.scdn.co/image/real" }), e);
+    assert.equal(own.status, 201);
+    const ownId = (await own.json()).id;
+    assert.equal(new Set([attacker.id, plainId, ownId]).size, 3);
+    for (const id of [plainId, ownId]) {
+        const body = JSON.stringify(await (await get(id, e)).json());
+        assert.ok(!body.includes("attacker-upload"), body);
+        const html = await (await handle(new Request(`${SITE}/t/${id}`), e)).text();
+        assert.ok(!html.includes("attacker-upload"));
+    }
+    // And sharing again with other art never rewrites a stored link's cover.
     await post(song({ art: "https://i.scdn.co/image/other" }), e);
-    assert.equal(stored().track.art, "https://cdn-images.dzcdn.net/images/cover/abc/1000x1000-000000-80-0-0.jpg");
-    assert.equal(stored().createdAt, createdAt);
+    assert.equal(JSON.parse(e.SHARE_KV.map.get(`t:${attacker.id}`).value).track.art, EVIL);
+    assert.equal(JSON.parse(e.SHARE_KV.map.get(`t:${plainId}`).value).track.art, undefined);
+});
+
+test("client art is part of the song's identity: the same art gives the same link", async () => {
+    const e = env();
+    const art = "https://cdn-images.dzcdn.net/images/cover/2fec34e02d0ca76df05f9f533f0492f2/1000x1000-000000-80-0-0.jpg";
+    const { id } = await (await post(song({ art }), e)).json();
+    const again = await post(song({ art }), e);
+    assert.equal(again.status, 200);
+    assert.equal((await again.json()).id, id);
+    assert.equal(JSON.parse(e.SHARE_KV.map.get(`t:${id}`).value).track.art, art);
+});
+
+test("art URLs that differ only in case are different covers, so they're different links", async () => {
+    const e = env();
+    const a = await (await post(song({ art: "https://lh3.googleusercontent.com/AbC" }), e)).json();
+    const b = await post(song({ art: "https://lh3.googleusercontent.com/abc" }), e);
+    assert.equal(b.status, 201);
+    assert.notEqual((await b.json()).id, a.id);
+});
+
+test("client i.scdn.co art is moved to its 640 px size before it is stored or hashed", async () => {
+    const e = env();
+    const small = "https://i.scdn.co/image/ab67616d00001e02255e131abc1410833be95673";
+    const big = "https://i.scdn.co/image/ab67616d0000b273255e131abc1410833be95673";
+    const { id } = await (await post(song({ art: small }), e)).json();
+    assert.equal(JSON.parse(e.SHARE_KV.map.get(`t:${id}`).value).track.art, big);
+    const again = await post(song({ art: big }), e);
+    assert.equal(again.status, 200, "the 300 px and 640 px URLs are one cover");
+    assert.equal((await again.json()).id, id);
 });
 
 test("a body over the cap is 413; a rate-limited client gets 429 before anything is read", async () => {

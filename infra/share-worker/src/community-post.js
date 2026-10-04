@@ -2,7 +2,7 @@
  * Stash Community posts (spec docs/superpowers/specs/2026-09-26-stash-community-design.md §2): the pure
  * parts, turning a request into what is stored and a stored row into what phones see.
  */
-import { allowedCover, cleanTrack } from "./validate.js";
+import { cleanCover, cleanTrack } from "./validate.js";
 
 export const MAX_POST_TRACKS = 500;
 const KINDS = new Set(["playlist", "mix", "song"]);
@@ -38,9 +38,8 @@ export function cleanPost(input) {
     if (!Array.isArray(raw) || raw.length < 1 || raw.length > MAX_POST_TRACKS) return null;
     const tracks = raw.map(track);
     if (tracks.includes(null)) return null;
-    // Cut to 4 first: each check parses a URL, and a body can hold thousands of covers.
-    const covers = (Array.isArray(input.body.covers) ? input.body.covers.slice(0, 4) : [])
-        .filter((c) => typeof c === "string" && c.length <= 1000 && allowedCover(c));
+    // Cut to 4 first: each check parses a URL, and a body can hold thousands of covers. Kept in parsed form (cleanCover).
+    const covers = (Array.isArray(input.body.covers) ? input.body.covers.slice(0, 4) : []).map(cleanCover).filter(Boolean);
     return { kind: input.kind, name, title, body: { covers, tracks }, summary: { covers }, count: tracks.length };
 }
 

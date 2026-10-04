@@ -1,15 +1,25 @@
 /**
  * Short song links (stashfm.app contract 2026-10-03): `t:{id}` in SHARE_KV → { v: 1, track, createdAt }, kept forever
  * like a mix. The id comes from the song itself, so sharing the same song twice gives the same link.
+ * Two optional fields belong to the server, never the sharer: `found` (art a lookup found, src/art.js) and
+ * `artTriedAt` (when a lookup last found nothing).
  */
 import { sha256Hex } from "./store.js";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-/** What makes two shares the same song. Not art (a later share may add it) or duration (sources disagree by a second). */
-const IDENTITY = ["t", "a", "al", "isrc", "sp", "yt"];
+/** Text that makes two shares the same song; duration isn't one (sources disagree by a second). */
+const IDENTITY_TEXT = ["t", "a", "al", "isrc", "sp", "yt"];
 const kvKey = (id) => `t:${id}`;
 
-export const trackIdentity = (track) => JSON.stringify(IDENTITY.map((k) => String(track?.[k] ?? "").trim().toLowerCase()));
+/**
+ * The sharer's art is part of the identity, exactly as stored (URL paths are case-sensitive). Otherwise the first link
+ * made for a song would fix its cover for everyone, and some allowed hosts serve user uploads: anyone could make that
+ * first link for a popular song with an offensive picture. Now other art, or none, is another link.
+ */
+export const trackIdentity = (track) => JSON.stringify([
+    ...IDENTITY_TEXT.map((k) => String(track?.[k] ?? "").normalize("NFC").trim().toLowerCase()),
+    String(track?.art ?? ""),
+]);
 
 /**
  * Five ids from SHA-256(identity) written in base62, 8 digits at a time: the song's id is the first,
@@ -28,7 +38,10 @@ export async function candidateIds(identity) {
 export const readTrack = (kv, id) => kv.get(kvKey(id), "json");
 export const writeTrack = (kv, id, record) => kv.put(kvKey(id), JSON.stringify(record));
 
-/** Stores a cleaned song under its id: { id, created }. A song already stored only gains art it lacked. */
+/**
+ * Stores a cleaned song under its id: { id, created }, or null when all five ids hold other songs. A stored song is
+ * never changed by a share, so nobody can alter a link they didn't make.
+ */
 export async function saveTrack(kv, track, now = Date.now()) {
     const identity = trackIdentity(track);
     for (const id of await candidateIds(identity)) {
@@ -37,12 +50,17 @@ export async function saveTrack(kv, track, now = Date.now()) {
             await writeTrack(kv, id, { v: 1, track, createdAt: now });
             return { id, created: true };
         }
-        if (trackIdentity(record.track) !== identity) continue; // another song's hash starts with the same digits
-        if (!record.track.art && track.art) await writeTrack(kv, id, { ...record, track: { ...record.track, art: track.art } });
-        return { id, created: false };
+        if (trackIdentity(record.track) === identity) return { id, created: false };
+        // else another song's hash starts with the same digits: try the next 8
     }
-    throw new Error("could not allocate a track id"); // five clashes in a row: the caller's 503 says try again
+    return null;
 }
+
+/** The song the app gets (GET /v1/tracks/{id}): the sharer's art, else art the server found. */
+export const publicTrack = (record) => {
+    const art = record.track.art ?? record.found?.url;
+    return art ? { ...record.track, art } : record.track;
+};
 
 /**
  * The song in a legacy long link (`/t?t=&a=&al=&d=&isrc=&sp=&yt=`), with the app parser's caps (ShareLinks.trackFrom).

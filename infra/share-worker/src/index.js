@@ -6,9 +6,9 @@
  */
 import { cleanDoc, cleanTrackLink, validateDoc, validateTrackLink, validEditKey, MAX_BODY_BYTES, MAX_TRACK_BODY_BYTES } from "./validate.js";
 import { freeId, readMix, sameHex, sha256Hex, writeMix, writeTombstone } from "./store.js";
-import { assetLinks, landingPage, messagePage, mixPage, roomPage, songPage } from "./pages.js";
-import { legacyTrackUrl, readTrack, saveTrack, trackFromQuery, writeTrack } from "./tracks.js";
-import { findArt, legacyArt } from "./art.js";
+import { APP_LINK_ORIGIN, assetLinks, landingPage, messagePage, mixPage, roomPage, songPage } from "./pages.js";
+import { legacyTrackUrl, publicTrack, readTrack, saveTrack, trackFromQuery, writeTrack } from "./tracks.js";
+import { legacyArt, songLinkArt } from "./art.js";
 import { base64url, randomCode } from "./listen-room.js";
 import { ip, json, limitKey } from "./http.js";
 import { cleanup, communityRoute } from "./community.js";
@@ -54,6 +54,8 @@ export async function handle(request, env, ctx) {
     const method = request.method === "HEAD" ? "GET" : request.method;
     // Art write-backs run after the response when there's a ctx; tests have none, so there they finish first.
     const later = (p) => (ctx ? ctx.waitUntil(p) : p);
+    // ART_RL: art lookups per IP a minute. Over it, a page uses hqdefault (or no image) instead of asking Spotify and Deezer.
+    const allowLookup = async () => (await env.ART_RL.limit({ key: ip(request) })).success;
 
     if (path === "/v1/mixes") return method === "POST" ? createMix(request, env, url) : methodNotAllowed();
     const m = MIX_API.exec(path);
@@ -82,22 +84,25 @@ export async function handle(request, env, ctx) {
     }
     if (path.startsWith("/v1/community/")) return communityRoute(request, env, path, method);
     if (method === "GET" && path === "/.well-known/assetlinks.json") return json(assetLinks(), 200, { "cache-control": "public, max-age=3600" });
-    if (method === "GET" && path === "/t") {
+    // Pages forgive one trailing slash (`/t/{id}/`, `/m/{id}/`, `/t/?…`), which some apps and people add; APIs stay exact.
+    const pagePath = path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+    if (method === "GET" && pagePath === "/t") {
         const song = trackFromQuery(url.searchParams);
-        return html(songPage(song, { pageUrl: legacyTrackUrl(url.origin, song), image: await legacyArt(url.origin, song, later) }));
+        const image = await legacyArt(url.origin, song, { later, allowLookup });
+        return html(songPage(song, { pageUrl: legacyTrackUrl(url.origin, song), image }));
     }
-    const short = TRACK_PAGE.exec(path);
-    if (method === "GET" && short) return songLinkPage(env, url, short[1], later);
-    // Page URLs drop the query (`?fbclid=…`), so a preview's og:url and canonical are the link itself.
-    const here = `${url.origin}${url.pathname}`;
-    const page = /^\/m\/([A-Za-z0-9]{8})$/.exec(path);
+    const short = TRACK_PAGE.exec(pagePath);
+    if (method === "GET" && short) return songLinkPage(env, url, short[1], { later, allowLookup });
+    // Page URLs drop the query (`?fbclid=…`) and the slash, so a preview's og:url and canonical are the link itself.
+    const here = `${url.origin}${pagePath}`;
+    const page = /^\/m\/([A-Za-z0-9]{8})$/.exec(pagePath);
     if (method === "GET" && page) {
         const record = await readMix(env.SHARE_KV, page[1]);
         if (record === null) return html(messagePage("Mix not found", "This link doesn't point to a mix.", here), 404);
         if (record.deleted) return html(messagePage("No longer shared", "This mix is no longer shared.", here), 410);
         return html(mixPage(record.doc, here));
     }
-    const invite = ROOM_PAGE.exec(upperCode(path));
+    const invite = ROOM_PAGE.exec(upperCode(pagePath));
     if (method === "GET" && invite) {
         const inviteUrl = `${url.origin}/l/${invite[1]}`;
         if (!(await joinAllowed(request, env))) return html(messagePage("Slow down", "Too many requests. Try again in a minute.", inviteUrl), 429);
@@ -146,8 +151,10 @@ async function createTrack(request, env, url) {
     if (tooBig) return json({ error: "too_large" }, 413);
     const problem = validateTrackLink(body);
     if (problem) return json({ error: "bad_request", message: problem }, 400);
-    const { id, created } = await saveTrack(env.SHARE_KV, cleanTrackLink(body));
-    return json({ id, url: `${url.origin}/t/${id}` }, created ? 201 : 200);
+    const saved = await saveTrack(env.SHARE_KV, cleanTrackLink(body));
+    // All five ids taken by other songs: that won't change, so no Retry-After. The app shares the long link instead.
+    if (!saved) return json({ error: "unavailable" }, 503);
+    return json({ id: saved.id, url: `${url.origin}/t/${saved.id}` }, saved.created ? 201 : 200);
 }
 
 /**
@@ -157,21 +164,24 @@ async function createTrack(request, env, url) {
 async function getTrack(env, id) {
     const record = await readTrack(env.SHARE_KV, id);
     if (record === null) return json({ error: "not_found" }, 404, { "cache-control": "no-store" });
-    return json({ track: record.track }, 200, { "cache-control": "public, max-age=300" });
+    return json({ track: publicTrack(record) }, 200, { "cache-control": "public, max-age=300" });
 }
 
-/** GET /t/{id}: the short song page. Looked-up art is written back, so later views and GET /v1/tracks skip the lookup. */
-async function songLinkPage(env, url, id, later) {
+/**
+ * GET /t/{id}: the short song page. A lookup's result (found art, or when it found nothing) is written back, so later
+ * views and GET /v1/tracks skip it. "Open in Stash" hands the app the long workers.dev form, which every version reads.
+ */
+async function songLinkPage(env, url, id, { later, allowLookup }) {
     const pageUrl = `${url.origin}/t/${id}`;
     const record = await readTrack(env.SHARE_KV, id);
     if (record === null) return html(messagePage("Song not found", "This link doesn't point to a song.", pageUrl), 404);
-    const { url: image, looked } = await findArt(record.track);
-    if (looked) {
+    const { art, patch } = await songLinkArt(record, { allowLookup });
+    if (patch) {
         // KV takes one write a second per key and chat apps fetch a fresh link several times at once, so a write can
         // fail; that only costs a lookup on the next view, never the page.
-        await later(writeTrack(env.SHARE_KV, id, { ...record, track: { ...record.track, art: image } }).catch((e) => console.error(e)));
+        await later(writeTrack(env.SHARE_KV, id, { ...record, ...patch }).catch((e) => console.error(e)));
     }
-    return html(songPage(record.track, { pageUrl, image }));
+    return html(songPage(record.track, { pageUrl, appUrl: legacyTrackUrl(APP_LINK_ORIGIN, record.track), image: art }));
 }
 
 /** Loads a mix: { record } when live, else a ready 404/410 response. */

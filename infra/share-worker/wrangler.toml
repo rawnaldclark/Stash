@@ -35,6 +35,13 @@ name = "TRACK_RL"
 namespace_id = "2008"
 simple = { limit = 30, period = 60 }
 
+# Song pages' album-art lookups (Spotify oEmbed, Deezer) per IP, so the Worker can't be used to hammer them. Over it,
+# a page shows YouTube's hqdefault, or no image, instead. Only real lookups count: stored and cached art don't.
+[[ratelimits]]
+name = "ART_RL"
+namespace_id = "2009"
+simple = { limit = 60, period = 60 }
+
 # Listen Together (spec 2026-09-24 §2): one Durable Object per room, reached over WebSockets.
 [[durable_objects.bindings]]
 name = "ROOMS"

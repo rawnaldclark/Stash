@@ -156,3 +156,32 @@ test("pages built on a workers.dev request keep workers.dev URLs", async () => {
     assert.equal(meta(song, "og:url"), `${OLD}/t?t=Song&amp;a=Artist`);
     assert.ok(!song.includes("stashfm.app"));
 });
+
+/** Every Stash version's manifest knows the workers.dev host; only new ones know stashfm.app. */
+const APP_HOST = "stash-share.rawnaldclark.workers.dev";
+
+test("Open in Stash on stashfm.app opens the workers.dev link every app version handles, falling back to the page", async () => {
+    const e = env();
+    const id = await withMix(e, { v: 1, name: "X", tracks: [{ t: "T", a: "A" }] });
+    const mix = await (await handle(new Request(`https://stashfm.app/m/${id}`), e)).text();
+    assert.ok(mix.includes(`intent://${APP_HOST}/m/${id}#Intent;scheme=https;package=com.stash.app;` +
+        `S.browser_fallback_url=${encodeURIComponent(`https://stashfm.app/m/${id}`)};end`), mix);
+    const created = await handle(new Request("https://stashfm.app/v1/rooms", { method: "POST", body: JSON.stringify({ hostName: "R" }) }), e);
+    const { code, url } = await created.json();
+    assert.equal(url, `https://stashfm.app/l/${code}`);
+    const invite = await (await handle(new Request(url), e)).text();
+    assert.ok(invite.includes(`intent://${APP_HOST}/l/${code}#Intent;scheme=https;package=com.stash.app;` +
+        `S.browser_fallback_url=${encodeURIComponent(url)};end`));
+});
+
+test("a trailing slash on a mix or invite link finds the page, and its URL drops the slash", async () => {
+    const e = env();
+    const id = await withMix(e, { v: 1, name: "Slash", tracks: [{ t: "T", a: "A" }] });
+    const r = await handle(new Request(`${BASE}/m/${id}/`), e);
+    assert.equal(r.status, 200);
+    assert.equal(meta(await r.text(), "og:url"), `${BASE}/m/${id}`);
+    const created = await handle(new Request(`${BASE}/v1/rooms`, { method: "POST", body: JSON.stringify({ hostName: "R" }) }), e);
+    const { code } = await created.json();
+    assert.equal((await handle(new Request(`${BASE}/l/${code.toLowerCase()}/`), e)).status, 200);
+    assert.equal((await handle(new Request(`${BASE}/v1/mixes/${id}/`), e)).status, 404, "API paths stay exact");
+});
