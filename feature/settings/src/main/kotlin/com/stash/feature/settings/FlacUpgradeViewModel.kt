@@ -46,6 +46,7 @@ class FlacUpgradeViewModel @Inject constructor(
             FlacSweepResult.StreamingMode -> "Downloads are off (streaming mode), so there's nothing to upgrade."
             FlacSweepResult.LosslessDisabled -> "Turn on lossless in Audio & Quality first."
             FlacSweepResult.AlreadyRunning -> null
+            FlacSweepResult.NothingToUpgrade -> "Nothing to upgrade. Every downloaded track is already FLAC or was checked recently."
             is FlacSweepResult.Queued ->
                 if (running) null else "Finished checking ${result.count} ${if (result.count == 1) "track" else "tracks"}."
         }
