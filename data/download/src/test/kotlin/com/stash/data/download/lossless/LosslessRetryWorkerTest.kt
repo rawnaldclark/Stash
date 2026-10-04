@@ -236,7 +236,7 @@ class LosslessRetryWorkerTest {
 
     @Test
     fun `a song whose audio the user picked never asks the relay`() = runTest {
-        coEvery { downloadQueueDao.waitingForLosslessTracks() } returns
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns
             listOf(entry(id = 100L, trackId = 1L), entry(id = 200L, trackId = 2L))
         // Picked in Failed Matches: it downloads that video once Lossy
         // fallback is on. A lookup by title finds the recording the user
