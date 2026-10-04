@@ -30,7 +30,8 @@ npm test                    # the Worker's tests (worker/test); one checks the b
 npx wrangler dev --local    # http://localhost:8787
 ```
 
-Always pass `--local`. It keeps every binding on your machine: a local copy of the KV namespace, and
+Always pass `--local`. It keeps every binding on your machine: a local copy of the KV namespace (the
+placeholder id in `wrangler.jsonc` is fine locally), and
 email that's printed in the terminal instead of sent (the binding has `remote: true`, so plain
 `npx wrangler dev` would send real email). The Worker needs a `SESSION_SECRET` to sign anyone in; put
 one in `web/.dev.vars`, which git ignores:
@@ -44,7 +45,7 @@ To try signing in, put an email on the local list. `<hash>` is the SHA-256 of th
 example from `node -e "console.log(require('crypto').createHash('sha256').update('you@example.com').digest('hex'))"`:
 
 ```bash
-npx wrangler kv key put --local --binding STASH_KV "access:<hash>" '{"source":"manual"}'
+npx wrangler kv key put --local --binding ACCESS_KV "access:<hash>" '{"source":"manual"}'
 ```
 
 Then enter that email at `/` and copy the code from the terminal. `/admin` refuses every request
@@ -201,36 +202,56 @@ blanks with HTMLRewriter (`data-fill`, `data-value`, `data-html`, `data-if` and 
 in `worker/pages.js`). A test checks the built pages still have every blank the Worker fills, so rename
 both sides together. `/gate/...` itself is never served.
 
-**Signing in.** Emails are trimmed and lowercased, then hashed (SHA-256, or HMAC-SHA256 with the
-optional `EMAIL_PEPPER`), the same way as the tip jar (`infra/tipjar-worker/src/access.js`) and its
-import script; tests in both places check the same vectors. Codes: only an HMAC is stored, for 10
-minutes and 5 tries, and an email gets at most 5 codes an hour. The cookie is
-`b64url({h, exp}).b64url(HMAC-SHA256)` with `SESSION_SECRET`, `HttpOnly; Secure; SameSite=Lax; Path=/`,
-90 days. Each signed-in request also checks the email's hash is still on the list (cached for 5
-minutes), so removing someone signs them out within a few minutes. Every POST must come from this site
-(`Origin`, or `Sec-Fetch-Site: same-origin`).
+**Signing in.** Emails are trimmed and lowercased, then hashed: HMAC-SHA256 with `EMAIL_PEPPER`
+(recommended), or plain SHA-256 without one, the same way as the tip jar
+(`infra/tipjar-worker/src/access.js`) and its import script; tests in both places check the same
+vectors. Codes: only an HMAC of each is stored, each lasts 10 minutes, and an email can have up to 3
+live at once (asking again adds one instead of cancelling the one on its way). Any of them signs you
+in and clears them all; 5 wrong tries clear them all too. An email gets at most one code email a
+minute and 5 an hour. The cookie is `b64url({h, exp}).b64url(HMAC-SHA256)` with `SESSION_SECRET`,
+`HttpOnly; Secure; SameSite=Lax; Path=/`, and a session lasts 90 days unless the email is taken off the
+list: each signed-in request checks the email's hash is still there (cached for 5 minutes), so removing
+someone signs them out within a few minutes. Signing out deletes the cookie from that browser but
+doesn't revoke a copy of it; removing the email does. Every POST must come from this site (`Origin`, or
+`Sec-Fetch-Site: same-origin`).
 
-**Saying nothing about who has access.** Sending a code, a wrong code and requesting access answer the
-same way for an email on the list and one that isn't, and the slow parts (writing the code, sending
-email, storing a request) run after the response, so timing doesn't tell either.
+**Saying nothing about who has access.** Sending a code, a wrong code and requesting access show the
+same page for an email on the list and one that isn't, and every rate limit applies to both alike.
+The KV writes and email behind them (issuing a code, counting a wrong try, storing a request) run
+after the response, in `ctx.waitUntil`, so they don't show in the response time. What still differs:
+checking a code reads the email's code record, and while a code is live that record exists, so the
+read can take slightly longer than for an email with no record (a few milliseconds on `wrangler dev`).
+Telling the two apart would mean first asking for a code for that address (which emails its owner)
+and then timing guesses, at 5 a minute.
 
 **Rate limits** (Workers ratelimit bindings in `wrangler.jsonc`, per Cloudflare location, namespace ids
-2010 to 2013; the share Worker has 2001 to 2009): code emails 5 a minute per IP and 3 a minute per email
-hash (for every email, listed or not), code tries 10 a minute per IP, requests 3 a minute per IP.
-Over a limit, the visitor gets a "Slow down a little" page (HTTP 429).
+2010 to 2015; the share Worker has 2001 to 2009). Per-IP limits key IPv6 by its /48.
 
-**The goal.** `goal:<YYYY-MM>` (UTC month), against `GOAL_CENTS` ($100). Ko-fi donations count by
-themselves (the tip jar); GitHub Sponsors and PayPal are added on `/admin`, which can also take a
-hand-added entry back out. The pages show whole dollars, rounded down, and read the total at most once
-a minute.
+| Limit | What | Over it |
+| --- | --- | --- |
+| `SEND_IP_RL` | Code emails asked for: 5 a minute per IP | "Slow down a little" (429) |
+| `SEND_EMAIL_RL` | Code emails asked for: 3 a minute per email hash, listed or not | "Slow down a little" (429) |
+| `CODE_SEND_RL` | Code emails sent: 1 a minute per email hash (plus 5 an hour, a KV count) | Nothing shows; no email goes out |
+| `VERIFY_IP_RL` | Code tries: 10 a minute per IP | "Slow down a little" (429) |
+| `VERIFY_EMAIL_RL` | Code tries: 5 a minute per email hash, every email, before its code is looked up | "Slow down a little" (429) |
+| `REQUEST_IP_RL` | Access requests: 3 a minute per IP | "Slow down a little" (429) |
 
-**Storage.** The Worker shares the tip jar's KV namespace, `STASH_KV`. Every key, who writes it and how
-long it's kept: [`infra/tipjar-worker/README.md`, "STASH_KV keys"](../infra/tipjar-worker/README.md#stash_kv-keys).
+**The goal.** Every donation is its own key, `goal:<YYYY-MM>:kofi:<id>` (the tip jar) or
+`goal:<YYYY-MM>:manual:<id>` (`/admin`), with the amount in its metadata, so the two Workers never
+overwrite each other's totals. A month's total (UTC) is the sum of the keys listed under
+`goal:<YYYY-MM>:`, against `GOAL_CENTS` ($100). `/admin` can take a hand-added entry back out, not a
+Ko-fi one. The pages show whole dollars, rounded down, and read the total at most once a minute.
+
+**Storage.** The Worker binds one KV namespace, `ACCESS_KV` (`stash-early-access`), shared with the tip
+jar, and never the tip jar's `STASH_KV` (the app's supporters list and the relay config). Every key of
+both, who writes it and how long it's kept: [`infra/tipjar-worker/README.md`, "KV keys"](../infra/tipjar-worker/README.md#kv-keys).
 
 **`/admin`.** Cloudflare Access (Zero Trust) guards it, and the Worker checks the Access token itself
 (`Cf-Access-Jwt-Assertion`: RS256 against your team's certs, the app's AUD tag, the issuer and expiry),
 then that the token's email is in the `ADMIN_EMAILS` secret. With either missing, or the placeholders
 still in `wrangler.jsonc`, `/admin` refuses everyone. There's no fallback to the plain email header.
+`/admin` pages also allow forms to go to the Access team domain (`form-action`), so a form posted after
+the Access session expired can be sent to its sign-in page.
 
 **Settings** (`wrangler.jsonc` and secrets):
 
@@ -238,13 +259,14 @@ still in `wrangler.jsonc`, `/admin` refuses everyone. There's no fallback to the
 | --- | --- | --- |
 | `SESSION_SECRET` | secret | Signs the cookie and the stored codes. 32+ random characters. Changing it signs everyone out |
 | `ADMIN_EMAILS` | secret | Comma-separated emails allowed on `/admin` |
-| `EMAIL_PEPPER` | secret, optional | Only if the tip jar has one, and then the same value. Otherwise unset on both |
+| `EMAIL_PEPPER` | secret, recommended | Keys the email hashes. The same value on the tip jar and for its import script |
 | `ACCESS_TEAM_DOMAIN` | var | `https://<team>.cloudflareaccess.com` |
 | `ACCESS_AUD` | var | The Access application's AUD tag |
 | `GOAL_CENTS` | var | The monthly goal in US cents (`10000`) |
 | `EMAIL_FROM` | var | `access@stashfm.app`, the only sender the `EMAIL` binding allows |
 
-Replies to `access@stashfm.app` reach the owner through Email Routing.
+Mail to `access@stashfm.app` (replies to a code, removal requests) is forwarded to the maintainer's inbox
+by Email Routing.
 
 ## Things to know
 
@@ -259,15 +281,22 @@ The site is a Worker named `stashfm-site`: `dist/` served with Workers Static As
 `public/_headers`, a 404 page), plus the early-access Worker in `worker/`. Nothing is set up yet. The plan:
 
 0. **Early access, before the site goes live**, in this order:
-   1. **Deploy the tip jar.** From `infra/tipjar-worker`: `npm ci`, `npm test`, `npx wrangler deploy`.
+   1. **Create the early-access namespace**, once: `npx wrangler kv namespace create stash-early-access`.
+      Paste the id it prints into `infra/tipjar-worker/wrangler.toml` (the `ACCESS_KV` binding) and
+      `web/wrangler.jsonc` (the same binding), replacing `REPLACE_WITH_STASH_EARLY_ACCESS_NAMESPACE_ID`,
+      and commit that. Until then, deploying either Worker fails, on purpose.
+   2. **Pick an email pepper** (recommended): a long random value, e.g. `openssl rand -base64 48`, kept in
+      your password manager. Set it on the tip jar now (`npx wrangler secret put EMAIL_PEPPER` in
+      `infra/tipjar-worker`), on the site in step 6, and in the environment when you run the import.
+      Without one, anyone who got a copy of the list could check a guessed email against it.
+   3. **Deploy the tip jar.** From `infra/tipjar-worker`: `npm ci`, `npm test`, `npx wrangler deploy`.
       From then on Ko-fi donations also fill the access list and the goal; the app's supporters list
-      doesn't change. If you want an `EMAIL_PEPPER`, set it now, before anything writes `access:*`:
-      `npx wrangler secret put EMAIL_PEPPER` there, then the same value on the site (step 4).
-   2. **Import past supporters**, once: export your Ko-fi transactions as CSV, then follow "Importing
+      doesn't change.
+   4. **Import past supporters**, once: export your Ko-fi transactions as CSV, then follow "Importing
       past supporters" in `infra/tipjar-worker/README.md` (`node scripts/import-kofi-csv.mjs
-      <export.csv>`, then the `npx wrangler kv bulk put ... --remote` command it prints). Delete the
-      CSV and the JSON file afterwards.
-   3. **Set up Cloudflare Access for `/admin`** (Zero Trust, free): Zero Trust › Access › Applications ›
+      <export.csv>` with `EMAIL_PEPPER` set, then the `npx wrangler kv bulk put ... --binding ACCESS_KV
+      --remote` command it prints). Delete the CSV and the JSON file afterwards.
+   5. **Set up Cloudflare Access for `/admin`** (Zero Trust, free): Zero Trust › Access › Applications ›
       Add an application › Self-hosted. Application domain `stashfm.app`, path `admin`. To use the
       admin page before launch too, add a second destination: `stashfm-site.<account>.workers.dev`,
       path `admin`. Policy: Allow, Include › Emails › the owner's and Evo's addresses. Save, then copy
@@ -275,13 +304,13 @@ The site is a Worker named `stashfm-site`: `dist/` served with Workers Static As
       domain** (Zero Trust › Settings, `<team>.cloudflareaccess.com`). Put both in `vars` in
       `wrangler.jsonc`: `ACCESS_AUD`, and `ACCESS_TEAM_DOMAIN` as `https://<team>.cloudflareaccess.com`.
       They aren't secrets.
-   4. **The site's secrets**, once the Worker exists (after its first deploy, step 1 below; until
+   6. **The site's secrets**, once the Worker exists (after its first deploy, step 1 below; until
       then sign-in says it isn't working and `/admin` refuses everyone). From `web/`:
       `npx wrangler secret put SESSION_SECRET` (paste 48 random bytes, e.g. `openssl rand -base64 48`),
       `npx wrangler secret put ADMIN_EMAILS` (the owner's and Evo's addresses, comma-separated), and
-      `EMAIL_PEPPER` only if the tip jar has one. Or set them in the dashboard: Workers & Pages ›
-      stashfm-site › Settings › Variables and Secrets.
-   5. **Try it on the workers.dev address**: sign in with a supporter's email, ask for access with
+      `npx wrangler secret put EMAIL_PEPPER` (the tip jar's value). Or set them in the dashboard:
+      Workers & Pages › stashfm-site › Settings › Variables and Secrets, under Production.
+   7. **Try it on the workers.dev address**: sign in with a supporter's email, ask for access with
       another, approve it on `/admin` (if Access covers workers.dev), add and remove a donation, sign
       out. Email Sending for stashfm.app is already set up (2026-10-04: DKIM, SPF, DMARC, bounce
       records), so the codes really go out.
@@ -296,9 +325,17 @@ The site is a Worker named `stashfm-site`: `dist/` served with Workers Static As
    Workers Builds uses the Wrangler version pinned in `package.json`.
 2. **Previews.** Each branch pushed to this repo gets a preview URL, posted on its pull request, so
    changes can be checked before merging. Pull requests from forks get no preview; the Website check
-   in GitHub Actions still type-checks, builds and tests them. Merging to `master` deploys. Previews
-   run with the real bindings and secrets: signing in on one uses the real access list and sends real
-   codes, and the gate applies there too.
+   in GitHub Actions still type-checks, builds and tests them. Merging to `master` deploys. A Preview
+   gets none of production's bindings, vars or secrets, only what the `previews` block in
+   `wrangler.jsonc` gives it, and that block is empty on purpose: a Preview shows the pages (the
+   early-access page at `/`, with no goal bar), signing in says it isn't working, and `/admin`
+   refuses everyone. To see the signed-in pages, use `npx wrangler dev --local`.
+   - **Never** put the production `ACCESS_KV` or the `EMAIL` binding in `previews`, or production
+     secrets in the dashboard's Previews Base configuration: every branch's Preview would then read
+     and write the real access list and send real email.
+   - **Don't** change the Preview command to `npx wrangler versions upload`: a version upload runs
+     with production's bindings and secrets on a Version URL anyone can open, unless `preview_urls`
+     is `false` or Cloudflare Access guards those URLs.
 3. **At launch, hand stashfm.app over in this order**, or shared links break. Today the share Worker
    (`infra/share-worker`, Worker `stash-share`) owns all of `stashfm.app/*`, and its `/` is a
    placeholder page. A route pattern can belong to only one Worker, and the most specific one wins.
