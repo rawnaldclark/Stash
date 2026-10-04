@@ -1571,6 +1571,8 @@ private fun SpeedSheet(
                                     modifier = Modifier.fillMaxWidth(),
                                     textAlign = TextAlign.Center,
                                     maxLines = 1,
+                                    softWrap = false,
+                                    fontSize = 12.sp,
                                 )
                             },
                             modifier = Modifier.weight(1f),
