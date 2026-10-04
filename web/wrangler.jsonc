@@ -52,9 +52,9 @@
   // narrow the routes in infra/share-worker/wrangler.toml, deploy stash-share and
   // check its links, and only then uncomment this.
   // ---------------------------------------------------------------------------
-  // "routes": [
-  //   { "pattern": "stashfm.app/*", "zone_name": "stashfm.app" }
-  // ],
+  "routes": [
+    { "pattern": "stashfm.app/*", "zone_name": "stashfm.app" }
+  ],
 
   "assets": {
     "directory": "./dist",

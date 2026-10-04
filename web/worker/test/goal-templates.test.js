@@ -150,7 +150,7 @@ test("every Worker route is in run_worker_first, and the public files aren't", (
     // Previews get nothing but assets: no production KV or email (Cloudflare's Previews don't inherit bindings).
     assert.deepEqual(config.previews, {});
     assert.equal(config.vars.GOAL_CENTS, "10000");
-    assert.equal(config.routes, undefined, "no routes until launch");
+    assert.deepEqual(config.routes, [{ pattern: "stashfm.app/*", zone_name: "stashfm.app" }], "the site takes the rest of stashfm.app; the share Worker keeps its own, more specific routes");
     const ids = config.ratelimits.map((r) => Number(r.namespace_id));
     assert.ok(ids.every((id) => id >= 2010 && id <= 2015), "2001-2009 belong to the share Worker");
     assert.equal(new Set(ids).size, ids.length);

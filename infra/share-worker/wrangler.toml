@@ -11,7 +11,13 @@ workers_dev = true
 #   stashfm.app/m/*  stashfm.app/t*  stashfm.app/l/*  stashfm.app/v1/*  stashfm.app/.well-known/assetlinks.json
 # (`/t*` also catches any site page starting with /t; if that matters, use `stashfm.app/t` plus `stashfm.app/t/*`,
 # after checking that `stashfm.app/t` still matches `/t?…` links, since route patterns can't carry a query.)
-routes = [{ pattern = "stashfm.app/*", zone_name = "stashfm.app" }]
+routes = [
+  { pattern = "stashfm.app/m/*", zone_name = "stashfm.app" },
+  { pattern = "stashfm.app/t*", zone_name = "stashfm.app" },
+  { pattern = "stashfm.app/l/*", zone_name = "stashfm.app" },
+  { pattern = "stashfm.app/v1/*", zone_name = "stashfm.app" },
+  { pattern = "stashfm.app/.well-known/assetlinks.json", zone_name = "stashfm.app" },
+]
 
 # Created in Task 23: `npx wrangler kv namespace create SHARE_KV`, then paste the id.
 [[kv_namespaces]]
