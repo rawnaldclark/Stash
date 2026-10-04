@@ -63,6 +63,27 @@ class FileOrganizerPlannedPathTest {
         }
     }
 
+    /**
+     * Only a NEW file (an import) steps around a file already at its name; a
+     * re-download or upgrade still replaces the track's own file there.
+     */
+    @Test
+    fun `a re-download still replaces the file at its name`() = runTest {
+        val organizer = organizer(LibraryLayout.ARTIST_ALBUM)
+        val own = File(musicDir, "evanescence/synthesis/lacrymosa.opus")
+        own.parentFile!!.mkdirs()
+        own.writeText("old")
+        coEvery { trackDao.countOtherTracksWithFilePath(any(), any()) } returns 1
+
+        val committed = organizer.commitDownload(
+            tmp.newFile("redownload.opus").apply { writeText("new") },
+            "Evanescence", "Synthesis", "Lacrymosa", "opus", 7L,
+        )
+
+        assertEquals(own.absolutePath, committed.filePath)
+        assertEquals("new", own.readText())
+    }
+
     @Test
     fun `a name suffix gives a distinct file in every layout`() = runTest {
         val expectedCanonical = mapOf(

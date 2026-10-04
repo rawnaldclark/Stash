@@ -44,7 +44,9 @@ sealed interface LocalImportState {
  *      duration/embedded album art). Falls back to filename parsing
  *      (`Artist - Title.ext`) when tags are missing.
  *   3. Hands the temp file to [FileOrganizer.commitDownload] so the final
- *      destination obeys the user's storage preference (internal vs. SAF).
+ *      destination obeys the user's storage preference (internal vs. SAF),
+ *      as a new file: it never replaces a library file or shares a path
+ *      with another track.
  *   4. Persists the embedded album art (if any) into the app's cache.
  *   5. Inserts a [Track] with `source = MusicSource.LOCAL`, `isDownloaded =
  *      true`, and `spotifyUri` / `youtubeId` null.
@@ -153,12 +155,16 @@ class LocalImportCoordinator @Inject constructor(
 
         val metadata = extractMetadata(tempFile, displayName)
 
+        // A new track: never written over a file already at its name (a
+        // downloaded copy of the same song, say) or onto a path another
+        // track records; the name gets -2, -3, … instead.
         val committed = fileOrganizer.commitDownload(
             tempFile = tempFile,
             artist = metadata.artist,
             album = metadata.album,
             title = metadata.title,
             format = ext,
+            asNewFile = true,
         )
 
         val albumArtPath = metadata.embeddedArt?.let { bytes ->

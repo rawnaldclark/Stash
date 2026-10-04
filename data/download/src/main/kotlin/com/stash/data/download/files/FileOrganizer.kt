@@ -479,6 +479,8 @@ class FileOrganizer @Inject constructor(
         // resolveInIndex's extension-probe when the caller doesn't
         // know the track's format ahead of time.
         private val KNOWN_AUDIO_FORMATS = listOf("opus", "m4a", "flac", "mp3", "ogg", "wav")
+        // Highest `-N` a new file's name tries before the commit gives up.
+        private const val MAX_COPY_NUMBER = 999
     }
 
     /**
@@ -498,6 +500,14 @@ class FileOrganizer @Inject constructor(
      * the owning playlist is looked up so the file lands in its folder.
      * [nameSuffix] gives the file a distinct name at that spot (see
      * [plannedPaths]).
+     *
+     * A file already at the spot is replaced: that is a track's own file on
+     * a re-download or upgrade. [asNewFile] is for a file that starts a NEW
+     * track (a device import), which must never take another track's place:
+     * the name is used only when no file is there and no track records it,
+     * else `-2`, `-3`, … is added until one is free. Otherwise an import
+     * named like a downloaded song wrote over the download, and both rows
+     * pointed at the one file, so deleting either broke the other.
      */
     suspend fun commitDownload(
         tempFile: File,
@@ -507,6 +517,7 @@ class FileOrganizer @Inject constructor(
         format: String,
         trackId: Long? = null,
         nameSuffix: String? = null,
+        asNewFile: Boolean = false,
     ): CommittedTrack {
         val size = tempFile.length()
         val externalTree = storagePreference.externalTreeUri.first()
@@ -517,22 +528,63 @@ class FileOrganizer @Inject constructor(
             } else {
                 File(musicDir, location.segments.joinToString("/")).also { it.mkdirs() }
             }
-            val finalFile = File(dir, fileNameFor(location, format, nameSuffix))
-            tempFile.copyTo(finalFile, overwrite = true)
+            val finalFile = if (asNewFile) {
+                freeInternalFile(dir, location, format, nameSuffix, trackId)
+            } else {
+                File(dir, fileNameFor(location, format, nameSuffix))
+            }
+            // A new file never replaces one, even one that appeared since the
+            // name was picked: copyTo throws instead.
+            tempFile.copyTo(finalFile, overwrite = !asNewFile)
             tempFile.delete()
             CommittedTrack(finalFile.absolutePath, size)
         } else {
             val location = resolveLocation(artist, album, title, trackId)
-            val safUriString = writeToSafTree(
-                tempFile,
-                externalTree,
-                location,
-                fileNameFor(location, format, nameSuffix),
-                format,
-            )
+            val safUriString = if (asNewFile) {
+                writeNewToSafTree(tempFile, externalTree, location, format, nameSuffix, trackId)
+            } else {
+                writeToSafTree(
+                    tempFile,
+                    externalTree,
+                    location,
+                    fileNameFor(location, format, nameSuffix),
+                    format,
+                )
+            }
             tempFile.delete()
             CommittedTrack(safUriString, size)
         }
+    }
+
+    /**
+     * The names a new file may take, in order: [nameSuffix] (null = the
+     * plain name), then `-2`, `-3`, … added after it.
+     */
+    private fun newFileSuffixes(nameSuffix: String?): Sequence<String?> =
+        sequenceOf(nameSuffix) +
+            (2..MAX_COPY_NUMBER).asSequence().map { n -> listOfNotNull(nameSuffix, "$n").joinToString("-") }
+
+    /**
+     * Whether a track other than [trackId] records [path] as its file, whether
+     * or not the file is still there. Ids start at 1, so a null [trackId]
+     * (no row yet) counts every track.
+     */
+    private suspend fun recordedByAnotherTrack(path: String, trackId: Long?): Boolean =
+        trackDao.countOtherTracksWithFilePath(path, trackId ?: 0L) > 0
+
+    /** The first name in [dir] with no file on disk and no track recording it. */
+    private suspend fun freeInternalFile(
+        dir: File,
+        location: LibraryLayoutResolver.ResolvedLocation,
+        format: String,
+        nameSuffix: String?,
+        trackId: Long?,
+    ): File {
+        for (suffix in newFileSuffixes(nameSuffix)) {
+            val file = File(dir, fileNameFor(location, format, suffix))
+            if (!file.exists() && !recordedByAnotherTrack(file.absolutePath, trackId)) return file
+        }
+        error("No free file name for '${location.baseName}.$format' in $dir")
     }
 
     /**
@@ -549,22 +601,73 @@ class FileOrganizer @Inject constructor(
         filename: String,
         format: String,
     ): String {
+        val cursor = openSafDir(treeUri, location)
+        // Overwrite: delete any existing file with the same name before creating.
+        cursor.findFile(filename)?.delete()
+        val target = cursor.createFile(mimeTypeFor(format), filename)
+            ?: error("Could not create SAF file '$filename' under ${cursor.uri}")
+        copyIntoDocument(tempFile, target, filename)
+        return target.uri.toString()
+    }
+
+    /**
+     * [writeToSafTree] for a new file ([commitDownload]'s `asNewFile`): never
+     * deletes or reuses a document. The folder is listed once; a name in it
+     * is taken. A document made at a deleted one's name gets that one's URI
+     * back on path-based providers (ExternalStorageProvider), and a track may
+     * still record it, so a URI a track records is given up and the next
+     * name tried.
+     */
+    private suspend fun writeNewToSafTree(
+        tempFile: File,
+        treeUri: Uri,
+        location: LibraryLayoutResolver.ResolvedLocation,
+        format: String,
+        nameSuffix: String?,
+        trackId: Long?,
+    ): String {
+        val cursor = openSafDir(treeUri, location)
+        val taken = cursor.listFiles().mapNotNullTo(HashSet()) { it.name }
+        for (suffix in newFileSuffixes(nameSuffix)) {
+            val filename = fileNameFor(location, format, suffix)
+            if (filename in taken) continue
+            val target = cursor.createFile(mimeTypeFor(format), filename)
+                ?: error("Could not create SAF file '$filename' under ${cursor.uri}")
+            if (recordedByAnotherTrack(target.uri.toString(), trackId)) {
+                target.delete()
+                taken += filename
+                continue
+            }
+            var copied = false
+            try {
+                copyIntoDocument(tempFile, target, filename)
+                copied = true
+            } finally {
+                // The document is this call's own, so a failed copy leaves nothing behind.
+                if (!copied) target.delete()
+            }
+            return target.uri.toString()
+        }
+        error("No free file name for '${location.baseName}.$format' under ${cursor.uri}")
+    }
+
+    /** The folder for [location] in the SAF tree, made as needed. */
+    private fun openSafDir(treeUri: Uri, location: LibraryLayoutResolver.ResolvedLocation): DocumentFile {
         val root = DocumentFile.fromTreeUri(context, treeUri)
             ?: error("Could not open SAF tree; permission may have been revoked: $treeUri")
         var cursor = root
         for (segment in location.segments) {
             cursor = cursor.findOrCreateDir(segment)
         }
-        // Overwrite: delete any existing file with the same name before creating.
-        cursor.findFile(filename)?.delete()
-        val target = cursor.createFile(mimeTypeFor(format), filename)
-            ?: error("Could not create SAF file '$filename' under ${cursor.uri}")
+        return cursor
+    }
+
+    private fun copyIntoDocument(tempFile: File, target: DocumentFile, filename: String) {
         tempFile.inputStream().use { input ->
             context.contentResolver.openOutputStream(target.uri)?.use { output ->
                 input.copyTo(output)
             } ?: error("Could not open SAF output stream for '$filename'")
         }
-        return target.uri.toString()
     }
 
     private fun DocumentFile.findOrCreateDir(name: String): DocumentFile =
