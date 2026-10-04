@@ -13,9 +13,16 @@ import kotlinx.serialization.json.jsonPrimitive
  * NOT the same as `videostatsWatchtimeUrl` (which is the in-app
  * progress-ping channel; hitting it does not register a history entry
  * on its own).
+ *
+ * The history ping sends the user's YouTube cookies to this URL, so only
+ * one that may receive them ([YouTubeCredentialUrl]) is returned.
  */
 class PlaybackTrackingParser {
-    fun extract(playerResponse: JsonObject): String? {
+    fun extract(playerResponse: JsonObject): String? =
+        extractUnchecked(playerResponse)?.takeIf { YouTubeCredentialUrl.parse(it) != null }
+
+    /** The `baseUrl` as the response gives it, before the credential check. For diagnostics. */
+    internal fun extractUnchecked(playerResponse: JsonObject): String? {
         val tracking = playerResponse["playbackTracking"]?.jsonObject ?: return null
         val playbackUrl = tracking["videostatsPlaybackUrl"]?.jsonObject ?: return null
         return playbackUrl["baseUrl"]?.jsonPrimitive?.content

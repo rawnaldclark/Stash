@@ -10,6 +10,7 @@ import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.YouTubeHistoryPreference
 import com.stash.data.ytmusic.InnerTubeClient
+import com.stash.data.ytmusic.YouTubeCredentialUrl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -59,15 +61,30 @@ fun interface PingSubmitter {
  *   - Standard SAPISIDHASH auth header with origin `https://music.youtube.com`
  *     (matches the hash computed by [YouTubeCookieHelper.generateAuthHeader]).
  *   - `X-Origin` mirrors `Origin` — real YT Music clients send both.
+ *
+ * Only a URL that may receive YouTube credentials ([YouTubeCredentialUrl])
+ * is pinged: for any other, [submit] throws before a request is built, and
+ * no ping is sent. The ping never follows a redirect, so the credentials go
+ * only to the URL that was checked.
  */
 class OkHttpPingSubmitter @Inject constructor(
-    private val okHttpClient: OkHttpClient,
+    okHttpClient: OkHttpClient,
     private val cookieHelper: YouTubeCookieHelper,
 ) : PingSubmitter {
+
+    /** The shared client, without redirects (see the class doc). */
+    internal val client: OkHttpClient = okHttpClient.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+
     override suspend fun submit(url: String, cookies: String, sapiSid: String): Int {
-        val fullUrl = appendPlaybackParams(url)
+        val base = YouTubeCredentialUrl.parse(url)
+            ?: throw IllegalArgumentException(
+                "Refused to ping ${YouTubeCredentialUrl.describeForLog(url)}: not a YouTube URL",
+            )
         val request = Request.Builder()
-            .url(fullUrl)
+            .url(withPlaybackParams(base))
             .get()
             .header("Authorization", cookieHelper.generateAuthHeader(sapiSid))
             .header("Cookie", cookies)
@@ -76,20 +93,20 @@ class OkHttpPingSubmitter @Inject constructor(
             .header("X-Goog-AuthUser", "0")
             .header("User-Agent", USER_AGENT)
             .build()
-        return okHttpClient.newCall(request).execute().use { it.code }
+        return client.newCall(request).execute().use { it.code }
     }
 
     /**
-     * Appends the three query parameters YT's stats endpoint requires to
+     * Adds the three query parameters YT's stats endpoint requires to
      * actually record a play: `cpn` (new 16-char random), `ver=2`, and
      * `c=WEB_REMIX`. The `videostatsPlaybackUrl` baseUrl already contains
      * `docid`, signed state, etc.; we're layering on the per-request fields.
      */
-    private fun appendPlaybackParams(baseUrl: String): String {
-        val cpn = generateCpn()
-        val separator = if (baseUrl.contains('?')) '&' else '?'
-        return "$baseUrl${separator}ver=2&c=WEB_REMIX&cpn=$cpn"
-    }
+    private fun withPlaybackParams(base: HttpUrl): HttpUrl = base.newBuilder()
+        .addQueryParameter("ver", "2")
+        .addQueryParameter("c", "WEB_REMIX")
+        .addQueryParameter("cpn", generateCpn())
+        .build()
 
     /**
      * 16-char content-playback-nonce using YT's charset. Matches the
@@ -243,6 +260,8 @@ class YouTubeHistoryScrobbler @Inject constructor(
             return
         }
 
+        // PlaybackTrackingParser returns only URLs that may receive the user's
+        // YouTube credentials, and the submitter sends no ping to any other.
         val code = runCatching {
             pingSubmitter.submit(trackingUrl, cookies, sapiSid)
         }.getOrElse { e ->

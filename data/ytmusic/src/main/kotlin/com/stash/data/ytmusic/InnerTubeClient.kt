@@ -619,8 +619,10 @@ class InnerTubeClient @Inject constructor(
      * and delegates field extraction to [PlaybackTrackingParser].
      *
      * @param videoId The YouTube video ID.
-     * @return The playback-tracking base URL, or null on HTTP failure or if
-     *   the `playbackTracking` block is absent from the response.
+     * @return The playback-tracking base URL, or null on HTTP failure, if
+     *   the `playbackTracking` block is absent from the response, or if its
+     *   URL may not receive the user's YouTube credentials
+     *   ([YouTubeCredentialUrl]).
      */
     suspend fun getPlaybackTracking(videoId: String): String? =
         withContext(Dispatchers.IO) {
@@ -643,9 +645,16 @@ class InnerTubeClient @Inject constructor(
             }
             val response = executeRequest("$BASE_URL/player", body, cookie, variant)
                 ?: return@withContext null
-            PlaybackTrackingParser().extract(response)
+            val parser = PlaybackTrackingParser()
+            parser.extract(response)
                 .also { url ->
-                    if (url == null) {
+                    if (url != null) return@also
+                    val unchecked = parser.extractUnchecked(response)
+                    if (unchecked != null) {
+                        // The ping would carry the user's cookies; only the host is logged.
+                        Log.w(TAG, "getPlaybackTracking: refusing a tracking URL on " +
+                            "${YouTubeCredentialUrl.describeForLog(unchecked)} for $videoId")
+                    } else {
                         val playStatus = response["playabilityStatus"]?.jsonObject
                             ?.get("status")?.jsonPrimitive?.content
                         Log.w(TAG, "getPlaybackTracking: no playbackTracking block for " +
