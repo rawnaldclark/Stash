@@ -98,7 +98,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         ArtistImageEntity::class,
         SharedMixEntity::class,
     ],
-    version = 52,
+    version = 53,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1395,6 +1395,22 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+        * v52 → v53: adds `tracks.flac_no_match_at`, the last time a FLAC-upgrade lookup
+        * found no lossless match for the track.
+        *
+        * Nullable with no default, so existing rows start as "never came back empty"
+        * and stay eligible for the next sweep. Nothing to backfill: the old
+        * `flac_upgrade_queue` rows that held per-track results were wiped by every
+        * batch, so there is no earlier history to recover. Tracks stamp themselves as
+        * sweeps find misses.
+        */
+        val MIGRATION_52_53 = object : Migration(52, 53) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN flac_no_match_at INTEGER")
+            }
+        }
+
+        /**
          * The complete migration chain, shared by every builder of a
          * [StashDatabase]: the DI singleton in
          * [com.stash.core.data.di.DatabaseModule] AND the throwaway instance
@@ -1459,6 +1475,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_49_50,
                 MIGRATION_50_51,
                 MIGRATION_51_52,
+                MIGRATION_52_53,
             )
         }
     }

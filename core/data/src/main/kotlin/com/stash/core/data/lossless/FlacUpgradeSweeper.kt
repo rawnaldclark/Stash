@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.stash.core.data.db.dao.FlacUpgradeQueueDao
@@ -11,12 +12,14 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.sync.workers.FlacUpgradeWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
 sealed interface FlacSweepResult {
     data object StreamingMode : FlacSweepResult
     data object LosslessDisabled : FlacSweepResult
+    data object AlreadyRunning : FlacSweepResult
     data object NothingToUpgrade : FlacSweepResult
     data class Queued(val count: Int) : FlacSweepResult
 }
@@ -39,7 +42,16 @@ class FlacUpgradeSweeper @Inject constructor(
         if (streamingPreference.current()) return FlacSweepResult.StreamingMode
         if (!losslessUpgrader.isLosslessEnabled()) return FlacSweepResult.LosslessDisabled
 
-        val candidates = trackDao.getLosslessUpgradeCandidates().filterNot { it.id in exclude }
+        // ENQUEUED counts: a paced worker waits there between retries, and startBatch()
+        // would wipe its pending rows. Also protects a batch the user picked themselves.
+        val active = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWorkFlow(FlacUpgradeWorker.UNIQUE_WORK_NAME).first()
+            .any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
+        if (active) return FlacSweepResult.AlreadyRunning
+
+        val retryBefore = System.currentTimeMillis() - NO_MATCH_COOLDOWN_MS
+        val candidates = trackDao.getLosslessUpgradeCandidates(retryBefore)
+            .filterNot { it.id in exclude }
         if (candidates.isEmpty()) return FlacSweepResult.NothingToUpgrade
 
         flacUpgradeQueueDao.startBatch(candidates.map { it.id })
@@ -53,5 +65,10 @@ class FlacUpgradeSweeper @Inject constructor(
         )
         Log.i("FlacUpgradeSweeper", "enqueued ${candidates.size} candidate(s) (auto=$autoSweep)")
         return FlacSweepResult.Queued(candidates.size)
+    }
+
+    private companion object {
+        /** A track with no lossless match is skipped this long before being tried again. */
+        const val NO_MATCH_COOLDOWN_MS = 14L * 24 * 60 * 60 * 1000
     }
 }

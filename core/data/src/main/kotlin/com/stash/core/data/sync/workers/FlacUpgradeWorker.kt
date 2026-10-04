@@ -89,7 +89,11 @@ class FlacUpgradeWorker @AssistedInject constructor(
                 } else {
                     val status = when (losslessUpgrader.upgradeToLossless(track, sweep = true)) {
                         UpgradeResult.Upgraded -> { upgraded++; FlacUpgradeStatus.DONE }
-                        UpgradeResult.NoMatch -> { noMatch++; FlacUpgradeStatus.NO_MATCH }
+                        UpgradeResult.NoMatch -> {
+                            noMatch++
+                            trackDao.setFlacNoMatchAt(trackId, System.currentTimeMillis())
+                            FlacUpgradeStatus.NO_MATCH
+                        }
                         UpgradeResult.Error -> { failed++; FlacUpgradeStatus.FAILED }
                         // The relay is serving streams first today. Leave this row and the rest
                         // pending and come back later: WorkManager's backoff grows each time, and

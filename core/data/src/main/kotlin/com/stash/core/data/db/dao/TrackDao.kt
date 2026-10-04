@@ -307,9 +307,15 @@ interface TrackDao {
         AND LOWER(t.file_format) != 'flac'
         AND t.match_picked_at IS NULL
         AND bl.canonical_key IS NULL
+        AND (t.flac_no_match_at IS NULL OR t.flac_no_match_at < :retryBefore)
+        ORDER BY t.flac_no_match_at IS NOT NULL, t.flac_no_match_at ASC, t.id ASC
         """
     )
-    suspend fun getLosslessUpgradeCandidates(): List<TrackEntity>
+    suspend fun getLosslessUpgradeCandidates(retryBefore: Long): List<TrackEntity>
+
+    /** Stamps (or clears with null) the last time a lossless lookup found no match for this track. */
+    @Query("UPDATE tracks SET flac_no_match_at = :ts WHERE id = :trackId")
+    suspend fun setFlacNoMatchAt(trackId: Long, ts: Long?)
 
     /**
      * Undownloaded tracks in a currently sync-enabled, non-mix playlist —
