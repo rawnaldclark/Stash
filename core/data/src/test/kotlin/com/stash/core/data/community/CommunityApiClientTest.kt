@@ -19,7 +19,7 @@ class CommunityApiClientTest {
 
     @Before fun setUp() {
         server = MockWebServer().also { it.start() }
-        client = CommunityApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
+        client = CommunityApiClient(OkHttpClient()).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
     }
 
     @After fun tearDown() { server.shutdown() }
@@ -77,8 +77,23 @@ class CommunityApiClientTest {
         assertThat(client.feed(5, null)).isInstanceOf(CommunityResult.Failed::class.java)
         server.enqueue(MockResponse().setBody("<html>"))
         assertThat(client.feed(5, null)).isInstanceOf(CommunityResult.Failed::class.java)
-        val offline = CommunityApiClient(OkHttpClient()).apply { baseUrl = "http://127.0.0.1:1" }
+        val offline = CommunityApiClient(OkHttpClient()).apply { baseUrls = listOf("http://127.0.0.1:1") }
         assertThat(offline.feed(5, null)).isInstanceOf(CommunityResult.Failed::class.java)
+    }
+
+    @Test fun `a refused stashfm-app falls back to the old host, keeping the key, and a 4xx doesn't`() = runBlocking {
+        val api = CommunityApiClient(OkHttpClient()).apply { baseUrls = listOf("http://127.0.0.1:1", server.url("/").toString().removeSuffix("/")) }
+        server.enqueue(MockResponse().setBody("""{"posts":[$summary]}"""))
+        assertThat((api.feed(5, key) as CommunityResult.Ok).value.single().title).isEqualTo("sad boy hours")
+        assertThat(server.takeRequest().getHeader(CommunityApiClient.KEY_HEADER)).isEqualTo(key)
+
+        val old = MockWebServer().also { it.start() }
+        val answered = CommunityApiClient(OkHttpClient())
+            .apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/"), old.url("/").toString().removeSuffix("/")) }
+        server.enqueue(MockResponse().setResponseCode(429).setBody("""{"error":"daily_limit"}"""))
+        assertThat(answered.me(key)).isEqualTo(CommunityResult.Rejected("daily_limit"))
+        assertThat(old.requestCount).isEqualTo(0)
+        old.shutdown()
     }
 
     @Test fun `a redirect is Failed and not followed`() = runBlocking {

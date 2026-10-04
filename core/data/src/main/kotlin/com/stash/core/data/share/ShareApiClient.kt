@@ -3,24 +3,17 @@ package com.stash.core.data.share
 import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
-import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 
 sealed interface ShareResult<out T> {
     data class Ok<T>(val value: T) : ShareResult<T>
@@ -41,8 +34,9 @@ sealed interface ShareResult<out T> {
 /** HTTP client for the stash-share Worker (spec §4): shared mixes and short song links. */
 @Singleton
 class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient) {
-    /** Test seam; off the constructor because Hilt rejects @Inject with default params. */
-    internal var baseUrl: String = ShareConfig.BASE_URL
+    /** The hosts tried in turn. Test seam; off the constructor because Hilt rejects @Inject with default params. */
+    internal var baseUrls: List<String> = ShareConfig.API_BASE_URLS
+    private val http = ShareHttp(okHttpClient)
 
     data class Created(val id: String, val version: Int)
     @Serializable private data class CreatedBody(val id: String, val version: Int)
@@ -52,7 +46,7 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
 
     suspend fun create(doc: SharedMixDocument, editKey: String): ShareResult<Created> {
         val body = buildJsonObject { put("doc", docJson(doc)); put("editKey", editKey) }
-        return call(Request.Builder().url("$baseUrl/v1/mixes").post(body.toBody())) {
+        return call("/v1/mixes", { post(body.toBody()) }) {
             ShareJson.decodeFromString(CreatedBody.serializer(), it).let { c -> Created(c.id, c.version) }
         }
     }
@@ -60,19 +54,19 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
     /** [baseVersion] = the version this phone last got back; the Worker never goes below it + 1 (stale-KV guard). */
     suspend fun update(id: String, doc: SharedMixDocument, editKey: String, baseVersion: Int): ShareResult<Int> {
         val body = buildJsonObject { put("doc", docJson(doc)); put("baseVersion", baseVersion) }
-        return call(Request.Builder().url("$baseUrl/v1/mixes/$id").header(KEY_HEADER, editKey).put(body.toBody())) {
+        return call("/v1/mixes/$id", { header(KEY_HEADER, editKey).put(body.toBody()) }) {
             ShareJson.decodeFromString(VersionBody.serializer(), it).version
         }
     }
 
     suspend fun delete(id: String, editKey: String): ShareResult<Unit> =
-        call(Request.Builder().url("$baseUrl/v1/mixes/$id").header(KEY_HEADER, editKey).delete()) { }
+        call("/v1/mixes/$id", { header(KEY_HEADER, editKey).delete() }) { }
 
     suspend fun get(id: String): ShareResult<SharedMixDocument> =
-        call(Request.Builder().url("$baseUrl/v1/mixes/$id").get()) { ShareJson.decodeFromString(SharedMixDocument.serializer(), it) }
+        call("/v1/mixes/$id") { ShareJson.decodeFromString(SharedMixDocument.serializer(), it) }
 
     suspend fun version(id: String): ShareResult<Int> =
-        call(Request.Builder().url("$baseUrl/v1/mixes/$id/version").get()) { ShareJson.decodeFromString(VersionBody.serializer(), it).version }
+        call("/v1/mixes/$id/version") { ShareJson.decodeFromString(VersionBody.serializer(), it).version }
 
     /** Test seam for [createTrackLink]'s call timeout; set it before the first call. */
     internal var trackLinkTimeoutMs: Long = ShareLinks.SHORT_LINK_TIMEOUT_MS
@@ -81,9 +75,7 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
      * Bounds a short-link request on OkHttp's side (every address, TLS, the answer), so its thread is freed once
      * the person sharing has stopped waiting. Built once, on first use.
      */
-    private val trackLinkHttp by lazy {
-        okHttpClient.newBuilder().callTimeout(trackLinkTimeoutMs, TimeUnit.MILLISECONDS).build()
-    }
+    private val trackLinkHttp by lazy { ShareHttp(okHttpClient) { callTimeout(trackLinkTimeoutMs, TimeUnit.MILLISECONDS) } }
 
     /** A short song link: [url] is `https://stashfm.app/t/{id}`. */
     data class TrackLink(val id: String, val url: String)
@@ -98,9 +90,9 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
     suspend fun createTrackLink(track: SharedTrack): ShareResult<TrackLink> {
         val body = track.copy(addedBy = null, artUrl = track.artUrl?.takeIf(ShareConfig::isAllowedCover))
         val json = ShareJson.encodeToString(SharedTrack.serializer(), body).toRequestBody(JSON)
-        return trackLinkHttp.shareCall(Request.Builder().url("$baseUrl/v1/tracks").post(json)) {
+        return trackLinkHttp.shareCall(baseUrls, "/v1/tracks", { post(json) }) {
             val id = ShareJson.decodeFromString(TrackLinkBody.serializer(), it).id
-            // Built from the id, like mix links, so it's always a link this app's App Links open.
+            // Built from the id, like mix links: always a stashfm.app link, whichever host answered.
             require(ShareLinks.isShareId(id)) { "bad track id" }
             TrackLink(id, ShareLinks.trackShortUrl(id))
         }
@@ -108,10 +100,10 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
 
     /** The song behind a short link; [ShareResult.NotFound] when no link has that id. */
     suspend fun getTrack(id: String): ShareResult<SharedTrack> =
-        call(Request.Builder().url("$baseUrl/v1/tracks/$id").get()) { ShareJson.decodeFromString(TrackBody.serializer(), it).track }
+        call("/v1/tracks/$id") { ShareJson.decodeFromString(TrackBody.serializer(), it).track }
 
-    private suspend fun <T> call(builder: Request.Builder, parse: (String) -> T): ShareResult<T> =
-        okHttpClient.shareCall(builder, parse)
+    private suspend fun <T> call(path: String, request: Request.Builder.() -> Unit = {}, parse: (String) -> T): ShareResult<T> =
+        http.shareCall(baseUrls, path, request, parse)
 
     private fun JsonObject.toBody() = toString().toRequestBody(JSON)
 
@@ -119,40 +111,4 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
         const val KEY_HEADER = "X-Stash-Edit-Key"
         val JSON = "application/json".toMediaType()
     }
-}
-
-/** One request to the stash-share Worker, mapped to a [ShareResult]. Shared by the mix and room clients. */
-internal suspend fun <T> OkHttpClient.shareCall(builder: Request.Builder, parse: (String) -> T): ShareResult<T> =
-    try {
-        newCall(builder.build()).await { code, body ->
-            when (code) {
-                in 200..299 -> ShareResult.Ok(parse(body))
-                403 -> ShareResult.Forbidden
-                404 -> ShareResult.NotFound
-                410 -> ShareResult.Gone
-                429 -> ShareResult.Failed(ShareResult.Failed.RATE_LIMITED)
-                in 400..499 -> ShareResult.Rejected(code)
-                else -> ShareResult.Failed("HTTP $code")
-            }
-        }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        ShareResult.Failed(e.message)
-    }
-
-/**
- * Runs the call on OkHttp's own thread and suspends until it answers; [read] turns the status and body into a
- * result on that thread, off the caller's. Cancelling the caller cancels the call and returns at once, even while
- * that thread is stuck in a DNS lookup, which nothing can interrupt. A blocking execute() inside withContext
- * held the caller until the lookup gave up: the share sheet's 4 s became 10-30 s on weak signal.
- */
-internal suspend fun <T> Call.await(read: (code: Int, body: String) -> T): T = suspendCancellableCoroutine { cont ->
-    cont.invokeOnCancellation { cancel() }
-    enqueue(object : Callback {
-        override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)
-
-        override fun onResponse(call: Call, response: Response) =
-            cont.resumeWith(runCatching { response.use { read(it.code, it.body?.string().orEmpty()) } })
-    })
 }

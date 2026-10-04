@@ -51,7 +51,7 @@ class CommunityRepositoryTest {
         val base = server.url("/").toString().removeSuffix("/")
         shared = SharedMixRepository(
             db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), mockk(relaxed = true),
-            ShareApiClient(OkHttpClient()).apply { baseUrl = base }, ApplicationProvider.getApplicationContext(),
+            ShareApiClient(OkHttpClient()).apply { baseUrls = listOf(base) }, ApplicationProvider.getApplicationContext(),
         )
         repo = repository(keyStore(existingKey = key))
     }
@@ -64,7 +64,7 @@ class CommunityRepositoryTest {
     }
 
     private fun repository(keys: CommunityKeyStore, on: Boolean = true): CommunityRepository {
-        val api = CommunityApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
+        val api = CommunityApiClient(OkHttpClient()).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
         val homeSections = mockk<HomeSectionsPreference> { every { communityOn } returns flowOf(on) }
         return CommunityRepository(api, keys, shared, db.playlistDao(), db.trackDao(), prefs, homeSections)
     }

@@ -6,15 +6,24 @@ import java.net.URLEncoder
 
 /** Where share links live (spec §1; moved to stashfm.app on 2026-10-03). */
 object ShareConfig {
-    /** New links and every share API call (mixes, song links, rooms, Community). */
+    /** Every link the app builds, and the first host every share API call tries (mixes, song links, rooms, Community). */
     const val BASE_URL = "https://stashfm.app"
 
+    /** Where links lived before stashfm.app. The same Worker and data still answer there, forever. */
+    const val LEGACY_BASE_URL = "https://stash-share.rawnaldclark.workers.dev"
+
     /**
-     * Hosts whose links open in Stash. The workers.dev host is where links lived before stashfm.app; the same
-     * Worker still serves it, so those links keep working forever. Keep in sync with the App Links filter in
-     * app/src/main/AndroidManifest.xml.
+     * Where share API calls go, in order. The old host is tried only when a request never reached stashfm.app (no
+     * DNS answer, refused, TLS failed): DNS filters often block newly registered domains for weeks. Links are still
+     * built on [BASE_URL], whichever host answered.
      */
-    val HOSTS: Set<String> = setOf("stashfm.app", "stash-share.rawnaldclark.workers.dev")
+    val API_BASE_URLS: List<String> = listOf(BASE_URL, LEGACY_BASE_URL)
+
+    /**
+     * Hosts whose links open in Stash: stashfm.app, and the workers.dev host older links use. Keep in sync with the
+     * App Links filter in app/src/main/AndroidManifest.xml.
+     */
+    val HOSTS: Set<String> = API_BASE_URLS.mapTo(LinkedHashSet()) { it.removePrefix("https://") }
 
     /**
      * Album-art CDNs a shared mix's or song's covers may point at. Anything else could log recipients' IPs.

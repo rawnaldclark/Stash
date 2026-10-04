@@ -55,7 +55,8 @@ fun interface RoomConnector {
 
 @Singleton
 class OkHttpRoomConnector @Inject constructor(okHttpClient: OkHttpClient) : RoomConnector {
-    internal var baseUrl: String = ShareConfig.BASE_URL
+    /** The hosts the socket can use (see [RoomClient]). Test seam. */
+    internal var baseUrls: List<String> = ShareConfig.API_BASE_URLS
 
     // A room socket can sit quiet for 30 s between pings, and the shared client's 30 s read
     // timeout would kill it. OkHttp's own ping keeps NAT mappings warm.
@@ -65,7 +66,7 @@ class OkHttpRoomConnector @Inject constructor(okHttpClient: OkHttpClient) : Room
         .build()
 
     override fun connect(code: String, scope: CoroutineScope, hello: () -> ClientMessage.Hello): RoomConnection =
-        RoomClient(client, { resume -> "$baseUrl/v1/rooms/$code/ws" + if (resume) "?r=1" else "" }, scope, hello)
+        RoomClient(client, baseUrls, { resume -> "/v1/rooms/$code/ws" + if (resume) "?r=1" else "" }, scope, hello)
 }
 
 /**
@@ -75,10 +76,15 @@ class OkHttpRoomConnector @Inject constructor(okHttpClient: OkHttpClient) : Room
  * (full), closes 4000/4404 (ended) and 4409 (full), and 1000 "replaced". A 409 on a resume is the
  * room's socket cap, so it retries. Other closes (4408 no hello, 1008/1009 misbehaving, network)
  * reconnect; a drop only resets the backoff if the socket had been up at least 5 s.
+ *
+ * A connect that got no answer at all (no DNS answer, refused, TLS failed) moves the next one to the other of
+ * [bases] (stashfm.app and the old workers.dev host: the same Worker and rooms), and it stays there until that
+ * host can't be reached either.
  */
 internal class RoomClient(
     private val http: OkHttpClient,
-    private val url: (resume: Boolean) -> String,
+    private val bases: List<String>,
+    private val path: (resume: Boolean) -> String,
     scope: CoroutineScope,
     private val hello: () -> ClientMessage.Hello,
     private val now: () -> Long = { SystemClock.elapsedRealtime() },
@@ -90,6 +96,8 @@ internal class RoomClient(
     override val events: Flow<RoomEvent> = channel.receiveAsFlow()
 
     @Volatile private var socket: WebSocket? = null
+    /** Which of [bases] the next connect uses. */
+    @Volatile private var host = 0
     /** The socket [close] is shutting down gracefully, which cancellation must not abort. */
     @Volatile private var leaving: WebSocket? = null
     private val job = scope.launch { loop() }
@@ -138,7 +146,7 @@ internal class RoomClient(
             if (cont.isActive) cont.resume(end)
         }
         val ws = http.newWebSocket(
-            Request.Builder().url(url(resume)).build(),
+            Request.Builder().url(bases[host] + path(resume)).build(),
             object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     Log.i(TAG, "open (resume=$resume)")
@@ -181,6 +189,8 @@ internal class RoomClient(
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     Log.i(TAG, "failure ${response?.code} ${t.message}")
+                    // Never opened and no HTTP answer: this host couldn't be reached, so try the other one next.
+                    if (response == null && openedAt == null && bases.size > 1) host = (host + 1) % bases.size
                     finish(
                         when (response?.code) {
                             404 -> End.Final(CloseReason.ENDED)

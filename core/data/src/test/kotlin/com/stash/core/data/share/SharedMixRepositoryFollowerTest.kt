@@ -63,7 +63,7 @@ class SharedMixRepositoryFollowerTest {
                     type = PlaylistType.CUSTOM, syncEnabled = true),
             )
         }
-        val api = ShareApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
+        val api = ShareApiClient(OkHttpClient()).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
         repo = SharedMixRepository(db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), music, api, ApplicationProvider.getApplicationContext())
     }
     @After fun tearDown() { db.close(); server.shutdown() }

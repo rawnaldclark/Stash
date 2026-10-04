@@ -34,7 +34,7 @@ class SharedMixRepositoryOwnerTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java)
             .allowMainThreadQueries().build()
         server = MockWebServer().also { it.start() }
-        val api = ShareApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
+        val api = ShareApiClient(OkHttpClient()).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
         repo = SharedMixRepository(db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), mockk<MusicRepository>(relaxed = true), api, ApplicationProvider.getApplicationContext())
         playlistId = db.playlistDao().insert(PlaylistEntity(name = "Ambient", source = MusicSource.BOTH, sourceId = "custom_1"))
         val t1 = db.trackDao().insert(TrackEntity(title = "One", artist = "A", isrc = "I1", albumArtUrl = "https://i.scdn.co/image/1", source = MusicSource.SPOTIFY))

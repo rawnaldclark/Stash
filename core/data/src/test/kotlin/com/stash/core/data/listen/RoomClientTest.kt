@@ -3,6 +3,8 @@ package com.stash.core.data.listen
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.model.listen.ClientMessage
 import com.stash.core.model.listen.ServerMessage
+import java.net.InetAddress
+import java.net.UnknownHostException
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
@@ -13,6 +15,7 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -42,10 +45,19 @@ class RoomClientTest {
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { serverClosing += "$code $reason"; webSocket.close(code, null) }
     })
 
-    private fun client(scope: CoroutineScope, backoffMs: Long = 10L, hello: () -> ClientMessage.Hello) =
+    private fun MockWebServer.base() = url("/").toString().removeSuffix("/")
+
+    private fun client(
+        scope: CoroutineScope,
+        backoffMs: Long = 10L,
+        bases: List<String> = listOf(server.base()),
+        http: OkHttpClient = OkHttpClient(),
+        hello: () -> ClientMessage.Hello,
+    ) =
         RoomClient(
-            http = OkHttpClient(),
-            url = { resume -> server.url("/v1/rooms/K7QA2PXM/ws").toString() + if (resume) "?r=1" else "" },
+            http = http,
+            bases = bases,
+            path = { resume -> "/v1/rooms/K7QA2PXM/ws" + if (resume) "?r=1" else "" },
             scope = scope,
             hello = hello,
             now = { t.get() },
@@ -70,6 +82,34 @@ class RoomClientTest {
         assertThat(events).containsExactly(RoomEvent.Connected, RoomEvent.Reconnecting, RoomEvent.Connected).inOrder()
         assertThat(server.requestCount).isEqualTo(2)
         c.close()
+    }
+
+    @Test fun `a connect that can't reach stashfm-app moves the next one to the old host`() = runBlocking {
+        val blocked = object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> =
+                if (hostname == "stashfm.invalid") throw UnknownHostException(hostname) else Dns.SYSTEM.lookup(hostname)
+        }
+        server.enqueue(upgrade())
+        val c = client(this, bases = listOf("http://stashfm.invalid", server.base()), http = OkHttpClient.Builder().dns(blocked).build()) {
+            ClientMessage.Hello()
+        }
+        val events = withTimeout(5_000) { c.events.take(2).toList() }
+        assertThat(events).containsExactly(RoomEvent.Reconnecting, RoomEvent.Connected).inOrder()
+        assertThat(server.takeRequest().path).isEqualTo("/v1/rooms/K7QA2PXM/ws")
+        c.close()
+    }
+
+    @Test fun `an answer at the upgrade keeps the host`() = runBlocking {
+        val old = MockWebServer().also { it.start() }
+        server.enqueue(MockResponse().setResponseCode(503))
+        server.enqueue(upgrade())
+        val c = client(this, bases = listOf(server.base(), old.base())) { ClientMessage.Hello() }
+        val events = withTimeout(5_000) { c.events.take(2).toList() }
+        assertThat(events).containsExactly(RoomEvent.Reconnecting, RoomEvent.Connected).inOrder()
+        assertThat(server.requestCount).isEqualTo(2)
+        assertThat(old.requestCount).isEqualTo(0)
+        c.close()
+        old.shutdown()
     }
 
     @Test fun `a resume token asks for the rejoin route`() = runBlocking {

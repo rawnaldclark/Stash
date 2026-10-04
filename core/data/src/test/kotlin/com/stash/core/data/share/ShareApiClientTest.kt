@@ -13,6 +13,7 @@ import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -29,7 +30,7 @@ class ShareApiClientTest {
 
     @Before fun setUp() {
         server = MockWebServer().also { it.start() }
-        client = ShareApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
+        client = ShareApiClient(OkHttpClient()).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
     }
     @After fun tearDown() { server.shutdown() }
 
@@ -138,6 +139,43 @@ class ShareApiClientTest {
         stalled.dispatcher.executorService.shutdownNow()
         assertThat(link).isEqualTo(ShareLinks.trackUrl(song))
         assertThat(ms).isLessThan(4_500L)
+    }
+
+    /** A DNS filter blocking stashfm.app: no answer for that one name, everything else resolves. */
+    private val blockedDns = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> =
+            if (hostname == "stashfm.invalid") throw UnknownHostException(hostname) else Dns.SYSTEM.lookup(hostname)
+    }
+    private fun MockWebServer.base() = url("/").toString().removeSuffix("/")
+
+    @Test fun `when stashfm-app can't be reached, the call goes to the old host and the link is still on stashfm-app`() = runBlocking {
+        val api = ShareApiClient(OkHttpClient.Builder().dns(blockedDns).build())
+            .apply { baseUrls = listOf("http://stashfm.invalid", server.base()) }
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"Ab3xY9qk","url":"https://stash-share.rawnaldclark.workers.dev/t/Ab3xY9qk"}"""))
+        assertThat(api.createTrackLink(song))
+            .isEqualTo(ShareResult.Ok(ShareApiClient.TrackLink("Ab3xY9qk", "https://stashfm.app/t/Ab3xY9qk")))
+        assertThat(server.takeRequest().path).isEqualTo("/v1/tracks")
+        server.enqueue(MockResponse().setBody("""{"track":{"t":"T","a":"A"}}"""))
+        assertThat(api.getTrack("Ab3xY9qk")).isEqualTo(ShareResult.Ok(SharedTrack("T", "A")))
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"Kx7Qa2pL","version":1,"url":"u"}"""))
+        assertThat(api.create(doc, "KEY")).isEqualTo(ShareResult.Ok(ShareApiClient.Created("Kx7Qa2pL", 1)))
+    }
+
+    @Test fun `an answer from stashfm-app is final - a 4xx, a 5xx or a drop after sending never tries the old host`() = runBlocking {
+        val old = MockWebServer().also { it.start() }
+        client.baseUrls = listOf(server.base(), old.base())
+        server.enqueue(MockResponse().setResponseCode(400))
+        assertThat(client.createTrackLink(song)).isEqualTo(ShareResult.Rejected(400))
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertThat(client.getTrack("Zz9xY9qk")).isEqualTo(ShareResult.NotFound)
+        server.enqueue(MockResponse().setResponseCode(503))
+        assertThat(client.get("Kx7Qa2pL")).isEqualTo(ShareResult.Failed("HTTP 503"))
+        // The request went out, so the mix may already exist: sending it again elsewhere could make it twice.
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
+        assertThat(client.create(doc, "KEY")).isInstanceOf(ShareResult.Failed::class.java)
+        assertThat(old.requestCount).isEqualTo(0)
+        old.shutdown()
     }
 
     @Test fun `getTrack reads the song back, 404 is NotFound, no network is Failed`() = runBlocking {
