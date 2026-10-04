@@ -1,0 +1,19 @@
+{
+  "name": "stashfm-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The website for Stash, served at https://stashfm.app",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.4",
+    "astro": "^7.3.5"
+  }
+}
