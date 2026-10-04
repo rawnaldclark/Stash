@@ -68,8 +68,6 @@ fun ShareTrackSheet(
     val artist = track.artist
     val spotifyUrl = spotifyShareUrl(track.spotifyUri)
     val youtubeUrl = youtubeShareUrl(track.youtubeId)
-    // Album, length, ISRC and the cover (only from a known art CDN, never a local file) go into the song link.
-    val shared = remember(track) { track.toSharedTrackWithArt() }
     val createLink = LocalCreateTrackLink.current
     val scope = rememberCoroutineScope()
     var linking by remember { mutableStateOf(false) }
@@ -121,7 +119,7 @@ fun ShareTrackSheet(
                 // Closing the sheet mid-wait cancels this with it, and nothing is shared.
                 scope.launch {
                     try {
-                        send("$artist — $title\n${stashSongLink(shared, createLink)}")
+                        send("$artist — $title\n${stashSongLink(track, createLink)}")
                     } finally {
                         linking = false
                     }
@@ -193,20 +191,22 @@ private fun ShareRow(
  * The link "Stash link" shares: the short `/t/{id}` link when [create] makes one within [timeoutMs], otherwise
  * (offline, refused, rate limited, slow, or no [create]) the long `/t?…` link, which needs no server, so sharing
  * always works. Both open in Stash via App Links; without Stash, the page shows the song and offers "Get Stash".
+ * Album, length, ISRC and ids go to the server, and the cover only from a known art CDN, never a local file.
  */
 suspend fun stashSongLink(
-    track: SharedTrack,
+    track: Track,
     create: (suspend (SharedTrack) -> String?)?,
     timeoutMs: Long = ShareLinks.SHORT_LINK_TIMEOUT_MS,
 ): String {
+    val shared = track.toSharedTrackWithArt()
     val short = if (create == null) null else try {
-        withTimeoutOrNull(timeoutMs) { create(track) }
+        withTimeoutOrNull(timeoutMs) { create(shared) }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         null
     }
-    return short ?: ShareLinks.trackUrl(track)
+    return short ?: ShareLinks.trackUrl(shared)
 }
 
 /**
