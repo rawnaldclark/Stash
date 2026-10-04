@@ -355,9 +355,10 @@ data class TrackEntity(
     val lyricsFetchedAt: Long? = null,
 
     /**
-     * When the last FLAC-upgrade lookup for this track found no lossless match,
-     * as epoch millis. `null` = never came back empty (never tried, or the last
-     * attempt matched or errored).
+     * When a FLAC-upgrade lookup for this track last found no lossless match,
+     * as epoch millis. `null` = no lookup has come back empty. A later match or
+     * error doesn't clear it: an old stamp only matters while it is inside the
+     * sweep's cooldown, and an upgraded track is FLAC and out of the pool anyway.
      *
      * [com.stash.core.data.db.dao.TrackDao.getLosslessUpgradeCandidates] sorts
      * never-stamped tracks first and skips stamped ones for the sweeper's
@@ -367,9 +368,10 @@ data class TrackEntity(
      *
      * Written by `FlacUpgradeWorker` on [com.stash.core.model.UpgradeResult.NoMatch]
      * only. Errors are left unstamped because they're usually transient and the
-     * track should stay eligible. `flac_upgrade_queue` can't carry this: its
-     * rows are wiped on every new batch.
+     * track should stay eligible, and a sweep reports a null it can't trust (an
+     * outage, a failed fetch) as an error (`LosslessUpgraderImpl.isRealMiss`).
+     * `flac_upgrade_queue` can't carry this: its rows are wiped on every new batch.
      */
-    @ColumnInfo(name = "flac_no_match_at") 
+    @ColumnInfo(name = "flac_no_match_at")
     val flacNoMatchAt: Long? = null,
 )

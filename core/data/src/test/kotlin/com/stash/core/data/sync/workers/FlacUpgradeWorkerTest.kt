@@ -115,6 +115,20 @@ class FlacUpgradeWorkerTest {
         verify { syncNotificationManager.showFlacUpgradeSummary(upgraded = 1, noMatch = 1, failed = 1, skipped = 0) }
     }
 
+    @Test fun `a track with no lossless match is remembered, an error is not`() = runBlocking {
+        val (miss, error, upgraded) = seedTracks(3)
+        db.flacUpgradeQueueDao().startBatch(listOf(miss, error, upgraded))
+
+        buildWorker(
+            upgraderReturning(UpgradeResult.NoMatch, UpgradeResult.Error, UpgradeResult.Upgraded),
+        ).doWork()
+
+        // The sweep skips a stamped track for two weeks; an error is usually transient.
+        assertTrue(db.trackDao().getById(miss)!!.flacNoMatchAt != null)
+        assertEquals(null, db.trackDao().getById(error)!!.flacNoMatchAt)
+        assertEquals(null, db.trackDao().getById(upgraded)!!.flacNoMatchAt)
+    }
+
     @Test fun `a paced sweep stops, leaves the rest pending, and retries later`() = runBlocking {
         val ids = seedTracks(3)
         db.flacUpgradeQueueDao().startBatch(ids)
