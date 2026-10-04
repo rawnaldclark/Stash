@@ -5,11 +5,14 @@
  * knows your email can't cancel it. Any live code signs you in, and signing in clears them all. The fifth wrong
  * try clears them all too.
  *
- * Timing: a wrong code is answered without waiting on KV (the try is counted afterwards, in ctx.waitUntil), so
- * an email with a live code answers as fast as one without.
+ * Timing: a wrong code is answered without waiting on KV (the try is counted afterwards, in ctx.waitUntil). The
+ * read itself can still be a little slower when a code record exists than when none does (web/README.md).
  *
  * KV isn't transactional and can lag up to a minute between locations, so tries landing at once can count as
- * one. The per-email (VERIFY_EMAIL_RL) and per-address (VERIFY_IP_RL) limits on tries keep that harmless.
+ * one, and the 5-try count isn't exact. The tries are also rate-limited per email (VERIFY_EMAIL_RL, 5 a minute)
+ * and per address (VERIFY_IP_RL), but those limits are per Cloudflare location, so someone spread over many
+ * locations gets proportionally more. What they realistically stop is guessing at scale: each try has about a
+ * 3-in-a-million chance (up to 3 live codes out of 1,000,000), at a few tries a minute per location.
  */
 import { clock, hmacHex, sameHex, sixDigitCode } from "./crypto.js";
 import { KEYS } from "./keys.js";
@@ -39,7 +42,8 @@ export function cleanCode(input) {
 /**
  * A fresh code for [h], added to the ones still live (the oldest dropped past LIVE_CODES), or null when this
  * email has had SENDS_PER_HOUR codes this hour. That hourly count is a KV counter, so it's approximate under
- * concurrency; CODE_SEND_RL (one a minute, checked before this) is the exact limit.
+ * concurrency and across locations. CODE_SEND_RL (one a minute, checked before this) is tighter but per
+ * Cloudflare location too: together they keep one address from being flooded, not to an exact number.
  */
 export async function issueCode(env, secret, h) {
     const kv = env.ACCESS_KV;

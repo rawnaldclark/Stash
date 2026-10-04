@@ -2,7 +2,8 @@ import { before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { handle } from "../index.js";
 import { forgetAccessKeys, verifyAccess } from "../access-jwt.js";
-import { b64urlEncode, hashEmail } from "../crypto.js";
+import { b64urlEncode } from "../crypto.js";
+import { hashFor as hashEmail } from "./fakes.js";
 import { forgetGoalCache } from "../goal.js";
 import { forgetAllAccess, hasAccess, signSession } from "../session.js";
 import { BASE, env, fakeEmail, fakeKV, get, post, SECRET } from "./fakes.js";
@@ -272,6 +273,14 @@ test("admin POSTs need the same Origin check, and an unknown action does nothing
     assert.equal(res.headers.get("location"), "/admin?done=bad-form");
     assert.equal([...e.ACCESS_KV.map.keys()].length, 0);
     assert.equal((await adminPost({ action: "drop-tables" }, e)).headers.get("location"), "/admin?done=bad-form");
+});
+
+test("without EMAIL_PEPPER, the admin page won't add or remove emails (they'd be hashed wrong)", async () => {
+    const e = env({ EMAIL_PEPPER: undefined });
+    for (const action of ["add", "remove"]) {
+        assert.equal((await adminPost({ action, email: "x@example.com" }, e)).headers.get("location"), "/admin?done=no-pepper");
+    }
+    assert.equal([...e.ACCESS_KV.map.keys()].length, 0);
 });
 
 test("a pepper mismatch between the tip jar and the site shows a warning", async () => {

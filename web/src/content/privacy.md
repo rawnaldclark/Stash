@@ -8,8 +8,8 @@
 #   relay counts kept 7 days plus today  QUOTA_KEEP_DAYS, infra/lossless-relay/src/db.js
 #   Last.fm proxy answers kept 14 days   CACHE_TTL_SECONDS, infra/lastfm-proxy/src/index.js
 #   Qobuz login retried once a minute    DEAD_COOLDOWN_MS, data/download/.../qbdlx/QbdlxCredentialStore.kt
-#   early-access emails hashed with a     EMAIL_PEPPER on both the tip jar and the site (web/README.md,
-#   secret ("pepper")                     "Deploying"); if it isn't set, rewrite that sentence to say plain hash
+#   early-access emails hashed with a     EMAIL_PEPPER, required: the site's sign-in refuses to run without
+#   secret ("pepper")                     it (missingForGate in web/worker/index.js), and the import too
 #
 # Shown as "Last updated" on the page. Change it whenever this file changes.
 updated: 2026-10-04

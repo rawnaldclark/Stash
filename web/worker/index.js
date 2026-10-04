@@ -20,8 +20,8 @@
  * counting a wrong try, storing a request) run after the response, in ctx.waitUntil. What's left before the
  * response is the same for every email: the rate limits, one KV read and an HMAC.
  *
- * Without its bindings and SESSION_SECRET (a Preview gets none: wrangler.jsonc "previews"), the gate says
- * signing in isn't working, and /admin refuses everyone; the pages themselves still load.
+ * Without its bindings, SESSION_SECRET and EMAIL_PEPPER (a Preview gets none: wrangler.jsonc "previews"), the
+ * gate says signing in isn't working, and /admin refuses everyone; the pages themselves still load.
  */
 import { teamDomain } from "./access-jwt.js";
 import { adminRoute } from "./admin.js";
@@ -153,10 +153,14 @@ const slowDown = (env, url) => gatePage(env, url, "slow-down", { status: 429, he
 
 const GATE_BINDINGS = ["ACCESS_KV", "EMAIL", "SEND_IP_RL", "SEND_EMAIL_RL", "CODE_SEND_RL", "VERIFY_IP_RL", "VERIFY_EMAIL_RL", "REQUEST_IP_RL"];
 
-/** Everything sign-in and requests need, or the names of what's missing (a Preview, or a half-finished setup). */
+/**
+ * Everything sign-in and requests need, or the names of what's missing (a Preview, or a half-finished setup).
+ * EMAIL_PEPPER is required: the privacy page promises the access list's hashes are keyed with it.
+ */
 function missingForGate(env) {
     const missing = GATE_BINDINGS.filter((name) => !env[name]);
     if (!sessionSecret(env)) missing.push("SESSION_SECRET (32+ characters)");
+    if (!env.EMAIL_PEPPER) missing.push("EMAIL_PEPPER");
     return missing;
 }
 

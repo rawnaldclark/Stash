@@ -3,7 +3,7 @@
  * bindings, the static assets binding, ExecutionContext, and just enough of HTMLRewriter for the
  * attribute selectors worker/pages.js uses ([data-fill], [data-if], ...).
  */
-import { clock } from "../crypto.js";
+import { clock, hashEmail } from "../crypto.js";
 
 /**
  * Workers KV: get (text, "json", {type}), put with expirationTtl/expiration (honoured by clock.now()) and metadata,
@@ -161,6 +161,9 @@ export function fakeCtx() {
 }
 
 export const SECRET = "test-session-secret-0123456789abcdef";
+/** The gate requires EMAIL_PEPPER, so tests hash with this one (the same test pepper as the tip jar's vectors). */
+export const PEPPER = "test-pepper";
+export const hashFor = (email) => hashEmail(email, PEPPER);
 
 export function env(over = {}) {
     return {
@@ -174,6 +177,7 @@ export function env(over = {}) {
         VERIFY_EMAIL_RL: fakeRL(),
         REQUEST_IP_RL: fakeRL(),
         SESSION_SECRET: SECRET,
+        EMAIL_PEPPER: PEPPER,
         GOAL_CENTS: "10000",
         EMAIL_FROM: "access@stashfm.app",
         ACCESS_TEAM_DOMAIN: "https://stash-test.cloudflareaccess.com",

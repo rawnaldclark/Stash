@@ -1,7 +1,7 @@
 import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { handle } from "../index.js";
-import { hashEmail } from "../crypto.js";
+import { hashFor as hashEmail } from "./fakes.js";
 import { forgetAllAccess } from "../session.js";
 import { env, fakeCtx, fakeKV, fakeRL, get, post } from "./fakes.js";
 

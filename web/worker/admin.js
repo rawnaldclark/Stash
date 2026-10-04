@@ -34,6 +34,7 @@ const DONE = {
     "bad-amount": "Enter the amount in US dollars, like 5 or 12.50.",
     "bad-source": "Say where the donation came from, like \"GitHub Sponsors\".",
     "bad-form": "That form didn't come through. Try again.",
+    "no-pepper": "EMAIL_PEPPER isn't set on this Worker, so emails can't be added or removed (they'd be hashed differently from the tip jar's).",
 };
 
 const fmtDate = (iso) => {
@@ -171,6 +172,7 @@ async function act(request, env, url, admin) {
             return back(url, "denied");
         }
         case "add": {
+            if (!env.EMAIL_PEPPER) return back(url, "no-pepper");
             const email = normalizeEmail(form.email);
             if (!validEmail(email)) return back(url, "bad-email");
             const h = await hashOf(email);
@@ -182,6 +184,7 @@ async function act(request, env, url, admin) {
             return sent.ok ? back(url, "added-emailed") : back(url, "added-noemail", sent.code);
         }
         case "remove": {
+            if (!env.EMAIL_PEPPER) return back(url, "no-pepper");
             const email = normalizeEmail(form.email);
             if (!validEmail(email)) return back(url, "bad-email");
             const h = await hashOf(email);

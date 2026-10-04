@@ -2,7 +2,7 @@ import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import worker, { handle } from "../index.js";
-import { hashEmail } from "../crypto.js";
+import { hashFor as hashEmail } from "./fakes.js";
 import { forgetGoalCache } from "../goal.js";
 import { CSP, SECURITY_HEADERS } from "../pages.js";
 import { forgetAllAccess, signSession } from "../session.js";

@@ -113,13 +113,15 @@
     // Code emails asked for, per email (by its hash). Applies to every email, listed or
     // not, so hitting it says nothing about who has access. Over it: "Slow down".
     { "name": "SEND_EMAIL_RL", "namespace_id": "2011", "simple": { "limit": 3, "period": 60 } },
-    // Code emails actually sent, per email: one a minute. Silent (the page is the same),
-    // and counted for every email. Also capped at 5 an hour by a KV count (worker/codes.js).
+    // Code emails actually sent, per email: one a minute per location. Silent (the page is
+    // the same), and counted for every email. Also capped at about 5 an hour by a KV count
+    // (worker/codes.js); together they stop one address being flooded, not to an exact number.
     { "name": "CODE_SEND_RL", "namespace_id": "2015", "simple": { "limit": 1, "period": 60 } },
     // Code tries, per IP.
     { "name": "VERIFY_IP_RL", "namespace_id": "2012", "simple": { "limit": 10, "period": 60 } },
     // Code tries, per email (by its hash), for every email, before its code is looked up.
-    // With the 5 wrong tries each set of codes allows, this keeps guessing hopeless.
+    // Per location, like every limit here: with the 5 wrong tries each set of codes allows,
+    // it keeps guessing to a few tries a minute per location, each about 3 in a million.
     { "name": "VERIFY_EMAIL_RL", "namespace_id": "2014", "simple": { "limit": 5, "period": 60 } },
     // Access requests, per IP.
     { "name": "REQUEST_IP_RL", "namespace_id": "2013", "simple": { "limit": 3, "period": 60 } }
@@ -142,8 +144,9 @@
   //   SESSION_SECRET  signs the sign-in cookie and the stored codes. At least 32 random
   //                   characters, e.g. `openssl rand -base64 48`. Changing it signs everyone out.
   //   ADMIN_EMAILS    comma-separated emails allowed on /admin (also checked by Access).
-  //   EMAIL_PEPPER    recommended: keys the email hashes. The same value on the tip jar and for
-  //                   its import script, set before anything writes access:* entries.
+  //   EMAIL_PEPPER    required: keys the email hashes (sign-in refuses to run without it). The same
+  //                   value on the tip jar and for its import script, set before anything writes
+  //                   access:* entries.
 
   // Previews (`npx wrangler preview`, Workers Builds' Preview command) don't inherit any
   // production binding, var or secret: they get only what this block gives them, and
@@ -156,8 +159,12 @@
   //     unless preview_urls is false or Cloudflare Access guards those URLs.
   "previews": {},
 
-  // The site also answers at stashfm-site.<account>.workers.dev, and each uploaded
-  // version gets its own Version URL, which keeps showing that version's pages.
+  // The site also answers at stashfm-site.<account>.workers.dev.
   "workers_dev": true,
-  "preview_urls": true
+  // No Version URLs: with them on, every uploaded version (old ones included) stays
+  // reachable at its own URL with production's bindings and secrets, outside the routes
+  // and the Access app. Branch Previews (`wrangler preview`) are a separate mechanism with
+  // their own, empty bindings (the "previews" block). If branch previews stop appearing once
+  // Workers Builds is connected, revisit this (web/README.md, "Deploying", step 2).
+  "preview_urls": false
 }

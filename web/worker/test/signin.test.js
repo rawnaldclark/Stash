@@ -1,7 +1,7 @@
 import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import worker, { handle } from "../index.js";
-import { hashEmail } from "../crypto.js";
+import { hashFor as hashEmail } from "./fakes.js";
 import { forgetAllAccess } from "../session.js";
 import { env, fakeCtx, fakeEmail, fakeKV, fakeRL, freezeClock, get, post } from "./fakes.js";
 
@@ -264,8 +264,8 @@ test("a bad email gets a friendly 400; a missing SESSION_SECRET turns sign-in of
     assert.equal(off.status, 503);
 });
 
-test("without the gate's bindings (a Preview has none), sign-in and requests say they aren't working; the page still loads", async () => {
-    for (const missing of ["ACCESS_KV", "EMAIL", "SEND_IP_RL", "VERIFY_EMAIL_RL", "CODE_SEND_RL"]) {
+test("without the gate's bindings or EMAIL_PEPPER (a Preview has none), sign-in and requests say they aren't working; the page still loads", async () => {
+    for (const missing of ["ACCESS_KV", "EMAIL", "SEND_IP_RL", "VERIFY_EMAIL_RL", "CODE_SEND_RL", "EMAIL_PEPPER"]) {
         const e = env({ [missing]: undefined });
         for (const [path, fields] of [["/access", { email: EMAIL }], ["/access/verify", { email: EMAIL, code: "123456" }], ["/request", { email: EMAIL }]]) {
             const res = await run(e, post(path, fields));
