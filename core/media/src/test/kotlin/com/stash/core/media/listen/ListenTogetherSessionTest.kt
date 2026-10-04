@@ -15,6 +15,7 @@ import com.stash.core.model.listen.RoomPhase
 import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
+import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -574,8 +575,8 @@ class ListenTogetherSessionTest {
         assertThat(notices).containsExactly("Session ended")
     }
 
-    fun TestScope.host(upcoming: List<MediaItem> = listOf(item("2"))) {
-        coEvery { api.create("Rawn") } returns ShareResult.Ok(RoomApiClient.Created("K7QA2PXM", "KEY", "https://x/l/K7QA2PXM"))
+    fun TestScope.host(upcoming: List<MediaItem> = listOf(item("2")), serverUrl: String = "https://x/l/K7QA2PXM") {
+        coEvery { api.create("Rawn") } returns ShareResult.Ok(RoomApiClient.Created("K7QA2PXM", "KEY", serverUrl))
         player.queue = UserQueue(current = item("1"), upcoming = upcoming, positionMs = 40_000)
         player.positionMs = 42_000 // the song played on while the room was being created
         session()
@@ -590,7 +591,13 @@ class ListenTogetherSessionTest {
         assertThat(player.calls.take(3)).containsExactly("save", "enter:host", "pause").inOrder()
         assertThat(connection.sent.filterIsInstance<ClientMessage.Load>()).containsExactly(ClientMessage.Load(track, 42_000, listOf(next)))
         assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", resumeToken = "tok"))
-        assertThat((controller.state.value as ListenTogetherState.InRoom).url).isEqualTo("https://x/l/K7QA2PXM")
+        assertThat((controller.state.value as ListenTogetherState.InRoom).url).isEqualTo(ShareLinks.roomUrl("K7QA2PXM"))
+    }
+
+    @Test fun `the host's invite is always a stashfm-app link, whichever host made the room`() = runTest {
+        // When stashfm.app can't be reached the room is made on the old workers.dev host, which answers with its own url.
+        host(serverUrl = "https://stash-share.rawnaldclark.workers.dev/l/K7QA2PXM")
+        assertThat((controller.state.value as ListenTogetherState.InRoom).url).isEqualTo("https://stashfm.app/l/K7QA2PXM")
     }
 
     @Test fun `a room that can't be created leaves everything alone`() = runTest {
