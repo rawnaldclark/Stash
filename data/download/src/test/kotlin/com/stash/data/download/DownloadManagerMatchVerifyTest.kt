@@ -221,10 +221,10 @@ class DownloadManagerMatchVerifyTest {
         // search whose best row is under the bar, which left every later search unrun.
         val track = Track(id = 9L, title = "100% Pure Love", artist = "Crystal Waters")
         // YouTube Music shows only a karaoke cut, and yt-dlp's search finds the song.
-        val karaoke = ytmRow("karaoke", "100% Pure Love (Karaoke)", "Crystal Waters")
+        val karaoke = ytmRow("karaokeRow1", "100% Pure Love (Karaoke)", "Crystal Waters")
         everySearchReturns(karaoke)
         coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns
-            listOf(ytmRow("pct", "100% Pure Love", "Crystal Waters"))
+            listOf(ytmRow("percentRow1", "100% Pure Love", "Crystal Waters"))
         val karaokeScore = scorer.scoreResults(track.title, track.artist, track.durationMs, listOf(karaoke))
             .single().matchScore
         assertTrue(
@@ -234,7 +234,7 @@ class DownloadManagerMatchVerifyTest {
 
         newSubject().downloadTrack(track)
 
-        downloaded("pct", times = 1)
+        downloaded("percentRow1", times = 1)
     }
 
     @Test
@@ -313,56 +313,56 @@ class DownloadManagerMatchVerifyTest {
 
     @Test
     fun `at most three candidates are checked per search`() = runTest {
-        val ids = listOf("c1", "c2", "c3", "c4", "c5")
+        val ids = listOf("candidate01", "candidate02", "candidate03", "candidate04", "candidate05")
         firstSearchReturns(*ids.map { ytmRow(it) }.toTypedArray())
         // The existing player-title check rejects each one, which isolates the loop.
         ids.forEach { player(it, "Something Else Entirely", 226) }
 
         val result = newSubject().downloadTrack(patientZero)
 
-        assertEquals(TrackDownloadResult.Unmatched(rejectedVideoId = "c1"), result)
-        listOf("c1", "c2", "c3").forEach { lookedUp(it, times = 1) }
-        listOf("c4", "c5").forEach { lookedUp(it, times = 0) }
+        assertEquals(TrackDownloadResult.Unmatched(rejectedVideoId = "candidate01"), result)
+        listOf("candidate01", "candidate02", "candidate03").forEach { lookedUp(it, times = 1) }
+        listOf("candidate04", "candidate05").forEach { lookedUp(it, times = 0) }
         coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
     }
 
     @Test
     fun `a video the player rejected does not use up the next search's checks`() = runTest {
         // Both searches return three wrong cuts ahead of the song.
-        everySearchReturns(ytmRow(MV), ytmRow("mv2"), ytmRow("mv3"), ytmRow(AUDIO))
-        listOf(MV, "mv2", "mv3").forEach { player(it, MV_PLAYER_TITLE, 312) }
+        everySearchReturns(ytmRow(MV), ytmRow("musicVideo2"), ytmRow("musicVideo3"), ytmRow(AUDIO))
+        listOf(MV, "musicVideo2", "musicVideo3").forEach { player(it, MV_PLAYER_TITLE, 312) }
         player(AUDIO, "Patient Zero", 226)
 
         newSubject().downloadTrack(patientZero)
 
         downloaded(AUDIO, times = 1)
-        listOf(MV, "mv2", "mv3").forEach { lookedUp(it, times = 1) }
+        listOf(MV, "musicVideo2", "musicVideo3").forEach { lookedUp(it, times = 1) }
     }
 
     @Test
     fun `a video the player says is another song does not use up the next search's checks`() = runTest {
         // Both searches return three videos the player names as another song, ahead of
         // the song. Their length is the song's, so only the title check rejects them.
-        everySearchReturns(ytmRow("x1"), ytmRow("x2"), ytmRow("x3"), ytmRow(AUDIO))
-        listOf("x1", "x2", "x3").forEach { player(it, "Something Else Entirely", 226) }
+        everySearchReturns(ytmRow("anotherOne1"), ytmRow("anotherOne2"), ytmRow("anotherOne3"), ytmRow(AUDIO))
+        listOf("anotherOne1", "anotherOne2", "anotherOne3").forEach { player(it, "Something Else Entirely", 226) }
         player(AUDIO, "Patient Zero", 226)
 
         newSubject().downloadTrack(patientZero)
 
         downloaded(AUDIO, times = 1)
-        listOf("x1", "x2", "x3").forEach { lookedUp(it, times = 1) }
+        listOf("anotherOne1", "anotherOne2", "anotherOne3").forEach { lookedUp(it, times = 1) }
     }
 
     @Test
     fun `a lower candidate is taken only when the player answered for it`() = runTest {
-        firstSearchReturns(ytmRow(MV), ytmRow("unchecked"), ytmRow(AUDIO))
+        firstSearchReturns(ytmRow(MV), ytmRow("uncheckedV1"), ytmRow(AUDIO))
         player(MV, MV_PLAYER_TITLE, 312)
-        // No answer for "unchecked": its lookup fails.
+        // No answer for "uncheckedV1": its lookup fails.
         player(AUDIO, "Patient Zero", 226)
 
         newSubject().downloadTrack(patientZero)
 
-        downloaded("unchecked", times = 0)
+        downloaded("uncheckedV1", times = 0)
         downloaded(AUDIO, times = 1)
     }
 
@@ -372,18 +372,18 @@ class DownloadManagerMatchVerifyTest {
         // too. Later searches skip the rejected video, which leaves that row first in
         // line, but it is still the lower candidate: taken on a failed lookup, it
         // would be downloaded with no title or length check.
-        everySearchReturns(ytmRow(MV), ytmRow("unchecked"))
-        coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns listOf(ytmRow(MV), ytmRow("unchecked"))
+        everySearchReturns(ytmRow(MV), ytmRow("uncheckedV1"))
+        coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns listOf(ytmRow(MV), ytmRow("uncheckedV1"))
         player(MV, MV_PLAYER_TITLE, 312)
-        // No answer for "unchecked": its lookup fails every time.
+        // No answer for "uncheckedV1": its lookup fails every time.
 
         val result = newSubject().downloadTrack(patientZero)
 
         assertEquals(TrackDownloadResult.Unmatched(rejectedVideoId = MV), result)
-        downloaded("unchecked", times = 0)
+        downloaded("uncheckedV1", times = 0)
         lookedUp(MV, times = 1)
         // Once per search: two on YouTube Music, then yt-dlp's.
-        lookedUp("unchecked", times = 3)
+        lookedUp("uncheckedV1", times = 3)
     }
 
     @Test
@@ -392,11 +392,11 @@ class DownloadManagerMatchVerifyTest {
         // Lower candidates are checked now, so the loop has to keep the bar itself:
         // the instrumental passes every gate (its title strips to the song's, and the
         // player gives the song's length), and only its score marks the wrong cut.
-        val instrumental = ytmRow("inst", "Patient Zero (Instrumental)")
+        val instrumental = ytmRow("instrumentl", "Patient Zero (Instrumental)")
         firstSearchReturns(ytmRow(MV), instrumental)
         player(MV, MV_PLAYER_TITLE, 312)
-        player("inst", "Patient Zero (Instrumental)", 226)
-        val instrumentalScore = ranked(ytmRow(MV), instrumental).single { it.videoId == "inst" }.matchScore
+        player("instrumentl", "Patient Zero (Instrumental)", 226)
+        val instrumentalScore = ranked(ytmRow(MV), instrumental).single { it.videoId == "instrumentl" }.matchScore
         assertTrue(
             "premise: the instrumental scores under the bar, at $instrumentalScore",
             instrumentalScore < MatchScorer.AUTO_ACCEPT_THRESHOLD,
@@ -405,9 +405,9 @@ class DownloadManagerMatchVerifyTest {
         val result = newSubject().downloadTrack(patientZero)
 
         assertEquals(TrackDownloadResult.Unmatched(rejectedVideoId = MV), result)
-        downloaded("inst", times = 0)
+        downloaded("instrumentl", times = 0)
         lookedUp(MV, times = 1)
-        lookedUp("inst", times = 0)
+        lookedUp("instrumentl", times = 0)
     }
 
     @Test
@@ -495,6 +495,61 @@ class DownloadManagerMatchVerifyTest {
         // Rejected in the YouTube Music searches, and not looked up again by yt-dlp's.
         lookedUp(MV, times = 1)
         lookedUp(AUDIO, times = 1)
+    }
+
+    @Test
+    fun `a search row whose id isn't a video id is never taken, and the valid row behind it is`() = runTest {
+        // Identical untyped rows tie and keep the search's order, so the malformed rows rank first.
+        val malformed = listOf("../x", "a%(title)s")
+        val rows = (malformed.map { ytmRow(it) } + ytmRow(AUDIO)).toTypedArray()
+        firstSearchReturns(*rows)
+        player(AUDIO, "Patient Zero", 226)
+        assertEquals("premise: a malformed row outranks the song", "../x", rankedFirst(*rows))
+
+        newSubject().downloadTrack(patientZero)
+
+        downloaded(AUDIO, times = 1)
+        coVerify(exactly = 1) { trackDao.fillMissingMetadata(7L, any(), any(), any(), AUDIO) }
+        malformed.forEach { id ->
+            coVerify(exactly = 0) { downloadExecutor.download(match { id in it }, any(), any(), any(), any()) }
+            coVerify(exactly = 0) { trackDao.fillMissingMetadata(any(), any(), any(), any(), id) }
+            coVerify(exactly = 0) { trackDao.updateYoutubeId(any(), id) }
+            lookedUp(id, times = 0)
+        }
+    }
+
+    @Test
+    fun `yt-dlp gets the URL built from the accepted row's id, not the row's own link`() = runTest {
+        val row = ytmRow(AUDIO).copy(webpageUrl = "https://other.example/watch?v=$AUDIO")
+        everySearchReturns(row)
+        player(AUDIO, "Patient Zero", 226)
+
+        newSubject().downloadTrack(patientZero)
+
+        downloaded(AUDIO, times = 1)
+        coVerify(exactly = 0) { downloadExecutor.download(row.webpageUrl, any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `an album match reaches yt-dlp as the URL built from its id`() = runTest {
+        val albumRow = ytmRow(AUDIO).copy(webpageUrl = "https://other.example/watch?v=$AUDIO")
+        coEvery { albumMatchExecutor.findTrackInAlbum(any(), any(), any(), any()) } returns albumRow
+
+        newSubject().downloadTrack(patientZero)
+
+        downloaded(AUDIO, times = 1)
+        coVerify(exactly = 0) { downloadExecutor.download(albumRow.webpageUrl, any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `an album row whose id isn't a video id is never taken`() = runTest {
+        coEvery { albumMatchExecutor.findTrackInAlbum(any(), any(), any(), any()) } returns ytmRow("../x")
+
+        val result = newSubject().downloadTrack(patientZero)
+
+        assertTrue("expected Unmatched, got $result", result is TrackDownloadResult.Unmatched)
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { trackDao.fillMissingMetadata(any(), any(), any(), any(), "../x") }
     }
 
     @Test

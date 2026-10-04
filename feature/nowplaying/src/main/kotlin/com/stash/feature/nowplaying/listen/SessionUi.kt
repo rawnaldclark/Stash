@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.media.listen.SessionEvent
+import com.stash.core.model.YouTubeVideoId
 import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.SharedTrack
@@ -506,15 +507,13 @@ private fun Person(m: RoomMember, room: ListenTogetherState.InRoom, onMakeHost: 
     }
 }
 
-private val YOUTUBE_ID = Regex("[A-Za-z0-9_-]{11}")
-
 /**
  * The song's YouTube thumbnail. `mqdefault` is 320x180 with no letterbox bars, so the square crop is the
  * picture itself (for YouTube Music uploads, the album cover); `hqdefault` pads with black. The id comes
  * from whoever added the song, so it must look like a real one.
  */
 internal fun thumbnailUrl(track: SharedTrack): String? =
-    track.youtubeId?.takeIf { YOUTUBE_ID.matches(it) }?.let { "https://i.ytimg.com/vi/$it/mqdefault.jpg" }
+    track.youtubeId?.takeIf(YouTubeVideoId::isValid)?.let { "https://i.ytimg.com/vi/$it/mqdefault.jpg" }
 
 /** The cover the adder's phone shows when it came along (checked again: it's another phone's link), else the YouTube thumbnail. */
 internal fun coverUrl(track: SharedTrack): String? = track.artUrl?.takeIf(ShareConfig::isAllowedCover) ?: thumbnailUrl(track)

@@ -11,6 +11,7 @@ import io.mockk.coVerify
 import kotlinx.coroutines.CancellationException
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -110,6 +111,31 @@ class TrackFinalizerTest {
 
         assertTrue("cancellation must propagate", cancellationPropagated)
     }
+
+    @Test fun `the format reaches the library in lower case`() = runTest {
+        val formats = mutableListOf<String>()
+        coEvery {
+            fileOrganizer.commitDownload(any(), any(), any(), any(), capture(formats), any())
+        } returns FileOrganizer.CommittedTrack("/library/Drake/x.flac", 100)
+        coEvery { audioExtractor.extract(any()) } returns null
+
+        listOf(
+            AudioFormat(codec = "FLAC", bitrateKbps = 0),
+            AudioFormat(codec = "aac", bitrateKbps = 256, fileExtension = "M4A"),
+            AudioFormat(codec = "Opus", bitrateKbps = 128, fileExtension = ""),
+        ).forEach { format ->
+            val result = subject.finalizeFile(
+                sourceFile = File.createTempFile("src", ".bin"),
+                track = stubTrack(),
+                format = format,
+                embedMetadata = false,
+            )
+            assertTrue("expected Success, got $result", result is TrackFinalizer.FinalizeResult.Success)
+        }
+
+        assertEquals(listOf("flac", "m4a", "opus"), formats)
+    }
+
     private fun stubTrack(): Track = Track(
         id = 1L,
         title = "Title",

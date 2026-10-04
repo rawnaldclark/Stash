@@ -4,6 +4,7 @@ import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmSimilarArtist
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
+import com.stash.core.model.YouTubeVideoId
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.async
@@ -197,8 +198,11 @@ class RadioStationGenerator @Inject constructor(
      *  frame), so it center-crops cleanly to a square without black space —
      *  same reason this used to ask for `mqdefault`, but four times the width.
      *  Videos without one are walked back down by `ArtFallbackInterceptor`.
-     *  The player upgrades this to the square Qobuz cover once qbdlx resolves. */
-    private fun ytThumbnail(videoId: String) = "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg"
+     *  The player upgrades this to the square Qobuz cover once qbdlx resolves.
+     *  Null for an id without the YouTube video-id shape: the id came from a
+     *  server response and is only built into a URL when it has it. */
+    private fun ytThumbnail(videoId: String): String? =
+        videoId.takeIf(YouTubeVideoId::isValid)?.let { "https://i.ytimg.com/vi/$it/maxresdefault.jpg" }
 
     private suspend fun startSong(seed: RadioSeed.Song): Pair<RadioSession, List<Track>> {
         val similar = lastFm.getSimilarTracks(seed.artist, seed.title, limit = NEIGHBOR_LIMIT)

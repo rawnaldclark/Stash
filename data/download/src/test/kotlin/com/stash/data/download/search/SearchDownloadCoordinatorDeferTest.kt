@@ -95,7 +95,7 @@ class SearchDownloadCoordinatorDeferTest {
     )
 
     private fun stubTrack(): TrackItem = TrackItem(
-        videoId = "vid42",
+        videoId = "vid42abcdef",
         title = "Sample",
         artist = "Sample Artist",
         durationSeconds = 200.0,
@@ -115,14 +115,14 @@ class SearchDownloadCoordinatorDeferTest {
             id = 7L,
             title = "Sample",
             artist = "Sample Artist",
-            youtubeId = "vid42",
+            youtubeId = "vid42abcdef",
             canonicalTitle = "sample",
             canonicalArtist = "sample artist",
             durationMs = 200_000L,
             source = MusicSource.YOUTUBE,
             albumArtUrl = null,
         )
-        coEvery { trackDao.findByYoutubeId("vid42") } returns trackEntity
+        coEvery { trackDao.findByYoutubeId("vid42abcdef") } returns trackEntity
         val queueEntry = DownloadQueueEntity(
             id = 99L,
             trackId = 7L,

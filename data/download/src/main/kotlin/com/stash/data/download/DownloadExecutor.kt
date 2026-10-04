@@ -14,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -54,10 +55,49 @@ class DownloadExecutor @Inject constructor(
 ) {
     companion object {
         private const val TAG = "StashDL"
+
+        /** Longest base name accepted: a short prefix, a track id and a video id fit well inside. */
+        private const val MAX_FILENAME_LENGTH = 100
+
+        /**
+         * True when [filename] is a plain base name: 1 to [MAX_FILENAME_LENGTH]
+         * ASCII letters, digits, `_`, `-` and `.`, not starting with a dot and
+         * with no `..`. Any other name is refused, never cleaned up into a
+         * different one.
+         */
+        internal fun isSafeFilename(filename: String): Boolean =
+            filename.length in 1..MAX_FILENAME_LENGTH &&
+                filename.all { it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' || it == '_' || it == '-' || it == '.' } &&
+                !filename.startsWith('.') &&
+                ".." !in filename
+
+        /**
+         * The `-o` template for [filename] inside [outputDir], or null when the
+         * name isn't [isSafeFilename] or the output would resolve anywhere but
+         * directly inside [outputDir].
+         */
+        internal fun outputTemplateFor(outputDir: File, filename: String): String? {
+            if (!isSafeFilename(filename)) return null
+            val template = File(outputDir, "$filename.%(ext)s")
+            val dir = runCatching { outputDir.canonicalFile }.getOrNull() ?: return null
+            val resolved = runCatching { template.canonicalFile }.getOrNull() ?: return null
+            return template.absolutePath.takeIf { resolved.parentFile == dir }
+        }
+
+        /** True when [url] is an https URL with a host. */
+        internal fun isAcceptedUrl(url: String): Boolean {
+            val uri = runCatching { URI(url) }.getOrNull() ?: return false
+            return uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrEmpty()
+        }
     }
 
     /**
      * Downloads audio from a YouTube URL using yt-dlp.
+     *
+     * Only plain base names inside the output folder and https URLs are
+     * accepted ([isSafeFilename], [outputTemplateFor], [isAcceptedUrl]); for
+     * anything else it returns [DownloadResult.Error] without running
+     * anything.
      *
      * @param url         YouTube video URL to download.
      * @param outputDir   Directory to write the downloaded file into.
@@ -73,6 +113,14 @@ class DownloadExecutor @Inject constructor(
         qualityArgs: List<String>,
         onProgress: (Float) -> Unit = {},
     ): DownloadResult = withContext(Dispatchers.IO) {
+        // Checked before the freshen, the cookie file and yt-dlp: nothing runs
+        // for a name or URL that fails. Neither value is logged.
+        val outputTemplate = outputTemplateFor(outputDir, filename)
+        if (outputTemplate == null || !isAcceptedUrl(url)) {
+            Log.e(TAG, "download: refused an unsafe output name or URL (name ok=${outputTemplate != null})")
+            return@withContext DownloadResult.Error("Refused an unsafe download name or URL")
+        }
+
         // Gate on a freshened (latest-nightly) yt-dlp + warmed EJS solver
         // before the first download in a session. YouTube's signature /
         // n-challenge changes land in nightly well before stable, so running
@@ -118,10 +166,10 @@ class DownloadExecutor @Inject constructor(
             // — the whole reason the YouTube download path exists — never regresses.
             PreviewUrlExtractor.FAST_PLAYER_CLIENTS
                 .firstNotNullOfOrNull { client ->
-                    runYtDlp(url, outputDir, filename, qualityArgs, cookiePath, client, onProgress)
+                    runYtDlp(url, outputDir, outputTemplate, filename, qualityArgs, cookiePath, client, onProgress)
                         .takeIf { it is DownloadResult.Success }
                 }
-                ?: runYtDlp(url, outputDir, filename, qualityArgs, cookiePath, null, onProgress)
+                ?: runYtDlp(url, outputDir, outputTemplate, filename, qualityArgs, cookiePath, null, onProgress)
         } finally {
             if (cookieFile.exists()) cookieFile.delete()
         }
@@ -132,10 +180,12 @@ class DownloadExecutor @Inject constructor(
      * to a single client (e.g. `android_vr`); null leaves the default client
      * set. Returns the result for THIS attempt; the caller decides whether a
      * non-[DownloadResult.Success] should fall back to another client.
+     * [outputTemplate] is the checked template from [outputTemplateFor].
      */
     private suspend fun runYtDlp(
         url: String,
         outputDir: File,
+        outputTemplate: String,
         filename: String,
         qualityArgs: List<String>,
         cookiePath: String?,
@@ -143,8 +193,6 @@ class DownloadExecutor @Inject constructor(
         onProgress: (Float) -> Unit,
     ): DownloadResult {
         return try {
-            val outputTemplate = File(outputDir, "$filename.%(ext)s").absolutePath
-
             val request = YoutubeDLRequest(url).apply {
                 // The user's quality tier on every attempt. Its `-f` list already falls through
                 // (141/251/140/.../bestaudio), so a pinned client needs no selector of its own.

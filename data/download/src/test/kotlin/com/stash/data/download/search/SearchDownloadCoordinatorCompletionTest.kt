@@ -106,7 +106,7 @@ class SearchDownloadCoordinatorCompletionTest {
     }
 
     private fun track() = TrackItem(
-        videoId = "vid42",
+        videoId = "vid42abcdef",
         title = "Sample",
         artist = "Sample Artist",
         durationSeconds = 200.0,
@@ -117,7 +117,7 @@ class SearchDownloadCoordinatorCompletionTest {
         id = 7L,
         title = "Sample",
         artist = "Sample Artist",
-        youtubeId = "vid42",
+        youtubeId = "vid42abcdef",
         canonicalTitle = "sample",
         canonicalArtist = "sample artist",
         durationMs = 200_000L,
@@ -146,7 +146,7 @@ class SearchDownloadCoordinatorCompletionTest {
                 bitsPerSample = 16,
             ),
         )
-        coEvery { trackDao.findByYoutubeId("vid42") } returns existingTrack()
+        coEvery { trackDao.findByYoutubeId("vid42abcdef") } returns existingTrack()
         coEvery {
             trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any())
         } returns 1
@@ -189,7 +189,7 @@ class SearchDownloadCoordinatorCompletionTest {
                     bitsPerSample = 16,
                 ),
             )
-        coEvery { trackDao.findByYoutubeId("vid42") } returns existingTrack()
+        coEvery { trackDao.findByYoutubeId("vid42abcdef") } returns existingTrack()
         coEvery {
             trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any())
         } returns 1

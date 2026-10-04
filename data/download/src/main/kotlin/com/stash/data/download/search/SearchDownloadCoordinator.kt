@@ -13,6 +13,7 @@ import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.TrackItem
+import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
 import com.stash.data.download.DownloadManager
@@ -140,10 +141,23 @@ class SearchDownloadCoordinator @Inject constructor(
      *
      * Operational errors are mapped to [SearchDownloadStatus.Failed].
      * [CancellationException] still propagates for cooperative cancellation.
+     *
+     * A [TrackItem.videoId] without the YouTube video-id shape fails at once
+     * ([SearchDownloadStatus.Resolving] → [SearchDownloadStatus.Failed]).
      */
     fun download(track: TrackItem): Flow<SearchDownloadStatus> = flow {
         val key = track.videoId
         emit(SearchDownloadStatus.Resolving)
+
+        // The id names this download's temp files and its yt-dlp URL, and is
+        // stored as the track's youtube_id. It comes from a server response, so
+        // one without the YouTube video-id shape goes no further: no lookup,
+        // no temp file, no download, no library row.
+        if (!YouTubeVideoId.isValid(key)) {
+            Log.w(TAG, "refusing a download whose id isn't a YouTube video id")
+            emit(SearchDownloadStatus.Failed("Not a valid YouTube video"))
+            return@flow
+        }
 
         val deferred = mutex.withLock {
             inFlight[key] ?: scope.async { performDownload(track) }.also { created ->
@@ -440,12 +454,15 @@ class SearchDownloadCoordinator @Inject constructor(
     }
 
     private suspend fun finalizeFromYtDlp(track: TrackItem): TrackFinalizer.FinalizeResult {
+        // download() already refused a malformed id; built from the checked id all the same.
+        val url = YouTubeVideoId.watchUrl(track.videoId)
+            ?: return TrackFinalizer.FinalizeResult.Failed("Not a valid YouTube video")
         val tempDir = File(context.cacheDir, "search_ytdlp").also { it.mkdirs() }
         val filename = "search_${track.videoId}"
 
         val ytDlpResult = runCatching {
             downloadExecutor.download(
-                url = "https://www.youtube.com/watch?v=${track.videoId}",
+                url = url,
                 outputDir = tempDir,
                 filename = filename,
                 qualityArgs = qualityPrefs.qualityTier.first().toYtDlpArgs(),

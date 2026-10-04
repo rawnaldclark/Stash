@@ -31,7 +31,9 @@ class RadioStationGeneratorSongTest {
         coEvery { yt.searchCanonicalMatch(any(), any()) } answers {
             val artist = firstArg<String>()
             com.stash.data.ytmusic.CanonicalMatch(
-                videoId = "vid_${artist}_${secondArg<String>()}".replace(" ", ""),
+                // A distinct id per song, in the 11-character shape real ids have:
+                // only those are built into a thumbnail URL.
+                videoId = "v%010d".format("$artist|${secondArg<String>()}".hashCode().toLong() and 0x7fffffffL),
                 thumbnailUrl = if (artist == "T.I.") null
                     else "https://lh3.googleusercontent.com/cover=w1024-h1024",
             )

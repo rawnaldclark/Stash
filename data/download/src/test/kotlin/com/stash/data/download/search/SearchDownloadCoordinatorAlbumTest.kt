@@ -106,7 +106,7 @@ class SearchDownloadCoordinatorAlbumTest {
         id = 7L,
         title = "Sample",
         artist = "Sample Artist",
-        youtubeId = "vid42",
+        youtubeId = "vid42abcdef",
         canonicalTitle = "sample",
         canonicalArtist = "sample artist",
         durationMs = 200_000L,
@@ -139,7 +139,7 @@ class SearchDownloadCoordinatorAlbumTest {
             trackFinalizer.finalizeFile(any(), capture(finalizerSlot), any(), any())
         } returns TrackFinalizer.FinalizeResult.Success(committed, meta)
 
-        coEvery { trackDao.findByYoutubeId("vid42") } returns stubExistingTrackRow()
+        coEvery { trackDao.findByYoutubeId("vid42abcdef") } returns stubExistingTrackRow()
     }
 
     @Test
@@ -148,7 +148,7 @@ class SearchDownloadCoordinatorAlbumTest {
         arrangeSuccessfulDownload(finalizerTrack)
 
         val item = TrackItem(
-            videoId = "vid42",
+            videoId = "vid42abcdef",
             title = "Sample",
             artist = "Sample Artist",
             durationSeconds = 200.0,
@@ -167,7 +167,7 @@ class SearchDownloadCoordinatorAlbumTest {
         arrangeSuccessfulDownload(finalizerTrack)
 
         val item = TrackItem(
-            videoId = "vid42",
+            videoId = "vid42abcdef",
             title = "Sample",
             artist = "Sample Artist",
             durationSeconds = 200.0,

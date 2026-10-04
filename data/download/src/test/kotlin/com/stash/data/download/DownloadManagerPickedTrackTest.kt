@@ -113,7 +113,7 @@ class DownloadManagerPickedTrackTest {
         title = "Lacrymosa",
         artist = "Evanescence",
         album = "Synthesis",
-        youtubeId = "picked-video",
+        youtubeId = "pickedVideo",
         source = source,
         matchPickedAt = 1_000L,
     )
@@ -125,13 +125,13 @@ class DownloadManagerPickedTrackTest {
 
         newSubject().downloadTrack(
             track = pickedTrack(),
-            preResolvedUrl = "https://music.youtube.com/watch?v=sync-match",
+            preResolvedUrl = "https://music.youtube.com/watch?v=syncMatch01",
         )
 
         coVerify(exactly = 0) { losslessRegistry.resolve(any()) }
         coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
-        coVerify { downloadExecutor.download(match { it.contains("picked-video") }, any(), any(), any(), any()) }
-        coVerify(exactly = 0) { downloadExecutor.download(match { it.contains("sync-match") }, any(), any(), any(), any()) }
+        coVerify { downloadExecutor.download(match { it.contains("pickedVideo") }, any(), any(), any(), any()) }
+        coVerify(exactly = 0) { downloadExecutor.download(match { it.contains("syncMatch01") }, any(), any(), any(), any()) }
     }
 
     @Test
@@ -141,7 +141,7 @@ class DownloadManagerPickedTrackTest {
         newSubject().downloadTrack(track = pickedTrack(source = MusicSource.YOUTUBE), preResolvedUrl = null)
 
         coVerify(exactly = 0) { ytLibraryCanonicalizer.canonicalize(any(), any()) }
-        coVerify { downloadExecutor.download(match { it.contains("picked-video") }, any(), any(), any(), any()) }
+        coVerify { downloadExecutor.download(match { it.contains("pickedVideo") }, any(), any(), any(), any()) }
     }
 
     @Test
@@ -154,5 +154,91 @@ class DownloadManagerPickedTrackTest {
         assertTrue("fallback off means no YouTube download, got $result", result is TrackDownloadResult.Deferred)
         coVerify(exactly = 0) { losslessRegistry.resolve(any()) }
         coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    // A stored or queued id without the YouTube video-id shape is never built
+    // into a yt-dlp URL; the track is left unmatched so Failed Matches can find
+    // it a real video.
+
+    @Test
+    fun `a picked id that isn't a YouTube video id is never handed to yt-dlp`() = runTest {
+        coEvery { losslessPrefs.enabledNow() } returns false
+
+        val result = newSubject().downloadTrack(
+            track = pickedTrack().copy(youtubeId = "../x"),
+            preResolvedUrl = null,
+        )
+
+        assertTrue("expected Unmatched, got $result", result is TrackDownloadResult.Unmatched)
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `a stored id that isn't a YouTube video id is never handed to yt-dlp`() = runTest {
+        coEvery { losslessPrefs.enabledNow() } returns false
+
+        listOf(MusicSource.SPOTIFY, MusicSource.YOUTUBE).forEach { source ->
+            val result = newSubject().downloadTrack(
+                track = pickedTrack(source).copy(youtubeId = "x&list=../y", matchPickedAt = null),
+                preResolvedUrl = null,
+            )
+            assertTrue("expected Unmatched for $source, got $result", result is TrackDownloadResult.Unmatched)
+        }
+        coVerify(exactly = 0) { ytLibraryCanonicalizer.canonicalize(any(), any()) }
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `a queued URL whose id isn't a YouTube video id is never handed to yt-dlp`() = runTest {
+        coEvery { losslessPrefs.enabledNow() } returns false
+
+        listOf(
+            "https://music.youtube.com/watch?v=../x",
+            "https://music.youtube.com/watch?v=a%25(title)s",
+            "https://other.example/watch?v=dQw4w9WgXcQ",
+            "--x",
+        ).forEach { url ->
+            val result = newSubject().downloadTrack(
+                track = pickedTrack().copy(youtubeId = null, matchPickedAt = null),
+                preResolvedUrl = url,
+            )
+            assertTrue("expected Unmatched for $url, got $result", result is TrackDownloadResult.Unmatched)
+        }
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `a queued watch URL with a real video id still downloads`() = runTest {
+        coEvery { losslessPrefs.enabledNow() } returns false
+
+        newSubject().downloadTrack(
+            track = pickedTrack().copy(youtubeId = null, matchPickedAt = null),
+            preResolvedUrl = "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+        )
+
+        coVerify(exactly = 1) {
+            downloadExecutor.download("https://music.youtube.com/watch?v=dQw4w9WgXcQ", any(), "dl_7", any(), any())
+        }
+    }
+
+    @Test
+    fun `a queued watch URL reaches yt-dlp rebuilt from its id, on its own YouTube host`() = runTest {
+        coEvery { losslessPrefs.enabledNow() } returns false
+        val queued = mapOf(
+            "https://music.youtube.com/watch?v=dQw4w9WgXcQ&list=RDAMVM1" to "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?t=3&v=V-uIp-WuD60" to "https://www.youtube.com/watch?v=V-uIp-WuD60",
+        )
+
+        queued.keys.forEach { url ->
+            newSubject().downloadTrack(
+                track = pickedTrack().copy(youtubeId = null, matchPickedAt = null),
+                preResolvedUrl = url,
+            )
+        }
+
+        queued.forEach { (url, rebuilt) ->
+            coVerify(exactly = 1) { downloadExecutor.download(rebuilt, any(), "dl_7", any(), any()) }
+            coVerify(exactly = 0) { downloadExecutor.download(url, any(), any(), any(), any()) }
+        }
     }
 }

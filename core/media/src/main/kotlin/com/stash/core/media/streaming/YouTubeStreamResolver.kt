@@ -3,6 +3,7 @@ package com.stash.core.media.streaming
 import android.util.Log
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.SearchResultSection
@@ -49,9 +50,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * The whole call is bound to [YT_RESOLVE_TIMEOUT_MS]; on timeout we treat
  * the track as unavailable.
  *
- * **VideoId resolution.** If the track already has a `youtubeId`
- * (YT-synced rows, or Spotify rows that were cross-matched during
- * sync), we use it directly. Otherwise — pure-Spotify rows with no
+ * **VideoId resolution.** If the track already has a `youtubeId` with the
+ * YouTube video-id shape (YT-synced rows, or Spotify rows that were
+ * cross-matched during sync), we use it directly. Otherwise — pure-Spotify rows with no
  * cross-match, like underground techno releases not on YT Music's
  * curated catalog — we do a fall-back YT search by `"$artist $title"`
  * and take the top Songs-shelf hit. Top-result fuzzy match accepts
@@ -90,7 +91,9 @@ class YouTubeStreamResolver @Inject constructor(
         // and cross-matched Spotify rows already have one). Otherwise
         // fall through to a YT Music search by metadata — covers the
         // pure-Spotify case where the original sync never linked to YT.
-        val videoId = track.youtubeId?.takeIf { it.isNotBlank() }
+        // The extractor takes only ids with the YouTube video-id shape, so a
+        // stored id without it gets the same metadata search.
+        val videoId = track.youtubeId?.takeIf(YouTubeVideoId::isValid)
             ?: searchYouTubeForVideoId(track)
             ?: return null
 
@@ -155,16 +158,18 @@ class YouTubeStreamResolver @Inject constructor(
             // uses it for a row with no art or a YouTube thumbnail, so real covers are untouched; but
             // without it a song only YouTube plays (not on Qobuz, often not on Last.fm either) was
             // blank for good, since nothing else fills art for a row with no stored video id.
-            coverArtUrl = ArtUrlUpgrader.youTubeThumbnail(videoId),
+            // Built only from an id with the YouTube video-id shape.
+            coverArtUrl = videoId.takeIf(YouTubeVideoId::isValid)?.let(ArtUrlUpgrader::youTubeThumbnail),
             origin = ORIGIN,
         )
     }
 
     /**
      * Falls back to a YT Music search when the track has no stored
-     * youtubeId. Uses `"$artist $title"` as the query (no extra
-     * normalisation — the InnerTube search is already tolerant). Picks
-     * the top Songs-shelf hit and returns its videoId. Null when:
+     * youtubeId, or one without the YouTube video-id shape. Uses
+     * `"$artist $title"` as the query (no extra normalisation — the
+     * InnerTube search is already tolerant). Picks the top Songs-shelf
+     * hit and returns its videoId. Null when:
      *  - The artist/title combo is blank (defensive — shouldn't happen).
      *  - The search timed out.
      *  - The search returned no Songs section, or the section was empty.

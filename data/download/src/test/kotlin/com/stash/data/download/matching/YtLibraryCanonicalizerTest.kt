@@ -13,6 +13,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
@@ -131,7 +133,7 @@ class YtLibraryCanonicalizerTest {
     fun `ATV videoId is returned unchanged without calling search or DB`() = runTest {
         val searchExecutor = mock<InnerTubeSearchExecutor>()
         val trackDao = mock<TrackDao>()
-        whenever(searchExecutor.verifyVideo("atv1")).thenReturn(
+        whenever(searchExecutor.verifyVideo("atvStudio01")).thenReturn(
             InnerTubeSearchExecutor.VideoVerification(
                 title = "Studio Song",
                 isPlayable = true,
@@ -149,12 +151,12 @@ class YtLibraryCanonicalizerTest {
             title = "Studio Song",
             artist = "Some Artist",
             source = MusicSource.YOUTUBE,
-            youtubeId = "atv1",
+            youtubeId = "atvStudio01",
         )
 
-        val url = canonicalizer.canonicalize(track, "atv1")
+        val url = canonicalizer.canonicalize(track, "atvStudio01")
 
-        assertEquals("https://www.youtube.com/watch?v=atv1", url)
+        assertEquals("https://www.youtube.com/watch?v=atvStudio01", url)
         verify(searchExecutor, never()).search(any(), any())
         verify(trackDao, never()).updateYoutubeId(any(), any())
     }
@@ -163,7 +165,7 @@ class YtLibraryCanonicalizerTest {
     fun `OMV falls back to original when no better candidate is found`() = runTest {
         val searchExecutor = mock<InnerTubeSearchExecutor>()
         val trackDao = mock<TrackDao>()
-        whenever(searchExecutor.verifyVideo("omv1")).thenReturn(
+        whenever(searchExecutor.verifyVideo("omvVideo001")).thenReturn(
             InnerTubeSearchExecutor.VideoVerification(
                 title = "Obscure OMV",
                 isPlayable = true,
@@ -182,16 +184,101 @@ class YtLibraryCanonicalizerTest {
             title = "Obscure Song",
             artist = "Obscure Artist",
             source = MusicSource.YOUTUBE,
-            youtubeId = "omv1",
+            youtubeId = "omvVideo001",
         )
 
-        val url = canonicalizer.canonicalize(track, "omv1")
+        val url = canonicalizer.canonicalize(track, "omvVideo001")
 
         assertEquals(
             "with no alternative, keep the original URL rather than failing the track",
-            "https://www.youtube.com/watch?v=omv1",
+            "https://www.youtube.com/watch?v=omvVideo001",
             url,
         )
+        verify(trackDao, never()).updateYoutubeId(any(), any())
+    }
+
+    private fun omvTrack() = Track(
+        id = 21L,
+        title = "Studio Song (Official Video)",
+        artist = "Some Artist",
+        source = MusicSource.YOUTUBE,
+        youtubeId = "omvVideo001",
+    )
+
+    /** A studio-audio row as YouTube Music search returns it. */
+    private fun atvRow(id: String, webpageUrl: String = "https://www.youtube.com/watch?v=$id") = YtDlpSearchResult(
+        id = id,
+        title = "Studio Song",
+        uploader = "Some Artist - Topic",
+        channel = "Some Artist - Topic",
+        duration = 200.0,
+        viewCount = 1_000_000,
+        webpageUrl = webpageUrl,
+        musicVideoType = MusicVideoType.ATV,
+    )
+
+    private fun canonicalizerFor(searchExecutor: InnerTubeSearchExecutor, trackDao: TrackDao) = YtLibraryCanonicalizer(
+        searchExecutor = searchExecutor,
+        matchScorer = MatchScorer(TrackMatcher()),
+        trackDao = trackDao,
+        trackMatcher = TrackMatcher(),
+        trackIdentityEvents = mock(),
+    )
+
+    private suspend fun InnerTubeSearchExecutor.reportsOmv(videoId: String) {
+        whenever(verifyVideo(videoId)).thenReturn(
+            InnerTubeSearchExecutor.VideoVerification(
+                title = "Studio Song (Official Video)",
+                isPlayable = true,
+                musicVideoType = MusicVideoType.OMV,
+            ),
+        )
+    }
+
+    @Test
+    fun `a swap returns the URL built from the new id, not the row's own link`() = runTest {
+        val searchExecutor = mock<InnerTubeSearchExecutor>()
+        val trackDao = mock<TrackDao>()
+        searchExecutor.reportsOmv("omvVideo001")
+        whenever(searchExecutor.search(any(), any()))
+            .thenReturn(listOf(atvRow("atvStudio01", webpageUrl = "https://other.example/watch?v=atvStudio01")))
+
+        val url = canonicalizerFor(searchExecutor, trackDao).canonicalize(omvTrack(), "omvVideo001")
+
+        assertEquals("https://www.youtube.com/watch?v=atvStudio01", url)
+        verify(trackDao).updateYoutubeId(eq(21L), eq("atvStudio01"))
+    }
+
+    @Test
+    fun `when the only candidate above the bar isn't a video id, the original is kept`() = runTest {
+        val searchExecutor = mock<InnerTubeSearchExecutor>()
+        val trackDao = mock<TrackDao>()
+        searchExecutor.reportsOmv("omvVideo001")
+        val malformed = atvRow("../x")
+        whenever(searchExecutor.search(any(), any())).thenReturn(listOf(malformed))
+        val scorer = MatchScorer(TrackMatcher())
+        assertNotNull(
+            "premise: the row clears the bar on its own",
+            scorer.bestMatch(scorer.scoreResults("Studio Song (Official Video)", "Some Artist", 0L, listOf(malformed))),
+        )
+
+        val url = canonicalizerFor(searchExecutor, trackDao).canonicalize(omvTrack(), "omvVideo001")
+
+        assertEquals("https://www.youtube.com/watch?v=omvVideo001", url)
+        verify(trackDao, never()).updateYoutubeId(any(), any())
+        verify(trackDao, never()).updateCanonicalMetadata(any(), any(), any(), any(), anyOrNull(), anyOrNull(), any())
+    }
+
+    @Test
+    fun `an original id that isn't a video id gives no URL, and nothing is looked up`() = runTest {
+        val searchExecutor = mock<InnerTubeSearchExecutor>()
+        val trackDao = mock<TrackDao>()
+
+        val url = canonicalizerFor(searchExecutor, trackDao).canonicalize(omvTrack().copy(youtubeId = "../x"), "../x")
+
+        assertNull(url)
+        verify(searchExecutor, never()).verifyVideo(any())
+        verify(searchExecutor, never()).search(any(), any())
         verify(trackDao, never()).updateYoutubeId(any(), any())
     }
 }

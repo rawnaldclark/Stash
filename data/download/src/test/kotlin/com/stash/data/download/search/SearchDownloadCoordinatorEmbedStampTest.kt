@@ -109,7 +109,7 @@ class SearchDownloadCoordinatorEmbedStampTest {
         id = id,
         title = "Sample",
         artist = "Sample Artist",
-        youtubeId = "vid42",
+        youtubeId = "vid42abcdef",
         canonicalTitle = "sample",
         canonicalArtist = "sample artist",
         durationMs = 200_000L,
@@ -141,7 +141,7 @@ class SearchDownloadCoordinatorEmbedStampTest {
             trackFinalizer.finalizeFile(any(), any(), any(), any())
         } returns TrackFinalizer.FinalizeResult.Success(committed, meta)
 
-        coEvery { trackDao.findByYoutubeId("vid42") } returns stubExistingTrackRow()
+        coEvery { trackDao.findByYoutubeId("vid42abcdef") } returns stubExistingTrackRow()
         coEvery {
             trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any())
         } returns 1
@@ -154,7 +154,7 @@ class SearchDownloadCoordinatorEmbedStampTest {
         coEvery { trackDao.setMetadataEmbeddedAt(7L, capture(tsSlot)) } answers { }
 
         val item = TrackItem(
-            videoId = "vid42",
+            videoId = "vid42abcdef",
             title = "Sample",
             artist = "Sample Artist",
             durationSeconds = 200.0,
@@ -204,7 +204,7 @@ class SearchDownloadCoordinatorEmbedStampTest {
         }
 
         val item = TrackItem(
-            videoId = "vid42",
+            videoId = "vid42abcdef",
             title = "Sample",
             artist = "Drake, 21 Savage",
             durationSeconds = 200.0,

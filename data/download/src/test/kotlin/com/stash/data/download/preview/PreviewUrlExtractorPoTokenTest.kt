@@ -37,7 +37,7 @@ class PreviewUrlExtractorPoTokenTest {
 
     /** One client (IOS) with a direct URL; the extractor's judge decides whether it plays. */
     private fun stubWalk(streamPot: String?) {
-        coEvery { innerTube.playerForAudio("vid1", captureLambda()) } coAnswers {
+        coEvery { innerTube.playerForAudio("dQw4w9WgXcQ", captureLambda()) } coAnswers {
             lambda<suspend (JsonObject, String?) -> String?>().coInvoke(response, streamPot)
                 ?.let { AudioStream(it, response, InnerTubeVariant.IOS) }
         }
@@ -57,7 +57,7 @@ class PreviewUrlExtractorPoTokenTest {
         val probed = slot<String>()
         coEvery { tailProbe.servesFullFile(capture(probed), any()) } returns true
 
-        val url = extractor().extractStreamUrl("vid1", allowYtDlp = false)
+        val url = extractor().extractStreamUrl("dQw4w9WgXcQ", allowYtDlp = false)
 
         assertThat(probed.captured).isEqualTo("https://rr1.googlevideo.com/videoplayback?id=1&pot=SESSION")
         assertThat(url).isEqualTo("https://rr1.googlevideo.com/videoplayback?id=1&pot=SESSION")
@@ -69,7 +69,7 @@ class PreviewUrlExtractorPoTokenTest {
         val probed = slot<String>()
         coEvery { tailProbe.servesFullFile(capture(probed), any()) } returns true
 
-        val url = extractor().extractStreamUrl("vid1", allowYtDlp = false)
+        val url = extractor().extractStreamUrl("dQw4w9WgXcQ", allowYtDlp = false)
 
         assertThat(probed.captured).isEqualTo("https://rr1.googlevideo.com/videoplayback?id=1")
         assertThat(url).isEqualTo("https://rr1.googlevideo.com/videoplayback?id=1")

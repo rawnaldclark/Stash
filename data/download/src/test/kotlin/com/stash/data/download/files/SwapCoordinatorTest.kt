@@ -167,7 +167,7 @@ class SwapCoordinatorTest {
         return outcomes
     }
 
-    private suspend fun swap() = coordinator.performSwap(trackId = 7L, newVideoId = "vid123")
+    private suspend fun swap() = coordinator.performSwap(trackId = 7L, newVideoId = "vid12345678")
 
     private fun neverWroteTheVideo() {
         // The video id is written only by the final write (completeSwap).
@@ -220,7 +220,7 @@ class SwapCoordinatorTest {
         coVerify {
             trackDao.completeSwap(
                 trackId = 7L,
-                youtubeId = "vid123",
+                youtubeId = "vid12345678",
                 filePath = committedPath,
                 fileSizeBytes = 123L,
                 fileFormat = any(),
@@ -275,12 +275,12 @@ class SwapCoordinatorTest {
         givenRow(filePath = oldFile.absolutePath, title = "Lacrymosa")
         val newTemp = stubSuccessfulDownload()
         stubCommitOverwriting(oldFile)
-        coEvery { trackDao.findByYoutubeId("vid123") } returns TrackEntity(
+        coEvery { trackDao.findByYoutubeId("vid12345678") } returns TrackEntity(
             id = 8L,
             title = "Lacrymosa",
             artist = "Evanescence",
             album = "The Open Door",
-            youtubeId = "vid123",
+            youtubeId = "vid12345678",
         )
         val outcomes = collectOutcomes()
 
@@ -295,7 +295,7 @@ class SwapCoordinatorTest {
             listOf(
                 SwapOutcome.AlreadyLinked(
                     trackId = 7L,
-                    newVideoId = "vid123",
+                    newVideoId = "vid12345678",
                     title = "Lacrymosa",
                     ownerArtist = "Evanescence",
                     ownerTitle = "Lacrymosa",
@@ -313,8 +313,8 @@ class SwapCoordinatorTest {
         stubSuccessfulDownload()
         destinationIs(oldFile.absolutePath)
         stubCommitOverwriting(oldFile)
-        val owner = TrackEntity(id = 8L, title = "Lacrymosa", artist = "Evanescence", album = "The Open Door", youtubeId = "vid123")
-        coEvery { trackDao.findByYoutubeId("vid123") } returnsMany listOf(null, owner)
+        val owner = TrackEntity(id = 8L, title = "Lacrymosa", artist = "Evanescence", album = "The Open Door", youtubeId = "vid12345678")
+        coEvery { trackDao.findByYoutubeId("vid12345678") } returnsMany listOf(null, owner)
         // The guarded write finds the video taken: nothing is written.
         coEvery {
             trackDao.completeSwap(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
@@ -343,7 +343,7 @@ class SwapCoordinatorTest {
         // file: resync then excluded the right video as "the wrong one".
         neverWroteTheVideo()
         assertEquals("original audio", oldFile.readText())
-        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid12345678", "Title")), outcomes)
     }
 
     @Test
@@ -385,7 +385,7 @@ class SwapCoordinatorTest {
         coVerify {
             trackDao.completeSwap(
                 trackId = 7L,
-                youtubeId = "vid123",
+                youtubeId = "vid12345678",
                 filePath = committedPath,
                 fileSizeBytes = 123L,
                 fileFormat = "opus",
@@ -439,7 +439,7 @@ class SwapCoordinatorTest {
         coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
         assertEquals("original audio", oldFile.readText())
         // Not "download again": retrying only helps once storage is sorted out.
-        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid12345678", "Title")), outcomes)
     }
 
     // -- A save onto the old file's own path (album folders make it the norm) --
@@ -467,7 +467,7 @@ class SwapCoordinatorTest {
         assertTrue("no backup is left behind", oldFile.parentFile!!.listFiles()!!.none { it.name.endsWith(".swapbak") })
         assertTrue(journal.pending().isEmpty())
         neverWroteTheVideo()
-        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid12345678", "Title")), outcomes)
     }
 
     @Test
@@ -502,7 +502,7 @@ class SwapCoordinatorTest {
         assertEquals("replacement", oldFile.readText())
         assertTrue("the backup goes once the swap is recorded", oldFile.parentFile!!.listFiles()!!.none { it.name.endsWith(".swapbak") })
         assertTrue(journal.pending().isEmpty())
-        assertEquals(listOf(SwapOutcome.Swapped(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.Swapped(7L, "vid12345678", "Title")), outcomes)
     }
 
     // -- A swap cut short by the app being killed --------------------------------
@@ -511,7 +511,7 @@ class SwapCoordinatorTest {
     fun `a swap cut short after setting the old file aside is put back at the next start`() = runTest {
         val song = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
         val backup = localFileOps.setAside(song.absolutePath)!!
-        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup, newVideoId = "vid123"))
+        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup, newVideoId = "vid12345678"))
         song.writeText("unrecorded replacement") // the save ran; the app died before the record
         coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = true)
 
@@ -526,11 +526,11 @@ class SwapCoordinatorTest {
     fun `a set-aside copy left after a finished swap is removed at the next start`() = runTest {
         val song = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
         val backup = localFileOps.setAside(song.absolutePath)!!
-        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup, newVideoId = "vid123"))
+        journal.record(SwapJournal.Entry(7L, song.absolutePath, backup, newVideoId = "vid12345678"))
         song.writeText("recorded replacement")
         // completeSwap wrote the new video with the new file: the swap finished,
         // only the cleanup didn't.
-        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = false).copy(youtubeId = "vid123")
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = false).copy(youtubeId = "vid12345678")
 
         coordinator.recoverInterruptedSwaps()
 
@@ -642,12 +642,12 @@ class SwapCoordinatorTest {
 
         swap()
 
-        assertEquals(listOf(SwapOutcome.Swapped(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.Swapped(7L, "vid12345678", "Title")), outcomes)
     }
 
     @Test
     fun `a blocked replacement brings the row back and says why`() = runTest {
-        coEvery { blocklistGuard.isBlocked(any(), any(), any(), "vid123") } returns true
+        coEvery { blocklistGuard.isBlocked(any(), any(), any(), "vid12345678") } returns true
         val outcomes = collectOutcomes()
 
         swap()
@@ -657,7 +657,7 @@ class SwapCoordinatorTest {
         // nothing cleared the flag, and the outcome says why.
         coVerify(exactly = 0) { trackDao.updateMatchFlagged(any(), any()) }
         coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
-        assertEquals(listOf(SwapOutcome.Blocked(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.Blocked(7L, "vid12345678", "Title")), outcomes)
     }
 
     @Test
@@ -669,7 +669,7 @@ class SwapCoordinatorTest {
 
         swap()
 
-        assertEquals(listOf(SwapOutcome.DownloadFailed(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.DownloadFailed(7L, "vid12345678", "Title")), outcomes)
     }
 
     @Test
@@ -688,7 +688,7 @@ class SwapCoordinatorTest {
 
         assertEquals("original audio", oldFile.readText())
         neverWroteTheVideo()
-        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid12345678", "Title")), outcomes)
     }
 
     // -- One swap per track (#531 review) ------------------------------------------
@@ -701,12 +701,12 @@ class SwapCoordinatorTest {
             DownloadResult.Error("stopped")
         }
 
-        assertTrue(coordinator.swap(7L, "vid123"))
+        assertTrue(coordinator.swap(7L, "vid12345678"))
         // Approve, leave, come back and approve again: the screen's own guard
         // is gone with the old screen, so the coordinator must refuse. Two
         // swaps would interleave set-aside, save and undo.
         assertEquals(setOf(7L), coordinator.running.value)
-        assertFalse(coordinator.swap(7L, "vid456"))
+        assertFalse(coordinator.swap(7L, "vid45678901"))
 
         gate.complete(Unit)
         coordinator.running.first { it.isEmpty() }
@@ -716,7 +716,7 @@ class SwapCoordinatorTest {
     // -- #531 review: recovery decides by the video, and only restores where safe --
 
     /** The old file set aside and written down, as a swap of [videoId] leaves it. */
-    private fun setAsideFor(song: File, videoId: String? = "vid123"): String {
+    private fun setAsideFor(song: File, videoId: String? = "vid12345678"): String {
         val backup = localFileOps.setAside(song.absolutePath)!!
         journal.record(SwapJournal.Entry(7L, song.absolutePath, backup, newVideoId = videoId))
         return backup
@@ -744,7 +744,7 @@ class SwapCoordinatorTest {
         val song = tmp.newFile("lacrymosa.m4a").apply { writeText("original audio") }
         val backup = setAsideFor(song)
         song.writeText("recorded replacement")
-        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = true).copy(youtubeId = "vid123")
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = true).copy(youtubeId = "vid12345678")
 
         coordinator.recoverInterruptedSwaps()
 
@@ -797,8 +797,8 @@ class SwapCoordinatorTest {
         // A SAF provider with stable document ids keeps the URI through the
         // rename, so the backup can be the very file the track points at.
         val song = tmp.newFile("lacrymosa.m4a").apply { writeText("the only copy") }
-        journal.record(SwapJournal.Entry(7L, song.absolutePath, song.absolutePath, newVideoId = "vid123"))
-        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = false).copy(youtubeId = "vid123")
+        journal.record(SwapJournal.Entry(7L, song.absolutePath, song.absolutePath, newVideoId = "vid12345678"))
+        coEvery { trackDao.getById(7L) } returns row(filePath = song.absolutePath, flagged = false).copy(youtubeId = "vid12345678")
 
         coordinator.recoverInterruptedSwaps()
 
@@ -822,7 +822,7 @@ class SwapCoordinatorTest {
 
         swap()
 
-        assertEquals(listOf(SwapOutcome.Swapped(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.Swapped(7L, "vid12345678", "Title")), outcomes)
     }
 
     @Test
@@ -835,7 +835,7 @@ class SwapCoordinatorTest {
         // A second set-aside could bury the user's original audio; the next
         // start's recovery handles the first one.
         coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
-        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid123", "Title")), outcomes)
+        assertEquals(listOf(SwapOutcome.SaveFailed(7L, "vid12345678", "Title")), outcomes)
     }
 
     @Test
@@ -850,5 +850,40 @@ class SwapCoordinatorTest {
         swap()
 
         assertEquals(1, journal.pending().size)
+    }
+
+    @Test
+    fun `a replacement id that isn't a YouTube video id is never downloaded or written`() = runTest {
+        val oldFile = tmp.newFile("kept.m4a").apply { writeText("original audio") }
+        givenRow(filePath = oldFile.absolutePath)
+        val outcomes = collectOutcomes()
+        val malformed = listOf("../x", "a/b", "a%(title)s", "x\\y", "short", "")
+
+        malformed.forEach { coordinator.performSwap(trackId = 7L, newVideoId = it) }
+
+        // The id names the temp file and the yt-dlp URL, and would become the
+        // track's youtube_id: none of that may happen for a malformed one.
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+        neverWroteTheVideo()
+        assertTrue("the old file must be untouched", oldFile.exists())
+        assertTrue(journal.pending().isEmpty())
+        assertEquals(malformed.map { SwapOutcome.DownloadFailed(7L, it, "Title") }, outcomes)
+    }
+
+    @Test
+    fun `a real video id still names the temp file and the URL`() = runTest {
+        stubSuccessfulDownload()
+
+        coordinator.performSwap(trackId = 7L, newVideoId = "dQw4w9WgXcQ")
+
+        coVerify(exactly = 1) {
+            downloadExecutor.download(
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                any(),
+                "swap_7_dQw4w9WgXcQ",
+                any(),
+                any(),
+            )
+        }
     }
 }

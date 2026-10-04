@@ -38,6 +38,7 @@ import java.time.temporal.ChronoUnit
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -192,7 +193,10 @@ class BotGuardPoTokenMinter @Inject constructor(
         private val scope = MainScope()
         private val closed = AtomicBoolean(false)
         private val readyCompleted = AtomicBoolean(false)
-        private val pendingMints = Collections.synchronizedMap(HashMap<String, CancellableContinuation<String>>())
+
+        /** Mints waiting for the page's answer, by the request number [mint] picked. */
+        private val pendingMints = Collections.synchronizedMap(HashMap<Long, CancellableContinuation<String>>())
+        private val nextRequest = AtomicLong()
         private lateinit var expiry: Instant
         val isExpired: Boolean get() = Instant.now().isAfter(expiry)
 
@@ -264,40 +268,26 @@ class BotGuardPoTokenMinter @Inject constructor(
             signalError(classifyJsError(error))
         }
 
+        /** Mints [identifier]'s token; the page answers under a request number picked here. */
         suspend fun mint(identifier: String): String = withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { cont ->
-                pendingMints[identifier] = cont
-                cont.invokeOnCancellation {
-                    synchronized(pendingMints) {
-                        if (pendingMints[identifier] === cont) pendingMints.remove(identifier)
-                    }
-                }
-                val u8Arg = stringToJsUint8Array(identifier)
-                webView.evaluateJavascript(
-                    """
-                    try {
-                        obtainPoToken($u8Arg).then(function(u8) {
-                            $JS_BRIDGE.onMintOk("$identifier", u8.join(","));
-                        }).catch(function(e) {
-                            $JS_BRIDGE.onMintErr("$identifier", e + "\n" + (e.stack || ''));
-                        });
-                    } catch(e) { $JS_BRIDGE.onMintErr("$identifier", e + "\n" + e.stack); }
-                    """.trimIndent(),
-                    null,
-                )
+                val request = nextRequest.incrementAndGet()
+                pendingMints[request] = cont
+                cont.invokeOnCancellation { pendingMints.remove(request) }
+                webView.evaluateJavascript(mintScript(request, identifier, JS_BRIDGE), null)
             }
         }
 
         @JavascriptInterface
-        fun onMintOk(identifier: String, csvBytes: String) {
+        fun onMintOk(request: Long, csvBytes: String) {
             val base64 = commaSeparatedBytesToBase64(csvBytes)
-            pendingMints.remove(identifier)?.let { if (it.isActive) it.resume(base64) }
+            pendingMints.remove(request)?.let { if (it.isActive) it.resume(base64) }
         }
 
         @JavascriptInterface
-        fun onMintErr(identifier: String, error: String) {
-            Log.w(TAG, "mint failed for $identifier: ${error.take(200)}")
-            pendingMints.remove(identifier)?.let { if (it.isActive) it.resumeWithException(classifyJsError(error)) }
+        fun onMintErr(request: Long, error: String) {
+            Log.w(TAG, "mint $request failed: ${error.take(200)}")
+            pendingMints.remove(request)?.let { if (it.isActive) it.resumeWithException(classifyJsError(error)) }
         }
 
         private val exceptionHandler = CoroutineExceptionHandler { _, t -> signalError(t) }
@@ -405,4 +395,23 @@ class BotGuardPoTokenMinter @Inject constructor(
         const val WARM_TIMEOUT_MS = 5_000L
         const val PLAYER_TOKEN_CACHE_SIZE = 200
     }
+}
+
+/**
+ * The script that asks the BotGuard page for [identifier]'s token and reports
+ * to [bridge] under [request]. The identifier enters the script only as a
+ * `Uint8Array` literal of its UTF-8 bytes ([stringToJsUint8Array]); the
+ * answer is matched to its mint by [request] alone.
+ */
+internal fun mintScript(request: Long, identifier: String, bridge: String): String {
+    val u8Arg = stringToJsUint8Array(identifier)
+    return """
+        try {
+            obtainPoToken($u8Arg).then(function(u8) {
+                $bridge.onMintOk($request, u8.join(","));
+            }).catch(function(e) {
+                $bridge.onMintErr($request, e + "\n" + (e.stack || ''));
+            });
+        } catch(e) { $bridge.onMintErr($request, e + "\n" + e.stack); }
+    """.trimIndent()
 }

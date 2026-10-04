@@ -8,6 +8,7 @@ import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
+import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.BuildConfig
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
@@ -33,6 +34,7 @@ import com.stash.data.download.model.DownloadProgress
 import com.stash.data.download.model.DownloadStatus
 import com.stash.data.download.prefs.QualityPreferencesManager
 import com.stash.data.download.prefs.toYtDlpArgs
+import com.stash.data.download.ytdlp.YtDlpSearchResult
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -224,10 +226,9 @@ class DownloadManager @Inject constructor(
         // video. "YouTube fallback off" still means no YouTube download: the
         // row waits until the user turns it on (LosslessRetryWorker leaves
         // picked rows alone).
-        val pickedUrl = track.youtubeId
+        val pickedId = track.youtubeId
             ?.takeIf { track.matchPickedAt != null && it.isNotBlank() }
-            ?.let { "https://www.youtube.com/watch?v=$it" }
-        if (pickedUrl != null) {
+        if (pickedId != null) {
             if (losslessPrefs.enabledNow() &&
                 !losslessPrefs.youtubeFallbackEnabledNow() &&
                 !forceYoutubeFallbackOnDebugBuilds
@@ -235,6 +236,10 @@ class DownloadManager @Inject constructor(
                 Log.i(TAG, "deferring picked '${track.artist} - ${track.title}': fallback off")
                 return TrackDownloadResult.Deferred
             }
+            // A stored id is only built into a yt-dlp URL when it has the YouTube
+            // video-id shape; any other leaves the track unmatched.
+            val pickedUrl = YouTubeVideoId.watchUrl(pickedId)
+            if (pickedUrl == null) Log.w(TAG, "track ${track.id}: picked id isn't a YouTube video id; leaving it unmatched")
             return downloadFromYouTube(track, ResolveResult(url = pickedUrl))
         }
 
@@ -312,8 +317,19 @@ class DownloadManager @Inject constructor(
         val jioSaavnResult = tryJioSaavnDownload(track)
         if (jioSaavnResult != null) return jioSaavnResult
 
-        // Step 2: Resolve YouTube URL
-        val resolveResult = if (preResolvedUrl != null) ResolveResult(url = preResolvedUrl) else resolveUrl(track)
+        // Step 2: Resolve YouTube URL. A queued URL counts only when it is a
+        // YouTube watch link whose id has the video-id shape, and yt-dlp gets
+        // the link rebuilt from that id (on music.youtube.com for a YouTube
+        // Music link, which is what sync queues).
+        val resolveResult = if (preResolvedUrl == null) {
+            resolveUrl(track)
+        } else {
+            val queuedUrl = YouTubeVideoId.rebuildWatchUrl(preResolvedUrl)
+            if (queuedUrl == null) {
+                Log.w(TAG, "track ${track.id}: queued URL isn't a YouTube watch link with a video id; leaving it unmatched")
+            }
+            ResolveResult(url = queuedUrl)
+        }
         return downloadFromYouTube(track, resolveResult)
     }
 
@@ -756,10 +772,16 @@ class DownloadManager @Inject constructor(
         // verifyMatch gates on a previous sync, so they skip the canonicalizer
         // to avoid pointless re-search work.
         track.youtubeId?.let { videoId ->
+            // Built into a URL only with the YouTube video-id shape; any other
+            // stored id leaves the track unmatched, never searched around.
+            val watchUrl = YouTubeVideoId.watchUrl(videoId) ?: run {
+                Log.w(TAG, "resolveUrl: track ${track.id}'s stored id isn't a YouTube video id; leaving it unmatched")
+                return ResolveResult(url = null)
+            }
             val url = if (track.source == MusicSource.YOUTUBE) {
                 ytLibraryCanonicalizer.canonicalize(track, videoId)
             } else {
-                "https://www.youtube.com/watch?v=$videoId"
+                watchUrl
             }
             return ResolveResult(url = url)
         }
@@ -778,7 +800,7 @@ class DownloadManager @Inject constructor(
                 targetArtist = track.artist,
                 targetAlbum = track.album,
                 targetDurationMs = track.durationMs,
-            )
+            )?.takeIf { YouTubeVideoId.isValid(it.id) }
             if (albumResult != null) {
                 val scored = matchScorer.scoreResults(
                     targetTitle = track.title,
@@ -789,13 +811,15 @@ class DownloadManager @Inject constructor(
                     targetExplicit = track.explicit,
                 )
                 val best = matchScorer.bestMatch(scored)
-                if (best != null) {
+                // The URL is built from the row's checked id, not taken from the row.
+                val albumUrl = best?.let { YouTubeVideoId.watchUrl(it.videoId) }
+                if (best != null && albumUrl != null) {
                     // Album matches skip verifyMatch() intentionally — video IDs come from
                     // the album's structured tracklist, not search results, so they don't
                     // suffer from the metadata/ID mismatch that verifyMatch guards against.
-                    Log.d(TAG, "resolveUrl: ALBUM MATCH '${track.artist} - ${track.title}' → ${best.youtubeUrl}")
+                    Log.d(TAG, "resolveUrl: ALBUM MATCH '${track.artist} - ${track.title}' → $albumUrl")
                     persistMatchMetadata(track, best)
-                    return ResolveResult(url = best.youtubeUrl)
+                    return ResolveResult(url = albumUrl)
                 }
             }
         }
@@ -807,7 +831,7 @@ class DownloadManager @Inject constructor(
 
         for (query in strategies) {
             if (query.isBlank()) continue
-            val results = searchExecutor.search(query, maxResults = 10)
+            val results = searchExecutor.search(query, maxResults = 10).withVideoIds()
             if (results.isEmpty()) continue
 
             val scored = matchScorer.scoreResults(
@@ -831,7 +855,7 @@ class DownloadManager @Inject constructor(
         // Final fallback: direct yt-dlp search (bypasses InnerTube entirely)
         Log.d(TAG, "resolveUrl: InnerTube strategies exhausted, trying yt-dlp for '${track.artist} - ${track.title}'")
         val ytDlpQuery = "${track.artist} ${track.title}"
-        val ytDlpResults = searchExecutor.searchYtDlpDirect(ytDlpQuery, maxResults = 5)
+        val ytDlpResults = searchExecutor.searchYtDlpDirect(ytDlpQuery, maxResults = 5).withVideoIds()
         if (ytDlpResults.isNotEmpty()) {
             val scored = matchScorer.scoreResults(
                 targetTitle = track.title,
@@ -912,7 +936,8 @@ class DownloadManager @Inject constructor(
      * @param playerRejected Gets [best]'s video id when gate 4 or 5 rejects it.
      * @param requirePlayerCheck Rejects [best] when its player lookup fails,
      *        instead of skipping gates 4 and 5.
-     * @return The YouTube URL if all gates pass, null if rejected.
+     * @return The watch URL built from [best]'s video id if all gates pass,
+     *         null if rejected or the id isn't a YouTube video id.
      */
     private suspend fun verifyMatch(
         track: Track,
@@ -1032,14 +1057,16 @@ class DownloadManager @Inject constructor(
             return null
         }
 
+        // Built from the candidate's checked id, not taken from its search row.
+        val url = YouTubeVideoId.watchUrl(best.videoId) ?: return null
         // Only the number goes through format(): the title and query can hold a "%".
         Log.d(
             TAG,
-            "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → ${best.youtubeUrl} " +
+            "resolveUrl: matched '${track.artist} - ${track.title}' with query '$query' → $url " +
                 "(artist=${String.format("%.2f", artistSim)}, verified=${verification != null}, " +
                 "len=${verification?.lengthSeconds ?: 0}s target=${track.durationMs / 1000}s)",
         )
-        return best.youtubeUrl
+        return url
     }
 
     /**
@@ -1082,7 +1109,7 @@ class DownloadManager @Inject constructor(
                     lastFmApiClient.getTrackInfo(track.artist, track.title).getOrNull()?.bestImageUrl
                 }.getOrNull()
             } else null)
-            ?: best.videoId.takeIf { it.isNotBlank() }?.let { vid ->
+            ?: best.videoId.takeIf(YouTubeVideoId::isValid)?.let { vid ->
                 "https://i.ytimg.com/vi/$vid/maxresdefault.jpg"
             }
 
@@ -1092,7 +1119,7 @@ class DownloadManager @Inject constructor(
                 album = best.album?.takeIf { it.isNotBlank() },
                 albumArtUrl = resolvedArtUrl,
                 durationMs = best.durationSeconds.takeIf { it > 0 }?.let { it * 1000L } ?: 0L,
-                youtubeId = best.videoId.takeIf { it.isNotBlank() },
+                youtubeId = best.videoId.takeIf(YouTubeVideoId::isValid),
             )
         }.onFailure { e ->
             // fillMissingMetadata can fail on UNIQUE constraint (youtube_id
@@ -1171,6 +1198,14 @@ class DownloadManager @Inject constructor(
         // At least one significant word must match exactly
         return targetWords.any { it in candidateWords } || candidateWords.any { it in targetWords }
     }
+
+    /**
+     * Search rows whose id has the YouTube video-id shape; the rest are
+     * dropped before scoring. The accepted row's id is what the yt-dlp URL is
+     * built from and what is saved as the track's youtube_id.
+     */
+    private fun List<YtDlpSearchResult>.withVideoIds(): List<YtDlpSearchResult> =
+        filter { YouTubeVideoId.isValid(it.id) }
 
     /**
      * Emits a progress update for the given track.

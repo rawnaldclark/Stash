@@ -14,6 +14,7 @@ import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
+import com.stash.core.model.YouTubeVideoId
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.delay
@@ -268,8 +269,9 @@ class ArtBackfillWorker @AssistedInject constructor(
             }.getOrNull()
             if (!lfm.isNullOrBlank()) return lfm
         }
+        // Only an id with the YouTube video-id shape is built into a URL.
         val vid = row.youtubeId
-        if (!vid.isNullOrBlank()) {
+        if (YouTubeVideoId.isValid(vid)) {
             return "https://i.ytimg.com/vi/$vid/maxresdefault.jpg"
         }
         return null

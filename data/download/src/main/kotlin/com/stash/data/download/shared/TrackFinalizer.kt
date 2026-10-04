@@ -76,7 +76,8 @@ class TrackFinalizer @Inject constructor(
             artist = track.artist,
             album = track.album.takeIf { it.isNotBlank() },
             title = track.title,
-            format = format.fileExtension.ifBlank { format.codec.ifBlank { "flac" } },
+            // Library files get a lower-case extension, whatever case the source reports.
+            format = format.fileExtension.ifBlank { format.codec.ifBlank { "flac" } }.lowercase(),
             // Lets the Per-playlist layout (#198) file the track under its
             // playlist folder; null/unknown ids fall back gracefully.
             trackId = track.id.takeIf { it > 0 },

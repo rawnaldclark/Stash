@@ -7,6 +7,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.TrackIdentityEvents
+import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
 import com.stash.data.download.prefs.QualityPreferencesManager
@@ -332,6 +333,14 @@ class SwapCoordinator @Inject constructor(
             ?: return SwapOutcome.DownloadFailed(trackId, newVideoId, title = "")
         val title = track.title
 
+        // The replacement id names the temp file and the yt-dlp URL below and is
+        // written to the track. It came from a search answer, so one without the
+        // YouTube video-id shape goes no further.
+        val url = YouTubeVideoId.watchUrl(newVideoId) ?: run {
+            Log.w(TAG, "swap: trackId=$trackId was offered an id that isn't a YouTube video id; not swapping")
+            return SwapOutcome.DownloadFailed(trackId, newVideoId, title)
+        }
+
         // An earlier swap of this track left its old file set aside (a
         // restore failed, or the app died). The next start's recovery deals
         // with it; a second set-aside now could bury the user's original audio.
@@ -350,7 +359,6 @@ class SwapCoordinator @Inject constructor(
             return SwapOutcome.Blocked(trackId, newVideoId, title)
         }
 
-        val url = "https://www.youtube.com/watch?v=$newVideoId"
         val qualityArgs = qualityPrefs.qualityTier.first().toYtDlpArgs()
 
         // #36: download + commit the replacement BEFORE touching the old

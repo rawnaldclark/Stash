@@ -3,6 +3,7 @@ package com.stash.data.download.preview
 import android.content.Context
 import android.util.Log
 import com.stash.core.auth.TokenManager
+import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.CookieFileWriter
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.stash.data.ytmusic.InnerTubeClient
@@ -418,9 +419,14 @@ class PreviewUrlExtractor @Inject constructor(
      * slow lane is never touched: InnerTube runs alone and a miss throws
      * [NoFastStreamException]. Fast-only and full-race calls for the same
      * [videoId] use distinct coalesce keys so they never share a Deferred.
+     *
+     * [videoId] must have the YouTube video-id shape; any other throws
+     * [IllegalArgumentException] before either lane runs.
      */
-    suspend fun extractStreamUrl(videoId: String, allowYtDlp: Boolean = true, lowestQuality: Boolean = false): String =
-        coalesce(coalesceKey(videoId, allowYtDlp, lowestQuality)) { doExtract(videoId, allowYtDlp, lowestQuality) }
+    suspend fun extractStreamUrl(videoId: String, allowYtDlp: Boolean = true, lowestQuality: Boolean = false): String {
+        require(YouTubeVideoId.isValid(videoId)) { "not a YouTube video id" }
+        return coalesce(coalesceKey(videoId, allowYtDlp, lowestQuality)) { doExtract(videoId, allowYtDlp, lowestQuality) }
+    }
 
     // The `#fast` suffix is collision-safe: YouTube videoIds are `#`-free
     // 11-char base64url, so a suffixed fast-only key can never equal a real
@@ -572,11 +578,16 @@ class PreviewUrlExtractor @Inject constructor(
      * **Coalescing.** Concurrent callers for the same [videoId] share one
      * extract under a dedicated `#ytdlp` key so they never collide with the
      * race-mode (`videoId`) or fast-only (`videoId#fast`) Deferreds.
+     *
+     * [videoId] must have the YouTube video-id shape; any other throws
+     * [IllegalArgumentException] before the yt-dlp slot is taken.
      */
-    suspend fun extractStreamUrlViaYtDlp(videoId: String): String =
-        coalesce("$videoId#ytdlp") {
+    suspend fun extractStreamUrlViaYtDlp(videoId: String): String {
+        require(YouTubeVideoId.isValid(videoId)) { "not a YouTube video id" }
+        return coalesce("$videoId#ytdlp") {
             ytDlpSemaphore.withPermit { extractViaYtDlp(videoId) }
         }
+    }
 
     /**
      * Test-only mirror of [extractStreamUrlViaYtDlp] driven by the [TestHooks]
@@ -675,6 +686,9 @@ class PreviewUrlExtractor @Inject constructor(
      * Slow fallback: extract stream URL via yt-dlp with QuickJS cipher solving.
      */
     private suspend fun extractViaYtDlp(videoId: String, lowestQuality: Boolean = false): String {
+        // The id becomes yt-dlp's URL argument; one without the YouTube
+        // video-id shape is refused before yt-dlp starts.
+        require(YouTubeVideoId.isValid(videoId)) { "not a YouTube video id" }
         return withTimeout(YTDLP_TIMEOUT_MS) {
             withContext(Dispatchers.IO) {
                 ytDlpManager.initialize()
@@ -763,7 +777,7 @@ class PreviewUrlExtractor @Inject constructor(
     private suspend fun runYtDlp(videoId: String, playerClient: String?, lowestQuality: Boolean = false): YtDlpStream? {
         val cookieFile = File(context.noBackupFilesDir, "yt_preview_cookies_${System.nanoTime()}.txt")
         return try {
-            val url = "https://www.youtube.com/watch?v=$videoId"
+            val url = YouTubeVideoId.watchUrl(videoId) ?: return null
 
             val request = YoutubeDLRequest(url).apply {
                 addOption("-f", formatSelectorFor(playerClient, lowestQuality))

@@ -37,7 +37,7 @@ class YouTubeStreamResolverTest {
         coEvery { extractor.extractStreamUrl(any(), any()) } throws
             CancellationException("outer cancel")
         val resolver = YouTubeStreamResolver(extractor, ytMusic, policy())
-        val track = trackWithYoutubeId("abc123")
+        val track = trackWithYoutubeId("abc123def45")
 
         try {
             resolver.resolve(track)
@@ -86,7 +86,7 @@ class YouTubeStreamResolverTest {
             "unreachable"
         }
         val resolver = YouTubeStreamResolver(extractor, ytMusic, policy())
-        val track = trackWithYoutubeId("abc123")
+        val track = trackWithYoutubeId("abc123def45")
 
         val result = resolver.resolve(track)
         assertThat(result).isNull()
@@ -109,15 +109,15 @@ class YouTubeStreamResolverTest {
     fun resolve_allowYtDlpTrue_racesBothLanes_notYtDlpDirect() = runTest {
         val extractor: PreviewUrlExtractor = mockk()
         val ytMusic: YTMusicApiClient = mockk()
-        coEvery { extractor.extractStreamUrl("abc123", true, false) } returns "https://raced/abc123"
-        every { extractor.observedCodec("abc123") } returns "opus"
+        coEvery { extractor.extractStreamUrl("abc123def45", true, false) } returns "https://raced/abc123def45"
+        every { extractor.observedCodec("abc123def45") } returns "opus"
         val resolver = YouTubeStreamResolver(extractor, ytMusic, policy())
 
-        val result = resolver.resolve(trackWithYoutubeId("abc123"), allowYtDlp = true)
+        val result = resolver.resolve(trackWithYoutubeId("abc123def45"), allowYtDlp = true)
 
-        assertThat(result?.url).isEqualTo("https://raced/abc123")
+        assertThat(result?.url).isEqualTo("https://raced/abc123def45")
         assertThat(result?.codec).isEqualTo("opus")
-        coVerify(exactly = 1) { extractor.extractStreamUrl("abc123", true, false) }
+        coVerify(exactly = 1) { extractor.extractStreamUrl("abc123def45", true, false) }
         coVerify(exactly = 0) { extractor.extractStreamUrlViaYtDlp(any()) }
     }
 
@@ -131,19 +131,19 @@ class YouTubeStreamResolverTest {
     fun resolve_allowYtDlpFalse_routesToInnerTubeFastLaneOnly() = runTest {
         val extractor: PreviewUrlExtractor = mockk()
         val ytMusic: YTMusicApiClient = mockk()
-        coEvery { extractor.extractStreamUrl("abc123", false, false) } returns "https://innertube/abc123"
+        coEvery { extractor.extractStreamUrl("abc123def45", false, false) } returns "https://innertube/abc123def45"
         // Deliberately NOT "opus": the resolver used to hardcode a codec, so a
         // test that only ever expects the default would pass against the bug it
         // is meant to catch. Asserting a non-default value proves the observed
         // codec is actually threaded through.
-        every { extractor.observedCodec("abc123") } returns "aac"
+        every { extractor.observedCodec("abc123def45") } returns "aac"
         val resolver = YouTubeStreamResolver(extractor, ytMusic, policy())
 
-        val result = resolver.resolve(trackWithYoutubeId("abc123"), allowYtDlp = false)
+        val result = resolver.resolve(trackWithYoutubeId("abc123def45"), allowYtDlp = false)
 
-        assertThat(result?.url).isEqualTo("https://innertube/abc123")
+        assertThat(result?.url).isEqualTo("https://innertube/abc123def45")
         assertThat(result?.codec).isEqualTo("aac")
-        coVerify(exactly = 1) { extractor.extractStreamUrl("abc123", false, false) }
+        coVerify(exactly = 1) { extractor.extractStreamUrl("abc123def45", false, false) }
         coVerify(exactly = 0) { extractor.extractStreamUrlViaYtDlp(any()) }
     }
 
@@ -152,14 +152,14 @@ class YouTubeStreamResolverTest {
     fun resolve_saveDataOn_asksForTheLowestQuality() = runTest {
         val extractor: PreviewUrlExtractor = mockk()
         val ytMusic: YTMusicApiClient = mockk()
-        coEvery { extractor.extractStreamUrl("abc123", true, true) } returns "https://low/abc123"
-        every { extractor.observedCodec("abc123") } returns "opus"
+        coEvery { extractor.extractStreamUrl("abc123def45", true, true) } returns "https://low/abc123def45"
+        every { extractor.observedCodec("abc123def45") } returns "opus"
         val resolver = YouTubeStreamResolver(extractor, ytMusic, policy(saveData = true))
 
-        val result = resolver.resolve(trackWithYoutubeId("abc123"), allowYtDlp = true)
+        val result = resolver.resolve(trackWithYoutubeId("abc123def45"), allowYtDlp = true)
 
-        assertThat(result?.url).isEqualTo("https://low/abc123")
-        coVerify(exactly = 1) { extractor.extractStreamUrl("abc123", true, true) }
+        assertThat(result?.url).isEqualTo("https://low/abc123def45")
+        coVerify(exactly = 1) { extractor.extractStreamUrl("abc123def45", true, true) }
     }
 
     /**
@@ -179,6 +179,28 @@ class YouTubeStreamResolverTest {
         val result = resolver.resolve(trackWithoutYoutubeId("Death Plus", "Garden"), allowYtDlp = true)
 
         assertThat(result?.coverArtUrl).isEqualTo("https://i.ytimg.com/vi/9Vz-MkbnSg4/maxresdefault.jpg")
+    }
+
+    /**
+     * The extractor takes only ids with the YouTube video-id shape. A song whose stored id has
+     * another shape still plays: the resolver finds its video by metadata, as for a song with none.
+     */
+    @Test
+    fun resolve_storedIdWithoutTheVideoIdShape_findsTheVideoBySearch() = runTest {
+        listOf("../x", "a%(title)s", "abc123", "").forEach { storedId ->
+            val extractor: PreviewUrlExtractor = mockk()
+            val ytMusic: YTMusicApiClient = mockk()
+            coEvery { ytMusic.searchCanonicalVideoId("Death Plus", "Garden") } returns "9Vz-MkbnSg4"
+            coEvery { extractor.extractStreamUrl("9Vz-MkbnSg4", true, false) } returns "https://raced/9Vz-MkbnSg4"
+            every { extractor.observedCodec("9Vz-MkbnSg4") } returns "opus"
+            val resolver = YouTubeStreamResolver(extractor, ytMusic, policy())
+            val track = trackWithoutYoutubeId("Death Plus", "Garden").copy(youtubeId = storedId)
+
+            val result = resolver.resolve(track, allowYtDlp = true)
+
+            assertThat(result?.url).isEqualTo("https://raced/9Vz-MkbnSg4")
+            coVerify(exactly = 0) { extractor.extractStreamUrl(storedId, any(), any()) }
+        }
     }
 
     private fun policy(saveData: Boolean = false): StreamQualityPolicy =

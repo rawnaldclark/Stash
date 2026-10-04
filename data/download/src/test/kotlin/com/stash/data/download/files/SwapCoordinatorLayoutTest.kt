@@ -137,7 +137,7 @@ class SwapCoordinatorLayoutTest {
         val shared = siblingsFile(sharedRelative)
         flagged(album = album, filePath = shared.absolutePath)
 
-        coordinator(layout).performSwap(7L, "vid123")
+        coordinator(layout).performSwap(7L, "vid12345678")
 
         assertEquals("track 8's audio is untouched and still there", "open door audio", shared.readText())
         assertNotEquals("track 7 got its own file", shared.absolutePath, saved.captured)
@@ -174,7 +174,7 @@ class SwapCoordinatorLayoutTest {
         }
         flagged(album = "Synthesis", filePath = wrongFile.absolutePath)
 
-        coordinator(LibraryLayout.ARTIST_ALBUM).performSwap(7L, "vid123")
+        coordinator(LibraryLayout.ARTIST_ALBUM).performSwap(7L, "vid12345678")
 
         assertEquals(File(musicDir, "evanescence/synthesis/lacrymosa.opus").absolutePath, saved.captured)
         assertEquals("synthesis audio", File(saved.captured).readText())

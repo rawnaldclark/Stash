@@ -12,6 +12,7 @@ import com.stash.core.media.preview.PreviewPlayer
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.model.DownloadStatus
+import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
 import com.stash.data.download.files.FileOrganizer
@@ -565,6 +566,15 @@ class FailedMatchesViewModel @Inject constructor(
      */
     fun approveMatch(trackId: Long, queueEntryId: Long, candidate: ResyncCandidate) {
         viewModelScope.launch {
+            // The candidate's id names the temp file and the yt-dlp URL below and
+            // is written to the track. It came from a search answer, so one
+            // without the YouTube video-id shape goes no further.
+            val url = YouTubeVideoId.watchUrl(candidate.videoId) ?: run {
+                Log.w(TAG, "approve: candidate for trackId=$trackId isn't a YouTube video id")
+                _userMessages.trySend("Can't approve — this match isn't a valid YouTube video.")
+                return@launch
+            }
+
             // v0.9.15: Reject blocklisted identities. Approving a match
             // for a track the user already blocked would re-mark it
             // downloaded and resurrect the file.
@@ -604,7 +614,6 @@ class FailedMatchesViewModel @Inject constructor(
             // Background download — fire and forget
             launch {
                 try {
-                    val url = "https://www.youtube.com/watch?v=${candidate.videoId}"
                     val qualityTier = qualityPrefs.qualityTier.first()
                     val qualityArgs = qualityTier.toYtDlpArgs()
                     val tempDir = fileOrganizer.getTempDir()

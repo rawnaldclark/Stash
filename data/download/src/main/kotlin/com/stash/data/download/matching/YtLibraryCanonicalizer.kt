@@ -5,6 +5,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.model.Track
+import com.stash.core.model.YouTubeVideoId
 import com.stash.data.ytmusic.model.MusicVideoType
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -48,9 +49,16 @@ class YtLibraryCanonicalizer @Inject constructor(
      * Returns either the original URL or a canonicalized replacement.
      * Safe to call on any track — unknown types, ATV originals, and
      * search misses all short-circuit back to the original URL.
+     *
+     * Both are watch URLs built from a checked id ([YouTubeVideoId.watchUrl]).
+     * Null when [originalVideoId] isn't a YouTube video id; nothing is looked
+     * up then.
      */
-    suspend fun canonicalize(track: Track, originalVideoId: String): String {
-        val originalUrl = "https://www.youtube.com/watch?v=$originalVideoId"
+    suspend fun canonicalize(track: Track, originalVideoId: String): String? {
+        val originalUrl = YouTubeVideoId.watchUrl(originalVideoId) ?: run {
+            Log.w(TAG, "canonicalize: track ${track.id}'s id isn't a YouTube video id")
+            return null
+        }
 
         val verification = searchExecutor.verifyVideo(originalVideoId)
         val type = verification?.musicVideoType
@@ -68,7 +76,10 @@ class YtLibraryCanonicalizer @Inject constructor(
         }
 
         val query = buildQuery(track.title, track.artist)
+        // The winner's id is written to the track and built into the download
+        // URL, so only rows whose id has the YouTube video-id shape compete.
         val candidates = searchExecutor.search(query, maxResults = 10)
+            .filter { YouTubeVideoId.isValid(it.id) }
         if (candidates.isEmpty()) {
             Log.d(TAG, "canonicalize: no candidates for '$query' ($type=$originalVideoId), keeping original")
             return originalUrl
@@ -101,6 +112,9 @@ class YtLibraryCanonicalizer @Inject constructor(
             // Scorer reached for the same videoId — nothing to swap.
             return originalUrl
         }
+        // Only well-formed candidates were scored, so this always builds; the
+        // swap below is never made without it.
+        val canonicalUrl = YouTubeVideoId.watchUrl(best.videoId) ?: return originalUrl
 
         // Persist the swap on [tracks.youtube_id] so future lookups are
         // consistent with the file on disk. Without this, the row still
@@ -146,7 +160,7 @@ class YtLibraryCanonicalizer @Inject constructor(
                 "(score=${"%.2f".format(best.matchScore)}) " +
                 "newTitle='$atvTitle'",
         )
-        return best.youtubeUrl
+        return canonicalUrl
     }
 
     /**
