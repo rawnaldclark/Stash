@@ -1,6 +1,9 @@
 package com.stash.core.data.share
 
 import com.stash.core.model.share.ShareConfig
+import com.stash.core.model.share.ShareLinks
+import com.stash.core.model.share.SharedTrack
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +33,7 @@ sealed interface ShareResult<out T> {
     }
 }
 
-/** HTTP client for the stash-share Worker (spec §4). */
+/** HTTP client for the stash-share Worker (spec §4): shared mixes and short song links. */
 @Singleton
 class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient) {
     /** Test seam; off the constructor because Hilt rejects @Inject with default params. */
@@ -65,6 +68,37 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
 
     suspend fun version(id: String): ShareResult<Int> =
         call(Request.Builder().url("$baseUrl/v1/mixes/$id/version").get()) { ShareJson.decodeFromString(VersionBody.serializer(), it).version }
+
+    /** Test seam for [createTrackLink]'s call timeout. */
+    internal var trackLinkTimeoutMs: Long = ShareLinks.SHORT_LINK_TIMEOUT_MS
+
+    /** A short song link: [url] is `https://stashfm.app/t/{id}`. */
+    data class TrackLink(val id: String, val url: String)
+    @Serializable private data class TrackLinkBody(val id: String)
+    @Serializable private data class TrackBody(val track: SharedTrack)
+
+    /**
+     * The short link for [track] (contract 2026-10-03 `POST /v1/tracks`). The Worker's id is deterministic, so
+     * sharing the same song again returns the same link (200 instead of 201). The cover goes only when it's on
+     * [ShareConfig.COVER_HOSTS] (a local art path never leaves the phone), and the room-only `by` never goes.
+     */
+    suspend fun createTrackLink(track: SharedTrack): ShareResult<TrackLink> {
+        val body = track.copy(addedBy = null, artUrl = track.artUrl?.takeIf(ShareConfig::isAllowedCover))
+        val json = ShareJson.encodeToString(SharedTrack.serializer(), body).toRequestBody(JSON)
+        // Bounds the whole call (every address, TLS, the answer): the share sheet's withTimeout can't cut a
+        // blocking execute() short, and the person sharing is waiting on it.
+        val http = okHttpClient.newBuilder().callTimeout(trackLinkTimeoutMs, TimeUnit.MILLISECONDS).build()
+        return http.shareCall(Request.Builder().url("$baseUrl/v1/tracks").post(json)) {
+            val id = ShareJson.decodeFromString(TrackLinkBody.serializer(), it).id
+            // Built from the id, like mix links, so it's always a link this app's App Links open.
+            require(ShareLinks.isShareId(id)) { "bad track id" }
+            TrackLink(id, ShareLinks.trackShortUrl(id))
+        }
+    }
+
+    /** The song behind a short link; [ShareResult.NotFound] when no link has that id. */
+    suspend fun getTrack(id: String): ShareResult<SharedTrack> =
+        call(Request.Builder().url("$baseUrl/v1/tracks/$id").get()) { ShareJson.decodeFromString(TrackBody.serializer(), it).track }
 
     private suspend fun <T> call(builder: Request.Builder, parse: (String) -> T): ShareResult<T> =
         okHttpClient.shareCall(builder, parse)

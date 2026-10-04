@@ -39,7 +39,7 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     companion object {
-        /** [pendingDeepLink] prefix for a shared-track link; the raw link follows. */
+        /** [pendingDeepLink] prefix for a shared-track link; the link (long, or short `/t/{id}`) follows. */
         const val DEEP_LINK_SHARED_TRACK_PREFIX = "shared_track:"
 
         /** [pendingDeepLink] prefix for a shared-mix link; the share id follows. */
@@ -138,7 +138,8 @@ class MainActivity : ComponentActivity() {
     private fun handleDeepLinkIntent(intent: Intent?) {
         if (intent == null) return
 
-        // Shared mix / track links (https App Links, and legacy stash://track). Spec §6.
+        // Shared mix / track links (https App Links on stashfm.app or the old workers.dev host, and legacy
+        // stash://track). Spec §6.
         if (intent.action == Intent.ACTION_VIEW) {
             val handled = when (val parsed = ShareLinks.parse(intent.data?.toString())) {
                 is ShareLinks.Parsed.Mix -> {
@@ -147,6 +148,11 @@ class MainActivity : ComponentActivity() {
                 }
                 is ShareLinks.Parsed.Track -> {
                     pendingDeepLink.value = DEEP_LINK_SHARED_TRACK_PREFIX + ShareLinks.trackUrl(parsed.track) // bounded, normalised
+                    true
+                }
+                is ShareLinks.Parsed.TrackRef -> {
+                    // A short song link: the card fetches the song by its id.
+                    pendingDeepLink.value = DEEP_LINK_SHARED_TRACK_PREFIX + ShareLinks.trackShortUrl(parsed.id)
                     true
                 }
                 is ShareLinks.Parsed.Room -> {

@@ -81,16 +81,25 @@
                 <data android:scheme="stash" android:host="track" />
             </intent-filter>
             <!--
-                Shared mix, track and Listen Together links (spec 2026-09-23 shared mixes §6, 2026-09-24 listen together). Verified App Links:
-                the host serves /.well-known/assetlinks.json for com.stash.app and .debug.
-                Adding a custom domain later = one more <data android:host=…/> pair.
+                Shared mix, song and Listen Together links (spec 2026-09-23 shared mixes §6, 2026-09-24 listen together). Verified App Links:
+                each host serves /.well-known/assetlinks.json for com.stash.app and .debug. stashfm.app is where links live
+                since 2026-10-03; the old workers.dev host stays so links already shared keep opening (same Worker, keep ShareConfig.HOSTS in sync).
+                /t?… is the long song link, /t/{id} the short one. (The <data> tags of one filter combine, so every path applies to both hosts.)
+                Release order: the Worker must be live on stashfm.app, serving assetlinks.json, BEFORE an app with this host ships.
+                On Android 6-11 one host that fails verification turns App Links off for every host in the filter, and the
+                app's share API calls go to stashfm.app too.
             -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="stashfm.app" android:pathPrefix="/m/" />
+                <data android:scheme="https" android:host="stashfm.app" android:path="/t" />
+                <data android:scheme="https" android:host="stashfm.app" android:pathPrefix="/t/" />
+                <data android:scheme="https" android:host="stashfm.app" android:pathPrefix="/l/" />
                 <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/m/" />
                 <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:path="/t" />
+                <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/t/" />
                 <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/l/" />
             </intent-filter>
             <!-- Static app shortcuts (e.g. "Resume playback"). Must live on

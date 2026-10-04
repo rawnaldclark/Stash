@@ -4,13 +4,20 @@ import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
 
-/** Where share links live. One place to change when a custom domain is added (spec §1). */
+/** Where share links live (spec §1; moved to stashfm.app on 2026-10-03). */
 object ShareConfig {
-    const val BASE_URL = "https://stash-share.rawnaldclark.workers.dev"
-    val HOSTS: Set<String> = setOf("stash-share.rawnaldclark.workers.dev")
+    /** New links and every share API call (mixes, song links, rooms, Community). */
+    const val BASE_URL = "https://stashfm.app"
 
     /**
-     * Album-art CDNs a shared mix's covers may point at. Anything else could log recipients' IPs.
+     * Hosts whose links open in Stash. The workers.dev host is where links lived before stashfm.app; the same
+     * Worker still serves it, so those links keep working forever. Keep in sync with the App Links filter in
+     * app/src/main/AndroidManifest.xml.
+     */
+    val HOSTS: Set<String> = setOf("stashfm.app", "stash-share.rawnaldclark.workers.dev")
+
+    /**
+     * Album-art CDNs a shared mix's or song's covers may point at. Anything else could log recipients' IPs.
      * Keep in sync with COVER_HOSTS in infra/share-worker/src/validate.js.
      */
     val COVER_HOSTS: List<String> = listOf(
@@ -18,6 +25,8 @@ object ShareConfig {
         "i.ytimg.com", "lh3.googleusercontent.com", "yt3.googleusercontent.com", "yt3.ggpht.com",
         "lastfm.freetls.fastly.net", "lastfm-img.freetls.fastly.net",
         "static.qobuz.com", "c.saavncdn.com",
+        // Deezer: where the Worker finds a song page's cover by ISRC.
+        "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net",
     )
 
     /** An https URL on [COVER_HOSTS], exactly or as a subdomain. Never throws. */
@@ -32,6 +41,9 @@ object ShareLinks {
     sealed interface Parsed {
         data class Mix(val shareId: String) : Parsed
         data class Track(val track: SharedTrack) : Parsed
+
+        /** A short song link, `https://…/t/{id}`: the song itself is on the share Worker (`GET /v1/tracks/{id}`). */
+        data class TrackRef(val id: String) : Parsed
 
         /** A Listen Together invite, `https://…/l/{code}` (spec 2026-09-24 §5). */
         data class Room(val code: String) : Parsed
@@ -49,6 +61,18 @@ object ShareLinks {
 
     fun roomUrl(code: String): String = "${ShareConfig.BASE_URL}/l/$code"
 
+    /**
+     * How long Share → "Stash link" waits for `POST /v1/tracks` before it shares the long link instead.
+     * The share sheet's time box and the request's own call timeout both use it.
+     */
+    const val SHORT_LINK_TIMEOUT_MS = 4_000L
+
+    /** The short song link for an id the Worker's `POST /v1/tracks` returned. */
+    fun trackShortUrl(id: String): String = "${ShareConfig.BASE_URL}/t/$id"
+
+    /** An id the Worker hands out for mixes and short song links: 8 letters or digits. */
+    fun isShareId(id: String): Boolean = ID.matches(id)
+
     fun trackUrl(t: SharedTrack): String = buildString {
         fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
         append(ShareConfig.BASE_URL).append("/t?t=").append(enc(t.title)).append("&a=").append(enc(t.artist))
@@ -59,7 +83,7 @@ object ShareLinks {
         t.youtubeId?.let { append("&yt=").append(enc(it)) }
     }
 
-    /** A share link (https mix/track, or the legacy `stash://track`), or null when it isn't one. */
+    /** A share link (https mix/track/room, short or long song link, or the legacy `stash://track`), or null when it isn't one. */
     fun parse(link: String?): Parsed? {
         if (link == null) return null
         // Links arrive from any app or page, so nothing here may throw.
@@ -71,6 +95,7 @@ object ShareLinks {
             scheme == "https" && host in ShareConfig.HOSTS -> when {
                 path.startsWith("/m/") -> path.removePrefix("/m/").takeIf { ID.matches(it) }?.let { Parsed.Mix(it) }
                 path.startsWith("/l/") -> path.removePrefix("/l/").uppercase().takeIf { ROOM_CODE.matches(it) }?.let { Parsed.Room(it) }
+                path.startsWith("/t/") -> path.removePrefix("/t/").takeIf { ID.matches(it) }?.let { Parsed.TrackRef(it) }
                 path == "/t" -> trackFrom(q["t"], q["a"], q["al"], q["d"], q["isrc"], q["sp"], q["yt"])
                 else -> null
             }

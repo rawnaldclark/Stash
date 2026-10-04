@@ -56,6 +56,51 @@ class ShareLinksTest {
         assertThat(ShareConfig.isAllowedCover(null)).isFalse()
     }
 
+    @Test fun `links are built on stashfm-app and the old workers-dev links still open`() {
+        assertThat(ShareConfig.BASE_URL).isEqualTo("https://stashfm.app")
+        assertThat(ShareLinks.mixUrl("Kx7Qa2pL")).isEqualTo("https://stashfm.app/m/Kx7Qa2pL")
+        assertThat(ShareLinks.trackUrl(SharedTrack("T", "A"))).isEqualTo("https://stashfm.app/t?t=T&a=A")
+        val old = "https://stash-share.rawnaldclark.workers.dev"
+        assertThat(ShareLinks.parse("$old/m/Kx7Qa2pL")).isEqualTo(ShareLinks.Parsed.Mix("Kx7Qa2pL"))
+        assertThat(ShareLinks.parse("$old/l/K7QA2PXM")).isEqualTo(ShareLinks.Parsed.Room("K7QA2PXM"))
+        assertThat(ShareLinks.parse("$old/t?t=T&a=A")).isEqualTo(ShareLinks.Parsed.Track(SharedTrack("T", "A")))
+        assertThat(ShareLinks.parse("https://www.stashfm.app/m/Kx7Qa2pL")).isNull() // the apex only, like the manifest
+    }
+
+    @Test fun `short song link builds and parses on either host`() {
+        assertThat(ShareLinks.trackShortUrl("Ab3xY9qk")).isEqualTo("https://stashfm.app/t/Ab3xY9qk")
+        assertThat(ShareLinks.parse(ShareLinks.trackShortUrl("Ab3xY9qk"))).isEqualTo(ShareLinks.Parsed.TrackRef("Ab3xY9qk"))
+        assertThat(ShareLinks.parse("https://stash-share.rawnaldclark.workers.dev/t/Ab3xY9qk"))
+            .isEqualTo(ShareLinks.Parsed.TrackRef("Ab3xY9qk"))
+        assertThat(ShareLinks.parse("HTTPS://STASHFM.APP/t/Ab3xY9qk/")).isEqualTo(ShareLinks.Parsed.TrackRef("Ab3xY9qk"))
+        // A share sheet may tack a query on; the id is still the path.
+        assertThat(ShareLinks.parse("$base/t/Ab3xY9qk?si=x")).isEqualTo(ShareLinks.Parsed.TrackRef("Ab3xY9qk"))
+    }
+
+    @Test fun `short song links with a bad id or a foreign host are rejected, never thrown`() {
+        assertThat(ShareLinks.parse("$base/t/Ab3xY9q")).isNull() // 7
+        assertThat(ShareLinks.parse("$base/t/Ab3xY9qkZ")).isNull() // 9
+        assertThat(ShareLinks.parse("$base/t/Ab3x-9qk")).isNull()
+        assertThat(ShareLinks.parse("$base/t/Ab3xY9qk/extra")).isNull()
+        assertThat(ShareLinks.parse("$base/t/%zz")).isNull()
+        assertThat(ShareLinks.parse("$base/t/")).isNull()
+        assertThat(ShareLinks.parse("http://stashfm.app/t/Ab3xY9qk")).isNull()
+        assertThat(ShareLinks.parse("https://evil.example/t/Ab3xY9qk")).isNull()
+        assertThat(ShareLinks.parse("stash://track/Ab3xY9qk")).isNull()
+    }
+
+    @Test fun `the long song link and the legacy scheme are unchanged on the new host`() {
+        val t = SharedTrack("Teardrop", "Massive Attack", "Mezzanine", 330_000, "GBAAA9800174", "sp1", "yt1")
+        assertThat(ShareLinks.parse(ShareLinks.trackUrl(t))).isEqualTo(ShareLinks.Parsed.Track(t))
+        assertThat(ShareLinks.parse("stash://track?t=Teardrop&a=Massive+Attack&y=yt1"))
+            .isEqualTo(ShareLinks.Parsed.Track(SharedTrack("Teardrop", "Massive Attack", youtubeId = "yt1")))
+    }
+
+    @Test fun `deezer's image cdn is a cover host`() {
+        assertThat(ShareConfig.isAllowedCover("https://cdn-images.dzcdn.net/images/cover/abc/1000x1000-000000-80-0-0.jpg")).isTrue()
+        assertThat(ShareConfig.isAllowedCover("https://e-cdns-images.dzcdn.net/images/cover/abc/1000x1000-000000-80-0-0.jpg")).isTrue()
+    }
+
     @Test fun `room url and parse round-trip, lower case and a trailing slash accepted`() {
         assertThat(ShareLinks.roomUrl("K7QA2PXM")).isEqualTo("$base/l/K7QA2PXM")
         assertThat(ShareLinks.parse("$base/l/K7QA2PXM")).isEqualTo(ShareLinks.Parsed.Room("K7QA2PXM"))
