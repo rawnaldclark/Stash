@@ -96,6 +96,9 @@ class HomeDiscoveryRepositoryImpl @Inject constructor(
         thumbnailUrl = image?.large ?: image?.small,
         year = release_date_original?.take(4),
         source = AlbumSource.QOBUZ,
+        // #481: Top Albums lists singles too, and Qobuz sends no release type; the
+        // album screen tells a single by this when it looks for a YouTube copy.
+        trackCount = tracks_count.takeIf { it > 0 },
     )
 
     private fun QbdlxPlaylistItem.toPlaylistSummary() = PlaylistSummary(

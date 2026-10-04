@@ -115,4 +115,5 @@ private fun QbdlxAlbumItem.toAlbumSummary(artistName: String) = AlbumSummary(
     thumbnailUrl = image?.large ?: image?.small ?: image?.thumbnail,
     year = release_date_original, // "YYYY-MM-DD"; DiscographyMerger parses the year
     source = AlbumSource.QOBUZ,
+    trackCount = tracks_count.takeIf { it > 0 }, // #481: tells the album screen it's an album
 )

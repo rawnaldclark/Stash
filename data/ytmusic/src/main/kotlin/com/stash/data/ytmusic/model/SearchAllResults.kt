@@ -41,8 +41,16 @@ sealed interface TopResultItem {
  *
  * An empty [sections] list signals "no results"; the UI should render an
  * appropriate empty-state rather than a blank list.
+ *
+ * [topAlbum] is YouTube's top-result card when that card is an album. Search's
+ * top slot shows artists and tracks only, so it rides alongside the sections
+ * for [com.stash.data.ytmusic.YTMusicApiClient.resolveAlbum]: for a new release
+ * the card is often the only place a search names the album (#481).
  */
-data class SearchAllResults(val sections: List<SearchResultSection>)
+data class SearchAllResults(
+    val sections: List<SearchResultSection>,
+    val topAlbum: AlbumSummary? = null,
+)
 
 /** Minimal artist identity for cards, top-result, and related-artists rows. */
 @Serializable
@@ -56,7 +64,15 @@ data class ArtistSummary(
 @Serializable
 enum class AlbumSource { YOUTUBE, QOBUZ, QOBUZ_PLAYLIST }
 
-/** Minimal album identity for horizontal album rows and discography grids. */
+/**
+ * Minimal album identity for horizontal album rows and discography grids.
+ *
+ * [releaseType] is YouTube's label from a search result ("Album", "Single",
+ * "EP"...), null where the source doesn't say. #481: a single that shares an
+ * album's title is a different release. [trackCount] is how many tracks the
+ * release has where the source lists it (Qobuz's rows do, and send no release
+ * type, so it is how a Qobuz single is told from an album); null otherwise.
+ */
 @Serializable
 data class AlbumSummary(
     val id: String,
@@ -65,6 +81,8 @@ data class AlbumSummary(
     val thumbnailUrl: String?,
     val year: String?,
     val source: AlbumSource = AlbumSource.YOUTUBE,
+    val releaseType: String? = null,
+    val trackCount: Int? = null,
 )
 
 /** Minimal playlist identity for the Home discovery playlist row. */

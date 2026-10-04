@@ -76,6 +76,8 @@ class DownloadQueueDaoPartitionTest {
         assertEquals("expected only sync row", listOf(100L), result.map { it.id })
     }
 
+    // The discovery rows below are taps (user_requested), so these two tests check the
+    // partition and status rules; which rows count as asked for is DownloadQueueDaoAskedForTest's.
     @Test fun `pendingDiscoveryDownloads returns only sync_id IS NULL rows in PENDING or retryable FAILED`() = runTest {
         seedTrack(trackId = 1L)
         seedTrack(trackId = 2L)
@@ -83,9 +85,9 @@ class DownloadQueueDaoPartitionTest {
         seedTrack(trackId = 4L)
 
         dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
-        dao.insert(pendingRow(id = 101L, trackId = 2L, syncId = null))
-        dao.insert(failedRow(id = 102L, trackId = 3L, syncId = null, retryCount = 1))
-        dao.insert(failedRow(id = 103L, trackId = 4L, syncId = null, retryCount = 3))
+        dao.insert(pendingRow(id = 101L, trackId = 2L, syncId = null).copy(userRequested = true))
+        dao.insert(failedRow(id = 102L, trackId = 3L, syncId = null, retryCount = 1).copy(userRequested = true))
+        dao.insert(failedRow(id = 103L, trackId = 4L, syncId = null, retryCount = 3).copy(userRequested = true))
 
         val result = dao.pendingDiscoveryDownloads()
 
@@ -103,6 +105,7 @@ class DownloadQueueDaoPartitionTest {
                 status = DownloadStatus.WAITING_FOR_LOSSLESS,
                 syncId = null,
                 searchQuery = "q",
+                userRequested = true,
             )
         )
         dao.insert(
@@ -112,6 +115,7 @@ class DownloadQueueDaoPartitionTest {
                 status = DownloadStatus.IN_PROGRESS,
                 syncId = null,
                 searchQuery = "q",
+                userRequested = true,
             )
         )
 

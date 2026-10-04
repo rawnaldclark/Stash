@@ -253,6 +253,25 @@ class QbdlxApiClientTest {
         assertThat(d.tracks.items.single().title).isEqualTo("S")
     }
 
+    /**
+     * #481: in a country Qobuz doesn't sell in, album/get answers this 404 for every
+     * album. The status has to survive to the caller: QobuzAlbumFetcherImpl reads it
+     * to tell "not sold here" from a failure a retry can fix.
+     */
+    @Test fun `album get 404 throws QbdlxApiException carrying the status`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(404)
+                .setBody("""{"status":"error","code":404,"message":"No result matching given argument"}"""),
+        )
+        try {
+            client.getAlbum("z9oweab47swxc")
+            org.junit.Assert.fail("expected QbdlxApiException")
+        } catch (e: QbdlxApiException) {
+            assertThat(e.status).isEqualTo(404)
+        }
+        assertThat(server.takeRequest().path).contains("album/get")
+    }
+
     private companion object {
         /** Fixed clock for the heal throttle — any two reads land inside the floor. */
         const val NOW = 1_000_000L

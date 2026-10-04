@@ -30,7 +30,9 @@ data class QbdlxAlbumItem(
     val image: QbdlxImage? = null,
     val release_date_original: String? = null,    // "YYYY-MM-DD"
     val tracks_count: Int = 0,
-    val release_type: String? = null,             // absent in albums list fixture
+    // Absent from album/getFeatured and artist/get (live 2026-10-03, 417 items):
+    // tracks_count is the only length signal these endpoints give.
+    val release_type: String? = null,
 )
 
 // ── album/get ──────────────────────────────────────────────────────────

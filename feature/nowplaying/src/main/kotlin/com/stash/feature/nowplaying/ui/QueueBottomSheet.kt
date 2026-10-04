@@ -119,10 +119,15 @@ fun QueueBottomSheet(
     // that was skipped mid-drag when the drop sends no move.
     var draggedIdx by remember { mutableIntStateOf(-1) }
     var resyncTick by remember { mutableIntStateOf(0) }
+    val listState = rememberLazyListState()
     LaunchedEffect(upcomingSource, resyncTick) {
         if (draggedIdx < 0) {
+            // LazyColumn keeps the first visible row's key in place, so a row inserted above it
+            // (Play next) would land just above the viewport, unseen. A list showing its top keeps it.
+            val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
             localQueue.clear()
             localQueue.addAll(queueEntries(upcomingSource))
+            if (atTop) listState.requestScrollToItem(0)
         }
     }
 
@@ -168,7 +173,6 @@ fun QueueBottomSheet(
                 )
             }
 
-            val listState = rememberLazyListState()
             var dragOffsetY by remember { mutableFloatStateOf(0f) }
             var itemHeight by remember { mutableIntStateOf(0) }
 

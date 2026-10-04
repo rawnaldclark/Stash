@@ -24,12 +24,13 @@ import androidx.compose.ui.unit.dp
  *
  * Shows an icon + title + body message + "Retry" button. Used by
  * ArtistProfileScreen and AlbumDiscoveryScreen when a cold-miss fetch fails
- * and there's no cached copy to fall back to.
+ * and there's no cached copy to fall back to. A null [onRetry] leaves the
+ * button out, for a failure a retry can't fix.
  */
 @Composable
 fun DiscoveryErrorCard(
     message: String,
-    onRetry: () -> Unit,
+    onRetry: (() -> Unit)?,
     modifier: Modifier = Modifier,
     title: String = "Something went wrong",
 ) {
@@ -58,12 +59,14 @@ fun DiscoveryErrorCard(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(16.dp))
-        Button(
-            onClick = onRetry,
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text("Retry")
+        if (onRetry != null) {
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = onRetry,
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text("Retry")
+            }
         }
     }
 }

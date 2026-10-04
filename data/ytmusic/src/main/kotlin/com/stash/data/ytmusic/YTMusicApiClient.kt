@@ -3,6 +3,7 @@ package com.stash.data.ytmusic
 import android.util.Log
 import com.stash.core.model.SyncResult
 import com.stash.data.ytmusic.model.AlbumDetail
+import com.stash.data.ytmusic.model.AlbumSearch
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistPhotoResolution
@@ -511,7 +512,12 @@ class YTMusicApiClient @Inject constructor(
     suspend fun searchAll(query: String): SearchAllResults {
         val response = innerTubeClient.search(query)
             ?: return SearchAllResults(emptyList())
+        return parseSearchAll(response)
+            .also { Log.d(TAG, "searchAll('$query'): ${it.sections.size} sections") }
+    }
 
+    /** Reads a search response into Search's sections, plus [SearchAllResults.topAlbum]. */
+    private fun parseSearchAll(response: JsonObject): SearchAllResults {
         val shelves = response.navigatePath(
             "contents", "tabbedSearchResultsRenderer", "tabs",
         )?.firstArray()?.firstOrNull()?.asObject()
@@ -522,11 +528,11 @@ class YTMusicApiClient @Inject constructor(
         val sections = mutableListOf<SearchResultSection>()
 
         // 1. Top result — musicCardShelfRenderer appears at most once, usually first.
-        shelves.asSequence()
+        val topCard = shelves.asSequence()
             .mapNotNull { it.asObject() }
             .firstOrNull { it.containsKey("musicCardShelfRenderer") }
             ?.get("musicCardShelfRenderer")?.asObject()
-            ?.let { parseTopResultCard(it) }
+        topCard?.let { parseTopResultCard(it) }
             ?.let { sections.add(SearchResultSection.Top(it)) }
 
         // 2..4. Named musicShelfRenderer shelves, dispatched by their title text.
@@ -560,50 +566,90 @@ class YTMusicApiClient @Inject constructor(
             sections.addAll(parseFlatSearchSections(shelves))
         }
 
-        Log.d(TAG, "searchAll('$query'): ${sections.size} sections")
-        return SearchAllResults(sections)
+        return SearchAllResults(sections, topAlbum = topCard?.let { parseAlbumTopCard(it) })
+    }
+
+    /**
+     * The albums a plain "<album> <artist>" search turns up, for a caller that
+     * judges each candidate itself: the album screen's YouTube Music fallback for
+     * albums Qobuz doesn't sell in the user's country (#481). Candidates are
+     * YouTube's top-result card when it is an album ([SearchAllResults.topAlbum],
+     * for a new release often the only place the search names the album), then the
+     * Albums shelf. Unlike [resolveAlbum] it tells "YouTube answered and named no
+     * such album" ([AlbumSearch.Answered] with no candidates) apart from "YouTube
+     * didn't answer" ([AlbumSearch.Failed]: no connection, timeout, 429, 5xx), which
+     * is worth a retry. A cancellation propagates.
+     */
+    suspend fun searchAlbums(album: String, artist: String): AlbumSearch {
+        if (album.isBlank()) return AlbumSearch.Answered(topAlbum = null, shelf = emptyList())
+        val query = if (artist.isBlank()) album else "$album $artist"
+        val response = innerTubeClient.searchWithStatus(query).body
+        if (response == null) {
+            Log.w(TAG, "searchAlbums: no answer for '$query'")
+            return AlbumSearch.Failed
+        }
+        val results = try {
+            parseSearchAll(response)
+        } catch (e: Exception) {
+            Log.w(TAG, "searchAlbums: unreadable answer for '$query'", e)
+            return AlbumSearch.Answered(topAlbum = null, shelf = emptyList())
+        }
+        return AlbumSearch.Answered(
+            topAlbum = results.topAlbum,
+            shelf = results.sections
+                .filterIsInstance<SearchResultSection.Albums>()
+                .firstOrNull()
+                ?.albums
+                .orEmpty(),
+        )
     }
 
     /**
      * Resolve an album to its YouTube Music browse identity via a plain
-     * search + the existing Albums-shelf parser ([parseAlbumsShelf], reused
-     * by [searchAll]). Unlike [resolveArtist] this has no dedicated filter
+     * search ([searchAlbums]). Unlike [resolveArtist] this has no dedicated filter
      * param — an ALBUMS_FILTER-equivalent isn't wired up — so this runs an
-     * unfiltered search and picks the best Albums-shelf match:
+     * unfiltered search and picks the best album match:
      *
-     *  1. Prefer a result whose artist field matches [artist] (case-
-     *     insensitive contains, either direction) — guards against a
-     *     same-named album by a different artist ranking first.
-     *  2. Otherwise take the first Albums-shelf result.
+     *  1. YouTube's top-result card when it is an album by [artist] — for a new
+     *     release often the only place the search names the album (#481). A card
+     *     naming no artist doesn't count (a blank name "contains" every artist), and
+     *     a card that is a Single gives way to an album of the same title on the shelf.
+     *  2. Otherwise prefer an Albums-shelf result whose artist field matches
+     *     [artist] (case-insensitive contains, either direction) — guards against
+     *     a same-named album by a different artist ranking first.
+     *  3. Otherwise take the first Albums-shelf result.
      *
      * Used by the Now Playing / Library "View Album" actions, which open
      * the real remote album page — distinct from the local Albums library
      * tab, which just filters downloaded tracks.
      *
-     * Returns null when [album] is blank, the search returns no Albums
-     * shelf, or on failure.
+     * Returns null when [album] is blank, the search names no album, or on
+     * failure. A cancellation propagates.
      */
     suspend fun resolveAlbum(album: String, artist: String): AlbumSummary? {
-        if (album.isBlank()) return null
-        val query = if (artist.isBlank()) album else "$album $artist"
-        val results = try {
-            searchAll(query)
-        } catch (t: Throwable) {
-            Log.w(TAG, "resolveAlbum: search failed for '$query'", t)
-            return null
+        val found = searchAlbums(album, artist) as? AlbumSearch.Answered ?: return null
+        val top = found.topAlbum?.takeIf { it.artist.isNotBlank() && artistsOverlap(it.artist, artist) }
+        if (top != null) {
+            // An album named after its lead single (Lover, After Hours): the top card is
+            // often the single. Open the album when the shelf has it; a track tagged with
+            // the single's own title still opens the single.
+            if (top.releaseType.equals("Single", ignoreCase = true)) {
+                found.shelf.firstOrNull {
+                    !it.releaseType.equals("Single", ignoreCase = true) &&
+                        it.title.equals(top.title, ignoreCase = true) &&
+                        artistsOverlap(it.artist, artist)
+                }?.let { return it }
+            }
+            return top
         }
-        val albums = results.sections
-            .filterIsInstance<SearchResultSection.Albums>()
-            .firstOrNull()
-            ?.albums
-            ?: return null
+        val albums = found.shelf
         if (albums.isEmpty()) return null
-
-        return albums.firstOrNull {
-            it.artist.contains(artist, ignoreCase = true) ||
-                artist.contains(it.artist, ignoreCase = true)
-        } ?: albums.first()
+        return albums.firstOrNull { artistsOverlap(it.artist, artist) } ?: albums.first()
     }
+
+    /** Either name contains the other, ignoring case: "Joey Bada$$" and "Joey Bada$$ feat. X". */
+    private fun artistsOverlap(candidate: String, wanted: String): Boolean =
+        candidate.contains(wanted, ignoreCase = true) || wanted.contains(candidate, ignoreCase = true)
 
     /**
      * Resolve an artist name to its YouTube Music browse identity. Runs an

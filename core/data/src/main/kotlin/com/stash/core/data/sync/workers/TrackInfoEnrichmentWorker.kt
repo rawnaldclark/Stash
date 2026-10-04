@@ -14,6 +14,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmSessionPreference
+import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.delay
@@ -50,7 +51,7 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
         private const val BATCH_SIZE = 200
         private const val REQUEST_INTERVAL_MS = 250L // 4 req/sec — under LFM 5/sec limit
 
-        fun schedulePeriodic(context: Context) {
+        suspend fun schedulePeriodic(context: Context) {
             val work = PeriodicWorkRequestBuilder<TrackInfoEnrichmentWorker>(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
@@ -62,7 +63,7 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
                         .build()
                 )
                 .build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
                 work,

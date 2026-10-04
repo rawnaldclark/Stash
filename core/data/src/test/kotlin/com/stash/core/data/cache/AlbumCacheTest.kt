@@ -3,13 +3,16 @@ package com.stash.core.data.cache
 import com.stash.core.data.discography.QobuzAlbumFetcher
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.AlbumDetail
+import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
@@ -109,5 +112,25 @@ class AlbumCacheTest {
         j1.await(); j2.await()
         verify(api).getAlbum(eq("X"))
         verifyNoMoreInteractions(api)
+    }
+
+    /**
+     * #481: YTMusicApiClient.getAlbum answers a browse that didn't come back with a
+     * blank, track-less album. Cached, that was an empty page with no Retry for 30
+     * minutes. It is a failed load: thrown, never kept, so the next get asks again.
+     */
+    @Test
+    fun `a blank YouTube album with no tracks is a failed load and is not cached`() = runTest {
+        val api = mock<YTMusicApiClient>()
+        val nothing = detail("X").copy(title = "")
+        val album = detail("X").copy(tracks = listOf(TrackSummary("v1", "Song", "A", "T", 200.0, null)))
+        whenever(api.getAlbum(eq("X"))).thenReturn(nothing, album)
+        val cache = AlbumCache(api, noFetcher)
+
+        val failure = runCatching { cache.get("X") }.exceptionOrNull()
+        assertTrue("got $failure", failure is IOException)
+
+        assertSame(album, cache.get("X"))
+        verify(api, times(2)).getAlbum(eq("X"))
     }
 }

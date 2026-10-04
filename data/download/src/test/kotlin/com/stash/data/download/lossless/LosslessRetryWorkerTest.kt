@@ -6,6 +6,7 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.model.DownloadStatus
 import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
@@ -27,6 +28,7 @@ import org.junit.Test
  *  - Still-null row → no DB write; row stays in WAITING_FOR_LOSSLESS for
  *    the next trigger.
  *  - Empty deferred set → success, no DB writes.
+ *  - Stream-only mode → a sync's row nobody asked for is never resolved.
  *
  * The worker does not download — it only re-resolves and re-queues.
  *
@@ -42,6 +44,7 @@ class LosslessRetryWorkerTest {
     private val trackDao: TrackDao = mockk(relaxed = true)
     private val registry: LosslessSourceRegistry = mockk()
     private val enqueuer: SingleTrackDownloadEnqueuer = mockk(relaxed = true)
+    private val streamingPreference: StreamingPreference = mockk { coEvery { current() } returns false }
 
     private fun newWorker(): LosslessRetryWorker = LosslessRetryWorker(
         appContext = appContext,
@@ -50,11 +53,49 @@ class LosslessRetryWorkerTest {
         trackDao = trackDao,
         registry = registry,
         singleTrackDownloadEnqueuer = enqueuer,
+        streamingPreference = streamingPreference,
     )
 
     @Test
     fun `a re-queued row starts downloading now, not at the next sync`() = runTest {
-        coEvery { downloadQueueDao.waitingForLosslessTracks() } returns listOf(entry(id = 100L, trackId = 1L))
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(entry(id = 100L, trackId = 1L))
+        coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
+        coEvery { registry.resolve(any()) } returns stubSourceResult()
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) { enqueuer.enqueue(100L) }
+    }
+
+    /**
+     * Stream-only mode downloads no sync's songs (#474: the sync's own download step refuses them
+     * there), and the sweep downloads every row it resolves. So there it takes a sync's row only
+     * when the user asked for the song, which the DAO's Stream-only read keeps (#532); the others
+     * wait for Download mode, without spending a lossless lookup.
+     */
+    @Test
+    fun `in Stream-only mode a sync's song nobody asked for keeps waiting`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        val syncedOnly = entry(id = 100L, trackId = 1L, syncId = 7L)
+        val kept = entry(id = 101L, trackId = 2L, syncId = 7L)
+        coEvery { downloadQueueDao.waitingForLosslessTracks(false) } returns listOf(syncedOnly, kept)
+        coEvery { downloadQueueDao.waitingForLosslessTracks(true) } returns listOf(kept)
+        coEvery { trackDao.getById(any()) } answers { stubTrackEntity(firstArg()) }
+        coEvery { registry.resolve(any()) } returns stubSourceResult()
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) { registry.resolve(match { it.title == "Track 2" }) }
+        coVerify(exactly = 0) { registry.resolve(match { it.title == "Track 1" }) }
+        coVerify(exactly = 0) { enqueuer.enqueue(100L) }
+        coVerify(exactly = 1) { enqueuer.enqueue(101L) }
+    }
+
+    @Test
+    fun `in Download mode the sweep takes a sync's waiting songs too`() = runTest {
+        val synced = entry(id = 100L, trackId = 1L, syncId = 7L)
+        coEvery { downloadQueueDao.waitingForLosslessTracks(false) } returns listOf(synced)
+        coEvery { downloadQueueDao.waitingForLosslessTracks(true) } returns emptyList()
         coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
         coEvery { registry.resolve(any()) } returns stubSourceResult()
 
@@ -65,7 +106,7 @@ class LosslessRetryWorkerTest {
 
     @Test
     fun `the sweep is a download, and stops at the first paced row and retries later`() = runTest {
-        coEvery { downloadQueueDao.waitingForLosslessTracks() } returns listOf(
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(
             entry(id = 100L, trackId = 1L),
             entry(id = 101L, trackId = 2L),
         )
@@ -88,7 +129,7 @@ class LosslessRetryWorkerTest {
 
     @Test
     fun `resolved row flips to PENDING and reports resolved=1 total=1`() = runTest {
-        coEvery { downloadQueueDao.waitingForLosslessTracks() } returns listOf(
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(
             entry(id = 100L, trackId = 1L),
         )
         coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
@@ -108,7 +149,7 @@ class LosslessRetryWorkerTest {
 
     @Test
     fun `unresolved row stays WAITING_FOR_LOSSLESS and reports resolved=0 total=1`() = runTest {
-        coEvery { downloadQueueDao.waitingForLosslessTracks() } returns listOf(
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(
             entry(id = 100L, trackId = 1L),
         )
         coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
@@ -125,7 +166,7 @@ class LosslessRetryWorkerTest {
 
     @Test
     fun `empty deferred set returns resolved=0 total=0`() = runTest {
-        coEvery { downloadQueueDao.waitingForLosslessTracks() } returns emptyList()
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns emptyList()
 
         val result = newWorker().doWork() as androidx.work.ListenableWorker.Result.Success
 
@@ -138,7 +179,7 @@ class LosslessRetryWorkerTest {
 
     @Test
     fun `partial match across 3 rows reports resolved=2 total=3`() = runTest {
-        coEvery { downloadQueueDao.waitingForLosslessTracks() } returns listOf(
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(
             entry(id = 100L, trackId = 1L),
             entry(id = 101L, trackId = 2L),
             entry(id = 102L, trackId = 3L),
@@ -165,9 +206,10 @@ class LosslessRetryWorkerTest {
         }
     }
 
-    private fun entry(id: Long, trackId: Long) = DownloadQueueEntity(
+    private fun entry(id: Long, trackId: Long, syncId: Long? = null) = DownloadQueueEntity(
         id = id,
         trackId = trackId,
+        syncId = syncId,
         status = DownloadStatus.WAITING_FOR_LOSSLESS,
         searchQuery = "test query",
     )

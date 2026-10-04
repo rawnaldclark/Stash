@@ -7,6 +7,7 @@ import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.DownloadStatus
@@ -44,7 +45,11 @@ class DownloadQueueDaoCancelWaitingTest {
     @Test fun `off drops only this playlist's waiting discovery rows`() = runTest {
         val off = playlist("Turned off", "custom_off")
         val kept = playlist("Still kept", "custom_kept", keepOffline = true)
-        val followed = playlist("Followed", "share:abc", syncEnabled = true)
+        val followed = playlist("Followed", "share:abc", syncEnabled = true, follow = SharedMixEntity.STATUS_ACTIVE)
+        // The owner stopped sharing: an ordinary playlist now, so its sync_enabled keeps nothing waiting.
+        val stoppedSharing = playlist(
+            "Owner stopped sharing", "share:gone", syncEnabled = true, follow = SharedMixEntity.STATUS_REMOVED,
+        )
         // Synced but not a followed mix: a user's own playlist is created with sync on.
         val mineSynced = playlist("Mine, synced", "custom_mine", syncEnabled = true)
         val hiddenKept = playlist("Kept but hidden", "custom_hidden", keepOffline = true, isActive = false)
@@ -56,6 +61,7 @@ class DownloadQueueDaoCancelWaitingTest {
         val syncQueued = song("Sync queued", off)
         val alsoKept = song("Also kept", off, kept)
         val alsoFollowed = song("Also followed", off, followed)
+        val alsoStoppedSharing = song("Also in a stopped share", off, stoppedSharing)
         val alsoMineSynced = song("Also mine, synced", off, mineSynced)
         val onlyHiddenKept = song("Only hidden kept", off, hiddenKept)
         val elsewhere = song("Other playlist", kept)
@@ -69,33 +75,45 @@ class DownloadQueueDaoCancelWaitingTest {
         row(syncQueued, DownloadStatus.PENDING, syncId = db.syncHistoryDao().insert(SyncHistoryEntity()))
         row(alsoKept, DownloadStatus.PENDING)
         row(alsoFollowed, DownloadStatus.PENDING)
+        row(alsoStoppedSharing, DownloadStatus.PENDING)
         row(alsoMineSynced, DownloadStatus.PENDING)
         row(onlyHiddenKept, DownloadStatus.PENDING)
         row(elsewhere, DownloadStatus.PENDING)
         row(removedHere, DownloadStatus.PENDING)
         row(redownload, DownloadStatus.PENDING, userRequested = true) // Library Health asked for it
 
-        assertThat(dao.cancelWaitingForPlaylist(off)).isEqualTo(5)
+        assertThat(dao.cancelWaitingForPlaylist(off)).isEqualTo(6)
 
         val left = listOf(
-            pending, failed, waiting, running, syncQueued, alsoKept, alsoFollowed, alsoMineSynced,
+            pending, failed, waiting, running, syncQueued, alsoKept, alsoFollowed, alsoStoppedSharing, alsoMineSynced,
             onlyHiddenKept, elsewhere, removedHere, redownload,
         ).filter { dao.getByTrackId(it) != null }
         assertThat(left).containsExactly(running, syncQueued, alsoKept, alsoFollowed, elsewhere, removedHere, redownload)
     }
 
+    /** [follow]: a followed mix's status. follow() writes its row with the playlist, in one transaction. */
     private suspend fun playlist(
         name: String,
         sourceId: String,
         keepOffline: Boolean = false,
         syncEnabled: Boolean = false,
         isActive: Boolean = true,
+        follow: String? = null,
     ): Long = db.playlistDao().insert(
         PlaylistEntity(
             name = name, source = MusicSource.BOTH, sourceId = sourceId, type = PlaylistType.CUSTOM,
             keepOffline = keepOffline, syncEnabled = syncEnabled, isActive = isActive,
         )
-    )
+    ).also { id ->
+        if (follow != null) {
+            db.sharedMixDao().insert(
+                SharedMixEntity(
+                    playlistId = id, shareId = sourceId.removePrefix("share:"), role = SharedMixEntity.ROLE_FOLLOWER,
+                    name = name, status = follow,
+                )
+            )
+        }
+    }
 
     /** A song in [playlistIds]; [removedFromFirst] soft-removes it from the first one. */
     private suspend fun song(title: String, vararg playlistIds: Long, removedFromFirst: Boolean = false): Long {

@@ -150,6 +150,7 @@ private fun StashNavGraph(
                             thumbnailUrl = album.thumbnailUrl,
                             year = album.year,
                             source = album.source,
+                            qobuzTrackCount = album.trackCount,
                         ),
                     )
                 },
@@ -495,6 +496,8 @@ private fun StashNavGraph(
                             thumbnailUrl = album.thumbnailUrl,
                             year = album.year,
                             source = album.source,
+                            // Set on the Qobuz gap-fill albums, null on YouTube's.
+                            qobuzTrackCount = album.trackCount,
                         ),
                     )
                 },

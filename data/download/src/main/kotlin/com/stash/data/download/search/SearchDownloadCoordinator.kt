@@ -219,15 +219,14 @@ class SearchDownloadCoordinator @Inject constructor(
             // chained on the local Track row — the search-tab path bypasses
             // download_queue for fresh tracks, so most search defers won't
             // find a row here. The write only matters when the user re-taps
-            // Download on a track the sync pipeline previously deferred.
+            // Download on a track the sync pipeline previously deferred. It also
+            // marks the row as the user's ask, a sync's too: otherwise the leftover
+            // cleanup would drop it, and the lossless retry skip it (#532).
             runCatching {
                 val trackId = trackDao.findByYoutubeId(track.videoId)?.id
                 if (trackId != null) {
                     downloadQueueDao.getByTrackId(trackId)?.let { row ->
-                        downloadQueueDao.updateStatus(
-                            id = row.id,
-                            status = DownloadStatus.WAITING_FOR_LOSSLESS,
-                        )
+                        downloadQueueDao.deferForTap(row.id)
                     }
                 }
             }.onFailure { e ->

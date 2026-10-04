@@ -211,11 +211,17 @@ class LibraryHealthViewModel @Inject constructor(
 
     /**
      * Reconciles the download queue against the library — sweeps orphaned
-     * queue rows, resets exhausted/stale retries, and re-queues undownloaded
-     * tracks with no active queue entry — then refreshes disk-truth size
-     * stats. The same pass [com.stash.core.data.sync.workers.TrackDownloadWorker]
-     * runs at the start of every sync, exposed here as a standalone action
-     * so the user can rebuild queue/stat state without a full sync.
+     * queue rows and leftover downloads nobody asked for, resets exhausted/stale
+     * retries — then refreshes disk-truth size stats. The same pass
+     * [com.stash.core.data.sync.workers.TrackDownloadWorker] runs at the start of
+     * every sync, exposed here as a standalone action so the user can rebuild
+     * queue/stat state without a full sync.
+     *
+     * It never queues a download (#532): with no sync run, its rows were taken
+     * only by the background drain, which downloaded them unasked, Stream-only
+     * included. In Download mode the next sync queues what is missing, with its
+     * own id. Songs whose files went missing are offered under Missing downloads
+     * ("Download N again").
      *
      * ViewModel-scoped like [runBackfill] rather than WorkManager-backed:
      * this is DB housekeeping (no network, no per-file MMR reads), so it's

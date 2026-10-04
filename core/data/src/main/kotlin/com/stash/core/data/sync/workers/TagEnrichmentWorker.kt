@@ -14,6 +14,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmTag
+import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import com.stash.core.model.DownloadNetworkMode
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -61,14 +62,14 @@ class TagEnrichmentWorker @AssistedInject constructor(
          * constraints. `UPDATE` policy so a preference change replaces
          * the running schedule in place.
          */
-        fun schedulePeriodic(context: Context, mode: DownloadNetworkMode) {
+        suspend fun schedulePeriodic(context: Context, mode: DownloadNetworkMode) {
             val work = PeriodicWorkRequestBuilder<TagEnrichmentWorker>(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
             )
                 .setConstraints(constraintsFor(mode))
                 .build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
                 work,

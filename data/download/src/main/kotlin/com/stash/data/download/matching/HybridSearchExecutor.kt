@@ -32,8 +32,8 @@ class HybridSearchExecutor @Inject constructor(
 
     /**
      * Verifies a video ID via the InnerTube player endpoint.
-     * Returns title and playability status so [DownloadManager] can
-     * reject unplayable or mismatched video IDs before downloading.
+     * Returns title, playability, type and length so [DownloadManager] can
+     * reject mismatched or wrong-length video IDs before downloading.
      */
     suspend fun verifyVideo(videoId: String): InnerTubeSearchExecutor.VideoVerification? {
         return innerTubeSearch.verifyVideo(videoId)
