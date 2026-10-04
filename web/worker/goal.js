@@ -1,7 +1,9 @@
 /**
- * The monthly donation goal: goal:<YYYY-MM> (UTC month) = { cents, entries: [{ cents, source, at, ... }], updatedAt },
- * against GOAL_CENTS. The tip jar adds Ko-fi entries (infra/tipjar-worker/src/access.js); the admin page adds
- * GitHub Sponsors, PayPal and anything else by hand, and can take those back out.
+ * The monthly donation goal, against GOAL_CENTS. Every donation is its own ACCESS_KV key,
+ * goal:<YYYY-MM>:<kind>:<id> (UTC month), with { cents, source, at, ... } as its metadata: the tip jar writes
+ * kind "kofi" (infra/tipjar-worker/src/access.js), the admin page kind "manual" (GitHub Sponsors, PayPal). One
+ * key per donation means the two Workers never overwrite each other. A month's total is the sum of a
+ * list({ prefix: "goal:<YYYY-MM>:" }), page by page.
  *
  * Pages read it through currentGoal(), which keeps the answer for 60 seconds per Worker instance.
  */
@@ -10,6 +12,8 @@ import { KEYS } from "./keys.js";
 
 const CACHE_MS = 60 * 1000;
 const DEFAULT_TARGET = 10000;
+/** 50 pages of 1,000: far more donations than a month will see, but a bound all the same. */
+const MAX_PAGES = 50;
 let cached = null;
 
 export const monthKey = (date) => date.toISOString().slice(0, 7);
@@ -19,19 +23,30 @@ export function goalTarget(env) {
     return Number.isInteger(n) && n > 0 ? n : DEFAULT_TARGET;
 }
 
-const total = (entries) => entries.reduce((sum, e) => sum + (Number.isInteger(e.cents) ? e.cents : 0), 0);
-
+/** The month's entries ({ key, kind, id, cents, source, at, ... }, oldest first) and their total in cents. */
 export async function readGoal(kv, month) {
-    const goal = await kv.get(KEYS.goal(month), "json");
-    const entries = Array.isArray(goal?.entries) ? goal.entries : [];
-    return { month, cents: total(entries), entries, updatedAt: goal?.updatedAt ?? null };
+    const prefix = KEYS.goalMonth(month);
+    const entries = [];
+    let cursor;
+    for (let page = 0; page < MAX_PAGES; page++) {
+        const res = await kv.list({ prefix, cursor });
+        for (const { name, metadata } of res.keys) {
+            const [kind, ...id] = name.slice(prefix.length).split(":");
+            entries.push({ ...(metadata ?? {}), key: name, kind, id: id.join(":") });
+        }
+        if (res.list_complete || !res.cursor) break;
+        cursor = res.cursor;
+    }
+    entries.sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")));
+    const cents = entries.reduce((sum, e) => sum + (Number.isInteger(e.cents) ? e.cents : 0), 0);
+    return { month, cents, entries };
 }
 
 /** This month's goal, cached for a minute. */
 export async function currentGoal(env) {
     const month = monthKey(new Date(clock.now()));
     if (cached && cached.month === month && cached.until > clock.now()) return cached.goal;
-    const goal = await readGoal(env.STASH_KV, month);
+    const goal = await readGoal(env.ACCESS_KV, month);
     cached = { month, goal, until: clock.now() + CACHE_MS };
     return goal;
 }
@@ -40,27 +55,23 @@ export const forgetGoalCache = () => {
     cached = null;
 };
 
-async function write(kv, month, entries) {
-    const goal = { cents: total(entries), entries, updatedAt: new Date(clock.now()).toISOString() };
-    await kv.put(KEYS.goal(month), JSON.stringify(goal));
-    forgetGoalCache();
-    return goal;
-}
-
-/** A donation added by hand: { cents, source, at, by, id, manual: true }. */
+/** A donation added by hand. Returns its id. */
 export async function addManualEntry(kv, month, { cents, source, by }) {
-    const goal = await readGoal(kv, month);
     const id = crypto.randomUUID().slice(0, 8);
-    const entry = { cents, source, at: new Date(clock.now()).toISOString(), by, id, manual: true };
-    return write(kv, month, [...goal.entries, entry]);
+    const entry = { cents, source, at: new Date(clock.now()).toISOString(), by };
+    await kv.put(KEYS.goalEntry(month, "manual", id), JSON.stringify(entry), { metadata: entry });
+    forgetGoalCache();
+    return id;
 }
 
-/** Takes a hand-added entry back out. Ko-fi's entries can't be removed here. */
+/** Takes a hand-added entry back out; false if there's no such entry. Ko-fi's entries can't be removed here. */
 export async function removeManualEntry(kv, month, id) {
-    const goal = await readGoal(kv, month);
-    const entries = goal.entries.filter((e) => !(e.manual && e.id === id));
-    if (entries.length === goal.entries.length) return null;
-    return write(kv, month, entries);
+    if (!/^[0-9a-f]{8}$/.test(String(id))) return false;
+    const key = KEYS.goalEntry(month, "manual", id);
+    if ((await kv.get(key)) === null) return false;
+    await kv.delete(key);
+    forgetGoalCache();
+    return true;
 }
 
 /** "12.50" or "12" or "$12.50" in dollars to whole cents; null for anything else, zero or over $100,000. */

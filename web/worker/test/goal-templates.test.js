@@ -2,7 +2,7 @@ import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { addManualEntry, currentGoal, forgetGoalCache, goalTarget, goalView, monthKey, parseDollars, readGoal, removeManualEntry, wholeDollars, exactDollars } from "../goal.js";
-import { env, fakeKV, freezeClock } from "./fakes.js";
+import { env, fakeKV, freezeClock, goalEntry } from "./fakes.js";
 
 beforeEach(() => forgetGoalCache());
 
@@ -36,28 +36,41 @@ test("parseDollars takes plain dollar amounts only", () => {
     for (const bad of ["", "0", "0.00", "-1", "1,000", "1.234", "abc", "1e3", "1000001"]) assert.equal(parseDollars(bad), null, bad);
 });
 
-test("the total is always the sum of the entries, whatever the stored cents says", async () => {
-    const kv = fakeKV({ "goal:2026-10": { cents: 999999, entries: [{ cents: 500 }, { cents: 250 }, { cents: "junk" }] } });
-    assert.equal((await readGoal(kv, "2026-10")).cents, 750);
-    assert.equal((await readGoal(kv, "2026-09")).cents, 0);
+test("a month's total is the sum of its entries' metadata, across list pages, and nothing from other months", async () => {
+    const entries = {};
+    for (let i = 0; i < 1500; i++) Object.assign(entries, goalEntry("2026-10", "kofi", `tx${String(i).padStart(4, "0")}`, 100));
+    Object.assign(entries, goalEntry("2026-10", "manual", "m1", 250), goalEntry("2026-09", "kofi", "old", 999), goalEntry("2026-100", "kofi", "x", 7));
+    entries["goal:2026-10:kofi:junk"] = { value: "{}", metadata: { cents: "junk" } };
+    const kv = fakeKV(entries);
+    const goal = await readGoal(kv, "2026-10");
+    assert.equal(goal.cents, 150250);
+    assert.equal(goal.entries.length, 1502);
+    assert.ok(kv.lists >= 2, "read more than one page");
+    assert.equal((await readGoal(kv, "2026-08")).cents, 0);
 });
 
-test("manual entries: added with an id, removed by it; other entries can't be removed", async () => {
-    const kv = fakeKV({ "goal:2026-10": { entries: [{ cents: 500, source: "Ko-fi" }] } });
-    const goal = await addManualEntry(kv, "2026-10", { cents: 1000, source: "GitHub Sponsors", by: "owner@example.com" });
-    assert.equal(goal.cents, 1500);
-    const { id } = goal.entries[1];
+test("manual entries: one key each, added with an id, removed by it; Ko-fi's entries can't be removed", async () => {
+    const kv = fakeKV(goalEntry("2026-10", "kofi", "tx1", 500));
+    const id = await addManualEntry(kv, "2026-10", { cents: 1000, source: "GitHub Sponsors", by: "owner@example.com" });
     assert.match(id, /^[0-9a-f]{8}$/);
-    assert.equal(await removeManualEntry(kv, "2026-10", "missing"), null);
-    assert.equal((await removeManualEntry(kv, "2026-10", id)).cents, 500);
+    const meta = kv.map.get(`goal:2026-10:manual:${id}`).opts.metadata;
+    assert.equal(meta.cents, 1000);
+    assert.equal(meta.source, "GitHub Sponsors");
+    assert.equal((await readGoal(kv, "2026-10")).cents, 1500);
+    assert.equal(await removeManualEntry(kv, "2026-10", "missing"), false);
+    assert.equal(await removeManualEntry(kv, "2026-10", "tx1"), false, "not a manual key");
+    assert.equal(await removeManualEntry(kv, "2026-10", id), true);
+    assert.equal((await readGoal(kv, "2026-10")).cents, 500);
 });
 
 test("the pages' goal is cached for a minute, and moves to the new month by itself", async () => {
     const clock = freezeClock(Date.UTC(2026, 9, 31, 23, 59, 0));
     try {
-        const e = env({ STASH_KV: fakeKV({ "goal:2026-10": { entries: [{ cents: 4000 }] } }) });
+        const e = env({ ACCESS_KV: fakeKV(goalEntry("2026-10", "kofi", "a", 4000)) });
         assert.equal((await currentGoal(e)).cents, 4000);
-        await e.STASH_KV.put("goal:2026-10", JSON.stringify({ entries: [{ cents: 9000 }] }));
+        const more = goalEntry("2026-10", "kofi", "b", 5000);
+        const [[key, { value, metadata }]] = Object.entries(more);
+        await e.ACCESS_KV.put(key, value, { metadata });
         assert.equal((await currentGoal(e)).cents, 4000, "cached");
         clock.advance(30_000);
         assert.equal((await currentGoal(e)).cents, 4000);
@@ -106,7 +119,7 @@ test("the built gate pages have every blank the Worker fills, and no scripts", {
         "gate/signed-out.html": [],
         "gate/slow-down.html": [],
         "gate/problem.html": ['data-fill="title"', 'data-fill="message"'],
-        "gate/admin.html": ['data-fill="admin-email"', 'data-fill="flash"', 'data-if="hash-mismatch"', 'data-html="requests"', 'data-html="entries"', 'data-fill="goal-exact"', 'data-fill="month"', 'data-fill="request-count"', 'data-if="no-requests"', 'data-if="has-entries"', 'value="donation"', 'value="add"', 'value="remove"'],
+        "gate/admin.html": ['data-fill="admin-email"', 'data-fill="flash"', 'data-if="hash-mismatch"', 'data-html="requests"', 'data-html="pager"', 'data-html="entries"', 'data-fill="goal-exact"', 'data-fill="month"', 'data-fill="request-count"', 'data-if="no-requests"', 'data-if="has-entries"', 'value="donation"', 'value="add"', 'value="remove"'],
         "index.html": ['data-if="goal"', 'data-goal="raised"', 'action="/signout"'],
     };
     for (const [file, markers] of Object.entries(expect)) {
@@ -121,7 +134,8 @@ test("the built gate pages have every blank the Worker fills, and no scripts", {
 });
 
 test("every Worker route is in run_worker_first, and the public files aren't", () => {
-    const config = JSON.parse(stripJsonc(readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8")));
+    const raw = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
+    const config = JSON.parse(stripJsonc(raw));
     const patterns = config.assets.run_worker_first;
     const glob = (p) => new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
     const runsWorker = (path) => patterns.some((p) => !p.startsWith("!") && glob(p).test(path)) && !patterns.some((p) => p.startsWith("!") && glob(p.slice(1)).test(path));
@@ -129,10 +143,16 @@ test("every Worker route is in run_worker_first, and the public files aren't", (
     for (const path of ["/_astro/x.css", "/favicon.ico", "/robots.txt", "/sitemap-index.xml", "/privacy", "/social-preview.jpg"]) assert.ok(!runsWorker(path), path);
     assert.equal(config.main, "worker/index.js");
     assert.equal(config.assets.binding, "ASSETS");
-    assert.equal(config.kv_namespaces[0].id, "fca1bc38b42741e6a8cac11f54de5abd", "the tip jar's STASH_KV");
+    // Least privilege: the early-access namespace only, never the tip jar's STASH_KV (the app's supporters list, the relay config).
+    assert.deepEqual(config.kv_namespaces.map((k) => k.binding), ["ACCESS_KV"]);
+    assert.doesNotMatch(raw, /fca1bc38b42741e6a8cac11f54de5abd/, "STASH_KV's id must not appear");
+    assert.match(config.kv_namespaces[0].id, /^REPLACE_WITH_/, "a placeholder until the owner creates the namespace");
+    // Previews get nothing but assets: no production KV or email (Cloudflare's Previews don't inherit bindings).
+    assert.deepEqual(config.previews, {});
     assert.equal(config.vars.GOAL_CENTS, "10000");
     assert.equal(config.routes, undefined, "no routes until launch");
     const ids = config.ratelimits.map((r) => Number(r.namespace_id));
-    assert.ok(ids.every((id) => id >= 2010), "2001-2009 belong to the share Worker");
+    assert.ok(ids.every((id) => id >= 2010 && id <= 2015), "2001-2009 belong to the share Worker");
     assert.equal(new Set(ids).size, ids.length);
+    assert.deepEqual(config.ratelimits.map((r) => r.name).sort(), ["CODE_SEND_RL", "REQUEST_IP_RL", "SEND_EMAIL_RL", "SEND_IP_RL", "VERIFY_EMAIL_RL", "VERIFY_IP_RL"]);
 });

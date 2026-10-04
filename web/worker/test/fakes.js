@@ -5,9 +5,18 @@
  */
 import { clock } from "../crypto.js";
 
-/** Workers KV: get (text, "json", {type}), put with expirationTtl/expiration (honoured by clock.now()), delete, list. */
+/**
+ * Workers KV: get (text, "json", {type}), put with expirationTtl/expiration (honoured by clock.now()) and metadata,
+ * delete, and list with prefix, limit, cursor and metadata (pages of at most `limit`, 1000 by default, like KV).
+ * `holdPuts(match)` makes matching puts wait until `release()`, to prove a response doesn't wait on them.
+ */
 export function fakeKV(initial = {}) {
-    const map = new Map(Object.entries(initial).map(([k, v]) => [k, { value: typeof v === "string" ? v : JSON.stringify(v), opts: {} }]));
+    const map = new Map(
+        Object.entries(initial).map(([k, v]) => {
+            if (v && typeof v === "object" && "metadata" in v) return [k, { value: v.value, opts: { metadata: v.metadata } }];
+            return [k, { value: typeof v === "string" ? v : JSON.stringify(v), opts: {} }];
+        }),
+    );
     const live = (key) => {
         const e = map.get(key);
         if (!e) return null;
@@ -26,18 +35,36 @@ export function fakeKV(initial = {}) {
             const t = typeof type === "object" ? type?.type : type;
             return t === "json" ? JSON.parse(e.value) : e.value;
         },
+        held: null,
+        holdPuts(match) {
+            let release;
+            const gate = new Promise((r) => (release = r));
+            this.held = { match, gate };
+            return () => {
+                this.held = null;
+                release();
+            };
+        },
         async put(key, value, opts = {}) {
             if (typeof value !== "string") throw new Error("fake KV takes strings");
+            if (opts.metadata && JSON.stringify(opts.metadata).length > 1024) throw new Error("KV: metadata over 1024 bytes");
+            if (this.held && this.held.match(key)) await this.held.gate;
             if (opts.expirationTtl !== undefined && opts.expirationTtl < 60) throw new Error("KV: expirationTtl under 60");
             if (opts.expiration !== undefined && opts.expiration - clock.now() / 1000 < 60) throw new Error("KV: expiration under 60s away");
             map.set(key, { value, opts, at: clock.now() });
         },
         async delete(key) {
+            if (this.held && this.held.match(key)) await this.held.gate;
             map.delete(key);
         },
-        async list({ prefix = "", limit = 1000 } = {}) {
-            const keys = [...map.keys()].filter((k) => k.startsWith(prefix) && live(k)).sort().slice(0, limit);
-            return { keys: keys.map((name) => ({ name })), list_complete: true };
+        lists: 0,
+        async list({ prefix = "", limit = 1000, cursor } = {}) {
+            this.lists++;
+            const names = [...map.keys()].filter((k) => k.startsWith(prefix) && live(k)).sort();
+            const start = cursor ? Number(cursor) : 0;
+            const page = names.slice(start, start + Math.min(limit, 1000));
+            const done = start + page.length >= names.length;
+            return { keys: page.map((name) => ({ name, metadata: map.get(name).opts.metadata })), list_complete: done, cursor: done ? undefined : String(start + page.length) };
         },
         /** Test helper: the parsed value, or null. */
         json(key) {
@@ -92,7 +119,7 @@ export const PAGES = {
     "/gate/slow-down": html('<main id="slow-down">SLOW DOWN</main>'),
     "/gate/problem": html('<main id="problem"><h1 data-fill="title">Something went wrong</h1><p data-fill="message">Go back and try again.</p></main>'),
     "/gate/admin": html(
-        '<main id="admin">ADMIN <strong data-fill="admin-email">an admin</strong><p class="notice" data-if="flash" data-fill="flash"></p><p data-if="hash-mismatch">HASH MISMATCH</p><span data-fill="request-count">0 waiting</span><p data-if="no-requests">NOBODY WAITING</p><ul data-if="has-requests" data-html="requests"></ul><span data-fill="month">this month</span><p data-fill="goal-exact">$0.00 of $100.00</p><div data-if="goal"><strong data-goal="raised">$0</strong></div><table data-if="has-entries"><tbody data-html="entries"></tbody></table><p data-if="no-entries">NO ENTRIES</p></main>',
+        '<main id="admin">ADMIN <strong data-fill="admin-email">an admin</strong><p class="notice" data-if="flash" data-fill="flash"></p><p data-if="hash-mismatch">HASH MISMATCH</p><span data-fill="request-count">0 waiting</span><p data-if="no-requests">NOBODY WAITING</p><ul data-if="has-requests" data-html="requests"></ul><nav data-html="pager"></nav><span data-fill="month">this month</span><p data-fill="goal-exact">$0.00 of $100.00</p><div data-if="goal"><strong data-goal="raised">$0</strong></div><table data-if="has-entries"><tbody data-html="entries"></tbody></table><p data-if="no-entries">NO ENTRIES</p></main>',
     ),
 };
 
@@ -138,11 +165,13 @@ export const SECRET = "test-session-secret-0123456789abcdef";
 export function env(over = {}) {
     return {
         ASSETS: fakeAssets(),
-        STASH_KV: fakeKV(),
+        ACCESS_KV: fakeKV(),
         EMAIL: fakeEmail(),
         SEND_IP_RL: fakeRL(),
         SEND_EMAIL_RL: fakeRL(),
+        CODE_SEND_RL: fakeRL(),
         VERIFY_IP_RL: fakeRL(),
+        VERIFY_EMAIL_RL: fakeRL(),
         REQUEST_IP_RL: fakeRL(),
         SESSION_SECRET: SECRET,
         GOAL_CENTS: "10000",
@@ -155,6 +184,12 @@ export function env(over = {}) {
 }
 
 export const BASE = "https://stashfm.app";
+
+/** A goal entry as the tip jar or the admin page writes it: goal:<month>:<kind>:<id>, amount in metadata. */
+export function goalEntry(month, kind, id, cents, source = kind === "kofi" ? "Ko-fi" : "GitHub Sponsors") {
+    const meta = { cents, source, at: `${month}-02T10:00:00.000Z` };
+    return { [`goal:${month}:${kind}:${id}`]: { value: JSON.stringify(meta), metadata: meta } };
+}
 
 /** A browser-like form POST from this site. */
 export function post(path, fields, { origin = BASE, headers = {}, ip = "203.0.113.7" } = {}) {

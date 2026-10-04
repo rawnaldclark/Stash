@@ -24,6 +24,7 @@ import GoalBar from '../../components/gate/GoalBar.astro';
       <h2 id="requests-title">Requests <span class="count" data-fill="request-count">0 waiting</span></h2>
       <p class="empty" data-if="no-requests">Nobody's waiting.</p>
       <ul role="list" class="admin-list" data-if="has-requests" data-html="requests"></ul>
+      <nav class="pager" aria-label="Request pages" data-html="pager"></nav>
       <p class="gate-small">
         Approving emails them "You're in". Denying just removes the request. Requests left alone go away after
         30 days.
@@ -210,6 +211,22 @@ import GoalBar from '../../components/gate/GoalBar.astro';
   }
 
   /* The lists the Worker builds (worker/admin.js). */
+  .pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 18px;
+    margin-top: 16px;
+  }
+
+  .pager:empty {
+    display: none;
+  }
+
+  .pager :global(.admin-page-link) {
+    font-weight: 600;
+  }
+
   .admin-list {
     display: grid;
     gap: 10px;

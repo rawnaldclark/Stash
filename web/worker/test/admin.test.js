@@ -124,13 +124,16 @@ test("a failing certs endpoint means no admin, not a crash", async () => {
     assert.equal(res.status, 403);
 });
 
+/** A stored access request, as POST /request writes it (the time in metadata too). */
+const request = (email, note, at) => ({ value: JSON.stringify({ email, note, at }), metadata: { at } });
+
 test("the page lists pending requests, newest first, escaped", async () => {
     const h1 = await hashEmail("old@example.com");
     const h2 = await hashEmail("new@example.com");
     const e = env({
-        STASH_KV: fakeKV({
-            [`request:${h1}`]: { email: "old@example.com", note: "", at: "2026-10-01T00:00:00Z" },
-            [`request:${h2}`]: { email: "new@example.com", note: "<b>I donated</b> on PayPal", at: "2026-10-03T00:00:00Z" },
+        ACCESS_KV: fakeKV({
+            [`request:${h1}`]: request("old@example.com", "", "2026-10-01T00:00:00Z"),
+            [`request:${h2}`]: request("new@example.com", "<b>I donated</b> on PayPal", "2026-10-03T00:00:00Z"),
         }),
     });
     const page = await (await adminGet(await jwt(), e)).text();
@@ -142,17 +145,40 @@ test("the page lists pending requests, newest first, escaped", async () => {
     assert.doesNotMatch(page, /NOBODY WAITING/);
 });
 
+test("with many requests: the real total, newest first across pages of 25, and links between pages", async () => {
+    const seed = {};
+    for (let i = 0; i < 1030; i++) {
+        const day = String(1 + (i % 28)).padStart(2, "0");
+        const at = `2026-09-${day}T${String(i % 24).padStart(2, "0")}:00:${String(i % 60).padStart(2, "0")}.${String(i).padStart(3, "0")}Z`;
+        seed[`request:${await hashEmail(`r${i}@example.com`)}`] = request(`r${i}@example.com`, "", at);
+    }
+    const e = env({ ACCESS_KV: fakeKV(seed) });
+    const first = await (await adminGet(await jwt(), e)).text();
+    assert.match(first, /1030 waiting/);
+    assert.equal((first.match(/value="approve"/g) || []).length, 25);
+    assert.match(first, /href="\/admin\?page=2"/);
+    const ats = Object.values(seed).map((r) => r.metadata.at).sort().reverse();
+    const newest = Object.values(seed).find((r) => r.metadata.at === ats[0]);
+    assert.ok(first.includes(JSON.parse(newest.value).email), "the newest request is on page 1");
+    const last = await (await adminGet(await jwt(), e, "/admin?page=42")).text();
+    assert.equal((last.match(/value="approve"/g) || []).length, 5);
+    const oldest = Object.values(seed).find((r) => r.metadata.at === ats.at(-1));
+    assert.ok(last.includes(JSON.parse(oldest.value).email), "the oldest request is on the last page");
+    assert.match(last, /href="\/admin\?page=41"/);
+    assert.doesNotMatch(last, /page=43/);
+});
+
 test("approve: on the list as approved (by whom, when), request gone, 'You're in' emailed, back to /admin", async () => {
     const h = await hashEmail("new@example.com");
-    const e = env({ STASH_KV: fakeKV({ [`request:${h}`]: { email: "new@example.com", note: "", at: "2026-10-03T00:00:00Z" } }) });
+    const e = env({ ACCESS_KV: fakeKV({ [`request:${h}`]: request("new@example.com", "", "2026-10-03T00:00:00Z") }) });
     const res = await adminPost({ action: "approve", h }, e);
     assert.equal(res.status, 303);
     assert.equal(res.headers.get("location"), "/admin?done=approved");
-    const access = e.STASH_KV.json(`access:${h}`);
+    const access = e.ACCESS_KV.json(`access:${h}`);
     assert.equal(access.source, "approved");
     assert.equal(access.by, "owner@example.com");
     assert.ok(access.at);
-    assert.equal(e.STASH_KV.json(`request:${h}`), null);
+    assert.equal(e.ACCESS_KV.json(`request:${h}`), null);
     assert.equal(e.EMAIL.sent.length, 1);
     assert.equal(e.EMAIL.sent[0].to, "new@example.com");
     assert.equal(e.EMAIL.sent[0].subject, "You're in: Stash early access");
@@ -163,10 +189,10 @@ test("approve: on the list as approved (by whom, when), request gone, 'You're in
 
 test("approve when the email fails still approves, and says which error", async () => {
     const h = await hashEmail("new@example.com");
-    const e = env({ EMAIL: fakeEmail({ failWith: "E_RECIPIENT_SUPPRESSED" }), STASH_KV: fakeKV({ [`request:${h}`]: { email: "new@example.com", at: "x" } }) });
+    const e = env({ EMAIL: fakeEmail({ failWith: "E_RECIPIENT_SUPPRESSED" }), ACCESS_KV: fakeKV({ [`request:${h}`]: { email: "new@example.com", at: "x" } }) });
     const res = await adminPost({ action: "approve", h }, e);
     assert.equal(res.headers.get("location"), "/admin?done=approved-noemail&code=E_RECIPIENT_SUPPRESSED");
-    assert.ok(e.STASH_KV.json(`access:${h}`));
+    assert.ok(e.ACCESS_KV.json(`access:${h}`));
     const page = await (await adminGet(await jwt(), e, "/admin?done=approved-noemail&code=E_RECIPIENT_SUPPRESSED")).text();
     assert.match(page, /the email didn.t send \(E_RECIPIENT_SUPPRESSED\)/);
     const junk = await (await adminGet(await jwt(), e, "/admin?done=approved-noemail&code=%3Cscript%3E")).text();
@@ -175,10 +201,10 @@ test("approve when the email fails still approves, and says which error", async 
 
 test("deny removes the request and sends nothing; a handled request says so", async () => {
     const h = await hashEmail("new@example.com");
-    const e = env({ STASH_KV: fakeKV({ [`request:${h}`]: { email: "new@example.com", at: "x" } }) });
+    const e = env({ ACCESS_KV: fakeKV({ [`request:${h}`]: { email: "new@example.com", at: "x" } }) });
     assert.equal((await adminPost({ action: "deny", h }, e)).headers.get("location"), "/admin?done=denied");
-    assert.equal(e.STASH_KV.json(`request:${h}`), null);
-    assert.equal(e.STASH_KV.json(`access:${h}`), null);
+    assert.equal(e.ACCESS_KV.json(`request:${h}`), null);
+    assert.equal(e.ACCESS_KV.json(`access:${h}`), null);
     assert.equal(e.EMAIL.sent.length, 0);
     assert.equal((await adminPost({ action: "approve", h }, e)).headers.get("location"), "/admin?done=gone");
 });
@@ -187,8 +213,8 @@ test("add by email (source manual), with or without the email; remove ends acces
     const e = env();
     const h = await hashEmail("sponsor@example.com");
     assert.equal((await adminPost({ action: "add", email: " Sponsor@Example.com " }, e)).headers.get("location"), "/admin?done=added");
-    assert.deepEqual(Object.keys(e.STASH_KV.json(`access:${h}`)).sort(), ["at", "by", "source"]);
-    assert.equal(e.STASH_KV.json(`access:${h}`).source, "manual");
+    assert.deepEqual(Object.keys(e.ACCESS_KV.json(`access:${h}`)).sort(), ["at", "by", "source"]);
+    assert.equal(e.ACCESS_KV.json(`access:${h}`).source, "manual");
     assert.equal(e.EMAIL.sent.length, 0);
     assert.equal((await adminPost({ action: "add", email: "sponsor@example.com", notify: "yes" }, e)).headers.get("location"), "/admin?done=added-emailed");
     assert.equal(e.EMAIL.sent.length, 1);
@@ -197,22 +223,24 @@ test("add by email (source manual), with or without the email; remove ends acces
     const cookie = `stash_access=${await signSession(SECRET, h)}`;
     assert.ok(await hasAccess(e, h));
     assert.equal((await adminPost({ action: "remove", email: "sponsor@example.com" }, e)).headers.get("location"), "/admin?done=removed");
-    assert.equal(e.STASH_KV.json(`access:${h}`), null);
+    assert.equal(e.ACCESS_KV.json(`access:${h}`), null);
     assert.match(await (await handle(get("/", { Cookie: cookie }), e)).text(), /id="front"/);
     assert.equal((await adminPost({ action: "remove", email: "sponsor@example.com" }, e)).headers.get("location"), "/admin?done=not-listed");
     assert.equal((await adminPost({ action: "add", email: "not an email" }, e)).headers.get("location"), "/admin?done=bad-email");
 });
 
-test("donations by hand: added to this month in cents, shown, and removable; Ko-fi's entries aren't", async () => {
+test("donations by hand: one key each in this month, shown, and removable; Ko-fi's entries aren't", async () => {
     const month = new Date().toISOString().slice(0, 7);
-    const e = env({ STASH_KV: fakeKV({ [`goal:${month}`]: { cents: 500, entries: [{ cents: 500, source: "Ko-fi", at: "2026-10-01T00:00:00Z", orig: "4.63 EUR" }] } }) });
+    const kofi = { cents: 500, source: "Ko-fi", at: "2026-10-01T00:00:00Z", orig: "4.63 EUR" };
+    const e = env({ ACCESS_KV: fakeKV({ [`goal:${month}:kofi:tx1`]: { value: JSON.stringify(kofi), metadata: kofi } }) });
     assert.equal((await adminPost({ action: "donation", amount: "$12.5", source: "GitHub  Sponsors" }, e)).headers.get("location"), "/admin?done=donation");
-    let goal = e.STASH_KV.json(`goal:${month}`);
-    assert.equal(goal.cents, 1750);
-    const manual = goal.entries[1];
-    assert.equal(manual.cents, 1250);
-    assert.equal(manual.source, "GitHub Sponsors");
-    assert.equal(manual.manual, true);
+    const manualKeys = [...e.ACCESS_KV.map.keys()].filter((k) => k.startsWith(`goal:${month}:manual:`));
+    assert.equal(manualKeys.length, 1);
+    const meta = e.ACCESS_KV.map.get(manualKeys[0]).opts.metadata;
+    assert.equal(meta.cents, 1250);
+    assert.equal(meta.source, "GitHub Sponsors");
+    assert.equal(meta.by, "owner@example.com");
+    const manual = { id: manualKeys[0].split(":").pop() };
 
     const page = await (await adminGet(await jwt(), e)).text();
     assert.match(page, /\$17\.50 of \$100\.00/);
@@ -221,8 +249,9 @@ test("donations by hand: added to this month in cents, shown, and removable; Ko-
     assert.equal((page.match(/value="remove-entry"/g) || []).length, 1, "only the hand-added entry has Remove");
 
     assert.equal((await adminPost({ action: "remove-entry", id: manual.id }, e)).headers.get("location"), "/admin?done=entry-removed");
-    goal = e.STASH_KV.json(`goal:${month}`);
-    assert.equal(goal.cents, 500);
+    assert.equal(e.ACCESS_KV.map.has(manualKeys[0]), false);
+    assert.match(await (await adminGet(await jwt(), e)).text(), /\$5\.00 of \$100\.00/);
+    assert.equal((await adminPost({ action: "remove-entry", id: "tx1" }, e)).headers.get("location"), "/admin?done=gone", "Ko-fi's can't be removed");
     assert.equal((await adminPost({ action: "remove-entry", id: "nope" }, e)).headers.get("location"), "/admin?done=gone");
 
     for (const amount of ["", "abc", "0", "-5", "1.234", "9999999"]) {
@@ -241,14 +270,14 @@ test("admin POSTs need the same Origin check, and an unknown action does nothing
     const e = env();
     const res = await adminPost({ action: "add", email: "x@example.com" }, e, { origin: "https://evil.example" });
     assert.equal(res.headers.get("location"), "/admin?done=bad-form");
-    assert.equal([...e.STASH_KV.map.keys()].length, 0);
+    assert.equal([...e.ACCESS_KV.map.keys()].length, 0);
     assert.equal((await adminPost({ action: "drop-tables" }, e)).headers.get("location"), "/admin?done=bad-form");
 });
 
 test("a pepper mismatch between the tip jar and the site shows a warning", async () => {
     const plainCheck = await hashEmail("hashcheck@stashfm.app");
-    const same = env({ STASH_KV: fakeKV({ "meta:hashcheck": plainCheck }) });
+    const same = env({ ACCESS_KV: fakeKV({ "meta:hashcheck": plainCheck }) });
     assert.doesNotMatch(await (await adminGet(await jwt(), same)).text(), /HASH MISMATCH/);
-    const differs = env({ EMAIL_PEPPER: "a-pepper", STASH_KV: fakeKV({ "meta:hashcheck": plainCheck }) });
+    const differs = env({ EMAIL_PEPPER: "a-pepper", ACCESS_KV: fakeKV({ "meta:hashcheck": plainCheck }) });
     assert.match(await (await adminGet(await jwt(), differs)).text(), /HASH MISMATCH/);
 });

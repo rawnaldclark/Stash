@@ -74,10 +74,10 @@ test("cookieValue finds stash_access among other cookies", () => {
 test("removing someone from the access list ends their session (after the few-minute cache)", async () => {
     const clock = freezeClock(T0);
     try {
-        const e = env({ STASH_KV: fakeKV({ [`access:${H}`]: { source: "manual" } }) });
+        const e = env({ ACCESS_KV: fakeKV({ [`access:${H}`]: { source: "manual" } }) });
         const req = get("/", { Cookie: `stash_access=${await signSession(SECRET, H, T0)}` });
         assert.ok(await currentSession(req, e));
-        await e.STASH_KV.delete(`access:${H}`);
+        await e.ACCESS_KV.delete(`access:${H}`);
         assert.ok(await currentSession(req, e), "cached for a few minutes");
         clock.advance(5 * 60 * 1000 + 1);
         assert.equal(await currentSession(req, e), null);

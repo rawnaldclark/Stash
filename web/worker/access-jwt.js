@@ -23,14 +23,20 @@ const TEAM = /^https:\/\/[a-z0-9][a-z0-9-]*\.cloudflareaccess\.com$/;
 
 const jwks = new Map(); // team -> { keys: Map(kid -> CryptoKey), fetchedAt }
 
-export function accessSettings(env) {
+/** ACCESS_TEAM_DOMAIN as an origin (https://<team>.cloudflareaccess.com), or null while it's unset or a placeholder. */
+export function teamDomain(env) {
     const team = String(env.ACCESS_TEAM_DOMAIN || "").trim().replace(/\/+$/, "").toLowerCase();
+    return TEAM.test(team) && !/todo/.test(team) ? team : null;
+}
+
+export function accessSettings(env) {
+    const team = teamDomain(env) ?? "";
     const aud = String(env.ACCESS_AUD || "").trim();
     const admins = String(env.ADMIN_EMAILS || "")
         .split(",")
         .map((e) => e.trim().toLowerCase())
         .filter(Boolean);
-    const configured = TEAM.test(team) && !/todo/.test(team) && aud.length >= 16 && !/todo/i.test(aud) && admins.length > 0;
+    const configured = Boolean(team) && aud.length >= 16 && !/todo/i.test(aud) && admins.length > 0;
     return configured ? { team, aud, admins } : null;
 }
 

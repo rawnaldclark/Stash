@@ -9,8 +9,14 @@ export const hex = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16
 
 export const normalizeEmail = (email) => String(email ?? "").trim().toLowerCase();
 
-/** Loose on purpose (Ko-fi and PayPal addresses vary): one @, something on each side, a dot after it, no spaces. */
-export const validEmail = (email) => email.length <= 254 && /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/.test(email);
+/**
+ * Loose on purpose (Ko-fi and PayPal addresses vary): one @, something on each side, a dot after it. Apostrophes
+ * are fine (o'brien@...); spaces, line breaks, control characters, quotes, angle brackets, commas and semicolons
+ * are not. Every place an email is shown escapes it anyway.
+ */
+const EMAIL_CHAR = String.raw`[^\s\u0000-\u001f\u007f@<>",;]`;
+const EMAIL = new RegExp(`^${EMAIL_CHAR}+@${EMAIL_CHAR}+\\.${EMAIL_CHAR}+$`);
+export const validEmail = (email) => email.length <= 254 && EMAIL.test(email);
 
 export async function sha256Hex(text) {
     return hex(await crypto.subtle.digest("SHA-256", enc.encode(text)));

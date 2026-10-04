@@ -16,9 +16,14 @@
  * fonts, robots.txt, the sitemap, /privacy) Cloudflare serves directly.
  *
  * Nothing on these pages reveals who has access: sending a code, a wrong code and requesting access answer
- * the same whether or not the email is on the list, and the slow parts (writing a code, sending an email,
- * storing a request) run after the response.
+ * the same whether or not the email is on the list, and the KV writes and email behind them (issuing a code,
+ * counting a wrong try, storing a request) run after the response, in ctx.waitUntil. What's left before the
+ * response is the same for every email: the rate limits, one KV read and an HMAC.
+ *
+ * Without its bindings and SESSION_SECRET (a Preview gets none: wrangler.jsonc "previews"), the gate says
+ * signing in isn't working, and /admin refuses everyone; the pages themselves still load.
  */
+import { teamDomain } from "./access-jwt.js";
 import { adminRoute } from "./admin.js";
 import { checkCode, cleanCode, issueCode } from "./codes.js";
 import { clock, hashEmail, normalizeEmail, validEmail } from "./crypto.js";
@@ -37,7 +42,9 @@ const MAX_NOTE = 500;
 export default {
     async fetch(request, env, ctx) {
         try {
-            return withSecurityHeaders(await handle(request, env, ctx));
+            // /admin's forms may also go to the Access sign-in page (an expired session redirects there).
+            const formAction = new URL(request.url).pathname === "/admin" ? teamDomain(env) : null;
+            return withSecurityHeaders(await handle(request, env, ctx), { formAction });
         } catch (err) {
             console.error(err); // `wrangler tail`
             const url = new URL(request.url);
@@ -53,11 +60,19 @@ export default {
 };
 
 export async function handle(request, env, ctx, { fetchImpl } = {}) {
+    // Work that mustn't delay (or show in the timing of) the answer. Without a ctx (some tests), it's awaited
+    // before handle returns instead.
+    const pending = [];
+    const later = (p) => (ctx ? ctx.waitUntil(p) : pending.push(p));
+    const response = await route(request, env, later, fetchImpl);
+    await Promise.all(pending);
+    return response;
+}
+
+async function route(request, env, later, fetchImpl) {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method === "HEAD" ? "GET" : request.method;
-    // Work that mustn't delay (or show in the timing of) the answer. Tests have no ctx, so there it finishes first.
-    const later = (p) => (ctx ? ctx.waitUntil(p) : p);
 
     switch (path) {
         case "/":
@@ -69,7 +84,7 @@ export async function handle(request, env, ctx, { fetchImpl } = {}) {
             return notAllowed("GET, POST");
         case "/access/verify":
             if (method === "GET") return seeOther("/");
-            if (method === "POST") return verify(request, env, url);
+            if (method === "POST") return verify(request, env, url, later);
             return notAllowed("GET, POST");
         case "/request":
             if (method === "GET") return gatePage(env, url, "request");
@@ -136,29 +151,44 @@ function problem(env, url, status, message, title = "Something went wrong") {
 
 const slowDown = (env, url) => gatePage(env, url, "slow-down", { status: 429, headers: { "Retry-After": "60" } });
 
-/** Checks shared by every visitor form: same origin, a small form body. Returns the form, or a response. */
+const GATE_BINDINGS = ["ACCESS_KV", "EMAIL", "SEND_IP_RL", "SEND_EMAIL_RL", "CODE_SEND_RL", "VERIFY_IP_RL", "VERIFY_EMAIL_RL", "REQUEST_IP_RL"];
+
+/** Everything sign-in and requests need, or the names of what's missing (a Preview, or a half-finished setup). */
+function missingForGate(env) {
+    const missing = GATE_BINDINGS.filter((name) => !env[name]);
+    if (!sessionSecret(env)) missing.push("SESSION_SECRET (32+ characters)");
+    return missing;
+}
+
+/**
+ * Checks shared by every visitor form: same origin, the gate set up, a small form body. Returns the form and
+ * SESSION_SECRET, or a response.
+ */
 async function formOf(request, env, url) {
     if (!sameOrigin(request, url)) return { response: await problem(env, url, 403, "That form came from somewhere else, so it was ignored. Go back to stashfm.app and try again.") };
+    const missing = missingForGate(env);
+    if (missing.length) {
+        console.error(`sign-in is off, missing: ${missing.join(", ")}`);
+        return { response: await problem(env, url, 503, "Signing in isn't working right now. Try again later.") };
+    }
     const form = await readForm(request);
     if (!form) return { response: await problem(env, url, 400, "That form didn't come through. Go back and try again.") };
-    return { form };
+    return { form, secret: sessionSecret(env) };
 }
 
 /** POST /access: sends a code if the email has access; the page says the same thing either way. */
 async function sendCode(request, env, url, later) {
-    const { form, response } = await formOf(request, env, url);
+    const { form, secret, response } = await formOf(request, env, url);
     if (response) return response;
     const email = normalizeEmail(form.email);
     if (!validEmail(email)) return problem(env, url, 400, "That doesn't look like an email address. Go back and check it.", "Check that email");
     if (!(await env.SEND_IP_RL.limit({ key: clientKey(request) })).success) return slowDown(env, url);
     const h = await hashEmail(email, env.EMAIL_PEPPER);
+    // Visible to everyone, listed or not: 3 asks a minute per email.
     if (!(await env.SEND_EMAIL_RL.limit({ key: h })).success) return slowDown(env, url);
-    const secret = sessionSecret(env);
-    if (!secret) {
-        console.error("SESSION_SECRET is missing or shorter than 32 characters: sign-in is off");
-        return problem(env, url, 503, "Signing in isn't working right now. Try again later.");
-    }
-    if (await env.STASH_KV.get(KEYS.access(h))) {
+    // Silent: at most one code email a minute per address. Counted for every email, so it costs the same either way.
+    const mayEmail = (await env.CODE_SEND_RL.limit({ key: h })).success;
+    if ((await env.ACCESS_KV.get(KEYS.access(h))) && mayEmail) {
         later(
             (async () => {
                 const code = await issueCode(env, secret, h);
@@ -170,17 +200,19 @@ async function sendCode(request, env, url, later) {
 }
 
 /** POST /access/verify: the right code signs you in; anything else gets one answer for every kind of failure. */
-async function verify(request, env, url) {
-    const { form, response } = await formOf(request, env, url);
+async function verify(request, env, url, later) {
+    const { form, secret, response } = await formOf(request, env, url);
     if (response) return response;
     if (!(await env.VERIFY_IP_RL.limit({ key: clientKey(request) })).success) return slowDown(env, url);
     const email = normalizeEmail(form.email);
     const code = cleanCode(form.code);
-    const secret = sessionSecret(env);
     const failed = () => gatePage(env, url, "code-failed", { status: 400, text: { email } });
-    if (!secret || !validEmail(email) || !code) return failed();
+    if (!validEmail(email)) return failed();
     const h = await hashEmail(email, env.EMAIL_PEPPER);
-    if (!(await checkCode(env, secret, h, code))) return failed();
+    // Every email, before its code is looked up: 5 tries a minute, however many addresses they come from.
+    if (!(await env.VERIFY_EMAIL_RL.limit({ key: h })).success) return slowDown(env, url);
+    if (!code) return failed();
+    if (!(await checkCode(env, secret, h, code, later))) return failed();
     rememberAccess(h, undefined);
     if (!(await hasAccess(env, h))) return failed(); // removed while the code was on its way
     return seeOther("/", { "Set-Cookie": sessionCookie(await signSession(secret, h)) });
@@ -197,8 +229,10 @@ async function requestAccess(request, env, url, later) {
     later(
         (async () => {
             const h = await hashEmail(email, env.EMAIL_PEPPER);
-            if (await env.STASH_KV.get(KEYS.access(h))) return; // already in: nothing to ask for
-            await env.STASH_KV.put(KEYS.request(h), JSON.stringify({ email, note, at: new Date(clock.now()).toISOString() }), { expirationTtl: REQUEST_TTL_S });
+            if (await env.ACCESS_KV.get(KEYS.access(h))) return; // already in: nothing to ask for
+            const at = new Date(clock.now()).toISOString();
+            // The time in metadata too, so the admin page can sort every request without reading each one.
+            await env.ACCESS_KV.put(KEYS.request(h), JSON.stringify({ email, note, at }), { expirationTtl: REQUEST_TTL_S, metadata: { at } });
         })().catch((err) => console.error("request not stored:", err && err.message)),
     );
     return gatePage(env, url, "requested");

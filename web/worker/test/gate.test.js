@@ -6,7 +6,7 @@ import { hashEmail } from "../crypto.js";
 import { forgetGoalCache } from "../goal.js";
 import { CSP, SECURITY_HEADERS } from "../pages.js";
 import { forgetAllAccess, signSession } from "../session.js";
-import { env, fakeKV, get, post, SECRET } from "./fakes.js";
+import { env, fakeKV, get, goalEntry, post, SECRET } from "./fakes.js";
 
 const EMAIL = "supporter@example.com";
 const month = () => new Date().toISOString().slice(0, 7);
@@ -18,12 +18,12 @@ beforeEach(() => {
 
 async function signedIn(extra = {}) {
     const h = await hashEmail(EMAIL);
-    const e = env({ STASH_KV: fakeKV({ [`access:${h}`]: { source: "kofi" }, ...extra }) });
+    const e = env({ ACCESS_KV: fakeKV({ [`access:${h}`]: { source: "kofi" }, ...extra }) });
     return { e, cookie: `stash_access=${await signSession(SECRET, h)}` };
 }
 
 test("/ for a visitor who isn't signed in: the early-access page, with this month's goal filled in", async () => {
-    const e = env({ STASH_KV: fakeKV({ [`goal:${month()}`]: { cents: 3799, entries: [{ cents: 3799, source: "Ko-fi" }] } }) });
+    const e = env({ ACCESS_KV: fakeKV({ ...goalEntry(month(), "kofi", "tx1", 2599), ...goalEntry(month(), "manual", "m1", 1200) }) });
     const res = await handle(get("/"), e);
     assert.equal(res.status, 200);
     const page = await res.text();
@@ -39,7 +39,7 @@ test("/ for a visitor who isn't signed in: the early-access page, with this mont
 });
 
 test("the goal bar stops at 100% and the figure keeps counting", async () => {
-    const e = env({ STASH_KV: fakeKV({ [`goal:${month()}`]: { entries: [{ cents: 12550 }] } }) });
+    const e = env({ ACCESS_KV: fakeKV(goalEntry(month(), "kofi", "big", 12550)) });
     const page = await (await handle(get("/"), e)).text();
     assert.match(page, /\$125<\/strong>/);
     assert.match(page, /width:100%/);
@@ -47,10 +47,10 @@ test("the goal bar stops at 100% and the figure keeps counting", async () => {
 
 test("if the goal can't be read, the page still works, without the bar", async () => {
     const kv = fakeKV();
-    kv.get = async () => {
+    kv.get = kv.list = async () => {
         throw new Error("KV down");
     };
-    const res = await handle(get("/"), env({ STASH_KV: kv }));
+    const res = await handle(get("/"), env({ ACCESS_KV: kv }));
     assert.equal(res.status, 200);
     const page = await res.text();
     assert.match(page, /id="front"/);
@@ -58,7 +58,7 @@ test("if the goal can't be read, the page still works, without the bar", async (
 });
 
 test("/ signed in: the real home page, private, with the goal in its Support section", async () => {
-    const { e, cookie } = await signedIn({ [`goal:${month()}`]: { entries: [{ cents: 5000 }] } });
+    const { e, cookie } = await signedIn(goalEntry(month(), "manual", "m1", 5000));
     const res = await handle(get("/", { Cookie: cookie }), e);
     const page = await res.text();
     assert.match(page, /id="home"/);
@@ -140,6 +140,16 @@ test("every response from the Worker carries the site's security headers, errors
     const res = await worker.fetch(get("/privacy"), broken, { waitUntil() {} });
     assert.equal(res.status, 503);
     assert.equal(res.headers.get("content-security-policy"), CSP);
+});
+
+test("on /admin only, form-action also allows the Access team domain (an expired Access session redirects a form post there)", async () => {
+    const e = env();
+    const admin = await worker.fetch(get("/admin"), e, { waitUntil() {} });
+    assert.equal(admin.headers.get("content-security-policy"), CSP.replace("form-action 'self'", "form-action 'self' https://stash-test.cloudflareaccess.com"));
+    const unset = await worker.fetch(get("/admin"), env({ ACCESS_TEAM_DOMAIN: "https://TODO-team-name.cloudflareaccess.com" }), { waitUntil() {} });
+    assert.equal(unset.headers.get("content-security-policy"), CSP, "no team domain allowed while it's a placeholder");
+    const front = await worker.fetch(get("/"), e, { waitUntil() {} });
+    assert.equal(front.headers.get("content-security-policy"), CSP);
 });
 
 test("the Worker's CSP is public/_headers' CSP, with form-action 'self' and no scripts", () => {

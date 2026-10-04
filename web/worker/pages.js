@@ -15,6 +15,12 @@
 export const CSP =
     "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'none'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 
+/**
+ * The CSP with more places forms may go. Only /admin uses it: when the Access session has expired, Cloudflare
+ * Access answers an admin form post with a redirect to the team's sign-in page, which form-action 'self' blocks.
+ */
+export const cspWithFormAction = (origin) => (origin ? CSP.replace("form-action 'self'", `form-action 'self' ${origin}`) : CSP);
+
 export const SECURITY_HEADERS = {
     "Content-Security-Policy": CSP,
     "Referrer-Policy": "strict-origin-when-cross-origin",
@@ -22,10 +28,14 @@ export const SECURITY_HEADERS = {
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), browsing-topics=()",
 };
 
-/** Every response the Worker returns gets the site's security headers (_headers doesn't apply to them). */
-export function withSecurityHeaders(response) {
+/**
+ * Every response the Worker returns gets the site's security headers (_headers doesn't apply to them).
+ * [formAction] adds one origin to form-action (see cspWithFormAction).
+ */
+export function withSecurityHeaders(response, { formAction } = {}) {
     const out = new Response(response.body, response);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
+    if (formAction) out.headers.set("Content-Security-Policy", cspWithFormAction(formAction));
     return out;
 }
 

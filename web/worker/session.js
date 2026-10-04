@@ -6,6 +6,8 @@
  * A signed-in request also needs access:<h> to still exist, so removing someone on the admin page signs
  * them out. That lookup is cached in memory for ACCESS_CACHE_MS per Worker instance, and KV itself can
  * take up to a minute to show a delete everywhere, so a removal takes effect within about 6 minutes.
+ * Signing out deletes the cookie from that browser; it doesn't revoke a copy of it, which keeps working until
+ * it expires or the email is taken off the list (accepted: the cookie is HttpOnly and sent only over HTTPS).
  */
 import { b64urlDecode, b64urlEncode, clock, hmacBytes, hmacVerify } from "./crypto.js";
 import { KEYS } from "./keys.js";
@@ -67,7 +69,8 @@ export const forgetAllAccess = () => accessCache.clear();
 export async function hasAccess(env, h) {
     const hit = accessCache.get(h);
     if (hit && hit.until > clock.now()) return hit.ok;
-    const ok = (await env.STASH_KV.get(KEYS.access(h))) !== null;
+    if (!env.ACCESS_KV) return false; // a Preview: no access list, so nobody is signed in
+    const ok = (await env.ACCESS_KV.get(KEYS.access(h))) !== null;
     if (accessCache.size > 5000) accessCache.clear();
     rememberAccess(h, ok);
     return ok;

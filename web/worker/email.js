@@ -15,7 +15,7 @@ export async function sendEmail(env, { to, subject, text, html }) {
         return { ok: true, id: result?.messageId };
     } catch (err) {
         const code = err?.code || "E_UNKNOWN";
-        console.error(`email not sent (${subject.split(":")[0]}): ${code} ${err?.message ?? ""}`);
+        console.error(`email not sent (${subject}): ${code} ${err?.message ?? ""}`);
         return { ok: false, code };
     }
 }
@@ -24,7 +24,8 @@ const page = (body) => `<!doctype html><html><body style="font-family:system-ui,
 
 export function codeEmail(code) {
     return {
-        subject: `Your Stash sign-in code: ${code}`,
+        // Not in the subject: subjects show on lock screens and in inbox previews.
+        subject: "Your Stash sign-in code",
         text: `Your code for stashfm.app is ${code}\n\nIt works for 10 minutes. If you didn't ask for it, you can ignore this email.\n`,
         html: page(`<p>Your code for stashfm.app is</p><p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:8px 0 16px">${code}</p><p>It works for 10 minutes. If you didn't ask for it, you can ignore this email.</p>`),
     };

@@ -12,7 +12,9 @@ import { HASHCHECK_EMAIL, KEYS } from "./keys.js";
 import { esc, gatePage } from "./pages.js";
 import { rememberAccess } from "./session.js";
 
-const MAX_REQUESTS_SHOWN = 100;
+const REQUESTS_PER_PAGE = 25;
+/** Pending requests are listed in pages of 1,000 keys; past this many, the count says "N+". */
+const MAX_REQUEST_LIST_PAGES = 10;
 const MAX_SOURCE = 60;
 
 /** What each ?done= says. Anything not listed shows nothing. */
@@ -48,28 +50,54 @@ function requestItem(r) {
 
 function entryRow(e) {
     const orig = e.orig ? ` <span class="admin-meta">(${esc(e.orig)})</span>` : "";
-    const remove = e.manual
+    const remove = e.kind === "manual"
         ? `<form method="post" action="/admin"><input type="hidden" name="action" value="remove-entry"><input type="hidden" name="id" value="${esc(e.id)}"><button type="submit" class="admin-link">Remove</button></form>`
         : "";
     return `<tr><td>${esc(fmtDate(e.at))}</td><td>${esc(e.source)}${orig}</td><td class="admin-amount">${esc(exactDollars(e.cents))}</td><td>${remove}</td></tr>`;
 }
 
-async function pendingRequests(kv) {
-    const list = await kv.list({ prefix: KEYS.requestPrefix, limit: MAX_REQUESTS_SHOWN });
+/**
+ * One page of pending requests, newest first, and how many there are. Every request key is listed (its time
+ * is in the key's metadata, so sorting needs no reads), then only the page shown is read.
+ */
+async function pendingRequests(kv, page) {
+    const all = [];
+    let cursor;
+    let more = false;
+    for (let i = 0; i < MAX_REQUEST_LIST_PAGES; i++) {
+        const res = await kv.list({ prefix: KEYS.requestPrefix, cursor });
+        for (const { name, metadata } of res.keys) all.push({ name, at: String(metadata?.at ?? "") });
+        if (res.list_complete || !res.cursor) break;
+        cursor = res.cursor;
+        more = i === MAX_REQUEST_LIST_PAGES - 1;
+    }
+    all.sort((a, b) => b.at.localeCompare(a.at));
+    const pages = Math.max(1, Math.ceil(all.length / REQUESTS_PER_PAGE));
+    const current = Math.min(Math.max(1, page), pages);
+    const shown = all.slice((current - 1) * REQUESTS_PER_PAGE, current * REQUESTS_PER_PAGE);
     const rows = await Promise.all(
-        list.keys.map(async ({ name }) => {
+        shown.map(async ({ name }) => {
             const rec = await kv.get(name, "json");
             return rec ? { h: name.slice(KEYS.requestPrefix.length), ...rec } : null;
         }),
     );
-    return rows.filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    return { total: all.length, more, page: current, pages, rows: rows.filter(Boolean) };
+}
+
+function pager({ page, pages }) {
+    if (pages <= 1) return "";
+    const link = (n, label) => `<a class="admin-page-link" href="/admin?page=${n}">${label}</a>`;
+    const newer = page > 1 ? link(page - 1, "Newer") : "";
+    const older = page < pages ? link(page + 1, "Older") : "";
+    return `${newer}<span class="admin-meta">Page ${page} of ${pages}</span>${older}`;
 }
 
 async function adminPage(env, url, admin) {
-    const kv = env.STASH_KV;
+    const kv = env.ACCESS_KV;
     const month = monthKey(new Date(clock.now()));
+    const page = Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1;
     const [requests, goal, tipjarCheck, ourCheck] = await Promise.all([
-        pendingRequests(kv),
+        pendingRequests(kv, page),
         readGoal(kv, month),
         kv.get(KEYS.hashCheck),
         hashEmail(HASHCHECK_EMAIL, env.EMAIL_PEPPER),
@@ -86,17 +114,18 @@ async function adminPage(env, url, admin) {
             flash,
             month: monthName,
             "goal-exact": `${exactDollars(goal.cents)} of ${exactDollars(target)}`,
-            "request-count": requests.length === 1 ? "1 waiting" : `${requests.length} waiting`,
+            "request-count": `${requests.total}${requests.more ? "+" : ""} waiting`,
         },
         html: {
-            requests: requests.map(requestItem).join(""),
+            requests: requests.rows.map(requestItem).join(""),
+            pager: pager(requests),
             entries: [...goal.entries].reverse().map(entryRow).join(""),
         },
         flags: {
             flash: Boolean(flash),
             "hash-mismatch": tipjarCheck !== null && tipjarCheck !== ourCheck,
-            "no-requests": requests.length === 0,
-            "has-requests": requests.length > 0,
+            "no-requests": requests.total === 0,
+            "has-requests": requests.total > 0,
             "no-entries": goal.entries.length === 0,
             "has-entries": goal.entries.length > 0,
         },
@@ -119,7 +148,7 @@ async function welcome(env, url, email) {
 async function act(request, env, url, admin) {
     const form = await readForm(request);
     if (!form) return back(url, "bad-form");
-    const kv = env.STASH_KV;
+    const kv = env.ACCESS_KV;
     const at = new Date(clock.now()).toISOString();
     const month = monthKey(new Date(clock.now()));
     const hashOf = (email) => hashEmail(email, env.EMAIL_PEPPER);
@@ -180,7 +209,8 @@ async function act(request, env, url, admin) {
 }
 
 export async function adminRoute(request, env, url, method, fetchImpl) {
-    const admin = await verifyAccess(request, env, fetchImpl);
+    // No ACCESS_KV (a Preview) means nothing to manage: refused like anyone without Access.
+    const admin = env.ACCESS_KV ? await verifyAccess(request, env, fetchImpl) : null;
     if (!admin) {
         return gatePage(env, url, "problem", {
             status: 403,

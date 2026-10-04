@@ -1,17 +1,22 @@
 /**
- * One-time sign-in codes. Only an HMAC of each code is stored (code:<hash>, keyed with SESSION_SECRET, so
- * even someone reading KV can't work the code out), for 10 minutes, with a count of wrong tries: the fifth
- * wrong try deletes it. An email gets at most SENDS_PER_HOUR codes an hour (sends:<hash>); past that,
- * requests still get the usual "a code is on its way" page but no email goes out.
+ * One-time sign-in codes. code:<hash> holds up to LIVE_CODES live codes for an email, each as an HMAC keyed
+ * with SESSION_SECRET (so even someone reading KV can't work a code out) and its expiry (10 minutes), plus the
+ * wrong tries so far. Asking again adds a code instead of replacing the one already on its way, so someone who
+ * knows your email can't cancel it. Any live code signs you in, and signing in clears them all. The fifth wrong
+ * try clears them all too.
  *
- * KV isn't transactional, so two tries landing at once can both count as one. The per-IP limit on tries
- * (VERIFY_IP_RL) and the 6-digit space keep that harmless.
+ * Timing: a wrong code is answered without waiting on KV (the try is counted afterwards, in ctx.waitUntil), so
+ * an email with a live code answers as fast as one without.
+ *
+ * KV isn't transactional and can lag up to a minute between locations, so tries landing at once can count as
+ * one. The per-email (VERIFY_EMAIL_RL) and per-address (VERIFY_IP_RL) limits on tries keep that harmless.
  */
 import { clock, hmacHex, sameHex, sixDigitCode } from "./crypto.js";
 import { KEYS } from "./keys.js";
 
 export const CODE_TTL_S = 10 * 60;
 export const MAX_TRIES = 5;
+export const LIVE_CODES = 3;
 export const SENDS_PER_HOUR = 5;
 const HOUR_S = 3600;
 /** KV's shortest expiry. */
@@ -23,41 +28,55 @@ const nowS = () => Math.floor(clock.now() / 1000);
 /** KV put options that expire at [exp] (unix seconds), never sooner than KV allows. */
 const expiresAt = (exp) => (exp - nowS() >= MIN_TTL_S ? { expiration: exp } : { expirationTtl: MIN_TTL_S });
 
+const liveCodes = (record, now) => (Array.isArray(record?.codes) ? record.codes.filter((c) => Number.isInteger(c?.exp) && c.exp > now && typeof c.c === "string") : []);
+
 /** "123 456", "123-456" and " 123456 " all mean 123456. Anything else isn't a code. */
 export function cleanCode(input) {
     const digits = String(input ?? "").replace(/[\s-]/g, "");
     return /^\d{6}$/.test(digits) ? digits : null;
 }
 
-/** A fresh code for [h], replacing any earlier one, or null when this email has had its codes for the hour. */
+/**
+ * A fresh code for [h], added to the ones still live (the oldest dropped past LIVE_CODES), or null when this
+ * email has had SENDS_PER_HOUR codes this hour. That hourly count is a KV counter, so it's approximate under
+ * concurrency; CODE_SEND_RL (one a minute, checked before this) is the exact limit.
+ */
 export async function issueCode(env, secret, h) {
-    const kv = env.STASH_KV;
+    const kv = env.ACCESS_KV;
     const now = nowS();
     const sends = await kv.get(KEYS.sends(h), "json");
     const window = sends && sends.until > now ? sends : { n: 0, until: now + HOUR_S };
     if (window.n >= SENDS_PER_HOUR) return null;
+    const record = await kv.get(KEYS.code(h), "json");
+    const live = liveCodes(record, now);
+    const n = live.length && Number.isInteger(record.n) ? record.n : 0;
     const code = sixDigitCode();
-    const exp = now + CODE_TTL_S;
-    await kv.put(KEYS.code(h), JSON.stringify({ c: await codeMac(secret, h, code), n: 0, exp }), { expirationTtl: CODE_TTL_S });
+    const codes = [...live, { c: await codeMac(secret, h, code), exp: now + CODE_TTL_S }].slice(-LIVE_CODES);
+    await kv.put(KEYS.code(h), JSON.stringify({ codes, n }), { expirationTtl: CODE_TTL_S });
     await kv.put(KEYS.sends(h), JSON.stringify({ n: window.n + 1, until: window.until }), expiresAt(window.until));
     return code;
 }
 
-/** True once for the right code within its 10 minutes and 5 tries; the code is used up either way it ends. */
-export async function checkCode(env, secret, h, code) {
-    const kv = env.STASH_KV;
+/**
+ * True for any of [h]'s live codes, within its tries; all of them are cleared then. A wrong or missing code is
+ * false at once: the bookkeeping (counting the try, clearing expired or used-up codes) goes to [later].
+ */
+export async function checkCode(env, secret, h, code, later) {
+    const kv = env.ACCESS_KV;
     const key = KEYS.code(h);
-    const record = await kv.get(key, "json");
-    if (!record || !Number.isInteger(record.exp) || record.exp <= nowS() || !(record.n < MAX_TRIES)) {
-        if (record) await kv.delete(key);
+    const [record, mac] = await Promise.all([kv.get(key, "json"), codeMac(secret, h, code ?? "")]);
+    const live = liveCodes(record, nowS());
+    if (!record) return false;
+    if (!live.length || !(record.n < MAX_TRIES)) {
+        later(kv.delete(key));
         return false;
     }
-    if (code && sameHex(await codeMac(secret, h, code), record.c)) {
+    if (code && live.some((c) => sameHex(mac, c.c))) {
         await kv.delete(key);
         return true;
     }
     const n = record.n + 1;
-    if (n >= MAX_TRIES) await kv.delete(key);
-    else await kv.put(key, JSON.stringify({ ...record, n }), expiresAt(record.exp));
+    const lastExp = Math.max(...live.map((c) => c.exp));
+    later(n >= MAX_TRIES ? kv.delete(key) : kv.put(key, JSON.stringify({ codes: live, n }), expiresAt(lastExp)));
     return false;
 }

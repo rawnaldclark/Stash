@@ -14,8 +14,8 @@ test("hashEmail matches the tip jar: trim, lowercase, SHA-256; HMAC-SHA256 with 
 });
 
 test("validEmail is loose but refuses junk", () => {
-    for (const ok of ["a@b.co", "first.last+tag@sub.example.org", normalizeEmail("  X@Y.IO ")]) assert.ok(validEmail(ok), ok);
-    for (const bad of ["", "a", "a@b", "@b.co", "a@@b.co", "a b@c.co", "a@b.co, c@d.co", `${"x".repeat(250)}@b.co`, "<a@b.co>"]) assert.ok(!validEmail(bad), bad);
+    for (const ok of ["a@b.co", "first.last+tag@sub.example.org", normalizeEmail("  X@Y.IO "), "o'brien@example.com"]) assert.ok(validEmail(ok), ok);
+    for (const bad of ["", "a", "a@b", "@b.co", "a@@b.co", "a b@c.co", "a@b.co, c@d.co", `${"x".repeat(250)}@b.co`, "<a@b.co>", 'a"b@c.co', "a\nb@c.co", "a\u0000b@c.co", "a\u007fb@c.co", "a\tb@c.co"]) assert.ok(!validEmail(bad), JSON.stringify(bad));
 });
 
 test("sameHex compares equal-length hex only", () => {
