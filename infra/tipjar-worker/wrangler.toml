@@ -21,10 +21,10 @@ id = "REPLACE_WITH_STASH_EARLY_ACCESS_NAMESPACE_ID"
 # Set via `wrangler secret put KOFI_VERIFICATION_TOKEN` (paste from
 # https://ko-fi.com/manage/webhooks). NOT committed.
 
-# Recommended secret: EMAIL_PEPPER (stashfm.app early access, src/access.js).
+# Required secret: EMAIL_PEPPER (stashfm.app early access, src/access.js).
 # Keys the email hash in access:<hash>, so the list can't be checked against a
-# guessed email without it. If you use it, set the SAME value on the
-# website Worker (web/wrangler.jsonc) and in the EMAIL_PEPPER environment variable
-# when you run scripts/import-kofi-csv.mjs, and set it before any access:* entry
-# exists: changing it later locks every supporter out until they're re-imported.
-# Without it (on both Workers), the hash is plain SHA-256.
+# guessed email without it. Set the SAME value on the website Worker
+# (web/wrangler.jsonc; its sign-in refuses to run without one) and in the
+# EMAIL_PEPPER environment variable when you run scripts/import-kofi-csv.mjs, and
+# set it before any access:* entry exists: changing it later locks every
+# supporter out until they're re-imported.

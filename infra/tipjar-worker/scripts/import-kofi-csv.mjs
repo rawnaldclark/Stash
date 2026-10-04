@@ -10,8 +10,8 @@
  *   node scripts/import-kofi-csv.mjs <ko-fi-export.csv> [--out <file.json>] [--all-types]
  *   npx wrangler kv bulk put <file.json> --binding ACCESS_KV --remote
  *
- * If the Workers have an EMAIL_PEPPER secret (recommended), set the same value in the EMAIL_PEPPER
- * environment variable for this script, or the hashes won't match.
+ * Set the EMAIL_PEPPER environment variable to the Workers' EMAIL_PEPPER secret (the website requires
+ * one); without it the script refuses to run, since entries hashed without the pepper would never match.
  *
  * The file goes in a new folder of its own in your temp folder, readable only by you (or wherever
  * --out says). It is never written over an existing file.
@@ -141,6 +141,10 @@ function main(argv) {
     }
     const out = resolve(outArg || join(mkdtempSync(join(tmpdir(), "stash-access-")), "stash-access-bulk.json"));
     const pepper = process.env.EMAIL_PEPPER || "";
+    if (!pepper) {
+        console.error("Set EMAIL_PEPPER to the Workers' value first. The website requires a pepper, so entries hashed without one would never match.");
+        process.exit(2);
+    }
     const { entries, counts, filteredByType } = buildBulk(parseCsv(readFileSync(csvPath, "utf8")), { pepper, allTypes });
     try {
         writeFileSync(out, JSON.stringify(entries, null, 1), { flag: "wx", mode: 0o600 });
@@ -154,7 +158,7 @@ function main(argv) {
     console.log(`Skipped, no email:    ${counts.noEmail}`);
     console.log(`Skipped, other type:  ${filteredByType ? counts.otherType : "n/a (no type filter)"}`);
     console.log(`Supporters (unique):  ${counts.supporters}`);
-    console.log(`Hashing:              ${pepper ? "HMAC-SHA256 with EMAIL_PEPPER" : "SHA-256, no pepper (the Workers must have no EMAIL_PEPPER either)"}`);
+    console.log("Hashing:              HMAC-SHA256 with EMAIL_PEPPER");
     console.log(`Wrote ${entries.length} entries to ${out}`);
     console.log("");
     console.log("Next, from infra/tipjar-worker:");

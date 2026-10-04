@@ -177,11 +177,16 @@ test("a donation counts toward the month it was made in (UTC)", async () => {
     assert.equal(goalEntries(e.ACCESS_KV, "2026-09").length, 1);
 });
 
-test("Ko-fi's test webhook reaches the supporters list as before, but not the goal or the access list", async () => {
+test("Ko-fi's test webhook reaches the supporters list once in 60 days, and never the goal or the access list", async () => {
     const e = env();
-    await worker.fetch(kofiPost(donation({ kofi_transaction_id: KOFI_TEST_TXN, email: "jo.example@example.com", from_name: "Jo Example" })), e);
+    const test = () => kofiPost(donation({ kofi_transaction_id: KOFI_TEST_TXN, message_id: "test-msg", email: "jo.example@example.com", from_name: "Jo Example" }));
+    assert.equal((await worker.fetch(test(), e)).status, 200);
     assert.equal(e.ACCESS_KV.map.size, 0);
-    assert.ok(e.STASH_KV.map.has("supporters"));
+    assert.deepEqual(supportersOf(e).map((s) => s.name), ["Jo Example"]);
+    // A second "Send test" within 60 days: its transaction id is the same, so it's already done.
+    assert.equal((await worker.fetch(test(), e)).status, 200);
+    assert.equal(supportersOf(e).length, 1);
+    assert.equal(e.STASH_KV.map.get(`kofitxn:${KOFI_TEST_TXN}`).value, "done");
 });
 
 test("a later donation keeps the supporter's firstAt", async () => {

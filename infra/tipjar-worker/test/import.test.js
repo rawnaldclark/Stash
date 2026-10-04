@@ -67,14 +67,26 @@ test("by default the CLI writes to a new private temp folder, and never over an 
     const dir = mkdtempSync(join(tmpdir(), "stash-import-"));
     const csv = join(dir, "export.csv");
     writeFileSync(csv, CSV);
-    const printed = execFileSync(process.execPath, ["scripts/import-kofi-csv.mjs", csv], { encoding: "utf8", env: { ...process.env, EMAIL_PEPPER: "" } });
+    const printed = execFileSync(process.execPath, ["scripts/import-kofi-csv.mjs", csv], { encoding: "utf8", env: { ...process.env, EMAIL_PEPPER: "test-pepper" } });
     const out = /Wrote \d+ entries to (.+)$/m.exec(printed)[1].trim();
     assert.ok(existsSync(out));
     assert.notEqual(dirname(out), tmpdir(), "a folder of its own, not the shared temp folder");
     if (process.platform !== "win32") assert.equal(statSync(out).mode & 0o777, 0o600);
     assert.match(printed, /--binding ACCESS_KV --remote/);
     // --out to a file that exists is refused rather than overwritten.
-    assert.throws(() => execFileSync(process.execPath, ["scripts/import-kofi-csv.mjs", csv, "--out", out], { encoding: "utf8", stdio: "pipe" }), /already exists/);
+    assert.throws(() => execFileSync(process.execPath, ["scripts/import-kofi-csv.mjs", csv, "--out", out], { encoding: "utf8", stdio: "pipe", env: { ...process.env, EMAIL_PEPPER: "test-pepper" } }), /already exists/);
+});
+
+test("the CLI refuses to run without EMAIL_PEPPER (the website requires it, so plain hashes would never match)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "stash-import-"));
+    const csv = join(dir, "export.csv");
+    const out = join(dir, "bulk.json");
+    writeFileSync(csv, CSV);
+    assert.throws(
+        () => execFileSync(process.execPath, ["scripts/import-kofi-csv.mjs", csv, "--out", out], { encoding: "utf8", stdio: "pipe", env: { ...process.env, EMAIL_PEPPER: "" } }),
+        /EMAIL_PEPPER/,
+    );
+    assert.ok(!existsSync(out));
 });
 
 test("the CLI writes the bulk file and never prints an email", () => {
@@ -82,7 +94,7 @@ test("the CLI writes the bulk file and never prints an email", () => {
     const csv = join(dir, "export.csv");
     const out = join(dir, "bulk.json");
     writeFileSync(csv, CSV);
-    const printed = execFileSync(process.execPath, ["scripts/import-kofi-csv.mjs", csv, "--out", out], { encoding: "utf8", env: { ...process.env, EMAIL_PEPPER: "" } });
+    const printed = execFileSync(process.execPath, ["scripts/import-kofi-csv.mjs", csv, "--out", out], { encoding: "utf8", env: { ...process.env, EMAIL_PEPPER: "test-pepper" } });
     assert.match(printed, /Supporters \(unique\): {2}2/);
     assert.ok(!/@/.test(printed.replace(/hashcheck@stashfm\.app/g, "")), "an email was printed");
     const written = readFileSync(out, "utf8");

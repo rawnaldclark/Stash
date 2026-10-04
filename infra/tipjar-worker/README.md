@@ -166,20 +166,23 @@ change.
   supporters list, so nobody is listed twice. A retry of a `done`
   transaction changes nothing.
 - Ko-fi's **"Send test"** webhooks (transaction id
-  `00000000-1111-2222-3333-444444444444`) still show up in the supporters
-  list, as before, but never in the goal or the access list.
+  `00000000-1111-2222-3333-444444444444`) never reach the goal or the
+  access list. They reach the supporters list the first time only: like any
+  transaction, a test is then marked done for 60 days, so sending another
+  in that time changes nothing (before 2026-10, every test was listed).
 - Without `KOFI_VERIFICATION_TOKEN` set, every webhook gets a 500 (before,
   a payload with no token would have passed). Tokens are compared in
   constant time.
 
 **The email hash.** Trim and lowercase the email, then HMAC-SHA256 it keyed
-with the `EMAIL_PEPPER` secret (hex), or plain SHA-256 if there's no pepper.
+with the `EMAIL_PEPPER` secret (hex).
 The website Worker and `scripts/import-kofi-csv.mjs` hash the same way, and
-the tests in both places check the same vectors. **Set a pepper**: without
-one, anyone who gets a copy of the list can check whether an email they
-guess is on it; with one, they'd need the secret too. Set the same
-`EMAIL_PEPPER` on both Workers, and in the environment when you run the
-import, before anything writes `access:*`. Changing it later locks every
+the tests in both places check the same vectors. **The pepper is required**:
+the website won't sign anyone in without one, and the import refuses to run.
+It means someone with a copy of the list can't check whether an email they
+guess is on it without the secret too. Set the same `EMAIL_PEPPER` on both
+Workers, and in the environment when you run the import, before anything
+writes `access:*`. Changing it later locks every
 supporter out until they're imported again. If the two Workers disagree, the
 website's admin page says so (it compares `meta:hashcheck`).
 
@@ -190,7 +193,7 @@ early access, once, before launch:
 
 1. On Ko-fi, export your transaction history as CSV.
 2. From `infra/tipjar-worker`, with `EMAIL_PEPPER` set in the environment
-   to the Workers' value:
+   to the Workers' value (the script refuses to run without it):
 
    ```bash
    node scripts/import-kofi-csv.mjs path/to/kofi-export.csv

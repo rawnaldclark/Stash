@@ -15,7 +15,8 @@
  *
  * The email hash must match web/worker/crypto.js and scripts/import-kofi-csv.mjs exactly:
  * the email is trimmed and lowercased, then SHA-256 (hex), or HMAC-SHA256 (hex) keyed with
- * EMAIL_PEPPER when that secret is set (recommended). Set the same EMAIL_PEPPER on both Workers before
+ * EMAIL_PEPPER (required by the website; plain SHA-256 is only the fallback if it's missing, and the
+ * website's admin page then warns of the mismatch). Set the same EMAIL_PEPPER on both Workers before
  * any access:* entry exists: changing it later orphans every entry.
  */
 
@@ -33,8 +34,9 @@ export const KOFI_TXN_TTL_S = 60 * 24 * 3600;
 
 /**
  * Ko-fi's "Send test" buttons on its webhooks page all use this transaction id (and an
- * @example.com email). Tests still reach the supporters list, as they always have, but never
- * the goal or the access list.
+ * @example.com email). A test never reaches the goal or the access list. It reaches the
+ * supporters list the first time only: like any transaction, it's then marked done for 60
+ * days (src/index.js), so further tests in that time change nothing.
  */
 export const KOFI_TEST_TXN = "00000000-1111-2222-3333-444444444444";
 
