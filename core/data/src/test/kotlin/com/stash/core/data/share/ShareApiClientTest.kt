@@ -2,9 +2,14 @@ package com.stash.core.data.share
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.model.share.ShareConfig
+import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
+import java.net.InetAddress
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -114,6 +119,25 @@ class ShareApiClientTest {
         assertThat(client.createTrackLink(song)).isInstanceOf(ShareResult.Failed::class.java)
         // A blocking execute() ignores coroutine cancellation, so only the call timeout keeps the sheet's 4 s promise.
         assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(2_000L)
+    }
+
+    @Test fun `a DNS lookup that hangs can't hold the share sheet past its time box`() = runBlocking {
+        // Weak signal can leave a lookup hanging, and nothing can interrupt a thread inside one.
+        val stalled = OkHttpClient.Builder().dns(object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                try { Thread.sleep(10_000) } catch (_: InterruptedException) { }
+                throw UnknownHostException(hostname)
+            }
+        }).build()
+        val api = ShareApiClient(stalled) // the real hosts: the lookup never answers, so nothing leaves this machine
+        val started = System.nanoTime()
+        // What the share sheet does (stashSongLink): wait SHORT_LINK_TIMEOUT_MS for the short link, else share the long one.
+        val link = withTimeoutOrNull(ShareLinks.SHORT_LINK_TIMEOUT_MS) { (api.createTrackLink(song) as? ShareResult.Ok)?.value?.url }
+            ?: ShareLinks.trackUrl(song)
+        val ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+        stalled.dispatcher.executorService.shutdownNow()
+        assertThat(link).isEqualTo(ShareLinks.trackUrl(song))
+        assertThat(ms).isLessThan(4_500L)
     }
 
     @Test fun `getTrack reads the song back, 404 is NotFound, no network is Failed`() = runBlocking {
