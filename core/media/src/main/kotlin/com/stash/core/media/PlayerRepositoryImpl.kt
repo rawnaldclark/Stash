@@ -238,8 +238,10 @@ class PlayerRepositoryImpl @Inject constructor(
                     }
                 }
             }
+            // A session runs at the room's pace: the service puts the player back to 1x as it enters
+            // (and drift correction owns the speed from then on), so the picker shows Normal again.
             scope.launch {
-                together.active.collect { active -> if (active) setPlaybackSpeed(1f) }
+                together.active.collect { active -> if (active) _playbackSpeed.value = 1f }
             }
         }
 
@@ -535,6 +537,8 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override fun setPlaybackSpeed(speed: Float) {
+        // In a session the speed belongs to the room's clock, and the session player ignores it anyway.
+        if (inListenTogether) return
         val clamped = speed.coerceIn(0.1f, 4f)
         _playbackSpeed.value = clamped
         // Main-thread-affine; if nothing is connected, ensureController()
@@ -2055,8 +2059,9 @@ class PlayerRepositoryImpl @Inject constructor(
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val controller = controllerDeferred ?: return
-            // Safety net: keep the chosen speed across transitions / queue rebuilds.
-            if (controller.playbackParameters.speed != _playbackSpeed.value) {
+            // Safety net: keep the chosen speed across transitions / queue rebuilds. Not in a session,
+            // where drift correction nudges the speed on purpose.
+            if (!listenTogetherOwnsQueue && controller.playbackParameters.speed != _playbackSpeed.value) {
                 controller.setPlaybackSpeed(_playbackSpeed.value)
             }
             // Defense in depth: the existing onPlayerError recovery catches

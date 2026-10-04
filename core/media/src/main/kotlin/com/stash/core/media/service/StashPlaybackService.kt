@@ -1363,6 +1363,10 @@ class StashPlaybackService : MediaLibraryService() {
                 ?: com.stash.core.media.listen.ListenTogetherPlayer(m).also { togetherPlayer = it }
             wrapper.configure(isHost, interceptor)
             if (togetherListener == null) { // entering the session, not a role change
+                // The room plays at 1x and drift correction steers the speed from here, so a sped-up
+                // song mustn't carry in. (Here, not through the controller, whose command could land
+                // after the wrapper below, which ignores it.)
+                m.setPlaybackSpeed(1f)
                 // A listener waits for the room's first load: never show the user's own song meanwhile.
                 // The session has already saved its position, and saves are gated while active.
                 if (!isHost) { m.stop(); m.clearMediaItems() }
