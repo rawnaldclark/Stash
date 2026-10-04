@@ -11,15 +11,19 @@ import com.stash.core.data.prefs.StoragePreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.Track
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.slot
 import io.mockk.unmockkStatic
+import io.mockk.verify
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -28,6 +32,10 @@ import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Importing a file from the device makes a NEW track, so it must never take
@@ -53,13 +61,15 @@ class LocalImportCoordinatorTest {
     private val inserted = slot<Track>()
     private val source = mockk<Uri>()
     private lateinit var musicDir: File
+    private lateinit var cacheDir: File
 
     @Before
     fun setUp() {
         val filesDir = tmp.newFolder("files")
         musicDir = File(filesDir, "music")
         every { context.filesDir } returns filesDir
-        every { context.cacheDir } returns tmp.newFolder("cache")
+        cacheDir = tmp.newFolder("cache")
+        every { context.cacheDir } returns cacheDir
         every { context.contentResolver } returns resolver
         every { resolver.getType(source) } returns null
         every { resolver.openInputStream(source) } answers { ByteArrayInputStream(IMPORTED) }
@@ -199,10 +209,103 @@ class LocalImportCoordinatorTest {
         assertThat(tree.written[tree.uriOf(canonicalDoc)]).isEqualTo(IMPORTED)
     }
 
+    // ── Cancel ──────────────────────────────────────────────────────────
+
+    /** A second file in the batch, which a cancelled batch must never reach. */
+    private val second = mockk<Uri>()
+
+    private fun stubSecondFile() {
+        every { resolver.getType(second) } returns null
+        every { resolver.openInputStream(second) } answers { ByteArrayInputStream(IMPORTED) }
+        val shared = mockk<DocumentFile> { every { name } returns "Evanescence - Lacrymosa.flac" }
+        every { DocumentFile.fromSingleUri(any(), second) } returns shared
+    }
+
+    /**
+     * A cancel while the file is still being copied in stops the batch: that
+     * file never reaches the library, its temp copy is removed, the next file
+     * is never opened, and the batch does not end on Done.
+     */
+    @Test
+    fun `a cancel during the copy stops the batch and leaves nothing behind`() = runBlocking {
+        every { storagePreference.externalTreeUri } returns flowOf(null)
+        stubSecondFile()
+        val reading = CountDownLatch(1)
+        val gate = CountDownLatch(1)
+        every { resolver.openInputStream(source) } answers { gatedStream(reading, gate) }
+        val coordinator = coordinator()
+
+        coordinator.start(listOf(source, second))
+        assertThat(reading.await(5, TimeUnit.SECONDS)).isTrue()
+        coordinator.cancel()
+        gate.countDown()
+
+        assertThat(withTimeoutOrNull(1_500) { coordinator.state.first { it is LocalImportState.Done } }).isNull()
+        assertThat(coordinator.state.value).isEqualTo(LocalImportState.Idle)
+        verify(exactly = 0) { resolver.openInputStream(second) }
+        coVerify(exactly = 0) { musicRepository.insertTrack(any()) }
+        assertThat(tempFiles()).isEmpty()
+        assertThat(libraryFiles()).isEmpty()
+    }
+
+    /**
+     * A cancel while a file is being saved lets that file finish, so the
+     * library never keeps a file no song records, then stops the batch.
+     */
+    @Test
+    fun `a cancel while a file is saved finishes that file, then stops`() = runBlocking {
+        every { storagePreference.externalTreeUri } returns flowOf(null)
+        stubSecondFile()
+        val saving = CountDownLatch(1)
+        val saved = AtomicBoolean(false)
+        coEvery { musicRepository.insertTrack(capture(inserted)) } coAnswers {
+            saving.countDown()
+            delay(500) // the cancel lands here
+            saved.set(true)
+            2L
+        }
+        val coordinator = coordinator()
+
+        coordinator.start(listOf(source, second))
+        assertThat(saving.await(5, TimeUnit.SECONDS)).isTrue()
+        coordinator.cancel()
+
+        assertThat(withTimeoutOrNull(2_000) { coordinator.state.first { it is LocalImportState.Done } }).isNull()
+        assertThat(coordinator.state.value).isEqualTo(LocalImportState.Idle)
+        assertThat(saved.get()).isTrue()
+        assertThat(libraryFiles()).containsExactly(File(inserted.captured.filePath!!))
+        verify(exactly = 0) { resolver.openInputStream(second) }
+        assertThat(tempFiles()).isEmpty()
+    }
+
+    /** Streams [IMPORTED] once [gate] opens, saying when the copy has started. */
+    private fun gatedStream(reading: CountDownLatch, gate: CountDownLatch) = object : InputStream() {
+        private var sent = false
+
+        override fun read(): Int = throw UnsupportedOperationException("read in blocks")
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (sent) return -1
+            reading.countDown()
+            gate.await(5, TimeUnit.SECONDS)
+            sent = true
+            IMPORTED.copyInto(b, off)
+            return IMPORTED.size
+        }
+    }
+
+    private fun tempFiles(): List<File> =
+        File(cacheDir, "downloads").listFiles()?.filter { it.name.startsWith("import_") }.orEmpty()
+
+    private fun libraryFiles(): List<File> = musicDir.walkTopDown().filter { it.isFile }.toList()
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
+    private fun coordinator() =
+        LocalImportCoordinator(context, FileOrganizer(context, storagePreference, trackDao), musicRepository)
+
     private fun importOne() = runBlocking {
-        val coordinator = LocalImportCoordinator(context, FileOrganizer(context, storagePreference, trackDao), musicRepository)
+        val coordinator = coordinator()
         coordinator.start(listOf(source))
         val done = withTimeout(10_000) {
             coordinator.state.first { it is LocalImportState.Done || it is LocalImportState.Error }

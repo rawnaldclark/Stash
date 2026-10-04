@@ -633,20 +633,20 @@ class FileOrganizer @Inject constructor(
             if (filename in taken) continue
             val target = cursor.createFile(mimeTypeFor(format), filename)
                 ?: error("Could not create SAF file '$filename' under ${cursor.uri}")
-            if (recordedByAnotherTrack(target.uri.toString(), trackId)) {
-                target.delete()
-                taken += filename
-                continue
-            }
-            var copied = false
+            var kept = false
             try {
+                if (recordedByAnotherTrack(target.uri.toString(), trackId)) {
+                    taken += filename
+                    continue
+                }
                 copyIntoDocument(tempFile, target, filename)
-                copied = true
+                kept = true
+                return target.uri.toString()
             } finally {
-                // The document is this call's own, so a failed copy leaves nothing behind.
-                if (!copied) target.delete()
+                // The document is this call's own: unless it now holds the
+                // file, it goes (a taken URI, a failed check or copy).
+                if (!kept) target.delete()
             }
-            return target.uri.toString()
         }
         error("No free file name for '${location.baseName}.$format' under ${cursor.uri}")
     }

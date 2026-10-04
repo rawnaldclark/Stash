@@ -13,11 +13,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -59,8 +63,10 @@ sealed interface LocalImportState {
  *   - Per-file failures don't abort the batch — they increment `failed`
  *     and log with the offending URI.
  *   - Temp files are always deleted (success: commitDownload deletes
- *     them; failure: the `runCatching` around per-file work doesn't leak
- *     the temp since commitDownload hasn't run).
+ *     them; a failure or a cancel: [importOne] deletes them).
+ *   - A cancel stops the batch and leaves it [LocalImportState.Idle], never
+ *     [LocalImportState.Done]. A file whose save has begun finishes first,
+ *     so the library never keeps a file no song records.
  *   - Concurrent [start] calls while [Running] are no-ops.
  */
 @Singleton
@@ -113,12 +119,17 @@ class LocalImportCoordinator @Inject constructor(
             for ((index, uri) in uris.withIndex()) {
                 _state.value = LocalImportState.Running(current = index, total = total)
                 val ok = runCatching { importOne(uri) }
+                    // A cancel is not a failed file: it stops the batch (the catch below).
+                    .onFailure { e -> if (e is CancellationException) throw e }
                 if (ok.isSuccess) {
                     imported++
                 } else {
                     failed++
                     Log.w(TAG, "Import failed for $uri", ok.exceptionOrNull())
                 }
+                // A cancel that came while a file was being saved stops the
+                // batch here, before the next file, and never ends on Done.
+                currentCoroutineContext().ensureActive()
             }
 
             _state.value = LocalImportState.Done(imported = imported, failed = failed)
@@ -149,12 +160,28 @@ class LocalImportCoordinator @Inject constructor(
         // internal or SAF based on the user's storage preference.
         val tempDir = fileOrganizer.getTempDir()
         val tempFile = File(tempDir, "import_${UUID.randomUUID()}.$ext")
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            tempFile.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("Could not open input stream for $uri")
+        try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                tempFile.outputStream().use { output -> input.copyTo(output) }
+            } ?: error("Could not open input stream for $uri")
 
-        val metadata = extractMetadata(tempFile, displayName)
+            val metadata = extractMetadata(tempFile, displayName)
 
+            // A cancel during the copy stops here, before anything reaches the library.
+            currentCoroutineContext().ensureActive()
+
+            // Saving the file and its row runs to the end once begun: a cancel
+            // between the two would leave a library file no song records.
+            withContext(NonCancellable) { save(tempFile, ext, metadata) }
+        } finally {
+            // commitDownload deletes the temp copy once it has the bytes; a
+            // failure or a cancel before that leaves it here.
+            tempFile.delete()
+        }
+    }
+
+    /** Files [tempFile] in the library and records it as a new LOCAL track. */
+    private suspend fun save(tempFile: File, ext: String, metadata: LocalMetadata) {
         // A new track: never written over a file already at its name (a
         // downloaded copy of the same song, say) or onto a path another
         // track records; the name gets -2, -3, … instead.
