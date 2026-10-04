@@ -125,9 +125,20 @@ Opening Home also loads the Qobuz rows, unless you've turned them off, and the s
 
 ## This website
 
-The site's own pages (home, privacy and the 404 page) set no cookies of their own, run no analytics, and load their fonts and images from stashfm.app itself, nothing from anyone else. The site is hosted on Cloudflare. Cloudflare's security features can set a cookie of their own, but only if they're turned on for this domain. The Download button takes you to GitHub, where the app is published.
+The site's own pages run no analytics and load their fonts and images from stashfm.app itself, nothing from anyone else. They set one cookie, and only when you sign in (below). The site is hosted on Cloudflare. Cloudflare's security features can set a cookie of their own, but only if they're turned on for this domain. The Download button takes you to GitHub, where the app is published.
 
 Shared song pages, at `stashfm.app/t` and at the share Worker's first address, come from the share Worker described above. They set no cookies and run no analytics either, but they show the song's album art straight from where it's hosted (Spotify, YouTube, Last.fm, Qobuz, JioSaavn or Deezer). So your browser loads that image from there, and that service sees your IP address. To find the art, the Worker may look the song up on Spotify or Deezer by its Spotify id or ISRC; that request comes from the Worker, not your browser. Shared mix and Listen Together invite pages show no images.
+
+### Early access and signing in
+
+The website is in early access: people who have supported Stash are on the list as a thank-you, and anyone else can ask to be added. This is only about the website; the app needs no sign-in.
+
+- **The access list** holds a scrambled form of each email address (a hash), never the address itself, with where it came from (Ko-fi, an approved request, or added by hand) and when. Ko-fi's notice of each donation includes the donor's email, and the project's tip jar Worker puts that email's hash on the list. Past Ko-fi supporters are added the same way, from Ko-fi's records. GitHub Sponsors and PayPal supporters are added by hand.
+- **Signing in**: you type your email, and if it's on the list, a 6-digit code is emailed to you from `access@stashfm.app` through Cloudflare's Email Service, which handles your address to deliver it. The page says the same thing whether or not your email is on the list, so it doesn't tell anyone who has access. Only a scrambled form of the code is kept, for 10 minutes, along with how many codes went to that email in the last hour (by its hash), to stop floods. Your IP address is used for rate limits and isn't stored.
+- **The cookie**: signing in sets `stash_access`, the site's only cookie. It holds the hash of your email and an expiry date, signed so it can't be forged, is sent only to stashfm.app, and lasts 90 days. Signing out, at the bottom of the home page, deletes it. If you're taken off the list, it stops working within a few minutes.
+- **Asking for access** keeps the email and note you send until one of the project's two maintainers answers, and deletes them after 30 days if nobody has. If you're let in, you get one email saying so, and only the hash of your address stays.
+- **The monthly goal** adds up the month's donations: Ko-fi's automatically, and GitHub Sponsors and PayPal by hand. It keeps each amount and where it came from, not who gave it.
+- **To be taken off the list**, or to have a request deleted, email `access@stashfm.app`.
 
 ## Security
 

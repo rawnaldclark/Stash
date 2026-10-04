@@ -1,7 +1,9 @@
 # stashfm.app
 
-The website for Stash, built with [Astro](https://astro.build) as a fully static site: no client-side
-framework, no JavaScript shipped to visitors, and no requests to anyone but stashfm.app itself.
+The website for Stash, built with [Astro](https://astro.build) as a static site, with a small Worker in
+front of it for early access (sign-in codes by email, access requests, the monthly goal and `/admin`;
+see [Early access](#early-access)). No client-side framework, no JavaScript shipped to visitors, and no
+requests to anyone but stashfm.app itself.
 
 It is not deployed yet. See [Deploying](#deploying).
 
@@ -19,33 +21,62 @@ npm run build      # builds the site into dist/
 npm run preview    # serves dist/ the way it was built
 ```
 
-`npx wrangler dev` (after a build) runs the site the way Cloudflare will, with the response headers from
-`public/_headers` and the real 404 handling. Wrangler is a dev dependency pinned in `package.json`, so
-`npm install` gets the same version Cloudflare's build uses.
+`npm run dev` and `npm run preview` show the pages only: no Worker, so `/` is the full home page and the
+goal shows $0. To run the site the way Cloudflare will, Worker and all, build it and use Wrangler:
+
+```bash
+npm run build
+npm test                    # the Worker's tests (worker/test); one checks the built pages, so build first
+npx wrangler dev --local    # http://localhost:8787
+```
+
+Always pass `--local`. It keeps every binding on your machine: a local copy of the KV namespace, and
+email that's printed in the terminal instead of sent (the binding has `remote: true`, so plain
+`npx wrangler dev` would send real email). The Worker needs a `SESSION_SECRET` to sign anyone in; put
+one in `web/.dev.vars`, which git ignores:
+
+```
+SESSION_SECRET=<at least 32 random characters, e.g. from `openssl rand -base64 48`>
+ADMIN_EMAILS=owner@example.com
+```
+
+To try signing in, put an email on the local list. `<hash>` is the SHA-256 of the lowercased email, for
+example from `node -e "console.log(require('crypto').createHash('sha256').update('you@example.com').digest('hex'))"`:
+
+```bash
+npx wrangler kv key put --local --binding STASH_KV "access:<hash>" '{"source":"manual"}'
+```
+
+Then enter that email at `/` and copy the code from the terminal. `/admin` refuses every request
+locally, since there's no Cloudflare Access in front of it (the Worker's tests cover it). Wrangler is a
+dev dependency pinned in `package.json`, so `npm install` gets the same version Cloudflare's build uses.
 
 Every push and pull request that changes `web/` runs the Website check in GitHub Actions
-(`.github/workflows/web.yml`): `npm ci`, `npx astro check` and `npm run build`, plus a check that no
-built page has a script.
+(`.github/workflows/web.yml`): `npm ci`, `npx astro check`, `npm run build` and `npm test`, plus a check
+that no built page has a script.
 
 ## How it's organised
 
 ```
 web/
 ├── astro.config.mjs        Site URL, fonts, sitemap, build format
-├── wrangler.jsonc          Cloudflare Worker config (static assets only, not deployed yet)
+├── wrangler.jsonc          Cloudflare Worker config: assets, bindings, which paths run the Worker (not deployed yet)
 ├── public/                 Copied as-is: favicons, social card, robots.txt, _headers
 ├── scripts/make-assets.py  Regenerates the fonts and icons from the app's own files
+├── worker/                 The early-access Worker (index.js routes everything) and its tests (test/)
 └── src/
     ├── assets/             Images and fonts that Astro processes (resized, hashed)
     │   ├── brand/          The vinyl logo
     │   ├── fonts/          Inter and Space Grotesk, WOFF2, Latin subset
     │   └── screenshots/    App screenshots: dark/ and light/, plus the hero banners
     ├── components/         Shared pieces: header, footer, buttons, phone frames, icons
+    │   ├── gate/           The early-access pages' frame, goal bar, donate links and code box
     │   └── home/           One component per home-page section, in page order
     ├── content/privacy.md  The words on /privacy
     ├── data/               Links and site facts (site.ts), screenshots and alt text (screenshots.ts)
     ├── layouts/            BaseLayout.astro: <head>, meta tags, header and footer
     ├── pages/              One file per page: index, privacy, 404
+    │   └── gate/           The early-access pages, which the Worker fills in and serves (never at /gate/...)
     └── styles/             tokens.css (design tokens) and global.css (reset and shared classes)
 ```
 
@@ -121,11 +152,14 @@ The site practises what the app promises:
 - **No third-party requests.** No Google Fonts, CDNs, embeds, analytics or trackers. Self-host
   anything you need. `public/_headers` sets a Content-Security-Policy that blocks other origins, so
   something that loads in `npm run dev` but not in production is probably being blocked on purpose.
-- **No cookies, no scripts.** The site ships no JavaScript, and `public/_headers` enforces it: the
-  Content-Security-Policy says `script-src 'none'`, so browsers run no script on these pages, and the
-  Website check fails if a built page has one. If something truly needs a script, keep it small and
-  inline, allow that one script by its sha256 hash in `script-src` (never `'unsafe-inline'`), and
-  update the check in `.github/workflows/web.yml`.
+- **No scripts, and one cookie.** The site ships no JavaScript, and the Content-Security-Policy enforces
+  it with `script-src 'none'`: in `public/_headers` for the files Cloudflare serves directly, and in
+  `worker/pages.js` for everything the Worker answers (a test keeps the two equal). The Website check
+  fails if a built page has a script. Forms are plain HTML posts, allowed only to this site
+  (`form-action 'self'`). If something truly needs a script, keep it small and inline, allow that one
+  script by its sha256 hash in `script-src` (never `'unsafe-inline'`), and update the check in
+  `.github/workflows/web.yml`. The only cookie is `stash_access`, set when someone signs in (see
+  [Early access](#early-access)). Don't add another without updating the privacy page.
 - **Astro's own telemetry is switched off** in `astro.config.mjs`, and Wrangler's in `wrangler.jsonc`
   (`send_metrics: false`), for everyone who works on the site.
 - **In the Cloudflare dashboard, keep these off for stashfm.app**: Web Analytics (and its automatic
@@ -134,6 +168,83 @@ The site practises what the app promises:
   obfuscated email address would never show). Zaraz is worse: it rewrites the CSP so its own script
   can run. Bot Fight Mode stays off too, for the share Worker's sake (see
   `infra/share-worker/README.md`).
+
+## Early access
+
+The website is in early access. Supporters (Ko-fi automatically; GitHub Sponsors and PayPal added by
+hand) are on the list as a thank-you, anyone else can ask, and the owner and Evo answer requests on
+`/admin`. Never word it as "donate to get in", and keep Qobuz, lossless and the relay out of this copy.
+
+**What a visitor sees.** `/` is the early-access page (`src/pages/gate/front.astro`) for anyone who isn't
+signed in, and the real home page for anyone who is. `/privacy`, the 404 page and every file (CSS,
+fonts, images, `robots.txt`, the sitemap) are public. Any other page is private: a page added later
+needs a session until it's added to `PUBLIC_PAGES` in `worker/index.js`.
+
+**The routes** (`worker/index.js`):
+
+| Route | What it does |
+| --- | --- |
+| `GET /`, `GET /access` | The early-access page, with this month's goal filled in |
+| `POST /access` | Email in. If it's on the list, a 6-digit code goes out by email. The page is the same either way |
+| `POST /access/verify` | Email and code in. The right code sets the `stash_access` cookie and goes to `/` |
+| `GET` and `POST /request` | The request-access form, and storing a request (the same answer for everyone) |
+| `POST /signout` | Clears the cookie (the button is in the home page's footer) |
+| `GET` and `POST /admin` | Requests, the access list and the goal, behind Cloudflare Access |
+
+Which paths reach the Worker at all is `assets.run_worker_first` in `wrangler.jsonc`. With
+`not_found_handling` set, a browser navigation (a form post too) to a path with no file never reaches
+the Worker unless it's listed there, so a new route must be covered by it. A test checks this.
+
+**How the pages are made.** They're ordinary Astro pages in `src/pages/gate/`, built with the rest of
+the site, so they match it in both themes. The Worker fetches one from the static assets and fills its
+blanks with HTMLRewriter (`data-fill`, `data-value`, `data-html`, `data-if` and `data-goal`, explained
+in `worker/pages.js`). A test checks the built pages still have every blank the Worker fills, so rename
+both sides together. `/gate/...` itself is never served.
+
+**Signing in.** Emails are trimmed and lowercased, then hashed (SHA-256, or HMAC-SHA256 with the
+optional `EMAIL_PEPPER`), the same way as the tip jar (`infra/tipjar-worker/src/access.js`) and its
+import script; tests in both places check the same vectors. Codes: only an HMAC is stored, for 10
+minutes and 5 tries, and an email gets at most 5 codes an hour. The cookie is
+`b64url({h, exp}).b64url(HMAC-SHA256)` with `SESSION_SECRET`, `HttpOnly; Secure; SameSite=Lax; Path=/`,
+90 days. Each signed-in request also checks the email's hash is still on the list (cached for 5
+minutes), so removing someone signs them out within a few minutes. Every POST must come from this site
+(`Origin`, or `Sec-Fetch-Site: same-origin`).
+
+**Saying nothing about who has access.** Sending a code, a wrong code and requesting access answer the
+same way for an email on the list and one that isn't, and the slow parts (writing the code, sending
+email, storing a request) run after the response, so timing doesn't tell either.
+
+**Rate limits** (Workers ratelimit bindings in `wrangler.jsonc`, per Cloudflare location, namespace ids
+2010 to 2013; the share Worker has 2001 to 2009): code emails 5 a minute per IP and 3 a minute per email
+hash (for every email, listed or not), code tries 10 a minute per IP, requests 3 a minute per IP.
+Over a limit, the visitor gets a "Slow down a little" page (HTTP 429).
+
+**The goal.** `goal:<YYYY-MM>` (UTC month), against `GOAL_CENTS` ($100). Ko-fi donations count by
+themselves (the tip jar); GitHub Sponsors and PayPal are added on `/admin`, which can also take a
+hand-added entry back out. The pages show whole dollars, rounded down, and read the total at most once
+a minute.
+
+**Storage.** The Worker shares the tip jar's KV namespace, `STASH_KV`. Every key, who writes it and how
+long it's kept: [`infra/tipjar-worker/README.md`, "STASH_KV keys"](../infra/tipjar-worker/README.md#stash_kv-keys).
+
+**`/admin`.** Cloudflare Access (Zero Trust) guards it, and the Worker checks the Access token itself
+(`Cf-Access-Jwt-Assertion`: RS256 against your team's certs, the app's AUD tag, the issuer and expiry),
+then that the token's email is in the `ADMIN_EMAILS` secret. With either missing, or the placeholders
+still in `wrangler.jsonc`, `/admin` refuses everyone. There's no fallback to the plain email header.
+
+**Settings** (`wrangler.jsonc` and secrets):
+
+| Name | Kind | What |
+| --- | --- | --- |
+| `SESSION_SECRET` | secret | Signs the cookie and the stored codes. 32+ random characters. Changing it signs everyone out |
+| `ADMIN_EMAILS` | secret | Comma-separated emails allowed on `/admin` |
+| `EMAIL_PEPPER` | secret, optional | Only if the tip jar has one, and then the same value. Otherwise unset on both |
+| `ACCESS_TEAM_DOMAIN` | var | `https://<team>.cloudflareaccess.com` |
+| `ACCESS_AUD` | var | The Access application's AUD tag |
+| `GOAL_CENTS` | var | The monthly goal in US cents (`10000`) |
+| `EMAIL_FROM` | var | `access@stashfm.app`, the only sender the `EMAIL` binding allows |
+
+Replies to `access@stashfm.app` reach the owner through Email Routing.
 
 ## Things to know
 
@@ -144,8 +255,36 @@ The site practises what the app promises:
 
 ## Deploying
 
-The site is a Worker named `stashfm-site` that serves `dist/` with Workers Static Assets: no Worker
-code, just files, headers (`public/_headers`) and a 404 page. Nothing is set up yet. The plan:
+The site is a Worker named `stashfm-site`: `dist/` served with Workers Static Assets (files, headers from
+`public/_headers`, a 404 page), plus the early-access Worker in `worker/`. Nothing is set up yet. The plan:
+
+0. **Early access, before the site goes live**, in this order:
+   1. **Deploy the tip jar.** From `infra/tipjar-worker`: `npm ci`, `npm test`, `npx wrangler deploy`.
+      From then on Ko-fi donations also fill the access list and the goal; the app's supporters list
+      doesn't change. If you want an `EMAIL_PEPPER`, set it now, before anything writes `access:*`:
+      `npx wrangler secret put EMAIL_PEPPER` there, then the same value on the site (step 4).
+   2. **Import past supporters**, once: export your Ko-fi transactions as CSV, then follow "Importing
+      past supporters" in `infra/tipjar-worker/README.md` (`node scripts/import-kofi-csv.mjs
+      <export.csv>`, then the `npx wrangler kv bulk put ... --remote` command it prints). Delete the
+      CSV and the JSON file afterwards.
+   3. **Set up Cloudflare Access for `/admin`** (Zero Trust, free): Zero Trust › Access › Applications ›
+      Add an application › Self-hosted. Application domain `stashfm.app`, path `admin`. To use the
+      admin page before launch too, add a second destination: `stashfm-site.<account>.workers.dev`,
+      path `admin`. Policy: Allow, Include › Emails › the owner's and Evo's addresses. Save, then copy
+      the **Application Audience (AUD) Tag** (the application › Additional settings) and your **team
+      domain** (Zero Trust › Settings, `<team>.cloudflareaccess.com`). Put both in `vars` in
+      `wrangler.jsonc`: `ACCESS_AUD`, and `ACCESS_TEAM_DOMAIN` as `https://<team>.cloudflareaccess.com`.
+      They aren't secrets.
+   4. **The site's secrets**, once the Worker exists (after its first deploy, step 1 below; until
+      then sign-in says it isn't working and `/admin` refuses everyone). From `web/`:
+      `npx wrangler secret put SESSION_SECRET` (paste 48 random bytes, e.g. `openssl rand -base64 48`),
+      `npx wrangler secret put ADMIN_EMAILS` (the owner's and Evo's addresses, comma-separated), and
+      `EMAIL_PEPPER` only if the tip jar has one. Or set them in the dashboard: Workers & Pages ›
+      stashfm-site › Settings › Variables and Secrets.
+   5. **Try it on the workers.dev address**: sign in with a supporter's email, ask for access with
+      another, approve it on `/admin` (if Access covers workers.dev), add and remove a donation, sign
+      out. Email Sending for stashfm.app is already set up (2026-10-04: DKIM, SPF, DMARC, bounce
+      records), so the codes really go out.
 
 1. **Connect the repo with Workers Builds** (Cloudflare dashboard › Workers & Pages › Create ›
    Import a repository):
@@ -157,7 +296,9 @@ code, just files, headers (`public/_headers`) and a 404 page. Nothing is set up 
    Workers Builds uses the Wrangler version pinned in `package.json`.
 2. **Previews.** Each branch pushed to this repo gets a preview URL, posted on its pull request, so
    changes can be checked before merging. Pull requests from forks get no preview; the Website check
-   in GitHub Actions still type-checks and builds them. Merging to `master` deploys.
+   in GitHub Actions still type-checks, builds and tests them. Merging to `master` deploys. Previews
+   run with the real bindings and secrets: signing in on one uses the real access list and sends real
+   codes, and the gate applies there too.
 3. **At launch, hand stashfm.app over in this order**, or shared links break. Today the share Worker
    (`infra/share-worker`, Worker `stash-share`) owns all of `stashfm.app/*`, and its `/` is a
    placeholder page. A route pattern can belong to only one Worker, and the most specific one wins.
@@ -191,7 +332,8 @@ code, just files, headers (`public/_headers`) and a 404 page. Nothing is set up 
    4. **Connect the site:** uncomment `routes` in `wrangler.jsonc` and merge to `master`. The deploy
       gives this Worker `stashfm.app/*`, on the proxied DNS record the share Worker already uses. If
       that deploy fails on the route, `stash-share` still holds `stashfm.app/*`: go back to step 2.
-4. **After launch**, run the share-link checks again, then check the home page, `/privacy` and a
+4. **After launch**, run the share-link checks again, then check the home page (the early-access page
+   when signed out; sign in and out once), `/privacy`, `/admin` (Access should ask you to sign in) and a
    made-up path (which should show the 404 page). Once the app people use talks to stashfm.app, also
    share a song from it and join a Listen Together session, which uses the `/v1/rooms/<code>/ws`
    WebSocket.
