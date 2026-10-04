@@ -27,7 +27,8 @@ const contents = getHeadings().filter((heading) => heading.depth <= 3);
     <div class="glow" aria-hidden="true"></div>
     <div class="container">
       <p class="overline"><Icon name="shield" size="18px" />Privacy</p>
-      <h1>What Stash talks to, and why</h1>
+      {/* The no-break space keeps "talks to" together: the 16ch cap used to end a line on "talks". */}
+      <h1>What Stash talks&nbsp;to, and why</h1>
       <p class="lead">
         Stash has no account server, but it isn't a two-service app either. Here is every host the app can reach,
         what each one is sent, and when.
@@ -49,6 +50,22 @@ const contents = getHeadings().filter((heading) => heading.depth <= 3);
         }
       </ol>
     </nav>
+
+    {/* Phones and tablets: the same list, folded away. Wide screens get the sticky sidebar instead. */}
+    <details class="toc-mobile">
+      <summary>On this page <Icon name="chevron-down" size="22px" class="chevron" /></summary>
+      <nav aria-label="On this page">
+        <ol role="list">
+          {
+            contents.map((heading) => (
+              <li class={`depth-${heading.depth}`}>
+                <a href={`#${heading.slug}`}>{heading.text}</a>
+              </li>
+            ))
+          }
+        </ol>
+      </nav>
+    </details>
 
     <article class="prose">
       <Content />
@@ -146,6 +163,70 @@ const contents = getHeadings().filter((heading) => heading.depth <= 3);
     border-left-color: var(--purple);
   }
 
+  /* The folded contents list for narrow screens. Shown only below 960px. */
+  .toc-mobile {
+    display: none;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border-bright);
+    background: var(--glass);
+  }
+
+  .toc-mobile summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+    padding: 12px 20px;
+    border-radius: var(--radius-lg);
+    color: var(--text);
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .toc-mobile summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .toc-mobile summary :global(.chevron) {
+    color: var(--text-2);
+    transition: transform 0.2s ease;
+  }
+
+  .toc-mobile[open] summary :global(.chevron) {
+    transform: rotate(180deg);
+  }
+
+  .toc-mobile ol {
+    display: grid;
+    gap: 2px;
+    padding: 0 20px 14px;
+  }
+
+  .toc-mobile a {
+    display: block;
+    padding: 8px 0;
+    color: var(--text-2);
+    line-height: 1.4;
+    text-decoration: none;
+  }
+
+  .toc-mobile .depth-3 a {
+    padding-left: 16px;
+    font-size: 0.9375rem;
+  }
+
+  .toc-mobile a:hover {
+    color: var(--text);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toc-mobile summary :global(.chevron) {
+      transition: none;
+    }
+  }
+
   /* The Markdown content. */
   .prose {
     max-width: 780px;
@@ -153,12 +234,13 @@ const contents = getHeadings().filter((heading) => heading.depth <= 3);
     font-size: 1.0625rem;
   }
 
+  /* No scroll-margin-top here: html's scroll-padding-top (global.css) already
+     clears the sticky header, and adding both left headings 184px down. */
   .prose :global(h2) {
     margin-top: 72px;
     margin-bottom: 20px;
     font-size: clamp(1.75rem, 1.4rem + 1.4vw, 2.375rem);
     letter-spacing: -0.03em;
-    scroll-margin-top: 96px;
   }
 
   .prose :global(h2:first-child) {
@@ -169,7 +251,6 @@ const contents = getHeadings().filter((heading) => heading.depth <= 3);
     margin-top: 44px;
     margin-bottom: 14px;
     font-size: 1.3125rem;
-    scroll-margin-top: 96px;
   }
 
   .prose :global(p) {
@@ -254,6 +335,10 @@ const contents = getHeadings().filter((heading) => heading.depth <= 3);
 
     .toc {
       display: none;
+    }
+
+    .toc-mobile {
+      display: block;
     }
   }
 </style>

@@ -91,6 +91,8 @@ const screens: { name: ScreenName; title: string; text: string }[] = [
   figcaption span {
     color: var(--text-2);
     font-size: 0.9375rem;
+    /* The global text-wrap: pretty only covers <p>; this keeps a caption from ending on one lone word. */
+    text-wrap: pretty;
   }
 
   /* Phones and small tablets: one swipeable row that snaps to each phone. */

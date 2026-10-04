@@ -135,4 +135,16 @@ const { version } = await getLatestRelease();
       width: 100%;
     }
   }
+
+  /*
+   * Small phones: if a button is still wider than the space it has (the closing
+   * panel trims its own, see FinalCta), let the label wrap inside it rather than
+   * spill past the edge.
+   */
+  @media (max-width: 360px) {
+    .buttons .button {
+      white-space: normal;
+      text-align: center;
+    }
+  }
 </style>

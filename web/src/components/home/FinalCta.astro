@@ -72,4 +72,15 @@ import vinyl from '../../assets/brand/vinyl.png';
   .panel :global(.cta) {
     margin-top: 36px;
   }
+
+  /*
+   * Small phones: the panel's padding leaves about 246px at 320px, and the
+   * full-size Download button is about 276px. Trim it so it fits on one line.
+   */
+  @media (max-width: 360px) {
+    .panel :global(.cta .download) {
+      padding-inline: 16px;
+      font-size: 1rem;
+    }
+  }
 </style>

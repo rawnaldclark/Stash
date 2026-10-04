@@ -49,6 +49,8 @@
   --glow-cyan: rgb(6 182 212 / 0.10);
   --device-frame: linear-gradient(150deg, #2c2c36 0%, #101016 45%, #0a0a0f 100%);
   --device-shadow: 0 48px 96px -32px rgb(0 0 0 / 0.75), 0 24px 48px -24px rgb(0 0 0 / 0.5);
+  /* A phone screen still loading: the dark screenshots' background (#07060d) with a faint purple top. */
+  --screen-placeholder: radial-gradient(120% 45% at 50% 0%, rgb(139 92 246 / 0.16), transparent 70%), #07060d;
 
   /* Buttons. White on this gradient stays above 4.5:1 where the label sits. */
   --button-bg: linear-gradient(135deg, var(--purple) 0%, var(--purple-dark) 100%);
@@ -97,6 +99,7 @@
     --glow-magenta: rgb(217 70 239 / 0.12);
     --glow-cyan: rgb(6 182 212 / 0.08);
     --device-shadow: 0 48px 96px -32px rgb(46 16 101 / 0.35), 0 24px 48px -24px rgb(46 16 101 / 0.25);
+    --screen-placeholder: radial-gradient(120% 45% at 50% 0%, rgb(124 58 237 / 0.12), transparent 70%), #f6f4ff;
     --button-glow: 0 10px 32px -12px rgb(124 58 237 / 0.6);
 
     color-scheme: light;

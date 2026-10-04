@@ -56,5 +56,12 @@ const { dark, light, alt } = screen(name);
     width: 100%;
     height: auto;
     border-radius: var(--screen-radius);
+    /*
+     * Shown until the screenshot arrives (most load lazily, and swiping the
+     * gallery reaches them before they do): the app's own screen colour, so a
+     * loading phone looks switched on rather than empty. The loaded screenshot
+     * covers it completely.
+     */
+    background: var(--screen-placeholder);
   }
 </style>

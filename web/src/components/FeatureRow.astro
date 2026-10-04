@@ -154,5 +154,15 @@ const { id, icon, overline, title, screens, reverse = false } = Astro.props;
     .pair {
       --device-width: min(52vw, 260px);
     }
+
+    /*
+     * The halo is square and shares the phones' grid cell, so it sets the cell's
+     * height. In one column it would be 1.2× the full width (about 1000px at 900px
+     * wide), leaving about 200px of empty space above and below the phone. Capped,
+     * the phone sets the height again; desktop is unaffected.
+     */
+    .halo {
+      width: min(120%, 560px);
+    }
   }
 </style>

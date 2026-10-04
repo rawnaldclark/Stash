@@ -235,4 +235,16 @@ import { LINKS } from '../../data/site';
       align-items: flex-start;
     }
   }
+
+  /* Phones: the sentence wraps, so the icon flows with its first line instead of standing apart on the left. */
+  @media (max-width: 560px) {
+    .translate {
+      display: block;
+      text-wrap: balance;
+    }
+
+    .translate :global(.icon) {
+      margin-right: 8px;
+    }
+  }
 </style>

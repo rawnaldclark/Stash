@@ -13,7 +13,8 @@ import { heroAlt, heroDark, heroLight } from '../../data/screenshots';
       <Icon name="android" size="18px" />
       Open source music player for Android
     </p>
-    <h1 id="hero-title">Your <span class="gradient">Spotify + YouTube Music</span> library</h1>
+    {/* The no-break spaces keep "Spotify +" and "YouTube Music" whole: phones read "Your Spotify +" / "YouTube Music" / "library". */}
+    <h1 id="hero-title">Your <span class="gradient">Spotify&nbsp;+ YouTube&nbsp;Music</span> library</h1>
     <p class="lead">
       Stash mirrors your Spotify and YouTube Music libraries to your Android phone. Download your playlists
       and mixes to play offline, or stream them without filling up your storage.
@@ -77,12 +78,34 @@ import { heroAlt, heroDark, heroLight } from '../../data/screenshots';
     color: #3ddc84; /* Android green */
   }
 
+  /* Small phones: a little tighter, so the pill stays one line down to 320px. */
+  @media (max-width: 340px) {
+    .pill {
+      gap: 6px;
+      padding: 6px 12px 6px 10px;
+      border-radius: var(--radius-lg);
+      font-size: 0.8125rem;
+      text-wrap: balance;
+    }
+  }
+
   h1 {
     margin-top: 24px;
     max-width: 13em;
     font-size: clamp(2.5rem, 1.25rem + 5.6vw, 5.25rem);
     line-height: 1.02;
     letter-spacing: -0.04em;
+  }
+
+  /*
+   * "YouTube Music" can't break, and at the 40px minimum it is about 275px wide.
+   * Below 310px that's wider than the column, so scale the headline to fit
+   * (6.9em is that phrase plus a little room). Continuous with 40px at 310px.
+   */
+  @media (max-width: 309px) {
+    h1 {
+      font-size: calc((100vw - 2 * var(--gutter)) / 6.9);
+    }
   }
 
   .gradient {

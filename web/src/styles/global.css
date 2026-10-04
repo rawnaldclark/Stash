@@ -125,6 +125,9 @@ code {
   background: var(--glass);
   border: 1px solid var(--glass-border);
   overflow-wrap: anywhere;
+  /* A host name that wraps onto the next line keeps its border and padding on both lines. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 strong {
