@@ -7,6 +7,8 @@ If you discover a security issue in Stash — particularly anything related to c
 **How to report:**
 
 1. Open a **[private security advisory](https://github.com/rawnaldclark/Stash/security/advisories/new)** on GitHub. This creates a confidential channel visible only to the maintainers.
+
+For anything that isn't a security vulnerability, such as a takedown, abuse or legal request, email **[legal@stashfm.app](mailto:legal@stashfm.app)**.
 2. Include:
    - A description of the issue and its potential impact.
    - Step-by-step reproduction if possible.

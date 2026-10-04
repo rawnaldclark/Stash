@@ -313,7 +313,7 @@ Stash is provided **for personal use only** — a tool for managing your own lib
 
 ### Takedown and abuse reports
 
-Rights holders, service operators, and anyone else with a takedown or abuse report: open an issue on [GitHub Issues](https://github.com/rawnaldclark/Stash/issues), or reach the maintainer through his GitHub profile, [@rawnaldclark](https://github.com/rawnaldclark). If the report shouldn't be public, file it as a [private security advisory](https://github.com/rawnaldclark/Stash/security/advisories/new) — it's a confidential channel to the maintainers whether or not the issue is strictly a security one. Reports are read, and a source can be removed from the app in a release.
+Rights holders, service operators, and anyone else with a takedown or abuse report: email **[legal@stashfm.app](mailto:legal@stashfm.app)**, which reaches the maintainer directly. You can also open an issue on [GitHub Issues](https://github.com/rawnaldclark/Stash/issues) or, if the report shouldn't be public, file a [private security advisory](https://github.com/rawnaldclark/Stash/security/advisories/new). Reports are read, and a source can be removed from the app in a release.
 
 ---
 
