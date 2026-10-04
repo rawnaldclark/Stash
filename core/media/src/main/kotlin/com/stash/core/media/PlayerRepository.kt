@@ -104,6 +104,16 @@ interface PlayerRepository {
      */
     fun setVolume(volume: Float)
 
+    /**
+    * Session-only playback speed (1f = normal). Lives here, not in a ViewModel,
+    * so it survives Now Playing being dismissed and carries to the next song.
+    * Deliberately not persisted: the singleton dies with the process, so it
+    * resets to 1x on restart.
+    */
+    val playbackSpeed: StateFlow<Float>
+
+    fun setPlaybackSpeed(speed: Float)
+
     /** Skip to the next track in the queue. */
     suspend fun skipNext()
 

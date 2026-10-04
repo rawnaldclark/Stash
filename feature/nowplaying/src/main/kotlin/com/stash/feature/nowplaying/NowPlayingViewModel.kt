@@ -307,6 +307,11 @@ class NowPlayingViewModel @Inject constructor(
     /** Stop the active radio station. */
     fun stopRadio() = playerRepository.stopRadio()
 
+    // ── Playback speed (session-only; lives in PlayerRepository) ──
+    val playbackSpeed: StateFlow<Float> = playerRepository.playbackSpeed
+
+    fun onSetPlaybackSpeed(speed: Float) = playerRepository.setPlaybackSpeed(speed)
+
     // ------------------------------------------------------------------
     // Sleep timer
     // ------------------------------------------------------------------
