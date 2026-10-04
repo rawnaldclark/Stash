@@ -29,7 +29,11 @@ class FlacUpgradeViewModel @Inject constructor(
 ) : ViewModel() {
 
     val autoEnabled: StateFlow<Boolean> = autoPref.enabled
-    fun setAutoEnabled(enabled: Boolean) = autoPref.set(enabled)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setAutoEnabled(enabled: Boolean) {
+        viewModelScope.launch { autoPref.setEnabled(enabled) }
+    }
 
     private val lastResult = MutableStateFlow<FlacSweepResult?>(null)
 

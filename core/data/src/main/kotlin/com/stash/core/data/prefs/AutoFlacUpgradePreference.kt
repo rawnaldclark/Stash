@@ -1,30 +1,45 @@
 package com.stash.core.data.prefs
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Whether a FLAC upgrade sweep runs automatically after every sync. Off by default. */
+/** Dedicated DataStore for the auto FLAC upgrade opt-in (a settings backup carries it). */
+private val Context.autoFlacUpgradeDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "auto_flac_upgrade_preference",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
+
+/**
+ * Whether the FLAC upgrade sweep runs by itself after every sync
+ * ([com.stash.core.data.lossless.FlacUpgradeSweeper.afterSync]). Off by default:
+ * each sweep queues every lossy download for a lossless lookup. Library Health's
+ * "Check for upgrades" runs the same sweep on demand whatever this says.
+ */
 @Singleton
 class AutoFlacUpgradePreference @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val context: Context,
 ) {
-    private val prefs = context.getSharedPreferences("auto_flac_upgrade", Context.MODE_PRIVATE)
-    private val _enabled = MutableStateFlow(prefs.getBoolean(KEY, false))
-    val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
+    private val enabledKey = booleanPreferencesKey("enabled")
 
-    fun current(): Boolean = prefs.getBoolean(KEY, false)
-
-    fun set(value: Boolean) {
-        prefs.edit().putBoolean(KEY, value).apply()
-        _enabled.value = value
+    val enabled: Flow<Boolean> = context.autoFlacUpgradeDataStore.data.map { prefs ->
+        prefs[enabledKey] ?: false
     }
 
-    private companion object {
-        const val KEY = "auto_upgrade_enabled"
+    suspend fun current(): Boolean = enabled.first()
+
+    suspend fun setEnabled(value: Boolean) {
+        context.autoFlacUpgradeDataStore.edit { it[enabledKey] = value }
     }
 }
