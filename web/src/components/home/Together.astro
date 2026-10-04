@@ -4,6 +4,10 @@
  * (stash-share) and the code: up to 10 people in a Listen Together room
  * (infra/share-worker/src/room.js, MAX_MEMBERS), Follow or Save a copy for a
  * shared mix, and Community off until it's turned on in Home layout.
+ * Names are free text the user picks ("Show my name as", up to 40 characters,
+ * SharePreference): optional for Listen Together and shared mixes (others see
+ * "Someone"), required for a Community post, and never checked, so the intro
+ * mustn't suggest a name identifies anyone.
  */
 import Icon, { type IconName } from '../Icon.astro';
 
@@ -36,7 +40,7 @@ const features: { icon: IconName; title: string; text: string; fact: string }[] 
       <p class="overline"><Icon name="group" size="18px" />Social</p>
       <h2 id="together-title" class="section-title">Music is better together</h2>
       <p class="section-intro">
-        Still no accounts. People see the display name you choose, and that's how they know it's you.
+        Still no Stash account. People see whatever name you choose to show.
       </p>
     </div>
 

@@ -1,7 +1,13 @@
 ---
 /**
  * More of the app, one phone per screen. A swipeable row on phones, a grid on
- * wider screens. The screenshots follow the visitor's theme like the rest of the page.
+ * wider screens. The screenshots follow the visitor's theme like the rest of the
+ * page, so a visitor sees one theme only: the title promises no more than that.
+ * The app follows the phone's theme by default (ThemeMode.SYSTEM) and has a
+ * "Pure black (AMOLED)" option for its dark theme.
+ *
+ * Captions stick to playing and organising your own library; downloading is
+ * explained with the Download switch (Modes, HowItWorks).
  */
 import Device from '../Device.astro';
 import Icon from '../Icon.astro';
@@ -9,13 +15,13 @@ import type { ScreenName } from '../../data/screenshots';
 
 const screens: { name: ScreenName; title: string; text: string }[] = [
   { name: 'home', title: 'Home', text: 'Daily Discover, your mixes and radios' },
-  { name: 'playlist', title: 'Playlists', text: 'Play, shuffle, share or download' },
+  { name: 'playlist', title: 'Playlists', text: 'Play, shuffle or share' },
   { name: 'artist', title: 'Artists', text: 'Popular songs and artist radio' },
   { name: 'discography', title: 'Discography', text: 'Albums, singles and EPs' },
-  { name: 'album', title: 'Albums', text: 'Play, queue, save or download all' },
-  { name: 'search', title: 'Search', text: 'Songs and artists, ready to play or download' },
+  { name: 'album', title: 'Albums', text: 'Play, queue or save to your library' },
+  { name: 'search', title: 'Search', text: 'Songs and artists, ready to play' },
   { name: 'settings', title: 'Settings', text: 'Everything in a few clear groups' },
-  { name: 'appearance', title: 'Themes', text: 'Dark, light or pure black' },
+  { name: 'appearance', title: 'Themes', text: 'Dark, light or follow system' },
 ];
 ---
 
@@ -23,9 +29,10 @@ const screens: { name: ScreenName; title: string; text: string }[] = [
   <div class="container">
     <div class="section-head is-centered">
       <p class="overline"><Icon name="dark-mode" size="18px" />A closer look</p>
-      <h2 id="tour-title" class="section-title">Dark, light or pure black</h2>
+      <h2 id="tour-title" class="section-title">Dark or light, it follows your phone</h2>
       <p class="section-intro">
-        This page follows your device's theme, so these screens do too. Switch it to see the other look.
+        Stash matches your phone's dark or light setting, or you can pick one, and there's a pure-black option
+        for OLED screens. These screens follow your device's theme too, so switch it to see the other look.
       </p>
     </div>
   </div>

@@ -1,8 +1,12 @@
 ---
 /**
- * Frequently asked questions. Every answer restates the README (Install,
- * Requirements, Lossless, Privacy, "Why Stash isn't on the Play Store",
- * "When background sync stops working"); keep them in step when it changes.
+ * Frequently asked questions, from the README (Install, Requirements, Lossless,
+ * Privacy, "Why Stash isn't on the Play Store", "When background sync stops
+ * working") and checked against the app's code; keep them in step.
+ *
+ * The free, Play Store, lossless and requirements answers were corrected
+ * against the app in October 2026, and the README with them. When the README
+ * and the app disagree, the app's code is right.
  *
  * Each answer has an id (faq-*) so other pages can link straight to it;
  * browsers open the question when its answer is linked.
@@ -28,26 +32,23 @@ import { LINKS } from '../../data/site';
         <summary>Is Stash free?<Icon name="chevron-down" class="chevron" /></summary>
         <div class="answer" id="faq-free">
           <p>
-            Yes. Stash is free and open source under the GPL-3.0, with no ads, no subscription and no Stash
-            account. To sync a library you need your own Spotify and/or YouTube Music account.
+            Yes. Stash is free and open source under the
+            <a href={LINKS.license}>GNU General Public License, version 3</a> or later. There's no Stash account to
+            make, but to sync a library you need your own Spotify and/or YouTube Music account.
           </p>
-          <p>If Stash replaced a subscription for you, you can <a href="#community">support the project</a>.</p>
+          <p>If you'd like to help keep Stash going, you can <a href="#community">support the project</a>.</p>
         </div>
       </details>
 
       <details>
         <summary>Why isn't Stash on the Play Store?<Icon name="chevron-down" class="chevron" /></summary>
         <div class="answer" id="faq-play-store">
+          <p>Google Play doesn't allow apps that save audio from YouTube, so Stash is published on GitHub instead.</p>
           <p>
-            Stash downloads audio from YouTube and Spotify, which violates both services' Terms of Service, and
-            Google Play policy bans apps that facilitate unauthorized downloads. Every project in this space,
-            like NewPipe, YTDLnis, SpotTube and InnerTune, is distributed outside the Play Store for the same
-            reason.
-          </p>
-          <p>
-            That isn't a workaround. It's a principled choice: open-source tools that give users control over
-            their own libraries don't belong in a gatekept store that could revoke them on a whim. GitHub
-            Releases is the right home for Stash.
+            Stash never downloads audio from Spotify. It reads your Spotify library with your own login and finds
+            each song's audio elsewhere, as the <a href="/privacy#what-stash-talks-to">privacy page</a> lists. Stash
+            isn't affiliated with or endorsed by any of the services it connects to, and you're responsible for how
+            you use it.
           </p>
         </div>
       </details>
@@ -70,25 +71,22 @@ import { LINKS } from '../../data/site';
       <details>
         <summary>Where does lossless come from?<Icon name="chevron-down" class="chevron" /></summary>
         <div class="answer" id="faq-lossless">
-          <p>
-            Stash ships no shared user accounts: there's no bundled Qobuz account and no shared token pool. FLAC
-            comes from a source you pick:
-          </p>
+          <p>There's no Qobuz account or token inside the app. FLAC can come from:</p>
           <ul>
             <li>
               <strong>Your own Qobuz account</strong>, connected in Settings › Audio &amp; Quality. Your email
               and password are sent once to Qobuz to mint a token; Stash keeps the token, not the password.
             </li>
-            <li><strong>Your own relay endpoint</strong>, if you run one.</li>
+            <li><strong>Your own relay endpoint</strong>, if you run one, set under Advanced on the same screen.</li>
             <li>
-              <strong>Stash's own relay</strong>, in the official release build only: a relay the project runs on
-              a few paid Qobuz accounts. It's sized as a bridge, not a main path, and your phone stops using it
-              once you connect your own account.
+              <strong>Stash's relay</strong>, in official release builds only, when nothing of your own is connected
+              or working. The <a href="/privacy#lossless-and-fallback-audio">privacy page</a> says what it's sent.
             </li>
           </ul>
           <p>
-            When no lossless source can serve a song, playback and downloads fall back to AAC or Opus, and Home
-            tells you so instead of pretending.
+            When no lossless source can serve a song, it streams in AAC or Opus instead, and Now Playing shows where
+            it came from. Downloads wait for FLAC by default and show as "Waiting for lossless". To take an AAC or
+            Opus copy instead, turn on Lossy fallback in Settings › Audio &amp; Quality.
           </p>
         </div>
       </details>
@@ -114,9 +112,10 @@ import { LINKS } from '../../data/site';
         <summary>What do I need?<Icon name="chevron-down" class="chevron" /></summary>
         <div class="answer" id="faq-requirements">
           <p>
-            A phone running Android 8.0 or later, and a Spotify and/or YouTube Music account. Offline mode needs
-            room for your music: about 9–15 GB for a medium library, depending on how much you sync. Online mode
-            needs almost nothing.
+            A phone running Android 8.0 or later, and a Spotify and/or YouTube Music account. With Download on, you
+            also need room for your music. FLAC files are large: a four-minute song is about 28 MB in CD quality and
+            about 70 MB in Hi-Res, and you can pick the quality in Settings › Audio &amp; Quality. Stream only needs
+            almost nothing.
           </p>
         </div>
       </details>

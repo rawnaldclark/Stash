@@ -1,12 +1,17 @@
 ---
-/** Three steps from the README's "First-time setup" and "After setup". */
+/**
+ * Three steps from the README's "First-time setup" and "After setup",
+ * checked against the app: one Download switch since v0.9.107 (no Offline or
+ * Online mode), and Auto-sync is off until it's turned on in the Sync tab
+ * (SyncPreferencesManager, ScheduleCard).
+ */
 import Icon, { type IconName } from '../Icon.astro';
 
 const steps: { icon: IconName; title: string; text: string }[] = [
   {
     icon: 'login',
     title: 'Connect your accounts',
-    text: 'Sign in to Spotify, YouTube Music or both, right inside the app. Your login cookies stay on your phone, encrypted, and only ever go back to Spotify or YouTube.',
+    text: 'Sign in to Spotify, YouTube Music or both, right inside the app. Your login cookies are stored encrypted on your phone and only ever go back to Spotify or YouTube.',
   },
   {
     icon: 'playlist-check',
@@ -16,7 +21,7 @@ const steps: { icon: IconName; title: string; text: string }[] = [
   {
     icon: 'offline',
     title: 'Download or stream',
-    text: 'Offline mode downloads every song, so it plays with no connection. Online mode builds a streaming index instead, which takes almost no storage.',
+    text: 'With Download on, sync saves your switched-on playlists and mixes so they play with no connection. On Stream only, sync keeps them up to date and songs stream, using almost no storage.',
   },
 ];
 ---
@@ -27,8 +32,8 @@ const steps: { icon: IconName; title: string; text: string }[] = [
       <p class="overline">How it works</p>
       <h2 id="how-title" class="section-title">A couple of minutes per service</h2>
       <p class="section-intro">
-        The first sync is the slow one. After that, scheduled syncs pick up whatever's new and run quietly in
-        the background.
+        The first sync is the slow one. After that, each sync just picks up what's new. Turn on Auto-sync in the
+        Sync tab and it runs on its own, on the days and at the time you pick.
       </p>
     </div>
 

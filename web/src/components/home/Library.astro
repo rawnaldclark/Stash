@@ -1,5 +1,13 @@
 ---
-/** The library, from the README's "Features › Library". */
+/**
+ * The library, from the README's "Features › Library", checked against the app.
+ * Mirroring: "Sync your likes" sends new likes to Spotify, YouTube Music and
+ * Last.fm (LikeMirrorSection), and "Send plays to YouTube Music" adds finished
+ * songs to YouTube Music's history (YouTubeHistorySyncSection); every toggle is
+ * off by default. Nothing reports plays to Spotify (the optional "Auto-save
+ * liked tracks" only saves often-played songs to Liked Songs). Flagging a wrong
+ * match only marks it; the swap happens from the Sync tab (Resync, then approve).
+ */
 import FeatureRow from '../FeatureRow.astro';
 ---
 
@@ -17,11 +25,13 @@ import FeatureRow from '../FeatureRow.astro';
   </p>
   <ul class="checks">
     <li>
-      <strong>Likes and history mirroring.</strong> When it's on, each song you like or stream in Stash lands in
-      your Spotify and YouTube accounts.
+      <strong>Likes and history mirroring.</strong> New likes in Stash can be mirrored to Spotify, YouTube Music
+      and Last.fm, and songs you finish can be added to your YouTube Music history. Each is off until you turn
+      it on.
     </li>
     <li>
-      <strong>Wrong version? One tap.</strong> Flag it from Now Playing and Stash queues a re-search.
+      <strong>Wrong version? Swap it.</strong> Flag it from Now Playing, then pick the right one from the Sync
+      tab.
     </li>
     <li>
       <strong>Scrobbling, if you want it.</strong> Last.fm or ListenBrainz, off until you connect one.

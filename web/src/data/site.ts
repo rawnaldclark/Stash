@@ -9,9 +9,14 @@ export const SITE = {
   url: 'https://stashfm.app',
   /** The README's tagline. */
   tagline: 'Your Spotify + YouTube Music library',
-  /** Used for the home page's <meta name="description"> and social cards. */
+  /**
+   * Used for the home page's <meta name="description"> and social cards. Says
+   * "no Stash account", not "no account" (you do need Spotify or YouTube Music),
+   * and avoids "no ads" / "no subscription", which beside the tagline read as a
+   * pitch to replace those services' paid plans.
+   */
   description:
-    'Stash mirrors your Spotify and YouTube Music libraries to your Android phone, to play offline or stream. Free and open source, with no account and no ads.',
+    'Stash mirrors your Spotify and YouTube Music libraries to your Android phone, to play offline or stream. Free and open source, with no Stash account and no analytics.',
   /** README › Requirements. */
   minAndroid: 'Android 8.0+',
   /** The social card every page uses: public/social-preview.jpg (2560 × 1280). */

@@ -1,8 +1,13 @@
 ---
-/** Now Playing, lyrics and playback, from the README's "Features › Playback". */
+/**
+ * Now Playing, lyrics and playback, from the README's "Features › Playback",
+ * checked against the app: the 5-band equalizer and its presets (EqProcessor,
+ * PresetCatalog), Bass Boost and Loudness Normalization (EqualizerScreen) and
+ * Crossfade (Settings › Playback). There has been no virtualizer since v0.8.0.
+ */
 import FeatureRow from '../FeatureRow.astro';
 
-const playback = ['5-band equalizer with presets', 'Bass boost', 'Virtualizer', 'Crossfader', 'Normalizer'];
+const playback = ['5-band equalizer with presets', 'Bass boost', 'Crossfade', 'Loudness normalization'];
 ---
 
 <FeatureRow

@@ -2,6 +2,12 @@
 /**
  * The footer: links, the README's legal disclaimer, and the licence.
  * The disclaimer is the README's "Legal disclaimer" section; keep the two in step.
+ * It names every service the site and its privacy page mention, and it has no
+ * "for personal use only", which the GPL grant doesn't allow as a restriction.
+ *
+ * The licence is GPL version 3 or later (LICENSE, plus README.md's "either
+ * version 3 of the License, or (at your option) any later version"). Name it the
+ * same way everywhere: "GNU General Public License, version 3 or later".
  */
 import Wordmark from './Wordmark.astro';
 import { LINKS } from '../data/site';
@@ -70,29 +76,32 @@ const columns = [
     <div class="legal">
       <p>
         Stash is an independent, unofficial project. It is <strong>not affiliated with, endorsed by, or
-        sponsored by Spotify AB, YouTube LLC, Google LLC, or Alphabet Inc.</strong> All trademarks belong to
-        their respective owners.
+        sponsored by Spotify, YouTube, Google, Qobuz, Apple, Deezer, Discord, Last.fm, ListenBrainz,
+        MusicBrainz, JioSaavn, KuGou, LRCLIB, or any other service it connects to.</strong> Third-party names
+        and logos on this site are used only to identify the services they belong to, and all trademarks belong
+        to their respective owners.
       </p>
       <p>
-        Stash is provided <strong>for personal use only</strong> — a tool for managing your own library.
-        You're responsible for complying with the Terms of Service of any music service you use Stash with.
-        Downloading copyrighted content without a license may be illegal in your jurisdiction. The Stash
-        project accepts no responsibility for misuse.
+        Stash is a tool for managing your own music library. You're responsible for complying with the Terms
+        of Service of any music service you use Stash with. Downloading copyrighted content without a license
+        may be illegal in your jurisdiction. The Stash project accepts no responsibility for misuse.
       </p>
       <p>
         Rights holders, service operators, and anyone else with a takedown or abuse report: open an issue on
         <a href={LINKS.issues}>GitHub Issues</a>, or reach the maintainer through his GitHub profile,
         <a href="https://github.com/rawnaldclark">@rawnaldclark</a>. If the report shouldn't be public, file
-        it as a <a href={LINKS.securityAdvisory}>private security advisory</a>.
+        it as a <a href={LINKS.securityAdvisory}>private security advisory</a>: it's a confidential channel to
+        the maintainers whether or not the issue is strictly a security one. Reports are read, and a source can be
+        removed from the app in a release.
       </p>
     </div>
 
     <div class="bottom">
       <p>
         Copyright © 2026 Rawnald Clark. Stash is free software under the
-        <a href={LINKS.license}>GNU General Public License v3</a> or later.
+        <a href={LINKS.license}>GNU General Public License, version 3</a> or later.
       </p>
-      <p>This site uses no cookies or analytics, and loads nothing from anyone else.</p>
+      <p>This site sets no cookies of its own, runs no analytics, and loads nothing from anyone else.</p>
     </div>
   </div>
 </footer>
