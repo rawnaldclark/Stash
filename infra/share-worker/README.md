@@ -1,10 +1,13 @@
 # stash-share
 
-Stores shared Stash mixes and serves their links. See `docs/superpowers/specs/2026-09-23-shared-mixes-design.md`.
+Stores shared Stash mixes and songs and serves their links. See `docs/superpowers/specs/2026-09-23-shared-mixes-design.md`.
 
+- Hosts: `https://stashfm.app` (canonical since 2026-10-03, route `stashfm.app/*`) and `https://stash-share.rawnaldclark.workers.dev` (kept forever: `workers_dev = true`). Every URL in a response is built from the request's own origin, so each host answers with its own links and older app versions keep getting workers.dev links. `assetlinks.json` is served on both. `GET /` on stashfm.app is a placeholder landing page; on workers.dev it stays a JSON 404.
 - KV `SHARE_KV`: `mix:<id>` → `{ doc, keyHash, deleted }`. Deleted mixes keep a `{deleted:true}` tombstone for 180 days.
-- Rate limits: `CREATE_RL` (5/min per IP), `WRITE_RL` (30/min per IP).
-- Routes: `POST /v1/mixes`, `PUT|DELETE|GET /v1/mixes/{id}`, `GET /v1/mixes/{id}/version`, `GET /m/{id}`, `GET /t`, `GET /.well-known/assetlinks.json`.
+- Rate limits: `CREATE_RL` (5/min per IP), `WRITE_RL` (30/min per IP), `TRACK_RL` (30/min per IP).
+- Routes: `POST /v1/mixes`, `PUT|DELETE|GET /v1/mixes/{id}`, `GET /v1/mixes/{id}/version`, `GET /m/{id}`, `GET /t` (legacy long song link), `POST /v1/tracks`, `GET /v1/tracks/{id}`, `GET /t/{id}`, `GET /.well-known/assetlinks.json`.
+- Short song links (`src/tracks.js`): `POST /v1/tracks` takes `{ t, a, al?, d?, isrc?, sp?, yt?, art? }` with a mix track's limits (`art` only from a cover host in `COVER_HOSTS`, else dropped) and answers `{ id, url }`: 201 when new, 200 when that song was shared before. The id is derived from the song (base62 SHA-256 of the trimmed, lowercased title, artist, album, ISRC, Spotify id and YouTube id), so one song always gets one link; if another song already holds those 8 characters, the next 8 are used. KV `t:<id>` → `{ v: 1, track, createdAt }`, kept forever. `GET /v1/tracks/{id}` → `{ track }` (cacheable 5 min) or 404.
+- Song page previews (`src/art.js`): the og:image is the stored art, else Spotify oEmbed (moved to `i.scdn.co` at 640 px), else Deezer by ISRC, else YouTube's `hqdefault`, else none. Each lookup gives up after 2 s and never fails the page. Looked-up art is written back into a short link's KV doc; for a legacy `/t?…` link it is cached a day in the Cache API (which does nothing on workers.dev, so there every view looks up again).
 - Listen Together rooms (spec `docs/superpowers/specs/2026-09-24-listen-together-design.md`): Durable Object `ListenRoom`, bound as `ROOMS`, one per room code (`idFromName(code)`). `src/room.js` is the pure logic; `src/listen-room.js` wraps it (storage key `room`, one alarm, WebSocket Hibernation). Routes: `POST /v1/rooms` (`ROOM_RL`, 5/min per IP), `GET /v1/rooms/{code}`, `GET /v1/rooms/{code}/ws` (`?r=1` = rejoining with a resume token), `GET /l/{code}`. Codes are 8 characters, and the three `{code}` routes share `JOIN_RL` (60/min per IP, checked before the Durable Object is reached) so live rooms can't be found by guessing codes. A room keeps display names, song descriptors and the host key's SHA-256; everything is deleted when it closes (5 min after the last member leaves, or 12 h after creation).
 - Stash Community (spec `docs/superpowers/specs/2026-09-26-stash-community-design.md`): D1 database `stash-community`, bound as `COMMUNITY_DB`, schema in `migrations/`. `src/community-post.js` is the pure part (cleaning a post, summarising a row); `src/community.js` holds the routes and all the Worker's SQL. Routes: `GET /v1/community/feed`, `GET /v1/community/mine`, `GET /v1/community/me`, `POST /v1/community/posts`, `GET|DELETE /v1/community/posts/{id}`, `PUT /v1/community/posts/{id}/vote`. A phone is identified by `X-Stash-Community-Key` (only its SHA-256 is stored); a network is a salted hash (`COMMUNITY_SALT` secret) of the IPv4 address or IPv6 /56. Limits: 2 posts a day and 5 live per phone, 10 a day per network, 2 counted votes per network per post each way; `COMMUNITY_WRITE_RL` 10/min, `COMMUNITY_VOTE_RL` 60/min, `COMMUNITY_READ_RL` 120/min, each per network. A daily cron (`17 4 * * *`) deletes expired and long-removed posts.
 
@@ -27,6 +30,22 @@ npx wrangler d1 migrations apply stash-community --remote
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))" | npx wrangler secret put COMMUNITY_SALT
 npx wrangler deploy
 ```
+
+### stashfm.app (first deploy with the route)
+
+Order matters. The app's App Links and API base move to stashfm.app, and on Android 6–11 one host that can't be verified turns App Links off for every host, so the Worker must be live on stashfm.app before an app release that uses it.
+
+1. DNS for stashfm.app must exist and be proxied before the route serves anything: in the stashfm.app zone, add `AAAA`, name `@`, content `100::`, Proxy status Proxied (orange cloud). `100::` is the discard prefix: the Worker answers every request, so nothing reaches an origin. Wait until `https://stashfm.app` has a certificate (Universal SSL on a new zone can take a few minutes).
+2. Before deploying, save a mix's answers on workers.dev to compare afterwards: `curl -s https://stash-share.rawnaldclark.workers.dev/v1/mixes/<id> > before.json`.
+3. `npm test`, then `npx wrangler deploy`. It creates the `stashfm.app/*` route and the `TRACK_RL` binding, and keeps workers.dev.
+4. Check:
+   - `curl -s https://stashfm.app/.well-known/assetlinks.json` lists `com.stash.app` and `com.stash.app.debug`, with no redirect.
+   - `curl -s -X POST https://stashfm.app/v1/tracks -H 'content-type: application/json' -d '{"t":"Never Gonna Give You Up","a":"Rick Astley","isrc":"GBARL9300135","sp":"4uLU6hMCjMI75M1A2tKUQC","yt":"dQw4w9WgXcQ"}'` answers 201 with a `https://stashfm.app/t/<id>` URL; the same command again answers 200 with the same id; `curl -s https://stashfm.app/v1/tracks/<id>` returns the song.
+   - `curl -s -A 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)' https://stashfm.app/t/<id> | grep -E 'og:|twitter:'` (and again with `-A Twitterbot/1.0`) shows og:image on `i.scdn.co`; that proves the Spotify lookup works from Cloudflare. After that view, `GET /v1/tracks/<id>` includes the art.
+   - `curl -s https://stash-share.rawnaldclark.workers.dev/v1/mixes/<id> | diff before.json -` prints nothing, and the workers.dev `/m/<id>` page's og:url is still on workers.dev.
+   - `curl -s https://stashfm.app/` is the landing page; `curl -s https://stash-share.rawnaldclark.workers.dev/` is still `{"error":"not_found"}`.
+
+When the website ships, it takes `stashfm.app/*` and this Worker keeps only its own routes (see the comment in `wrangler.toml`).
 
 ## Remove a mix by hand
 
@@ -57,6 +76,10 @@ Every command prints what it hit, and an empty result means nothing matched. For
 - `unblock` leaves the phone's posts removed. `restore` brings back any of them within a day, before the cleanup deletes them. `list` shows who removed each post (`removed`: `owner` or `poster`); the ones the poster took down themselves stay down.
 - `list [n]` takes up to 200. A post buried by votes and older than the newest n can be in neither list, so `list 200` is the way to find it.
 
-## Moving to a custom domain later
+## Adding another host
 
-Add the domain as a Worker route or custom domain, add its host to `ShareConfig.HOSTS` in the app and to the manifest intent filter, and keep the old host working. `assetlinks.json` is served on every host automatically.
+Add a Worker route for it, add the host to `ShareConfig.HOSTS` in the app and to the manifest's App Links filter, and keep the old hosts working. `assetlinks.json` is served on every host automatically. Ship the route before the app release (see "stashfm.app" above for why).
+
+## Cover hosts
+
+`COVER_HOSTS` in `src/validate.js` and `ShareConfig.COVER_HOSTS` in the app (`ShareLinks.kt`) must list the same hosts. Deezer's (`cdn-images.dzcdn.net`, `e-cdns-images.dzcdn.net`) were added for song-link previews.
