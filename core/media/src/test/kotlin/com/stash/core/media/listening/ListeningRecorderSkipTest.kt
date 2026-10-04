@@ -99,6 +99,8 @@ class ListeningRecorderSkipTest {
         override suspend fun playTrack(track: Track) = StreamRoutingResult.NotAvailable
         override suspend fun playFromStream(item: TrackItem) = StreamRoutingResult.NotAvailable
         override fun setVolume(volume: Float) = Unit
+        override val playbackSpeed: StateFlow<Float> = MutableStateFlow(1f)
+        override fun setPlaybackSpeed(speed: Float) = Unit
     }
 
     private val trackA = Track(
