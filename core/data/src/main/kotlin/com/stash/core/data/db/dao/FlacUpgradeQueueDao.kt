@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import com.stash.core.data.db.entity.FlacUpgradeQueueEntity
 import com.stash.core.model.FlacUpgradeStatus
+import java.time.Instant
 
 /** Persisted worklist for the batch FLAC-upgrade worker (spec 2026-07-22 §3). */
 @Dao
@@ -18,11 +19,21 @@ interface FlacUpgradeQueueDao {
     @Query("DELETE FROM flac_upgrade_queue")
     suspend fun clearAll()
 
-    /** New batch = replace the old one wholesale (single-batch semantics). */
+    /**
+     * New batch = replace the old one wholesale (single-batch semantics). The worker
+     * drains rows in [trackIds] order: each row is stamped one millisecond after the
+     * last, so [pendingTrackIds]' `enqueued_at` sort can't fall back to track-id order
+     * on a tie (the sweep puts never-tried tracks first).
+     */
     @Transaction
     suspend fun startBatch(trackIds: List<Long>) {
         clearAll()
-        insertAll(trackIds.map { FlacUpgradeQueueEntity(trackId = it) })
+        val start = Instant.now()
+        insertAll(
+            trackIds.mapIndexed { i, id ->
+                FlacUpgradeQueueEntity(trackId = id, enqueuedAt = start.plusMillis(i.toLong()))
+            },
+        )
     }
 
     @Query("SELECT track_id FROM flac_upgrade_queue WHERE status = 'PENDING' ORDER BY enqueued_at ASC")
