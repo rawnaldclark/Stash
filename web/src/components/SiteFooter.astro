@@ -12,17 +12,11 @@
 import Wordmark from './Wordmark.astro';
 import { LINKS } from '../data/site';
 
-interface Props {
-  version: string | null;
-}
-
-const { version } = Astro.props;
-
 const columns = [
   {
     title: 'Stash',
     links: [
-      { href: LINKS.download, label: version ? `Download ${version}` : 'Download' },
+      { href: LINKS.download, label: 'Download' },
       { href: LINKS.releases, label: 'All releases' },
       { href: '/#faq', label: 'FAQ' },
       { href: '/privacy', label: 'Privacy' },

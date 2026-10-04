@@ -29,7 +29,10 @@ const REPO = 'https://github.com/rawnaldclark/Stash';
 
 export const LINKS = {
   /** Always the newest release, so the button never needs a rebuild to stay right. */
-  download: `${REPO}/releases/latest`,
+  // The newest release's APK. The release workflow names it Stash.apk (#550); older
+  // releases used Stash-v*.apk, so this link needs a release made after #550.
+  download: `${REPO}/releases/latest/download/Stash.apk`,
+  latestRelease: `${REPO}/releases/latest`,
   releases: `${REPO}/releases`,
   github: REPO,
   issues: `${REPO}/issues`,

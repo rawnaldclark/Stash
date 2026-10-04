@@ -1,10 +1,11 @@
 ---
 /**
  * "Download for Android", "View on GitHub", and the line under them with the
- * latest version (read from GitHub at build time) and the Android requirement.
+ * Android requirement. No version number: the site is only rebuilt when it
+ * changes, so a number would go stale. The Download button always fetches the
+ * newest release's Stash.apk.
  */
 import Icon from './Icon.astro';
-import { getLatestRelease } from '../lib/release';
 import { LINKS, SITE } from '../data/site';
 
 interface Props {
@@ -13,7 +14,6 @@ interface Props {
 }
 
 const { align = 'center' } = Astro.props;
-const { version } = await getLatestRelease();
 ---
 
 <div class:list={['cta', `align-${align}`]}>
@@ -28,17 +28,6 @@ const { version } = await getLatestRelease();
     </a>
   </div>
   <p class="meta">
-    {
-      version && (
-        <>
-          <span class="version">
-            <span class="dot" aria-hidden="true" />
-            Latest: {version}
-          </span>
-          <span class="sep" aria-hidden="true">·</span>
-        </>
-      )
-    }
     <span>{SITE.minAndroid}</span>
     <span class="sep last-sep" aria-hidden="true">·</span>
     <span class="last">Free and open source</span>
@@ -92,21 +81,6 @@ const { version } = await getLatestRelease();
 
   .align-start .meta {
     justify-content: flex-start;
-  }
-
-  .version {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--text);
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #10b981; /* StashSuccess */
-    box-shadow: 0 0 0 3px rgb(16 185 129 / 0.2);
   }
 
   .sep {

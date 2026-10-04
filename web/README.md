@@ -27,9 +27,6 @@ Every push and pull request that changes `web/` runs the Website check in GitHub
 (`.github/workflows/web.yml`): `npm ci`, `npx astro check` and `npm run build`, plus a check that no
 built page has a script.
 
-The build asks GitHub's API for the latest release once, to show its version number. Offline, the build
-still works and the version is simply left out.
-
 ## How it's organised
 
 ```
@@ -48,7 +45,6 @@ web/
     ├── content/privacy.md  The words on /privacy
     ├── data/               Links and site facts (site.ts), screenshots and alt text (screenshots.ts)
     ├── layouts/            BaseLayout.astro: <head>, meta tags, header and footer
-    ├── lib/release.ts      Reads the latest release from GitHub at build time
     ├── pages/              One file per page: index, privacy, 404
     └── styles/             tokens.css (design tokens) and global.css (reset and shared classes)
 ```
@@ -144,10 +140,6 @@ The site practises what the app promises:
 - **Whitespace.** Astro 7 applies JSX whitespace rules by default, which drops the space before a link
   that starts on a new line. `compressHTML: true` in the config keeps HTML's normal rules, so wrap text
   however you like.
-- **The version number** comes from GitHub at build time (`src/lib/release.ts`), so it only changes
-  when the site is rebuilt. The Download button always links to `/releases/latest`, which is never
-  stale. Set `GITHUB_TOKEN` in the build environment if GitHub's limit of 60 anonymous requests an hour
-  ever gets in the way, and only a token with no permissions (see [Deploying](#deploying)).
 - **Pages build to files** (`dist/privacy.html`), which Cloudflare serves at `/privacy`.
 
 ## Deploying
@@ -162,12 +154,6 @@ code, just files, headers (`public/_headers`) and a 404 page. Nothing is set up 
    - Deploy command: `npx wrangler deploy`
    - Preview builds: on, with the Preview command `npx wrangler preview` (the default for a new Worker)
    - Build watch paths: include `web/*`, so app-only commits don't rebuild the site
-   - Optional build secret: `GITHUB_TOKEN`, only if GitHub's anonymous limit gets in the way. Make it a
-     fine-grained personal access token with no permissions added (every fine-grained token can read
-     public repositories, which is all the build needs) and an expiry date. When it expires, builds
-     just leave the version number out. Never use a classic token or one that can write: the build,
-     and every package `npm ci` installs, can read it.
-
    Workers Builds uses the Wrangler version pinned in `package.json`.
 2. **Previews.** Each branch pushed to this repo gets a preview URL, posted on its pull request, so
    changes can be checked before merging. Pull requests from forks get no preview; the Website check

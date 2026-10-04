@@ -9,7 +9,6 @@ import { Font } from 'astro:assets';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import { SITE } from '../data/site';
-import { getLatestRelease } from '../lib/release';
 import '../styles/global.css';
 
 interface Props {
@@ -29,7 +28,6 @@ const canonical = new URL(path, SITE.url).href;
 // The link-preview card: public/social-preview.jpg, 1200 × 630 (the usual size for link previews).
 // If you replace it, keep og:image:width and og:image:height below in step with the file.
 const socialImage = new URL(SITE.socialImage, SITE.url).href;
-const release = await getLatestRelease();
 ---
 
 <!doctype html>
@@ -76,7 +74,7 @@ const release = await getLatestRelease();
     <main id="main" tabindex="-1">
       <slot />
     </main>
-    <SiteFooter version={release.version} />
+    <SiteFooter />
   </body>
 </html>
 
