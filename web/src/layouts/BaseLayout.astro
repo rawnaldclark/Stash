@@ -26,6 +26,8 @@ const { title, description, path, noindex = false } = Astro.props;
 const isHome = path === '/';
 const fullTitle = isHome ? title : `${title} · ${SITE.name}`;
 const canonical = new URL(path, SITE.url).href;
+// The link-preview card: public/social-preview.jpg, 1200 × 630 (the usual size for link previews).
+// If you replace it, keep og:image:width and og:image:height below in step with the file.
 const socialImage = new URL(SITE.socialImage, SITE.url).href;
 const release = await getLatestRelease();
 ---
@@ -54,8 +56,8 @@ const release = await getLatestRelease();
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={socialImage} />
-    <meta property="og:image:width" content="2560" />
-    <meta property="og:image:height" content="1280" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content={SITE.socialImageAlt} />
     <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />

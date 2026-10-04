@@ -7,30 +7,45 @@
  *   npm run build && npx wrangler dev
  *
  * Builds: Cloudflare Workers Builds (Git integration) on this repo, with
- *   Root directory:           web
- *   Build command:            npm ci && npm run build
- *   Deploy command:           npx wrangler deploy             (master)
- *   Non-production branches:  npx wrangler versions upload    (a preview URL per branch and pull request)
+ *   Root directory:   web
+ *   Build command:    npm ci && npm run build
+ *   Deploy command:   npx wrangler deploy     (master)
+ *   Preview builds:   on, Preview command npx wrangler preview (the default for a new Worker):
+ *                     a preview URL for each branch pushed to this repo, posted on its pull request.
+ *                     Pull requests from forks get no preview; the "Website" GitHub Actions
+ *                     workflow (.github/workflows/web.yml) still builds and checks them.
+ * Wrangler is pinned in package.json, and Workers Builds uses that version.
  */
 {
   "name": "stashfm-site",
   "compatibility_date": "2026-10-01",
 
+  // No usage data to Cloudflare from Wrangler, for everyone who works on the site
+  // (like Astro's telemetry, switched off in astro.config.mjs).
+  "send_metrics": false,
+
   // ---------------------------------------------------------------------------
-  // Production route: leave this commented out until launch.
+  // Production route: leave this commented out until launch. Without `routes`
+  // (and with no custom domain), a deploy only updates the workers.dev address
+  // and can't touch stashfm.app.
   //
   // Today the share Worker (infra/share-worker, Worker "stash-share") owns
-  // stashfm.app/*. At launch the site takes stashfm.app/*, and the share Worker
-  // narrows to its own paths, which are more specific and so keep winning:
+  // stashfm.app/*. At launch it keeps only its own paths, which are more specific
+  // than stashfm.app/* and so keep winning:
   //
   //   stashfm.app/m/*                          shared mix pages
-  //   stashfm.app/t   and  stashfm.app/t/*     shared song pages
+  //   stashfm.app/t*                           song links: /t/<id> and the older /t?…
   //   stashfm.app/l/*                          Listen Together invites
-  //   stashfm.app/v1/*                         the app's API (mixes, rooms, Community)
+  //   stashfm.app/v1/*                         the app's API (mixes, songs, rooms, Community)
   //   stashfm.app/.well-known/assetlinks.json  Android App Links
   //
-  // Order matters, or shared links break: add those routes to stash-share
-  // first, then move stashfm.app/* from stash-share to this Worker.
+  // Cloudflare matches a route against the whole URL, query included, so only a
+  // pattern ending in * catches /t?t=…. That also means no page on this site may
+  // start with /t (such as /terms): the share Worker would get it.
+  //
+  // Order matters, or shared links break (web/README.md, "Deploying", step 3):
+  // narrow the routes in infra/share-worker/wrangler.toml, deploy stash-share and
+  // check its links, and only then uncomment this.
   // ---------------------------------------------------------------------------
   // "routes": [
   //   { "pattern": "stashfm.app/*", "zone_name": "stashfm.app" }
@@ -44,7 +59,8 @@
     "html_handling": "auto-trailing-slash"
   },
 
-  // Keeps the workers.dev address and per-version preview URLs, which pull request previews use.
+  // The site also answers at stashfm-site.<account>.workers.dev, and each uploaded
+  // version gets its own Version URL, which keeps showing that version's pages.
   "workers_dev": true,
   "preview_urls": true
 }

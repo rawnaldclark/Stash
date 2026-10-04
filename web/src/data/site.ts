@@ -19,7 +19,7 @@ export const SITE = {
     'Stash mirrors your Spotify and YouTube Music libraries to your Android phone, to play offline or stream. Free and open source, with no Stash account and no analytics.',
   /** README › Requirements. */
   minAndroid: 'Android 8.0+',
-  /** The social card every page uses: public/social-preview.jpg (2560 × 1280). */
+  /** The social card every page uses: public/social-preview.jpg (1200 × 630). */
   socialImage: '/social-preview.jpg',
   socialImageAlt:
     'Stash on three phones: Home with Daily Discover, Now Playing with a lossless FLAC track, and word-synced lyrics',
