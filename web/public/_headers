@@ -1,0 +1,17 @@
+# Response headers for stashfm.app. Cloudflare Workers Static Assets reads this
+# file at deploy time and doesn't serve it. (`npm run preview` ignores it; use
+# `npx wrangler dev` to see these headers locally.)
+#
+# The Content-Security-Policy is the site's privacy promise, enforced by the
+# browser: fonts, images, styles and scripts may only come from stashfm.app itself.
+# If something you add doesn't load in production, this is why. Self-host it instead.
+
+/*
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), browsing-topics=()
+
+# Astro gives every built asset a content hash in its name, so it can be cached forever.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
