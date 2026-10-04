@@ -92,6 +92,7 @@ fun SettingsAudioQualityScreen(
     val qobuzConnectError by viewModel.qobuzConnectError.collectAsStateWithLifecycle()
     val customEndpoint by viewModel.customEndpoint.collectAsStateWithLifecycle()
     val customEndpointError by viewModel.customEndpointError.collectAsStateWithLifecycle()
+    val customEndpointTest by viewModel.customEndpointTest.collectAsStateWithLifecycle()
     val flacViewModel: FlacUpgradeViewModel = hiltViewModel()
     val autoFlacUpgrade by flacViewModel.autoEnabled.collectAsStateWithLifecycle()
 
