@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.automirrored.filled.Logout
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.common.primaryArtist
@@ -58,7 +59,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -587,7 +587,7 @@ fun NowPlayingScreen(
                     radioTuning = radioTuning,
                     radioLock = radioLock,
                     showSpeed = room == null,
-                    speedActive = playbackSpeed != 1f,
+                    speed = playbackSpeed,
                     onSpeedClick = { showSpeedSheet = true },
                     onStartRadio = viewModel::startRadioFromCurrent,
                     onStopRadio = viewModel::stopRadio,
@@ -881,8 +881,8 @@ private fun TopBar(
     onStartRadio: () -> Unit,
     onStopRadio: () -> Unit,
     showRadio: Boolean,
-    showSpeed: Boolean, 
-    speedActive: Boolean, 
+    showSpeed: Boolean,
+    speed: Float,
     onSpeedClick: () -> Unit,
     showQueueButton: Boolean,
     accentColor: Color,
@@ -938,13 +938,14 @@ private fun TopBar(
             }
         }
 
-        // Playback speed — right of Radio. Accented whenever it's not 1x.
+        // Playback speed — right of Radio. Accented whenever it's not 1x, and
+        // a screen reader hears the speed, since the tint alone doesn't say it.
         if (hasTrack && showSpeed) {
             IconButton(onClick = onSpeedClick) {
                 Icon(
                     imageVector = Icons.Default.Speed,
-                    contentDescription = "Playback speed",
-                    tint = if (speedActive) accentColor else npInk(),
+                    contentDescription = if (speed == 1f) "Playback speed" else "Playback speed, ${formatSpeed(speed)}",
+                    tint = if (speed != 1f) accentColor else npInk(),
                     modifier = Modifier.size(24.dp),
                 )
             }
@@ -1512,13 +1513,6 @@ private fun CustomSleepTimerDialog(
     )
 }
 
-/** YT Music's presets: 0.25x–2x in quarter steps. */
-private val SpeedPresets = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-
-private fun formatSpeed(s: Float): String =
-    if (s == s.toInt().toFloat()) "${s.toInt()}x"
-    else "${"%.2f".format(java.util.Locale.US, s).trimEnd('0').trimEnd('.')}x"
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SpeedSheet(
@@ -1548,7 +1542,7 @@ private fun SpeedSheet(
                     .align(Alignment.CenterHorizontally),
             )
             Text(
-                text = formatSpeed(currentSpeed),
+                text = speedLabel(currentSpeed),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
@@ -1556,30 +1550,52 @@ private fun SpeedSheet(
                     .align(Alignment.CenterHorizontally),
             )
 
-            SpeedPresets.chunked(4).forEach { rowSpeeds ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    rowSpeeds.forEach { s ->
-                        FilterChip(
-                            selected = currentSpeed == s,
-                            onClick = { onSelect(s) },
-                            label = {
-                                Text(
-                                    text = if (s == 1f) "Normal" else formatSpeed(s),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    fontSize = 12.sp,
+            // Four to a row when every label fits, else two: one line per chip at any font size.
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val labelStyle = MaterialTheme.typography.labelMedium
+                val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val widestLabelPx = remember(labelStyle, density) {
+                    SpeedPresets.maxOf { measurer.measure(speedLabel(it), labelStyle, maxLines = 1).size.width }
+                }
+                val columns = with(density) {
+                    speedPresetColumns(
+                        rowWidthPx = constraints.maxWidth,
+                        widestChipPx = widestLabelPx + SpeedChipLabelInset.roundToPx(),
+                        gapPx = 8.dp.roundToPx(),
+                    )
+                }
+                Column {
+                    SpeedPresets.chunked(columns).forEach { rowSpeeds ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            rowSpeeds.forEach { s ->
+                                FilterChip(
+                                    selected = currentSpeed == s,
+                                    onClick = { onSelect(s) },
+                                    label = {
+                                        Text(
+                                            text = speedLabel(s),
+                                            style = labelStyle,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                        )
+                                    },
+                                    colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    ),
+                                    modifier = Modifier.weight(1f),
                                 )
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
                     }
                 }
-                Spacer(Modifier.height(8.dp))
             }
 
             Spacer(Modifier.height(4.dp))
@@ -1587,6 +1603,12 @@ private fun SpeedSheet(
         }
     }
 }
+
+/**
+ * A FilterChip's label sits inside 8 dp of chip padding and 8 dp of label padding on each side
+ * (Material 3's chip layout); the column choice above measures the label plus this.
+ */
+private val SpeedChipLabelInset = 32.dp
 
 /** Free-form speed entry, reached via the sheet's "Custom" row. */
 @Composable
@@ -1596,17 +1618,15 @@ private fun CustomSpeedDialog(
     onDismiss: () -> Unit,
 ) {
     var text by remember { mutableStateOf(if (initial == 1f) "" else formatSpeed(initial).removeSuffix("x")) }
-    val parsed = text.toFloatOrNull()
-    val valid = parsed != null && parsed in 0.1f..4f
+    val parsed = parseCustomSpeed(text)
+    val valid = parsed != null
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Custom speed") },
         text = {
             androidx.compose.material3.OutlinedTextField(
                 value = text,
-                onValueChange = { new ->
-                    if (new.all { it.isDigit() || it == '.' } && new.count { it == '.' } <= 1) text = new
-                },
+                onValueChange = { new -> customSpeedInput(new)?.let { text = it } },
                 label = { Text("Speed (0.1 – 4.0)") },
                 suffix = { Text("x") },
                 singleLine = true,
