@@ -591,6 +591,9 @@ class DownloadManager @Inject constructor(
                 Log.w(TAG, "lossless registry threw for '${track.artist} - ${track.title}'", e)
             }
             .getOrNull() ?: return null
+        // A lossless copy exists. If the fetch or the save below fails, the null we return
+        // is not "no match", and the FLAC upgrade sweep reads this to tell the two apart.
+        kotlinx.coroutines.currentCoroutineContext()[LosslessDownloadPurpose]?.matchFound = true
 
         Log.d(
             TAG,

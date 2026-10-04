@@ -143,6 +143,44 @@ class LosslessSourceRegistryTest {
             .containsExactly("squid_qobuz", "kennyy_qobuz", "lucida").inOrder()
     }
 
+    // -- canSearchNow: can an empty answer be trusted as "no lossless version"? --
+
+    private fun sourceInState(
+        srcId: String,
+        enabled: Boolean = true,
+        circuitBroken: Boolean = false,
+        recentFailures: Int = 0,
+    ): LosslessSource = mockk {
+        every { id } returns srcId
+        coEvery { isEnabled() } returns enabled
+        coEvery { rateLimitState() } returns RateLimitState(3.0, 0L, circuitBroken, 0L, recentFailures)
+    }
+
+    @Test
+    fun `a healthy source in the chain means a lookup could really search`() = runTest {
+        acceptAnyQuality()
+        coEvery { healthGate.isDegraded(any()) } returns false
+
+        assertThat(registry(linkedSetOf(sourceInState("lucida"))).canSearchNow()).isTrue()
+    }
+
+    @Test
+    fun `no lookup could search while every source is off, degraded, broken, failing or parked`() = runTest {
+        acceptAnyQuality()
+        coEvery { healthGate.isDegraded(any()) } returns false
+        coEvery { healthGate.isDegraded("degraded") } returns true
+        val sources = linkedSetOf(
+            sourceInState("off", enabled = false),
+            sourceInState("degraded"),
+            sourceInState("broken", circuitBroken = true),
+            // Its last call failed (a network error answers null like a miss does).
+            sourceInState("failing", recentFailures = 1),
+            sourceInState("squid_qobuz"), // parked: resolve never asks it
+        )
+
+        assertThat(registry(sources).canSearchNow()).isFalse()
+    }
+
     @Test
     fun `a cancelled caller is rethrown, not treated as a failing source`() = runTest {
         acceptAnyQuality()

@@ -27,7 +27,8 @@ import kotlinx.coroutines.withContext
  * "lossless URL came back 404" — both are "no FLAC for you right
  * now." Thrown exceptions become [Error] so the snackbar can say
  * "Couldn't check lossless sources" rather than the misleading
- * "no match."
+ * "no match." A sweep is stricter (see [isRealMiss]): its NoMatch
+ * parks the track for two weeks, so a null it can't trust is [Error].
  *
  * **Persists DB row + deletes old file on Success.** [DownloadManager.tryLosslessDownload]
  * writes the FLAC file to disk via [com.stash.data.download.TrackFinalizer] but
@@ -46,6 +47,8 @@ class LosslessUpgraderImpl @Inject constructor(
     private val trackDao: TrackDao,
     private val audioExtractor: AudioDurationExtractor,
     private val losslessPrefs: LosslessSourcePreferences,
+    private val registry: LosslessSourceRegistry,
+    private val availability: LosslessAvailability,
 ) : LosslessUpgrader {
 
     override suspend fun isLosslessEnabled(): Boolean = losslessPrefs.enabledNow()
@@ -68,7 +71,11 @@ class LosslessUpgraderImpl @Inject constructor(
                 persistUpgrade(track, result.filePath, oldPath)
                 UpgradeResult.Upgraded
             }
-            null -> if (purpose?.pacedRetryAfterSec != null) UpgradeResult.Paced else UpgradeResult.NoMatch
+            null -> when {
+                purpose?.pacedRetryAfterSec != null -> UpgradeResult.Paced
+                purpose != null && !isRealMiss(purpose) -> UpgradeResult.Error
+                else -> UpgradeResult.NoMatch
+            }
             is TrackDownloadResult.Unmatched,
             is TrackDownloadResult.Failed,
             TrackDownloadResult.Deferred -> UpgradeResult.NoMatch
@@ -77,6 +84,20 @@ class LosslessUpgraderImpl @Inject constructor(
         Log.w(TAG, "upgradeToLossless threw for ${track.id}", e)
         UpgradeResult.Error
     }
+
+    /**
+     * Whether a sweep's empty answer really means "no lossless version". The FLAC upgrade
+     * worker stamps a NoMatch track and the sweep leaves it alone for two weeks, but a
+     * source answers null for a miss, a rate-limit block and a network failure alike. So
+     * it is a miss only when no source matched (a match whose fetch or save failed sets
+     * [LosslessDownloadPurpose.matchFound]) and a lookup could really search just now:
+     * a source is healthy ([LosslessSourceRegistry.canSearchNow]) and there is a file-URL
+     * path that isn't cooled (a cooled relay costs zero catalog calls and answers null).
+     * Anything else is an [UpgradeResult.Error], left unstamped for the next sweep.
+     * A tap carries no purpose and keeps the conservative NoMatch mapping.
+     */
+    private suspend fun isRealMiss(purpose: LosslessDownloadPurpose): Boolean =
+        !purpose.matchFound && registry.canSearchNow() && availability.fileUrlAvailableNow()
 
     /**
      * Mirrors the canonical post-Success block from

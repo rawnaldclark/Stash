@@ -22,12 +22,20 @@ class LosslessUpgraderImplTest {
     private val trackDao: TrackDao = mockk(relaxUnitFun = true)
     private val audioExtractor: AudioDurationExtractor = mockk()
     private val losslessPrefs: LosslessSourcePreferences = mockk()
+    private val registry: LosslessSourceRegistry = mockk {
+        coEvery { canSearchNow() } returns true
+    }
+    private val availability: LosslessAvailability = mockk {
+        coEvery { fileUrlAvailableNow() } returns true
+    }
     private val subject = LosslessUpgraderImpl(
         context,
         downloadManager,
         trackDao,
         audioExtractor,
         losslessPrefs,
+        registry,
+        availability,
     )
 
     @Test fun `isLosslessEnabled delegates to the master preference`() = runTest {
@@ -58,6 +66,47 @@ class LosslessUpgraderImplTest {
         }
         assertEquals(UpgradeResult.Paced, subject.upgradeToLossless(stubTrack(), sweep = true))
         // A tap carries no label, so the same null is still an honest NoMatch.
+        assertEquals(UpgradeResult.NoMatch, subject.upgradeToLossless(stubTrack()))
+    }
+
+    // -- A sweep's NoMatch parks the track for two weeks, so it has to be a real miss --
+
+    @Test fun `a sweep miss with a source able to search is a real NoMatch`() = runTest {
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns null
+
+        assertEquals(UpgradeResult.NoMatch, subject.upgradeToLossless(stubTrack(), sweep = true))
+    }
+
+    @Test fun `a sweep miss while no lossless source could search is Error, not NoMatch`() = runTest {
+        // A circuit-broken, degraded or failing source answers null exactly like a miss.
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns null
+        coEvery { registry.canSearchNow() } returns false
+
+        assertEquals(UpgradeResult.Error, subject.upgradeToLossless(stubTrack(), sweep = true))
+    }
+
+    @Test fun `a sweep miss while every relay is cooled and no login is live is Error`() = runTest {
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns null
+        coEvery { availability.fileUrlAvailableNow() } returns false
+
+        assertEquals(UpgradeResult.Error, subject.upgradeToLossless(stubTrack(), sweep = true))
+    }
+
+    @Test fun `a sweep that found a lossless copy but could not save it is Error, not NoMatch`() = runTest {
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } coAnswers {
+            // The fetch or the file write failed after the match.
+            kotlinx.coroutines.currentCoroutineContext()[com.stash.data.download.lossless.relay.LosslessDownloadPurpose]
+                ?.matchFound = true
+            null
+        }
+
+        assertEquals(UpgradeResult.Error, subject.upgradeToLossless(stubTrack(), sweep = true))
+    }
+
+    @Test fun `a tap miss stays NoMatch whatever the sources look like`() = runTest {
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns null
+        coEvery { registry.canSearchNow() } returns false
+
         assertEquals(UpgradeResult.NoMatch, subject.upgradeToLossless(stubTrack()))
     }
 

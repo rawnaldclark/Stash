@@ -37,19 +37,7 @@ class LosslessSourceRegistry @Inject constructor(
      * Path ii of the source-priority model).
      */
     suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult? {
-        // Test toggles (outage drills): filter the chain to a single source so a
-        // forced download exercises that source even when the Qobuz proxies are
-        // healthy. A miss falls through to a normal null return (no quota to
-        // protect).
-        val ordered = if (streamingPreference.isForceQbdlxOnly()) {
-            orderedSources().filter { it.id == "qbdlx_qobuz" }
-        } else {
-            // Normal chain skips parked (host-down) sources. qbdlx self-gates on
-            // LosslessAvailability. The force toggle above bypasses the filter so
-            // a manual test can still reach a source on demand, and
-            // orderedSources()/Settings still list them.
-            orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }
-        }
+        val ordered = chain()
         val minQuality = prefs.minQualityNow()
 
         for (source in ordered) {
@@ -83,6 +71,35 @@ class LosslessSourceRegistry @Inject constructor(
         }
         return null
     }
+
+    /**
+     * Whether a lookup right now could really search a lossless catalog: some source
+     * [resolve] would ask is enabled (not toggled off, not circuit-broken), not degraded,
+     * and its last call did not fail. Sources answer null for a miss, a rate-limit block
+     * and a network failure alike, so a background sweep reads this right after a null
+     * before filing the track as "no lossless version".
+     */
+    suspend fun canSearchNow(): Boolean = chain().any { source ->
+        !healthGate.isDegraded(source.id) &&
+            source.isEnabled() &&
+            source.rateLimitState().let { !it.isCircuitBroken && it.recentFailures == 0 }
+    }
+
+    /** The sources [resolve] asks, in order. */
+    private suspend fun chain(): List<LosslessSource> =
+        // Test toggles (outage drills): filter the chain to a single source so a
+        // forced download exercises that source even when the Qobuz proxies are
+        // healthy. A miss falls through to a normal null return (no quota to
+        // protect).
+        if (streamingPreference.isForceQbdlxOnly()) {
+            orderedSources().filter { it.id == "qbdlx_qobuz" }
+        } else {
+            // Normal chain skips parked (host-down) sources. qbdlx self-gates on
+            // LosslessAvailability. The force toggle above bypasses the filter so
+            // a manual test can still reach a source on demand, and
+            // orderedSources()/Settings still list them.
+            orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }
+        }
 
     /**
      * All registered sources, in user-configured priority order. Sources
