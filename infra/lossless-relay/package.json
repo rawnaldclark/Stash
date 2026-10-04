@@ -12,6 +12,6 @@
     "report": "wrangler d1 execute stash-relay --remote --command \"SELECT day, ip, COUNT(*) AS installs, SUM(n) AS plays FROM quota WHERE key LIKE 'i:%' AND ip IS NOT NULL GROUP BY day, ip ORDER BY installs DESC, plays DESC LIMIT 25\""
   },
   "devDependencies": {
-    "wrangler": "^4.135.0"
+    "wrangler": "^4.147.0"
   }
 }
