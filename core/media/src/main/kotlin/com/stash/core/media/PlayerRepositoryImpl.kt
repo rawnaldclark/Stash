@@ -227,7 +227,6 @@ class PlayerRepositoryImpl @Inject constructor(
         // once per session, even one that fails too fast for `active` to be observed as true.
         listenTogether?.let { together ->
             scope.launch {
-                together.active.collect { active -> if (active) setPlaybackSpeed(1f) }
                 together.sessionEnds.collect {
                     // One failed restore must not end the collector: every later session would then never restore.
                     try {
@@ -238,6 +237,9 @@ class PlayerRepositoryImpl @Inject constructor(
                         Log.w(TAG, "Listen Together: restoring the queue failed", e)
                     }
                 }
+            }
+            scope.launch {
+                together.active.collect { active -> if (active) setPlaybackSpeed(1f) }
             }
         }
 
