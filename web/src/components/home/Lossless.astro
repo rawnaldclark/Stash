@@ -1,0 +1,28 @@
+---
+/**
+ * Lossless, worded as carefully as the README's "Lossless" section: FLAC
+ * depends on a source the user connects. Don't promise free lossless here.
+ */
+import FeatureRow from '../FeatureRow.astro';
+import Icon from '../Icon.astro';
+---
+
+<FeatureRow id="lossless" icon="graphic-eq" overline="Lossless" title="FLAC, if you bring the source" screens={['queue']} reverse>
+  <p>
+    Connect a lossless source and Stash streams and downloads real FLAC files, with each song's quality shown
+    as it plays.
+  </p>
+  <p>
+    Stash ships no shared user accounts. When nothing lossless is available, it falls back to AAC or Opus,
+    and Home tells you so instead of pretending.
+  </p>
+  <p class="more">
+    <a class="arrow-link" href="#faq-lossless">Where lossless comes from <Icon name="arrow-forward" size="18px" /></a>
+  </p>
+</FeatureRow>
+
+<style>
+  .more {
+    margin-top: 24px;
+  }
+</style>

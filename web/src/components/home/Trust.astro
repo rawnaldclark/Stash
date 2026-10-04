@@ -1,0 +1,107 @@
+---
+/** "No account. No subscription. No ads. No analytics." — the README's promise, word for word. */
+import Icon, { type IconName } from '../Icon.astro';
+
+const items: { icon: IconName; label: string }[] = [
+  { icon: 'person-off', label: 'No account.' },
+  { icon: 'money-off', label: 'No subscription.' },
+  { icon: 'ad-off', label: 'No ads.' },
+  { icon: 'visibility-off', label: 'No analytics.' },
+];
+---
+
+<section class="trust" aria-labelledby="trust-title">
+  <div class="container">
+    <div class="panel glass">
+      <h2 id="trust-title" class="visually-hidden">Privacy at a glance</h2>
+      <ul role="list" class="items">
+        {
+          items.map((item) => (
+            <li>
+              <span class="icon-bubble">
+                <Icon name={item.icon} size="22px" />
+              </span>
+              {item.label}
+            </li>
+          ))
+        }
+      </ul>
+      <div class="note">
+        <p>
+          Your credentials live on your phone, with the Spotify, YouTube and Discord tokens encrypted, and each
+          one is only ever sent back to the service it came from.
+        </p>
+        <a class="arrow-link" href="/privacy">See everything Stash talks to <Icon name="arrow-forward" size="18px" /></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .trust {
+    position: relative;
+    margin-top: clamp(16px, 3vw, 40px);
+  }
+
+  .panel {
+    padding: clamp(24px, 4vw, 40px);
+    border-radius: var(--radius-2xl);
+    background:
+      linear-gradient(135deg, rgb(139 92 246 / 0.10), transparent 55%),
+      var(--glass);
+  }
+
+  .items {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+
+  .items li {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: var(--font-display);
+    font-size: clamp(1.125rem, 1rem + 0.6vw, 1.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 32px;
+    margin-top: 28px;
+    padding-top: 24px;
+    border-top: 1px solid var(--glass-border);
+    color: var(--text-2);
+  }
+
+  .note p {
+    max-width: 68ch;
+  }
+
+  .note .arrow-link {
+    white-space: nowrap;
+  }
+
+  @media (max-width: 900px) {
+    .items {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px 16px;
+    }
+  }
+
+  /* Small phones: icon above its label, so "No subscription." fits on one line. */
+  @media (max-width: 560px) {
+    .items li {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 1.1875rem;
+    }
+  }
+</style>

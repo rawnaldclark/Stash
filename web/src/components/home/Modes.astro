@@ -1,0 +1,57 @@
+---
+/** Offline vs Online, from the README's "Online vs Offline" section. */
+import FeatureRow from '../FeatureRow.astro';
+import Icon from '../Icon.astro';
+---
+
+<FeatureRow id="modes" icon="sync" overline="Two modes" title="Download it, or stream it" screens={['sync']}>
+  <p>Stash has two modes, and they decide what a sync actually does.</p>
+
+  <div class="modes">
+    <div class="mode glass">
+      <span class="icon-bubble"><Icon name="offline" size="22px" /></span>
+      <div>
+        <h3>Offline mode</h3>
+        <p>
+          Sync downloads each song and stores it on your phone. Once it's there, it plays forever with no
+          connection. It costs storage, but no recurring data.
+        </p>
+      </div>
+    </div>
+    <div class="mode glass">
+      <span class="icon-bubble"><Icon name="cloud" size="22px" /></span>
+      <div>
+        <h3>Online mode</h3>
+        <p>
+          For when you don't want the storage hit. Sync builds a streamable index of your library: almost no
+          storage, but you need a connection to play.
+        </p>
+      </div>
+    </div>
+  </div>
+</FeatureRow>
+
+<style>
+  .modes {
+    display: grid;
+    gap: 14px;
+    margin-top: 28px;
+  }
+
+  .mode {
+    display: flex;
+    gap: 16px;
+    padding: 20px;
+    border-radius: var(--radius-xl);
+  }
+
+  h3 {
+    font-size: 1.1875rem;
+  }
+
+  .mode p {
+    margin-top: 6px;
+    font-size: 1rem;
+    color: var(--text-2);
+  }
+</style>

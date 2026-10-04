@@ -1,0 +1,34 @@
+---
+/** The library, from the README's "Features › Library". */
+import FeatureRow from '../FeatureRow.astro';
+---
+
+<FeatureRow
+  id="library"
+  icon="library"
+  overline="Your library"
+  title="Spotify and YouTube Music, one library"
+  screens={['library', 'playlists']}
+  reverse
+>
+  <p>
+    Liked songs, playlists, daily mixes and every Spotify mix worth syncing, from both services, in one
+    library.
+  </p>
+  <ul class="checks">
+    <li>
+      <strong>Likes and history mirroring.</strong> When it's on, each song you like or stream in Stash lands in
+      your Spotify and YouTube accounts.
+    </li>
+    <li>
+      <strong>Wrong version? One tap.</strong> Flag it from Now Playing and Stash queues a re-search.
+    </li>
+    <li>
+      <strong>Scrobbling, if you want it.</strong> Last.fm or ListenBrainz, off until you connect one.
+    </li>
+    <li>
+      <strong>Recommended by Last.fm.</strong> Connect Last.fm and Stash keeps a rotating playlist of songs it
+      suggests from your listening.
+    </li>
+  </ul>
+</FeatureRow>
