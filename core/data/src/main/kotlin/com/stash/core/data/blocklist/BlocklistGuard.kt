@@ -7,6 +7,7 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.sync.TrackMatcher
@@ -86,7 +87,8 @@ class BlocklistGuard @Inject constructor(
             blockedAt = System.currentTimeMillis(),
             blockedFrom = source.name,
         )
-        fileDeleter.delete(track.filePath)
+        // Not a file another song still plays from (two rows can share one).
+        track.filePath?.takeUnless { trackDao.fileUsedByAnotherTrack(it, track.id) }?.let(fileDeleter::delete)
         fileDeleter.delete(track.albumArtPath)
 
         val playlistIds = database.withTransaction {

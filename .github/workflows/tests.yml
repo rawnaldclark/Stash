@@ -7,7 +7,9 @@ name: Unit tests
 
 on:
   push:
+    paths-ignore: ['web/**']
   pull_request:
+    paths-ignore: ['web/**']
   workflow_dispatch:
 
 permissions:
@@ -50,7 +52,7 @@ jobs:
       - name: Compile every module's unit tests
         run: ./gradlew compileDebugUnitTestKotlin --no-daemon
 
-  # The share Worker's tests (mixes, rooms, Community). They import only local files, so no npm install.
+  # The share Worker's tests (mixes, rooms, Community), then the tip jar's. They import only local files, so no npm install.
   worker-tests:
     name: Share worker tests
     if: >-
@@ -71,6 +73,11 @@ jobs:
 
       - name: Run the Worker's tests
         working-directory: infra/share-worker
+        run: node --no-warnings --test test/*.test.js
+
+      # The tip jar (supporters list, Ko-fi webhook, stashfm.app early access). Local imports only too.
+      - name: Run the tip jar's tests
+        working-directory: infra/tipjar-worker
         run: node --no-warnings --test test/*.test.js
 
   # Runs EVERY module's unit tests, not just :core:media.

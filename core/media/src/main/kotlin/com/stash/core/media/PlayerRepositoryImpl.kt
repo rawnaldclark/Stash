@@ -238,6 +238,11 @@ class PlayerRepositoryImpl @Inject constructor(
                     }
                 }
             }
+            // A session runs at the room's pace: the service puts the player back to 1x as it enters
+            // (and drift correction owns the speed from then on), so the picker shows Normal again.
+            scope.launch {
+                together.active.collect { active -> if (active) _playbackSpeed.value = 1f }
+            }
         }
 
         // A track's youtubeId was swapped (resync approval, wrong-match
@@ -399,6 +404,9 @@ class PlayerRepositoryImpl @Inject constructor(
     private val _radioSeedLabel = MutableStateFlow<String?>(null)
     override val radioSeedLabel: StateFlow<String?> = _radioSeedLabel.asStateFlow()
 
+    private val _playbackSpeed = MutableStateFlow(1f)
+    override val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
+
     private val radioGrowMutex = Mutex()
 
     /**
@@ -526,6 +534,16 @@ class PlayerRepositoryImpl @Inject constructor(
         scope.launch {
             controllerDeferred?.volume = volume.coerceIn(0f, 1f)
         }
+    }
+
+    override fun setPlaybackSpeed(speed: Float) {
+        // In a session the speed belongs to the room's clock, and the session player ignores it anyway.
+        if (inListenTogether) return
+        val clamped = speed.coerceIn(0.1f, 4f)
+        _playbackSpeed.value = clamped
+        // Main-thread-affine; if nothing is connected, ensureController()
+        // applies the stored value when it next connects.
+        scope.launch { controllerDeferred?.takeIf { it.isConnected }?.setPlaybackSpeed(clamped) }
     }
 
     override suspend fun skipNext() {
@@ -1999,6 +2017,9 @@ class PlayerRepositoryImpl @Inject constructor(
                     .await()
 
                 controller.addListener(playerListener)
+                // A service that idle-stopped and came back has a fresh 1x player;
+                // re-assert the session speed on connect.
+                if (_playbackSpeed.value != 1f) controller.setPlaybackSpeed(_playbackSpeed.value)
                 controllerDeferred = controller
                 // Sync initial state
                 updateState(controller)
@@ -2038,6 +2059,11 @@ class PlayerRepositoryImpl @Inject constructor(
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val controller = controllerDeferred ?: return
+            // Safety net: keep the chosen speed across transitions / queue rebuilds. Not in a session,
+            // where drift correction nudges the speed on purpose.
+            if (!listenTogetherOwnsQueue && controller.playbackParameters.speed != _playbackSpeed.value) {
+                controller.setPlaybackSpeed(_playbackSpeed.value)
+            }
             // Defense in depth: the existing onPlayerError recovery catches
             // PlaybackException-driven failures, but some failure modes (audio
             // offload sink stalls before we removed offload, plus any future

@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.model.Track
 import com.stash.core.model.UpgradeResult
@@ -27,7 +28,8 @@ import kotlinx.coroutines.withContext
  * "lossless URL came back 404" — both are "no FLAC for you right
  * now." Thrown exceptions become [Error] so the snackbar can say
  * "Couldn't check lossless sources" rather than the misleading
- * "no match."
+ * "no match." A sweep is stricter (see [isRealMiss]): its NoMatch
+ * parks the track for two weeks, so a null it can't trust is [Error].
  *
  * **Persists DB row + deletes old file on Success.** [DownloadManager.tryLosslessDownload]
  * writes the FLAC file to disk via [com.stash.data.download.TrackFinalizer] but
@@ -46,6 +48,8 @@ class LosslessUpgraderImpl @Inject constructor(
     private val trackDao: TrackDao,
     private val audioExtractor: AudioDurationExtractor,
     private val losslessPrefs: LosslessSourcePreferences,
+    private val registry: LosslessSourceRegistry,
+    private val availability: LosslessAvailability,
 ) : LosslessUpgrader {
 
     override suspend fun isLosslessEnabled(): Boolean = losslessPrefs.enabledNow()
@@ -68,15 +72,36 @@ class LosslessUpgraderImpl @Inject constructor(
                 persistUpgrade(track, result.filePath, oldPath)
                 UpgradeResult.Upgraded
             }
-            null -> if (purpose?.pacedRetryAfterSec != null) UpgradeResult.Paced else UpgradeResult.NoMatch
+            null -> when {
+                purpose?.pacedRetryAfterSec != null -> UpgradeResult.Paced
+                purpose != null && !isRealMiss(purpose) -> UpgradeResult.Error
+                else -> UpgradeResult.NoMatch
+            }
             is TrackDownloadResult.Unmatched,
             is TrackDownloadResult.Failed,
             TrackDownloadResult.Deferred -> UpgradeResult.NoMatch
         }
     }.getOrElse { e ->
+        // A stop is not a failed lookup: the caller (the FLAC upgrade worker's cancel
+        // handler) has to see it.
+        if (e is kotlinx.coroutines.CancellationException) throw e
         Log.w(TAG, "upgradeToLossless threw for ${track.id}", e)
         UpgradeResult.Error
     }
+
+    /**
+     * Whether a sweep's empty answer really means "no lossless version". The FLAC upgrade
+     * worker stamps a NoMatch track and the sweep leaves it alone for two weeks, but a
+     * source answers null for a miss, a rate-limit block and a network failure alike. So
+     * it is a miss only when no source matched (a match whose fetch or save failed sets
+     * [LosslessDownloadPurpose.matchFound]) and a lookup could really search just now:
+     * a source is healthy ([LosslessSourceRegistry.canSearchNow]) and there is a file-URL
+     * path that isn't cooled (a cooled relay costs zero catalog calls and answers null).
+     * Anything else is an [UpgradeResult.Error], left unstamped for the next sweep.
+     * A tap carries no purpose and keeps the conservative NoMatch mapping.
+     */
+    private suspend fun isRealMiss(purpose: LosslessDownloadPurpose): Boolean =
+        !purpose.matchFound && registry.canSearchNow() && availability.fileUrlAvailableNow()
 
     /**
      * Mirrors the canonical post-Success block from
@@ -139,8 +164,9 @@ class LosslessUpgraderImpl @Inject constructor(
         // same filename) — skip the delete in that case, otherwise we'd be
         // deleting the file we just wrote. Null oldPath = the row had no
         // prior file (defensive; shouldn't happen for a track currently
-        // playing).
-        if (!oldPath.isNullOrEmpty() && oldPath != newPath) {
+        // playing). A file another song still plays from stays (two rows can
+        // share one).
+        if (!oldPath.isNullOrEmpty() && oldPath != newPath && !trackDao.fileUsedByAnotherTrack(oldPath, track.id)) {
             deleteTrackFile(oldPath)
         }
     }

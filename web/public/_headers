@@ -1,0 +1,37 @@
+# Response headers for stashfm.app. Cloudflare Workers Static Assets reads this
+# file at deploy time and doesn't serve it. (`npm run preview` ignores it; use
+# `npx wrangler dev` to see these headers locally.)
+#
+# The Content-Security-Policy is the site's privacy promise, enforced by the
+# browser: fonts, images and styles may only come from stashfm.app itself, and no
+# script runs at all. Cloudflare leaves this header alone, except that Zaraz
+# rewrites it so its own script can run: one more reason Zaraz stays off
+# (web/README.md, "Privacy rules for the site itself").
+# It covers only the files Cloudflare serves without running the Worker (see
+# run_worker_first in wrangler.jsonc). Everything the Worker answers, the home page
+# and the early-access pages included, gets the same headers from worker/pages.js
+# (SECURITY_HEADERS); keep the two in step (a test checks the CSP matches).
+# form-action 'self': the sign-in and request forms post to this site only.
+# The share Worker's pages on the same domain (/t, /m, /l) send their own headers
+# from infra/share-worker.
+# If something you add doesn't load in production, this is why. Self-host it instead.
+# - The pages need inline styles (Astro inlines small stylesheets, the font rules
+#   and a few style attributes) and data: images (small SVG icons inside the CSS).
+# - If the site ever needs a script, allow that one script by its sha256 hash in
+#   script-src, not with 'unsafe-inline' or 'self', which would also allow the
+#   inline and /cdn-cgi/ scripts that some Cloudflare features add to pages.
+#
+# Caching: there is no long Cache-Control rule for /_astro/*, on purpose. These
+# rules match the request path whatever the status, so a missing /_astro/ file
+# would get the 404 page with a one-year cache, and a browser would keep that 404
+# even after the file exists again (after a rollback, for example). Without a
+# rule, every file gets Cloudflare's default, `public, max-age=0, must-revalidate`
+# with an ETag: a returning browser checks each file and gets a short
+# 304 Not Modified when it hasn't changed. Don't add a long cache back unless a
+# Worker removes it from responses that aren't 200.
+
+/*
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'none'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), browsing-topics=()

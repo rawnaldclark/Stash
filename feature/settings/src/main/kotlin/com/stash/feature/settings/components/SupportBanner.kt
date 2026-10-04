@@ -74,7 +74,7 @@ fun SupportBanner(
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            text = "If Stash replaced a subscription for you, consider supporting the project.",
+            text = "Stash is free and made by volunteers. If it's useful to you, consider supporting the project.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

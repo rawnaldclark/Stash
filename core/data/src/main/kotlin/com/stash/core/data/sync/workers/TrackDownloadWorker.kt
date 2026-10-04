@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -70,8 +69,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val fileExistenceSessionFactory: com.stash.core.data.library.FileExistenceSessionFactory,
     private val fileAdopter: com.stash.core.data.library.FileAdopter,
     private val syncLog: com.stash.core.data.sync.SyncLog,
-    private val flacUpgradeQueueDao: com.stash.core.data.db.dao.FlacUpgradeQueueDao,
-    private val losslessUpgrader: com.stash.core.data.lossless.LosslessUpgrader,
+    private val flacUpgradeSweeper: com.stash.core.data.lossless.FlacUpgradeSweeper,
     private val downloadJobs: DownloadJobRegistry,
 ) : CoroutineWorker(appContext, params) {
 
@@ -910,55 +908,24 @@ class TrackDownloadWorker @AssistedInject constructor(
     }
 
     /**
-     * Populates flac_upgrade_queue with every downloaded lossy track and
-     * enqueues [FlacUpgradeWorker] to drain it (spec 2026-07-22 §3).
+     * Hands the post-sync FLAC upgrade sweep to [com.stash.core.data.lossless.FlacUpgradeSweeper]
+     * (spec 2026-07-22 §3), which runs it only when the user turned on "Auto-upgrade to
+     * FLAC after sync", and never over a batch that is still running or waiting.
+     * [FlacUpgradeWorker] owns pacing, rate limiting, per-track status and cancellation.
      *
-     * Previously ran the upgrade attempts inline here, one coroutine per
-     * candidate with no concurrency cap — a thundering-herd risk against
-     * the lossless sources. FlacUpgradeWorker already owns pacing, rate
-     * limiting, and captcha-herd safety inside LosslessUpgrader's
-     * pipeline, plus per-track status and clean cancellation — so hand
-     * off to it instead of duplicating any of that here.
-     *
-     * REPLACE policy matches startBatch()'s wholesale-replace semantics: a
-     * sync mid-drain restarts both the worklist and the worker driving it,
-     * rather than leaving an orphaned worker draining a queue that's just
-     * been cleared out from under it.
+     * The tracks this run just downloaded are excluded: the download path already tried
+     * lossless for them. A failed sweep is logged and the sync still succeeds: the
+     * downloads are done, and the next sync or "Check for upgrades" sweeps again.
      */
     private suspend fun runLosslessUpgradeSweep(recentlyDownloadedTrackIds: Set<Long>) {
-        if (streamingPreference.current()) {
-            Log.i(TAG, "Streaming mode: skipping FLAC upgrade sweep")
-            return
+        try {
+            val result = flacUpgradeSweeper.afterSync(justDownloaded = recentlyDownloadedTrackIds)
+            Log.i(TAG, "FLAC upgrade sweep: $result")
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            Log.w(TAG, "FLAC upgrade sweep failed; the sync itself succeeded", e)
         }
-        if (!losslessUpgrader.isLosslessEnabled()) {
-            Log.i(TAG, "Lossless disabled in Settings: skipping FLAC upgrade sweep")
-            return
-        }
-
-        val candidates = trackDao.getLosslessUpgradeCandidates()
-            // The primary download path already attempted lossless resolution
-            // for tracks completed during this run. Retrying them immediately
-            // wastes bandwidth and can hammer rate-limited sources.
-            .filterNot { it.id in recentlyDownloadedTrackIds }
-        if (candidates.isEmpty()) return
-
-        flacUpgradeQueueDao.startBatch(candidates.map { it.id })
-
-        WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-            com.stash.core.data.sync.workers.FlacUpgradeWorker.UNIQUE_WORK_NAME,
-            androidx.work.ExistingWorkPolicy.REPLACE,
-            OneTimeWorkRequestBuilder<com.stash.core.data.sync.workers.FlacUpgradeWorker>()
-                // Tag the AUTOMATIC batch: the worker's consent re-check must
-                // apply only to sweep-produced batches — the user's explicit
-                // "Upgrade to FLAC" selection (FlacUpgradeEnqueuer) is a
-                // manual override that runs regardless of the master toggle.
-                .setInputData(
-                    workDataOf(com.stash.core.data.sync.workers.FlacUpgradeWorker.KEY_AUTO_SWEEP to true),
-                )
-                .build(),
-        )
-
-        Log.i(TAG, "FLAC upgrade sweep: enqueued ${candidates.size} candidate(s) to FlacUpgradeWorker")
     }
 
     /**

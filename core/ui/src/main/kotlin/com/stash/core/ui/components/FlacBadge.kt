@@ -12,10 +12,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 
 /**
- * "FLAC" pill that surfaces wherever a track row is rendered. Renders a
- * small Material3 Surface with a one-line label. Returns nothing for
- * non-lossless tracks so existing call sites can blindly drop one in
- * next to a title and let the badge gate itself.
+ * Lossless pill ("FLAC", "WAV", …) that surfaces wherever a track row is
+ * rendered. Renders a small Material3 Surface with a one-line label.
+ * Returns nothing for non-lossless tracks so existing call sites can
+ * blindly drop one in next to a title and let the badge gate itself.
+ * The label is the track's own format, upper-cased.
  *
  * Two display variants:
  *   - Plain `FLAC` — codec is lossless but bit-depth/sample-rate are
@@ -23,7 +24,8 @@ import androidx.compose.ui.graphics.Color
  *     gets the qualifier; CD doesn't, on purpose — the visual is "this
  *     is FLAC" first, "this is Hi-Res FLAC" second, without crowding
  *     row layouts that already carry artist + album text.
- *   - `FLAC 24/96` / `FLAC 24/192` — Hi-Res variants.
+ *   - `FLAC 24/96` / `FLAC 24/192` — Hi-Res variants (`WAV 24/96` for a
+ *     WAV, and so on).
  *
  * Optional [size] retained on the API for backwards compatibility
  * (some callers pass a larger value on Now Playing). Not currently
@@ -50,7 +52,7 @@ fun FlacBadge(
     tint: Color? = null,
 ) {
     if (!isLossless(fileFormat)) return
-    val text = flacBadgeText(bitsPerSample, sampleRateHz)
+    val text = flacBadgeText(fileFormat, bitsPerSample, sampleRateHz)
     Surface(
         modifier = modifier,
         color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -68,12 +70,16 @@ fun FlacBadge(
 /**
  * Pure-function text generator for the badge — broken out so the Now
  * Playing quality line can reuse the same "Hi-Res qualifier or not"
- * rule without duplicating the threshold logic.
+ * rule without duplicating the threshold logic. Names the real format
+ * (`WAV`, `ALAC`, …): an imported WAV read "FLAC".
  */
-internal fun flacBadgeText(bitsPerSample: Int?, sampleRateHz: Int?): String = when {
-    bitsPerSample == null || sampleRateHz == null -> "FLAC"
-    bitsPerSample <= 16 && sampleRateHz <= 44_100 -> "FLAC"
-    else -> "FLAC ${bitsPerSample}/${sampleRateHz / 1000}"
+internal fun flacBadgeText(fileFormat: String?, bitsPerSample: Int?, sampleRateHz: Int?): String {
+    val name = fileFormat?.takeIf { it.isNotBlank() }?.uppercase() ?: "FLAC"
+    return when {
+        bitsPerSample == null || sampleRateHz == null -> name
+        bitsPerSample <= 16 && sampleRateHz <= 44_100 -> name
+        else -> "$name ${bitsPerSample}/${sampleRateHz / 1000}"
+    }
 }
 
 private val LOSSLESS_CODECS = setOf("flac", "alac", "wav", "ape", "tta", "wv", "aiff")

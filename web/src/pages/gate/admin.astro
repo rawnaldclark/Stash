@@ -1,0 +1,341 @@
+---
+/**
+ * /admin, for the owner and Evo, behind Cloudflare Access (worker/admin.js). The Worker fills in the lists
+ * (data-html), the numbers (data-fill) and which notices show (data-if). Every form posts to /admin.
+ */
+import GateShell from '../../components/gate/GateShell.astro';
+import GoalBar from '../../components/gate/GoalBar.astro';
+---
+
+<GateShell title="Admin" path="/gate/admin" wide>
+  <header class="admin-head">
+    <p class="overline">Admin</p>
+    <h1>Early access</h1>
+    <p class="gate-lead">Signed in as <strong data-fill="admin-email">an admin</strong></p>
+    <p class="notice" role="status" data-if="flash" data-fill="flash"></p>
+    <p class="notice warning" data-if="hash-mismatch">
+      The tip jar hashes emails differently from this site, so Ko-fi supporters can't sign in. Set the same
+      EMAIL_PEPPER secret on both Workers, or on neither, then import past supporters again.
+    </p>
+  </header>
+
+  <div class="admin-grid">
+    <section class="gate-card glass requests" aria-labelledby="requests-title">
+      <h2 id="requests-title">Requests <span class="count" data-fill="request-count">0 waiting</span></h2>
+      <p class="empty" data-if="no-requests">Nobody's waiting.</p>
+      <ul role="list" class="admin-list" data-if="has-requests" data-html="requests"></ul>
+      <nav class="pager" aria-label="Request pages" data-html="pager"></nav>
+      <p class="gate-small">
+        Approving emails them "You're in". Denying just removes the request. Requests left alone go away after
+        30 days.
+      </p>
+    </section>
+
+    <section class="gate-card glass people" aria-labelledby="give-title">
+      <h2 id="give-title">Give access</h2>
+      <p>For supporters the site can't see on its own, like GitHub Sponsors and PayPal, and anyone you invite.</p>
+      <form method="post" action="/admin" class="stack">
+        <input type="hidden" name="action" value="add" />
+        <div>
+          <label class="label" for="add-email">Email</label>
+          <input class="input" id="add-email" name="email" type="email" maxlength="254" required autocomplete="off" />
+        </div>
+        <label class="check"><input type="checkbox" name="notify" value="yes" /> Email them that they're in</label>
+        <button type="submit" class="button button-primary button-small">Give access</button>
+      </form>
+
+      <h2 class="later" id="remove-title">Remove access</h2>
+      <p>Their sign-in stops working within a few minutes.</p>
+      <form method="post" action="/admin" class="stack" aria-labelledby="remove-title">
+        <input type="hidden" name="action" value="remove" />
+        <div>
+          <label class="label" for="remove-email">Email</label>
+          <input class="input" id="remove-email" name="email" type="email" maxlength="254" required autocomplete="off" />
+        </div>
+        <button type="submit" class="button button-secondary button-small">Remove access</button>
+      </form>
+    </section>
+
+    <section class="gate-card glass month" aria-labelledby="goal-title">
+      <h2 id="goal-title">Goal for <span data-fill="month">this month</span></h2>
+      <p class="exact" data-fill="goal-exact">$0.00 of $100.00</p>
+      <GoalBar compact />
+      <div class="table-wrap" data-if="has-entries">
+        <table>
+          <thead>
+            <tr><th scope="col">Date</th><th scope="col">From</th><th scope="col">Amount</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+          </thead>
+          <tbody data-html="entries"></tbody>
+        </table>
+      </div>
+      <p class="empty" data-if="no-entries">Nothing yet this month.</p>
+
+      <h3>Add a donation</h3>
+      <form method="post" action="/admin" class="donation">
+        <input type="hidden" name="action" value="donation" />
+        <div>
+          <label class="label" for="amount">Amount (US$)</label>
+          <input class="input" id="amount" name="amount" inputmode="decimal" placeholder="5.00" maxlength="10" required autocomplete="off" />
+        </div>
+        <div>
+          <label class="label" for="source">From</label>
+          <input class="input" id="source" name="source" list="sources" maxlength="60" placeholder="GitHub Sponsors" required autocomplete="off" />
+          <datalist id="sources">
+            <option value="GitHub Sponsors"></option>
+            <option value="PayPal (Evo)"></option>
+          </datalist>
+        </div>
+        <button type="submit" class="button button-primary button-small">Add</button>
+      </form>
+      <p class="gate-small">
+        Ko-fi donations count on their own. Ko-fi payments in other currencies are converted at fixed rates, so the
+        total is approximate. Months run on UTC.
+      </p>
+    </section>
+  </div>
+</GateShell>
+
+<style>
+  .admin-head {
+    max-width: 720px;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
+    letter-spacing: -0.03em;
+  }
+
+  .notice {
+    margin-top: 18px;
+    padding: 12px 16px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border-bright);
+    background: var(--accent-soft);
+    color: var(--text);
+  }
+
+  .warning {
+    border-color: rgb(255 0 51 / 0.45);
+    background: rgb(255 0 51 / 0.08);
+  }
+
+  .admin-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    align-items: start;
+    margin-top: 32px;
+  }
+
+  .requests {
+    grid-column: 1 / -1;
+  }
+
+  #requests-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+  }
+
+  h2.later {
+    margin-top: 36px;
+    padding-top: 28px;
+    border-top: 1px solid var(--glass-border);
+  }
+
+  h3 {
+    margin-top: 32px;
+    font-size: 1.1875rem;
+  }
+
+  .count {
+    color: var(--text-2);
+    font-family: var(--font-body);
+    font-size: 0.9375rem;
+    font-weight: 500;
+  }
+
+  .empty {
+    margin-top: 12px;
+    color: var(--text-2);
+  }
+
+  .stack {
+    display: grid;
+    gap: 14px;
+  }
+
+  .stack .input,
+  .donation .input {
+    margin-top: 8px;
+  }
+
+  .stack .button {
+    justify-self: start;
+  }
+
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-2);
+    font-size: 0.9375rem;
+  }
+
+  .check input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--purple);
+  }
+
+  .exact {
+    margin-top: 6px !important;
+    color: var(--text-2);
+  }
+
+  .month :global(.goal) {
+    margin-top: 16px;
+  }
+
+  .donation {
+    display: grid;
+    grid-template-columns: minmax(0, 140px) minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: end;
+    margin-top: 12px !important;
+  }
+
+  .donation .button {
+    min-height: 52px;
+  }
+
+  /* The lists the Worker builds (worker/admin.js). */
+  .pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 18px;
+    margin-top: 16px;
+  }
+
+  .pager:empty {
+    display: none;
+  }
+
+  .pager :global(.admin-page-link) {
+    font-weight: 600;
+  }
+
+  .admin-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .admin-list :global(.admin-item) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 20px;
+    padding: 16px 18px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+  }
+
+  .admin-list :global(.admin-item-main) {
+    min-width: 0;
+    flex: 1 1 280px;
+  }
+
+  .admin-list :global(.admin-email) {
+    color: var(--text);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-list :global(.admin-note) {
+    margin-top: 4px;
+    color: var(--text-2);
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-grid :global(.admin-meta) {
+    margin-top: 4px;
+    color: var(--text-2);
+    font-size: 0.875rem;
+  }
+
+  .admin-list :global(.admin-actions) {
+    display: flex;
+    gap: 8px;
+  }
+
+  .admin-list :global(.admin-actions form) {
+    margin: 0;
+  }
+
+  .table-wrap {
+    margin-top: 20px;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+  }
+
+  th {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--glass-border-bright);
+    color: var(--text-2);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  table :global(td) {
+    padding: 10px;
+    border-bottom: 1px solid var(--glass-border);
+    color: var(--text);
+    vertical-align: top;
+  }
+
+  table :global(.admin-amount) {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  table :global(form) {
+    margin: 0 !important;
+  }
+
+  table :global(.admin-link) {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--link);
+    font-size: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  @media (max-width: 860px) {
+    .admin-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 560px) {
+    .donation {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .donation .button {
+      justify-self: start;
+    }
+  }
+</style>

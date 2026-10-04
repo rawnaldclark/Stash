@@ -1,0 +1,51 @@
+---
+/**
+ * The 6-digit code box. The email rides along in a hidden field the Worker fills in (data-value="email"),
+ * so the code is checked against the address it was sent to.
+ */
+---
+
+<form method="post" action="/access/verify" class="code-form">
+  <input type="hidden" name="email" value="" data-value="email" />
+  <label class="label" for="code">Your 6-digit code</label>
+  <div class="row">
+    <input
+      class="input input-code"
+      id="code"
+      name="code"
+      type="text"
+      inputmode="numeric"
+      autocomplete="one-time-code"
+      minlength="6"
+      maxlength="9"
+      required
+      autofocus
+      spellcheck="false"
+    />
+    <button type="submit" class="button button-primary">Sign in</button>
+  </div>
+</form>
+
+<style>
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .row .input {
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+
+  .row .button {
+    flex: 0 0 auto;
+  }
+
+  @media (max-width: 420px) {
+    .row .button {
+      flex: 1 1 100%;
+    }
+  }
+</style>

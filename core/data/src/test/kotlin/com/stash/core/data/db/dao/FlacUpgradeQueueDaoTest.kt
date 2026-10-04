@@ -57,6 +57,15 @@ class FlacUpgradeQueueDaoTest {
         assertEquals(1, dao.countAll()) // t1's DONE row was cleared by the new batch
     }
 
+    @Test fun `the worker drains a batch in the order it was given`() = runTest {
+        val (a, b, c) = listOf("A", "B", "C").map { insertTrack(it) }
+
+        // The sweep orders never-tried tracks first; a selection keeps the user's order.
+        dao.startBatch(listOf(c, a, b))
+
+        assertEquals(listOf(c, a, b), dao.pendingTrackIds())
+    }
+
     @Test fun `counts reflect per-status transitions`() = runTest {
         val ids = listOf("A", "B", "C").map { insertTrack(it) }
         dao.startBatch(ids)

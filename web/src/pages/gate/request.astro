@@ -1,0 +1,72 @@
+---
+/** GET /request. Posting it stores {email, note} until someone answers (worker/index.js, requestAccess). */
+import GateShell from '../../components/gate/GateShell.astro';
+---
+
+<GateShell title="Request access" path="/gate/request">
+  <div class="gate-card glass">
+    <p class="overline">Early access</p>
+    <h1>Request access</h1>
+    <p>
+      Leave your email and we'll get back to you. If you supported Stash somewhere we can't see on our own, like
+      PayPal, say so in the note.
+    </p>
+    <form method="post" action="/request" class="fields">
+      <div>
+        <label class="label" for="email">Email</label>
+        <input
+          class="input"
+          id="email"
+          name="email"
+          type="email"
+          autocomplete="email"
+          inputmode="email"
+          maxlength="254"
+          required
+          placeholder="you@example.com"
+        />
+      </div>
+      <div>
+        <label class="label" for="note">Note <span class="optional">(optional)</span></label>
+        <textarea
+          class="input"
+          id="note"
+          name="note"
+          maxlength="500"
+          rows="4"
+          placeholder="For example: I donated on PayPal as …"></textarea>
+      </div>
+      <button type="submit" class="button button-primary">Send request</button>
+    </form>
+    <p class="gate-small">
+      We keep your email only until we've answered, and never more than 30 days. More on the
+      <a href="/privacy#early-access-and-signing-in">privacy page</a>. Already a supporter? <a href="/">Sign in</a>.
+    </p>
+  </div>
+</GateShell>
+
+<style>
+  .fields {
+    display: grid;
+    gap: 18px;
+  }
+
+  .fields .input {
+    margin-top: 8px;
+  }
+
+  .fields .button {
+    justify-self: start;
+  }
+
+  .optional {
+    color: var(--text-2);
+    font-weight: 400;
+  }
+
+  @media (max-width: 420px) {
+    .fields .button {
+      justify-self: stretch;
+    }
+  }
+</style>

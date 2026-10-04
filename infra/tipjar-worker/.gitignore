@@ -1,0 +1,3 @@
+# Ko-fi CSV exports and the files scripts/import-kofi-csv.mjs writes: keep them out of git.
+*.csv
+stash-access-bulk*.json

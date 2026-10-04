@@ -1,0 +1,15 @@
+---
+/** After POST /signout. */
+import GateShell from '../../components/gate/GateShell.astro';
+import Icon from '../../components/Icon.astro';
+---
+
+<GateShell title="Signed out" path="/gate/signed-out">
+  <div class="gate-card glass">
+    <h1>You're signed out</h1>
+    <p>Thanks for stopping by.</p>
+    <div class="gate-back">
+      <a class="button button-secondary" href="/"><Icon name="login" size="20px" />Sign in again</a>
+    </div>
+  </div>
+</GateShell>

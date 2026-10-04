@@ -1,0 +1,143 @@
+---
+/**
+ * Three steps from the README's "First-time setup" and "After setup",
+ * checked against the app: one Download switch since v0.9.107 (no Offline or
+ * Online mode), and Auto-sync is off until it's turned on in the Sync tab
+ * (SyncPreferencesManager, ScheduleCard).
+ */
+import Icon, { type IconName } from '../Icon.astro';
+
+const steps: { icon: IconName; title: string; text: string }[] = [
+  {
+    icon: 'login',
+    title: 'Connect your accounts',
+    text: 'Sign in to Spotify, YouTube Music or both, right inside the app. Your login cookies are stored encrypted on your phone and only ever go back to Spotify or YouTube.',
+  },
+  {
+    icon: 'playlist-check',
+    title: 'Pick what to sync',
+    text: 'Choose the playlists and mixes you want, each with its own switch. A mix can refresh on every sync, or keep stacking new songs on top.',
+  },
+  {
+    icon: 'offline',
+    title: 'Download or stream',
+    text: 'With Download on, sync saves your switched-on playlists and mixes so they play with no connection. On Stream only, sync keeps them up to date and songs stream, using almost no storage.',
+  },
+];
+---
+
+<section class="section how" id="how-it-works" aria-labelledby="how-title">
+  <div class="container">
+    <div class="section-head is-centered">
+      <p class="overline">How it works</p>
+      <h2 id="how-title" class="section-title">A couple of minutes per service</h2>
+      <p class="section-intro">
+        The first sync is the slow one. After that, each sync just picks up what's new. Turn on Auto-sync in the
+        Sync tab and it runs on its own, on the days and at the time you pick.
+      </p>
+    </div>
+
+    <ol role="list" class="steps">
+      {
+        steps.map((step, index) => (
+          <li class="step glass">
+            <div class="step-top">
+              <span class="number" aria-hidden="true">
+                {String(index + 1).padStart(2, '0')}
+              </span>
+              <span class="icon-bubble large">
+                <Icon name={step.icon} size="24px" />
+              </span>
+            </div>
+            <h3>{step.title}</h3>
+            <p>{step.text}</p>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+
+  .step {
+    position: relative;
+    padding: 28px;
+    border-radius: var(--radius-2xl);
+    overflow: hidden;
+  }
+
+  .step::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(167 139 250 / 0.5), transparent);
+  }
+
+  .step-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+
+  .number {
+    font-family: var(--font-display);
+    font-size: 3rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    background: linear-gradient(160deg, var(--purple-light), rgb(139 92 246 / 0.15));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  @media (prefers-color-scheme: light) {
+    .number {
+      background-image: linear-gradient(160deg, var(--purple-dark), rgb(124 58 237 / 0.2));
+    }
+  }
+
+  .large {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+  }
+
+  h3 {
+    font-size: 1.375rem;
+    letter-spacing: -0.02em;
+  }
+
+  .step p {
+    margin-top: 10px;
+    color: var(--text-2);
+  }
+
+  @media (max-width: 900px) {
+    .steps {
+      grid-template-columns: 1fr;
+      max-width: 560px;
+      margin-inline: auto;
+    }
+
+    .step {
+      padding: 24px;
+    }
+
+    .step-top {
+      margin-bottom: 18px;
+    }
+
+    .number {
+      font-size: 2.5rem;
+    }
+  }
+</style>

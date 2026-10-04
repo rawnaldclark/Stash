@@ -1,0 +1,67 @@
+---
+/**
+ * An app screenshot in a slim phone frame, like the phones in the README's
+ * hero banner. Set the phone's width with the `--device-width` CSS variable
+ * (default 300px) on the element or a parent; the frame scales with it.
+ */
+import ThemedImage from './ThemedImage.astro';
+import { screen, type ScreenName } from '../data/screenshots';
+
+interface Props {
+  name: ScreenName;
+  /** How wide the phone is drawn, so the browser can pick the right file. */
+  sizes?: string;
+  priority?: boolean;
+  class?: string;
+}
+
+const { name, sizes = '(max-width: 640px) 70vw, 300px', priority = false, class: className } = Astro.props;
+const { dark, light, alt } = screen(name);
+---
+
+<div class:list={['device', className]}>
+  <div class="frame">
+    <ThemedImage
+      dark={dark}
+      light={light}
+      alt={alt}
+      widths={[280, 420, 560, 720, 1080]}
+      sizes={sizes}
+      priority={priority}
+    />
+  </div>
+</div>
+
+<style>
+  /* The device is a size container, so the frame can scale its bezel and corners with the phone's width (cqi). */
+  .device {
+    width: var(--device-width, 300px);
+    container-type: inline-size;
+  }
+
+  .frame {
+    /* Bezel 2.6% of the phone's width; the screenshots' own corners are 5.1% of theirs. */
+    --bezel: 2.6cqi;
+    --screen-radius: calc((100cqi - 2 * var(--bezel)) * 0.051);
+    padding: var(--bezel);
+    border-radius: calc(var(--screen-radius) + var(--bezel));
+    background: var(--device-frame);
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.1),
+      inset 0 1px 0 rgb(255 255 255 / 0.12),
+      var(--device-shadow);
+  }
+
+  .frame :global(img) {
+    width: 100%;
+    height: auto;
+    border-radius: var(--screen-radius);
+    /*
+     * Shown until the screenshot arrives (most load lazily, and swiping the
+     * gallery reaches them before they do): the app's own screen colour, so a
+     * loading phone looks switched on rather than empty. The loaded screenshot
+     * covers it completely.
+     */
+    background: var(--screen-placeholder);
+  }
+</style>

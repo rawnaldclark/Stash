@@ -130,6 +130,38 @@ class BlocklistGuardTest {
         coVerify(exactly = 1) { playlistDao.updateTrackCount(9L, 0) }
     }
 
+    /**
+     * Two rows can share a file (an import that took a downloaded song's file
+     * before imports picked a name of their own). Blocking one row must not
+     * delete the audio the other still plays from.
+     */
+    @Test
+    fun `block keeps a file another song still plays from`() = runTest {
+        val track = TrackEntity(
+            id = 42L, title = "505", artist = "Arctic Monkeys", source = MusicSource.SPOTIFY,
+            filePath = "/music/505.flac", isDownloaded = true,
+        )
+        coEvery { trackDao.countOtherTracksWithFilePath("/music/505.flac", 42L) } returns 1
+
+        guard.block(track, BlockSource.CONTEXT_MENU)
+
+        coVerify(exactly = 0) { fileDeleter.delete("/music/505.flac") }
+        coVerify(exactly = 1) { trackDao.deleteById(42L) }
+    }
+
+    @Test
+    fun `block deletes a file only it records`() = runTest {
+        val track = TrackEntity(
+            id = 42L, title = "505", artist = "Arctic Monkeys", source = MusicSource.SPOTIFY,
+            filePath = "/music/505.flac", isDownloaded = true,
+        )
+        coEvery { trackDao.countOtherTracksWithFilePath("/music/505.flac", 42L) } returns 0
+
+        guard.block(track, BlockSource.CONTEXT_MENU)
+
+        coVerify(exactly = 1) { fileDeleter.delete("/music/505.flac") }
+    }
+
     @Test
     fun `unblock deletes the blocklist row by canonical key`() = runTest {
         guard.unblock("arctic monkeys|505")

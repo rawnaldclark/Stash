@@ -1,0 +1,122 @@
+---
+/**
+ * The early-access page. The Worker serves it at / (and /access) to anyone who isn't signed in, with this
+ * month's goal filled in; /gate/front itself is never served. See worker/index.js.
+ */
+import { Image } from 'astro:assets';
+import GateShell from '../../components/gate/GateShell.astro';
+import GoalBar from '../../components/gate/GoalBar.astro';
+import DonateLinks from '../../components/gate/DonateLinks.astro';
+import vinyl from '../../assets/brand/vinyl.png';
+import { LINKS, SITE } from '../../data/site';
+---
+
+<GateShell title={`${SITE.name}: early access`} description={SITE.description} path="/" wide noindex={false}>
+  <header class="intro">
+    <Image src={vinyl} alt="" width={72} height={72} densities={[1, 2]} loading="eager" class="record" />
+    <p class="overline">Early access</p>
+    <h1>stashfm.app is in early access</h1>
+    <p class="gate-lead">
+      Stash mirrors your Spotify and YouTube Music libraries to your Android phone, to play offline or stream. The
+      app is free and open source, <a href={LINKS.github}>on GitHub</a>.
+    </p>
+  </header>
+
+  <div class="cards">
+    <div class="gate-card glass signin">
+      <h2>Sign in</h2>
+      <p>Supporters are on the list as a thank‑you. Enter the email you supported with, and we'll send you a code.</p>
+      <form method="post" action="/access">
+        <label class="label" for="email">Email</label>
+        <div class="row">
+          <input
+            class="input"
+            id="email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            inputmode="email"
+            maxlength="254"
+            required
+            placeholder="you@example.com"
+          />
+          <button type="submit" class="button button-primary">Email me a code</button>
+        </div>
+      </form>
+      <p class="gate-small">Not on the list? <a href="/request">Request access</a>.</p>
+    </div>
+
+    <div class="gate-card glass month">
+      <h2>Monthly goal</h2>
+      <GoalBar />
+      <DonateLinks />
+    </div>
+  </div>
+</GateShell>
+
+<style>
+  .intro {
+    max-width: 680px;
+    margin-inline: auto;
+    text-align: center;
+  }
+
+  .intro :global(.record) {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 20px;
+    filter: drop-shadow(0 16px 32px rgb(139 92 246 / 0.4));
+  }
+
+  h1 {
+    font-size: clamp(2.25rem, 1.5rem + 3vw, 3.5rem);
+    line-height: 1.06;
+    letter-spacing: -0.04em;
+  }
+
+  .intro .gate-lead {
+    margin-top: 18px;
+    font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem);
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    margin-top: clamp(36px, 5vw, 56px);
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .row .input {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+
+  .month :global(.goal) {
+    margin-top: 18px;
+  }
+
+  .month :global(.donate) {
+    margin-top: 24px;
+    padding-top: 22px;
+    border-top: 1px solid var(--glass-border);
+  }
+
+  @media (max-width: 860px) {
+    .cards {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 420px) {
+    .row .button {
+      flex: 1 1 100%;
+    }
+  }
+</style>

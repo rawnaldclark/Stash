@@ -29,6 +29,8 @@ import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.R
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.toPlayerRepeatMode
+import com.stash.core.media.mediaToWallMs
+import com.stash.core.media.wallToMediaMs
 import com.stash.core.media.equalizer.LoudnessController
 import com.stash.core.media.equalizer.StashRenderersFactory
 import com.stash.core.media.equalizer.computeGain
@@ -811,8 +813,11 @@ class StashPlaybackService : MediaLibraryService() {
         val engine = crossfadeEngine ?: return
         if (!crossfadeEnabled || engine.isTransitioning()) return
         if (player.repeatMode == Player.REPEAT_MODE_ONE) return
-        val duration = player.duration
-        if (duration <= 0) return
+        if (player.duration <= 0) return
+        // Everything below is wall-clock time, like the fade ramp itself: at 2x the last 6 s of
+        // the song are over in 3 s, and a fade timed in song time would cut it off halfway.
+        val speed = player.playbackParameters.speed
+        val duration = mediaToWallMs(player.duration, speed)
         val fade = crossfadeDurationMs
         if (duration <= 2 * fade) return // skip very short tracks
         val nextIndex = player.nextMediaItemIndex
@@ -820,7 +825,7 @@ class StashPlaybackService : MediaLibraryService() {
         val nextItem = runCatching { player.getMediaItemAt(nextIndex) }.getOrNull() ?: return
         if (!isNextResolved(nextItem)) return
         val nextId = nextItem.mediaId
-        val remaining = duration - player.currentPosition
+        val remaining = mediaToWallMs(player.duration - player.currentPosition, speed)
 
         // Phase 1 — prime the spare as soon as the next track is resolved and we
         // are in the back stretch of the current one, so a COLD stream has tens
@@ -833,8 +838,10 @@ class StashPlaybackService : MediaLibraryService() {
 
         // Phase 2 — fire only when the spare has buffered at least the fade
         // length ahead, so it can't stall mid-fade (a barely-READY spare
-        // glitches on cold streams).
-        if (remaining <= fade && engine.isPreparedFor(nextId) && engine.spareBufferedMs() >= fade) {
+        // glitches on cold streams). Buffer is song time: the fade plays fade × speed of it.
+        if (remaining <= fade && engine.isPreparedFor(nextId) &&
+            engine.spareBufferedMs() >= wallToMediaMs(fade, speed)
+        ) {
             val fadeMs = minOf(fade, remaining - HANDOFF_MARGIN_MS)
             if (fadeMs >= MIN_FADE_MS) {
                 crossfadePollJob?.cancel() // swap restarts the poll on the new master
@@ -1356,6 +1363,10 @@ class StashPlaybackService : MediaLibraryService() {
                 ?: com.stash.core.media.listen.ListenTogetherPlayer(m).also { togetherPlayer = it }
             wrapper.configure(isHost, interceptor)
             if (togetherListener == null) { // entering the session, not a role change
+                // The room plays at 1x and drift correction steers the speed from here, so a sped-up
+                // song mustn't carry in. (Here, not through the controller, whose command could land
+                // after the wrapper below, which ignores it.)
+                m.setPlaybackSpeed(1f)
                 // A listener waits for the room's first load: never show the user's own song meanwhile.
                 // The session has already saved its position, and saves are gated while active.
                 if (!isHost) { m.stop(); m.clearMediaItems() }

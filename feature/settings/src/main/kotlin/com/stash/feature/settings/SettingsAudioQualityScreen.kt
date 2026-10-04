@@ -93,6 +93,8 @@ fun SettingsAudioQualityScreen(
     val customEndpoint by viewModel.customEndpoint.collectAsStateWithLifecycle()
     val customEndpointError by viewModel.customEndpointError.collectAsStateWithLifecycle()
     val customEndpointTest by viewModel.customEndpointTest.collectAsStateWithLifecycle()
+    val flacViewModel: FlacUpgradeViewModel = hiltViewModel()
+    val autoFlacUpgrade by flacViewModel.autoEnabled.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = "Audio & Quality", onBack = onBack, modifier = modifier) {
         // (a) Download tier — only when lossless OFF. The standalone yt-dlp
@@ -290,6 +292,17 @@ fun SettingsAudioQualityScreen(
                                 )
                             }
                         }
+
+                        // -- Auto-upgrade to FLAC after sync ------------------
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SettingsToggleRow(
+                            title = "Auto-upgrade to FLAC after sync",
+                            subtitle = "After every sync, look for lossless versions of your " +
+                                "downloads that aren't FLAC yet. You can also check by hand in " +
+                                "Library Health.",
+                            checked = autoFlacUpgrade,
+                            onCheckedChange = flacViewModel::setAutoEnabled,
+                        )
 
                         // -- Streaming quality block --------------------------
                         // Per-network tier for *streaming* playback (distinct

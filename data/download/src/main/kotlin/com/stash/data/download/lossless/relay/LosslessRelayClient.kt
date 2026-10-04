@@ -58,6 +58,13 @@ sealed interface RelayMint {
 class LosslessDownloadPurpose : AbstractCoroutineContextElement(Key) {
     /** Set when the relay paced this work; the seconds until it may try again. */
     @Volatile var pacedRetryAfterSec: Long? = null
+
+    /**
+     * Set once a lossless source matched the track. A null result after this is a failed
+     * fetch or save, not "no lossless version", and the FLAC upgrade sweep must not file
+     * it as a miss (it would leave the track alone for two weeks).
+     */
+    @Volatile var matchFound: Boolean = false
     companion object Key : CoroutineContext.Key<LosslessDownloadPurpose>
 }
 

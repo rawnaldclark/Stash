@@ -1,0 +1,92 @@
+---
+/** Shown for any address that doesn't exist (wrangler.jsonc: not_found_handling = "404-page"). */
+import { Image } from 'astro:assets';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
+import vinyl from '../assets/brand/vinyl.png';
+import { LINKS } from '../data/site';
+---
+
+<BaseLayout
+  title="Page not found"
+  description="This page doesn't exist. Head back to the Stash home page."
+  path="/404"
+  noindex
+>
+  <section class="not-found">
+    <div class="glow" aria-hidden="true"></div>
+    <div class="container inner">
+      <Image src={vinyl} alt="" width={140} height={140} densities={[1, 2]} loading="eager" class="record" />
+      <p class="code">404</p>
+      <h1>Nothing's playing here</h1>
+      <p class="lead">The page you're after doesn't exist, or it moved. Let's get you back to the music.</p>
+      <div class="actions">
+        <a class="button button-primary" href="/"><Icon name="home" size="20px" />Back to home</a>
+        <a class="button button-secondary" href={LINKS.download}><Icon name="download" size="20px" />Download Stash</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .not-found {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: calc(100vh - 64px - 200px);
+    padding-block: clamp(64px, 10vw, 128px);
+    isolation: isolate;
+  }
+
+  .glow {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(35% 45% at 50% 35%, var(--glow-purple), transparent 70%),
+      radial-gradient(30% 40% at 70% 70%, var(--glow-magenta), transparent 70%);
+    pointer-events: none;
+  }
+
+  .inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .inner :global(.record) {
+    width: 140px;
+    height: 140px;
+    filter: drop-shadow(0 24px 48px rgb(139 92 246 / 0.45));
+  }
+
+  .code {
+    margin-top: 28px;
+    color: var(--overline);
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.3em;
+  }
+
+  h1 {
+    margin-top: 8px;
+    font-size: clamp(2.25rem, 1.5rem + 3vw, 3.5rem);
+    letter-spacing: -0.03em;
+  }
+
+  .lead {
+    margin-top: 16px;
+    max-width: 44ch;
+    color: var(--text-2);
+    font-size: 1.125rem;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 32px;
+  }
+</style>

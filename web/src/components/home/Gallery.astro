@@ -1,0 +1,118 @@
+---
+/**
+ * More of the app, one phone per screen. A swipeable row on phones, a grid on
+ * wider screens. The screenshots follow the visitor's theme like the rest of the
+ * page, so a visitor sees one theme only: the title promises no more than that.
+ * The app follows the phone's theme by default (ThemeMode.SYSTEM) and has a
+ * "Pure black (AMOLED)" option for its dark theme.
+ *
+ * Captions stick to playing and organising your own library; downloading is
+ * explained with the Download switch (Modes, HowItWorks).
+ */
+import Device from '../Device.astro';
+import Icon from '../Icon.astro';
+import type { ScreenName } from '../../data/screenshots';
+
+const screens: { name: ScreenName; title: string; text: string }[] = [
+  { name: 'home', title: 'Home', text: 'Daily Discover, your mixes and radios' },
+  { name: 'playlist', title: 'Playlists', text: 'Play, shuffle or share' },
+  { name: 'artist', title: 'Artists', text: 'Popular songs and artist radio' },
+  { name: 'discography', title: 'Discography', text: 'Albums, singles and EPs' },
+  { name: 'album', title: 'Albums', text: 'Play, queue or save to your library' },
+  { name: 'search', title: 'Search', text: 'Songs and artists, ready to play' },
+  { name: 'settings', title: 'Settings', text: 'Everything in a few clear groups' },
+  { name: 'appearance', title: 'Themes', text: 'Dark, light or follow system' },
+];
+---
+
+<section class="section gallery" id="tour" aria-labelledby="tour-title">
+  <div class="container">
+    <div class="section-head is-centered">
+      <p class="overline"><Icon name="dark-mode" size="18px" />A closer look</p>
+      <h2 id="tour-title" class="section-title">Dark or light, it follows your phone</h2>
+      <p class="section-intro">
+        Stash matches your phone's dark or light setting, or you can pick one, and there's a pure-black option
+        for OLED screens. These screens follow your device's theme too, so switch it to see the other look.
+      </p>
+    </div>
+  </div>
+
+  <ul role="list" class="strip" aria-label="App screens">
+    {
+      screens.map((screen) => (
+        <li>
+          <figure>
+            <Device name={screen.name} sizes="(max-width: 900px) min(62vw, 260px), 260px" />
+            <figcaption>
+              <strong>{screen.title}</strong>
+              <span>{screen.text}</span>
+            </figcaption>
+          </figure>
+        </li>
+      ))
+    }
+  </ul>
+</section>
+
+<style>
+  .strip {
+    --device-width: min(260px, 100%);
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 48px 32px;
+    width: 100%;
+    max-width: calc(var(--content-max) + 2 * var(--gutter));
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  figure {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  figcaption {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    margin-top: 20px;
+    text-align: center;
+  }
+
+  figcaption strong {
+    font-family: var(--font-display);
+    font-size: 1.125rem;
+    font-weight: 500;
+  }
+
+  figcaption span {
+    color: var(--text-2);
+    font-size: 0.9375rem;
+    /* The global text-wrap: pretty only covers <p>; this keeps a caption from ending on one lone word. */
+    text-wrap: pretty;
+  }
+
+  /* Phones and small tablets: one swipeable row that snaps to each phone. */
+  @media (max-width: 900px) {
+    .strip {
+      grid-template-columns: none;
+      grid-auto-flow: column;
+      grid-auto-columns: min(62vw, 260px);
+      gap: 20px;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scroll-snap-type: x mandatory;
+      scroll-padding-inline: var(--gutter);
+      padding-bottom: 12px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--glass-border-bright) transparent;
+    }
+
+    .strip li {
+      scroll-snap-align: start;
+    }
+  }
+</style>

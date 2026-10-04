@@ -1,0 +1,46 @@
+---
+/**
+ * Now Playing, lyrics and playback, from the README's "Features › Playback",
+ * checked against the app: the 5-band equalizer and its presets (EqProcessor,
+ * PresetCatalog), Bass Boost and Loudness Normalization (EqualizerScreen) and
+ * Crossfade (Settings › Playback). There has been no virtualizer since v0.8.0.
+ */
+import FeatureRow from '../FeatureRow.astro';
+
+const playback = ['5-band equalizer with presets', 'Bass boost', 'Crossfade', 'Loudness normalization'];
+---
+
+<FeatureRow
+  id="now-playing"
+  icon="lyrics"
+  overline="Now Playing"
+  title="Lyrics that light up word by word"
+  screens={['now-playing', 'lyrics']}
+>
+  <p>
+    Now Playing's colour wash follows the album art. Synced lyrics scroll with the song, and where
+    word-synced lyrics exist, each word lights up as it's sung.
+  </p>
+  <ul role="list" class="chips" aria-label="Playback features">
+    {playback.map((item) => <li>{item}</li>)}
+  </ul>
+</FeatureRow>
+
+<style>
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 28px;
+  }
+
+  .chips li {
+    padding: 8px 14px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--glass-border-bright);
+    background: var(--glass);
+    color: var(--text);
+    font-size: 0.9375rem;
+    font-weight: 500;
+  }
+</style>

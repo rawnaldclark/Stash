@@ -1,0 +1,132 @@
+---
+/**
+ * Three plain facts under the hero, and the credentials note. Only things that
+ * are literally true: there's no Stash account, no analytics SDK in the app,
+ * and the code is open. "No subscription" and "No ads" are left out here and in
+ * the README's opening: under a Spotify + YouTube Music headline they read as a
+ * pitch to replace those services' paid plans.
+ */
+import Icon, { type IconName } from '../Icon.astro';
+
+const items: { icon: IconName; label: string }[] = [
+  { icon: 'person-off', label: 'No Stash account.' },
+  { icon: 'visibility-off', label: 'No analytics.' },
+  { icon: 'code', label: 'Open source.' },
+];
+---
+
+<section class="trust" aria-labelledby="trust-title">
+  <div class="container">
+    <div class="panel glass">
+      <h2 id="trust-title" class="visually-hidden">Stash at a glance</h2>
+      <ul role="list" class="items">
+        {
+          items.map((item) => (
+            <li>
+              <span class="icon-bubble">
+                <Icon name={item.icon} size="22px" />
+              </span>
+              {item.label}
+            </li>
+          ))
+        }
+      </ul>
+      <div class="note">
+        <p>
+          Your credentials live on your phone, with the Spotify, YouTube and Discord tokens encrypted, and each
+          one is only ever sent back to the service it came from.
+        </p>
+        <a class="arrow-link" href="/privacy">See everything Stash talks to <Icon name="arrow-forward" size="18px" /></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .trust {
+    position: relative;
+    margin-top: clamp(16px, 3vw, 40px);
+  }
+
+  .panel {
+    padding: clamp(24px, 4vw, 40px);
+    border-radius: var(--radius-2xl);
+    background:
+      linear-gradient(135deg, rgb(139 92 246 / 0.10), transparent 55%),
+      var(--glass);
+  }
+
+  /*
+   * Three columns with the icon beside its label. From 960px up each column
+   * leaves the longest label, "No Stash account.", at least 13px to spare
+   * (measured), so no label breaks onto a second line. Narrower screens use the
+   * layouts below, which keep every label on one line down to about 310px.
+   */
+  .items {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .items li {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: var(--font-display);
+    font-size: clamp(1.125rem, 1rem + 0.6vw, 1.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 32px;
+    margin-top: 28px;
+    padding-top: 24px;
+    border-top: 1px solid var(--glass-border);
+    color: var(--text-2);
+  }
+
+  .note p {
+    max-width: 68ch;
+  }
+
+  .note .arrow-link {
+    white-space: nowrap;
+  }
+
+  /* Tablets: still three columns, with the icon above its label so each label gets the full column. */
+  @media (max-width: 959px) {
+    .items li {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+  }
+
+  /* Phones: one item per row, icon beside label, so even a 320px screen keeps every label on one line. */
+  @media (max-width: 679px) {
+    .items {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    .items li {
+      flex-direction: row;
+      align-items: center;
+      gap: 14px;
+      font-size: 1.1875rem;
+    }
+  }
+
+  /* Below about 300px the link no longer fits on one line; let it wrap instead of running off the edge. */
+  @media (max-width: 340px) {
+    .note .arrow-link {
+      white-space: normal;
+    }
+  }
+</style>

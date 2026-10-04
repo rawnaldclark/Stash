@@ -1,0 +1,15 @@
+---
+/** Too many codes, tries or requests from one address or for one email (HTTP 429). */
+import GateShell from '../../components/gate/GateShell.astro';
+import Icon from '../../components/Icon.astro';
+---
+
+<GateShell title="Slow down a little" path="/gate/slow-down">
+  <div class="gate-card glass">
+    <h1>Slow down a little</h1>
+    <p>That's a lot of tries in a short time. Wait a minute, then try again.</p>
+    <div class="gate-back">
+      <a class="button button-secondary" href="/"><Icon name="home" size="20px" />Back to stashfm.app</a>
+    </div>
+  </div>
+</GateShell>

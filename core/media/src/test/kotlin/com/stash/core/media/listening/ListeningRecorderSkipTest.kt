@@ -99,6 +99,9 @@ class ListeningRecorderSkipTest {
         override suspend fun playTrack(track: Track) = StreamRoutingResult.NotAvailable
         override suspend fun playFromStream(item: TrackItem) = StreamRoutingResult.NotAvailable
         override fun setVolume(volume: Float) = Unit
+        private val speedFlow = MutableStateFlow(1f)
+        override val playbackSpeed: StateFlow<Float> get() = speedFlow
+        override fun setPlaybackSpeed(speed: Float) { speedFlow.value = speed }
     }
 
     private val trackA = Track(
@@ -552,6 +555,49 @@ class ListeningRecorderSkipTest {
         runCurrent()
         coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
         advanceTimeBy(1)
+        runCurrent()
+        coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
+    }
+
+    @Test
+    fun `at 2x a whole song counts as a listen, not a skip`() = runTest {
+        // A 3-minute song needs 90 s of it heard: 45 s of playing at 2x, where the song itself
+        // ends at 90 s. Counted in playing time, it would only qualify as it ends and lose the
+        // race to the next song, which records a skip.
+        val playerRepo = FakePlayerRepository(PlayerState(isPlaying = true, currentTrack = trackA))
+        playerRepo.setPlaybackSpeed(2f)
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
+        recorderFor(playerRepo, listeningDao, skipDao).start()
+        runCurrent()
+
+        advanceTimeBy(44_999)
+        runCurrent()
+        coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
+        advanceTimeBy(1)
+        runCurrent()
+        coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
+
+        advanceTimeBy(45_000) // the song plays out
+        playerRepo.setState(PlayerState(isPlaying = true, currentTrack = trackB))
+        runCurrent()
+        coVerify(exactly = 0) { skipDao.insert(any()) }
+    }
+
+    @Test
+    fun `a speed change mid-song counts each stretch at its own speed`() = runTest {
+        val playerRepo = FakePlayerRepository(PlayerState(isPlaying = true, currentTrack = trackA))
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        recorderFor(playerRepo, listeningDao).start()
+        runCurrent()
+
+        advanceTimeBy(30_000) // 30 s of the song at 1x
+        playerRepo.setPlaybackSpeed(2f)
+        runCurrent()
+        advanceTimeBy(29_999) // nearly 60 s more of it at 2x
+        runCurrent()
+        coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
+        advanceTimeBy(1) // 90 s heard
         runCurrent()
         coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
     }

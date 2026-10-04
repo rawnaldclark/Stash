@@ -47,13 +47,14 @@ class FlacUpgradeWorker @AssistedInject constructor(
         createForegroundInfo(text = "Preparing…", progress = -1f)
 
     override suspend fun doWork(): Result {
-        // The preference can change after TrackDownloadWorker builds the
-        // persisted batch but before WorkManager starts this worker. Enforce
-        // consent again at execution time and discard the unstarted worklist —
-        // but ONLY for the automatic sweep. This worker has two producers, and
-        // the user's explicit "Upgrade to FLAC" selection (FlacUpgradeEnqueuer,
-        // untagged) is a manual override that must run with the master toggle
-        // off, same contract as Now Playing's forced single-track upgrade.
+        // The preference can change after FlacUpgradeSweeper builds the
+        // persisted batch but before WorkManager starts this worker (a paced
+        // batch waits hours between runs). Enforce consent again at execution
+        // time and discard the unstarted worklist — but ONLY for a sweep (after
+        // a sync, or Library Health's "Check for upgrades"). The user's explicit
+        // "Upgrade to FLAC" selection (FlacUpgradeEnqueuer, untagged) is a
+        // manual override that must run with the master toggle off, same
+        // contract as Now Playing's forced single-track upgrade.
         if (inputData.getBoolean(KEY_AUTO_SWEEP, false) && !losslessUpgrader.isLosslessEnabled()) {
             queueDao.clearPending()
             Log.i(TAG, "Lossless disabled in Settings: discarded pending auto-sweep FLAC upgrades")
@@ -89,7 +90,11 @@ class FlacUpgradeWorker @AssistedInject constructor(
                 } else {
                     val status = when (losslessUpgrader.upgradeToLossless(track, sweep = true)) {
                         UpgradeResult.Upgraded -> { upgraded++; FlacUpgradeStatus.DONE }
-                        UpgradeResult.NoMatch -> { noMatch++; FlacUpgradeStatus.NO_MATCH }
+                        UpgradeResult.NoMatch -> {
+                            noMatch++
+                            trackDao.setFlacNoMatchAt(trackId, System.currentTimeMillis())
+                            FlacUpgradeStatus.NO_MATCH
+                        }
                         UpgradeResult.Error -> { failed++; FlacUpgradeStatus.FAILED }
                         // The relay is serving streams first today. Leave this row and the rest
                         // pending and come back later: WorkManager's backoff grows each time, and
@@ -153,11 +158,13 @@ class FlacUpgradeWorker @AssistedInject constructor(
         const val KEY_FAILED = "flac_failed"
 
         /**
-         * Input-data flag set ONLY by TrackDownloadWorker's automatic
-         * post-sync sweep. Marks the batch as machine-initiated so the
-         * consent re-check in [doWork] can discard it when the master
-         * lossless toggle is off — while user-enqueued batches
-         * (FlacUpgradeEnqueuer, untagged) run regardless.
+         * Input-data flag set ONLY by FlacUpgradeSweeper: a library-wide sweep,
+         * whether it runs after a sync or from Library Health's "Check for
+         * upgrades". Nobody picked those songs one by one, so the consent
+         * re-check in [doWork] discards the batch when the master lossless
+         * toggle is off, and a song whose audio the user picked since is left
+         * alone (#531) — while a hand-picked selection (FlacUpgradeEnqueuer,
+         * untagged) runs regardless.
          */
         const val KEY_AUTO_SWEEP = "flac_auto_sweep"
         private const val TAG = "FlacUpgradeWorker"

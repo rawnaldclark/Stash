@@ -71,6 +71,7 @@ fun LyricsBottomSheet(
     savingToFile: Boolean = false,
     onSaveToFile: () -> Unit = {},
     isPlaying: Boolean = true,
+    playbackSpeed: Float = 1f,
     /** Null = no lyrics row to store an offset on (streaming / not fetched yet): Offset is hidden. */
     currentOffsetMs: Long? = null,
     onOffsetChange: (Long) -> Unit = {},
@@ -128,6 +129,7 @@ fun LyricsBottomSheet(
                         onLineTap = onSeek,
                         syllables = state.syllables,
                         isPlaying = isPlaying,
+                        playbackSpeed = playbackSpeed,
                     )
                     is LyricsViewState.Plain -> LyricsPlainRenderer(state.text)
                     LyricsViewState.Instrumental -> CenteredPlacard("\u266A Instrumental")

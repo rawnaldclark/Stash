@@ -1,0 +1,168 @@
+---
+/**
+ * A feature section: words on one side, one or two phones on the other.
+ * Rows alternate sides with `reverse`. Put the paragraphs and an optional
+ * <ul class="checks"> in the default slot.
+ */
+import Device from './Device.astro';
+import Icon, { type IconName } from './Icon.astro';
+import type { ScreenName } from '../data/screenshots';
+
+interface Props {
+  id: string;
+  icon: IconName;
+  overline: string;
+  title: string;
+  /** One phone, or two (the first sits in front). */
+  screens: [ScreenName] | [ScreenName, ScreenName];
+  /** Phones on the left, words on the right. */
+  reverse?: boolean;
+}
+
+const { id, icon, overline, title, screens, reverse = false } = Astro.props;
+---
+
+<section class="section feature" id={id} aria-labelledby={`${id}-title`}>
+  <div class:list={['container', 'layout', { reverse }]}>
+    <div class="copy">
+      <p class="overline"><Icon name={icon} size="18px" />{overline}</p>
+      <h2 id={`${id}-title`} class="section-title">{title}</h2>
+      <div class="body">
+        <slot />
+      </div>
+    </div>
+
+    <div class:list={['media', { pair: screens.length > 1 }]}>
+      <div class="halo" aria-hidden="true"></div>
+      {
+        screens.map((name, index) => (
+          <Device name={name} class={index === 0 ? 'front' : 'back'} sizes="(max-width: 640px) 62vw, 300px" />
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(48px, 7vw, 112px);
+  }
+
+  .reverse .copy {
+    order: 2;
+  }
+
+  .copy {
+    max-width: 560px;
+  }
+
+  .reverse .copy {
+    justify-self: end;
+  }
+
+  .body {
+    margin-top: 20px;
+    color: var(--text-2);
+    font-size: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+  }
+
+  .body :global(p + p) {
+    margin-top: 14px;
+  }
+
+  .body :global(.checks) {
+    display: grid;
+    gap: 14px;
+    margin-top: 28px;
+    padding: 0;
+    list-style: none;
+    font-size: 1rem;
+  }
+
+  .body :global(.checks li) {
+    position: relative;
+    padding-left: 34px;
+  }
+
+  /* A purple check bubble in front of each item. */
+  .body :global(.checks li)::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.1em;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background:
+      no-repeat center / 14px
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960' fill='white'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E"),
+      var(--button-bg);
+  }
+
+  .body :global(.checks strong) {
+    color: var(--text);
+  }
+
+  .media {
+    --device-width: clamp(232px, 22vw, 300px);
+    position: relative;
+    display: grid;
+    place-items: center;
+    isolation: isolate;
+  }
+
+  .media > :global(*) {
+    grid-area: 1 / 1;
+  }
+
+  .halo {
+    width: 120%;
+    aspect-ratio: 1;
+    z-index: -1;
+    background: radial-gradient(closest-side, var(--glow-purple), var(--glow-magenta) 45%, transparent 75%);
+    pointer-events: none;
+  }
+
+  .pair :global(.front) {
+    z-index: 2;
+    transform: translateX(-30%) translateY(5%);
+  }
+
+  .pair :global(.back) {
+    z-index: 1;
+    transform: translateX(36%) translateY(-5%) scale(0.88);
+  }
+
+  @media (max-width: 900px) {
+    .layout {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 56px;
+    }
+
+    .reverse .copy {
+      order: 0;
+      justify-self: start;
+    }
+
+    .media {
+      --device-width: min(62vw, 280px);
+    }
+
+    .pair {
+      --device-width: min(52vw, 260px);
+    }
+
+    /*
+     * The halo is square and shares the phones' grid cell, so it sets the cell's
+     * height. In one column it would be 1.2× the full width (about 1000px at 900px
+     * wide), leaving about 200px of empty space above and below the phone. Capped,
+     * the phone sets the height again; desktop is unaffected.
+     */
+    .halo {
+      width: min(120%, 560px);
+    }
+  }
+</style>

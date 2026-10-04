@@ -38,6 +38,8 @@ import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lyrics.LyricsFetchStatus
+import com.stash.feature.settings.FlacUpgradeUiState
+import com.stash.feature.settings.FlacUpgradeViewModel
 
 /**
  * Library Health screen — answers "what's actually in my library?" by
@@ -56,9 +58,11 @@ fun LibraryHealthScreen(
     onNavigateBack: () -> Unit,
     viewModel: LibraryHealthViewModel = hiltViewModel(),
     lyricsViewModel: LyricsFetchViewModel = hiltViewModel(),
+    flacViewModel: FlacUpgradeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val lyricsStatus by lyricsViewModel.status.collectAsStateWithLifecycle()
+    val flacState by flacViewModel.state.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -118,6 +122,10 @@ fun LibraryHealthScreen(
         Spacer(Modifier.height(20.dp))
 
         QualityInfoRefreshSection(onClick = viewModel::runQualityInfoBackfill)
+
+        Spacer(Modifier.height(20.dp))
+
+        FlacUpgradeSection(state = flacState, onRun = flacViewModel::runNow)
 
         Spacer(Modifier.height(20.dp))
 
@@ -485,6 +493,48 @@ private fun QualityInfoRefreshSection(onClick: () -> Unit) {
                 },
             ) {
                 Text("Refresh")
+            }
+        }
+    }
+}
+
+@Composable
+private fun FlacUpgradeSection(
+    state: FlacUpgradeUiState,
+    onRun: () -> Unit,
+) {
+    SectionHeader(title = "FLAC upgrades")
+    GlassCard {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                text = "Look for lossless versions of downloaded tracks that aren't FLAC yet. " +
+                    "Keeps running in the background. To run this after every sync, " +
+                    "turn it on in Audio & Quality.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            state.message?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+            state.detail?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+            Spacer(Modifier.height(4.dp))
+            if (state.active) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            } else {
+                Button(onClick = onRun) { Text("Check for upgrades") }
             }
         }
     }

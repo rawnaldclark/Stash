@@ -11,6 +11,8 @@ import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.media.mediaToWallMs
+import com.stash.core.media.wallToMediaMs
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.Track
 import kotlinx.coroutines.CancellationException
@@ -39,6 +41,7 @@ import javax.inject.Singleton
  *   - The threshold counts time actually PLAYING, as Last.fm defines a
  *     scrobble: a pause (or buffering) stops the countdown and play
  *     resumes it. A song played for 3 s and left paused never counts.
+ *     It is measured in song time, so at 2x half the song still counts.
  *   - Switching tracks cancels the pending fire; the new track starts
  *     its own countdown.
  *   - If the user switches tracks before the threshold hits, no
@@ -87,6 +90,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
      * threshold job and a transition. Only the side that atomically claims it
      * may act. [job] counts down the listening time still needed and runs only
      * while the track plays; [playedMs] banks the time of earlier play stretches.
+     * Both are song time: at 2x, 10 s of playing covers 20 s of the song.
      */
     private class PendingFire(
         val track: Track,
@@ -97,6 +101,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         var job: Job? = null
         var playedMs = 0L
         var playingSinceMs = 0L
+        /** The playback speed of the current play stretch. */
+        var speed = 1f
     }
 
     private var pending: PendingFire? = null
@@ -113,6 +119,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
             }
             startTrackChangeCollector()
             startRepeatCollector()
+            startSpeedCollector()
         }
     }
 
@@ -213,6 +220,23 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         }
     }
 
+    // ── Collector 3: playback speed ───────────────────────────────
+    /**
+     * Counted in playing time, a song at 2x would only reach its threshold
+     * (half the song) as it ends, and lose that race to the next song, which
+     * records a skip. So a speed change banks the stretch played so far at
+     * the old speed and counts the rest down at the new one.
+     */
+    private fun startSpeedCollector() {
+        scope.launch {
+            playerRepository.playbackSpeed.collect {
+                val playing = pending?.takeIf { it.job != null } ?: return@collect
+                pauseCountdown(playing)
+                resumeCountdown(playing)
+            }
+        }
+    }
+
     /**
      * Starts a play session for the given track and its countdown. Shared by
      * both the track-change collector and the repeat-one loop detector so the
@@ -254,9 +278,10 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     private fun resumeCountdown(session: PendingFire) {
         if (session.job != null || session.claimed.get()) return
         session.playingSinceMs = nowMs()
+        session.speed = playerRepository.playbackSpeed.value
         val remaining = (thresholdFor(session.track.durationMs) - session.playedMs).coerceAtLeast(0L)
         session.job = scope.launch {
-            delay(remaining)
+            delay(mediaToWallMs(remaining, session.speed))
             recordListen(session)
         }
     }
@@ -267,7 +292,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         if (session.claimed.get()) return // the listen is already being recorded; let it finish
         job.cancel()
         session.job = null
-        session.playedMs += nowMs() - session.playingSinceMs
+        session.playedMs += wallToMediaMs(nowMs() - session.playingSinceMs, session.speed)
     }
 
     /** Enough listening time has played: record the listen, unless a transition claimed it first. */

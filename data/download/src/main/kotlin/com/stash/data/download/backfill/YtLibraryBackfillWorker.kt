@@ -11,6 +11,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.SyncNotificationManager
@@ -304,8 +305,9 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
         }
 
         // Non-canonical upload (OMV/UGC/PODCAST) — delete the file and
-        // requeue so the canonicalizer can re-download + fully persist.
-        track.filePath?.let { path ->
+        // requeue so the canonicalizer can re-download + fully persist. A file
+        // another song still plays from stays (two rows can share one).
+        track.filePath?.takeUnless { trackDao.fileUsedByAnotherTrack(it, track.id) }?.let { path ->
             try {
                 val deleted = File(path).delete()
                 Log.d(TAG, "deleted old file path=$path deleted=$deleted")

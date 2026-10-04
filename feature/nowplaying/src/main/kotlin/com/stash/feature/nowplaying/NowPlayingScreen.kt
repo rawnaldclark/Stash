@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.automirrored.filled.Logout
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.common.primaryArtist
@@ -58,6 +59,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -169,6 +172,10 @@ fun NowPlayingScreen(
     val sleepTimerState by viewModel.sleepTimerState.collectAsStateWithLifecycle()
     val sleepTimerSheetState = rememberModalBottomSheetState()
     val optionsSheetState = rememberModalBottomSheetState()
+    val playbackSpeed by viewModel.playbackSpeed.collectAsStateWithLifecycle()
+    var showSpeedSheet by remember { mutableStateOf(false) }
+    var showCustomSpeedDialog by remember { mutableStateOf(false) }
+    val speedSheetState = rememberModalBottomSheetState()
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var queueSaveTrack by remember { mutableStateOf<com.stash.core.model.Track?>(null) }
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
@@ -307,6 +314,7 @@ fun NowPlayingScreen(
             liveLyricsEnabled = liveLyricsEnabled,
             onLiveLyricsToggle = viewModel::setLiveLyricsBarEnabled,
             isPlaying = uiState.isPlaying && !uiState.isBuffering,
+            playbackSpeed = playbackSpeed,
             onSeek = { if (!isListener) viewModel.onLyricsLineSeek(it) }, // a listener follows the room
             canSaveToFile = track?.isDownloaded == true,
             savingToFile = exportingLyricsTrackId != null,
@@ -398,6 +406,24 @@ fun NowPlayingScreen(
             onEnd = {
                 if ((room?.members?.size ?: 1) <= 1) { together.end(); showSession = false } else confirmEndTogether = true
             },
+        )
+    }
+
+    if (showSpeedSheet) {
+        SpeedSheet(
+            currentSpeed = playbackSpeed,
+            onSelect = { viewModel.onSetPlaybackSpeed(it); showSpeedSheet = false },
+            onCustom = { showSpeedSheet = false; showCustomSpeedDialog = true },
+            onDismiss = { showSpeedSheet = false },
+            sheetState = speedSheetState,
+        )
+    }
+
+    if (showCustomSpeedDialog) {
+        CustomSpeedDialog(
+            initial = playbackSpeed,
+            onConfirm = { viewModel.onSetPlaybackSpeed(it); showCustomSpeedDialog = false },
+            onDismiss = { showCustomSpeedDialog = false },
         )
     }
 
@@ -561,6 +587,9 @@ fun NowPlayingScreen(
                     radioActive = radioLabel != null,
                     radioTuning = radioTuning,
                     radioLock = radioLock,
+                    showSpeed = room == null,
+                    speed = playbackSpeed,
+                    onSpeedClick = { showSpeedSheet = true },
                     onStartRadio = viewModel::startRadioFromCurrent,
                     onStopRadio = viewModel::stopRadio,
                     // No radio in a session, for host or listener: the room owns the queue.
@@ -802,6 +831,7 @@ fun NowPlayingScreen(
                 liveEnabled = liveLyricsEnabled,
                 onTap = viewModel::onShowLyrics,
                 isPlaying = uiState.isPlaying && !uiState.isBuffering,
+                playbackSpeed = playbackSpeed,
             )
         }
         if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize())
@@ -853,6 +883,9 @@ private fun TopBar(
     onStartRadio: () -> Unit,
     onStopRadio: () -> Unit,
     showRadio: Boolean,
+    showSpeed: Boolean,
+    speed: Float,
+    onSpeedClick: () -> Unit,
     showQueueButton: Boolean,
     accentColor: Color,
 ) {
@@ -904,6 +937,19 @@ private fun TopBar(
                         modifier = Modifier.size(24.dp),
                     )
                 }
+            }
+        }
+
+        // Playback speed — right of Radio. Accented whenever it's not 1x, and
+        // a screen reader hears the speed, since the tint alone doesn't say it.
+        if (hasTrack && showSpeed) {
+            IconButton(onClick = onSpeedClick) {
+                Icon(
+                    imageVector = Icons.Default.Speed,
+                    contentDescription = if (speed == 1f) "Playback speed" else "Playback speed, ${formatSpeed(speed)}",
+                    tint = if (speed != 1f) accentColor else npInk(),
+                    modifier = Modifier.size(24.dp),
+                )
             }
         }
 
@@ -1466,6 +1512,136 @@ private fun CustomSleepTimerDialog(
         dismissButton = {
             androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
         },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SpeedSheet(
+    currentSpeed: Float,
+    onSelect: (Float) -> Unit,
+    onCustom: () -> Unit,
+    onDismiss: () -> Unit,
+    sheetState: androidx.compose.material3.SheetState,
+) {
+    val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = extendedColors.elevatedSurface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 36.dp),
+        ) {
+            Text(
+                text = "Playback speed",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier
+                    .padding(bottom = 4.dp)
+                    .align(Alignment.CenterHorizontally),
+            )
+            Text(
+                text = speedLabel(currentSpeed),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(bottom = 16.dp)
+                    .align(Alignment.CenterHorizontally),
+            )
+
+            // Four to a row when every label fits, else two: one line per chip at any font size.
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val labelStyle = MaterialTheme.typography.labelMedium
+                val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val widestLabelPx = remember(labelStyle, density) {
+                    SpeedPresets.maxOf { measurer.measure(speedLabel(it), labelStyle, maxLines = 1).size.width }
+                }
+                val columns = with(density) {
+                    speedPresetColumns(
+                        rowWidthPx = constraints.maxWidth,
+                        widestChipPx = widestLabelPx + SpeedChipLabelInset.roundToPx(),
+                        gapPx = 8.dp.roundToPx(),
+                    )
+                }
+                Column {
+                    SpeedPresets.chunked(columns).forEach { rowSpeeds ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            rowSpeeds.forEach { s ->
+                                FilterChip(
+                                    selected = currentSpeed == s,
+                                    onClick = { onSelect(s) },
+                                    label = {
+                                        Text(
+                                            text = speedLabel(s),
+                                            style = labelStyle,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                        )
+                                    },
+                                    colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+            SheetOptionRow(icon = Icons.Default.Edit, label = "Custom", onClick = onCustom)
+        }
+    }
+}
+
+/**
+ * A FilterChip's label sits inside 8 dp of chip padding and 8 dp of label padding on each side
+ * (Material 3's chip layout); the column choice above measures the label plus this.
+ */
+private val SpeedChipLabelInset = 32.dp
+
+/** Free-form speed entry, reached via the sheet's "Custom" row. */
+@Composable
+private fun CustomSpeedDialog(
+    initial: Float,
+    onConfirm: (Float) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf(if (initial == 1f) "" else formatSpeed(initial).removeSuffix("x")) }
+    val parsed = parseCustomSpeed(text)
+    val valid = parsed != null
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Custom speed") },
+        text = {
+            androidx.compose.material3.OutlinedTextField(
+                value = text,
+                onValueChange = { new -> customSpeedInput(new)?.let { text = it } },
+                label = { Text("Speed (0.1 – 4.0)") },
+                suffix = { Text("x") },
+                singleLine = true,
+                isError = text.isNotEmpty() && !valid,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { parsed?.let(onConfirm) }, enabled = valid) { Text("Set") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 

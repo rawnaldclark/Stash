@@ -107,9 +107,10 @@ fun LyricsSyllableRenderer(
     onLineTap: (Long) -> Unit,
     modifier: Modifier = Modifier,
     isPlaying: Boolean = true,
+    playbackSpeed: Float = 1f,
 ) {
     val items = remember(lyrics) { buildItems(lyrics) }
-    val clock = rememberSmoothPositionMs(currentPositionMs, isPlaying)
+    val clock = rememberSmoothPositionMs(currentPositionMs, isPlaying, playbackSpeed)
     val activeIndex = remember(items) { derivedStateOf { activeItemIndex(items, clock.value) } }
     val listState = rememberLazyListState()
 
@@ -556,8 +557,9 @@ internal fun WordSyncedBarLine(
     isPlaying: Boolean,
     accent: Color,
     modifier: Modifier = Modifier,
+    playbackSpeed: Float = 1f,
 ) {
-    val clock = rememberSmoothPositionMs(currentPositionMs, isPlaying)
+    val clock = rememberSmoothPositionMs(currentPositionMs, isPlaying, playbackSpeed)
     val lines = lyrics.lines
     val lineIndex by remember(lines) { derivedStateOf { activeLineIndex(lines, clock.value) } }
     val style = MaterialTheme.typography.titleMedium.copy(

@@ -1,0 +1,51 @@
+---
+/**
+ * A responsive image with a dark and a light version, like the README's
+ * <picture> tags: the browser shows the one that matches the visitor's theme,
+ * and only downloads that one.
+ *
+ * Astro resizes both versions to `widths` at build time (WebP). `sizes` tells
+ * the browser how wide the image is drawn, so it can pick the smallest file
+ * that stays sharp.
+ */
+import type { ImageMetadata } from 'astro';
+import { getImage } from 'astro:assets';
+
+interface Props {
+  dark: ImageMetadata;
+  light: ImageMetadata;
+  alt: string;
+  widths: number[];
+  sizes: string;
+  /** For the main image at the top of a page: load it first, not lazily. */
+  priority?: boolean;
+  class?: string;
+}
+
+const { dark, light, alt, widths, sizes, priority = false, class: className } = Astro.props;
+
+const fallbackWidth = widths[Math.floor(widths.length / 2)];
+const [darkImage, lightImage] = await Promise.all(
+  [dark, light].map((src) => getImage({ src, widths, width: fallbackWidth, format: 'webp', quality: 82 })),
+);
+---
+
+<picture class={className}>
+  <source
+    media="(prefers-color-scheme: light)"
+    type="image/webp"
+    srcset={lightImage.srcSet.attribute}
+    sizes={sizes}
+  />
+  <img
+    src={darkImage.src}
+    srcset={darkImage.srcSet.attribute}
+    sizes={sizes}
+    alt={alt}
+    width={dark.width}
+    height={dark.height}
+    loading={priority ? 'eager' : 'lazy'}
+    fetchpriority={priority ? 'high' : 'auto'}
+    decoding="async"
+  />
+</picture>

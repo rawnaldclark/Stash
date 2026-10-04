@@ -284,8 +284,9 @@ interface TrackDao {
 
     /**
     * Downloaded tracks not currently in FLAC. Candidate pool for the FLAC-upgrade
-    * sweep, which runs every sync regardless of REFRESH/ACCUMULATE — the mode
-    * governs library membership, not audio quality. Only 'flac' is checked
+    * sweep (after a sync when the user opted in, or Library Health's "Check for
+    * upgrades"), regardless of REFRESH/ACCUMULATE — the mode governs library
+    * membership, not audio quality. Only 'flac' is checked
     * against (not the full lossless codec set used by getFlacCount/-StorageBytes)
     * because Stash's lossless sources (Qobuz) only ever deliver FLAC;
     * ALAC/WAV/APE/etc. never appear from any source Stash downloads through.
@@ -294,6 +295,10 @@ interface TrackDao {
     * `match_picked_at`): the upgrade re-runs the lossless lookup, which is
     * most likely what chose the wrong recording in the first place, and
     * would write that FLAC over the user's pick.
+    *
+    * Leaves out tracks whose last lookup found no lossless version after
+    * [retryBefore] ([TrackEntity.flacNoMatchAt]), and lists never-tried tracks
+    * first, then the oldest misses.
     */
     @Query(
         """
@@ -307,9 +312,15 @@ interface TrackDao {
         AND LOWER(t.file_format) != 'flac'
         AND t.match_picked_at IS NULL
         AND bl.canonical_key IS NULL
+        AND (t.flac_no_match_at IS NULL OR t.flac_no_match_at < :retryBefore)
+        ORDER BY t.flac_no_match_at IS NOT NULL, t.flac_no_match_at ASC, t.id ASC
         """
     )
-    suspend fun getLosslessUpgradeCandidates(): List<TrackEntity>
+    suspend fun getLosslessUpgradeCandidates(retryBefore: Long): List<TrackEntity>
+
+    /** Stamps (or clears with null) the last time a lossless lookup found no match for this track. */
+    @Query("UPDATE tracks SET flac_no_match_at = :ts WHERE id = :trackId")
+    suspend fun setFlacNoMatchAt(trackId: Long, ts: Long?)
 
     /**
      * Undownloaded tracks in a currently sync-enabled, non-mix playlist —

@@ -1,0 +1,148 @@
+---
+/**
+ * The sticky top bar: logo, page links, GitHub and a Download button.
+ * `minimal` (the early-access pages) keeps only the links a visitor who isn't signed in can open.
+ */
+import { Image } from 'astro:assets';
+import Icon from './Icon.astro';
+import Wordmark from './Wordmark.astro';
+import vinyl from '../assets/brand/vinyl.png';
+import { LINKS } from '../data/site';
+
+interface Props {
+  minimal?: boolean;
+}
+
+const { minimal = false } = Astro.props;
+const path = Astro.url.pathname.replace(/\.html$/, '');
+const nav = [
+  { href: '/#features', label: 'Features', signedIn: true },
+  { href: '/#faq', label: 'FAQ', signedIn: true },
+  { href: '/privacy', label: 'Privacy', signedIn: false },
+].filter((item) => !minimal || !item.signedIn);
+---
+
+<header class="site-header">
+  <div class="container bar">
+    <a class="brand" href="/" aria-label="Stash, home">
+      <Image src={vinyl} alt="" width={32} height={32} densities={[1, 2]} loading="eager" class="brand-icon" />
+      <Wordmark height="20px" />
+    </a>
+
+    <nav class="nav" aria-label="Main">
+      <ul role="list">
+        {
+          nav.map((item) => (
+            <li>
+              <a href={item.href} aria-current={item.href === path ? 'page' : undefined}>
+                {item.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+
+    <div class="actions">
+      <a class="icon-link" href={LINKS.github} aria-label="Stash on GitHub">
+        <Icon name="github" size="22px" />
+      </a>
+      <a class="button button-primary button-small" href={LINKS.download}>
+        <Icon name="download" size="20px" />
+        Download
+      </a>
+    </div>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--header-bg);
+    -webkit-backdrop-filter: saturate(160%) blur(18px);
+    backdrop-filter: saturate(160%) blur(18px);
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    height: 64px;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-right: auto;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+  }
+
+  .brand-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .nav ul {
+    display: flex;
+    gap: 4px;
+  }
+
+  .nav a {
+    display: block;
+    padding: 8px 14px;
+    border-radius: var(--radius-pill);
+    color: var(--text-2);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition:
+      color 160ms ease,
+      background-color 160ms ease;
+  }
+
+  .nav a:hover,
+  .nav a[aria-current='page'] {
+    color: var(--text);
+    background: var(--glass);
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .icon-link {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-pill);
+    color: var(--text-2);
+    transition:
+      color 160ms ease,
+      background-color 160ms ease;
+  }
+
+  .icon-link:hover {
+    color: var(--text);
+    background: var(--glass);
+  }
+
+  @media (max-width: 760px) {
+    .nav {
+      display: none;
+    }
+  }
+
+  @media (max-width: 359px) {
+    .icon-link {
+      display: none;
+    }
+  }
+</style>

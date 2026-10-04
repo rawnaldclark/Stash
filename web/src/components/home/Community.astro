@@ -1,0 +1,258 @@
+---
+/**
+ * Community and support, from the README's "Community" and "Support Stash"
+ * sections. The support line doesn't pitch Stash as a replacement for a paid
+ * subscription, and neither does the README's.
+ */
+import Icon from '../Icon.astro';
+import GoalBar from '../gate/GoalBar.astro';
+import { LINKS } from '../../data/site';
+---
+
+<section class="section community" id="community" aria-labelledby="community-title">
+  <div class="container">
+    <div class="section-head is-centered">
+      <p class="overline">Community</p>
+      <h2 id="community-title" class="section-title">Made in the open</h2>
+      <p class="section-intro">
+        Every line of Stash is open source. Come say hi, report a bug, or help build what's next.
+      </p>
+    </div>
+
+    <div class="grid">
+      <a class="card glass discord" href={LINKS.discord}>
+        <span class="logo"><Icon name="discord" size="28px" /></span>
+        <h3>Join the Discord</h3>
+        <p>Questions, requests, "is this thing on": the Stash Discord is the place. Active dev there, fast answers.</p>
+        <span class="go">Join the server <Icon name="arrow-forward" size="18px" /></span>
+      </a>
+
+      <a class="card glass github" href={LINKS.github}>
+        <span class="logo"><Icon name="github" size="28px" /></span>
+        <h3>Build it on GitHub</h3>
+        <p>
+          Bug reports and feature requests go to GitHub Issues, and pull requests are welcome. A star helps too.
+        </p>
+        <span class="go">Open the repo <Icon name="arrow-forward" size="18px" /></span>
+      </a>
+
+      <div class="card glass support">
+        <span class="logo"><Icon name="favorite" size="28px" /></span>
+        <h3>Support Stash</h3>
+        <p>Stash is free, open source, and has no ads or analytics. If you'd like to chip in:</p>
+        <ul role="list" class="people">
+          <li>
+            <div>
+              <strong>rawnaldclark (rawn)</strong>
+              <span>Owner, main dev</span>
+            </div>
+            <a class="button button-small kofi" href={LINKS.kofi}>
+              <Icon name="kofi" size="18px" />
+              Ko-fi
+            </a>
+          </li>
+          <li>
+            <div>
+              <strong>Paraliyzed_evo</strong>
+              <span>Co-dev, makes the beta builds</span>
+            </div>
+            <a class="button button-small paypal" href={LINKS.paypal}>
+              <Icon name="paypal" size="18px" />
+              PayPal
+            </a>
+          </li>
+        </ul>
+        {/* This month's donations, filled in by the Worker (worker/pages.js); removed if it can't read them. */}
+        <div class="goal-wrap"><GoalBar compact /></div>
+        <p class="small">
+          You can also <a href={LINKS.sponsors}>sponsor on GitHub</a> for recurring support. A star, a bug report,
+          or telling a friend helps just as much. Thanks.
+        </p>
+      </div>
+    </div>
+
+    <p class="translate">
+      <Icon name="translate" size="20px" />
+      <span>Want Stash in your language? <a href={LINKS.crowdin}>Help translate it on Crowdin</a>.</span>
+    </p>
+  </div>
+</section>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    padding: 28px;
+    border-radius: var(--radius-2xl);
+    color: inherit;
+    text-decoration: none;
+  }
+
+  a.card {
+    transition:
+      border-color 200ms ease,
+      background-color 200ms ease,
+      transform 200ms ease;
+  }
+
+  a.card:hover {
+    border-color: var(--glass-border-bright);
+    background-color: var(--glass-hover);
+    transform: translateY(-2px);
+  }
+
+  .support {
+    grid-column: 1 / -1;
+  }
+
+  .logo {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    color: #fff;
+  }
+
+  .discord .logo {
+    background: #5865f2; /* Discord blurple, as in the README badge */
+  }
+
+  .github .logo {
+    background: #24292f;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
+  }
+
+  .support .logo {
+    background: var(--button-bg);
+  }
+
+  h3 {
+    margin-top: 22px;
+    font-size: 1.5rem;
+  }
+
+  .card p {
+    margin-top: 10px;
+    color: var(--text-2);
+  }
+
+  .go {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: auto;
+    padding-top: 22px;
+    color: var(--link);
+    font-weight: 600;
+  }
+
+  .go :global(.icon) {
+    transition: transform 160ms ease;
+  }
+
+  a.card:hover .go :global(.icon) {
+    transform: translateX(3px);
+  }
+
+  .goal-wrap {
+    max-width: 560px;
+    margin-top: 24px;
+  }
+
+  .people {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 22px;
+  }
+
+  .people li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 16px 16px 20px;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+  }
+
+  .people div {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .people strong {
+    font-weight: 600;
+  }
+
+  .people span {
+    color: var(--text-2);
+    font-size: 0.9375rem;
+  }
+
+  .kofi {
+    background: #72a4f2; /* Ko-fi blue */
+    color: #0b1a33;
+  }
+
+  .paypal {
+    background: #00457c; /* PayPal blue, as in the README badge */
+    color: #fff;
+  }
+
+  .kofi:hover,
+  .paypal:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.08);
+  }
+
+  .card .small {
+    margin-top: 18px;
+    font-size: 0.9375rem;
+  }
+
+  .translate {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 32px;
+    color: var(--text-2);
+    text-align: center;
+  }
+
+  @media (max-width: 760px) {
+    .grid,
+    .people {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 420px) {
+    .people li {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  /* Phones: the sentence wraps, so the icon flows with its first line instead of standing apart on the left. */
+  @media (max-width: 560px) {
+    .translate {
+      display: block;
+      text-wrap: balance;
+    }
+
+    .translate :global(.icon) {
+      margin-right: 8px;
+    }
+  }
+</style>
