@@ -298,8 +298,8 @@ fun SettingsAudioQualityScreen(
                         SettingsToggleRow(
                             title = "Auto-upgrade to FLAC after sync",
                             subtitle = "After every sync, look for lossless versions of your " +
-                                "non-FLAC downloads. Off by default. You can also run it by hand " +
-                                "from Library Health.",
+                                "downloads that aren't FLAC yet. You can also check by hand in " +
+                                "Library Health.",
                             checked = autoFlacUpgrade,
                             onCheckedChange = flacViewModel::setAutoEnabled,
                         )
