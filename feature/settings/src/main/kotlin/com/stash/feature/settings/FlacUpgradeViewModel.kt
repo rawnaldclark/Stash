@@ -45,7 +45,7 @@ class FlacUpgradeViewModel @Inject constructor(
             null -> null
             FlacSweepResult.StreamingMode -> "Downloads are off (streaming mode), so there's nothing to upgrade."
             FlacSweepResult.LosslessDisabled -> "Turn on lossless in Audio & Quality first."
-            FlacSweepResult.AlreadyRunning -> null
+            FlacSweepResult.AlreadyRunning, FlacSweepResult.AutoUpgradeOff -> null
             FlacSweepResult.NothingToUpgrade -> "Nothing to upgrade. Every downloaded track is already FLAC or was checked recently."
             is FlacSweepResult.Queued ->
                 if (running) null else "Finished checking ${result.count} ${if (result.count == 1) "track" else "tracks"}."
@@ -55,7 +55,7 @@ class FlacUpgradeViewModel @Inject constructor(
 
     fun runNow() {
         viewModelScope.launch {
-            lastResult.value = sweeper.enqueue(autoSweep = false)
+            lastResult.value = sweeper.runNow()
         }
     }
 }

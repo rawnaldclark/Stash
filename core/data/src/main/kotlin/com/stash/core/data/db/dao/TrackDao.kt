@@ -284,8 +284,9 @@ interface TrackDao {
 
     /**
     * Downloaded tracks not currently in FLAC. Candidate pool for the FLAC-upgrade
-    * sweep, which runs every sync regardless of REFRESH/ACCUMULATE — the mode
-    * governs library membership, not audio quality. Only 'flac' is checked
+    * sweep (after a sync when the user opted in, or Library Health's "Check for
+    * upgrades"), regardless of REFRESH/ACCUMULATE — the mode governs library
+    * membership, not audio quality. Only 'flac' is checked
     * against (not the full lossless codec set used by getFlacCount/-StorageBytes)
     * because Stash's lossless sources (Qobuz) only ever deliver FLAC;
     * ALAC/WAV/APE/etc. never appear from any source Stash downloads through.
@@ -294,6 +295,10 @@ interface TrackDao {
     * `match_picked_at`): the upgrade re-runs the lossless lookup, which is
     * most likely what chose the wrong recording in the first place, and
     * would write that FLAC over the user's pick.
+    *
+    * Leaves out tracks whose last lookup found no lossless version after
+    * [retryBefore] ([TrackEntity.flacNoMatchAt]), and lists never-tried tracks
+    * first, then the oldest misses.
     */
     @Query(
         """

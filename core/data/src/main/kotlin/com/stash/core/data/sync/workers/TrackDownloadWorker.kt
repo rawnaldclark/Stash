@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -71,7 +70,6 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val fileAdopter: com.stash.core.data.library.FileAdopter,
     private val syncLog: com.stash.core.data.sync.SyncLog,
     private val flacUpgradeSweeper: com.stash.core.data.lossless.FlacUpgradeSweeper,
-    private val autoFlacUpgradePreference: com.stash.core.data.prefs.AutoFlacUpgradePreference,
     private val downloadJobs: DownloadJobRegistry,
 ) : CoroutineWorker(appContext, params) {
 
@@ -644,11 +642,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                 )
             }
 
-            if (autoFlacUpgradePreference.current()) {
-                runLosslessUpgradeSweep(downloadedTrackIds)
-            } else {
-                Log.i(TAG, "Auto FLAC upgrade is off: skipping sweep (run it from Library Health)")
-            }
+            runLosslessUpgradeSweep(downloadedTrackIds)
 
             return Result.success(
                 workDataOf(
@@ -914,29 +908,24 @@ class TrackDownloadWorker @AssistedInject constructor(
     }
 
     /**
-     * Populates flac_upgrade_queue with every downloaded lossy track and
-     * enqueues [FlacUpgradeWorker] to drain it (spec 2026-07-22 §3).
+     * Hands the post-sync FLAC upgrade sweep to [com.stash.core.data.lossless.FlacUpgradeSweeper]
+     * (spec 2026-07-22 §3), which runs it only when the user turned on "Auto-upgrade to
+     * FLAC after sync", and never over a batch that is still running or waiting.
+     * [FlacUpgradeWorker] owns pacing, rate limiting, per-track status and cancellation.
      *
-     * Previously ran the upgrade attempts inline here, one coroutine per
-     * candidate with no concurrency cap — a thundering-herd risk against
-     * the lossless sources. FlacUpgradeWorker already owns pacing, rate
-     * limiting, and captcha-herd safety inside LosslessUpgrader's
-     * pipeline, plus per-track status and clean cancellation — so hand
-     * off to it instead of duplicating any of that here.
-     *
-     * REPLACE policy matches startBatch()'s wholesale-replace semantics: a
-     * sync mid-drain restarts both the worklist and the worker driving it,
-     * rather than leaving an orphaned worker draining a queue that's just
-     * been cleared out from under it.
+     * The tracks this run just downloaded are excluded: the download path already tried
+     * lossless for them. A failed sweep is logged and the sync still succeeds: the
+     * downloads are done, and the next sync or "Check for upgrades" sweeps again.
      */
     private suspend fun runLosslessUpgradeSweep(recentlyDownloadedTrackIds: Set<Long>) {
-        // The primary download path already attempted lossless resolution for tracks
-        // completed during this run, so they're excluded here.
-        val result = flacUpgradeSweeper.enqueue(
-            exclude = recentlyDownloadedTrackIds,
-            autoSweep = true,
-        )
-        Log.i(TAG, "FLAC upgrade sweep: $result")
+        try {
+            val result = flacUpgradeSweeper.afterSync(justDownloaded = recentlyDownloadedTrackIds)
+            Log.i(TAG, "FLAC upgrade sweep: $result")
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            Log.w(TAG, "FLAC upgrade sweep failed; the sync itself succeeded", e)
+        }
     }
 
     /**
