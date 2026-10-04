@@ -19,7 +19,8 @@ export default defineConfig({
   trailingSlash: 'never',
   integrations: [
     sitemap({
-      filter: (page) => !page.endsWith('/404'),
+      // The early-access pages (src/pages/gate/) are templates the Worker fills in; none has a URL of its own.
+      filter: (page) => !page.endsWith('/404') && !page.includes('/gate/'),
     }),
   ],
   // The app's own fonts, self-hosted (see scripts/make-assets.py). <Font> in

@@ -7,8 +7,13 @@
 # script runs at all. Cloudflare leaves this header alone, except that Zaraz
 # rewrites it so its own script can run: one more reason Zaraz stays off
 # (web/README.md, "Privacy rules for the site itself").
-# It covers only the pages this Worker serves. The share Worker's pages on the
-# same domain (/t, /m, /l) send their own headers from infra/share-worker.
+# It covers only the files Cloudflare serves without running the Worker (see
+# run_worker_first in wrangler.jsonc). Everything the Worker answers, the home page
+# and the early-access pages included, gets the same headers from worker/pages.js
+# (SECURITY_HEADERS); keep the two in step (a test checks the CSP matches).
+# form-action 'self': the sign-in and request forms post to this site only.
+# The share Worker's pages on the same domain (/t, /m, /l) send their own headers
+# from infra/share-worker.
 # If something you add doesn't load in production, this is why. Self-host it instead.
 # - The pages need inline styles (Astro inlines small stylesheets, the font rules
 #   and a few style attributes) and data: images (small SVG icons inside the CSS).
@@ -26,7 +31,7 @@
 # Worker removes it from responses that aren't 200.
 
 /*
-  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'none'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'none'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
   Permissions-Policy: camera=(), microphone=(), geolocation=(), browsing-topics=()

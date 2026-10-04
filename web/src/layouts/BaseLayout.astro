@@ -4,6 +4,8 @@
  *
  * Usage:
  *   <BaseLayout title="Privacy" description="..." path="/privacy">...</BaseLayout>
+ *
+ * The early-access pages use it through components/gate/GateShell.astro.
  */
 import { Font } from 'astro:assets';
 import SiteHeader from '../components/SiteHeader.astro';
@@ -19,9 +21,16 @@ interface Props {
   path: string;
   /** Keeps a page out of search results (the 404 page). */
   noindex?: boolean;
+  /**
+   * The early-access pages (src/pages/gate/): no links into the signed-in site, such as Features and FAQ,
+   * which would only lead back to the early-access page.
+   */
+  minimal?: boolean;
+  /** Pages only signed-in visitors see (the home page): the footer gets a Sign out button. */
+  signedIn?: boolean;
 }
 
-const { title, description, path, noindex = false } = Astro.props;
+const { title, description, path, noindex = false, minimal = false, signedIn = false } = Astro.props;
 const isHome = path === '/';
 const fullTitle = isHome ? title : `${title} · ${SITE.name}`;
 const canonical = new URL(path, SITE.url).href;
@@ -70,11 +79,11 @@ const socialImage = new URL(SITE.socialImage, SITE.url).href;
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
-    <SiteHeader />
+    <SiteHeader minimal={minimal} />
     <main id="main" tabindex="-1">
       <slot />
     </main>
-    <SiteFooter />
+    <SiteFooter minimal={minimal} signedIn={signedIn} />
   </body>
 </html>
 

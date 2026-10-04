@@ -1,6 +1,6 @@
 name: Website
 
-# Type-checks and builds the stashfm.app website (web/) whenever it changes.
+# Type-checks, builds and tests the stashfm.app website (web/) whenever it changes.
 # Cloudflare Workers Builds deploys the site, but it makes no preview for pull
 # requests from forks, so without this check a fork's pull request that breaks
 # the build would show nothing until a failed deploy after merging.
@@ -56,6 +56,11 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The early-access Worker (worker/): sign-in, codes, the goal, /admin. After the build, so the
+      # test that checks the built pages still have every blank the Worker fills runs too.
+      - name: Test the Worker
+        run: npm test
 
       # public/_headers sets `script-src 'none'`, so a script would be blocked in
       # production. Catch it here instead. (JSON-LD data blocks don't run, so they pass.)

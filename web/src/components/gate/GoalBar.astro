@@ -1,0 +1,81 @@
+---
+/**
+ * This month's donations against the goal: "$X of $100 this month" and a bar. The numbers here are
+ * placeholders; the Worker fills them in on every request (worker/pages.js, data-goal) from KV, and
+ * removes the whole block (data-if="goal") if it can't read them. The target is GOAL_CENTS in wrangler.jsonc.
+ */
+interface Props {
+  /** Smaller type, for the home page's Support card. */
+  compact?: boolean;
+}
+
+const { compact = false } = Astro.props;
+---
+
+<div class:list={['goal', { compact }]} data-if="goal">
+  <p class="figures"><strong data-goal="raised">$0</strong> of <span data-goal="target">$100</span> this month</p>
+  <div
+    class="track"
+    role="progressbar"
+    aria-label="Donations this month"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    aria-valuenow="0"
+    aria-valuetext="$0 of $100 this month"
+    data-goal="bar"
+  >
+    <span class="fill" data-goal="fill" style="width:0%"></span>
+  </div>
+  <p class="note">Donations cover hosting and development.</p>
+</div>
+
+<style>
+  .figures {
+    color: var(--text-2);
+    font-size: 1.0625rem;
+  }
+
+  .figures strong {
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .track {
+    position: relative;
+    height: 12px;
+    margin-top: 14px;
+    overflow: hidden;
+    border-radius: var(--radius-pill);
+    background: var(--glass);
+    box-shadow: inset 0 0 0 1px var(--glass-border-bright);
+  }
+
+  .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    /* A sliver shows even at $0, so the bar reads as a bar. */
+    min-width: 12px;
+    max-width: 100%;
+    border-radius: inherit;
+    background: var(--button-bg);
+  }
+
+  .note {
+    margin-top: 12px;
+    color: var(--text-2);
+    font-size: 0.9375rem;
+  }
+
+  .compact .figures strong {
+    font-size: 1.5rem;
+  }
+
+  .compact .track {
+    height: 10px;
+    margin-top: 10px;
+  }
+</style>

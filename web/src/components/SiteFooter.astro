@@ -8,9 +8,19 @@
  * The licence is GPL version 3 or later (LICENSE, plus README.md's "either
  * version 3 of the License, or (at your option) any later version"). Name it the
  * same way everywhere: "GNU General Public License, version 3 or later".
+ *
+ * `minimal` (the early-access pages) drops the FAQ link, which only signed-in visitors can open.
+ * `signedIn` (the home page, which only signed-in visitors see) adds a Sign out button.
  */
 import Wordmark from './Wordmark.astro';
 import { LINKS } from '../data/site';
+
+interface Props {
+  minimal?: boolean;
+  signedIn?: boolean;
+}
+
+const { minimal = false, signedIn = false } = Astro.props;
 
 const columns = [
   {
@@ -18,7 +28,7 @@ const columns = [
     links: [
       { href: LINKS.download, label: 'Download' },
       { href: LINKS.releases, label: 'All releases' },
-      { href: '/#faq', label: 'FAQ' },
+      ...(minimal ? [] : [{ href: '/#faq', label: 'FAQ' }]),
       { href: '/privacy', label: 'Privacy' },
     ],
   },
@@ -95,7 +105,14 @@ const columns = [
         Copyright © 2026 Rawnald Clark. Stash is free software under the
         <a href={LINKS.license}>GNU General Public License, version 3</a> or later.
       </p>
-      <p>This site sets no cookies of its own, runs no analytics, and loads nothing from anyone else.</p>
+      <p>This site runs no analytics and loads nothing from anyone else. Its one cookie keeps you signed in.</p>
+      {
+        signedIn && (
+          <form class="signout" method="post" action="/signout">
+            <button type="submit">Sign out</button>
+          </form>
+        )
+      }
     </div>
   </div>
 </footer>
@@ -175,6 +192,23 @@ const columns = [
     margin-top: 28px;
     color: var(--text-2);
     font-size: 0.8125rem;
+  }
+
+  .signout button {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--link);
+    font-size: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+    cursor: pointer;
+  }
+
+  .signout button:hover {
+    text-decoration-thickness: 2px;
   }
 
   @media (max-width: 860px) {

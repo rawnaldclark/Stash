@@ -1,0 +1,102 @@
+---
+/**
+ * The frame of every early-access page (src/pages/gate/): the site's layout without links into the
+ * signed-in site, a soft glow, and a centred column. The Worker (worker/pages.js) fills in their blanks.
+ *
+ * Usage:
+ *   <GateShell title="Check your email" path="/gate/sent"> <div class="gate-card glass">...</div> </GateShell>
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+interface Props {
+  title: string;
+  /** Defaults to a line about early access. */
+  description?: string;
+  /** For the canonical link; the front page passes "/", since that's where it's served. */
+  path: string;
+  /** The front page: two columns on wide screens. */
+  wide?: boolean;
+  /** Everything but the front page stays out of search results. */
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description = 'The Stash website is in early access. Supporters can sign in, and anyone can ask for access.',
+  path,
+  wide = false,
+  noindex = true,
+} = Astro.props;
+---
+
+<BaseLayout title={title} description={description} path={path} noindex={noindex} minimal>
+  <section class:list={['gate', { wide }]}>
+    <div class="glow" aria-hidden="true"></div>
+    <div class="container inner">
+      <slot />
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .gate {
+    position: relative;
+    padding-block: clamp(48px, 8vw, 104px) clamp(48px, 8vw, 96px);
+    isolation: isolate;
+    overflow-x: clip;
+  }
+
+  .glow {
+    position: absolute;
+    inset: -64px 0 0;
+    z-index: -1;
+    background:
+      radial-gradient(40% 55% at 20% 15%, var(--glow-purple), transparent 70%),
+      radial-gradient(30% 45% at 85% 20%, var(--glow-cyan), transparent 70%);
+    pointer-events: none;
+  }
+
+  .inner {
+    max-width: calc(560px + 2 * var(--gutter));
+  }
+
+  .wide .inner {
+    max-width: calc(1040px + 2 * var(--gutter));
+  }
+
+  /* Shared by every gate page: the card, its heading and text, and the small print under a form. */
+  .gate :global(.gate-card) {
+    padding: clamp(24px, 4vw, 36px);
+    border-radius: var(--radius-2xl);
+  }
+
+  .gate :global(.gate-card h1) {
+    font-size: clamp(1.875rem, 1.5rem + 1.6vw, 2.5rem);
+    letter-spacing: -0.03em;
+  }
+
+  .gate :global(.gate-card h2) {
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .gate :global(.gate-card > p),
+  .gate :global(.gate-lead) {
+    margin-top: 12px;
+    color: var(--text-2);
+  }
+
+  .gate :global(.gate-card form) {
+    margin-top: 24px;
+  }
+
+  .gate :global(.gate-small) {
+    margin-top: 20px;
+    color: var(--text-2);
+    font-size: 0.9375rem;
+  }
+
+  .gate :global(.gate-back) {
+    margin-top: 28px;
+  }
+</style>

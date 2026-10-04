@@ -1,10 +1,13 @@
 /**
- * Cloudflare config for the stashfm.app website: a Worker with no code of its
- * own that serves the built site (./dist) with Workers Static Assets.
- * Nothing here is deployed yet. The full deploy flow is in web/README.md.
+ * Cloudflare config for the stashfm.app website: the built site (./dist), served
+ * with Workers Static Assets, and a small Worker (worker/index.js) in front of
+ * the pages for early access: sign-in codes by email, access requests, the
+ * monthly goal and /admin. Nothing here is deployed yet. The full deploy flow is
+ * in web/README.md.
  *
- * Local check of the real thing (headers from public/_headers, 404 handling):
- *   npm run build && npx wrangler dev
+ * Local check of the real thing (headers, 404 handling, the sign-in flow with
+ * simulated email and local KV; web/README.md, "Run it locally"):
+ *   npm run build && npx wrangler dev --local
  *
  * Builds: Cloudflare Workers Builds (Git integration) on this repo, with
  *   Root directory:   web
@@ -18,6 +21,7 @@
  */
 {
   "name": "stashfm-site",
+  "main": "worker/index.js",
   "compatibility_date": "2026-10-01",
 
   // No usage data to Cloudflare from Wrangler, for everyone who works on the site
@@ -53,11 +57,79 @@
 
   "assets": {
     "directory": "./dist",
+    // The Worker reaches the built pages through env.ASSETS (worker/pages.js).
+    "binding": "ASSETS",
     // Unknown paths get dist/404.html with a 404 status.
     "not_found_handling": "404-page",
     // The default: /privacy serves privacy.html; /privacy.html and /privacy/ redirect to /privacy.
-    "html_handling": "auto-trailing-slash"
+    "html_handling": "auto-trailing-slash",
+    // Which requests reach the Worker first. Everything does, so every page is private
+    // unless worker/index.js says otherwise, except what's public and needs no Worker:
+    // Astro's hashed CSS, fonts and images, the icons, the social card, robots.txt, the
+    // sitemap and the privacy page. Those Cloudflare serves directly, with public/_headers.
+    // This list has to include every Worker route: with not_found_handling set, a browser
+    // navigation (a form post too) to a path with no file never reaches the Worker otherwise.
+    // ("/*" covers "/" too; Wrangler refuses a separate "/" as redundant.)
+    "run_worker_first": [
+      "/*",
+      "!/_astro/*",
+      "!/favicon.ico",
+      "!/icon-192.png",
+      "!/apple-touch-icon.png",
+      "!/social-preview.jpg",
+      "!/robots.txt",
+      "!/sitemap-*",
+      "!/privacy"
+    ]
   },
+
+  // Early access (web/README.md, "Early access"). STASH_KV is the tip jar's namespace
+  // (infra/tipjar-worker): Ko-fi donations write the access list and the goal there.
+  // Every key is listed in infra/tipjar-worker/README.md, "STASH_KV keys".
+  // `wrangler dev` uses a local copy; only a deploy touches the real one.
+  "kv_namespaces": [
+    { "binding": "STASH_KV", "id": "fca1bc38b42741e6a8cac11f54de5abd" }
+  ],
+
+  // Sign-in codes and "You're in" emails, through Cloudflare Email Service, only
+  // ever from access@stashfm.app. `remote: true` makes `wrangler dev` send real
+  // email; `wrangler dev --local` simulates it (prints it instead).
+  "send_email": [
+    { "name": "EMAIL", "remote": true, "allowed_sender_addresses": ["access@stashfm.app"] }
+  ],
+
+  // Rate limits, per Cloudflare location. Each binding carries one fixed limit.
+  // The ids are account-wide: the share Worker uses 2001-2009, this Worker 2010-2013.
+  "ratelimits": [
+    // Code emails asked for, per IP (an IPv6 address by its /64).
+    { "name": "SEND_IP_RL", "namespace_id": "2010", "simple": { "limit": 5, "period": 60 } },
+    // Code emails asked for, per email (by its hash). Applies to every email, listed or
+    // not, so hitting it says nothing about who has access.
+    { "name": "SEND_EMAIL_RL", "namespace_id": "2011", "simple": { "limit": 3, "period": 60 } },
+    // Code tries, per IP. Each code also allows only 5 tries (worker/codes.js).
+    { "name": "VERIFY_IP_RL", "namespace_id": "2012", "simple": { "limit": 10, "period": 60 } },
+    // Access requests, per IP.
+    { "name": "REQUEST_IP_RL", "namespace_id": "2013", "simple": { "limit": 3, "period": 60 } }
+  ],
+
+  "vars": {
+    // The monthly goal, in US cents: $100.
+    "GOAL_CENTS": "10000",
+    // Where sign-in codes come from (the send_email binding above allows only this address).
+    "EMAIL_FROM": "access@stashfm.app",
+    // TODO(owner): the Cloudflare Access application that guards stashfm.app/admin
+    // (web/README.md, "Early access", step 3). Until both are real, /admin refuses everyone.
+    // Your Zero Trust team domain, like https://<team>.cloudflareaccess.com
+    "ACCESS_TEAM_DOMAIN": "https://TODO-team-name.cloudflareaccess.com",
+    // The application's AUD tag: Zero Trust > Access > Applications > (the app) > Additional settings.
+    "ACCESS_AUD": "TODO-application-audience-tag"
+  },
+
+  // Secrets, set with `npx wrangler secret put <NAME>` (never in this file):
+  //   SESSION_SECRET  signs the sign-in cookie and the stored codes. At least 32 random
+  //                   characters, e.g. `openssl rand -base64 48`. Changing it signs everyone out.
+  //   ADMIN_EMAILS    comma-separated emails allowed on /admin (also checked by Access).
+  //   EMAIL_PEPPER    optional; if the tip jar has one, the same value here, else leave both unset.
 
   // The site also answers at stashfm-site.<account>.workers.dev, and each uploaded
   // version gets its own Version URL, which keeps showing that version's pages.

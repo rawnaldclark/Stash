@@ -338,6 +338,60 @@ strong {
   transform: translateX(3px);
 }
 
+/* ---------- Forms (the early-access pages and /admin) ---------- */
+
+.label {
+  display: block;
+  color: var(--text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--glass-border-bright);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.input::placeholder {
+  color: var(--text-2);
+  opacity: 0.85;
+}
+
+.input:hover {
+  border-color: var(--purple-light);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+textarea.input {
+  min-height: 112px;
+  padding: 14px 18px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* The one-time code: big, spaced digits. */
+.input-code {
+  font-size: 1.375rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+
+.input-code::placeholder {
+  letter-spacing: 0.3em;
+}
+
 /* ---------- Motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {

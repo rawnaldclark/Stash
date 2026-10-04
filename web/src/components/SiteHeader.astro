@@ -1,17 +1,25 @@
 ---
-/** The sticky top bar: logo, page links, GitHub and a Download button. */
+/**
+ * The sticky top bar: logo, page links, GitHub and a Download button.
+ * `minimal` (the early-access pages) keeps only the links a visitor who isn't signed in can open.
+ */
 import { Image } from 'astro:assets';
 import Icon from './Icon.astro';
 import Wordmark from './Wordmark.astro';
 import vinyl from '../assets/brand/vinyl.png';
 import { LINKS } from '../data/site';
 
+interface Props {
+  minimal?: boolean;
+}
+
+const { minimal = false } = Astro.props;
 const path = Astro.url.pathname.replace(/\.html$/, '');
 const nav = [
-  { href: '/#features', label: 'Features' },
-  { href: '/#faq', label: 'FAQ' },
-  { href: '/privacy', label: 'Privacy' },
-];
+  { href: '/#features', label: 'Features', signedIn: true },
+  { href: '/#faq', label: 'FAQ', signedIn: true },
+  { href: '/privacy', label: 'Privacy', signedIn: false },
+].filter((item) => !minimal || !item.signedIn);
 ---
 
 <header class="site-header">

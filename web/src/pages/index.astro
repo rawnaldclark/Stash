@@ -3,6 +3,9 @@
  * The home page. Each section is its own component in src/components/home/,
  * in the order they appear. To add a section, make a component there and
  * place it below.
+ *
+ * Only signed-in visitors see it: the Worker (worker/index.js) serves the
+ * early-access page (pages/gate/front.astro) at / to everyone else.
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Hero from '../components/home/Hero.astro';
@@ -20,7 +23,7 @@ import FinalCta from '../components/home/FinalCta.astro';
 import { SITE } from '../data/site';
 ---
 
-<BaseLayout title={`${SITE.name}: ${SITE.tagline}`} description={SITE.description} path="/">
+<BaseLayout title={`${SITE.name}: ${SITE.tagline}`} description={SITE.description} path="/" signedIn>
   <Hero />
   <Trust />
   <div id="features">
