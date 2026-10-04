@@ -108,6 +108,7 @@ class FileOrganizer @Inject constructor(
         format: String = "opus",
         layout: LibraryLayout = LibraryLayout.DEFAULT,
     ): File {
+        requireSafeFormat(format)
         val location =
             LibraryLayoutResolver.resolve(layout, artist, album, title, playlistName = null)
         return File(getTrackDir(artist, album, layout), "${location.baseName}.$format")
@@ -131,6 +132,7 @@ class FileOrganizer @Inject constructor(
         trackId: Long?,
         nameSuffixes: List<String?>,
     ): List<String?> {
+        requireSafeFormat(format)
         val location = resolveLocation(artist, album, title, trackId)
         val names = nameSuffixes.map { fileNameFor(location, format, it) }
         val externalTree = storagePreference.externalTreeUri.first()
@@ -468,7 +470,25 @@ class FileOrganizer @Inject constructor(
         return LibrarySizeBreakdown(total, lossless, losslessCount)
     }
 
-    private companion object {
+    /**
+     * Refuses a [format] that can't end a library file name (see
+     * [isSafeFormat]) before anything is created or written. The value isn't
+     * echoed: it may have come from another app or a server.
+     */
+    private fun requireSafeFormat(format: String) {
+        require(isSafeFormat(format)) { "Refused a file extension that isn't 1-5 lower-case letters or digits" }
+    }
+
+    internal companion object {
+        /**
+         * True when [format] can end a library file name: 1 to 5 lower-case
+         * ASCII letters or digits. Callers pass yt-dlp's or a source's
+         * extension, or an import's checked one; whatever they pass, a
+         * separator, a dot or `..` never reaches a file name.
+         */
+        fun isSafeFormat(format: String): Boolean =
+            format.length in 1..5 && format.all { it in 'a'..'z' || it in '0'..'9' }
+
         // Mirrors `LibraryViewModel.LOSSLESS_CODECS` and
         // `core/ui/.../FlacBadge.kt`. Kept duplicated rather than reaching
         // across the data → ui boundary; the set is short and stable.
@@ -508,6 +528,7 @@ class FileOrganizer @Inject constructor(
         trackId: Long? = null,
         nameSuffix: String? = null,
     ): CommittedTrack {
+        requireSafeFormat(format)
         val size = tempFile.length()
         val externalTree = storagePreference.externalTreeUri.first()
         return if (externalTree == null) {

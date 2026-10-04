@@ -1,5 +1,6 @@
 package com.stash.data.download.files
 
+import android.content.ContentResolver
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -39,14 +40,18 @@ sealed interface LocalImportState {
  * Imports user-picked audio files into the Stash library.
  *
  * For each URI from the SAF picker (or share intent):
- *   1. Copies the bytes to a temp cache file.
+ *   1. Copies the bytes to a temp cache file whose name Stash picks.
  *   2. Extracts metadata via `MediaMetadataRetriever` (title/artist/album/
  *      duration/embedded album art). Falls back to filename parsing
  *      (`Artist - Title.ext`) when tags are missing.
- *   3. Hands the temp file to [FileOrganizer.commitDownload] so the final
+ *   3. Picks the extension: the provider's MIME type or display name when
+ *      either maps to an audio type Stash saves ([ImportedAudioType]), else
+ *      the content's own container type ([ImportedAudioType.fromContent]).
+ *      A file none of them identifies is refused.
+ *   4. Hands the temp file to [FileOrganizer.commitDownload] so the final
  *      destination obeys the user's storage preference (internal vs. SAF).
- *   4. Persists the embedded album art (if any) into the app's cache.
- *   5. Inserts a [Track] with `source = MusicSource.LOCAL`, `isDownloaded =
+ *   5. Persists the embedded album art (if any) into the app's cache.
+ *   6. Inserts a [Track] with `source = MusicSource.LOCAL`, `isDownloaded =
  *      true`, and `spotifyUri` / `youtubeId` null.
  *
  * Runs on an app-scoped [CoroutineScope] so the import survives VM
@@ -54,11 +59,15 @@ sealed interface LocalImportState {
  * progress. The UI observes [state] to render a progress strip.
  *
  * Safety invariants:
+ *   - Only content:// URIs whose provider belongs to another app are read.
+ *   - No sender-supplied text becomes the temp name or a file extension;
+ *     folder and file names derived from tags or the display name go
+ *     through slugify. The extension is always one of
+ *     [ImportedAudioType.EXTENSIONS].
  *   - Per-file failures don't abort the batch — they increment `failed`
  *     and log with the offending URI.
- *   - Temp files are always deleted (success: commitDownload deletes
- *     them; failure: the `runCatching` around per-file work doesn't leak
- *     the temp since commitDownload hasn't run).
+ *   - Temp files are always deleted: commitDownload removes them on
+ *     success, and [importOne] removes whatever a failure leaves.
  *   - Concurrent [start] calls while [Running] are no-ops.
  */
 @Singleton
@@ -130,28 +139,47 @@ class LocalImportCoordinator @Inject constructor(
     }
 
     private suspend fun importOne(uri: Uri) {
+        // Only content:// URIs whose provider belongs to another app are read.
+        require(uri.scheme == ContentResolver.SCHEME_CONTENT) { "Only content:// URIs are imported" }
+        require(!isOwnAuthority(uri.authority)) { "URIs of Stash's own providers aren't imported" }
+
         val displayName = runCatching {
             DocumentFile.fromSingleUri(context, uri)?.name
         }.getOrNull()
         val mime = context.contentResolver.getType(uri)
-        val extFromMime = mime?.let {
-            android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(it)
-        }
-        val extFromName = displayName
-            ?.substringAfterLast('.', "")
-            ?.takeIf { it.isNotBlank() }
-        val ext = (extFromMime ?: extFromName ?: "m4a").lowercase()
+        // The provider picks both of these, so they only choose the extension
+        // when they map to an audio type Stash saves (see ImportedAudioType).
+        val claimed = ImportedAudioType.fromClaims(mime, displayName)
 
         // Copy URI bytes into a temp file in the download cache dir so
         // FileOrganizer.commitDownload can route the write to either
-        // internal or SAF based on the user's storage preference.
+        // internal or SAF based on the user's storage preference. The name is
+        // ours alone; a claim-less file waits under `.tmp` for its content to
+        // be identified.
         val tempDir = fileOrganizer.getTempDir()
-        val tempFile = File(tempDir, "import_${UUID.randomUUID()}.$ext")
+        val tempFile = File(tempDir, "import_${UUID.randomUUID()}.${claimed ?: "tmp"}")
+        check(tempFile.canonicalFile.parentFile == tempDir.canonicalFile) { "Import temp file outside the download cache" }
+        try {
+            importCopied(uri, tempFile, displayName, claimed)
+        } finally {
+            // commitDownload removes it on success; anything else leaves it here.
+            if (tempFile.exists()) runCatching { tempFile.delete() }
+        }
+    }
+
+    private suspend fun importCopied(uri: Uri, tempFile: File, displayName: String?, claimed: String?) {
         context.contentResolver.openInputStream(uri)?.use { input ->
             tempFile.outputStream().use { output -> input.copyTo(output) }
         } ?: error("Could not open input stream for $uri")
 
         val metadata = extractMetadata(tempFile, displayName)
+
+        // No usable claim: the content decides, by the container type the
+        // retriever reads. Content it can't identify as audio Stash saves is
+        // refused, never given a default extension.
+        val ext = claimed
+            ?: ImportedAudioType.fromContent(metadata.containerMime, metadata.hasVideo)
+            ?: throw IllegalArgumentException("Not an audio file Stash can import")
 
         val committed = fileOrganizer.commitDownload(
             tempFile = tempFile,
@@ -195,6 +223,10 @@ class LocalImportCoordinator @Inject constructor(
         val album: String?,
         val durationMs: Long,
         val embeddedArt: ByteArray?,
+        /** The container MIME type the retriever read from the content, if any. */
+        val containerMime: String?,
+        /** The retriever's "has video" answer for the content: "yes", or null. */
+        val hasVideo: String?,
     )
 
     /**
@@ -220,6 +252,10 @@ class LocalImportCoordinator @Inject constructor(
                 .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 0L
             val embedded = retriever.embeddedPicture
+            val containerMime = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+            val hasVideo = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO)
 
             // Filename fallback: "Artist - Title.ext" → split on " - ".
             val baseName = (displayName ?: file.nameWithoutExtension).substringBeforeLast('.')
@@ -242,10 +278,25 @@ class LocalImportCoordinator @Inject constructor(
                 album = taggedAlbum,
                 durationMs = duration,
                 embeddedArt = embedded,
+                containerMime = containerMime,
+                hasVideo = hasVideo,
             )
         } finally {
             runCatching { retriever.release() }
         }
+    }
+
+    /**
+     * True when [authority] names one of this app's providers: the package
+     * name itself, or the package name followed by a dot, which is how every
+     * provider the app declares is named (`<package>.fileprovider`,
+     * `<package>.androidx-startup`). A `<user>@` prefix is ignored, as the
+     * system ignores it when it looks the provider up.
+     */
+    private fun isOwnAuthority(authority: String?): Boolean {
+        val name = authority?.substringAfterLast('@') ?: return false
+        val own = context.packageName
+        return name == own || name.startsWith("$own.")
     }
 
     companion object {
