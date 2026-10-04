@@ -110,7 +110,7 @@ maybe 10/day at the high end. Well under every limit.
 }
 ```
 
-Sorted newest-first. Capped at the 20 most recent entries (bumpable
+Sorted newest-first. Capped at the 500 most recent entries (bumpable
 via `SUPPORTERS_LIMIT` in `src/index.js`).
 
 ## Migrating off Cloudflare
@@ -140,3 +140,74 @@ the signed relay list the Stash app fetches at every cold start. They come
 byte-for-byte from the KV keys `lossless_config` / `lossless_config_sig`, which
 only `infra/lossless-relay/scripts/publish-config.mjs` writes. 404 until the
 first publish. Nothing about supporters changes.
+
+## stashfm.app early access and the monthly goal
+
+Since 2026-10 the webhook does two more things for each Donation or
+Subscription (`src/access.js`). The webhook URL, its answers and the GET
+JSON above don't change.
+
+- **Early access.** The donor's email gets an `access:<hash>` entry, so they
+  can sign in to stashfm.app with it (the website Worker, `web/worker`, reads
+  it). Only the hash is stored, never the email.
+- **The monthly goal.** The amount goes into `goal:<YYYY-MM>` (UTC month), in
+  US cents. Other currencies are converted with the fixed, approximate table
+  `USD_PER_UNIT` in `src/access.js`; a currency missing from it isn't counted
+  (the donor still gets access).
+- **No double counting.** Each `kofi_transaction_id` is remembered for 60
+  days (`kofitxn:<id>`). If Ko-fi sends the same one again, nothing changes,
+  the supporters list included.
+- Ko-fi's **"Send test"** webhooks (transaction id
+  `00000000-1111-2222-3333-444444444444`) still show up in the supporters
+  list, as before, but never in the goal or the access list.
+- If these extra writes fail, the error is logged (`npx wrangler tail`) and
+  Ko-fi still gets its 200, since the supporters list was already saved.
+
+**The email hash.** Trim and lowercase the email, then SHA-256 it (hex). If
+the optional `EMAIL_PEPPER` secret is set, it's HMAC-SHA256 keyed with the
+pepper instead. The website Worker and `scripts/import-kofi-csv.mjs` hash the
+same way, and the tests in both places check the same vectors. Pick one setup
+before launch: the same `EMAIL_PEPPER` on both Workers (and in the
+environment when you run the import), or none anywhere. Changing it later
+locks every supporter out until they're imported again. If the two Workers
+disagree, the website's admin page says so (it compares `meta:hashcheck`).
+
+### Importing past supporters
+
+The webhook only sees new donations. To give everyone who supported before
+early access, once, before launch:
+
+1. On Ko-fi, export your transaction history as CSV.
+2. From `infra/tipjar-worker` (set `EMAIL_PEPPER` in the environment first if
+   the Workers use one):
+
+   ```bash
+   node scripts/import-kofi-csv.mjs path/to/kofi-export.csv
+   ```
+
+   It prints counts only, never an email, and writes the entries to a JSON
+   file in your temp folder (`--out <file>` to choose; `--all-types` to
+   include shop orders and commissions too). Rows count when their type is a
+   donation, subscription, membership or tip.
+3. Upload it with the command it prints:
+   `npx wrangler kv bulk put <file> --binding STASH_KV --remote`
+4. Delete the JSON file and the CSV.
+
+Re-running is safe: each entry is rewritten with the same hash.
+
+## STASH_KV keys
+
+Every key in this namespace, in one place. The tip jar and the website Worker
+(`web/wrangler.jsonc`) both bind it. `<hash>` is the email hash above.
+
+| Key | Written by | Value | Kept |
+| --- | --- | --- | --- |
+| `supporters` | tip jar webhook | The list the app reads (`GET /`) | Until replaced |
+| `lossless_config`, `lossless_config_sig` | `infra/lossless-relay/scripts/publish-config.mjs` | The signed relay config, served byte for byte | Until replaced |
+| `access:<hash>` | tip jar webhook, the import script, the website's admin page | `{source: "kofi", firstAt, lastAt}`, or `{source: "approved" or "manual", by, at}` | Until removed on the admin page |
+| `goal:<YYYY-MM>` | tip jar webhook (Ko-fi), the website's admin page (by hand) | `{cents, entries: [{cents, source, at, ...}], updatedAt}` | Forever (one per month) |
+| `kofitxn:<id>` | tip jar webhook | `"1"`: this Ko-fi transaction was handled | 60 days |
+| `meta:hashcheck` | tip jar webhook, the import script | The hash of `hashcheck@stashfm.app`, to spot a pepper mismatch | Until replaced |
+| `code:<hash>` | website | A sign-in code's HMAC, tries so far, expiry | 10 minutes |
+| `sends:<hash>` | website | How many codes went to this email this hour | 1 hour |
+| `request:<hash>` | website | `{email, note, at}`: an access request, the only place a raw email is kept | Until approved or denied, or 30 days |

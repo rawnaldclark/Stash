@@ -11,3 +11,10 @@ id = "fca1bc38b42741e6a8cac11f54de5abd"
 # Secret: KOFI_VERIFICATION_TOKEN
 # Set via `wrangler secret put KOFI_VERIFICATION_TOKEN` (paste from
 # https://ko-fi.com/manage/webhooks). NOT committed.
+
+# Optional secret: EMAIL_PEPPER (stashfm.app early access, src/access.js).
+# Keys the email hash in access:<hash>. If you use it, set the SAME value on the
+# website Worker (web/wrangler.jsonc) and in the EMAIL_PEPPER environment variable
+# when you run scripts/import-kofi-csv.mjs, and set it before any access:* entry
+# exists: changing it later locks every supporter out until they're re-imported.
+# Leave it unset on both Workers to hash with plain SHA-256.

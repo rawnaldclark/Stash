@@ -2,11 +2,17 @@
   "name": "stash-tipjar",
   "version": "1.0.0",
   "private": true,
-  "description": "Cloudflare Worker that receives Ko-fi webhooks and serves the live supporter list to the Stash Android app.",
+  "type": "module",
+  "description": "Cloudflare Worker that receives Ko-fi webhooks, serves the live supporter list to the Stash Android app, and keeps stashfm.app's early-access list and monthly goal.",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "node --no-warnings --test test/*.test.js",
+    "import-kofi": "node scripts/import-kofi-csv.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.135.0"

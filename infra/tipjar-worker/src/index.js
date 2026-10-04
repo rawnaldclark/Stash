@@ -13,12 +13,18 @@
  * app reads. Bounded to the most recent SUPPORTERS_LIMIT entries to
  * avoid unbounded growth.
  *
+ * Since 2026-10 a Donation or Subscription also gives the donor early access
+ * to stashfm.app and counts toward the site's monthly goal (src/access.js).
+ * The webhook URL, its answers and the GET JSON are unchanged.
+ *
  * Why one Worker for both: Ko-fi webhook posts, app GETs. Routing by
  * HTTP method keeps it to one URL the user has to configure in two
  * places (Ko-fi dashboard + app's BuildConfig.SUPPORTERS_JSON_URL).
  *
  * Deploy: see ../README.md.
  */
+
+import { recordKofiSupport, seenTransaction } from "./access.js";
 
 // 2026-07-19: 20 was destructively truncating — donors pushed past the
 // cap were deleted from KV forever, which is why older donations vanished
@@ -74,6 +80,12 @@ async function handleKofiWebhook(request, env) {
         return new Response("Ignored", { status: 200 });
     }
 
+    // Ko-fi retries a webhook it thinks failed. One whose transaction was already
+    // handled in full changes nothing the second time.
+    if (await seenTransaction(env.STASH_KV, payload.kofi_transaction_id)) {
+        return new Response("OK", { status: 200 });
+    }
+
     const newSupporter = {
         name: (payload.from_name || "Anonymous").slice(0, 40),
         amountUsd: Math.max(0, Math.floor(parseFloat(payload.amount) || 0)),
@@ -88,6 +100,15 @@ async function handleKofiWebhook(request, env) {
     existing.supporters = existing.supporters.slice(0, SUPPORTERS_LIMIT);
 
     await env.STASH_KV.put(KV_KEY, JSON.stringify(existing));
+
+    // Early access and the monthly goal (src/access.js). The supporters list above is
+    // already saved, so a failure here is logged and Ko-fi still gets its 200: a retry
+    // would only add the same supporter to the list again.
+    try {
+        await recordKofiSupport(env, payload);
+    } catch (err) {
+        console.error("early access / goal update failed:", err && err.message);
+    }
 
     return new Response("OK", { status: 200 });
 }
