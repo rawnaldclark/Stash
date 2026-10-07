@@ -32,12 +32,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.db.BackupExportScope
 import com.stash.core.data.db.BackupImportScope
+import com.stash.core.data.weblibrary.WebLibraryFile
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
@@ -166,8 +168,10 @@ fun SettingsLibraryStorageScreen(
     onNavigateToLibraryHealth: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
+    webExport: WebLibraryExportViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val webExportState by webExport.state.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
     LaunchedEffect(viewModel) {
@@ -218,6 +222,10 @@ fun SettingsLibraryStorageScreen(
         ) { uri ->
             if (uri != null) viewModel.onExportDatabase(uri, BackupExportScope.valueOf(exportScopeName))
         }
+        // "Export for Stash on the web": the web player's library file (JSON), to a document the user names.
+        val webExportLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/json"),
+        ) { uri -> if (uri != null) webExport.export(uri) }
         val importLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocument(),
         ) { uri -> if (uri != null) viewModel.onImportDatabase(uri) }
@@ -399,6 +407,10 @@ fun SettingsLibraryStorageScreen(
                     }
                 },
             )
+        }
+
+        if (webExportState !is WebLibraryExportState.Idle) {
+            WebLibraryExportDialog(state = webExportState, onDismiss = webExport::dismiss)
         }
 
         if (showExportScopeDialog) {
@@ -600,6 +612,34 @@ fun SettingsLibraryStorageScreen(
                     ) {
                         Text("Import Backup")
                     }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = extendedColors.glassBorder)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Stash on the web --------------------------------------------
+                Text(
+                    text = stringResource(R.string.web_library_export_title),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.web_library_export_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { webExportLauncher.launch(WebLibraryFile.fileName(System.currentTimeMillis())) },
+                    enabled = webExportState !is WebLibraryExportState.Working,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ),
+                ) {
+                    Text(stringResource(R.string.web_library_export_button))
                 }
             }
         }
@@ -1075,4 +1115,54 @@ private fun libStorageFormatBytes(bytes: Long): String {
     val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
     val safeIndex = digitGroups.coerceIn(0, units.lastIndex)
     return "%.1f %s".format(bytes / Math.pow(1024.0, safeIndex.toDouble()), units[safeIndex])
+}
+
+/** Working / done / failed for "Export for Stash on the web". Not dismissable while the file is being written. */
+@Composable
+private fun WebLibraryExportDialog(state: WebLibraryExportState, onDismiss: () -> Unit) {
+    val resources = LocalContext.current.resources
+    AlertDialog(
+        onDismissRequest = { if (state !is WebLibraryExportState.Working) onDismiss() },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.large,
+        title = {
+            Text(
+                text = stringResource(
+                    when (state) {
+                        is WebLibraryExportState.Done -> R.string.web_library_export_done_title
+                        WebLibraryExportState.Failed -> R.string.web_library_export_failed_title
+                        else -> R.string.web_library_export_working_title
+                    },
+                ),
+                style = MaterialTheme.typography.titleLarge,
+            )
+        },
+        text = {
+            when (state) {
+                is WebLibraryExportState.Done -> {
+                    val r = state.result
+                    Text(
+                        text = stringResource(
+                            R.string.web_library_export_done_body,
+                            resources.getQuantityString(R.plurals.web_library_export_likes, r.likes, r.likes),
+                            resources.getQuantityString(R.plurals.web_library_export_playlists, r.playlists, r.playlists),
+                            resources.getQuantityString(R.plurals.web_library_export_plays, r.plays, r.plays),
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                WebLibraryExportState.Failed -> Text(
+                    text = stringResource(R.string.web_library_export_failed_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                else -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            if (state !is WebLibraryExportState.Working) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.web_library_export_ok)) }
+            }
+        },
+    )
 }

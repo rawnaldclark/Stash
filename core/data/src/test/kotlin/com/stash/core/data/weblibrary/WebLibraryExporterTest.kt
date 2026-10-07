@@ -270,10 +270,15 @@ class WebLibraryExporterTest {
         }
         val expected = path.readText(Charsets.UTF_8)
         assertEquals(expected, text)
+        // The web player's fixture pins the same hash (stash-player backup.test.ts, APP_GOLDEN_SHA256): change both or neither.
+        val sha = java.security.MessageDigest.getInstance("SHA-256").digest(path.readBytes()).joinToString("") { "%02x".format(it) }
+        assertEquals(GOLDEN_SHA256, sha)
     }
 
     private companion object {
         /** 2025-10-07T12:00:00Z */
         const val T = 1_759_838_400_000L
+
+        const val GOLDEN_SHA256 = "0810e42571ca36d1ee2209935604307a23c11b36166bee54518626b0b6b710e2"
     }
 }
