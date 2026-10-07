@@ -150,7 +150,7 @@ import Icon from '../Icon.astro';
   }
 
   /*
-   * "YouTube Music" can't break, and at the 40px minimum it is about 290px wide with its pill.
+   * "YouTube Music" can't break, and at the 40px minimum it is about 270px wide.
    * Below 320px that's wider than the column, so scale the headline to fit
    * (7.3em is that phrase plus a little room).
    */
@@ -160,19 +160,13 @@ import Icon from '../Icon.astro';
     }
   }
 
-  /* The services' own colours: Spotify green, and YouTube Music's white on red. */
+  /* The services' own colours, as text: Spotify green and YouTube red. */
   .spotify {
     color: var(--tag-spotify);
   }
 
   .ytm {
-    display: inline-block;
-    margin-block: 0.04em;
-    padding: 0.02em 0.16em 0.06em;
-    border-radius: 0.16em;
-    background: var(--tag-youtube-bg);
-    color: #fff;
-    line-height: 1;
+    color: var(--tag-youtube);
   }
 
   .lead {
