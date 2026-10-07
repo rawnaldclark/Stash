@@ -2,8 +2,11 @@ package com.stash.core.data.weblibrary
 
 import com.stash.core.model.Track
 import com.stash.core.model.share.toSharedTrackWithArt
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToStream
+import java.io.OutputStream
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -98,8 +101,12 @@ data class WebLibraryFile(
         private val ISO_MILLIS: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
 
-        /** The file's text: compact JSON, UTF-8, fields in a fixed order (so the same library always writes the same bytes). */
-        fun encode(file: WebLibraryFile): String = json.encodeToString(serializer(), file)
+        /**
+         * Writes the file's text to [out]: compact JSON, UTF-8, fields in a fixed order (so the same library always
+         * writes the same bytes). Streamed, so a big library is never held as one string. Doesn't close [out].
+         */
+        @OptIn(ExperimentalSerializationApi::class)
+        fun write(file: WebLibraryFile, out: OutputStream) = json.encodeToStream(serializer(), file, out)
 
         fun isoMillis(epochMs: Long): String = ISO_MILLIS.format(Instant.ofEpochMilli(epochMs))
 

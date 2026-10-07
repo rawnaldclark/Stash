@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -189,9 +190,13 @@ class WebLibraryExporterTest {
         events.insert(ListeningEventEntity(trackId = blocked, startedAt = T + 3_000))
     }
 
-    private suspend fun golden(): String {
+    /** The file's bytes, written the way the export writes them (streamed). */
+    private fun bytesOf(file: WebLibraryFile): ByteArray =
+        ByteArrayOutputStream().also { WebLibraryFile.write(file, it) }.toByteArray()
+
+    private suspend fun golden(): ByteArray {
         fill()
-        return WebLibraryFile.encode(exporter.collect(nowMs = T + 5_000, generator = "Stash for Android (golden)"))
+        return bytesOf(exporter.collect(nowMs = T + 5_000, generator = "Stash for Android (golden)"))
     }
 
     @Test fun `the file holds your likes, your playlists in order and your plays, newest first`() = runTest {
@@ -241,7 +246,7 @@ class WebLibraryExporterTest {
     }
 
     @Test fun `no file paths, download state, mixes or blocked songs in the text`() = runTest {
-        val text = golden()
+        val text = golden().toString(Charsets.UTF_8)
         listOf("/storage", ".opus", "memo", "tracker.example", "Daily", "Downloads", "Blocked", "Hidden", "Not synced", "isDownloaded", "filePath")
             .forEach { assertFalse("leaked: $it", text.contains(it)) }
         // The file reads back as the web expects: plain JSON objects with only the v1 fields.
@@ -258,7 +263,7 @@ class WebLibraryExporterTest {
     }
 
     @Test fun `an empty library writes an empty file the web accepts`() = runTest {
-        val text = WebLibraryFile.encode(exporter.collect(T, null))
+        val text = bytesOf(exporter.collect(T, null)).toString(Charsets.UTF_8)
         assertEquals("""{"kind":"stash-web-library","v":1,"exportedAt":"2025-10-07T12:00:00.000Z","likes":[],"playlists":[],"history":[]}""", text)
     }
 
@@ -272,7 +277,8 @@ class WebLibraryExporterTest {
         override fun write(b: ByteArray, off: Int, len: Int) = throw error()
     }
 
-    /** The documents the exporter deleted. */
+    /** The documents the exporter deleted (Robolectric records a delete with no provider behind it only here). */
+    @Suppress("DEPRECATION")
     private fun deleted(): List<Uri> = shadowOf(context.contentResolver).deleteStatements.map { it.uri }
 
     @Test fun `a finished export keeps its file`() = runTest {
@@ -308,14 +314,15 @@ class WebLibraryExporterTest {
 
     /** The exact bytes for the fixed library; the web player imports the same file in its tests. */
     @Test fun `golden file`() = runTest {
-        val text = golden()
+        val bytes = golden()
         val path = File("src/test/resources/weblibrary/golden-v1.json")
         if (System.getenv("UPDATE_WEB_LIBRARY_GOLDEN") == "1") {
             path.parentFile?.mkdirs()
-            path.writeBytes(text.toByteArray(Charsets.UTF_8))
+            path.writeBytes(bytes)
         }
-        val expected = path.readText(Charsets.UTF_8)
-        assertEquals(expected, text)
+        // Text first, for a readable diff when it fails; then the exact bytes, as the streamed export writes them.
+        assertEquals(path.readText(Charsets.UTF_8), bytes.toString(Charsets.UTF_8))
+        assertArrayEquals(path.readBytes(), bytes)
         // The web player's fixture pins the same hash (stash-player backup.test.ts, APP_GOLDEN_SHA256): change both or neither.
         val sha = java.security.MessageDigest.getInstance("SHA-256").digest(path.readBytes()).joinToString("") { "%02x".format(it) }
         assertEquals(GOLDEN_SHA256, sha)

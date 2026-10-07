@@ -4,12 +4,15 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
+import androidx.room.withTransaction
 import com.stash.core.data.db.StashDatabase
-import com.stash.core.data.mapper.toDomain
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.io.FilterOutputStream
+import java.io.OutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,27 +36,38 @@ class WebLibraryExporter @Inject constructor(
     private val database: StashDatabase,
 ) {
 
-    /** Builds the file from the library as it is now. [generator] names the writer inside the file. */
+    /**
+     * Builds the file from the library as it is now. [generator] names the writer inside the file.
+     *
+     * All five reads run in one transaction, so the file is one consistent snapshot: a sync finishing mid-export
+     * can't leave a playlist and its songs out of step, and a big likes list read over several cursor windows
+     * can't skip or repeat rows. That holds the database's write lock for the reads (about a second on a big
+     * library); a play recorded in that moment waits, it isn't lost.
+     */
     suspend fun collect(nowMs: Long, generator: String?): WebLibraryFile = withContext(Dispatchers.IO) {
+        database.withTransaction { read(nowMs, generator) }
+    }
+
+    private suspend fun read(nowMs: Long, generator: String?): WebLibraryFile {
         val dao = database.webLibraryExportDao()
 
         val seenLikes = HashSet<Long>()
         val likes = dao.likes().mapNotNull { row ->
             if (!seenLikes.add(row.track.id)) return@mapNotNull null
-            val added = row.track.dateAdded.toEpochMilli()
-            val song = WebLibraryFile.song(row.track.toDomain(), added) ?: return@mapNotNull null
+            val added = row.track.dateAdded
+            val song = WebLibraryFile.song(row.track.toTrack(), added) ?: return@mapNotNull null
             WebLibraryFile.Like(song, row.likedAt?.takeIf { it > 0 } ?: added.takeIf { it > 0 } ?: nowMs)
         }
 
         val follows = dao.followedMixes().associateBy { it.playlistId }
         val playlists = dao.playlists().map { p ->
-            val rows = dao.playlistItems(p.id).take(WebLibraryFile.MAX_PLAYLIST_ITEMS)
+            val rows = dao.playlistItems(p.id, WebLibraryFile.MAX_PLAYLIST_ITEMS)
             val created = p.dateAdded.toEpochMilli().takeIf { it > 0 } ?: nowMs
             val updated = rows.mapNotNull { it.addedAt }.maxOrNull()?.coerceAtLeast(created) ?: created
             WebLibraryFile.Playlist(
                 id = "app-${p.id}",
                 name = p.name.trim().ifEmpty { "Playlist" },
-                items = rows.mapNotNull { WebLibraryFile.song(it.track.toDomain(), it.track.dateAdded.toEpochMilli()) },
+                items = rows.mapNotNull { WebLibraryFile.song(it.track.toTrack(), it.track.dateAdded) },
                 createdAt = created,
                 updatedAt = updated,
                 follow = follows[p.id]?.let { WebLibraryFile.follow(it.shareId, it.version, it.sharedBy) },
@@ -62,11 +76,11 @@ class WebLibraryExporter @Inject constructor(
 
         val history = dao.recentPlays(WebLibraryFile.MAX_PLAYS).mapNotNull { row ->
             if (row.playedAt <= 0) return@mapNotNull null
-            val song = WebLibraryFile.song(row.track.toDomain(), row.track.dateAdded.toEpochMilli()) ?: return@mapNotNull null
+            val song = WebLibraryFile.song(row.track.toTrack(), row.track.dateAdded) ?: return@mapNotNull null
             WebLibraryFile.Play(song, row.playedAt)
         }
 
-        WebLibraryFile(
+        return WebLibraryFile(
             exportedAt = WebLibraryFile.isoMillis(nowMs),
             generator = generator,
             likes = likes,
@@ -86,11 +100,18 @@ class WebLibraryExporter @Inject constructor(
                 context.packageManager.getPackageInfo(context.packageName, 0).versionName
             }.getOrNull()
             val file = collect(System.currentTimeMillis(), listOfNotNull("Stash for Android", version).joinToString(" "))
-            val bytes = WebLibraryFile.encode(file).toByteArray(Charsets.UTF_8)
-            context.contentResolver.openOutputStream(targetUri)?.use { it.write(bytes) }
+            ensureActive()
+            // Streamed straight into the document: the text is never held whole in memory.
+            val stream = context.contentResolver.openOutputStream(targetUri)
                 ?: throw IllegalStateException("Could not open output stream for URI: $targetUri")
+            val bytes = stream.use { raw ->
+                val out = CountingOutputStream(raw.buffered(WRITE_BUFFER))
+                WebLibraryFile.write(file, out)
+                out.flush()
+                out.count
+            }
             val result = WebLibraryExportResult(likes = file.likes.size, playlists = file.playlists.size, plays = file.history.size)
-            Log.i(TAG, "Wrote ${bytes.size} bytes: ${result.likes} likes, ${result.playlists} playlists, ${result.plays} plays")
+            Log.i(TAG, "Wrote $bytes bytes: ${result.likes} likes, ${result.playlists} playlists, ${result.plays} plays")
             Result.success(result)
         } catch (e: CancellationException) {
             discard(targetUri)
@@ -118,7 +139,24 @@ class WebLibraryExporter @Inject constructor(
         Log.i(TAG, if (deleted) "Deleted the unfinished export" else "The unfinished export may still be there")
     }
 
+    /** Counts what passes through, for the log line. */
+    private class CountingOutputStream(out: OutputStream) : FilterOutputStream(out) {
+        var count = 0L
+            private set
+
+        override fun write(b: Int) {
+            out.write(b)
+            count++
+        }
+
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            out.write(b, off, len)
+            count += len
+        }
+    }
+
     private companion object {
         const val TAG = "WebLibraryExport"
+        const val WRITE_BUFFER = 64 * 1024
     }
 }
