@@ -257,6 +257,80 @@ class WebLibraryExporterTest {
         assertEquals(setOf("title", "artist", "durationMs", "artwork", "addedAt"), item.keys)
     }
 
+    @Test fun `a deleted playlist never leaves`() = runTest {
+        val song = db.trackDao().insert(track("Ivy", "Frank Ocean", added = 10, youtubeId = "AE005nZeF-A"))
+        val playlists = db.playlistDao()
+        val kept = playlists.insert(playlist("Kept", PlaylistType.CUSTOM, "custom_kept", added = 1, syncEnabled = false))
+        member(kept, song, 0, added = 100)
+        // Deleted in Stash (is_active = 0), though it is made in Stash and still holds a song you can play.
+        val gone = playlists.insert(
+            playlist("Deleted list", PlaylistType.CUSTOM, "custom_gone", added = 2, syncEnabled = false).copy(isActive = false),
+        )
+        member(gone, song, 0, added = 100)
+
+        val file = exporter.collect(T, null)
+
+        assertEquals(listOf("Kept"), file.playlists.map { it.name })
+        assertFalse(bytesOf(file).toString(Charsets.UTF_8).contains("Deleted list"))
+    }
+
+    @Test fun `a playlist keeps the order Library shows (its positions), not the order songs were added`() = runTest {
+        val tracks = db.trackDao()
+        val first = tracks.insert(track("First", "Band", added = 10))
+        val second = tracks.insert(track("Second", "Band", added = 20))
+        val third = tracks.insert(track("Third", "Band", added = 30))
+        val list = db.playlistDao().insert(playlist("Moved around", PlaylistType.CUSTOM, "custom_order", added = 1, syncEnabled = false))
+        // Added newest-first, then dragged into order: position and added_at disagree on every song.
+        member(list, first, 0, added = 900)
+        member(list, second, 1, added = 500)
+        member(list, third, 2, added = 100)
+
+        val playlist = exporter.collect(T, null).playlists.single()
+
+        assertEquals(listOf("First", "Second", "Third"), playlist.items.map { it.title })
+        assertEquals("the newest addition, wherever it sits", T + 900, playlist.updatedAt)
+    }
+
+    @Test fun `a song blocked by its Spotify or YouTube id never leaves, whatever it is called now`() = runTest {
+        val tracks = db.trackDao()
+        val bySpotify = tracks.insert(
+            track("Renamed On Spotify", "Artist A", added = 10, spotifyUri = "spotify:track:0aBcDeFgHiJkLmNoPqRsTu", stashLikedAt = T + 10),
+        )
+        val byYoutube = tracks.insert(
+            track("Renamed On YouTube", "Artist B", added = 20, youtubeId = "bbbbbbbbbbb", stashLikedAt = T + 20),
+        )
+        val fine = tracks.insert(track("Still Fine", "Artist C", added = 30, youtubeId = "ccccccccccc", stashLikedAt = T + 30))
+        // Blocked under the names they had then, so only the id can match.
+        val blocklist = db.trackBlocklistDao()
+        blocklist.insert(
+            TrackBlocklistEntity(
+                canonicalKey = "artist a|old spotify title", artist = "Artist A", title = "Old Spotify Title",
+                spotifyUri = "spotify:track:0aBcDeFgHiJkLmNoPqRsTu", blockedAt = T, blockedFrom = "test",
+            ),
+        )
+        blocklist.insert(
+            TrackBlocklistEntity(
+                canonicalKey = "artist b|old youtube title", artist = "Artist B", title = "Old YouTube Title",
+                youtubeId = "bbbbbbbbbbb", blockedAt = T, blockedFrom = "test",
+            ),
+        )
+        val list = db.playlistDao().insert(playlist("Mine", PlaylistType.CUSTOM, "custom_mine", added = 1, syncEnabled = false))
+        member(list, bySpotify, 0, added = 100)
+        member(list, byYoutube, 1, added = 100)
+        member(list, fine, 2, added = 100)
+        val events = db.listeningEventDao()
+        listOf(bySpotify, byYoutube, fine).forEachIndexed { i, id ->
+            events.insert(ListeningEventEntity(trackId = id, startedAt = T + 1_000 + i))
+        }
+
+        val file = exporter.collect(T + 5_000, null)
+
+        assertEquals(listOf("Still Fine"), file.likes.map { it.item.title })
+        assertEquals(listOf("Still Fine"), file.playlists.single().items.map { it.title })
+        assertEquals(listOf("Still Fine"), file.history.map { it.item.title })
+        assertFalse(bytesOf(file).toString(Charsets.UTF_8).contains("Renamed"))
+    }
+
     @Test fun `plays stop at the limit, newest kept`() = runTest {
         fill()
         assertEquals(listOf(T + 2_000, T + 1_500), db.webLibraryExportDao().recentPlays(2).map { it.playedAt })
