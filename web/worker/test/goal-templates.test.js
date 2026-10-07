@@ -111,9 +111,9 @@ const built = existsSync(new URL("gate/front.html", DIST));
 test("the built gate pages have every blank the Worker fills, and no scripts", { skip: !built && "run npm run build first" }, () => {
     const page = (name) => readFileSync(new URL(name, DIST), "utf8");
     const expect = {
-        "gate/front.html": ['data-if="goal"', 'data-goal="raised"', 'data-goal="target"', 'data-goal="bar"', 'data-goal="fill"', 'action="/access"', 'href="/request"'],
-        "gate/sent.html": ['data-fill="email"', 'data-value="email"', 'action="/access/verify"', 'autocomplete="one-time-code"'],
-        "gate/code-failed.html": ['data-value="email"', 'action="/access/verify"', 'action="/access"'],
+        "gate/front.html": ['data-if="goal"', 'data-goal="raised"', 'data-goal="target"', 'data-goal="bar"', 'data-goal="fill"', 'action="/access"', 'href="/request"', 'data-value="next"'],
+        "gate/sent.html": ['data-fill="email"', 'data-value="email"', 'data-value="next"', 'action="/access/verify"', 'autocomplete="one-time-code"'],
+        "gate/code-failed.html": ['data-value="email"', 'data-value="next"', 'action="/access/verify"', 'action="/access"'],
         "gate/request.html": ['action="/request"', 'name="note"'],
         "gate/requested.html": [],
         "gate/signed-out.html": [],
@@ -139,7 +139,7 @@ test("every Worker route is in run_worker_first, and the public files aren't", (
     const patterns = config.assets.run_worker_first;
     const glob = (p) => new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
     const runsWorker = (path) => patterns.some((p) => !p.startsWith("!") && glob(p).test(path)) && !patterns.some((p) => p.startsWith("!") && glob(p.slice(1)).test(path));
-    for (const path of ["/", "/access", "/access/verify", "/request", "/signout", "/admin", "/gate/front", "/404", "/a-page-added-later"]) assert.ok(runsWorker(path), path);
+    for (const path of ["/", "/access", "/access/verify", "/request", "/signout", "/admin", "/player", "/gate/front", "/404", "/a-page-added-later"]) assert.ok(runsWorker(path), path);
     for (const path of ["/_astro/x.css", "/favicon.ico", "/robots.txt", "/sitemap-index.xml", "/privacy", "/social-preview.jpg"]) assert.ok(!runsWorker(path), path);
     assert.equal(config.main, "worker/index.js");
     assert.equal(config.assets.binding, "ASSETS");
@@ -150,6 +150,10 @@ test("every Worker route is in run_worker_first, and the public files aren't", (
     // Previews get nothing but assets: no production KV or email (Cloudflare's Previews don't inherit bindings).
     assert.deepEqual(config.previews, {});
     assert.equal(config.vars.GOAL_CENTS, "10000");
+    // The web player's address is a plain var; its signing key is a secret and must never be in this file.
+    assert.equal(config.vars.PLAYER_URL, "https://play.stashfm.app");
+    assert.ok(!("PLAYER_TICKET_PRIVATE_KEY" in config.vars));
+    assert.doesNotMatch(raw, /"d"\s*:/, "no private JWK in wrangler.jsonc");
     assert.deepEqual(config.routes, [{ pattern: "stashfm.app/*", zone_name: "stashfm.app" }], "the site takes the rest of stashfm.app; the share Worker keeps its own, more specific routes");
     const ids = config.ratelimits.map((r) => Number(r.namespace_id));
     assert.ok(ids.every((id) => id >= 2010 && id <= 2015), "2001-2009 belong to the share Worker");

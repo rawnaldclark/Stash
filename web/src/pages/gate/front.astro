@@ -1,7 +1,8 @@
 ---
 /**
  * The early-access page. The Worker serves it at / (and /access) to anyone who isn't signed in, with this
- * month's goal filled in; /gate/front itself is never served. See worker/index.js.
+ * month's goal filled in; /gate/front itself is never served. See worker/index.js. The hidden `next` field is
+ * filled in when signing in started at /player (worker/player.js), so the visitor goes back there afterwards.
  */
 import { Image } from 'astro:assets';
 import GateShell from '../../components/gate/GateShell.astro';
@@ -27,6 +28,7 @@ import { LINKS, SITE } from '../../data/site';
       <h2>Sign in</h2>
       <p>Supporters are on the list as a thank‑you. Enter the email you supported with, and we'll send you a code.</p>
       <form method="post" action="/access">
+        <input type="hidden" name="next" value="" data-value="next" />
         <label class="label" for="email">Email</label>
         <div class="row">
           <input

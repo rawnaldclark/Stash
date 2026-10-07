@@ -137,7 +137,12 @@
     // `curl -sI https://stashfm.app/admin` redirects to https://<team>.cloudflareaccess.com/...?kid=<AUD>.
     "ACCESS_TEAM_DOMAIN": "https://stashfm.cloudflareaccess.com",
     // The application's AUD tag (Zero Trust > Access > Applications > Stash admin; also the login URL's kid).
-    "ACCESS_AUD": "e569cd58af6d149fff38da84f0cb87dadd90caf02d47a00fe680dd9d68c2e4d2"
+    "ACCESS_AUD": "e569cd58af6d149fff38da84f0cb87dadd90caf02d47a00fe680dd9d68c2e4d2",
+    // The Stash web player's origin, where GET /player sends signed-in visitors with a ticket
+    // (worker/player.js). Not a secret. https only, no path; anything else (or empty) and /player
+    // answers "The player isn't available" (503) and nothing else changes. The player is its own
+    // Worker on this account; its gate sends visitors back to https://stashfm.app/player (GATE_URL).
+    "PLAYER_URL": "https://play.stashfm.app"
   },
 
   // Secrets, set with `npx wrangler secret put <NAME>` (never in this file):
@@ -147,6 +152,9 @@
   //   EMAIL_PEPPER    required: keys the email hashes (sign-in refuses to run without it). The same
   //                   value on the tip jar and for its import script, set before anything writes
   //                   access:* entries.
+  //   PLAYER_TICKET_PRIVATE_KEY  the private half of the web player's Ed25519 key pair, as a JWK on one
+  //                   line (the player repo's `npm run keys` prints it as TICKET_PRIVKEY). Signs /player's
+  //                   tickets. Only this Worker holds it; the player gets the public half (TICKET_PUBKEY).
 
   // Previews (`npx wrangler preview`, Workers Builds' Preview command) don't inherit any
   // production binding, var or secret: they get only what this block gives them, and

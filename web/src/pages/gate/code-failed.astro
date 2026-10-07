@@ -12,6 +12,7 @@ import CodeForm from '../../components/gate/CodeForm.astro';
     <CodeForm />
     <form method="post" action="/access" class="resend">
       <input type="hidden" name="email" value="" data-value="email" />
+      <input type="hidden" name="next" value="" data-value="next" />
       <button type="submit" class="button button-secondary button-small">Send a new code</button>
     </form>
     <p class="gate-small">Not on the list? <a href="/request">Request access</a>.</p>

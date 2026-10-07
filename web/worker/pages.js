@@ -30,11 +30,14 @@ export const SECURITY_HEADERS = {
 
 /**
  * Every response the Worker returns gets the site's security headers (_headers doesn't apply to them).
- * [formAction] adds one origin to form-action (see cspWithFormAction).
+ * [formAction] adds one origin to form-action (see cspWithFormAction). A response may tighten its
+ * Referrer-Policy to no-referrer (/player's redirect to the web player does); that one is kept.
  */
 export function withSecurityHeaders(response, { formAction } = {}) {
     const out = new Response(response.body, response);
+    const noReferrer = out.headers.get("Referrer-Policy") === "no-referrer";
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
+    if (noReferrer) out.headers.set("Referrer-Policy", "no-referrer");
     if (formAction) out.headers.set("Content-Security-Policy", cspWithFormAction(formAction));
     return out;
 }

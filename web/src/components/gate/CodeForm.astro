@@ -1,12 +1,14 @@
 ---
 /**
  * The 6-digit code box. The email rides along in a hidden field the Worker fills in (data-value="email"),
- * so the code is checked against the address it was sent to.
+ * so the code is checked against the address it was sent to. So does where to go afterwards (data-value="next":
+ * empty, or /player when signing in started there; the Worker checks it again, worker/player.js playerReturn).
  */
 ---
 
 <form method="post" action="/access/verify" class="code-form">
   <input type="hidden" name="email" value="" data-value="email" />
+  <input type="hidden" name="next" value="" data-value="next" />
   <label class="label" for="code">Your 6-digit code</label>
   <div class="row">
     <input

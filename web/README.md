@@ -39,6 +39,8 @@ sign anyone in; put them in `web/.dev.vars`, which git ignores (local values, no
 SESSION_SECRET=<at least 32 random characters, e.g. from `openssl rand -base64 48`>
 EMAIL_PEPPER=<any local value>
 ADMIN_EMAILS=owner@example.com
+# Only to try /player: a local key pair from the player repo's `npm run keys` (never the real one)
+PLAYER_TICKET_PRIVATE_KEY=<the TICKET_PRIVKEY line>
 ```
 
 To try signing in, put an email on the local list. `<hash>` is the HMAC-SHA256 of the lowercased email
@@ -192,10 +194,11 @@ needs a session until it's added to `PUBLIC_PAGES` in `worker/index.js`.
 | --- | --- |
 | `GET /`, `GET /access` | The early-access page, with this month's goal filled in |
 | `POST /access` | Email in. If it's on the list, a 6-digit code goes out by email. The page is the same either way |
-| `POST /access/verify` | Email and code in. The right code sets the `stash_access` cookie and goes to `/` |
+| `POST /access/verify` | Email and code in. The right code sets the `stash_access` cookie and goes to `/` (or back to `/player`, if signing in started there) |
 | `GET` and `POST /request` | The request-access form, and storing a request (the same answer for everyone) |
 | `POST /signout` | Clears the cookie (the button is in the home page's footer) |
 | `GET` and `POST /admin` | Requests, the access list and the goal, behind Cloudflare Access |
+| `GET /player` | Signed in with early access: a 2-minute ticket and a redirect to the web player (below) |
 
 Which paths reach the Worker at all is `assets.run_worker_first` in `wrangler.jsonc`. With
 `not_found_handling` set, a browser navigation (a form post too) to a path with no file never reaches
@@ -271,8 +274,33 @@ the Access session expired can be sent to its sign-in page.
 | `GOAL_CENTS` | var | The monthly goal in US cents (`10000`) |
 | `EMAIL_FROM` | var | `access@stashfm.app`, the only sender the `EMAIL` binding allows |
 
+| `PLAYER_URL` | var | The web player's origin, `https://play.stashfm.app`. https only, no path; anything else turns `/player` off |
+| `PLAYER_TICKET_PRIVATE_KEY` | secret | The private half of the web player's Ed25519 key pair (a JWK on one line). Signs `/player`'s tickets. Without it, `/player` is off |
+
 Mail to `access@stashfm.app` (replies to a code, removal requests) is forwarded to the maintainer's inbox
 by Email Routing.
+
+**The web player** (`worker/player.js`). The Stash web player runs at `PLAYER_URL` and only lets in
+visitors who bring a ticket from `stashfm.app/player`; its own gate sends everyone else there. For a
+signed-in visitor still on the list, `/player` signs a ticket and redirects (302) to
+`PLAYER_URL/auth#t=<ticket>`. The ticket is in the URL fragment, which no server or log ever sees, and
+the redirect is `no-store` and `Referrer-Policy: no-referrer`. A ticket is
+`b64url(JSON {sub, exp, aud}).b64url(Ed25519 signature)`, with `aud` `"stash-player"` and `exp` two
+minutes away; `test/player.test.js` checks it against a copy of the player's own verifier. `sub` is an
+HMAC of the email hash keyed with `SESSION_SECRET`: the same for the same person, but not the email and
+not the access list's hash, so the player holds nothing that can be matched to either (changing
+`SESSION_SECRET` changes everyone's `sub`, and signs everyone out of the site anyway). Signed out, `/player`
+goes to the early-access page, and signing in comes back to `/player` (the forms carry a hidden `next`
+that can only ever be `/player`). Signed in but taken off the list, it goes to `/`. A shared song or mix
+link on the player arrives as `/player?next=/t/...`, `/m/...` or `/play...` and is passed on as
+`PLAYER_URL/auth?next=...`; any other `next` is dropped. Without a valid `PLAYER_URL` or key, `/player` is a
+503 that names neither (the log, `wrangler tail`, says which).
+
+**The ticket key.** In the player repo (`stash-web/player`), `npm run keys` prints a key pair (nothing is
+saved). The private half, `TICKET_PRIVKEY`, goes on this Worker only: `npx wrangler secret put
+PLAYER_TICKET_PRIVATE_KEY` from `web/`, pasting the JSON line. The public half, `TICKET_PUBKEY`, goes on the
+player Worker. Never commit either. To rotate, run it again and change both at the same moment (tickets
+last two minutes, so nothing breaks).
 
 ## Things to know
 
