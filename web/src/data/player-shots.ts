@@ -1,8 +1,8 @@
 /**
  * The web player's screenshots (play.stashfm.app), each in a dark and a light version, with its alt text.
  *
- * Files live in src/assets/player/{dark,light}/<name>.webp: the real player in its demo mode (`?fake=1`,
- * whose songs and covers are made up), captured at 1280 × 800 at 2x, so 2560 × 1600. Astro resizes them at
+ * Files live in src/assets/player/{dark,light}/<name>.webp: the real player with its real sources, real
+ * albums and covers, captured at 1280 × 800 at 2x, so 2560 × 1600. Astro resizes them at
  * build time. They're shown in a browser window (components/BrowserFrame.astro).
  */
 import type { ImageMetadata } from 'astro';
@@ -13,8 +13,8 @@ const dark = import.meta.glob<ImageModule>('../assets/player/dark/*.webp', { eag
 const light = import.meta.glob<ImageModule>('../assets/player/light/*.webp', { eager: true });
 
 const ALT = {
-  home: 'The Stash web player in a browser: Home, with Daily Discover, recently played albums and the lyrics beside them',
-  'now-playing': 'The web player’s Now Playing: the record turning beside big lyrics',
+  home: 'The Stash web player in a browser: Home, with Daily Discover, your likes and playlists, and the lyrics beside them',
+  'now-playing': 'The web player’s Now Playing: the album cover beside big lyrics',
   search: 'Searching in the web player: the top result, songs and artists',
   album: 'An album page in the web player, with its songs',
 } as const;

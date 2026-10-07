@@ -138,8 +138,9 @@ the smaller sizes at build time. For a new screen, also add its name and alt tex
 `src/data/screenshots.ts`.
 
 The web player's screenshots (the hero's browser window and the web player section) are in
-`src/assets/player/dark/` and `light/`: the real player in its demo mode (`?fake=1` on a local `npm run dev`
-in the player repo, whose songs and covers are made up), captured at 1280 × 800 at 2x, so 2560 × 1600 WebP.
+`src/assets/player/dark/` and `light/`: the real player (a local `npm run dev` in the player repo, pointed
+at the live sources) with a small real library, so the albums and covers are real, captured at 1280 × 800
+at 2x, so 2560 × 1600 WebP. Only a few lyric lines are left visible in them.
 Their names and alt text are in `src/data/player-shots.ts`, and `BrowserFrame.astro` draws the window
 around them.
 
