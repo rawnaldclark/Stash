@@ -27,6 +27,7 @@ import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.dao.TrackTagDao
+import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.db.entity.ArtistImageEntity
 import com.stash.core.data.db.entity.ArtistProfileCacheEntity
 import com.stash.core.data.db.entity.DiscoveryQueueEntity
@@ -145,6 +146,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun syncUndoDao(): SyncUndoDao
 
     abstract fun sharedMixDao(): SharedMixDao
+
+    abstract fun webLibraryExportDao(): WebLibraryExportDao
 
 
     companion object {
