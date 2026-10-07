@@ -18,7 +18,7 @@
  *   aud  "stash-player".
  *
  * PLAYER_TICKET_PRIVATE_KEY (secret) is the private half of the player's key pair, an Ed25519 JWK (the player
- * repo's `npm run keys` prints it as TICKET_PRIVKEY); the player holds only the public half. PLAYER_URL (var)
+ * repo's `npm run keys` prints it under that name); the player holds only the public half. PLAYER_URL (var)
  * is the player's origin, https only. Without either, or with either malformed, /player is a 503 page.
  *
  * Shared links: the player sends a visitor without a session to `/player?next=<a song or mix path>`. A

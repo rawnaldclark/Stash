@@ -153,7 +153,7 @@
   //                   value on the tip jar and for its import script, set before anything writes
   //                   access:* entries.
   //   PLAYER_TICKET_PRIVATE_KEY  the private half of the web player's Ed25519 key pair, as a JWK on one
-  //                   line (the player repo's `npm run keys` prints it as TICKET_PRIVKEY). Signs /player's
+  //                   line (the player repo's `npm run keys` prints it under that name). Signs /player's
   //                   tickets. Only this Worker holds it; the player gets the public half (TICKET_PUBKEY).
 
   // Previews (`npx wrangler preview`, Workers Builds' Preview command) don't inherit any

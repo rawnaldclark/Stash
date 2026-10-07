@@ -371,3 +371,12 @@ test("the key check accepts the player's `npm run keys` format and nothing that 
     assert.ok(await verifyTicket(ticket, JSON.stringify(publicKey.export({ format: "jwk" })), NOW));
     assert.equal(await ticketKey(JSON.stringify(publicKey.export({ format: "jwk" }))), null);
 });
+
+test("a removed visitor can't mint a ticket, even right after a cached yes", async () => {
+    const { h, e, cookie } = await signedIn();
+    assert.equal((await open(e, cookie)).status, 302, "listed: a ticket");
+    await e.ACCESS_KV.delete(`access:${h}`);
+    const res = await open(e, cookie);
+    assert.notEqual(res.status, 302, "no ticket once removed");
+    assert.ok(!(res.headers.get("location") ?? "").includes("#t="));
+});

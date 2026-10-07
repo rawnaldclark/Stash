@@ -277,6 +277,7 @@ async function player(request, env, url) {
     const secret = sessionSecret(env);
     const session = await readSession(secret, cookieValue(request));
     if (!session) return seeOther(`/access?next=${encodeURIComponent(playerPath(next))}`);
+    rememberAccess(session.h, undefined); // read the list fresh: one ticket starts a player session, so the cache must not outlive a removal
     if (!(await hasAccess(env, session.h))) return seeOther("/");
     const ticket = await mintTicket(key, await playerSub(secret, session.h), Math.floor(clock.now() / 1000));
     return new Response(null, {

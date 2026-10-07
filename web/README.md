@@ -40,7 +40,7 @@ SESSION_SECRET=<at least 32 random characters, e.g. from `openssl rand -base64 4
 EMAIL_PEPPER=<any local value>
 ADMIN_EMAILS=owner@example.com
 # Only to try /player: a local key pair from the player repo's `npm run keys` (never the real one)
-PLAYER_TICKET_PRIVATE_KEY=<the TICKET_PRIVKEY line>
+PLAYER_TICKET_PRIVATE_KEY=<the PLAYER_TICKET_PRIVATE_KEY line>
 ```
 
 To try signing in, put an email on the local list. `<hash>` is the HMAC-SHA256 of the lowercased email
@@ -297,7 +297,7 @@ link on the player arrives as `/player?next=/t/...`, `/m/...` or `/play...` and 
 503 that names neither (the log, `wrangler tail`, says which).
 
 **The ticket key.** In the player repo (`stash-web/player`), `npm run keys` prints a key pair (nothing is
-saved). The private half, `TICKET_PRIVKEY`, goes on this Worker only: `npx wrangler secret put
+saved). The private half, `PLAYER_TICKET_PRIVATE_KEY`, goes on this Worker only: `npx wrangler secret put
 PLAYER_TICKET_PRIVATE_KEY` from `web/`, pasting the JSON line. The public half, `TICKET_PUBKEY`, goes on the
 player Worker. Never commit either. To rotate, run it again and change both at the same moment (tickets
 last two minutes, so nothing breaks).
