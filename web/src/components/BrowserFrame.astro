@@ -1,0 +1,99 @@
+---
+/**
+ * A web player screenshot in a slim browser window: three dots and the player's address in a bar on top,
+ * drawn in CSS so it follows the visitor's theme. The window is a size container, so its bar, corners and
+ * type scale with its width, like the phone frame (Device.astro). Set the width on the element or a parent.
+ */
+import ThemedImage from './ThemedImage.astro';
+import { playerShot, type PlayerShotName } from '../data/player-shots';
+
+interface Props {
+  name: PlayerShotName;
+  /** How wide the window is drawn, so the browser can pick the right file. */
+  sizes?: string;
+  priority?: boolean;
+  class?: string;
+}
+
+const { name, sizes = '(max-width: 900px) 100vw, 960px', priority = false, class: className } = Astro.props;
+const { dark, light, alt } = playerShot(name);
+---
+
+<div class:list={['browser', className]}>
+  <div class="window">
+    <div class="bar" aria-hidden="true">
+      <span class="dots"><i></i><i></i><i></i></span>
+      <span class="address">play.stashfm.app</span>
+    </div>
+    <ThemedImage
+      dark={dark}
+      light={light}
+      alt={alt}
+      widths={[480, 720, 960, 1280, 1600, 2000, 2560]}
+      sizes={sizes}
+      priority={priority}
+    />
+  </div>
+</div>
+
+<style>
+  .browser {
+    width: 100%;
+    container-type: inline-size;
+  }
+
+  .window {
+    --r: clamp(8px, 1.6cqi, 16px);
+    overflow: hidden;
+    border-radius: var(--r);
+    background: var(--browser-chrome);
+    box-shadow:
+      inset 0 0 0 1px var(--browser-edge),
+      var(--device-shadow);
+  }
+
+  .bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: clamp(18px, 4.2cqi, 40px);
+    padding-inline: clamp(8px, 1.8cqi, 18px);
+  }
+
+  .dots {
+    position: absolute;
+    inset-inline-start: clamp(8px, 1.8cqi, 18px);
+    display: flex;
+    gap: clamp(3px, 0.7cqi, 7px);
+  }
+
+  .dots i {
+    width: clamp(5px, 1cqi, 11px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: var(--browser-dot);
+  }
+
+  .address {
+    width: min(42%, 340px);
+    padding-block: clamp(1px, 0.35cqi, 4px);
+    border-radius: var(--radius-pill);
+    background: var(--browser-field);
+    color: var(--text-2);
+    font-size: clamp(7px, 1.25cqi, 13px);
+    font-weight: 500;
+    line-height: 1.4;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .window :global(img) {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 10;
+    /* Shown until the screenshot arrives: the player's own background, so a loading window looks switched on. */
+    background: var(--screen-placeholder);
+  }
+</style>

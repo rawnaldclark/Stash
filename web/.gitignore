@@ -15,3 +15,6 @@ dist/
 npm-debug.log*
 .DS_Store
 Thumbs.db
+
+# Screenshots for review
+shots/
