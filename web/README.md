@@ -21,8 +21,9 @@ npm run build      # builds the site into dist/
 npm run preview    # serves dist/ the way it was built
 ```
 
-`npm run dev` and `npm run preview` show the pages only: no Worker, so `/` is the full home page and the
-goal shows $0. To run the site the way Cloudflare will, Worker and all, build it and use Wrangler:
+`npm run dev` and `npm run preview` show the pages only: no Worker, so `/` shows both versions of the
+parts the Worker picks between (the web player section's sign-in form and its "Open the player" button, for
+example), and the goal shows $0. To run the site the way Cloudflare will, Worker and all, build it and use Wrangler:
 
 ```bash
 npm run build
@@ -118,7 +119,7 @@ The site copies the app's design system rather than inventing one, so it looks l
 
 ## Common changes
 
-**Edit words.** Each home-page section is a component in `src/components/home/` (Hero, Trust,
+**Edit words.** Each home-page section is a component in `src/components/home/` (Hero, Trust, WebPlayer,
 HowItWorks, Modes, Library, Listening, Lossless, Together, Gallery, Faq, Community, FinalCta). The
 privacy page's text is `src/content/privacy.md`. Links live in `src/data/site.ts`.
 
@@ -134,9 +135,16 @@ and its path. It's served at `/<name>` and lands in the sitemap automatically. A
 **Update screenshots.** Drop full-size 1080 × 2340 WebP files (transparent rounded corners, as in
 `docs/screenshots/`) into `src/assets/screenshots/dark/` and `light/` under the same name; Astro makes
 the smaller sizes at build time. For a new screen, also add its name and alt text to
-`src/data/screenshots.ts`. The hero banners are `hero-dark.webp` and `hero-light.webp` (2560 × 1280).
-`public/social-preview.jpg` is the card shown when someone shares a link: the dark banner trimmed a
-little at the sides to 1200 × 630, saved as JPEG and kept under 200 KB, since some apps skip large
+`src/data/screenshots.ts`.
+
+The web player's screenshots (the hero's browser window and the web player section) are in
+`src/assets/player/dark/` and `light/`: the real player in its demo mode (`?fake=1` on a local `npm run dev`
+in the player repo, whose songs and covers are made up), captured at 1280 × 800 at 2x, so 2560 × 1600 WebP.
+Their names and alt text are in `src/data/player-shots.ts`, and `BrowserFrame.astro` draws the window
+around them.
+
+`public/social-preview.jpg` is the card shown when someone shares a link: the app's three-phone banner
+(`docs/screenshots/` in the repo) trimmed a little at the sides to 1200 × 630, saved as JPEG and kept under 200 KB, since some apps skip large
 preview images. If its size changes, change `og:image:width` and `og:image:height` in
 `BaseLayout.astro` too.
 
@@ -183,16 +191,24 @@ The website is in early access. Supporters (Ko-fi automatically; GitHub Sponsors
 hand) are on the list as a thank-you, anyone else can ask, and the owner and Evo answer requests on
 `/admin`. Never word it as "donate to get in", and keep Qobuz, lossless and the relay out of this copy.
 
-**What a visitor sees.** `/` is the early-access page (`src/pages/gate/front.astro`) for anyone who isn't
-signed in, and the real home page for anyone who is. `/privacy`, the 404 page and every file (CSS,
-fonts, images, `robots.txt`, the sitemap) are public. Any other page is private: a page added later
-needs a session until it's added to `PUBLIC_PAGES` in `worker/index.js`.
+The web player (play.stashfm.app) is in early access, and stashfm.app is where people sign in to it.
+
+**What a visitor sees.** `/` is the home page for everyone. Its web player section has the sign-in form
+for a visitor who isn't signed in and an "Open the player" button (to `/player`) for one who is, and only a
+signed-in visitor gets the footer's Sign out button: the Worker removes the other version
+(`data-if="signed-in"` and `data-if="signed-out"`). The Lossless section and the FAQ's lossless answer are
+for signed-in visitors only, so the public page keeps quality and sources out of its words. `/access` is
+the sign-in page on its own (`src/pages/gate/front.astro`), where `/player` sends a visitor who isn't
+signed in. `/privacy`, the 404 page and every file (CSS, fonts, images, `robots.txt`, the sitemap) are
+public. Any other page is private: a page added later needs a session until it's added to `PUBLIC_PAGES`
+in `worker/index.js`.
 
 **The routes** (`worker/index.js`):
 
 | Route | What it does |
 | --- | --- |
-| `GET /`, `GET /access` | The early-access page, with this month's goal filled in |
+| `GET /` | The home page, with this month's goal, in its signed-in or signed-out version |
+| `GET /access` | The early-access sign-in page, with the goal (signed in: back to `/`) |
 | `POST /access` | Email in. If it's on the list, a 6-digit code goes out by email. The page is the same either way |
 | `POST /access/verify` | Email and code in. The right code sets the `stash_access` cookie and goes to `/` (or back to `/player`, if signing in started there) |
 | `GET` and `POST /request` | The request-access form, and storing a request (the same answer for everyone) |
@@ -290,7 +306,7 @@ minutes away; `test/player.test.js` checks it against a copy of the player's own
 HMAC of the email hash keyed with `SESSION_SECRET`: the same for the same person, but not the email and
 not the access list's hash, so the player holds nothing that can be matched to either (changing
 `SESSION_SECRET` changes everyone's `sub`, and signs everyone out of the site anyway). Signed out, `/player`
-goes to the early-access page, and signing in comes back to `/player` (the forms carry a hidden `next`
+goes to the sign-in page (`/access`), and signing in comes back to `/player` (the forms carry a hidden `next`
 that can only ever be `/player`). Signed in but taken off the list, it goes to `/`. A shared song or mix
 link on the player arrives as `/player?next=/t/...`, `/m/...` or `/play...` and is passed on as
 `PLAYER_URL/auth?next=...`; any other `next` is dropped. Without a valid `PLAYER_URL` or key, `/player` is a
@@ -365,7 +381,7 @@ The site is a Worker named `stashfm-site`: `dist/` served with Workers Static As
    in GitHub Actions still type-checks, builds and tests them. Merging to `master` deploys. A Preview
    gets none of production's bindings, vars or secrets, only what the `previews` block in
    `wrangler.jsonc` gives it, and that block is empty on purpose: a Preview shows the pages (the
-   early-access page at `/`, with no goal bar), signing in says it isn't working, and `/admin`
+   home page as a visitor who isn't signed in sees it, with no goal bar), signing in says it isn't working, and `/admin`
    refuses everyone. To see the signed-in pages, use `npx wrangler dev --local`.
    - **Never** put the production `ACCESS_KV` or the `EMAIL` binding in `previews`, or production
      secrets in the dashboard's Previews Base configuration: every branch's Preview would then read
@@ -409,8 +425,8 @@ The site is a Worker named `stashfm-site`: `dist/` served with Workers Static As
    4. **Connect the site:** uncomment `routes` in `wrangler.jsonc` and merge to `master`. The deploy
       gives this Worker `stashfm.app/*`, on the proxied DNS record the share Worker already uses. If
       that deploy fails on the route, `stash-share` still holds `stashfm.app/*`: go back to step 2.
-4. **After launch**, run the share-link checks again, then check the home page (the early-access page
-   when signed out; sign in and out once), `/privacy`, `/admin` (Access should ask you to sign in) and a
+4. **After launch**, run the share-link checks again, then check the home page (the sign-in form
+   when signed out, "Open the player" when signed in; sign in and out once), `/privacy`, `/admin` (Access should ask you to sign in) and a
    made-up path (which should show the 404 page). Once the app people use talks to stashfm.app, also
    share a song from it and join a Listen Together session, which uses the `/v1/rooms/<code>/ws`
    WebSocket.

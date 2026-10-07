@@ -1,56 +1,71 @@
 ---
-/** The top of the home page: tagline, download buttons and the three-phone banner. */
+/**
+ * The top of the home page: the tagline, the two ways to get Stash (the Android app, and the web player in early
+ * access), and Stash in a browser window with the phone in front of it.
+ *
+ * The second button has two versions, like the web player section below (WebPlayer.astro): the Worker keeps
+ * the one that fits the visitor (data-if, worker/pages.js) and removes the other.
+ */
+import BrowserFrame from '../BrowserFrame.astro';
+import Device from '../Device.astro';
 import DownloadCta from '../DownloadCta.astro';
-import ThemedImage from '../ThemedImage.astro';
 import Icon from '../Icon.astro';
-import { heroAlt, heroDark, heroLight } from '../../data/screenshots';
 ---
 
 <section class="hero" aria-labelledby="hero-title">
   <div class="glow" aria-hidden="true"></div>
   <div class="container intro">
     <p class="pill">
-      <Icon name="android" size="18px" />
-      Open source music player for Android
+      <span class="kind"><Icon name="android" size="18px" class="android" />Android app</span>
+      <span class="sep" aria-hidden="true"></span>
+      <span class="kind"><Icon name="computer" size="18px" class="web" />Web player</span>
+      <span class="early">Early access</span>
     </p>
     {/* The no-break spaces keep "Spotify +" and "YouTube Music" whole: phones read "Your Spotify +" / "YouTube Music" / "library". */}
-    <h1 id="hero-title">Your <span class="gradient">Spotify&nbsp;+ YouTube&nbsp;Music</span> library</h1>
-    <p class="lead">
-      Stash mirrors your Spotify and YouTube Music libraries to your Android phone. Download your playlists
-      and mixes to play offline, or stream them without filling up your storage.
-    </p>
-    <DownloadCta />
+    <h1 id="hero-title">
+      Your <span class="spotify">Spotify</span>&nbsp;+ <span class="ytm">YouTube&nbsp;Music</span> library
+    </h1>
+    <p class="lead">On your Android phone, to play offline or stream. And now in your browser.</p>
+    <DownloadCta>
+      <a slot="secondary" class="button button-secondary" href="#web-player" data-if="signed-out">
+        <Icon name="computer" size="20px" />
+        Web player: early access
+      </a>
+      <a slot="secondary" class="button button-secondary" href="/player" data-if="signed-in">
+        <Icon name="play-circle" size="20px" />
+        Open the web player
+      </a>
+    </DownloadCta>
   </div>
 
-  <div class="art">
-    <ThemedImage
-      dark={heroDark}
-      light={heroLight}
-      alt={heroAlt}
-      widths={[640, 960, 1280, 1600, 2000, 2560]}
-      sizes="(max-width: 640px) 250vw, min(100vw, 1360px)"
-      priority
-    />
+  <div class="container">
+    <div class="stage">
+      <BrowserFrame name="home" priority sizes="(max-width: 640px) 100vw, min(84vw, 1000px)" />
+      <div class="phone">
+        <Device name="now-playing" priority sizes="(max-width: 640px) 34vw, min(21vw, 250px)" />
+      </div>
+    </div>
   </div>
 </section>
 
 <style>
   .hero {
     position: relative;
-    padding-top: clamp(48px, 8vw, 96px);
+    padding-top: clamp(40px, 6vw, 72px);
     isolation: isolate;
+    overflow-x: clip;
   }
 
-  /* The banner's purple and magenta light, spilling onto the page behind the text. */
+  /* Purple and magenta light behind the text and the windows. */
   .glow {
     position: absolute;
     inset: -64px 0 auto;
-    height: 900px;
+    height: 1100px;
     z-index: -1;
     background:
-      radial-gradient(42% 38% at 22% 30%, var(--glow-purple), transparent 70%),
-      radial-gradient(38% 34% at 82% 62%, var(--glow-magenta), transparent 70%),
-      radial-gradient(30% 30% at 50% 0%, var(--glow-cyan), transparent 70%);
+      radial-gradient(42% 32% at 22% 26%, var(--glow-purple), transparent 70%),
+      radial-gradient(38% 30% at 82% 64%, var(--glow-magenta), transparent 70%),
+      radial-gradient(30% 26% at 50% 0%, var(--glow-cyan), transparent 70%);
     pointer-events: none;
   }
 
@@ -63,9 +78,11 @@ import { heroAlt, heroDark, heroLight } from '../../data/screenshots';
 
   .pill {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    padding: 7px 14px 7px 12px;
+    justify-content: center;
+    gap: 6px 10px;
+    padding: 6px 7px 6px 14px;
     border-radius: var(--radius-pill);
     border: 1px solid var(--glass-border-bright);
     background: var(--glass);
@@ -74,89 +91,137 @@ import { heroAlt, heroDark, heroLight } from '../../data/screenshots';
     font-weight: 500;
   }
 
-  .pill :global(.icon) {
+  .kind {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .pill :global(.android) {
     color: #3ddc84; /* Android green */
   }
 
-  /* Small phones: a little tighter, so the pill stays one line down to 320px. */
-  @media (max-width: 340px) {
+  .pill :global(.web) {
+    color: var(--purple-light);
+  }
+
+  .sep {
+    width: 1px;
+    height: 14px;
+    background: var(--glass-border-bright);
+  }
+
+  .early {
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    background: var(--accent-soft);
+    color: var(--link);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  @media (prefers-color-scheme: light) {
+    .pill :global(.web) {
+      color: var(--purple-dark);
+    }
+  }
+
+  /* Small phones: the pill wraps onto two lines, so round it less. */
+  @media (max-width: 400px) {
     .pill {
-      gap: 6px;
-      padding: 6px 12px 6px 10px;
+      padding: 8px 12px;
       border-radius: var(--radius-lg);
       font-size: 0.8125rem;
-      text-wrap: balance;
+    }
+
+    .sep {
+      display: none;
     }
   }
 
   h1 {
-    margin-top: 24px;
+    margin-top: 20px;
     max-width: 13em;
     font-size: clamp(2.5rem, 1.25rem + 5.6vw, 5.25rem);
-    line-height: 1.02;
+    line-height: 1.04;
     letter-spacing: -0.04em;
   }
 
   /*
-   * "YouTube Music" can't break, and at the 40px minimum it is about 275px wide.
-   * Below 310px that's wider than the column, so scale the headline to fit
-   * (6.9em is that phrase plus a little room). Continuous with 40px at 310px.
+   * "YouTube Music" can't break, and at the 40px minimum it is about 290px wide with its pill.
+   * Below 320px that's wider than the column, so scale the headline to fit
+   * (7.3em is that phrase plus a little room).
    */
-  @media (max-width: 309px) {
+  @media (max-width: 319px) {
     h1 {
-      font-size: calc((100vw - 2 * var(--gutter)) / 6.9);
+      font-size: calc((100vw - 2 * var(--gutter)) / 7.3);
     }
   }
 
-  .gradient {
-    background: linear-gradient(100deg, var(--purple-light) 0%, var(--purple) 45%, var(--cyan) 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+  /* The services' own colours: Spotify green, and YouTube Music's white on red. */
+  .spotify {
+    color: var(--tag-spotify);
   }
 
-  @media (prefers-color-scheme: light) {
-    .gradient {
-      background-image: linear-gradient(100deg, var(--purple-dark) 0%, #6d28d9 50%, var(--cyan-dark) 100%);
-    }
+  .ytm {
+    display: inline-block;
+    margin-block: 0.04em;
+    padding: 0.02em 0.16em 0.06em;
+    border-radius: 0.16em;
+    background: var(--tag-youtube-bg);
+    color: #fff;
+    line-height: 1;
   }
 
   .lead {
-    margin-top: 24px;
-    max-width: 40em;
+    margin-top: 20px;
+    max-width: 34em;
+    text-wrap: balance;
     color: var(--text-2);
     font-size: clamp(1.0625rem, 0.95rem + 0.5vw, 1.25rem);
     line-height: 1.6;
   }
 
   .intro :global(.cta) {
-    margin-top: 36px;
+    margin-top: 32px;
   }
 
-  .art {
-    max-width: 1360px;
-    margin: clamp(24px, 4vw, 48px) auto 0;
-    overflow: hidden;
+  /* Stash in a browser window, with the phone standing in front of its lower right corner. */
+  .stage {
+    position: relative;
+    width: min(100%, 1000px);
+    margin: clamp(36px, 5vw, 56px) auto 0;
+    padding-bottom: clamp(24px, 6vw, 72px);
+    container-type: inline-size;
   }
 
-  /* Fade all four edges of the banner into the page, so the phones float on it. */
-  .art :global(img) {
-    --fade-y: linear-gradient(to bottom, transparent 0%, #000 9%, #000 80%, transparent 100%);
-    --fade-x: linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%);
-    width: 100%;
-    aspect-ratio: 2 / 1;
-    object-fit: cover;
-    -webkit-mask-image: var(--fade-y), var(--fade-x);
-    -webkit-mask-composite: source-in;
-    mask-image: var(--fade-y), var(--fade-x);
-    mask-composite: intersect;
+  .stage > :global(.browser) {
+    width: 84%;
   }
 
-  /* On phones, crop in on the middle phone instead of shrinking all three. */
+  .phone {
+    --device-width: 100%;
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 25%;
+  }
+
+  /* Phones: the window fills the column and the phone overlaps its corner. */
   @media (max-width: 640px) {
-    .art :global(img) {
-      --fade-x: linear-gradient(to right, transparent 0%, #000 8%, #000 92%, transparent 100%);
-      aspect-ratio: 4 / 5;
+    .stage > :global(.browser) {
+      width: 100%;
+    }
+
+    .stage {
+      padding-bottom: 28%;
+    }
+
+    .phone {
+      right: -2%;
+      width: 34%;
     }
   }
 </style>

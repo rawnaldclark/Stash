@@ -3,6 +3,7 @@
  * bindings, the static assets binding, ExecutionContext, and just enough of HTMLRewriter for the
  * attribute selectors worker/pages.js uses ([data-fill], [data-if], ...).
  */
+import assert from "node:assert/strict";
 import { clock, hashEmail } from "../crypto.js";
 
 /**
@@ -107,7 +108,7 @@ const html = (body) => `<!doctype html><html><head><title>t</title></head><body>
 
 /** Small stand-ins for the built pages, with the same data-* blanks as src/pages/gate/*.astro. */
 export const PAGES = {
-    "/": html('<main id="home">HOME<div class="goal compact" data-if="goal" data-astro-cid-x><strong data-goal="raised">$0</strong> of <span data-goal="target">$100</span><div class="track" data-goal="bar" aria-valuenow="0"><span class="fill" data-goal="fill" style="width:0%"></span></div></div></main><footer><form class="signout" method="post" action="/signout"><button>Sign out</button></form></footer>'),
+    "/": html('<main id="home">HOME<a href="#web-player" data-if="signed-out">HERO SIGN IN</a><a href="/player" data-if="signed-in">HERO OPEN PLAYER</a><section id="web-player"><div class="access" data-if="signed-out"><form method="post" action="/access"><input name="email"></form><a href="/request">Request access</a></div><div class="access" data-if="signed-in"><a href="/player">Open the player</a></div><div class="goal" data-if="goal" data-astro-cid-x><strong data-goal="raised">$0</strong> of <span data-goal="target">$100</span><div class="track" data-goal="bar" aria-valuenow="0"><span class="fill" data-goal="fill" style="width:0%"></span></div></div></section></main><footer><form class="signout" method="post" action="/signout" data-if="signed-in"><button>Sign out</button></form></footer>'),
     "/privacy": html("<main>PRIVACY</main>"),
     "/404": html("<main>NOT FOUND PAGE</main>"),
     "/gate/front": html('<main id="front">FRONT<div class="goal" data-if="goal"><strong data-goal="raised">$0</strong> of <span data-goal="target">$100</span> this month<div class="track" role="progressbar" data-goal="bar" aria-valuenow="0" aria-valuetext="$0 of $100 this month"><span class="fill" data-goal="fill" style="width:0%"></span></div></div><form method="post" action="/access"><input type="hidden" name="next" value="" data-value="next"><input name="email"></form></main>'),
@@ -122,6 +123,15 @@ export const PAGES = {
         '<main id="admin">ADMIN <strong data-fill="admin-email">an admin</strong><p class="notice" data-if="flash" data-fill="flash"></p><p data-if="hash-mismatch">HASH MISMATCH</p><span data-fill="request-count">0 waiting</span><p data-if="no-requests">NOBODY WAITING</p><ul data-if="has-requests" data-html="requests"></ul><nav data-html="pager"></nav><span data-fill="month">this month</span><p data-fill="goal-exact">$0.00 of $100.00</p><div data-if="goal"><strong data-goal="raised">$0</strong></div><table data-if="has-entries"><tbody data-html="entries"></tbody></table><p data-if="no-entries">NO ENTRIES</p></main>',
     ),
 };
+
+// The home page as a visitor who isn't signed in sees it: the sign-in form, no button to /player and no Sign out.
+export function assertSignedOutHome(page) {
+    assert.match(page, /id="home"/);
+    assert.match(page, /action="\/access"/);
+    assert.match(page, /href="\/request"/);
+    assert.doesNotMatch(page, /href="\/player"/);
+    assert.doesNotMatch(page, /action="\/signout"/);
+}
 
 /**
  * The static assets binding with html_handling "auto-trailing-slash" and not_found_handling "404-page":

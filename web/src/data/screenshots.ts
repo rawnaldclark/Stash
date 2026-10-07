@@ -18,7 +18,7 @@ const ALT = {
   home: 'Home: Daily Discover, your mixes and radios',
   'now-playing': 'Now Playing: the colour wash follows the album art',
   lyrics: 'Lyrics that light up word by word',
-  library: 'Library: songs from Spotify and YouTube, with their FLAC quality',
+  library: "Library: songs from Spotify and YouTube, with each one's quality",
   playlists: "The Library's Playlists tab",
   playlist: 'A playlist page',
   artist: 'An artist page',
@@ -48,9 +48,3 @@ function load(files: Record<string, ImageModule>, theme: string, name: string): 
 export function screen(name: ScreenName): Screen {
   return { dark: load(dark, 'dark', name), light: load(light, 'light', name), alt: ALT[name] };
 }
-
-/** The three-phone banner at the top of the home page (2560 × 1280), as in the README. */
-export { default as heroDark } from '../assets/screenshots/hero-dark.webp';
-export { default as heroLight } from '../assets/screenshots/hero-light.webp';
-export const heroAlt =
-  'Stash on three phones: Home with Daily Discover, Now Playing with a lossless FLAC track, and word-synced lyrics';

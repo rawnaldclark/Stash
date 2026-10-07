@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import worker, { handle } from "../index.js";
 import { playerNext, playerOrigin, playerReturn, ticketKey, TICKET_SECONDS } from "../player.js";
 import { forgetAllAccess, signSession } from "../session.js";
-import { env, fakeCtx, fakeKV, freezeClock, get, hashFor, post, SECRET } from "./fakes.js";
+import { assertSignedOutHome, env, fakeCtx, fakeKV, freezeClock, get, hashFor, post, SECRET } from "./fakes.js";
 
 const EMAIL = "supporter@example.com";
 const PLAYER = "https://player.example.net";
@@ -227,14 +227,13 @@ test("signing in from the home page still lands on /, and a signed-in visitor at
     assert.equal((await handle(get("/access", { Cookie: cookie }), e)).headers.get("location"), "/");
 });
 
-test("signed in but no longer on the list: the early-access page, as / shows it, and no ticket", async () => {
+test("signed in but no longer on the list: no ticket, and / as a visitor who isn't signed in sees it", async () => {
     const { e, cookie } = await signedIn({ listed: false });
     const res = await open(e, cookie);
     assert.equal(res.status, 303);
     assert.equal(res.headers.get("location"), "/");
     assert.equal(res.headers.get("cache-control"), "no-store");
-    const page = await (await open(e, cookie, "/")).text();
-    assert.match(page, /id="front"/);
+    assertSignedOutHome(await (await open(e, cookie, "/")).text());
 });
 
 test("without a working key or PLAYER_URL: a plain 503 page that names no setting, for everyone, never a crash", async () => {

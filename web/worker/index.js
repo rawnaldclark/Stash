@@ -2,14 +2,15 @@
  * stashfm.app: the website's Worker. The site itself is static (Astro, ./dist, Workers Static Assets);
  * this adds the early-access gate in front of it, the sign-in flow and the admin page.
  *
- *   GET  /               signed in: the site's home page. Otherwise: the early-access page, with the goal.
- *   GET  /access         the early-access page (signed in: back to /)
+ *   GET  /               the home page, with the goal: its web player section has the sign-in form, or (signed in)
+ *                        a button to /player, and only a signed-in visitor gets the footer's Sign out button
+ *   GET  /access         the early-access sign-in page (signed in: back to /)
  *   POST /access         email in -> a sign-in code by email, if that email has access. The same answer either way.
  *   POST /access/verify  email + code -> the stash_access cookie, then back to /
  *   GET  /request        the request-access form;  POST /request  stores the request (same answer either way)
  *   POST /signout        clears the cookie
  *   GET  /player         signed in with early access: a 2-minute ticket and a 302 to the web player (player.js).
- *                        Not signed in: the early-access page, which comes back to /player after signing in.
+ *                        Not signed in: the early-access sign-in page, which comes back to /player after signing in.
  *   GET|POST /admin      requests, the access list and the goal (Cloudflare Access + access-jwt.js)
  *
  * Anything else goes to the static assets: files, /privacy and the 404 page are public, and any other HTML
@@ -80,7 +81,7 @@ async function route(request, env, later, fetchImpl) {
     switch (path) {
         case "/":
             if (method !== "GET") return notAllowed("GET");
-            return (await currentSession(request, env)) ? home(env, url) : front(env, url);
+            return home(env, url, Boolean(await currentSession(request, env)));
         case "/access":
             if (method === "GET") {
                 // ?next= is where to go after signing in: only ever /player (with a shared song or mix), see player.js.
@@ -145,15 +146,19 @@ async function goalFor(env) {
     }
 }
 
-/** The early-access page. [back] (from playerReturn) goes in the sign-in form, to come back to after signing in. */
+/** The early-access sign-in page (/access). [back] (from playerReturn) goes in the sign-in form, to come back to after signing in. */
 async function front(env, url, back = null) {
     return gatePage(env, url, "front", { goal: await goalFor(env), text: back ? { next: back } : {} });
 }
 
-/** The real home page, for a signed-in visitor. Its support section shows the goal too. */
-async function home(env, url) {
+/**
+ * The home page, for everyone, with the goal. Its web player section has two versions (data-if): the sign-in
+ * form for a visitor who isn't signed in, and a button to /player for one who is; the footer's Sign out button
+ * is only for a signed-in visitor.
+ */
+async function home(env, url, signedIn) {
     const res = await fetchAsset(env, url, "/");
-    return personal(fill(res, { goal: await goalFor(env) }));
+    return personal(fill(res, { goal: await goalFor(env), flags: { "signed-in": signedIn, "signed-out": !signedIn } }));
 }
 
 function problem(env, url, status, message, title = "Something went wrong") {
@@ -262,8 +267,8 @@ async function signOut(request, env, url) {
 
 /**
  * GET /player: a ticket to the web player for a signed-in visitor with early access (player.js). Signed out,
- * the early-access page, back here afterwards; signed in but no longer on the list, the early-access page as /
- * shows it. Without a working PLAYER_URL and PLAYER_TICKET_PRIVATE_KEY, a 503 that names neither.
+ * the early-access sign-in page, back here afterwards; signed in but no longer on the list, the home page as a
+ * signed-out visitor sees it. Without a working PLAYER_URL and PLAYER_TICKET_PRIVATE_KEY, a 503 that names neither.
  */
 async function player(request, env, url) {
     const origin = playerOrigin(env.PLAYER_URL);

@@ -1,7 +1,7 @@
 ---
 /**
- * The frame of every early-access page (src/pages/gate/): the site's layout without links into the
- * signed-in site, a soft glow, and a centred column. The Worker (worker/pages.js) fills in their blanks.
+ * The frame of every early-access page (src/pages/gate/): the site's layout, a soft glow, and a centred
+ * column. The Worker (worker/pages.js) fills in their blanks.
  *
  * Usage:
  *   <GateShell title="Check your email" path="/gate/sent"> <div class="gate-card glass">...</div> </GateShell>
@@ -22,14 +22,14 @@ interface Props {
 
 const {
   title,
-  description = 'The Stash website is in early access. Supporters can sign in, and anyone can ask for access.',
+  description = 'The Stash web player is in early access. Supporters can sign in, and anyone can ask for access.',
   path,
   wide = false,
   noindex = true,
 } = Astro.props;
 ---
 
-<BaseLayout title={title} description={description} path={path} noindex={noindex} minimal>
+<BaseLayout title={title} description={description} path={path} noindex={noindex}>
   <section class:list={['gate', { wide }]}>
     <div class="glow" aria-hidden="true"></div>
     <div class="container inner">

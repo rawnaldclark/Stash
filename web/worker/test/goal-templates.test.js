@@ -120,7 +120,7 @@ test("the built gate pages have every blank the Worker fills, and no scripts", {
         "gate/slow-down.html": [],
         "gate/problem.html": ['data-fill="title"', 'data-fill="message"'],
         "gate/admin.html": ['data-fill="admin-email"', 'data-fill="flash"', 'data-if="hash-mismatch"', 'data-html="requests"', 'data-html="pager"', 'data-html="entries"', 'data-fill="goal-exact"', 'data-fill="month"', 'data-fill="request-count"', 'data-if="no-requests"', 'data-if="has-entries"', 'value="donation"', 'value="add"', 'value="remove"'],
-        "index.html": ['data-if="goal"', 'data-goal="raised"', 'action="/signout"'],
+        "index.html": ['data-if="goal"', 'data-goal="raised"', 'action="/signout"', 'data-if="signed-in"', 'data-if="signed-out"', 'action="/access"', 'href="/request"', 'href="/player"'],
     };
     for (const [file, markers] of Object.entries(expect)) {
         const html = page(file);

@@ -4,6 +4,8 @@
  * Android requirement. No version number: the site is only rebuilt when it
  * changes, so a number would go stale. The Download button always fetches the
  * newest release's Stash.apk.
+ *
+ * The second button is "View on GitHub" unless a `secondary` slot gives another (the hero's web player button).
  */
 import Icon from './Icon.astro';
 import { LINKS, SITE } from '../data/site';
@@ -22,10 +24,16 @@ const { align = 'center' } = Astro.props;
       <Icon name="download" size="22px" />
       Download for Android
     </a>
-    <a class="button button-secondary" href={LINKS.github}>
-      <Icon name="github" size="20px" />
-      View on GitHub
-    </a>
+    {
+      Astro.slots.has('secondary') ? (
+        <slot name="secondary" />
+      ) : (
+        <a class="button button-secondary" href={LINKS.github}>
+          <Icon name="github" size="20px" />
+          View on GitHub
+        </a>
+      )
+    }
   </div>
   <p class="meta">
     <span>{SITE.minAndroid}</span>

@@ -4,12 +4,17 @@
  * in the order they appear. To add a section, make a component there and
  * place it below.
  *
- * Only signed-in visitors see it: the Worker (worker/index.js) serves the
- * early-access page (pages/gate/front.astro) at / to everyone else.
+ * Everyone sees it. The Worker (worker/index.js) fills in this month's goal
+ * and keeps the parts that fit the visitor (data-if="signed-in" or
+ * "signed-out"): the web player section's sign-in form or its button to the
+ * player, and the footer's Sign out button. The lossless section is for
+ * signed-in visitors only, like the FAQ's lossless answer: the public page
+ * keeps quality and sources out of its words.
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Hero from '../components/home/Hero.astro';
 import Trust from '../components/home/Trust.astro';
+import WebPlayer from '../components/home/WebPlayer.astro';
 import HowItWorks from '../components/home/HowItWorks.astro';
 import Modes from '../components/home/Modes.astro';
 import Library from '../components/home/Library.astro';
@@ -26,12 +31,13 @@ import { SITE } from '../data/site';
 <BaseLayout title={`${SITE.name}: ${SITE.tagline}`} description={SITE.description} path="/" signedIn>
   <Hero />
   <Trust />
+  <WebPlayer />
   <div id="features">
     <HowItWorks />
     <Modes />
     <Library />
     <Listening />
-    <Lossless />
+    <div data-if="signed-in"><Lossless /></div>
     <Together />
     <Gallery />
   </div>

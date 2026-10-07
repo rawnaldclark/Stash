@@ -6,7 +6,7 @@ import { hashFor as hashEmail } from "./fakes.js";
 import { forgetGoalCache } from "../goal.js";
 import { CSP, SECURITY_HEADERS } from "../pages.js";
 import { forgetAllAccess, signSession } from "../session.js";
-import { env, fakeKV, get, goalEntry, post, SECRET } from "./fakes.js";
+import { assertSignedOutHome, env, fakeKV, get, goalEntry, post, SECRET } from "./fakes.js";
 
 const EMAIL = "supporter@example.com";
 const month = () => new Date().toISOString().slice(0, 7);
@@ -22,13 +22,12 @@ async function signedIn(extra = {}) {
     return { e, cookie: `stash_access=${await signSession(SECRET, h)}` };
 }
 
-test("/ for a visitor who isn't signed in: the early-access page, with this month's goal filled in", async () => {
+test("/ for a visitor who isn't signed in: the home page with the sign-in form, and this month's goal filled in", async () => {
     const e = env({ ACCESS_KV: fakeKV({ ...goalEntry(month(), "kofi", "tx1", 2599), ...goalEntry(month(), "manual", "m1", 1200) }) });
     const res = await handle(get("/"), e);
     assert.equal(res.status, 200);
     const page = await res.text();
-    assert.match(page, /id="front"/);
-    assert.doesNotMatch(page, /id="home"/);
+    assertSignedOutHome(page);
     assert.match(page, /<strong data-goal="raised">\$37<\/strong> of <span data-goal="target">\$100<\/span>/);
     assert.match(page, /aria-valuenow="37"/);
     assert.match(page, /aria-valuetext="\$37 of \$100 this month"/);
@@ -53,24 +52,37 @@ test("if the goal can't be read, the page still works, without the bar", async (
     const res = await handle(get("/"), env({ ACCESS_KV: kv }));
     assert.equal(res.status, 200);
     const page = await res.text();
-    assert.match(page, /id="front"/);
+    assertSignedOutHome(page);
     assert.doesNotMatch(page, /data-goal/);
 });
 
-test("/ signed in: the real home page, private, with the goal in its Support section", async () => {
+test("/ signed in: the home page with a button to /player instead of the sign-in form, Sign out, and the goal", async () => {
     const { e, cookie } = await signedIn(goalEntry(month(), "manual", "m1", 5000));
     const res = await handle(get("/", { Cookie: cookie }), e);
     const page = await res.text();
     assert.match(page, /id="home"/);
+    assert.match(page, /href="\/player"/);
+    assert.match(page, /action="\/signout"/);
+    assert.doesNotMatch(page, /action="\/access"/);
     assert.match(page, /\$50<\/strong>/);
     assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.equal(res.headers.get("vary"), "Cookie");
 });
 
-test("a forged or stale cookie gets the early-access page", async () => {
+test("a forged or stale cookie gets the home page as a visitor who isn't signed in sees it", async () => {
     const e = env();
     for (const cookie of ["stash_access=abc.def", `stash_access=${await signSession(SECRET, await hashEmail(EMAIL))}`]) {
-        assert.match(await (await handle(get("/", { Cookie: cookie }), e)).text(), /id="front"/);
+        assertSignedOutHome(await (await handle(get("/", { Cookie: cookie }), e)).text());
     }
+});
+
+test("GET /access is still the early-access sign-in page, and signed in it goes back to /", async () => {
+    const page = await (await handle(get("/access"), env())).text();
+    assert.match(page, /id="front"/);
+    const { e, cookie } = await signedIn();
+    const res = await handle(get("/access", { Cookie: cookie }), e);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), "/");
 });
 
 test("the gate's templates are never served as they are", async () => {
@@ -168,6 +180,6 @@ test("HEAD / works like GET", async () => {
 test("pages are fetched from the assets without the visitor's conditional headers (a 304 can't be filled in)", async () => {
     const e = env();
     await handle(get("/", { "If-None-Match": '"abc"' }), e);
-    const asked = e.ASSETS.requests.find((r) => r.path === "/gate/front");
+    const asked = e.ASSETS.requests.find((r) => r.path === "/");
     assert.equal(asked.headers["if-none-match"], undefined);
 });

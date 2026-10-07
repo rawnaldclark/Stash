@@ -1,0 +1,222 @@
+---
+/**
+ * The web player (play.stashfm.app), in early access: three screens of it, the way in, and this month's goal.
+ *
+ * The way in has two versions, and the Worker keeps the one that fits the visitor (data-if, worker/pages.js):
+ * the sign-in form for a visitor who isn't signed in, or a button to /player (worker/player.js) for one who is.
+ * `npm run dev` has no Worker, so it shows both. The goal's numbers are filled in by the Worker too (data-goal),
+ * and the bar is removed if they can't be read.
+ *
+ * Words: "the same great Stash, in your browser, streaming only". Supporters are on the list as a thank-you;
+ * never word it as "donate to get in".
+ */
+import BrowserFrame from '../BrowserFrame.astro';
+import Icon from '../Icon.astro';
+import GoalBar from '../gate/GoalBar.astro';
+import DonateLinks from '../gate/DonateLinks.astro';
+---
+
+<section class="section web-player" id="web-player" aria-labelledby="web-player-title">
+  <div class="glow" aria-hidden="true"></div>
+  <div class="container">
+    <div class="section-head is-centered">
+      <p class="overline"><span class="live" aria-hidden="true"></span>Web player · Early access</p>
+      <h2 id="web-player-title" class="section-title">The same great Stash, in your browser</h2>
+      <p class="section-intro">Streaming only, with nothing to install.</p>
+    </div>
+  </div>
+
+  <ul role="list" class="showcase" aria-label="Web player screens">
+    <li class="main"><BrowserFrame name="now-playing" sizes="(max-width: 700px) 86vw, min(92vw, 1040px)" /></li>
+    <li><BrowserFrame name="search" sizes="(max-width: 700px) 86vw, min(45vw, 510px)" /></li>
+    <li><BrowserFrame name="album" sizes="(max-width: 700px) 86vw, min(45vw, 510px)" /></li>
+  </ul>
+
+  <div class="container">
+    <div class="cards">
+      <div class="card glass access" data-if="signed-out">
+        <h3>Get early access</h3>
+        <p>Supporters are on the list as a thank‑you. Enter the email you supported with, and we'll send you a code.</p>
+        <form method="post" action="/access">
+          <label class="label" for="access-email">Email</label>
+          <div class="row">
+            <input
+              class="input"
+              id="access-email"
+              name="email"
+              type="email"
+              autocomplete="email"
+              inputmode="email"
+              maxlength="254"
+              required
+              placeholder="you@example.com"
+            />
+            <button type="submit" class="button button-primary">Email me a code</button>
+          </div>
+        </form>
+        <p class="small">Not on the list? <a href="/request">Request access</a>.</p>
+      </div>
+
+      <div class="card glass access" data-if="signed-in">
+        <h3>You're in</h3>
+        <p>Thanks for being here early.</p>
+        <a class="button button-primary open" href="/player">
+          <Icon name="play-circle" size="22px" />
+          Open the player
+        </a>
+      </div>
+
+      <div class="card glass month">
+        <h3>Monthly goal</h3>
+        <GoalBar />
+        <DonateLinks />
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .web-player {
+    isolation: isolate;
+  }
+
+  .glow {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(40% 30% at 30% 30%, var(--glow-purple), transparent 70%),
+      radial-gradient(30% 26% at 78% 55%, var(--glow-cyan), transparent 70%);
+    pointer-events: none;
+  }
+
+  /* A small "on air" dot before the overline. */
+  .live {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 22%, transparent);
+  }
+
+  /* Now Playing large on top, Search and an album side by side under it. */
+  .showcase {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(16px, 2vw, 24px);
+    width: 100%;
+    max-width: calc(1040px + 2 * var(--gutter));
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  .showcase .main {
+    grid-column: 1 / -1;
+  }
+
+  /* Phones and small tablets: one swipeable row that snaps to each window. */
+  @media (max-width: 700px) {
+    .showcase {
+      grid-template-columns: none;
+      grid-template-rows: none;
+      grid-auto-flow: column;
+      grid-auto-columns: 86vw;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scroll-snap-type: x mandatory;
+      scroll-padding-inline: var(--gutter);
+      padding-bottom: 12px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--glass-border-bright) transparent;
+    }
+
+    .showcase .main {
+      grid-column: auto;
+    }
+
+    .showcase li {
+      scroll-snap-align: start;
+    }
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    max-width: 1040px;
+    margin: clamp(40px, 5vw, 64px) auto 0;
+  }
+
+  .card {
+    padding: clamp(24px, 4vw, 36px);
+    border-radius: var(--radius-2xl);
+  }
+
+  .card h3 {
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .card > p {
+    margin-top: 12px;
+    color: var(--text-2);
+  }
+
+  .access {
+    background:
+      linear-gradient(135deg, rgb(139 92 246 / 0.14), transparent 60%),
+      var(--glass);
+    border-color: var(--glass-border-bright);
+  }
+
+  .access form {
+    margin-top: 24px;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .row .input {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+
+  .small {
+    margin-top: 20px;
+    color: var(--text-2);
+    font-size: 0.9375rem;
+  }
+
+  .open {
+    margin-top: 24px;
+    min-height: 56px;
+    padding-inline: 28px;
+    font-size: 1.0625rem;
+  }
+
+  .month :global(.goal) {
+    margin-top: 18px;
+  }
+
+  .month :global(.donate) {
+    margin-top: 24px;
+    padding-top: 22px;
+    border-top: 1px solid var(--glass-border);
+  }
+
+  @media (max-width: 860px) {
+    .cards {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 420px) {
+    .row .button {
+      flex: 1 1 100%;
+    }
+  }
+</style>

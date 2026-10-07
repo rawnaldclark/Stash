@@ -1,26 +1,24 @@
 ---
 /**
- * The early-access page. The Worker serves it at / (and /access) to anyone who isn't signed in, with this
- * month's goal filled in; /gate/front itself is never served. See worker/index.js. The hidden `next` field is
- * filled in when signing in started at /player (worker/player.js), so the visitor goes back there afterwards.
+ * The web player's early-access sign-in page. The Worker serves it at /access to anyone who isn't signed in
+ * (/player sends them there), with this month's goal filled in; /gate/front itself is never served. See
+ * worker/index.js. The home page has the same form in its web player section (WebPlayer.astro). The hidden
+ * `next` field is filled in when signing in started at /player (worker/player.js), so the visitor goes back
+ * there afterwards.
  */
 import { Image } from 'astro:assets';
 import GateShell from '../../components/gate/GateShell.astro';
 import GoalBar from '../../components/gate/GoalBar.astro';
 import DonateLinks from '../../components/gate/DonateLinks.astro';
 import vinyl from '../../assets/brand/vinyl.png';
-import { LINKS, SITE } from '../../data/site';
 ---
 
-<GateShell title={`${SITE.name}: early access`} description={SITE.description} path="/" wide noindex={false}>
+<GateShell title="Web player early access" path="/access" wide>
   <header class="intro">
     <Image src={vinyl} alt="" width={72} height={72} densities={[1, 2]} loading="eager" class="record" />
-    <p class="overline">Early access</p>
-    <h1>stashfm.app is in early access</h1>
-    <p class="gate-lead">
-      Stash mirrors your Spotify and YouTube Music libraries to your Android phone, to play offline or stream. The
-      app is free and open source, <a href={LINKS.github}>on GitHub</a>.
-    </p>
+    <p class="overline">Web player · Early access</p>
+    <h1>The same great Stash, in your browser</h1>
+    <p class="gate-lead">Streaming only, with nothing to install. The <a href="/">Android app</a> is free for everyone.</p>
   </header>
 
   <div class="cards">

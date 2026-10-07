@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import worker, { handle } from "../index.js";
 import { hashFor as hashEmail } from "./fakes.js";
 import { forgetAllAccess } from "../session.js";
-import { env, fakeCtx, fakeEmail, fakeKV, fakeRL, freezeClock, get, post } from "./fakes.js";
+import { assertSignedOutHome, env, fakeCtx, fakeEmail, fakeKV, fakeRL, freezeClock, get, post } from "./fakes.js";
 
 const EMAIL = "supporter@example.com";
 const T0 = Date.UTC(2026, 9, 4, 12, 0, 0);
@@ -276,7 +276,7 @@ test("without the gate's bindings or EMAIL_PEPPER (a Preview has none), sign-in 
     const preview = env({ ACCESS_KV: undefined, EMAIL: undefined, SESSION_SECRET: undefined });
     const front = await handle(get("/"), preview);
     assert.equal(front.status, 200);
-    assert.match(await front.text(), /id="front"/);
+    assertSignedOutHome(await front.text());
     const res = await worker.fetch(get("/admin"), preview, fakeCtx());
     assert.equal(res.status, 403);
 });

@@ -4,15 +4,9 @@
  * placeholders; the Worker fills them in on every request (worker/pages.js, data-goal) from KV, and
  * removes the whole block (data-if="goal") if it can't read them. The target is GOAL_CENTS in wrangler.jsonc.
  */
-interface Props {
-  /** Smaller type, for the home page's Support card. */
-  compact?: boolean;
-}
-
-const { compact = false } = Astro.props;
 ---
 
-<div class:list={['goal', { compact }]} data-if="goal">
+<div class="goal" data-if="goal">
   <p class="figures"><strong data-goal="raised">$0</strong> of <span data-goal="target">$100</span> this month</p>
   <div
     class="track"
@@ -68,14 +62,5 @@ const { compact = false } = Astro.props;
     margin-top: 12px;
     color: var(--text-2);
     font-size: 0.9375rem;
-  }
-
-  .compact .figures strong {
-    font-size: 1.5rem;
-  }
-
-  .compact .track {
-    height: 10px;
-    margin-top: 10px;
   }
 </style>

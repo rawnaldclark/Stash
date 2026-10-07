@@ -10,6 +10,10 @@
  *
  * Each answer has an id (faq-*) so other pages can link straight to it;
  * browsers open the question when its answer is linked.
+ *
+ * The home page is public, but the lossless answer is for signed-in visitors
+ * only (data-if="signed-in", removed by the Worker for everyone else), like the
+ * Lossless section: the public page keeps quality and sources out of its words.
  */
 import Icon from '../Icon.astro';
 import { LINKS } from '../../data/site';
@@ -69,7 +73,7 @@ import { LINKS } from '../../data/site';
         </div>
       </details>
 
-      <details>
+      <details data-if="signed-in">
         <summary>Where does lossless come from?<Icon name="chevron-down" class="chevron" /></summary>
         <div class="answer" id="faq-lossless">
           <p>There's no Qobuz account or token inside the app. FLAC can come from:</p>
@@ -102,7 +106,7 @@ import { LINKS } from '../../data/site';
             host the project runs ever sees one.
           </p>
           <p>
-            Lyrics, scrobbling, artist info and lossless have hosts of their own. The
+            Lyrics, scrobbling, artist info and the audio itself come from hosts of their own. The
             <a href="/privacy">privacy page</a> lists everything Stash can reach, and what each one is sent. Found
             a security issue? Please <a href={LINKS.security}>report it privately</a>.
           </p>
@@ -114,9 +118,8 @@ import { LINKS } from '../../data/site';
         <div class="answer" id="faq-requirements">
           <p>
             A phone running Android 8.0 or later, and a Spotify and/or YouTube Music account. With Download on, you
-            also need room for your music. FLAC files are large: a four-minute song is about 28 MB in CD quality and
-            about 70 MB in Hi-Res, and you can pick the quality in Settings › Audio &amp; Quality. Stream only needs
-            almost nothing.
+            also need room for your music, at the quality you pick in Settings › Audio &amp; Quality. Stream only
+            needs almost nothing.
           </p>
         </div>
       </details>

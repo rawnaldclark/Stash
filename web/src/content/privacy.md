@@ -12,7 +12,7 @@
 #   secret ("pepper")                     it (missingForGate in web/worker/index.js), and the import too
 #
 # Shown as "Last updated" on the page. Change it whenever this file changes.
-updated: 2026-10-04
+updated: 2026-10-07
 ---
 
 ## The short version
@@ -133,7 +133,7 @@ Shared song pages, at `stashfm.app/t` and at the share Worker's first address, c
 
 ### Early access and signing in
 
-The website is in early access: people who have supported Stash are on the list as a thank-you, and anyone else can ask to be added. This is only about the website; the app needs no sign-in.
+The Stash web player is in early access, and you sign in to it here: people who have supported Stash are on the list as a thank-you, and anyone else can ask to be added. This is only about the web player; the website itself and the app need no sign-in.
 
 - **The access list** holds a scrambled form of each email address (a hash), never the address itself, with where it came from (Ko-fi, an approved request, or added by hand) and when. A plain hash can't be turned back into an address, but anyone holding a copy of the list could check whether an address they already know is on it. So the hash is keyed with a secret (a "pepper") that only the project's Workers hold, and without that secret the list can't be checked that way. Ko-fi's notice of each donation includes the donor's email, and the project's tip jar Worker puts that email's hash on the list. Past Ko-fi supporters are added the same way, from Ko-fi's records. GitHub Sponsors and PayPal supporters are added by hand. When a maintainer adds you or approves your request, the list also notes which maintainer did it (their address, not yours) and when.
 - **Signing in**: you type your email, and if it's on the list, a 6-digit code is emailed to you from `access@stashfm.app`. The code is sent through Cloudflare's Email Service, which handles your address to deliver it, and it's in the email's body, not its subject. The page says the same thing whether or not your email is on the list, so it doesn't tell anyone who has access. Only scrambled forms of your codes are kept, each for 10 minutes, along with how many codes went to that email in the last hour (by its hash), to stop floods. Your IP address is used for rate limits and isn't stored.

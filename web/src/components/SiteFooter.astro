@@ -9,18 +9,17 @@
  * version 3 of the License, or (at your option) any later version"). Name it the
  * same way everywhere: "GNU General Public License, version 3 or later".
  *
- * `minimal` (the early-access pages) drops the FAQ link, which only signed-in visitors can open.
- * `signedIn` (the home page, which only signed-in visitors see) adds a Sign out button.
+ * `signedIn` (the home page) adds a Sign out button, which the Worker keeps for signed-in visitors only
+ * (data-if="signed-in", worker/pages.js).
  */
 import Wordmark from './Wordmark.astro';
 import { LINKS } from '../data/site';
 
 interface Props {
-  minimal?: boolean;
   signedIn?: boolean;
 }
 
-const { minimal = false, signedIn = false } = Astro.props;
+const { signedIn = false } = Astro.props;
 
 const columns = [
   {
@@ -28,7 +27,8 @@ const columns = [
     links: [
       { href: LINKS.download, label: 'Download' },
       { href: LINKS.releases, label: 'All releases' },
-      ...(minimal ? [] : [{ href: '/#faq', label: 'FAQ' }]),
+      { href: '/#web-player', label: 'Web player' },
+      { href: '/#faq', label: 'FAQ' },
       { href: '/privacy', label: 'Privacy' },
     ],
   },
@@ -58,7 +58,7 @@ const columns = [
     <div class="top">
       <div class="about">
         <a class="brand" href="/" aria-label="Stash, home"><Wordmark height="22px" /></a>
-        <p>Stash mirrors your Spotify and YouTube Music libraries to your Android phone. Free and open source.</p>
+        <p>Your Spotify and YouTube Music library, on your Android phone and in your browser. Free and open source.</p>
       </div>
 
       {
@@ -107,7 +107,7 @@ const columns = [
       <p>This site runs no analytics and loads nothing from anyone else. Its one cookie keeps you signed in.</p>
       {
         signedIn && (
-          <form class="signout" method="post" action="/signout">
+          <form class="signout" method="post" action="/signout" data-if="signed-in">
             <button type="submit">Sign out</button>
           </form>
         )

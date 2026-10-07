@@ -5,7 +5,6 @@
  * subscription, and neither does the README's.
  */
 import Icon from '../Icon.astro';
-import GoalBar from '../gate/GoalBar.astro';
 import { LINKS } from '../../data/site';
 ---
 
@@ -62,8 +61,6 @@ import { LINKS } from '../../data/site';
             </a>
           </li>
         </ul>
-        {/* This month's donations, filled in by the Worker (worker/pages.js); removed if it can't read them. */}
-        <div class="goal-wrap"><GoalBar compact /></div>
         <p class="small">
           You can also <a href={LINKS.sponsors}>sponsor on GitHub</a> for recurring support. A star, a bug report,
           or telling a friend helps just as much. Thanks.
@@ -159,11 +156,6 @@ import { LINKS } from '../../data/site';
 
   a.card:hover .go :global(.icon) {
     transform: translateX(3px);
-  }
-
-  .goal-wrap {
-    max-width: 560px;
-    margin-top: 24px;
   }
 
   .people {

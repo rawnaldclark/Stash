@@ -6,7 +6,7 @@ import { b64urlEncode } from "../crypto.js";
 import { hashFor as hashEmail } from "./fakes.js";
 import { forgetGoalCache } from "../goal.js";
 import { forgetAllAccess, hasAccess, signSession } from "../session.js";
-import { BASE, env, fakeEmail, fakeKV, get, post, SECRET } from "./fakes.js";
+import { assertSignedOutHome, BASE, env, fakeEmail, fakeKV, get, post, SECRET } from "./fakes.js";
 
 const TEAM = "https://stash-test.cloudflareaccess.com";
 const AUD = "aud-0123456789abcdef0123456789abcdef";
@@ -225,7 +225,7 @@ test("add by email (source manual), with or without the email; remove ends acces
     assert.ok(await hasAccess(e, h));
     assert.equal((await adminPost({ action: "remove", email: "sponsor@example.com" }, e)).headers.get("location"), "/admin?done=removed");
     assert.equal(e.ACCESS_KV.json(`access:${h}`), null);
-    assert.match(await (await handle(get("/", { Cookie: cookie }), e)).text(), /id="front"/);
+    assertSignedOutHome(await (await handle(get("/", { Cookie: cookie }), e)).text());
     assert.equal((await adminPost({ action: "remove", email: "sponsor@example.com" }, e)).headers.get("location"), "/admin?done=not-listed");
     assert.equal((await adminPost({ action: "add", email: "not an email" }, e)).headers.get("location"), "/admin?done=bad-email");
 });
