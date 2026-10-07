@@ -1,6 +1,7 @@
 package com.stash.core.data.weblibrary
 
 import android.content.Context
+import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.StashDatabase
@@ -12,6 +13,7 @@ import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -27,8 +29,12 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import java.io.OutputStream
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -260,6 +266,46 @@ class WebLibraryExporterTest {
         assertEquals("stash-library-2025-10-07.json", WebLibraryFile.fileName(T, ZoneOffset.UTC))
     }
 
+    /** A stream that fails on the first write, as a full disk or a vanished SD card does. */
+    private fun failingStream(error: () -> Throwable) = object : OutputStream() {
+        override fun write(b: Int) = throw error()
+        override fun write(b: ByteArray, off: Int, len: Int) = throw error()
+    }
+
+    /** The documents the exporter deleted. */
+    private fun deleted(): List<Uri> = shadowOf(context.contentResolver).deleteStatements.map { it.uri }
+
+    @Test fun `a finished export keeps its file`() = runTest {
+        fill()
+        val out = ByteArrayOutputStream()
+        shadowOf(context.contentResolver).registerOutputStream(EXPORT_URI, out)
+
+        val result = exporter.export(EXPORT_URI).getOrThrow()
+
+        assertEquals(WebLibraryExportResult(likes = 3, playlists = 2, plays = 3), result)
+        val root = Json.parseToJsonElement(out.toString(Charsets.UTF_8.name())).jsonObject
+        assertEquals(3, root["likes"]!!.jsonArray.size)
+        assertTrue(deleted().isEmpty())
+    }
+
+    @Test fun `a failed export deletes the file it was writing, so no empty file is left`() = runTest {
+        fill()
+        shadowOf(context.contentResolver).registerOutputStream(EXPORT_URI, failingStream { IOException("disk full") })
+
+        assertTrue(exporter.export(EXPORT_URI).isFailure)
+        assertEquals(listOf(EXPORT_URI), deleted())
+    }
+
+    @Test fun `a cancelled export deletes the file too`() = runTest {
+        fill()
+        // Leaving the screen cancels the export; here the cancellation lands while the file is being written.
+        shadowOf(context.contentResolver).registerOutputStream(EXPORT_URI, failingStream { CancellationException("left the screen") })
+
+        val outcome = runCatching { exporter.export(EXPORT_URI) }
+        assertTrue("cancellation is passed on, not turned into a result", outcome.exceptionOrNull() is CancellationException)
+        assertEquals(listOf(EXPORT_URI), deleted())
+    }
+
     /** The exact bytes for the fixed library; the web player imports the same file in its tests. */
     @Test fun `golden file`() = runTest {
         val text = golden()
@@ -278,6 +324,8 @@ class WebLibraryExporterTest {
     private companion object {
         /** 2025-10-07T12:00:00Z */
         const val T = 1_759_838_400_000L
+
+        val EXPORT_URI: Uri = Uri.parse("content://com.stash.test.export/stash-library-2025-10-07.json")
 
         const val GOLDEN_SHA256 = "0810e42571ca36d1ee2209935604307a23c11b36166bee54518626b0b6b710e2"
     }

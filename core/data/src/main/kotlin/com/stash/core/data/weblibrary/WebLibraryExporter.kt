@@ -2,6 +2,7 @@ package com.stash.core.data.weblibrary
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.mapper.toDomain
@@ -74,7 +75,11 @@ class WebLibraryExporter @Inject constructor(
         )
     }
 
-    /** Writes the file to [targetUri] (a new document from the system file picker). */
+    /**
+     * Writes the file to [targetUri] (a new document from the system file picker). The picker has already created
+     * that document, so if the export fails or is cancelled (the user leaves the screen), the document is deleted
+     * again: an empty `stash-library-….json` would only tell the web "That file isn't a Stash backup."
+     */
     suspend fun export(targetUri: Uri): Result<WebLibraryExportResult> = withContext(Dispatchers.IO) {
         try {
             val version = runCatching {
@@ -88,11 +93,29 @@ class WebLibraryExporter @Inject constructor(
             Log.i(TAG, "Wrote ${bytes.size} bytes: ${result.likes} likes, ${result.playlists} playlists, ${result.plays} plays")
             Result.success(result)
         } catch (e: CancellationException) {
+            discard(targetUri)
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Web library export failed", e)
+            discard(targetUri)
             Result.failure(e)
         }
+    }
+
+    /** Deletes the half-made document at [uri]. Best effort: a failure here only leaves the file behind. */
+    private fun discard(uri: Uri) {
+        val resolver = context.contentResolver
+        val deleted = try {
+            if (DocumentsContract.isDocumentUri(context, uri)) {
+                DocumentsContract.deleteDocument(resolver, uri)
+            } else {
+                resolver.delete(uri, null, null) > 0
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not delete the unfinished export", e)
+            false
+        }
+        Log.i(TAG, if (deleted) "Deleted the unfinished export" else "The unfinished export may still be there")
     }
 
     private companion object {
