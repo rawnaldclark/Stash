@@ -50,6 +50,8 @@ data class SettingsUiState(
     val qobuzDiscoveryEnabled: Boolean = true,
     /** Ambient animated background on the Now Playing screen. */
     val ambientAnimationEnabled: Boolean = true,
+    /** How that background moves: Soft glow (default) or Classic. */
+    val ambientStyle: com.stash.core.data.prefs.AmbientStyle = com.stash.core.data.prefs.AmbientStyle.SOFT_GLOW,
     /** Full Home-section order (including hidden) + the hidden set —
      * drives the Settings > Appearance > Home layout editor. */
     val homeSectionOrder: List<com.stash.core.data.prefs.HomeSection> =

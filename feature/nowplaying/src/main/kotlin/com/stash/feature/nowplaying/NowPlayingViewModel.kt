@@ -127,6 +127,11 @@ class NowPlayingViewModel @Inject constructor(
         .map<Boolean, Boolean?> { it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** Settings > Appearance > Ambient style. */
+    val ambientStyle: StateFlow<com.stash.core.data.prefs.AmbientStyle?> = nowPlayingPreference.ambientStyle
+        .map<com.stash.core.data.prefs.AmbientStyle, com.stash.core.data.prefs.AmbientStyle?> { it }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
 
     private val _userMessages = MutableSharedFlow<String>(
         // v0.9.18: bumped from 1 → 8. The Find-in-FLAC action emits TWO

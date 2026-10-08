@@ -600,6 +600,7 @@ class SettingsViewModel @Inject constructor(
         themePreference.amoledDark,
         homeDiscoveryPreference.enabled,
         nowPlayingPreference.ambientAnimationEnabled,
+        nowPlayingPreference.ambientStyle,
         homeSectionsPreference.order,
         homeSectionsPreference.hidden,
         homeSectionsPreference.showLikedOnHome,
@@ -648,6 +649,7 @@ class SettingsViewModel @Inject constructor(
         val amoledDark = v.next<Boolean>()
         val qobuzDiscoveryEnabled = v.next<Boolean>()
         val ambientAnimationEnabled = v.next<Boolean>()
+        val ambientStyle = v.next<com.stash.core.data.prefs.AmbientStyle>()
         @Suppress("UNCHECKED_CAST")
         val homeSectionOrder = v.next<List<com.stash.core.data.prefs.HomeSection>>()
         @Suppress("UNCHECKED_CAST")
@@ -702,6 +704,7 @@ class SettingsViewModel @Inject constructor(
             stashMixesEnabled = stashMixesEnabled,
             qobuzDiscoveryEnabled = qobuzDiscoveryEnabled,
             ambientAnimationEnabled = ambientAnimationEnabled,
+            ambientStyle = ambientStyle,
             homeSectionOrder = homeSectionOrder,
             homeSectionsHidden = homeSectionsHidden,
             showLikedOnHome = showLikedOnHome,
@@ -1484,6 +1487,11 @@ class SettingsViewModel @Inject constructor(
     /** Ambient animated background on Now Playing (Settings > Appearance). */
     fun onAmbientAnimationEnabledChanged(enabled: Boolean) {
         viewModelScope.launch { nowPlayingPreference.setAmbientAnimationEnabled(enabled) }
+    }
+
+    /** How the Now Playing ambient moves (Settings > Appearance > Ambient style). */
+    fun onAmbientStyleChanged(style: com.stash.core.data.prefs.AmbientStyle) {
+        viewModelScope.launch { nowPlayingPreference.setAmbientStyle(style) }
     }
 
     /** Move a Home section one slot up/down (Settings > Appearance > Home layout). */

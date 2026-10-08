@@ -169,6 +169,8 @@ fun NowPlayingScreen(
         }
     }
     val ambientAnimationEnabled = viewModel.ambientAnimationEnabled.collectAsStateWithLifecycle().value ?: return
+    // Read with the switch above (one DataStore), so a Classic user never sees a frame of Soft glow.
+    val ambientStyle = viewModel.ambientStyle.collectAsStateWithLifecycle().value ?: return
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
     var showOptionsSheet by remember { mutableStateOf(false) }
@@ -554,12 +556,23 @@ fun NowPlayingScreen(
         // light pastel wash, or a dead-black AMOLED ground, following the
         // resolved app theme. It runs to the screen's bottom edge, under the
         // system navigation bar (the scaffold hides the tab bar on this route).
-        if (ambientAnimationEnabled) AmbientBackground(
-            palette = uiState.ambientPalette,
-            lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
-            amoledMode = LocalIsAmoledTheme.current,
-            modifier = Modifier.fillMaxSize(),
-        )
+        if (ambientAnimationEnabled) when (ambientStyle) {
+            com.stash.core.data.prefs.AmbientStyle.SOFT_GLOW -> AmbientBackground(
+                palette = uiState.ambientPalette,
+                lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
+                amoledMode = LocalIsAmoledTheme.current,
+                modifier = Modifier.fillMaxSize(),
+            )
+            // Settings > Appearance > Ambient style: the original ambient, unchanged.
+            com.stash.core.data.prefs.AmbientStyle.CLASSIC -> com.stash.feature.nowplaying.ui.ClassicAmbientBackground(
+                dominantColor = uiState.dominantColor,
+                vibrantColor = uiState.vibrantColor,
+                mutedColor = uiState.mutedColor,
+                lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
+                amoledMode = LocalIsAmoledTheme.current,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         // The raw navigation-bar inset (never consumed by the scaffold here), so the
         // controls sit above the gesture handle or the 3-button bar and do not move

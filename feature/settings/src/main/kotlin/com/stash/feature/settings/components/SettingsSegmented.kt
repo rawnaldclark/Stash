@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -31,10 +32,13 @@ fun SettingsSegmented(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    /** False greys the control out and ignores taps (its setting doesn't apply right now). */
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.38f)
             .clip(RoundedCornerShape(12.dp))
             // Theme-aware track: a faint tint of onSurface so the control reads on
             // both the dark (#06060C) and light (#F6F3FF) backgrounds.
@@ -58,7 +62,7 @@ fun SettingsSegmented(
                             Modifier
                         },
                     )
-                    .clickable { onSelect(index) }
+                    .clickable(enabled = enabled) { onSelect(index) }
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
