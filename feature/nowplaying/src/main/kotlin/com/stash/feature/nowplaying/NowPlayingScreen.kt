@@ -171,7 +171,7 @@ fun NowPlayingScreen(
     var showCustomTimerDialog by remember { mutableStateOf(false) }
     val sleepTimerState by viewModel.sleepTimerState.collectAsStateWithLifecycle()
     val sleepTimerSheetState = rememberModalBottomSheetState()
-    val optionsSheetState = rememberModalBottomSheetState()
+    val optionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val playbackSpeed by viewModel.playbackSpeed.collectAsStateWithLifecycle()
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showCustomSpeedDialog by remember { mutableStateOf(false) }
@@ -584,9 +584,6 @@ fun NowPlayingScreen(
                     radioActive = radioLabel != null,
                     radioTuning = radioTuning,
                     radioLock = radioLock,
-                    showSpeed = room == null,
-                    speed = playbackSpeed,
-                    onSpeedClick = { showSpeedSheet = true },
                     onStartRadio = viewModel::startRadioFromCurrent,
                     onStopRadio = viewModel::stopRadio,
                     // No radio in a session, for host or listener: the room owns the queue.
@@ -844,6 +841,9 @@ fun NowPlayingScreen(
             onPostToCommunity = postToCommunity?.let { post -> { post(com.stash.core.model.community.PostTarget.Song(track)) } },
             onFlagWrongMatch = { showWrongMatchDialog = true },
             onViewAlbum = viewModel::onViewAlbumTapped,
+            showSpeed = room == null,
+            speed = playbackSpeed,
+            onSpeedClick = { showSpeedSheet = true },
             together = togetherState,
             onStartTogether = { showStartTogether = true },
             onOpenSession = { showSession = true },
@@ -880,9 +880,6 @@ private fun TopBar(
     onStartRadio: () -> Unit,
     onStopRadio: () -> Unit,
     showRadio: Boolean,
-    showSpeed: Boolean,
-    speed: Float,
-    onSpeedClick: () -> Unit,
     showQueueButton: Boolean,
     accentColor: Color,
 ) {
@@ -937,20 +934,7 @@ private fun TopBar(
             }
         }
 
-        // Playback speed — right of Radio. Accented whenever it's not 1x, and
-        // a screen reader hears the speed, since the tint alone doesn't say it.
-        if (hasTrack && showSpeed) {
-            IconButton(onClick = onSpeedClick) {
-                Icon(
-                    imageVector = Icons.Default.Speed,
-                    contentDescription = if (speed == 1f) "Playback speed" else "Playback speed, ${formatSpeed(speed)}",
-                    tint = if (speed != 1f) accentColor else npInk(),
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
-        // More actions — opens the options sheet (Save, Download, Share,
+        // More actions — opens the options sheet (Save, Share, Speed, Download,
         // Flag, View Album). While a download is in flight a spinner replaces
         // the icon so it isn't a silent background job.
         if (hasTrack) {
@@ -1289,6 +1273,9 @@ private fun NowPlayingOptionsSheet(
     onPostToCommunity: (() -> Unit)?,
     onFlagWrongMatch: () -> Unit,
     onViewAlbum: () -> Unit,
+    showSpeed: Boolean,
+    speed: Float,
+    onSpeedClick: () -> Unit,
     together: ListenTogetherState,
     onStartTogether: () -> Unit,
     onOpenSession: () -> Unit,
@@ -1367,6 +1354,17 @@ private fun NowPlayingOptionsSheet(
                 label = "View Album",
                 onClick = { onViewAlbum(); onDismiss() }
             )
+
+            // Playback speed — opens the speed picker. Shows the speed when it isn't 1x.
+            // Not in a Listen Together session: the room keeps everyone in sync.
+            if (showSpeed) {
+                Spacer(modifier = Modifier.height(8.dp))
+                SheetOptionRow(
+                    icon = Icons.Default.Speed,
+                    label = if (speed == 1f) "Playback speed" else "Playback speed · ${formatSpeed(speed)}",
+                    onClick = { onSpeedClick(); onDismiss() },
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
