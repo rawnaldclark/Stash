@@ -8,7 +8,7 @@ export const SITE = {
   name: 'Stash',
   url: 'https://stashfm.app',
   /** The README's tagline. */
-  tagline: 'Your Spotify + YouTube Music library',
+  tagline: 'Your music, your way.',
   /**
    * Used for the home page's <meta name="description"> and social cards. It
    * avoids "no ads" / "no subscription", which beside the tagline read as a

@@ -54,9 +54,6 @@
   --browser-edge: rgb(255 255 255 / 0.1);
   --browser-dot: rgb(255 255 255 / 0.16);
   --browser-field: rgb(255 255 255 / 0.06);
-  /* The tagline's service names (Hero.astro), as coloured text: Spotify green 7.8:1 on --bg, YouTube red 5.3:1. */
-  --tag-spotify: var(--spotify);
-  --tag-youtube: #ff1a1a;
   /* A phone screen still loading: the dark screenshots' background (#07060d) with a faint purple top. */
   --screen-placeholder: radial-gradient(120% 45% at 50% 0%, rgb(139 92 246 / 0.16), transparent 70%), #07060d;
 
@@ -112,8 +109,6 @@
     --browser-edge: rgb(46 16 101 / 0.12);
     --browser-dot: rgb(46 16 101 / 0.16);
     --browser-field: #f1ecfc;
-    --tag-spotify: #117a37;           /* a deeper Spotify green: 5.0:1 on --bg (#1db954 is only 2.4:1) */
-    --tag-youtube: #cc0000;           /* a deeper YouTube red: 5.9:1 on --bg (#ff0000 is 4.0:1) */
     --button-glow: 0 10px 32px -12px rgb(124 58 237 / 0.6);
 
     color-scheme: light;

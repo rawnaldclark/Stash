@@ -16,12 +16,10 @@ import Hero from '../components/home/Hero.astro';
 import Trust from '../components/home/Trust.astro';
 import WebPlayer from '../components/home/WebPlayer.astro';
 import HowItWorks from '../components/home/HowItWorks.astro';
-import Modes from '../components/home/Modes.astro';
 import Library from '../components/home/Library.astro';
 import Listening from '../components/home/Listening.astro';
 import Lossless from '../components/home/Lossless.astro';
 import Together from '../components/home/Together.astro';
-import Gallery from '../components/home/Gallery.astro';
 import Faq from '../components/home/Faq.astro';
 import Community from '../components/home/Community.astro';
 import FinalCta from '../components/home/FinalCta.astro';
@@ -34,12 +32,10 @@ import { SITE } from '../data/site';
   <WebPlayer />
   <div id="features">
     <HowItWorks />
-    <Modes />
     <Library />
     <Listening />
     <div data-if="signed-in"><Lossless /></div>
     <Together />
-    <Gallery />
   </div>
   <Faq />
   <Community />

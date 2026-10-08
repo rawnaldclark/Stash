@@ -21,9 +21,8 @@ import Icon from '../Icon.astro';
       <span class="kind"><Icon name="computer" size="18px" class="web" />Web player</span>
       <span class="early">Early access</span>
     </p>
-    {/* The no-break spaces keep "Spotify +" and "YouTube Music" whole: phones read "Your Spotify +" / "YouTube Music" / "library". */}
     <h1 id="hero-title">
-      Your <span class="spotify">Spotify</span>&nbsp;+ <span class="ytm">YouTube&nbsp;Music</span> library
+      Your music, <span class="gradient">your&nbsp;way.</span>
     </h1>
     <p class="lead">On your Android phone, to play offline or stream. And now in your browser.</p>
     <DownloadCta>
@@ -144,29 +143,22 @@ import Icon from '../Icon.astro';
   h1 {
     margin-top: 20px;
     max-width: 13em;
-    font-size: clamp(2.5rem, 1.25rem + 5.6vw, 5.25rem);
+    font-size: clamp(2rem, 1rem + 4.48vw, 4.2rem);
     line-height: 1.04;
     letter-spacing: -0.04em;
   }
 
-  /*
-   * "YouTube Music" can't break, and at the 40px minimum it is about 270px wide.
-   * Below 320px that's wider than the column, so scale the headline to fit
-   * (7.3em is that phrase plus a little room).
-   */
-  @media (max-width: 319px) {
-    h1 {
-      font-size: calc((100vw - 2 * var(--gutter)) / 7.3);
+  .gradient {
+    background: linear-gradient(100deg, var(--purple-light) 0%, var(--purple) 45%, var(--cyan) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  @media (prefers-color-scheme: light) {
+    .gradient {
+      background-image: linear-gradient(100deg, var(--purple-dark) 0%, #6d28d9 50%, var(--cyan-dark) 100%);
     }
-  }
-
-  /* The services' own colours, as text: Spotify green and YouTube red. */
-  .spotify {
-    color: var(--tag-spotify);
-  }
-
-  .ytm {
-    color: var(--tag-youtube);
   }
 
   .lead {
