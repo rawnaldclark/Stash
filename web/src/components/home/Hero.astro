@@ -39,10 +39,10 @@ import Icon from '../Icon.astro';
 
   <div class="container">
     <div class="stage">
-      {/* Screenshot themes alternate down the page (the page itself is always light): the player light, the phone dark. */}
-      <BrowserFrame name="home" theme="light" priority sizes="(max-width: 640px) 100vw, min(84vw, 1000px)" />
+      {/* Screenshot themes alternate down the page (the page itself is always light): the player dark, the phone light (Laura Misch, "Climb"; the Listening section shows "Hide To Seek"). */}
+      <BrowserFrame name="home" theme="dark" priority sizes="(max-width: 640px) 100vw, min(84vw, 1000px)" />
       <div class="phone">
-        <Device name="now-playing" theme="dark" priority sizes="(max-width: 640px) 34vw, min(21vw, 250px)" />
+        <Device name="now-playing" theme="light" priority sizes="(max-width: 640px) 34vw, min(21vw, 250px)" />
       </div>
     </div>
   </div>
