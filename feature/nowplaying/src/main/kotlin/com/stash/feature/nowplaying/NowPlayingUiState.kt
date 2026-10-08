@@ -30,6 +30,12 @@ data class NowPlayingUiState(
     val vibrantColor: Color = Color(0xFF8E24AA),
     /** Muted color extracted from the album art via Palette API. */
     val mutedColor: Color = Color(0xFF37474F),
+    /**
+     * The ambient's colours, derived from the cover the way the web player does (see
+     * AmbientPalette); null until this screen's first cover has been read, so the
+     * ambient keeps the colours it last showed instead of flashing the default.
+     */
+    val ambientPalette: com.stash.feature.nowplaying.ui.AmbientPalette? = null,
     /** User-created playlists available for the "Save to Playlist" sheet. */
     val userPlaylists: List<PlaylistInfo> = emptyList(),
     /**

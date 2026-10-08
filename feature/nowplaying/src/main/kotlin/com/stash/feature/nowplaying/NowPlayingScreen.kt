@@ -545,9 +545,7 @@ fun NowPlayingScreen(
         // light pastel wash, or a dead-black AMOLED ground, following the
         // resolved app theme.
         if (ambientAnimationEnabled) AmbientBackground(
-            dominantColor = uiState.dominantColor,
-            vibrantColor = uiState.vibrantColor,
-            mutedColor = uiState.mutedColor,
+            palette = uiState.ambientPalette,
             lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
             amoledMode = LocalIsAmoledTheme.current,
             modifier = Modifier.fillMaxSize(),
