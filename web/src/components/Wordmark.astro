@@ -3,9 +3,9 @@
  * The "STASH" wordmark from the app's Home screen, as inline SVG.
  *
  * Path data comes from feature/home/src/main/res/drawable/wordmark_stash_dark.xml
- * (the Bungee Shade letters, SIL OFL, by David Jonathan Ross). The colours follow
- * the visitor's theme like the app's two drawables do: wordmark_stash_dark.xml
- * and wordmark_stash_light.xml differ only in their fills.
+ * (the Bungee Shade letters, SIL OFL, by David Jonathan Ross). One ink, like the
+ * web player's logo: white on the dark theme, the light theme's dark base colour
+ * on light (the accent shade is drawn in the same ink).
  */
 interface Props {
   /** Rendered height in CSS units; the width follows the 4.56:1 aspect ratio. */
@@ -49,7 +49,7 @@ const { height = '1.5rem', class: className } = Astro.props;
   }
 
   .accent {
-    fill: var(--wordmark-accent);
+    fill: var(--wordmark-base);
   }
 
   .base {

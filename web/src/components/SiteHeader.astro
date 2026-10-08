@@ -2,10 +2,8 @@
 /**
  * The sticky top bar: logo, page links, GitHub and a Download button.
  */
-import { Image } from 'astro:assets';
 import Icon from './Icon.astro';
 import Wordmark from './Wordmark.astro';
-import vinyl from '../assets/brand/vinyl.png';
 import { LINKS } from '../data/site';
 
 const path = Astro.url.pathname.replace(/\.html$/, '');
@@ -20,7 +18,6 @@ const nav = [
 <header class="site-header">
   <div class="container bar">
     <a class="brand" href="/" aria-label="Stash, home">
-      <Image src={vinyl} alt="" width={32} height={32} densities={[1, 2]} loading="eager" class="brand-icon" />
       <Wordmark height="20px" />
     </a>
 
@@ -75,11 +72,6 @@ const nav = [
     margin-right: auto;
     border-radius: var(--radius-sm);
     text-decoration: none;
-  }
-
-  .brand-icon {
-    width: 32px;
-    height: 32px;
   }
 
   .nav ul {
