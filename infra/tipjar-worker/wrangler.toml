@@ -28,3 +28,15 @@ id = "9c1524fb52d64900b5ae05cca64efca3"
 # EMAIL_PEPPER environment variable when you run scripts/import-kofi-csv.mjs, and
 # set it before any access:* entry exists: changing it later locks every
 # supporter out until they're re-imported.
+
+# The welcome email for a donor new to the early-access list (src/welcome.js):
+# the stash-mailer Worker (rawnaldclark/stash-web-workspace, mailer/), on the same
+# account. Deploy stash-mailer BEFORE this Worker: a deploy fails while the
+# service it binds doesn't exist.
+[[services]]
+binding = "MAILER"
+service = "stash-mailer"
+
+# Secret: MAILER_TOKEN, the same value as stash-mailer's MAILER_TOKEN
+# (`wrangler secret put MAILER_TOKEN`). Without it no welcome is sent; the
+# webhook works as before.

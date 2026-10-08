@@ -120,20 +120,29 @@ export function toUsdCents(amount, currency) {
  * Everything early access needs from one Ko-fi Donation or Subscription. Called after the supporters
  * list is written. It's safe to run again for the same donation (every write is to a key of its own),
  * which is what a Ko-fi retry does after a throw here.
+ *
+ * [onNewAccess] (optional) is called with the normalised email right after an access entry is written for
+ * an email that had none: the welcome email (src/welcome.js). Called at that point, not at the end, so a
+ * throw later on (the goal write) doesn't lose the welcome, and the retry, which finds the entry, doesn't
+ * send it twice. It must not throw.
  */
-export async function recordKofiSupport(env, payload, now = new Date()) {
+export async function recordKofiSupport(env, payload, now = new Date(), { onNewAccess } = {}) {
     const kv = env.ACCESS_KV;
     if (!kv) throw new Error("ACCESS_KV is not bound");
     const id = dedupeId(payload);
     if (id === KOFI_TEST_TXN) return { test: true };
 
-    const result = { access: false, cents: null };
+    const result = { access: false, newAccess: false, cents: null };
     const email = normalizeEmail(payload.email);
     if (email.includes("@")) {
         const hash = await hashEmail(email, env.EMAIL_PEPPER);
         const prev = await kv.get(KEYS.access(hash), "json");
         const at = now.toISOString();
         await kv.put(KEYS.access(hash), JSON.stringify({ source: "kofi", firstAt: prev?.firstAt ?? prev?.at ?? at, lastAt: at }));
+        if (!prev) {
+            result.newAccess = true;
+            onNewAccess?.(email);
+        }
         const check = await hashEmail(HASHCHECK_EMAIL, env.EMAIL_PEPPER);
         if ((await kv.get(KEYS.hashCheck)) !== check) await kv.put(KEYS.hashCheck, check);
         result.access = true;

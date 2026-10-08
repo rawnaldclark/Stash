@@ -18,6 +18,9 @@
  * in the separate ACCESS_KV namespace). The webhook URL and the GET JSON are
  * unchanged; the webhook answers 500 when that early-access step fails, so
  * Ko-fi retries it, and a retry never lists the same supporter twice.
+ * A donor who wasn't on the early-access list yet also gets the welcome email,
+ * sent by the stash-mailer Worker (service binding MAILER, src/welcome.js)
+ * after the webhook has answered: it never slows or fails the webhook.
  *
  * Why one Worker for both: Ko-fi webhook posts, app GETs. Routing by
  * HTTP method keeps it to one URL the user has to configure in two
@@ -27,6 +30,7 @@
  */
 
 import { dedupeId, KEYS, KOFI_TXN_TTL_S, recordKofiSupport, sameSecret } from "./access.js";
+import { sendWelcome } from "./welcome.js";
 
 // 2026-07-19: 20 was destructively truncating — donors pushed past the
 // cap were deleted from KV forever, which is why older donations vanished
@@ -35,9 +39,9 @@ const SUPPORTERS_LIMIT = 500;
 const KV_KEY = "supporters";
 
 export default {
-    async fetch(request, env) {
+    async fetch(request, env, ctx) {
         if (request.method === "POST") {
-            return handleKofiWebhook(request, env);
+            return handleKofiWebhook(request, env, ctx);
         }
         if (request.method === "GET") {
             const path = new URL(request.url).pathname;
@@ -56,7 +60,7 @@ export default {
  * MUST match `KOFI_VERIFICATION_TOKEN` (set as a Worker secret) — see
  * https://ko-fi.com/manage/webhooks for where to find that token.
  */
-async function handleKofiWebhook(request, env) {
+async function handleKofiWebhook(request, env, ctx) {
     // Without the secret every token would be "valid" (undefined === undefined).
     if (!env.KOFI_VERIFICATION_TOKEN) {
         console.error("KOFI_VERIFICATION_TOKEN is not set: refusing webhooks");
@@ -102,9 +106,14 @@ async function handleKofiWebhook(request, env) {
 
     // Early access and the monthly goal (src/access.js). If this fails, Ko-fi
     // gets a 500 and retries; the supporter above is already listed and won't
-    // be added again.
+    // be added again. A donor new to the list is welcomed by email once the
+    // response is out (waitUntil); sendWelcome never throws.
+    const onNewAccess = (email) => {
+        const welcome = sendWelcome(env, email);
+        if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(welcome);
+    };
     try {
-        await recordKofiSupport(env, payload);
+        await recordKofiSupport(env, payload, new Date(), { onNewAccess });
     } catch (err) {
         console.error("early access / goal update failed:", err && err.message);
         return new Response("Try again", { status: 500 });

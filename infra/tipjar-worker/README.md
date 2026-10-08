@@ -170,6 +170,18 @@ change.
   access list. They reach the supporters list the first time only: like any
   transaction, a test is then marked done for 60 days, so sending another
   in that time changes nothing (before 2026-10, every test was listed).
+- **The welcome email.** When a donation gives an email access for the first
+  time (no `access:<hash>` entry yet), the donor is emailed the welcome
+  ("You're in: the Stash web player"). The tip jar doesn't send it itself: it
+  asks the `stash-mailer` Worker (rawnaldclark/stash-web-workspace,
+  `mailer/`) through the service binding `MAILER`, with the shared
+  `MAILER_TOKEN` secret, after the webhook has answered (`waitUntil`), so a
+  slow or failing mailer never slows or fails the webhook. Logs show the
+  address masked (`a***@e***.org`). A later donation from the same email, a
+  Ko-fi retry and Ko-fi's test webhook send nothing. Without `MAILER` or
+  `MAILER_TOKEN`, nobody is emailed and everything else works as before.
+  Deploy `stash-mailer` first: this Worker's deploy fails while the service
+  it binds doesn't exist.
 - Without `KOFI_VERIFICATION_TOKEN` set, every webhook gets a 500 (before,
   a payload with no token would have passed). Tokens are compared in
   constant time.
