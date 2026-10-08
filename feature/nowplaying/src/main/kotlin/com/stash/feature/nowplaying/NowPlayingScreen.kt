@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,6 +66,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -540,10 +544,16 @@ fun NowPlayingScreen(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(
+        modifier = Modifier
+            .holdHeightWhileLeaving()
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
         // Ambient animated background behind everything — dark canvas, the
         // light pastel wash, or a dead-black AMOLED ground, following the
-        // resolved app theme.
+        // resolved app theme. It runs to the screen's bottom edge, under the
+        // system navigation bar (the scaffold hides the tab bar on this route).
         if (ambientAnimationEnabled) AmbientBackground(
             palette = uiState.ambientPalette,
             lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
@@ -551,7 +561,11 @@ fun NowPlayingScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        Column(modifier = Modifier.fillMaxSize()) {
+        // The raw navigation-bar inset (never consumed by the scaffold here), so the
+        // controls sit above the gesture handle or the 3-button bar and do not move
+        // while the screen slides away.
+        val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        Column(modifier = Modifier.fillMaxSize().padding(bottom = navBarInset)) {
             // #333 v2 — the slot system. No estimated heights, no thresholds:
             // the title/progress/controls stack is FIXED and anchors to the
             // bottom of the column (directly above the lyrics bar when it's
@@ -562,14 +576,13 @@ fun NowPlayingScreen(
             // slack splits evenly around the art instead of pooling anywhere.
             // Every phone renders the same anatomy, scaled — nothing clips,
             // nothing crowds, nothing pools.
-            Column(
+            NowPlayingBody(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .weight(1f)
                     .statusBarsPadding()
                     .padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+                top = {
                 // -- Top bar: dismiss, radio, more (options sheet) --
                 TopBar(
                     onDismiss = onDismiss,
@@ -599,32 +612,14 @@ fun NowPlayingScreen(
                     )
                 }
 
-                // -- Album art slot: absorbs all flexible height --
-                BoxWithConstraints(
-                    modifier = Modifier
-                        // The art may use 16dp of the column's 24dp side padding on each side, so it
-                        // fills more of the screen (8dp from the edges) while the rest keeps 24dp.
-                        .layout { measurable, constraints ->
-                            val extra = 32.dp.roundToPx()
-                            val wide = constraints.copy(
-                                minWidth = constraints.maxWidth + extra,
-                                maxWidth = constraints.maxWidth + extra,
-                            )
-                            val placeable = measurable.measure(wide)
-                            layout(constraints.maxWidth, placeable.height) { placeable.place(-extra / 2, 0) }
-                        }
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(vertical = 4.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    // 375dp: a quarter bigger than the old 300dp cap.
-                    val artSize = minOf(this.maxHeight, this.maxWidth, 375.dp)
+                },
+                art = {
+                // -- Album art: NowPlayingBody sizes this slot (a square) --
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     AlbumArtSection(
                         albumArtUrl = track?.albumArtUrl,
                         albumArtPath = track?.albumArtPath,
                         accentColor = npAccent(uiState.vibrantColor),
-                        artSize = artSize,
                         onBitmapLoaded = viewModel::onAlbumArtLoaded,
                     )
                     if (room != null) {
@@ -632,7 +627,8 @@ fun NowPlayingScreen(
                         com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
                     }
                 }
-
+                },
+                stack = {
                 // -- Track info -- (tap the title/artist to open the artist
                 // profile; the trailing chevron signals it's actionable, and
                 // swaps to a spinner while the artist name is being resolved).
@@ -697,7 +693,7 @@ fun NowPlayingScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(StackRhythm.TitleToArtist))
 
                     // Collapse collaboration credits to the lead act
                     // ("Metro Boomin, Travis Scott" → "Metro Boomin"), and
@@ -714,7 +710,7 @@ fun NowPlayingScreen(
                                 }
                             }
                         },
-                        fontSize = 14.sp,
+                        fontSize = 15.sp,
                         color = npInk().copy(alpha = 0.7f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -767,7 +763,7 @@ fun NowPlayingScreen(
                 if (track != null) {
                     val qualityText = trackQualityText(track)
                     if (qualityText != null) {
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(StackRhythm.ArtistToQuality))
                         QualityLine(
                             qualityText = qualityText,
                             isStreaming = uiState.isStreaming,
@@ -777,7 +773,7 @@ fun NowPlayingScreen(
 
                 if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(StackRhythm.InfoToProgress))
 
                 // -- Progress bar --
                 GlowingProgressBar(
@@ -800,7 +796,7 @@ fun NowPlayingScreen(
                     },
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(StackRhythm.ProgressToControls))
 
                 // -- Playback controls -- the same row for host and listener, so a role change
                 // doesn't move anything; a listener's skip slots are simply empty.
@@ -822,8 +818,8 @@ fun NowPlayingScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-            }
+                },
+            )
 
             // Live-lyrics bar — sits exactly where the MiniPlayer is on other
             // screens (the scaffold hides MiniPlayer on this route), directly
@@ -865,6 +861,117 @@ fun NowPlayingScreen(
 }
 
 // ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+/** The fixed steps inside the title-to-controls stack. */
+private object StackRhythm {
+    val TitleToArtist = 4.dp
+    val ArtistToQuality = 6.dp
+    val InfoToProgress = 16.dp
+    val ProgressToControls = 12.dp
+}
+
+/** The art's design ceiling. */
+private val ArtMax = 375.dp
+
+/*
+ * The three flexible gaps around the art, at their full size and at their floor:
+ * top bar -> art, art -> title, controls -> the bottom (the lyrics bar or the edge).
+ * They shrink together towards the floor only when keeping them would make the
+ * art smaller than ART_COMFORT of its full size (a short phone, a large font).
+ */
+private val GapTop = 20.dp
+private val GapTopMin = 8.dp
+private val GapArt = 36.dp
+private val GapArtMin = 16.dp
+private val GapBottom = 28.dp
+private val GapBottomMin = 12.dp
+private const val ART_COMFORT = 0.75f
+
+/**
+ * Now Playing's vertical rhythm: [top] (the icon row), a square [art] slot, and the
+ * [stack] (title, artist, quality, progress, controls). The top and stack take their
+ * natural heights; the art gets what is left after the three gaps, capped by the
+ * width (so it lines up with the progress bar and the controls) and [ArtMax].
+ * Any height still over (a tall phone) is split evenly above the art and below the
+ * controls, so the whole group sits centred with its internal spacing unchanged.
+ * Nothing scrolls and nothing overlaps: on a short screen the gaps give way first,
+ * then the art.
+ */
+@Composable
+private fun NowPlayingBody(
+    modifier: Modifier = Modifier,
+    top: @Composable () -> Unit,
+    art: @Composable () -> Unit,
+    stack: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    androidx.compose.ui.layout.Layout(
+        contents = listOf(
+            { Column(horizontalAlignment = Alignment.CenterHorizontally) { top() } },
+            art,
+            { Column(horizontalAlignment = Alignment.CenterHorizontally, content = stack) },
+        ),
+        modifier = modifier,
+    ) { (topM, artM, stackM), constraints ->
+        val w = constraints.maxWidth
+        val h = constraints.maxHeight
+        val loose = constraints.copy(minWidth = w, maxWidth = w, minHeight = 0)
+        val topP = topM.first().measure(loose)
+        val stackP = stackM.first().measure(loose)
+        val avail = (h - topP.height - stackP.height).coerceAtLeast(0)
+
+        val full = minOf(w, ArtMax.roundToPx())
+        val nominal = GapTop.roundToPx() + GapArt.roundToPx() + GapBottom.roundToPx()
+        val floor = GapTopMin.roundToPx() + GapArtMin.roundToPx() + GapBottomMin.roundToPx()
+        val shortfall = (full * ART_COMFORT - (avail - nominal)).coerceIn(0f, (nominal - floor).toFloat())
+        val k = if (nominal > floor) 1f - shortfall / (nominal - floor) else 1f
+        fun gap(max: androidx.compose.ui.unit.Dp, min: androidx.compose.ui.unit.Dp): Int =
+            (min.roundToPx() + (max.roundToPx() - min.roundToPx()) * k).toInt()
+        val gTop = gap(GapTop, GapTopMin)
+        val gArt = gap(GapArt, GapArtMin)
+        val gBottom = gap(GapBottom, GapBottomMin)
+        val artSide = (avail - gTop - gArt - gBottom).coerceIn(0, full)
+        val slack = (avail - gTop - gArt - gBottom - artSide).coerceAtLeast(0)
+
+        val artP = artM.first().measure(androidx.compose.ui.unit.Constraints.fixed(artSide, artSide))
+        layout(w, h) {
+            topP.place(0, 0)
+            val artY = topP.height + gTop + slack / 2
+            artP.place((w - artSide) / 2, artY)
+            stackP.place(0, artY + artSide + gArt)
+        }
+    }
+}
+
+/**
+ * Keeps Now Playing at its full height while it slides away. As it closes, the
+ * scaffold brings the tab bar and mini player straight back, which would shrink
+ * this screen mid-slide and reflow the art; instead, while its back-stack entry is
+ * not resumed (entering or leaving), it keeps the tallest height it has had and
+ * runs past the bottom, under the returning bars.
+ */
+@Composable
+private fun Modifier.holdHeightWhileLeaving(): Modifier {
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val state by lifecycle.currentStateFlow.collectAsState()
+    val resumed = state.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+    val held = remember { intArrayOf(0, 0) } // width, height
+    return this.layout { measurable, constraints ->
+        val w = constraints.maxWidth
+        val maxH = constraints.maxHeight
+        if (held[0] != w) {
+            held[0] = w
+            held[1] = 0
+        }
+        val height = if (resumed) maxH else maxOf(held[1], maxH)
+        held[1] = height
+        val p = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+        layout(w, maxH) { p.place(0, 0) }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Private composables
 // ---------------------------------------------------------------------------
 
@@ -897,7 +1004,7 @@ private fun TopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onDismiss) {
@@ -1000,7 +1107,6 @@ private fun AlbumArtSection(
     albumArtUrl: String?,
     albumArtPath: String?,
     accentColor: Color,
-    artSize: androidx.compose.ui.unit.Dp = 280.dp,
     onBitmapLoaded: (android.graphics.Bitmap?) -> Unit,
 ) {
     val context = LocalContext.current
@@ -1021,11 +1127,12 @@ private fun AlbumArtSection(
             .build()
     }
 
-    Box(contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // Glow behind the artwork.
         Box(
             modifier = Modifier
-                .size(artSize - 20.dp)
+                .fillMaxSize()
+                .padding(10.dp)
                 .shadow(
                     elevation = 40.dp,
                     shape = RoundedCornerShape(20.dp),
@@ -1050,7 +1157,7 @@ private fun AlbumArtSection(
                 }
             },
             modifier = Modifier
-                .size(artSize)
+                .fillMaxSize()
                 .clip(RoundedCornerShape(20.dp)),
         )
     }
