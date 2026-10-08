@@ -77,6 +77,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -559,7 +560,7 @@ fun NowPlayingScreen(
             // present), while the album art lives in a weight(1f) slot that
             // absorbs exactly whatever height this phone/scale/bar
             // combination leaves over. The art sizes to its slot (capped by
-            // width and the 300dp design ceiling) and centers in it, so any
+            // width and the 375dp design ceiling) and centers in it, so any
             // slack splits evenly around the art instead of pooling anywhere.
             // Every phone renders the same anatomy, scaled — nothing clips,
             // nothing crowds, nothing pools.
@@ -603,12 +604,24 @@ fun NowPlayingScreen(
                 // -- Album art slot: absorbs all flexible height --
                 BoxWithConstraints(
                     modifier = Modifier
+                        // The art may use 16dp of the column's 24dp side padding on each side, so it
+                        // fills more of the screen (8dp from the edges) while the rest keeps 24dp.
+                        .layout { measurable, constraints ->
+                            val extra = 32.dp.roundToPx()
+                            val wide = constraints.copy(
+                                minWidth = constraints.maxWidth + extra,
+                                maxWidth = constraints.maxWidth + extra,
+                            )
+                            val placeable = measurable.measure(wide)
+                            layout(constraints.maxWidth, placeable.height) { placeable.place(-extra / 2, 0) }
+                        }
                         .fillMaxWidth()
                         .weight(1f)
-                        .padding(vertical = 8.dp),
+                        .padding(vertical = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    val artSize = minOf(this.maxHeight, this.maxWidth, 300.dp)
+                    // 375dp: a quarter bigger than the old 300dp cap.
+                    val artSize = minOf(this.maxHeight, this.maxWidth, 375.dp)
                     AlbumArtSection(
                         albumArtUrl = track?.albumArtUrl,
                         albumArtPath = track?.albumArtPath,
@@ -766,7 +779,7 @@ fun NowPlayingScreen(
 
                 if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // -- Progress bar --
                 GlowingProgressBar(
@@ -789,7 +802,7 @@ fun NowPlayingScreen(
                     },
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // -- Playback controls -- the same row for host and listener, so a role change
                 // doesn't move anything; a listener's skip slots are simply empty.
@@ -811,7 +824,7 @@ fun NowPlayingScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             // Live-lyrics bar — sits exactly where the MiniPlayer is on other
