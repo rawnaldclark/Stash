@@ -248,14 +248,8 @@ strong {
   height: 44px;
   border-radius: 14px;
   background: var(--accent-soft);
-  color: var(--purple-light);
+  color: var(--purple-dark);
   box-shadow: inset 0 0 0 1px var(--glass-border);
-}
-
-@media (prefers-color-scheme: light) {
-  .icon-bubble {
-    color: var(--purple-dark);
-  }
 }
 
 /* ---------- Buttons ---------- */

@@ -32,6 +32,7 @@ const ALT = {
 } as const;
 
 export type ScreenName = keyof typeof ALT;
+export type ScreenTheme = 'dark' | 'light';
 
 export interface Screen {
   dark: ImageMetadata;

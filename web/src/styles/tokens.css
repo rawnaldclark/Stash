@@ -7,16 +7,17 @@
  *   type     core/ui/src/main/kotlin/com/stash/core/ui/theme/Type.kt
  *            (Space Grotesk for headings, Inter for text; set up in astro.config.mjs)
  *
- * The site follows the visitor's system theme. Dark is the default; light
- * overrides the theme tokens below. Brand colours are the same in both.
+ * The site is always light: the app's light theme. Screenshots pick their own
+ * theme (the `theme` prop on Device and BrowserFrame), so the page still shows
+ * both of the app's looks; the dark ones carry their own frame colours.
  *
- * Contrast (WCAG AA wants 4.5:1 for body text): --text-2 is 7.9:1 on dark and
- * 7.3:1 on light. --text-3 is under 4.5:1 in both themes, so it is for
- * decoration and large text only, never for sentences.
+ * Contrast (WCAG AA wants 4.5:1 for body text): --text-2 is 7.3:1 on --bg.
+ * --text-3 is under 4.5:1, so it is for decoration and large text only, never
+ * for sentences.
  */
 
 :root {
-  /* Brand, shared by both themes */
+  /* Brand */
   --purple: #8b5cf6;        /* StashPurple */
   --purple-light: #a78bfa;  /* StashPurpleLight */
   --purple-dark: #7c3aed;   /* StashPurpleDark */
@@ -26,41 +27,41 @@
   --spotify: #1db954;       /* StashSpotifyGreen */
   --youtube: #ff0033;       /* StashYouTubeRed */
 
-  /* Dark theme */
-  --bg: #06060c;                                  /* StashBackground */
-  --surface: #0d0d18;                             /* StashSurface */
-  --elevated: #1a1a2e;                            /* StashElevatedSurface */
-  --text: #e8e8f0;                                /* StashTextPrimary */
-  --text-2: #a0a0b8;                              /* StashTextSecondary */
-  --text-3: #606078;                              /* StashTextTertiary: decoration only */
-  --glass: rgb(255 255 255 / 0.04);               /* StashGlassBackground */
-  --glass-hover: rgb(255 255 255 / 0.08);         /* StashGlassBackgroundHover */
-  --glass-border: rgb(255 255 255 / 0.06);        /* StashGlassBorder */
-  --glass-border-bright: rgb(255 255 255 / 0.14); /* StashGlassBorderBright */
+  /* Theme (the app's light theme) */
+  --bg: #f6f3ff;                                  /* StashBackgroundLight */
+  --surface: #ffffff;                             /* StashSurfaceLight */
+  --elevated: #eee7fc;                            /* StashElevatedSurfaceLight */
+  --text: #1a0b2e;                                /* StashTextPrimaryLight */
+  --text-2: #5b4680;                              /* StashTextSecondaryLight */
+  --text-3: #8b7ab0;                              /* StashTextTertiaryLight: decoration only */
+  --glass: rgb(124 58 237 / 0.06);                /* StashGlassBackgroundLight */
+  --glass-hover: rgb(124 58 237 / 0.10);          /* StashGlassBackgroundHoverLight */
+  --glass-border: rgb(124 58 237 / 0.12);         /* StashGlassBorderLight */
+  --glass-border-bright: rgb(124 58 237 / 0.20);  /* StashGlassBorderBrightLight */
 
   /* Web-only roles, built from the palette above */
-  --link: var(--purple-light);             /* 7.4:1 on --bg */
-  --overline: var(--cyan-light);           /* small caps labels, like "UPDATED DAILY" in the app */
-  --focus-ring: var(--cyan-light);
-  --accent-soft: rgb(139 92 246 / 0.16);   /* icon bubbles, chips */
-  --header-bg: rgb(6 6 12 / 0.72);
-  --glow-purple: rgb(124 58 237 / 0.30);
-  --glow-magenta: rgb(168 38 211 / 0.18);
-  --glow-cyan: rgb(6 182 212 / 0.10);
+  --link: var(--purple-dark);              /* 5.2:1 on --bg */
+  --overline: #0e7490;                     /* a deeper cyan: StashCyan is only 2.2:1 on lavender */
+  --focus-ring: var(--purple-dark);
+  --accent-soft: rgb(124 58 237 / 0.10);   /* icon bubbles, chips */
+  --header-bg: rgb(246 243 255 / 0.78);
+  --glow-purple: rgb(139 92 246 / 0.20);
+  --glow-magenta: rgb(217 70 239 / 0.12);
+  --glow-cyan: rgb(6 182 212 / 0.08);
   --device-frame: linear-gradient(150deg, #2c2c36 0%, #101016 45%, #0a0a0f 100%);
-  --device-shadow: 0 48px 96px -32px rgb(0 0 0 / 0.75), 0 24px 48px -24px rgb(0 0 0 / 0.5);
-  /* The browser window around the web player's screenshots (BrowserFrame.astro). */
-  --browser-chrome: #15151f;
-  --browser-edge: rgb(255 255 255 / 0.1);
-  --browser-dot: rgb(255 255 255 / 0.16);
-  --browser-field: rgb(255 255 255 / 0.06);
-  /* A phone screen still loading: the dark screenshots' background (#07060d) with a faint purple top. */
-  --screen-placeholder: radial-gradient(120% 45% at 50% 0%, rgb(139 92 246 / 0.16), transparent 70%), #07060d;
+  --device-shadow: 0 48px 96px -32px rgb(46 16 101 / 0.35), 0 24px 48px -24px rgb(46 16 101 / 0.25);
+  /* The browser window around the web player's screenshots (BrowserFrame.astro; a dark shot gets dark chrome there). */
+  --browser-chrome: #ffffff;
+  --browser-edge: rgb(46 16 101 / 0.12);
+  --browser-dot: rgb(46 16 101 / 0.16);
+  --browser-field: #f1ecfc;
+  /* A light screen still loading: the light screenshots' background with a faint purple top (dark shots set their own). */
+  --screen-placeholder: radial-gradient(120% 45% at 50% 0%, rgb(124 58 237 / 0.12), transparent 70%), #f6f4ff;
 
   /* Buttons. White on this gradient stays above 4.5:1 where the label sits. */
   --button-bg: linear-gradient(135deg, var(--purple) 0%, var(--purple-dark) 100%);
   --button-text: #ffffff;
-  --button-glow: 0 10px 36px -10px rgb(139 92 246 / 0.75);
+  --button-glow: 0 10px 32px -12px rgb(124 58 237 / 0.6);
 
   /* Shape: Shape.kt's small, medium, large and extra-large, plus web-only sizes */
   --radius-sm: 8px;
@@ -79,38 +80,5 @@
   --content-max: 1200px;
   --section-space: clamp(56px, 7vw, 96px);
 
-  color-scheme: dark;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f6f3ff;                                  /* StashBackgroundLight */
-    --surface: #ffffff;                             /* StashSurfaceLight */
-    --elevated: #eee7fc;                            /* StashElevatedSurfaceLight */
-    --text: #1a0b2e;                                /* StashTextPrimaryLight */
-    --text-2: #5b4680;                              /* StashTextSecondaryLight */
-    --text-3: #8b7ab0;                              /* StashTextTertiaryLight: decoration only */
-    --glass: rgb(124 58 237 / 0.06);                /* StashGlassBackgroundLight */
-    --glass-hover: rgb(124 58 237 / 0.10);          /* StashGlassBackgroundHoverLight */
-    --glass-border: rgb(124 58 237 / 0.12);         /* StashGlassBorderLight */
-    --glass-border-bright: rgb(124 58 237 / 0.20);  /* StashGlassBorderBrightLight */
-
-    --link: var(--purple-dark);       /* 5.2:1 on --bg */
-    --overline: #0e7490;              /* a deeper cyan: StashCyan is only 2.2:1 on lavender */
-    --focus-ring: var(--purple-dark);
-    --accent-soft: rgb(124 58 237 / 0.10);
-    --header-bg: rgb(246 243 255 / 0.78);
-    --glow-purple: rgb(139 92 246 / 0.20);
-    --glow-magenta: rgb(217 70 239 / 0.12);
-    --glow-cyan: rgb(6 182 212 / 0.08);
-    --device-shadow: 0 48px 96px -32px rgb(46 16 101 / 0.35), 0 24px 48px -24px rgb(46 16 101 / 0.25);
-    --screen-placeholder: radial-gradient(120% 45% at 50% 0%, rgb(124 58 237 / 0.12), transparent 70%), #f6f4ff;
-    --browser-chrome: #ffffff;
-    --browser-edge: rgb(46 16 101 / 0.12);
-    --browser-dot: rgb(46 16 101 / 0.16);
-    --browser-field: #f1ecfc;
-    --button-glow: 0 10px 32px -12px rgb(124 58 237 / 0.6);
-
-    color-scheme: light;
-  }
+  color-scheme: light;
 }

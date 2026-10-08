@@ -131,13 +131,7 @@ const features: { icon: IconName; title: string; text: string; fact: string }[] 
   }
 
   .fact :global(.icon) {
-    color: var(--cyan);
-  }
-
-  @media (prefers-color-scheme: light) {
-    .fact :global(.icon) {
-      color: var(--cyan-dark);
-    }
+    color: var(--cyan-dark);
   }
 
   @media (max-width: 900px) {

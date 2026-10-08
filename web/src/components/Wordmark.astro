@@ -4,8 +4,8 @@
  *
  * Path data comes from feature/home/src/main/res/drawable/wordmark_stash_dark.xml
  * (the Bungee Shade letters, SIL OFL, by David Jonathan Ross). One ink, like the
- * web player's logo: white on the dark theme, the light theme's dark base colour
- * on light (the accent shade is drawn in the same ink).
+ * web player's logo: the light theme's dark base colour (the accent shade is
+ * drawn in the same ink).
  */
 interface Props {
   /** Rendered height in CSS units; the width follows the 4.56:1 aspect ratio. */
@@ -36,16 +36,9 @@ const { height = '1.5rem', class: className } = Astro.props;
     display: block;
     width: auto;
     aspect-ratio: 3874 / 849;
-    /* Dark theme: #C084FC and #FFFFFF; light theme: #7C3AED and #1E0742 (the app's drawables). */
-    --wordmark-accent: #c084fc;
-    --wordmark-base: #ffffff;
-  }
-
-  @media (prefers-color-scheme: light) {
-    .wordmark {
-      --wordmark-accent: #7c3aed;
-      --wordmark-base: #1e0742;
-    }
+    /* The light theme's #7C3AED and #1E0742 (the app's drawables). */
+    --wordmark-accent: #7c3aed;
+    --wordmark-base: #1e0742;
   }
 
   .accent {

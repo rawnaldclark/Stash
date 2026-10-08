@@ -10,12 +10,14 @@ import FeatureRow from '../FeatureRow.astro';
 const playback = ['5-band equalizer with presets', 'Bass boost', 'Crossfade', 'Loudness normalization'];
 ---
 
+{/* Dark phones, between the light Library and the light Lossless rows. */}
 <FeatureRow
   id="now-playing"
   icon="lyrics"
   overline="Now Playing"
   title="Lyrics that light up word by word"
   screens={['now-playing', 'lyrics']}
+  theme="dark"
 >
   <p>
     Now Playing's colour wash follows the album art. Synced lyrics scroll with the song, and where

@@ -6,7 +6,7 @@
  */
 import Device from './Device.astro';
 import Icon, { type IconName } from './Icon.astro';
-import type { ScreenName } from '../data/screenshots';
+import type { ScreenName, ScreenTheme } from '../data/screenshots';
 
 interface Props {
   id: string;
@@ -15,11 +15,13 @@ interface Props {
   title: string;
   /** One phone, or two (the first sits in front). */
   screens: [ScreenName] | [ScreenName, ScreenName];
+  /** The screenshots' theme, the same for every phone in the row (light by default). */
+  theme?: ScreenTheme;
   /** Phones on the left, words on the right. */
   reverse?: boolean;
 }
 
-const { id, icon, overline, title, screens, reverse = false } = Astro.props;
+const { id, icon, overline, title, screens, theme = 'light', reverse = false } = Astro.props;
 ---
 
 <section class="section feature" id={id} aria-labelledby={`${id}-title`}>
@@ -36,7 +38,7 @@ const { id, icon, overline, title, screens, reverse = false } = Astro.props;
       <div class="halo" aria-hidden="true"></div>
       {
         screens.map((name, index) => (
-          <Device name={name} class={index === 0 ? 'front' : 'back'} sizes="(max-width: 640px) 62vw, 300px" />
+          <Device name={name} theme={theme} class={index === 0 ? 'front' : 'back'} sizes="(max-width: 640px) 62vw, 300px" />
         ))
       }
     </div>

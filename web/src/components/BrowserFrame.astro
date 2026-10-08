@@ -1,34 +1,37 @@
 ---
 /**
  * A web player screenshot in a slim browser window: three dots and the player's address in a bar on top,
- * drawn in CSS so it follows the visitor's theme. The window is a size container, so its bar, corners and
+ * drawn in CSS in the same theme as the screenshot. The window is a size container, so its bar, corners and
  * type scale with its width, like the phone frame (Device.astro). Set the width on the element or a parent.
+ *
+ * `theme` picks the dark or light screenshot (light by default). The page is always light; dark shots are
+ * placed on purpose so both of the player's looks show.
  */
-import ThemedImage from './ThemedImage.astro';
-import { playerShot, type PlayerShotName } from '../data/player-shots';
+import ResponsiveImage from './ResponsiveImage.astro';
+import { playerShot, type PlayerShotName, type PlayerShotTheme } from '../data/player-shots';
 
 interface Props {
   name: PlayerShotName;
+  theme?: PlayerShotTheme;
   /** How wide the window is drawn, so the browser can pick the right file. */
   sizes?: string;
   priority?: boolean;
   class?: string;
 }
 
-const { name, sizes = '(max-width: 900px) 100vw, 960px', priority = false, class: className } = Astro.props;
-const { dark, light, alt } = playerShot(name);
+const { name, theme = 'light', sizes = '(max-width: 900px) 100vw, 960px', priority = false, class: className } = Astro.props;
+const shot = playerShot(name);
 ---
 
-<div class:list={['browser', className]}>
+<div class:list={['browser', `is-${theme}`, className]}>
   <div class="window">
     <div class="bar" aria-hidden="true">
       <span class="dots"><i></i><i></i><i></i></span>
       <span class="address">play.stashfm.app</span>
     </div>
-    <ThemedImage
-      dark={dark}
-      light={light}
-      alt={alt}
+    <ResponsiveImage
+      src={shot[theme]}
+      alt={shot.alt}
       widths={[480, 720, 960, 1280, 1600, 2000, 2560]}
       sizes={sizes}
       priority={priority}
@@ -40,6 +43,16 @@ const { dark, light, alt } = playerShot(name);
   .browser {
     width: 100%;
     container-type: inline-size;
+  }
+
+  /* A dark shot gets a dark window, like a browser in dark mode, and a dark placeholder while it loads. */
+  .is-dark {
+    --browser-chrome: #15151f;
+    --browser-edge: rgb(255 255 255 / 0.1);
+    --browser-dot: rgb(255 255 255 / 0.16);
+    --browser-field: rgb(255 255 255 / 0.06);
+    --browser-address: #a0a0b8;
+    --screen-placeholder: radial-gradient(120% 45% at 50% 0%, rgb(139 92 246 / 0.16), transparent 70%), #07060d;
   }
 
   .window {
@@ -80,7 +93,7 @@ const { dark, light, alt } = playerShot(name);
     padding-block: clamp(1px, 0.35cqi, 4px);
     border-radius: var(--radius-pill);
     background: var(--browser-field);
-    color: var(--text-2);
+    color: var(--browser-address, var(--text-2));
     font-size: clamp(7px, 1.25cqi, 13px);
     font-weight: 500;
     line-height: 1.4;

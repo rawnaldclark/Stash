@@ -26,10 +26,11 @@ import DonateLinks from '../gate/DonateLinks.astro';
     </div>
   </div>
 
+  {/* Screenshot themes: dark, then light and dark side by side, so neighbours differ (the hero's player is light). */}
   <ul role="list" class="showcase" aria-label="Web player screens">
-    <li class="main"><BrowserFrame name="now-playing" sizes="(max-width: 700px) 86vw, min(92vw, 1040px)" /></li>
-    <li><BrowserFrame name="search" sizes="(max-width: 700px) 86vw, min(45vw, 510px)" /></li>
-    <li><BrowserFrame name="album" sizes="(max-width: 700px) 86vw, min(45vw, 510px)" /></li>
+    <li class="main"><BrowserFrame name="now-playing" theme="dark" sizes="(max-width: 700px) 86vw, min(92vw, 1040px)" /></li>
+    <li><BrowserFrame name="search" theme="light" sizes="(max-width: 700px) 86vw, min(45vw, 510px)" /></li>
+    <li><BrowserFrame name="album" theme="dark" sizes="(max-width: 700px) 86vw, min(45vw, 510px)" /></li>
   </ul>
 
   <div class="container">

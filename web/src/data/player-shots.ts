@@ -20,6 +20,7 @@ const ALT = {
 } as const;
 
 export type PlayerShotName = keyof typeof ALT;
+export type PlayerShotTheme = 'dark' | 'light';
 
 export interface PlayerShot {
   dark: ImageMetadata;

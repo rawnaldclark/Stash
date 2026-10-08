@@ -3,28 +3,31 @@
  * An app screenshot in a slim phone frame, like the phones in the README's
  * hero banner. Set the phone's width with the `--device-width` CSS variable
  * (default 300px) on the element or a parent; the frame scales with it.
+ *
+ * `theme` picks the dark or light screenshot (light by default). The page is
+ * always light; dark shots are placed on purpose so both of the app's looks show.
  */
-import ThemedImage from './ThemedImage.astro';
-import { screen, type ScreenName } from '../data/screenshots';
+import ResponsiveImage from './ResponsiveImage.astro';
+import { screen, type ScreenName, type ScreenTheme } from '../data/screenshots';
 
 interface Props {
   name: ScreenName;
+  theme?: ScreenTheme;
   /** How wide the phone is drawn, so the browser can pick the right file. */
   sizes?: string;
   priority?: boolean;
   class?: string;
 }
 
-const { name, sizes = '(max-width: 640px) 70vw, 300px', priority = false, class: className } = Astro.props;
-const { dark, light, alt } = screen(name);
+const { name, theme = 'light', sizes = '(max-width: 640px) 70vw, 300px', priority = false, class: className } = Astro.props;
+const shot = screen(name);
 ---
 
-<div class:list={['device', className]}>
+<div class:list={['device', `is-${theme}`, className]}>
   <div class="frame">
-    <ThemedImage
-      dark={dark}
-      light={light}
-      alt={alt}
+    <ResponsiveImage
+      src={shot[theme]}
+      alt={shot.alt}
       widths={[280, 420, 560, 720, 1080]}
       sizes={sizes}
       priority={priority}
@@ -63,5 +66,10 @@ const { dark, light, alt } = screen(name);
      * covers it completely.
      */
     background: var(--screen-placeholder);
+  }
+
+  /* A dark screen loading: the dark screenshots' background (#07060d) with a faint purple top. */
+  .is-dark {
+    --screen-placeholder: radial-gradient(120% 45% at 50% 0%, rgb(139 92 246 / 0.16), transparent 70%), #07060d;
   }
 </style>

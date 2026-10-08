@@ -1,0 +1,39 @@
+---
+/**
+ * A responsive screenshot: Astro resizes it to `widths` at build time (WebP),
+ * and `sizes` tells the browser how wide the image is drawn, so it can pick
+ * the smallest file that stays sharp.
+ *
+ * Which theme a screenshot shows is chosen where it's placed (the `theme` prop
+ * on Device and BrowserFrame), not by the visitor's system setting.
+ */
+import type { ImageMetadata } from 'astro';
+import { getImage } from 'astro:assets';
+
+interface Props {
+  src: ImageMetadata;
+  alt: string;
+  widths: number[];
+  sizes: string;
+  /** For the main image at the top of a page: load it first, not lazily. */
+  priority?: boolean;
+  class?: string;
+}
+
+const { src, alt, widths, sizes, priority = false, class: className } = Astro.props;
+
+const image = await getImage({ src, widths, width: widths[Math.floor(widths.length / 2)], format: 'webp', quality: 82 });
+---
+
+<img
+  class={className}
+  src={image.src}
+  srcset={image.srcSet.attribute}
+  sizes={sizes}
+  alt={alt}
+  width={src.width}
+  height={src.height}
+  loading={priority ? 'eager' : 'lazy'}
+  fetchpriority={priority ? 'high' : 'auto'}
+  decoding="async"
+/>

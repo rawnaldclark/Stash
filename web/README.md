@@ -94,15 +94,13 @@ web/
 The site copies the app's design system rather than inventing one, so it looks like Stash.
 
 - **Colours** are in `src/styles/tokens.css`, each one commented with its name in
-  `core/ui/src/main/kotlin/com/stash/core/ui/theme/Color.kt`. Dark is the default; the light theme
-  overrides the same tokens inside `@media (prefers-color-scheme: light)`. Brand colours (purple, cyan)
-  are shared. If the app's palette changes, change the token here too.
-- **Light and dark** follow the visitor's system setting, for colours and screenshots alike. There's
-  no manual switch: screenshots use `<picture>` with a `prefers-color-scheme` source, like the README.
-  To check the other theme in Chrome: DevTools › More tools › Rendering › Emulate CSS media feature
-  `prefers-color-scheme`.
-- **Contrast**: `--text` and `--text-2` pass WCAG AA in both themes. `--text-3` doesn't, so use it for
-  decoration and large text only. Links use `--link`, which is tuned per theme.
+  `core/ui/src/main/kotlin/com/stash/core/ui/theme/Color.kt`. The site uses the app's light theme only,
+  whatever the visitor's system setting. If the app's palette changes, change the token here too.
+- **Screenshots pick their own theme**: `Device`, `BrowserFrame` and `FeatureRow` take
+  `theme="dark" | "light"` (light by default), and only that file is shipped. Down the home page the
+  themes alternate so both of the app's looks show; a dark web player shot gets a dark browser window.
+- **Contrast**: `--text` and `--text-2` pass WCAG AA. `--text-3` doesn't, so use it for decoration and
+  large text only. Links use `--link`.
 - **Type**: Space Grotesk for headings, Inter for everything else, as in `Type.kt`. The fonts are the
   app's own TTFs, subset to Latin and converted to WOFF2 by `scripts/make-assets.py`, and loaded
   through Astro's font API (`fonts` in `astro.config.mjs`, `<Font>` in the layout), which also preloads
