@@ -2,6 +2,7 @@ package com.stash.core.media.streaming
 
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
@@ -63,20 +64,9 @@ class StreamingMediaSourceFactory @Inject constructor(
     private val trackDao: TrackDao,
 ) {
     fun create(trackId: Long): MediaSource.Factory {
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("Stash/0.9.26")
-            .setConnectTimeoutMs(10_000)
-            .setReadTimeoutMs(30_000)
-        val refreshFactory = RefreshingDataSourceFactory(
-            innerFactory = httpFactory,
-            resolver = resolver,
-            cache = urlCache,
-            trackDao = trackDao,
-            trackId = trackId,
-        )
         val cachedFactory = CacheDataSource.Factory()
             .setCache(streamCache)
-            .setUpstreamDataSourceFactory(refreshFactory)
+            .setUpstreamDataSourceFactory(createUncachedDataSourceFactory(trackId))
             .setCacheWriteDataSinkFactory(
                 CacheDataSink.Factory().setCache(streamCache),
             )
@@ -85,5 +75,26 @@ class StreamingMediaSourceFactory @Inject constructor(
                     CacheDataSource.FLAG_BLOCK_ON_CACHE,
             )
         return DefaultMediaSourceFactory(cachedFactory)
+    }
+
+    /**
+     * The 403-refreshing HTTP pipeline under [create], without the cache. The
+     * cast media server reads through this: a speaker opens a new range
+     * request on every seek while its old connection may still be draining,
+     * and [CacheDataSource.FLAG_BLOCK_ON_CACHE] would make the new request
+     * wait on the old one's span lock (cast spec 2026-10-06 §4).
+     */
+    fun createUncachedDataSourceFactory(trackId: Long): DataSource.Factory {
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent("Stash/0.9.26")
+            .setConnectTimeoutMs(10_000)
+            .setReadTimeoutMs(30_000)
+        return RefreshingDataSourceFactory(
+            innerFactory = httpFactory,
+            resolver = resolver,
+            cache = urlCache,
+            trackDao = trackDao,
+            trackId = trackId,
+        )
     }
 }

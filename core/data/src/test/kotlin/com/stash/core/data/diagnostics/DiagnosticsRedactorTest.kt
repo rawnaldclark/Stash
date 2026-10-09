@@ -38,6 +38,16 @@ class DiagnosticsRedactorTest {
         assertTrue(out.contains("[REDACTED]"))
     }
 
+    @Test fun `strips the cast media server's address and token`() {
+        val token = "0123456789abcdef0123456789abcdef"
+        val out = DiagnosticsRedactor.redact(
+            "load http://192.168.1.23:41877/$token/m/3\nserving /$token/a/4 failed: reset",
+        )
+        listOf(token, "192.168.1.23", "41877").forEach { assertFalse(out.contains(it)) }
+        assertTrue(out.contains("http://[REDACTED_LAN]/[REDACTED]/m/3"))
+        assertTrue(out.contains("/[REDACTED]/a/4"))
+    }
+
     @Test fun `leaves ordinary text and stack traces intact`() {
         val text = "java.lang.NoSuchMethodError at FFmpegBridge.kt:98\nrefreshing 13 Stash Mix(es)"
         assertTrue(DiagnosticsRedactor.redact(text) == text)

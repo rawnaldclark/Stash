@@ -10,4 +10,5 @@
     <string name="shuffle_play">Shuffle Play</string>
     <string name="resuming_channel_name">Playback</string>
     <string name="resuming_notification_title">Resuming…</string>
+    <string name="cast_no_wifi">Can\'t cast: connect your phone to the same Wi-Fi as the speaker</string>
 </resources>

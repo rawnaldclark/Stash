@@ -107,6 +107,16 @@ test("every label in the secret joins the rotation at once: two misses use two a
     assert.deepEqual(q.calls.map((c) => c.init.headers["X-User-Auth-Token"]), ["tok-a", "tok-b"]);
 });
 
+test("QOBUZ_ACCOUNTS_EXTRA accounts join the pool and can serve a miss", async () => {
+    const extra = { label: "extra", token: "extra-token", app_id: "222222222", app_secret: "extra-secret" };
+    const e = env({ QOBUZ_ACCOUNTS: "[]", QOBUZ_ACCOUNTS_EXTRA: JSON.stringify([extra]) });
+    const q = qobuz([200, GOOD]);
+    assert.equal((await handle(mintReq(44, 27), e, q, NOW)).status, 200);
+    assert.equal(q.calls.length, 1);
+    assert.equal(q.calls[0].init.headers["X-User-Auth-Token"], "extra-token");
+    assert.deepEqual(await e.DB.prepare("SELECT label FROM accounts").all(), { results: [{ label: "extra" }] });
+});
+
 test("a dead account is retired and the next one serves the same request", async () => {
     const e = env(); const q = qobuz([401, {}], [200, GOOD]);
     assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 200);

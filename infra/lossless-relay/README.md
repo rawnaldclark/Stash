@@ -5,6 +5,10 @@ operator-owned Qobuz accounts. The device streams from Qobuz's CDN directly;
 **no audio ever transits this Worker.** Contract and design:
 [`../../docs/superpowers/specs/2026-08-31-lossless-relay-plan-b-contract.md`](../../docs/superpowers/specs/2026-08-31-lossless-relay-plan-b-contract.md).
 
+The pool can be supplied through `QOBUZ_ACCOUNTS` and the optional additive
+`QOBUZ_ACCOUNTS_EXTRA` Worker secret. The relay combines both arrays; set either
+secret without replacing the other.
+
 Sized as a bridge, not the main path: the durable lossless path is the user's
 own Qobuz account (free to us, no ceiling). Four accounts serve roughly 65 daily
 actives thanks to the shared mint cache; see spec §6.

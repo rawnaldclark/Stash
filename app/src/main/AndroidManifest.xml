@@ -26,6 +26,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Stash">
+        <!-- Google Cast (spec docs/superpowers/specs/2026-10-06-google-cast-design.md). -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.stash.app.cast.StashCastOptionsProvider" />
         <!--
             No-UI trampoline launched by the "Resume playback" app shortcut
             (and Samsung Bixby Routines). Resumes the last queue and finishes

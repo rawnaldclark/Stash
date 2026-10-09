@@ -228,4 +228,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.okhttp)
+    // Google Cast: casting to Chromecast / Cast speakers (spec 2026-10-06).
+    implementation(libs.play.services.cast.framework)
+    implementation(libs.androidx.mediarouter)
 }

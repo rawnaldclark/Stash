@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.first
  *  - the last resolves this app run: which source served each track, and how long it took
  *  - the last playback errors this app run: the error, what the player did about it, and
  *    where the stream came from
+ *  - Google Cast: where it stands, and its last events this app run (connects, drops,
+ *    timeouts, speaker errors) — never a speaker's name or an address
  *
  * Track ids only, never a title, artist, URL or path: [PlaybackDiagnosticsLog] doesn't
  * take them in. Every block is fault-isolated, so one failing read costs one line.
@@ -46,7 +48,8 @@ class PlaybackDiagnosticsContributor @Inject constructor(
         appendLine(block("settings") { settingsBlock() })
         appendLine(block("output") { outputBlock() })
         appendLine(block("recent resolves") { resolvesBlock() })
-        append(block("recent playback errors") { errorsBlock() })
+        appendLine(block("recent playback errors") { errorsBlock() })
+        append(block("cast") { castBlock() })
     }
 
     private inline fun block(name: String, body: () -> String): String =
@@ -118,6 +121,15 @@ class PlaybackDiagnosticsContributor @Inject constructor(
                 (it.httpStatus?.let { status -> " (HTTP $status)" } ?: "") +
                 " · ${it.branch} · origin=${it.origin ?: "none"} · scheme=${it.scheme ?: "none"}"
         }
+    }
+
+    private fun castBlock(): String {
+        val rows = log.recentCastEvents()
+        val head = "Cast:                   " + log.castConnection
+        if (rows.isEmpty()) return "$head\nRecent cast events: none this app run"
+        val now = log.clock()
+        return "$head\nRecent cast events, this app run (newest first):\n" +
+            rows.joinToString("\n") { "  ${ago(now - it.atMs)} · ${it.event}" }
     }
 
     private fun ago(ms: Long): String {

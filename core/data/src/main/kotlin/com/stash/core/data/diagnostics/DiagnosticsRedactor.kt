@@ -25,6 +25,11 @@ object DiagnosticsRedactor {
             to "$1=[REDACTED]",
         // Email addresses — account PII that can surface in errors/logs/source rows.
         Regex("""(?i)\b[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}\b""") to "[REDACTED_EMAIL]",
+        // Google Cast media server URLs (http://<phone's LAN IP>:<port>/<token>/m/<n>): the phone's
+        // address and the URL token, should a log line or a Cast SDK message carry one. Address
+        // first, then any token left on its own (a path logged without the host).
+        Regex("""(?i)\bhttp://(?:\d{1,3}\.){3}\d{1,3}:\d{1,5}/[0-9a-f]{32}/""") to "http://[REDACTED_LAN]/[REDACTED]/",
+        Regex("""(?i)/[0-9a-f]{32}/([ma])/(\d+)""") to "/[REDACTED]/$1/$2",
     )
 
     fun redact(text: String): String =

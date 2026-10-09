@@ -14,7 +14,7 @@
  *   GET /v1/status                            reachability probe for the Settings "Test" button
  *
  * State: D1 (accounts' rotation state, the shared mint cache, daily quotas).
- * Secrets: RELAY_KEY, RELAY_KEY_PREV (optional), QOBUZ_ACCOUNTS. Deploy: see README.md.
+ * Secrets: RELAY_KEY, RELAY_KEY_PREV (optional), QOBUZ_ACCOUNTS, QOBUZ_ACCOUNTS_EXTRA (optional). Deploy: see README.md.
  */
 import { createHmac } from "node:crypto";
 import { verifyMint } from "./auth.js";
@@ -45,7 +45,7 @@ export function refusalNamesTrack(reason) {
     // even when a Format… code rides along with it.
     return r === "404" || (!/\bUser/.test(r) && /\b(Track|Sample|Format)/.test(r));
 }
-/** Per D1 binding: the QOBUZ_ACCOUNTS value whose labels already have rows. One cheap batch per isolate. */
+/** Per D1 binding: the account-secret values whose labels already have rows. One cheap batch per isolate. */
 const ensured = new WeakMap();
 
 export default {
@@ -116,9 +116,10 @@ async function mint(request, url, env, fetchImpl, nowSec) {
     const accounts = parseAccounts(env);
     // Every label needs a D1 row BEFORE selection, or the LRU never reaches an account added to the
     // secret while the old ones are still under their caps. Once per isolate per secret value.
-    if (ensured.get(env.DB) !== env.QOBUZ_ACCOUNTS) {
+    const accountSecretVersion = JSON.stringify([env.QOBUZ_ACCOUNTS || "", env.QOBUZ_ACCOUNTS_EXTRA || ""]);
+    if (ensured.get(env.DB) !== accountSecretVersion) {
         await ensureAccounts(env.DB, accounts.map((a) => a.label));
-        ensured.set(env.DB, env.QOBUZ_ACCOUNTS);
+        ensured.set(env.DB, accountSecretVersion);
     }
     let refusedBy = null; // an account that refused this track without naming the track
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -191,14 +192,16 @@ function vars(env) {
     };
 }
 
-/** QOBUZ_ACCOUNTS is operator-written JSON; a malformed secret must degrade to "no accounts" (503), not a 500 loop. */
+/** Account secrets are operator-written JSON arrays; malformed values degrade to no entries, not a 500 loop. */
 function parseAccounts(env) {
-    try {
-        const a = JSON.parse(env.QOBUZ_ACCOUNTS || "[]");
-        return Array.isArray(a) ? a.filter((x) => x && x.label && x.token && x.app_id && x.app_secret) : [];
-    } catch {
-        return [];
-    }
+    return [env.QOBUZ_ACCOUNTS, env.QOBUZ_ACCOUNTS_EXTRA].flatMap((raw) => {
+        try {
+            const a = JSON.parse(raw || "[]");
+            return Array.isArray(a) ? a.filter((x) => x && x.label && x.token && x.app_id && x.app_secret) : [];
+        } catch {
+            return [];
+        }
+    });
 }
 
 /** The spec §1 success shape. sample_rate is already Hz. `no-store`: the URL is short-lived and per-request headers gate it. */

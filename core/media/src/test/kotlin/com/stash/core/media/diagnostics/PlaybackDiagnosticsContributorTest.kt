@@ -128,6 +128,18 @@ class PlaybackDiagnosticsContributorTest {
         assertThat(s).doesNotContain("stash-resolve://")
     }
 
+    @Test fun `the cast block says where casting stands and its last events, newest first`() = runTest {
+        assertThat(contributor().section()).contains("Recent cast events: none this app run")
+
+        log.castConnection = "connected"
+        log.recordCast("connect requested")
+        log.recordCast("session started")
+        val s = contributor().section()
+
+        assertThat(s).contains("Cast:                   connected")
+        assertThat(s.indexOf("session started")).isLessThan(s.indexOf("connect requested"))
+    }
+
     @Test fun `a saved equalizer preset's name is the user's own words and stays out`() = runTest {
         coEvery { eqStore.read() } returns EqState(
             enabled = true,

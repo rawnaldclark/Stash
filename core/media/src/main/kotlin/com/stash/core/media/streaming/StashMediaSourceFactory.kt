@@ -5,6 +5,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -46,21 +47,22 @@ class StashMediaSourceFactory(
     trackDao: TrackDao,
 ) : MediaSource.Factory {
 
-    private val localFactory = DefaultMediaSourceFactory(context)
+    private val localDataSourceFactory = DefaultDataSource.Factory(context)
+    private val localFactory = DefaultMediaSourceFactory(localDataSourceFactory)
 
     internal val jioSaavnHttpClient = httpClient.newBuilder()
         .followRedirects(false)
         .followSslRedirects(false)
         .build()
-    private val jioSaavnFactory = DefaultMediaSourceFactory(
-        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(jioSaavnHttpClient),
-    )
+    private val jioSaavnDataSourceFactory =
+        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(jioSaavnHttpClient)
+    private val jioSaavnFactory = DefaultMediaSourceFactory(jioSaavnDataSourceFactory)
 
     // Full-timeline placeholders: stash-resolve://track/<id> items resolve
     // their URL inside LazyResolvingDataSource.open() on the loader thread.
     // Cold-jump path only — the next-up prefetch upgrades the common case to
     // a real URL in place, which then routes through the branches above.
-    private val lazyFactory = DefaultMediaSourceFactory(
+    private val lazyDataSourceFactory =
         DataSource.Factory {
             LazyResolvingDataSource(
                 resolver = resolver,
@@ -76,8 +78,8 @@ class StashMediaSourceFactory(
                         .createDataSource()
                 },
             )
-        },
-    )
+        }
+    private val lazyFactory = DefaultMediaSourceFactory(lazyDataSourceFactory)
 
     override fun setDrmSessionManagerProvider(
         provider: DrmSessionManagerProvider,
@@ -98,6 +100,20 @@ class StashMediaSourceFactory(
     }
 
     override fun getSupportedTypes(): IntArray = localFactory.supportedTypes
+
+    /**
+     * The byte source [createMediaSource] would play [mediaItem] from, with the
+     * same routing. The cast media server reads through it, so a speaker gets
+     * the lazy resolve, the YouTube 403 refresh and JioSaavn's no-redirect
+     * client exactly as local playback does (spec 2026-10-06 §4) — minus the
+     * stream cache, see [StreamingMediaSourceFactory.createUncachedDataSourceFactory].
+     */
+    fun dataSourceFactoryFor(mediaItem: MediaItem): DataSource.Factory {
+        if (mediaItem.localConfiguration?.uri?.scheme == STASH_RESOLVE_SCHEME) return lazyDataSourceFactory
+        streamingTrackId(mediaItem)?.let { return streamingFactory.createUncachedDataSourceFactory(it) }
+        if (isJioSaavnOrigin(mediaItem)) return jioSaavnDataSourceFactory
+        return localDataSourceFactory
+    }
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         // Placeholder items (full-timeline queue) resolve in the DataSource

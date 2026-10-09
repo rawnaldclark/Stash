@@ -191,6 +191,11 @@ fun NowPlayingScreen(
     val togetherState by together.state.collectAsStateWithLifecycle()
     val room = togetherState as? ListenTogetherState.InRoom
     var showStartTogether by remember { mutableStateOf(false) }
+    // Google Cast (spec 2026-10-06 §5). Hidden on phones without Play Services.
+    val castViewModel: com.stash.feature.nowplaying.cast.CastViewModel = hiltViewModel()
+    val castConnection by castViewModel.connection.collectAsStateWithLifecycle()
+    val casting = castConnection is com.stash.core.media.cast.CastConnection.Connected
+    var showCastSheet by remember { mutableStateOf(false) }
     // A listener follows the room: no skip or seek; their play/pause is their own (spec §5).
     val isListener = room != null && !room.isHost
     // The Session sheet: people, Up next, suggestions, invite, leave (design 2026-09-25).
@@ -431,6 +436,14 @@ fun NowPlayingScreen(
         )
     }
 
+    // Cast speaker sheet — opened by the cast icon in the top bar.
+    if (showCastSheet) {
+        com.stash.feature.nowplaying.cast.CastSheet(
+            viewModel = castViewModel,
+            onDismiss = { showCastSheet = false },
+        )
+    }
+
     // Sleep timer bottom sheet — opened by the icon next to the track title.
     if (showSleepTimerSheet) {
         SleepTimerSheet(
@@ -616,6 +629,17 @@ fun NowPlayingScreen(
                     // Nor the queue: the sheet would show the user's own queue, which the room set aside.
                     showQueueButton = room == null,
                     accentColor = npAccent(uiState.vibrantColor),
+                    // Cast and Listen Together exclude each other (cast spec §3).
+                    castButton = {
+                        if (room == null) {
+                            com.stash.feature.nowplaying.cast.CastButton(
+                                connection = castConnection,
+                                tint = npInk(),
+                                accentColor = npAccent(uiState.vibrantColor),
+                                onClick = { showCastSheet = true },
+                            )
+                        }
+                    },
                 )
                 if (room != null) {
                     com.stash.feature.nowplaying.listen.SessionBar(
@@ -861,7 +885,8 @@ fun NowPlayingScreen(
             onPostToCommunity = postToCommunity?.let { post -> { post(com.stash.core.model.community.PostTarget.Song(track)) } },
             onFlagWrongMatch = { showWrongMatchDialog = true },
             onViewAlbum = viewModel::onViewAlbumTapped,
-            showSpeed = room == null,
+            // The speaker decodes while casting, so speed is the phone's no longer.
+            showSpeed = room == null && !casting,
             speed = playbackSpeed,
             onSpeedClick = { showSpeedSheet = true },
             together = togetherState,
@@ -1013,6 +1038,7 @@ private fun TopBar(
     showRadio: Boolean,
     showQueueButton: Boolean,
     accentColor: Color,
+    castButton: @Composable () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -1030,6 +1056,9 @@ private fun TopBar(
         }
 
         Spacer(modifier = Modifier.weight(1f))
+
+        // Cast — left of Radio. Draws nothing where Cast isn't available.
+        if (hasTrack) castButton()
 
         // Radio toggle — start a station from the current song, or stop the
         // running one. Accent tint signals an active station; the radar sweep

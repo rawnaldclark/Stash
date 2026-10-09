@@ -7,6 +7,8 @@ hilt = "2.58"
 navigationCompose = "2.9.7"
 coil = "3.4.0"
 media3 = "1.9.2"
+playServicesCast = "22.1.0"
+mediarouter = "1.8.1"
 room = "2.7.1"
 datastore = "1.1.4"
 okhttp = "4.12.0"
@@ -80,6 +82,10 @@ media3-session = { group = "androidx.media3", name = "media3-session", version.r
 media3-datasource = { group = "androidx.media3", name = "media3-datasource", version.ref = "media3" }
 media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", version.ref = "media3" }
 media3-database = { group = "androidx.media3", name = "media3-database", version.ref = "media3" }
+
+# Google Cast
+play-services-cast-framework = { group = "com.google.android.gms", name = "play-services-cast-framework", version.ref = "playServicesCast" }
+androidx-mediarouter = { group = "androidx.mediarouter", name = "mediarouter", version.ref = "mediarouter" }
 
 # Palette
 palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }

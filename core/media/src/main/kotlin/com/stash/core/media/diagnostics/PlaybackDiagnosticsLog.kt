@@ -41,11 +41,21 @@ class PlaybackDiagnosticsLog @Inject constructor() {
         val scheme: String?,
     )
 
+    /** One Google Cast event: fixed words and numbers only, never a speaker's name or an address. */
+    data class CastEvent(val atMs: Long, val event: String)
+
+    /**
+     * Where casting stands, as fixed words ("unavailable", "disconnected",
+     * "connecting", "connected"). Written by the Cast integration in the app module.
+     */
+    @Volatile var castConnection: String = "unavailable"
+
     /** Test seam for the clock. */
     internal var clock: () -> Long = System::currentTimeMillis
 
     private val resolves = ArrayDeque<Resolve>()
     private val errors = ArrayDeque<PlaybackError>()
+    private val castEvents = ArrayDeque<CastEvent>()
 
     fun recordResolve(trackId: Long, servedBy: String, elapsedMs: Long, lossless: Boolean) =
         push(resolves, RESOLVES_MAX) { Resolve(clock(), trackId, servedBy, elapsedMs, lossless) }
@@ -55,6 +65,12 @@ class PlaybackDiagnosticsLog @Inject constructor() {
         push(errors, ERRORS_MAX) {
             PlaybackError(clock(), trackId, error.errorCodeName, httpStatusOf(error), branch, origin, scheme)
         }
+
+    /** [event] must be fixed words and numbers: never a speaker's name, a URL or an address. */
+    fun recordCast(event: String) = push(castEvents, CAST_EVENTS_MAX) { CastEvent(clock(), event) }
+
+    /** Newest first. */
+    fun recentCastEvents(): List<CastEvent> = synchronized(castEvents) { castEvents.reversed() }
 
     /** Newest first. */
     fun recentResolves(): List<Resolve> = synchronized(resolves) { resolves.reversed() }
@@ -83,6 +99,7 @@ class PlaybackDiagnosticsLog @Inject constructor() {
     internal companion object {
         const val RESOLVES_MAX = 10
         const val ERRORS_MAX = 5
+        const val CAST_EVENTS_MAX = 15
 
         /** Bounds the cause walk, so a cyclic cause chain can't loop. */
         private const val MAX_CAUSE_DEPTH = 5
