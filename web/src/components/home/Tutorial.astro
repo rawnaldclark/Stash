@@ -1,0 +1,235 @@
+---
+/**
+ * Video tutorial walkthrough.
+ * Displays the mobile app walkthrough video inside a device frame,
+ * detailing account sign-in, storage setup, and library syncing.
+ */
+import Icon from '../Icon.astro';
+---
+
+<section class="section tutorial" id="tutorial" aria-labelledby="tutorial-title">
+  <div class="glow" aria-hidden="true"></div>
+  <div class="container">
+    <div class="section-head is-centered">
+      <p class="overline"><Icon name="videocam" size="18px" />Tutorial Walkthrough</p>
+      <h2 id="tutorial-title" class="section-title">See Stash in action</h2>
+      <p class="section-intro">
+        Watch how to connect your Spotify and YouTube Music accounts, configure your download location,
+        and start syncing in under four minutes.
+      </p>
+    </div>
+
+    <div class="tutorial-layout">
+      <div class="media">
+        <div class="halo" aria-hidden="true"></div>
+        <div class="device">
+          <div class="frame">
+            <video
+              controls
+              playsinline
+              preload="metadata"
+              poster="/tutorial-poster.jpg"
+              aria-label="Stash setup walkthrough video"
+            >
+              <source src="/tutorial.mp4" type="video/mp4" />
+              <p>Your browser does not support the video tag. Download the video <a href="/tutorial.mp4">here</a>.</p>
+            </video>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <ol role="list" class="steps">
+          <li class="step glass">
+            <div class="step-num">01</div>
+            <div class="step-body">
+              <h3>Connect accounts</h3>
+              <p>
+                Sign in to Spotify and YouTube Music directly inside Stash. Your login cookies are stored encrypted
+                on your phone and only ever travel to Spotify or Google.
+              </p>
+            </div>
+          </li>
+          <li class="step glass">
+            <div class="step-num">02</div>
+            <div class="step-body">
+              <h3>Set storage &amp; backup</h3>
+              <p>
+                Store music in app-private storage or select an SD card folder. Export your settings and database
+                backups so your setup is always safe.
+              </p>
+            </div>
+          </li>
+          <li class="step glass">
+            <div class="step-num">03</div>
+            <div class="step-body">
+              <h3>Sync, download or stream</h3>
+              <p>
+                Pick which playlists and mixes to sync. Turn on Download for offline playback anywhere, or keep it on
+                Stream only to save space.
+              </p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="hint glass">
+          <span class="icon-bubble"><Icon name="play-circle" size="22px" /></span>
+          <p>
+            <strong>Quick tip:</strong> Tap the player controls to pause, scrub, or expand into fullscreen
+            to follow along in full resolution.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .tutorial {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .glow {
+    position: absolute;
+    inset: 10% 0;
+    z-index: -1;
+    background:
+      radial-gradient(40% 50% at 20% 50%, var(--glow-purple), transparent 70%),
+      radial-gradient(35% 45% at 80% 40%, var(--glow-magenta), transparent 70%);
+    pointer-events: none;
+  }
+
+  .tutorial-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    align-items: center;
+    gap: clamp(48px, 6vw, 96px);
+  }
+
+  .media {
+    position: relative;
+    display: grid;
+    place-items: center;
+    isolation: isolate;
+  }
+
+  .halo {
+    position: absolute;
+    width: 140%;
+    aspect-ratio: 1;
+    z-index: -1;
+    background: radial-gradient(closest-side, var(--glow-purple), var(--glow-magenta) 50%, transparent 80%);
+    pointer-events: none;
+  }
+
+  .device {
+    --device-width: clamp(280px, 24vw, 340px);
+    width: var(--device-width);
+    container-type: inline-size;
+  }
+
+  .frame {
+    --bezel: 2.6cqi;
+    --screen-radius: calc((100cqi - 2 * var(--bezel)) * 0.051);
+    padding: var(--bezel);
+    border-radius: calc(var(--screen-radius) + var(--bezel));
+    background: var(--device-frame);
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.1),
+      inset 0 1px 0 rgb(255 255 255 / 0.12),
+      var(--device-shadow);
+  }
+
+  .frame video {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 9 / 16;
+    border-radius: var(--screen-radius);
+    background: var(--screen-placeholder);
+    object-fit: cover;
+  }
+
+  .content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .step {
+    display: flex;
+    gap: 20px;
+    padding: 24px;
+    align-items: flex-start;
+  }
+
+  .step-num {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    background: linear-gradient(160deg, var(--purple-light), rgb(139 92 246 / 0.2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    padding-top: 2px;
+  }
+
+  @media (prefers-color-scheme: light) {
+    .step-num {
+      background-image: linear-gradient(160deg, var(--purple-dark), rgb(124 58 237 / 0.3));
+    }
+  }
+
+  .step-body h3 {
+    font-size: 1.25rem;
+    letter-spacing: -0.02em;
+  }
+
+  .step-body p {
+    margin-top: 6px;
+    color: var(--text-2);
+    font-size: 0.9375rem;
+  }
+
+  .hint {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    border-radius: var(--radius-lg);
+  }
+
+  .hint p {
+    font-size: 0.875rem;
+    color: var(--text-2);
+  }
+
+  .hint strong {
+    color: var(--text);
+  }
+
+  @media (max-width: 900px) {
+    .tutorial-layout {
+      grid-template-columns: 1fr;
+      gap: 48px;
+    }
+
+    .device {
+      --device-width: min(78vw, 300px);
+    }
+
+    .halo {
+      width: min(120%, 480px);
+    }
+  }
+</style>
+
