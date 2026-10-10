@@ -77,14 +77,22 @@ class FakeMirrorLibrary : MirrorLibrary {
 
     override suspend fun playlist(localId: Long) = playlists[localId]?.let { LocalVersion(it.name, it.items, it.follow, it.ro) }
 
-    override suspend fun putPlaylist(localId: Long?, mirrorId: String, name: String, items: List<WireSong>): Long {
+    /** The next putPlaylist throws, as a matcher batch that failed (nothing written). */
+    var failPut = false
+
+    override suspend fun putPlaylist(localId: Long?, mirrorId: String, name: String, items: List<WireSong>): PutPlaylist {
+        if (failPut) throw com.stash.core.data.weblink.handoff.MirrorMatchException(IllegalStateException("db"))
+        // A song this library can't hold, and a repeat (one row per song, as the real library keeps it), aren't held.
+        val seen = HashSet<String>()
+        val held = items.map { it.title !in unholdable && seen.add(it.title) }
+        val kept = items.filterIndexed { i, _ -> held[i] }
         val p = localId?.let { playlists[it] }
         if (p != null) {
             p.name = name
-            p.items = items.filter { it.title !in unholdable }
-            return localId
+            p.items = kept
+            return PutPlaylist(localId, held)
         }
-        return addPlaylist(name, items.filter { it.title !in unholdable })
+        return PutPlaylist(addPlaylist(name, kept), held)
     }
 
     override suspend fun deletePlaylist(localId: Long) {

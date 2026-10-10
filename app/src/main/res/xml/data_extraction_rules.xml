@@ -14,6 +14,7 @@
         <exclude domain="sharedpref" path="stash_auth_keyset_prefs.xml" />
         <exclude domain="sharedpref" path="weblink_handoff.xml" />
         <exclude domain="sharedpref" path="weblink_inbox.xml" />
+        <exclude domain="sharedpref" path="weblink_mirror.xml" />
         <exclude domain="root" path="no_backup/stash_mirror.json.gz" />
     </cloud-backup>
     <device-transfer>
@@ -24,6 +25,7 @@
         <exclude domain="sharedpref" path="stash_auth_keyset_prefs.xml" />
         <exclude domain="sharedpref" path="weblink_handoff.xml" />
         <exclude domain="sharedpref" path="weblink_inbox.xml" />
+        <exclude domain="sharedpref" path="weblink_mirror.xml" />
         <exclude domain="root" path="no_backup/stash_mirror.json.gz" />
     </device-transfer>
 </data-extraction-rules>

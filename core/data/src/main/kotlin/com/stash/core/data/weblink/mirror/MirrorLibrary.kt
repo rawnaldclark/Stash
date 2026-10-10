@@ -15,6 +15,9 @@ data class LocalPlaylist(
     val songs: Int,
 )
 
+/** A mirrored playlist written here: its id, and per song of the list whether this phone holds it. */
+data class PutPlaylist(val id: Long, val held: List<Boolean>)
+
 /** A local playlist's content now. */
 data class LocalVersion(val name: String, val items: List<WireSong>, val follow: Follow?, val ro: Boolean)
 
@@ -56,9 +59,10 @@ interface MirrorLibrary {
 
     /**
      * Writes a mirrored playlist: replaces [localId]'s name and songs, or makes it (CUSTOM, `custom_sync_<mirrorId>`) when
-     * [localId] is null or gone. Returns its id.
+     * [localId] is null or gone. Says which of [items] it holds (a song with no row here, or a repeat the library keeps once,
+     * isn't). Throws, writing nothing, when the songs couldn't be matched at all.
      */
-    suspend fun putPlaylist(localId: Long?, mirrorId: String, name: String, items: List<WireSong>): Long
+    suspend fun putPlaylist(localId: Long?, mirrorId: String, name: String, items: List<WireSong>): PutPlaylist
 
     suspend fun deletePlaylist(localId: Long)
 }

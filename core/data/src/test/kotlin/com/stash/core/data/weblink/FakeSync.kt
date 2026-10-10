@@ -42,6 +42,9 @@ class FakeSyncServer : SyncApi {
     /** The server's clock for log rows and the config slot (advances by one per write). */
     var serverNow = 1_000_000L
 
+    /** When set: that many more log posts land, then every post is unreachable (a run cut short mid-push). */
+    var failPostsAfter: Int? = null
+
     /** Log batches before `409 compact` (the Worker's is 2,000). */
     var logLimit = 2_000
 
@@ -260,6 +263,7 @@ class FakeSyncServer : SyncApi {
     override suspend fun postLog(auth: DeviceAuth, spaceId: String, env: SyncEnvelope): SyncResult<LogPosted> {
         calls += "postLog"
         forced("postLog")?.let { return it }
+        failPostsAfter?.let { n -> if (n <= 0) return SyncResult.Unreachable("offline") else failPostsAfter = n - 1 }
         val (space, me) = member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
         if (space.rotationDue) return err(409, SyncErrorCode.ROTATION_DUE)
         if (env.e != space.epoch) return err(409, SyncErrorCode.EPOCH)

@@ -135,14 +135,17 @@ class RoomMirrorLibraryTest {
     @Test fun `a mirrored playlist is written in order, renamed and replaced in place, and set not to download`() = runTest {
         track("1")
         track("2")
-        val id = lib.putPlaylist(null, "m_AAAAAAAAAAAAAAAA", "Night drive", listOf(song("2"), song("1"), song("Brand new")))
+        val put = lib.putPlaylist(null, "m_AAAAAAAAAAAAAAAA", "Night drive", listOf(song("2"), song("1"), song("Brand new"), song("1")))
+        val id = put.id
+        // A repeat is held once here; the engine carries the other (review B2).
+        assertThat(put.held).containsExactly(true, true, true, false).inOrder()
         val p = db.playlistDao().getById(id)!!
         assertThat(p.sourceId).isEqualTo("custom_sync_m_AAAAAAAAAAAAAAAA")
         assertThat(p.syncEnabled).isFalse()
         assertThat(lib.playlist(id)!!.items.map { it.title }).containsExactly("2", "1", "Brand new").inOrder()
         assertThat(lib.playlists().map { it.name }).contains("Night drive")
 
-        assertThat(lib.putPlaylist(id, "m_AAAAAAAAAAAAAAAA", "Night drive 2", listOf(song("1")))).isEqualTo(id)
+        assertThat(lib.putPlaylist(id, "m_AAAAAAAAAAAAAAAA", "Night drive 2", listOf(song("1"))).id).isEqualTo(id)
         assertThat(lib.playlist(id)!!.let { it.name to it.items.map { s -> s.title } }).isEqualTo("Night drive 2" to listOf("1"))
         lib.deletePlaylist(id)
         assertThat(lib.playlist(id)).isNull()

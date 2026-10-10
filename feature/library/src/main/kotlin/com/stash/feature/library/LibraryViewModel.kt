@@ -793,7 +793,7 @@ class LibraryViewModel @Inject constructor(
     fun deletePlaylist(playlist: Playlist, alsoBlacklist: Boolean = false, everywhere: Boolean = false) {
         viewModelScope.launch {
             // "Only here": it stops mirroring first, so its copies elsewhere stay; "Everywhere": the next mirror run deletes them.
-            if (!everywhere) mirror?.stopMirroring(playlist.id)
+            mirror?.beforeDelete(playlist.id, everywhere)
             playlistImageHelper.deletePlaylistCoverFile(playlist.id)
             musicRepository.deletePlaylistWithCascade(
                 playlistId = playlist.id,
@@ -805,7 +805,7 @@ class LibraryViewModel @Inject constructor(
     /** Remove playlist from library without deleting its downloaded tracks. */
     fun removePlaylist(playlist: Playlist) {
         viewModelScope.launch {
-            mirror?.stopMirroring(playlist.id) // removing it here never removes it from your other devices
+            mirror?.beforeDelete(playlist.id, everywhere = false) // removing it here never removes it from your other devices
             musicRepository.removePlaylist(playlist)
         }
     }

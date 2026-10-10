@@ -109,7 +109,16 @@ data class BaseLike(val s: WireSong, val on: Boolean, val at: Hlc)
  * 5,000 go on a first merge; after a push the floor moves up to two days ago), so [ids] stays small however long History is.
  */
 @Serializable
-data class BasePlays(val floor: Long = 0, val ids: Set<String> = emptySet(), val clearedBefore: Long = 0)
+data class BasePlays(
+    val floor: Long = 0,
+    val ids: Set<String> = emptySet(),
+    val clearedBefore: Long = 0,
+    /**
+     * The oldest of this phone's own plays the mirror ever covered (the first merge's floor; never moves up). A "Clear on all
+     * your devices" from another device clears this phone's own plays from here on (Phase 6 review S3).
+     */
+    val coveredFrom: Long = 0,
+)
 
 /** A mirrored playlist's version this phone last agreed on, with its hash. */
 @Serializable
@@ -133,12 +142,22 @@ data class LikesQuestion(
     /** "Chrome on Windows", or "your browsers". */
     val thereName: String,
     val since: Long,
-    /** Likes here only through Spotify / YouTube Music: a "use the browser's" can't remove those. */
+    /** Likes here only through Spotify / YouTube Music and not there: a "use the browser's" can't remove those. */
     val externalHere: Int = 0,
+    /** Which sets of songs these counts are of: an answer applies only to the same sets (Phase 6 review S11). */
+    val fingerprint: String = "",
 )
 
 @Serializable
-data class LikesAnswer(val since: Long, val choice: FirstMergeChoice)
+data class LikesAnswer(val since: Long, val choice: FirstMergeChoice, val fingerprint: String = "")
+
+/**
+ * A song of a mirrored playlist this phone couldn't hold (no row for it, or a repeat the library keeps once): carried in every
+ * version this phone sends, in its place, so it is never sent back as removed (Phase 6 review B2). [heldBefore]: how many held
+ * songs come before it; [after]: the held song right before it as this phone lists it (null: at the start).
+ */
+@Serializable
+data class Ghost(val s: WireSong, val heldBefore: Int, val after: WireSong? = null)
 
 /** The first-merge answers: keep both, take the browsers' (`THEIRS`), or this phone's (`MINE`). */
 enum class FirstMergeChoice { COMBINE, THEIRS, MINE }
@@ -191,6 +210,15 @@ data class MirrorRecord(
     var lastPushAt: Long = 0,
     /** The change signal's digests at the last run (spec §9: only a real change schedules a run). */
     var digest: String? = null,
+    /** Per mirror id, the songs this phone couldn't hold, carried in every version it sends (B2). */
+    var ghosts: Map<String, List<Ghost>> = emptyMap(),
+    /** Mirror ids deleted here with "Everywhere": the only way a delete here goes to every device (B5, S5). */
+    var everywhere: Set<String> = emptySet(),
+    /** Mirror ids let go here ("Only here", or deleted without a choice) that the shared settings still list: written by the next run (S2). */
+    var letGo: Set<String> = emptySet(),
+    /** Unlikes held back because one run would remove too many (N7); the listener sends or keeps them. */
+    var heldRemovals: Int = 0,
+    var allowRemovals: Boolean = false,
 )
 
 /** Where [MirrorRecord] lives. */
@@ -198,6 +226,12 @@ interface MirrorStore {
     suspend fun load(): MirrorRecord?
     suspend fun save(r: MirrorRecord)
     suspend fun clear()
+
+    /**
+     * The mirror id → playlist map of [spaceId], kept apart from the record, so a record that can't be read back never loses
+     * which of this phone's playlists mirror which id (a rejoin would otherwise duplicate them: review N1).
+     */
+    suspend fun savedMap(spaceId: String): Map<String, MappedPl> = emptyMap()
 }
 
 /**
@@ -205,8 +239,9 @@ interface MirrorStore {
  * is several MB, past what one cursor window can read back.
  */
 @Singleton
-class FileMirrorStore internal constructor(private val file: File) : MirrorStore {
-    @Inject constructor(@ApplicationContext context: Context) : this(File(context.noBackupFilesDir, FILE_NAME))
+class FileMirrorStore internal constructor(private val file: File, private val prefs: android.content.SharedPreferences?) : MirrorStore {
+    @Inject constructor(@ApplicationContext context: Context) :
+        this(File(context.noBackupFilesDir, FILE_NAME), context.getSharedPreferences(MAP_PREFS, Context.MODE_PRIVATE))
 
     private val lock = Mutex()
     private val atomic = AtomicFile(file)
@@ -222,7 +257,7 @@ class FileMirrorStore internal constructor(private val file: File) : MirrorStore
         }
     }
 
-    override suspend fun save(r: MirrorRecord) = withContext(Dispatchers.IO) {
+    override suspend fun save(r: MirrorRecord): Unit = withContext(Dispatchers.IO) {
         lock.withLock {
             file.parentFile?.mkdirs()
             val out = atomic.startWrite()
@@ -231,6 +266,8 @@ class FileMirrorStore internal constructor(private val file: File) : MirrorStore
                 gz.write(json.encodeToString(MirrorRecord.serializer(), r).encodeToByteArray())
                 gz.finish()
                 atomic.finishWrite(out)
+                prefs?.edit()?.putString(MAP_KEY, json.encodeToString(MapBackup.serializer(), MapBackup(r.spaceId, r.map)))?.apply()
+                Unit
             } catch (e: Exception) {
                 atomic.failWrite(out)
                 throw e
@@ -238,12 +275,28 @@ class FileMirrorStore internal constructor(private val file: File) : MirrorStore
         }
     }
 
-    override suspend fun clear() = withContext(Dispatchers.IO) {
-        lock.withLock { atomic.delete() }
+    override suspend fun clear(): Unit = withContext(Dispatchers.IO) {
+        lock.withLock {
+            atomic.delete()
+            prefs?.edit()?.remove(MAP_KEY)?.commit()
+        }
+        Unit
     }
+
+    override suspend fun savedMap(spaceId: String): Map<String, MappedPl> = withContext(Dispatchers.IO) {
+        val text = prefs?.getString(MAP_KEY, null) ?: return@withContext emptyMap()
+        runCatching { json.decodeFromString(MapBackup.serializer(), text) }.getOrNull()?.takeIf { it.spaceId == spaceId }?.map.orEmpty()
+    }
+
+    @Serializable
+    internal data class MapBackup(val spaceId: String, val map: Map<String, MappedPl>)
 
     companion object {
         const val FILE_NAME = "stash_mirror.json.gz"
+
+        /** Excluded from backups and transfers with the rest of the link's state. */
+        const val MAP_PREFS = "weblink_mirror"
+        private const val MAP_KEY = "map"
         internal val json = Json {
             ignoreUnknownKeys = true
             encodeDefaults = false
@@ -264,10 +317,16 @@ class InMemoryMirrorStore : MirrorStore {
 
     override suspend fun save(r: MirrorRecord) {
         record = FileMirrorStore.json.decodeFromString(MirrorRecord.serializer(), FileMirrorStore.json.encodeToString(MirrorRecord.serializer(), r))
+        map = r.spaceId to r.map
         saves++
     }
 
+    var map: Pair<String, Map<String, MappedPl>>? = null
+
     override suspend fun clear() {
         record = null
+        map = null
     }
+
+    override suspend fun savedMap(spaceId: String): Map<String, MappedPl> = map?.takeIf { it.first == spaceId }?.second.orEmpty()
 }

@@ -29,7 +29,9 @@ import com.stash.core.data.weblink.store.LinkedSpace
 import com.stash.core.data.weblink.store.WebLinkStore
 import com.stash.core.model.weblink.ClockOffset
 import com.stash.core.model.weblink.Hlc
+import com.stash.core.model.weblink.SongIdentity
 import com.stash.core.model.weblink.SongIndex
+import com.stash.core.model.weblink.SongKey
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -74,6 +76,10 @@ data class MirrorStatus(
     val otherName: String = OTHERS,
     /** Mirror id → this phone's playlist id, for the chooser. */
     val mirrored: Map<String, Long> = emptyMap(),
+    /** Unlikes held back because one run would remove too many (N7): the listener sends or keeps them. */
+    val heldRemovals: Int = 0,
+    /** The change signal's digest of the library when the last push read it (S6). */
+    val pushDigest: String? = null,
 ) {
     companion object {
         const val OTHERS = "your browsers"
@@ -87,6 +93,8 @@ data class MirrorChange(
     val add: List<Long> = emptyList(),
     /** This phone's playlists to stop mirroring (every copy stays where it is). */
     val remove: List<Long> = emptyList(),
+    /** Mirror ids to take out of the shared choice (playlists let go here). */
+    val removeIds: List<String> = emptyList(),
     val newOnes: Boolean? = null,
 )
 
@@ -137,6 +145,7 @@ class MirrorEngine internal constructor(
         val me: String get() = id.deviceId
         val auth: DeviceAuth get() = DeviceAuth(id.deviceId, id.token)
         var pendingLikes: SongIndex<Boolean>? = null
+        var pushDigest: String? = null
     }
 
     /** The service said no: [error] is its answer. */
@@ -166,8 +175,11 @@ class MirrorEngine internal constructor(
 
     /** The first-merge answer for likes. */
     suspend fun answer(choice: FirstMergeChoice): MirrorRun = attempt { c ->
-        c.r.question?.let { q -> c.r.answer = LikesAnswer(q.since, choice) }
+        c.r.question?.let { q -> c.r.answer = LikesAnswer(q.since, choice, q.fingerprint) }
     }
+
+    /** Hook for the change signal's digest (S6): read when a push reads the library. */
+    @Volatile var digester: (suspend (MirrorStatus) -> String)? = null
 
     /** [localId] is a playlist this phone mirrors now (from the last state read: [load] or a run). */
     fun isMirrored(localId: Long): Boolean {
@@ -177,20 +189,57 @@ class MirrorEngine internal constructor(
     }
 
     /**
-     * "Only here" (spec §2.4): [localId] stops mirroring before it is deleted here, so its copies elsewhere stay. Offline, the
-     * settings can't change yet; the playlist is let go here at least, so a later run never sends it as deleted everywhere.
+     * Before [localId] is deleted or removed here (spec §2.4; review B5, S2, S5). [everywhere]: the listener chose "Everywhere",
+     * so the next run sends it as deleted on every device. Otherwise ("Only here", the default, and every delete that asks
+     * nothing) it is let go: kept on the other devices, taken out of the shared choice by the next run that reaches the service
+     * (retried until it lands), and never brought back here by a later edit elsewhere meanwhile. Reads the saved state itself,
+     * so it holds even before anything was loaded.
      */
-    suspend fun stopMirroring(localId: Long) {
-        if (!isMirrored(localId)) return
-        if (configure(MirrorChange(remove = listOf(localId))) == MirrorRun.Done) return
-        withContext(Dispatchers.IO) {
-            mutex.withLock {
-                val r = guard(null) { records.load() } ?: return@withLock
-                r.map = r.map.filterValues { it.localId != localId }
-                guard(Unit) { records.save(r) }
-                _status.update { it.copy(mirrored = r.map.mapValues { e -> e.value.localId }) }
+    suspend fun beforeDelete(localId: Long, everywhere: Boolean) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val r = guard(null) { records.load() } ?: return@withLock
+            val mid = r.map.entries.firstOrNull { it.value.localId == localId }?.key ?: return@withLock
+            if (everywhere) {
+                r.everywhere = r.everywhere + mid
+            } else {
+                letGo(r, setOf(mid))
             }
+            guard(Unit) { records.save(r) }
+            _status.update { it.copy(mirrored = r.map.mapValues { e -> e.value.localId }) }
         }
+    }
+
+    /** Sends the unlikes held back (N7), or keeps the likes: they are liked here again, so nothing goes. */
+    suspend fun releaseRemovals(send: Boolean): MirrorRun = attempt { c ->
+        if (send) {
+            c.r.allowRemovals = true
+        } else {
+            val liked = SongIndex.of(lib.likes().map { it.s to true })
+            val keep = c.r.baseLikes.filter { it.on && !liked.has(it.s) }.map { it.s }
+            if (keep.isNotEmpty()) lib.setLikes(keep, emptyList(), wall(c))
+        }
+        c.r.heldRemovals = 0
+    }
+
+    /** Lets [mids] go here: no mapping, no base, no ghosts; the shared choice drops them on the next run. */
+    private fun letGo(r: MirrorRecord, mids: Set<String>) {
+        r.letGo = r.letGo + mids
+        r.map = r.map - mids
+        r.basePlaylists = r.basePlaylists - mids
+        r.ghosts = r.ghosts - mids
+        r.everywhere = r.everywhere - mids
+    }
+
+    /** Writes the shared choice without the playlists let go here (S2): before anything is applied, so none comes back. */
+    private suspend fun settleLetGo(c: Ctx) {
+        val r = c.r
+        val pending = r.letGo.filter { it in c.cfg.ids }
+        if (pending.isEmpty()) {
+            r.letGo = emptySet()
+            return
+        }
+        writeConfig(c, MirrorChange(removeIds = pending))
+        r.letGo = r.letGo.filterTo(HashSet()) { it in c.cfg.ids }
     }
 
     /** Unlinked (here, or another device removed this phone): the mirror's state goes at once; the library stays as it is. */
@@ -314,7 +363,10 @@ class MirrorEngine internal constructor(
         val id = store.identity() ?: return null
         val sp = store.space() ?: return null
         var r = records.load()
-        if (r == null || r.v != 1 || r.spaceId != sp.spaceId) r = MirrorRecord(spaceId = sp.spaceId)
+        if (r == null || r.v != 1 || r.spaceId != sp.spaceId) {
+            // A record that couldn't be read back keeps which playlists mirror which id (N1): a rejoin then merges, not copies.
+            r = MirrorRecord(spaceId = sp.spaceId, map = records.savedMap(sp.spaceId))
+        }
         val roster = store.roster().filter { it.deviceId != id.deviceId }.associate { it.deviceId to it.type }
         val sent = clock()
         val info = api.space(DeviceAuth(id.deviceId, id.token), sp.spaceId).get()
@@ -332,6 +384,7 @@ class MirrorEngine internal constructor(
     private suspend fun once(c: Ctx, op: (suspend (Ctx) -> Unit)?) {
         val r = c.r
         readConfig(c)
+        settleLetGo(c)
         c.pendingLikes = pendingLikes(c)
         pull(c)
         records.save(r)
@@ -349,6 +402,7 @@ class MirrorEngine internal constructor(
             it.copy(
                 config = cfg, question = r.question, waiting = r.waiting,
                 joined = Kind.entries.filter { k -> joinedNow(c, k) }.toSet(), mirrored = r.map.mapValues { e -> e.value.localId },
+                heldRemovals = r.heldRemovals, pushDigest = c.pushDigest,
             )
         }
         Log.i(TAG, "run: seen ${r.seen}, ${r.view.likes.size} likes, ${r.view.plays.size} plays, ${r.view.playlists.size} playlists in the space")
@@ -421,10 +475,11 @@ class MirrorEngine internal constructor(
                     r.map = r.map + (mid to MappedPl(pid, FollowRec.of(p.follow)))
                 }
             }
-            if (change.remove.isNotEmpty()) {
-                val gone = r.map.filterValues { it.localId in change.remove }.keys
+            if (change.remove.isNotEmpty() || change.removeIds.isNotEmpty()) {
+                val gone = r.map.filterValues { it.localId in change.remove }.keys + change.removeIds
                 ids.removeAll(gone)
                 r.basePlaylists = r.basePlaylists - gone
+                r.ghosts = r.ghosts - gone
             }
             next = next.copy(ids = ids.distinct())
             val stamp = Hlc.tick(maxOf(r.last ?: cur.at, cur.at), wall(c), c.me)
@@ -575,7 +630,7 @@ class MirrorEngine internal constructor(
                         if (o.all) {
                             // "Also on Pixel 6": the listener chose to clear this phone's History too, up to that moment.
                             if (o.before > r.clearMark) {
-                                lib.dropPlaysBefore(o.before, r.basePlays.floor)
+                                lib.dropPlaysBefore(o.before, r.basePlays.coveredFrom)
                                 r.clearMark = o.before
                             }
                             r.basePlays = r.basePlays.copy(clearedBefore = maxOf(r.basePlays.clearedBefore, minOf(o.before, r.clearMark)))
@@ -642,19 +697,53 @@ class MirrorEngine internal constructor(
         val m = c.r.map[mid] ?: return null
         val v = lib.playlist(m.localId) ?: return null
         val base = c.r.basePlaylists[mid]?.version()
-        val pv = PlVersion(v.name, v.items, Hlc(0, 0, c.me), v.follow ?: m.follow?.follow(), v.ro)
+        val pv = PlVersion(v.name, withGhosts(c.r.ghosts[mid], v.items), Hlc(0, 0, c.me), v.follow ?: m.follow?.follow(), v.ro)
         val at = if (base != null && PlaylistMerge.sameVersion(pv, base)) base.at else PlaylistMerge.localVersionAt(base?.at, null, c.r.last, wall(c), c.me)
         return pv.copy(at = at)
     }
 
+    /** The songs of [items] this phone doesn't hold, each with where it sits among the held ones ([heldNow], as listed here). */
+    private fun ghostsOf(items: List<WireSong>, held: List<Boolean>, heldNow: List<WireSong>): List<Ghost> {
+        val out = mutableListOf<Ghost>()
+        var k = 0
+        items.forEachIndexed { i, s ->
+            if (held.getOrElse(i) { false }) {
+                k++
+            } else {
+                out += Ghost(s, k, heldNow.getOrNull(k - 1))
+            }
+        }
+        return out
+    }
+
+    /**
+     * [items] (this phone's list) with the songs it couldn't hold put back in place (B2): each group right after the held song it
+     * followed, else where the previous group went, else at the start. So the phone never sends them as removed.
+     */
+    private fun withGhosts(ghosts: List<Ghost>?, items: List<WireSong>): List<WireSong> {
+        if (ghosts.isNullOrEmpty()) return items
+        val out = items.toMutableList()
+        var cursor = 0
+        for ((_, group) in ghosts.groupBy { it.heldBefore }.toSortedMap()) {
+            val after = group.first().after
+            if (after != null) {
+                val i = (cursor until out.size).firstOrNull { SongKey.sameSong(out[it], after) }
+                if (i != null) cursor = i + 1
+            }
+            out.addAll(cursor.coerceAtMost(out.size), group.map { it.s })
+            cursor = (cursor + group.size).coerceAtMost(out.size)
+        }
+        return out
+    }
+
     private suspend fun applyPl(c: Ctx, op: MirrorOp.Pl, hash: String) {
         val r = c.r
+        if (op.id in r.letGo) return // let go here: the shared choice drops it on this run; nothing brings it back
         val local = localVersion(c, op.id)
         val localHash = local?.let { SyncHashes.playlistHash(it.name, it.items, it.follow) }
         val base = r.basePlaylists[op.id]?.version()
         val remote = PlVersion(op.name, op.items, op.at, op.follow, op.ro)
         val res = PlaylistMerge.merge(phone = true, base = base, local = local, localHash = localHash, remote = remote, parent = op.parent, fromPhone = false)
-        var held: LocalVersion? = null
         if (res.action == PlaylistMerge.Action.TAKE || res.action == PlaylistMerge.Action.MERGE) {
             val v = res.local
             val mapped = r.map[op.id]
@@ -663,23 +752,17 @@ class MirrorEngine internal constructor(
                     lib.deletePlaylist(mapped.localId)
                     r.map = r.map - op.id
                 }
+                r.ghosts = r.ghosts - op.id
             } else {
-                val id = lib.putPlaylist(mapped?.localId, op.id, v.name, v.items)
-                r.map = r.map + (op.id to MappedPl(id, FollowRec.of(v.follow)))
-                held = lib.playlist(id)
+                val put = lib.putPlaylist(mapped?.localId, op.id, v.name, v.items)
+                r.map = r.map + (op.id to MappedPl(put.id, FollowRec.of(v.follow)))
+                r.ghosts = ghostsOf(v.items, put.held, lib.playlist(put.id)?.items.orEmpty()).let { g ->
+                    if (g.isEmpty()) r.ghosts - op.id else r.ghosts + (op.id to g)
+                }
             }
         }
         if (res.base === base) return // an ignored read-only op keeps the old base
-        // Songs this phone couldn't hold (no row for them here) mustn't go back as removed: the base is what it holds.
-        val nb = res.base?.let { b ->
-            val h = held
-            if (h != null && b.items != null && res.local?.items != null && !PlaylistMerge.sameVersion(PlVersion(h.name, h.items, b.at, b.follow), PlVersion(res.local!!.name, res.local!!.items, b.at, b.follow))) {
-                Log.w(TAG, "a mirrored playlist lost ${res.local!!.items!!.size - h.items.size} song(s) here")
-                b.copy(name = h.name, items = h.items)
-            } else {
-                b
-            }
-        }
+        val nb = res.base
         r.basePlaylists = if (nb == null) {
             r.basePlaylists - op.id
         } else {
@@ -717,14 +800,14 @@ class MirrorEngine internal constructor(
                     val floor = lib.ownPlayAt(FIRST_PLAYS)
                     val own = lib.ownPlays(floor).mapTo(HashSet()) { PlaysMerge.playId(it.s, it.playedAt) }
                     val ids = view.plays.filter { it.device == c.me && it.playedAt >= floor }.map { PlaysMerge.playId(it.s, it.playedAt) }.filter { it in own }
-                    r.basePlays = BasePlays(floor, ids.toSet(), r.clearMark)
+                    r.basePlays = BasePlays(floor, ids.toSet(), r.clearMark, coveredFrom = floor)
                     joinedKind(c, k)
                 }
                 Kind.PLAYLISTS -> {
                     // Joined again (turned off and on): the old base describes another time, so it goes (sync-v1 §7.4).
                     r.basePlaylists = emptyMap()
                     for ((id, vp) in view.playlists) {
-                        if (id !in cfg.ids) continue
+                        if (id !in cfg.ids || id in r.letGo) continue
                         val op = MirrorOp.Pl(id, vp.at, vp.hash, vp.name, vp.items, vp.follow?.follow(), vp.ro)
                         if (kc.dir.phoneApplies && !vp.ro) {
                             applyPl(c, op, vp.hash)
@@ -767,21 +850,26 @@ class MirrorEngine internal constructor(
         val there = view.likes.filter { it.on }.map { it.s }
         val here = lib.likes()
         val n = FirstMerge.counts(here.map { it.s }, there)
+        val fingerprint = fingerprintOf(here.map { it.s }, there)
+        // An answer applies only to the songs the listener saw counted; if either side changed since, ask again (S11).
+        val answer = r.answer?.takeIf { it.since == kc.since && it.fingerprint == fingerprint }
+        if (r.answer != null && answer == null) r.answer = null
         val choice = when {
             there.isEmpty() || (n.onlyA == 0 && n.onlyB == 0) -> FirstMergeChoice.COMBINE
             here.isEmpty() -> FirstMergeChoice.THEIRS
-            r.answer?.since == kc.since -> r.answer!!.choice
+            answer != null -> answer.choice
             else -> null
-        }
-        if (choice == null || (choice == FirstMergeChoice.MINE && !kc.dir.phoneSends)) {
-            r.question = LikesQuestion(
-                oneWay = !kc.dir.phoneSends, here = n.a, there = n.b, both = n.both, combined = n.combined,
-                thereName = _status.value.otherName, since = kc.since, externalHere = here.count { it.external },
-            )
-            return
         }
         val hereIdx = SongIndex.of(here.map { it.s to it })
         val thereIdx = SongIndex.of(there.map { it to true })
+        if (choice == null || (choice == FirstMergeChoice.MINE && !kc.dir.phoneSends)) {
+            r.question = LikesQuestion(
+                oneWay = !kc.dir.phoneSends, here = n.a, there = n.b, both = n.both, combined = n.combined,
+                thereName = _status.value.otherName, since = kc.since,
+                externalHere = here.count { it.external && !thereIdx.has(it.s) }, fingerprint = fingerprint,
+            )
+            return
+        }
         val at = wall(c)
         val taken = there.filter { !hereIdx.has(it) }
         when (choice) {
@@ -826,92 +914,126 @@ class MirrorEngine internal constructor(
     private suspend fun push(c: Ctx) {
         val r = c.r
         val cfg = c.cfg
+        c.pushDigest = digester?.let { d ->
+            guard(null) { d(_status.value.copy(config = cfg, mirrored = r.map.mapValues { e -> e.value.localId })) }
+        }
         val at = Hlc.tick(r.last, wall(c), c.me)
         val ops = mutableListOf<MirrorOp>()
-        var likeOps: List<LikeRec<WireSong>> = emptyList()
         if (joinedNow(c, Kind.LIKES) && cfg.likes.dir.phoneSends) {
-            likeOps = LikesMerge.diff(likeRecs(r), lib.likes(), at)
+            var likeOps = LikesMerge.diff(likeRecs(r), lib.likes(), at)
+            // One run that would remove a big part of the likes is held for the listener to confirm (N7).
+            val offs = likeOps.count { !it.on }
+            val onCount = r.baseLikes.count { it.on }
+            if (!r.allowRemovals && (offs > MASS_REMOVALS || (onCount >= 20 && offs * 4 > onCount))) {
+                likeOps = likeOps.filter { it.on }
+                r.heldRemovals = offs
+                Log.w(TAG, "holding $offs unlikes for the listener to confirm")
+            } else {
+                r.heldRemovals = 0
+            }
             ops += likeOps.map { MirrorOp.Like(it.s, it.on, it.at) }
         }
-        var playIds: Set<String>? = null
+        var ownHere: Set<String>? = null
         if (joinedNow(c, Kind.PLAYS) && cfg.plays.dir.phoneSends) {
             val own = lib.ownPlays(r.basePlays.floor)
             val local = PlaysState(own, r.clearMark)
-            val diff = PlaysMerge.diff(r.basePlays.ids, r.basePlays.clearedBefore, local, at)
-            for (o in diff) {
+            for (o in PlaysMerge.diff(r.basePlays.ids, r.basePlays.clearedBefore, local, at)) {
                 ops += when (o) {
                     is PlayOp.Play -> MirrorOp.Play(o.s, o.playedAt)
                     is PlayOp.ClearPlays -> MirrorOp.ClearPlays(o.before, o.at, o.all)
                 }
             }
-            val here = own.mapTo(HashSet()) { PlaysMerge.playId(it.s, it.playedAt) }
-            playIds = r.basePlays.ids.filterTo(HashSet()) { it in here } + diff.filterIsInstance<PlayOp.Play<WireSong>>().map { PlaysMerge.playId(it.s, it.playedAt) }
+            ownHere = own.mapTo(HashSet()) { PlaysMerge.playId(it.s, it.playedAt) }
         }
-        val plBases = mutableListOf<Pair<String, BasePl>>()
+        val plBases = HashMap<String, BasePl>()
+        val gone = HashSet<String>()
         if (joinedNow(c, Kind.PLAYLISTS) && cfg.playlists.dir != Dir.OFF) {
             for ((mid, m) in r.map) {
-                if (mid !in cfg.ids) continue
+                if (mid !in cfg.ids || mid in r.letGo) continue
                 val base = r.basePlaylists[mid]
                 val v = lib.playlist(m.localId)
                 if (v == null) {
-                    // Deleted here while it still mirrors: deleted on every device.
-                    if (base != null && base.items != null && (cfg.playlists.dir.phoneSends || base.ro)) {
-                        val del = MirrorOp.Pl(mid, at, base.hash, base.name, null, null, base.ro)
-                        ops += del
-                        plBases += mid to BasePl(base.name, null, null, base.ro, at, SyncHashes.playlistHash(base.name, null, null))
+                    if (mid !in r.everywhere) {
+                        // Gone here without the listener choosing "Everywhere" (an unfollow, a mix deleted from Home, a delete
+                        // that asked nothing): Only here. It stays on the other devices (review B5, S5).
+                        gone += mid
+                    } else if (base != null && base.items != null && (cfg.playlists.dir.phoneSends || base.ro)) {
+                        ops += MirrorOp.Pl(mid, at, base.hash, base.name, null, null, base.ro)
+                        plBases[mid] = BasePl(base.name, null, null, base.ro, at, SyncHashes.playlistHash(base.name, null, null))
                     }
                     continue
                 }
                 if (!cfg.playlists.dir.phoneSends && !v.ro) continue // only the read-only ones go phone → web whatever the direction
                 val follow = v.follow ?: m.follow?.follow()
-                val pv = PlVersion(v.name, v.items, at, follow, v.ro)
+                val items = withGhosts(r.ghosts[mid], v.items)
+                val pv = PlVersion(v.name, items, at, follow, v.ro)
                 if (base != null && base.items != null && PlaylistMerge.sameVersion(pv, base.version()) && base.ro == v.ro) continue
-                ops += MirrorOp.Pl(mid, at, base?.hash, v.name, v.items, follow, v.ro)
-                plBases += mid to BasePl(v.name, v.items, FollowRec.of(follow), v.ro, at, SyncHashes.playlistHash(v.name, v.items, follow))
+                ops += MirrorOp.Pl(mid, at, base?.hash, v.name, items, follow, v.ro)
+                plBases[mid] = BasePl(v.name, items, FollowRec.of(follow), v.ro, at, SyncHashes.playlistHash(v.name, items, follow))
             }
         }
         val marks = r.marks.filter { cfg.of(it.kind).dir != Dir.OFF && cfg.of(it.kind).since == it.since }
         ops += marks.map { MirrorOp.Joined(it.kind, it.since) }
-        if (ops.isEmpty()) {
+        if (gone.isNotEmpty()) letGo(r, gone)
+        if (ops.isNotEmpty()) {
+            for (o in ops) o.stamp?.let { if (r.last == null || it > r.last!!) r.last = it }
+            // The base moves batch by batch as each lands (review S1): a run cut short never re-sends what is in.
+            send(c, ops) { batch ->
+                val likes = batch.filterIsInstance<MirrorOp.Like>()
+                if (likes.isNotEmpty()) {
+                    r.baseLikes = LikesMerge.apply(likeRecs(r), likes.map { LikeRec(it.s, it.on, it.at) }).map { BaseLike(it.s, it.on, it.at) }
+                }
+                val played = batch.filterIsInstance<MirrorOp.Play>().map { PlaysMerge.playId(it.s, it.playedAt) }
+                val cleared = batch.any { it is MirrorOp.ClearPlays }
+                if (played.isNotEmpty() || cleared) {
+                    r.basePlays = r.basePlays.copy(
+                        ids = r.basePlays.ids + played,
+                        clearedBefore = if (cleared) maxOf(r.basePlays.clearedBefore, r.clearMark) else r.basePlays.clearedBefore,
+                    )
+                }
+                for (o in batch.filterIsInstance<MirrorOp.Pl>()) {
+                    plBases[o.id]?.let { r.basePlaylists = r.basePlaylists + (o.id to it) }
+                    if (o.items == null) r.everywhere = r.everywhere - o.id
+                }
+                val sentMarks = batch.filterIsInstance<MirrorOp.Joined>().map { PendingMark(it.kind, it.since) }
+                if (sentMarks.isNotEmpty()) r.marks = r.marks.filter { it !in sentMarks }
+            }
+            if (r.allowRemovals && ops.any { it is MirrorOp.Like && !it.on }) r.allowRemovals = false
+            r.lastPushAt = clock()
+            Log.i(TAG, "pushed ${ops.size} op(s)")
+        } else {
             r.marks = emptyList()
-            playIds?.let { r.basePlays = movedFloor(c, r.basePlays.copy(ids = it)) }
-            return
         }
-        for (o in ops) o.stamp?.let { if (r.last == null || it > r.last!!) r.last = it }
-        send(c, ops)
-        // In: the base moves.
-        if (likeOps.isNotEmpty()) {
-            r.baseLikes = LikesMerge.apply(likeRecs(r), likeOps).map { BaseLike(it.s, it.on, it.at) }
-        }
-        playIds?.let { r.basePlays = movedFloor(c, r.basePlays.copy(ids = it, clearedBefore = maxOf(r.basePlays.clearedBefore, r.clearMark))) }
-        for ((id, b) in plBases) r.basePlaylists = r.basePlaylists + (id to b)
-        r.marks = r.marks.filter { it !in marks }
-        r.lastPushAt = clock()
-        Log.i(TAG, "pushed ${ops.size} op(s)")
+        // The plays base keeps only own plays still here, then its floor moves up (the oldest fall off it).
+        ownHere?.let { here -> r.basePlays = movedFloor(c, r.basePlays.copy(ids = r.basePlays.ids.filterTo(HashSet()) { it in here })) }
+        if (gone.isNotEmpty()) settleLetGo(c)
     }
 
     /** Every own play is in the base now: the floor moves up to two days ago, and the ids before it go (sync-v1 §7.2). */
     private fun movedFloor(c: Ctx, b: BasePlays): BasePlays {
         val floor = maxOf(b.floor, wall(c) - FLOOR_LAG_MS)
         // Keyed `textKey|playedAt`: an id's time is after its last `|`.
-        return BasePlays(floor, b.ids.filterTo(HashSet()) { (it.substringAfterLast('|').toLongOrNull() ?: Long.MAX_VALUE) >= floor }, b.clearedBefore)
+        return b.copy(floor = floor, ids = b.ids.filterTo(HashSet()) { (it.substringAfterLast('|').toLongOrNull() ?: Long.MAX_VALUE) >= floor })
     }
 
-    /** Seals and posts [ops], in as many batches as one part each needs (768,000 bytes of gzip); saved after each. */
-    private suspend fun send(c: Ctx, ops: List<MirrorOp>) {
+    /**
+     * Seals and posts [ops], in as many batches as one part each needs (768,000 bytes of gzip). After each batch lands, [landed]
+     * moves the base by that batch and the state is saved (review S1).
+     */
+    private suspend fun send(c: Ctx, ops: List<MirrorOp>, landed: (List<MirrorOp>) -> Unit) {
         val key = dataKey(c, c.sp.epoch) ?: throw Settle()
-        val batches = mutableListOf<SyncEnvelope>()
+        val batches = mutableListOf<Pair<List<MirrorOp>, SyncEnvelope>>()
         fun cut(part: List<MirrorOp>) {
             val env = SyncCrypto.seal(key, c.sp.spaceId, c.sp.epoch, SyncCrypto.Place.LOG, MirrorWire.opsJson(c.me, part))
             if (env.c.length.toLong() * 3 / 4 - 16 <= SyncCrypto.PART_BYTES || part.size < 2) {
-                batches += env
+                batches += part to env
                 return
             }
             cut(part.subList(0, part.size / 2))
             cut(part.subList(part.size / 2, part.size))
         }
         cut(ops)
-        for (env in batches) {
+        for ((part, env) in batches) {
             var res = api.postLog(c.auth, c.sp.spaceId, env)
             if (res is SyncResult.Error && res.code == SyncErrorCode.COMPACT) {
                 compact(c, wholeLog = true)
@@ -920,6 +1042,7 @@ class MirrorEngine internal constructor(
             val posted = res.get()
             // The batch is next in the log: the view takes it now (else the next pull reads it back, as anyone's).
             if (posted.seq == c.r.seen + 1) applyEntry(c, LogEntry(posted.seq, c.me, posted.serverAt.takeIf { it > 0 } ?: wall(c), env))
+            landed(part)
             records.save(c.r)
         }
     }
@@ -943,6 +1066,7 @@ class MirrorEngine internal constructor(
                 c.info = api.space(c.auth, c.sp.spaceId).get()
                 if (c.info.rotationDue || c.info.epoch > c.sp.epoch) throw Settle()
                 pull(c)
+                records.save(c.r) // what the pull applied stays applied, whatever the snapshot does (review S1)
             }
             val r = c.r
             val uptoSeq = r.seen
@@ -996,6 +1120,15 @@ class MirrorEngine internal constructor(
         const val SLOW = "Mirroring waits a little: too many changes at once."
         const val FULL = "Your linked devices hold too much to mirror more."
         const val CANT_COMPACT = "Mirroring waits for your browser to catch up."
+
+        /** More unlikes than this in one run are held for the listener (N7). */
+        const val MASS_REMOVALS = 200
+
+        /** Which sets of liked songs a first-merge question counted (S11): SHA-256 of the sorted identity keys of each side. */
+        fun fingerprintOf(here: List<SongIdentity>, there: List<SongIdentity>): String {
+            val text = here.map(SongKey::keyOf).sorted().joinToString("\n") + "\u0000" + there.map(SongKey::keyOf).sorted().joinToString("\n")
+            return com.stash.core.data.weblink.Base64Url.encode(SyncCrypto.sha256(text.toByteArray(Charsets.UTF_8)).copyOf(16))
+        }
 
         private const val ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 

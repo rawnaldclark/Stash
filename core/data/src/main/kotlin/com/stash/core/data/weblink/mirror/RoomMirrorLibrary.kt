@@ -107,10 +107,15 @@ class RoomMirrorLibrary @Inject constructor(
         LocalVersion(nameOf(p.name), dao.playlistItems(localId, MirrorWire.MAX_PL_ITEMS).mapNotNull { songOf(it.song) }, follow, isSynced(p))
     }
 
-    override suspend fun putPlaylist(localId: Long?, mirrorId: String, name: String, items: List<WireSong>): Long = io {
+    override suspend fun putPlaylist(localId: Long?, mirrorId: String, name: String, items: List<WireSong>): PutPlaylist = io {
         val playlists = database.playlistDao()
-        val ids = matcher.matchAll(items, mirror = true).mapNotNull { it?.id }.distinct()
-        if (ids.size < items.size) Log.i(TAG, "${items.size - ids.size} song(s) of a mirrored playlist have no row here")
+        // Throws (MirrorMatchException) when a batch couldn't be matched: nothing is written then (review B2).
+        val rows = matcher.matchAll(items, mirror = true)
+        val seen = HashSet<Long>()
+        // A repeat of one row is kept once here (one cross-ref per song); the engine carries the others (review B2).
+        val held = rows.map { row -> row != null && seen.add(row.id) }
+        val ids = rows.filterIndexed { i, _ -> held[i] }.map { it!!.id }
+        if (ids.size < items.size) Log.i(TAG, "${items.size - ids.size} song(s) of a mirrored playlist aren't held here")
         database.withTransaction {
             val existing = localId?.let { playlists.getById(it) }?.takeIf { it.isActive }
                 ?: playlists.findBySourceId(SOURCE_PREFIX + mirrorId)
@@ -128,7 +133,7 @@ class RoomMirrorLibrary @Inject constructor(
                 ids.forEachIndexed { i, t -> playlists.insertCrossRef(PlaylistTrackCrossRef(playlistId = id, trackId = t, position = i, addedAt = now, locallyAdded = true)) }
                 playlists.updateTrackCount(id, ids.size)
             }
-            id
+            PutPlaylist(id, held)
         }
     }
 

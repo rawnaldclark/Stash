@@ -200,6 +200,162 @@ class MirrorEngineTest {
         assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>()).isEmpty()
     }
 
+    // ------------------------------------------------------------------------------------------------ Phase 6 review
+
+    /** The web sends playlist [items] under [mid]; returns the phone's local id for it. */
+    private suspend fun webPlaylist(mid: String, items: List<String>): Long {
+        web.configure(playlists = Dir.BOTH, ids = listOf(mid))
+        val since = web.head
+        web.post(MirrorOp.Pl(mid, web.at(), null, "Mix", items.map { song(it) }), MirrorOp.Joined(Kind.PLAYLISTS, since))
+        run()
+        return lib.playlists.entries.single { it.value.name == "Mix" }.key
+    }
+
+    private fun lastPl() = web.ops(me).filterIsInstance<MirrorOp.Pl>().lastOrNull()
+
+    private fun lastWebHash(mid: String): String {
+        val pl = web.ops(web.id).filterIsInstance<MirrorOp.Pl>().last { it.id == mid }
+        return SyncHashes.playlistHash(pl.name, pl.items, pl.follow)
+    }
+
+    @Test fun `B2 - a song the phone can't hold stays in place in every version it sends after a local edit`() = runTest {
+        link()
+        lib.unholdable += "Ghost"
+        val id = webPlaylist("m_WebPlaylist00003", listOf("One", "Ghost", "Two"))
+        assertThat(lib.playlists.getValue(id).items.map { it.title }).containsExactly("One", "Two").inOrder()
+        lib.playlists.getValue(id).items = lib.playlists.getValue(id).items + song("Three")
+        run()
+        assertThat(lastPl()!!.items!!.map { it.title }).containsExactly("One", "Ghost", "Two", "Three").inOrder()
+        // And again after another edit (the carried song survives every push).
+        lib.playlists.getValue(id).items = listOf(song("Zero")) + lib.playlists.getValue(id).items
+        run()
+        assertThat(lastPl()!!.items!!.map { it.title }).containsExactly("Zero", "One", "Ghost", "Two", "Three").inOrder()
+    }
+
+    @Test fun `B2 - a repeated song the library keeps once is carried, not removed`() = runTest {
+        link()
+        val id = webPlaylist("m_WebPlaylist00004", listOf("A", "A", "B"))
+        assertThat(lib.playlists.getValue(id).items.map { it.title }).containsExactly("A", "B").inOrder()
+        lib.playlists.getValue(id).items = lib.playlists.getValue(id).items + song("C")
+        run()
+        assertThat(lastPl()!!.items!!.map { it.title }).containsExactly("A", "A", "B", "C").inOrder()
+    }
+
+    @Test fun `B2 - a matcher failure aborts the run, writes nothing and never pushes an emptied playlist`() = runTest {
+        link()
+        val id = webPlaylist("m_WebPlaylist00005", listOf("One", "Two"))
+        lib.failPut = true
+        web.post(MirrorOp.Pl("m_WebPlaylist00005", web.at(), lastWebHash("m_WebPlaylist00005"), "Mix", listOf(song("One"), song("Two"), song("New"))))
+        assertThat(run()).isInstanceOf(MirrorRun.Retry::class.java)
+        assertThat(lib.playlists.getValue(id).items.map { it.title }).containsExactly("One", "Two").inOrder()
+        assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>()).isEmpty()
+        lib.failPut = false
+        assertThat(run()).isEqualTo(MirrorRun.Done)
+        assertThat(lib.playlists.getValue(id).items.map { it.title }).containsExactly("One", "Two", "New").inOrder()
+    }
+
+    @Test fun `B5 S5 - a mirrored playlist gone without a choice (unfollow, a Home delete) is Only here, never deleted elsewhere`() = runTest {
+        link()
+        val p = lib.addPlaylist("Run", listOf(song("R1")))
+        engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYLISTS to Dir.BOTH), add = listOf(p)))
+        val mid = web.config()!!.ids.single()
+        lib.playlists.remove(p) // deleted by a path that asked nothing
+        run()
+        assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>().none { it.items == null }).isTrue()
+        assertThat(web.config()!!.ids).doesNotContain(mid)
+    }
+
+    @Test fun `B5 - Everywhere, chosen in the dialog, deletes it on every device`() = runTest {
+        link()
+        val p = lib.addPlaylist("Run", listOf(song("R1")))
+        engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYLISTS to Dir.BOTH), add = listOf(p)))
+        engine.beforeDelete(p, everywhere = true)
+        lib.playlists.remove(p)
+        run()
+        assertThat(lastPl()!!.items).isNull()
+    }
+
+    @Test fun `S2 - Only here made offline stays deleted, the settings change is retried, and an edit elsewhere doesn't bring it back`() = runTest {
+        link()
+        val id = webPlaylist("m_WebPlaylist00006", listOf("G1"))
+        engine.beforeDelete(id, everywhere = false)
+        lib.playlists.remove(id)
+        server.failNext("putConfig", SyncResult.Error(503, "unavailable"))
+        assertThat(run()).isInstanceOf(MirrorRun.Retry::class.java)
+        web.post(MirrorOp.Pl("m_WebPlaylist00006", web.at(), lastWebHash("m_WebPlaylist00006"), "Mix", listOf(song("G1"), song("G2"))))
+        assertThat(run()).isEqualTo(MirrorRun.Done)
+        assertThat(lib.playlists.values.none { it.name == "Mix" }).isTrue()
+        assertThat(web.config()!!.ids).doesNotContain("m_WebPlaylist00006")
+    }
+
+    @Test fun `S1 - a push cut short after its first batch never re-sends that batch`() = runTest {
+        link()
+        likesMirroring()
+        val n = 20_000
+        val rnd = java.util.Random(7)
+        val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        fun word() = (1..24).map { chars[rnd.nextInt(62)] }.joinToString("")
+        repeat(n) { lib.like(song(word(), word())) }
+        server.failPostsAfter = 1
+        assertThat(run()).isInstanceOf(MirrorRun.Retry::class.java)
+        val landed = likeOps(me).count { it.on }
+        assertThat(landed).isGreaterThan(3) // the first batch landed...
+        assertThat(landed).isLessThan(n) // ...and the rest didn't
+        server.failPostsAfter = null
+        assertThat(run()).isEqualTo(MirrorRun.Done)
+        val sent = likeOps(me).filter { it.on }.map { it.s.title }
+        assertThat(sent.size).isEqualTo(sent.toSet().size) // nothing went twice
+        assertThat(sent.toSet().size).isAtLeast(n)
+    }
+
+    @Test fun `S3 - Also on Pixel clears every own play the mirror sent, not just the last two days`() = runTest {
+        link()
+        server.serverNow = 30L * 86_400_000
+        repeat(3) { lib.plays += PlayRec(song("Old $it"), 1_000L + it) }
+        engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYS to Dir.BOTH)))
+        clock += 10L * 86_400_000
+        server.serverNow += 10L * 86_400_000
+        run()
+        web.post(MirrorOp.Joined(Kind.PLAYS, web.config()!!.plays.since), MirrorOp.ClearPlays(5_000, web.at(), all = true))
+        run()
+        assertThat(lib.plays).isEmpty()
+    }
+
+    @Test fun `S11 - an answer given to other counts is not applied, the question comes back with the new ones`() = runTest {
+        link()
+        browserTurnsLikesOn()
+        run()
+        assertThat(engine.status.value.question!!.there).isEqualTo(2)
+        web.post(MirrorOp.Like(song("D"), true, web.at())) // the browser likes one more before the answer runs
+        engine.answer(FirstMergeChoice.MINE)
+        assertThat(likeOps(me).none { !it.on }).isTrue() // nothing removed on the strength of the old counts
+        assertThat(engine.status.value.question!!.there).isEqualTo(3)
+        engine.answer(FirstMergeChoice.MINE)
+        assertThat(likeOps(me).filter { !it.on }.map { it.s.title }).containsExactly("C", "D")
+    }
+
+    @Test fun `N7 - one run that would unlike a big part of the likes is held until the listener sends it`() = runTest {
+        link()
+        repeat(40) { lib.like(song("L$it")) }
+        engine.configure(MirrorChange(dirs = mapOf(Kind.LIKES to Dir.BOTH)))
+        repeat(15) { lib.unlike(song("L$it")) }
+        run()
+        assertThat(engine.status.value.heldRemovals).isEqualTo(15)
+        assertThat(likeOps(me).none { !it.on }).isTrue()
+        engine.releaseRemovals(send = true)
+        assertThat(likeOps(me).count { !it.on }).isEqualTo(15)
+        assertThat(engine.status.value.heldRemovals).isEqualTo(0)
+    }
+
+    @Test fun `N1 - a state file that can't be read back keeps the playlist mapping, so a rejoin doesn't copy the phone's playlists`() = runTest {
+        link()
+        val p = lib.addPlaylist("Run", listOf(song("R1")))
+        engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYLISTS to Dir.BOTH), add = listOf(p)))
+        records.record = null // unreadable; the map backup survives
+        run()
+        assertThat(lib.playlists.values.count { it.name == "Run" }).isEqualTo(1)
+    }
+
     @Test fun `a stamp more than 10 minutes past its row is skipped`() = runTest {
         link()
         likesMirroring()
