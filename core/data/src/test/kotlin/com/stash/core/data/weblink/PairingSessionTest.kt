@@ -146,33 +146,46 @@ class PairingSessionTest {
         assertThat(store.space()).isNull()
     }
 
-    @Test fun `the browser grants its phone-less space - the phone joins it without creating one`() = runTest {
+    @Test fun `a reply that grants the browser's space is refused - nothing joined, created or pinned`() = runTest {
         val browser = FakeBrowser(server)
-        // The browser is in a space whose phone was removed.
         val grant = SyncKeys.SpaceGrant(WebLinkIds.newSpaceId(), SyncCrypto.randomBytes(32), 3)
-        server.spaces[grant.id] = FakeSyncServer.Space(grant.id).apply {
-            epoch = 3
-            devices[browser.deviceId] = FakeSyncServer.Dev(browser.deviceId, "web", SyncCrypto.tokenHash(browser.token), Base64Url.encode(browser.pub), null)
-        }
         val link = browser.openCode()
         server.onAnswered = { slot ->
             browser.readAnswer(slot)
-            // Sponsor: adds the phone (its label re-sealed under the data key), then replies with the space.
-            val phoneLabel = browser.answer!!.label
-            val labelCt = SyncCrypto.seal(
-                SyncCrypto.dataKey(grant.k, grant.id), grant.id, 3, SyncCrypto.Place.label(phoneLabel.deviceId), SyncKeys.labelJson(phoneLabel),
-            )
-            server.browserAddsPhone(grant.id, slot.pairId, labelCt)
-            browser.reply(grant)
+            browser.reply(grant) // a v1 browser never does this (sync-v1 §5.6): the phone never takes a browser's key
         }
+        val confirm = session.open(link) as PairingState.Confirm
+        assertThat(session.confirm()).isEqualTo(PairingState.Failed(WebLinkCopy.UNFINISHED, confirm.code))
+        assertThat(server.calls).doesNotContain("create")
+        assertThat(store.space()).isNull()
+        assertThat(store.roster()).isEmpty()
+    }
+
+    @Test fun `a second tap on Link sends no second answer`() = runTest {
+        val browser = FakeBrowser(server)
+        val link = browser.openCode()
+        browser.confirmsOnAnswer()
         session.open(link)
         assertThat(session.confirm()).isEqualTo(PairingState.Linked("Chrome on Windows"))
-        assertThat(server.calls).doesNotContain("create")
-        val sp = store.space()!!
-        assertThat(sp.spaceId).isEqualTo(grant.id)
-        assertThat(sp.epoch).isEqualTo(3)
-        assertThat(Base64Url.encode(sp.k)).isEqualTo(Base64Url.encode(grant.k))
-        assertThat(store.roster().single().deviceId).isEqualTo(browser.deviceId)
+        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Chrome on Windows"))
+        assertThat(server.calls.count { it == "answer" }).isEqualTo(1)
+    }
+
+    @Test fun `a pairing link opened from outside the scanner says so on the confirm sheet`() = runTest {
+        val browser = FakeBrowser(server)
+        val confirm = session.open(browser.openCode(), fromLink = true) as PairingState.Confirm
+        assertThat(confirm.fromLink).isTrue()
+    }
+
+    @Test fun `a create refused for good leaves no link behind`() = runTest {
+        val browser = FakeBrowser(server)
+        val link = browser.openCode()
+        browser.confirmsOnAnswer()
+        server.failNext("create", SyncResult.Error(429, SyncErrorCode.RATE_LIMITED))
+        session.open(link)
+        assertThat(session.confirm()).isInstanceOf(PairingState.Failed::class.java)
+        assertThat(store.space()).isNull()
+        assertThat(store.roster()).isEmpty()
     }
 
     @Test fun `a linked phone adds a second browser to its space, label under the data key`() = runTest {

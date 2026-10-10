@@ -10,7 +10,10 @@ import com.stash.core.data.weblink.store.RosterEntry
 import com.stash.core.data.weblink.store.WebLinkStore
 import java.security.KeyPair
 import java.security.interfaces.ECPublicKey
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,8 +29,12 @@ sealed interface PairingState {
     /** Reading the code's slot (the browser's label). */
     data object Checking : PairingState
 
-    /** The confirm sheet: "Link Chrome on Windows?" with the code the computer will ask about. */
-    data class Confirm(val browserName: String, val code: String) : PairingState
+    /**
+     * The confirm sheet: "Link Chrome on Windows?" with the code the computer will ask about. [fromLink]: the code came in as a
+     * link (the camera app, a chat, a web page), not from the in-app scanner, so the sheet warns that only a computer in front
+     * of the user should be linked (the name on the sheet is whatever that browser chose).
+     */
+    data class Confirm(val browserName: String, val code: String, val fromLink: Boolean = false) : PairingState
 
     /** Answered; "Waiting for your computer… · 123 456" until the browser's user confirms the same code. */
     data class Waiting(val browserName: String, val code: String) : PairingState
@@ -47,11 +54,12 @@ sealed interface PairingState {
  * 2. [confirm] (the user tapped Link): post the answer (this phone's label, and the space: the current one when linked,
  *    else a freshly minted one) → [PairingState.Waiting], keeping the code on screen.
  * 3. Long-poll the browser's reply and open it under **this phone's own** `Kpair` (R7). Only then: join the browser to this
- *    phone's space, or create the minted space, or (the browser granted its phone-less space) confirm membership in it;
- *    save the space and pin the browser's key → [PairingState.Linked]. A reply that doesn't open (the browser's label was
+ *    phone's space, or create the minted space; save the space and pin the browser's key → [PairingState.Linked]. A reply
+ *    that grants a space is refused (the answer always carries one; a phone never takes a browser's key). A reply that doesn't open (the browser's label was
  *    swapped in the slot, so the codes differ) stops here with nothing joined, created or pinned.
  *
- * Not thread-safe: one coroutine drives a session (the screen's view model); cancelling it cancels the pairing.
+ * Not thread-safe: one coroutine drives a session (the screen's view model). Cancelling it cancels the pairing up to the
+ * reply; after the reply the commit finishes regardless.
  */
 class PairingSession(
     private val api: SyncApi,
@@ -82,8 +90,33 @@ class PairingSession(
         _state.value = PairingState.Idle
     }
 
-    /** Step 1: a scanned or opened link → the confirm sheet, or why not. */
-    suspend fun open(linkText: String): PairingState {
+    /** Step 1: a scanned or opened link → the confirm sheet, or why not. [fromLink]: it didn't come from the in-app scanner. */
+    suspend fun open(linkText: String, fromLink: Boolean = false): PairingState = guarded(null) { openInner(linkText, fromLink) }
+
+    /**
+     * Steps 2 and 3: the user tapped Link. Runs until linked or stopped. One answer per code: a second tap while this runs, or
+     * after it, finds nothing pending and does nothing. Once the browser's reply has opened, the commit (create or join, then
+     * save and pin) runs to completion even if the caller is cancelled (Cancel, Back), so the server and this phone never
+     * disagree about the link.
+     */
+    suspend fun confirm(): PairingState {
+        val p = pending ?: return _state.value.takeIf { it !is PairingState.Confirm } ?: fail(WebLinkCopy.UNFINISHED)
+        pending = null
+        set(PairingState.Waiting(p.browser.name, p.code))
+        return guarded(p.code) { confirmInner(p) }
+    }
+
+    /** Any unexpected failure (a Keystore hiccup, a provider error) stops the pairing with a message instead of crashing. */
+    private suspend fun guarded(code: String?, block: suspend () -> PairingState): PairingState = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "pairing stopped: ${e.javaClass.simpleName}")
+        fail(WebLinkCopy.UNFINISHED, code)
+    }
+
+    private suspend fun openInner(linkText: String, fromLink: Boolean): PairingState {
         pending = null
         val link = SyncKeys.parseQrLink(linkText.trim()) ?: return fail(WebLinkCopy.NOT_A_CODE)
         _state.value = PairingState.Checking
@@ -127,15 +160,17 @@ class PairingSession(
         val kpair = SyncKeys.pairKey(eP.private, link.eBPub, link.pairSecret, link.pairId, link.eBPub, ePPub, browser.deviceId, browser.pub)
         val code = SyncKeys.pairCode(kpair)
         pending = Pending(link, browser, eP, ePPub, kpair, code)
-        return set(PairingState.Confirm(browser.name, code))
+        return set(PairingState.Confirm(browser.name, code, fromLink))
     }
 
-    /** Steps 2 and 3: the user tapped Link. Runs until linked or stopped (or the caller is cancelled). */
-    suspend fun confirm(): PairingState {
-        val p = pending ?: return fail(WebLinkCopy.UNFINISHED)
-        pending = null
+    private suspend fun confirmInner(p: Pending): PairingState {
         val name = p.browser.name
-        val id = store.identity() ?: store.createIdentity(WebLinkRepository.cleanName(phoneName()) ?: "Phone")
+        // A link whose device key can't be read any more is dead: refresh clears it (and tells the server) before a new
+        // identity is made, so createIdentity never writes over a live link.
+        val id = store.identity() ?: run {
+            repo.refresh()
+            store.createIdentity(WebLinkRepository.cleanName(phoneName()) ?: "Phone")
+        }
         val linked = store.space()
         val grant = linked?.let { SyncKeys.SpaceGrant(it.spaceId, it.k, it.epoch) }
             ?: SyncKeys.SpaceGrant(WebLinkIds.newSpaceId(), SyncCrypto.randomBytes(SyncCrypto.KEY_BYTES), 1)
@@ -179,17 +214,25 @@ class PairingSession(
             return fail(WebLinkCopy.UNFINISHED, p.code)
         }
 
-        val outcome = repo.locked {
-            when {
-                granted != null && linked != null -> WebLinkResult.Failed(WebLinkCopy.UNFINISHED) // a linked phone grants, never joins
-                granted != null -> joinedBrowserSpace(id, granted)
-                linked != null -> joinBrowser(id, linked, p)
-                else -> createSpace(id, grant, myLabel, p)
-            }.also { if (it == WebLinkResult.Ok) pin(p.browser) }
+        // The answer always carries this phone's space, so a reply never grants one; a phone never takes a browser's key (sync-v1 §3.4).
+        if (granted != null) {
+            Log.w(TAG, "the browser's reply grants a space: refused, nothing joined or pinned")
+            return fail(WebLinkCopy.UNFINISHED, p.code)
+        }
+
+        // The reply opened: from here the commit runs to completion, whatever happens to the screen that started it.
+        val outcome = withContext(NonCancellable) {
+            repo.locked {
+                if (linked != null) {
+                    joinBrowser(id, linked, p).also { if (it == WebLinkResult.Ok) pin(p.browser) }
+                } else {
+                    createSpace(id, grant, myLabel, p)
+                }
+            }
         }
         return when (outcome) {
             WebLinkResult.Ok -> {
-                repo.refresh()
+                withContext(NonCancellable) { repo.refresh() }
                 set(PairingState.Linked(name))
             }
             is WebLinkResult.Failed -> fail(outcome.message, p.code)
@@ -230,13 +273,19 @@ class PairingSession(
             id.deviceId to SyncCrypto.seal(data, grant.id, grant.epoch, SyncCrypto.Place.label(id.deviceId), SyncKeys.labelJson(myLabel)),
             p.browser.deviceId to SyncCrypto.seal(data, grant.id, grant.epoch, SyncCrypto.Place.label(p.browser.deviceId), SyncKeys.labelJson(p.browser)),
         )
+        // Kept before the call: if the app dies or the answer is lost after the server created the space, the next refresh finds
+        // the link (or, if it was never created, `401 revoked` clears it). The reply has opened, so this keeps to R7.
+        store.saveSpace(LinkedSpace(grant.id, grant.epoch, grant.k))
+        pin(p.browser)
         val r = retryNoReply { api.createSpace(auth(id), CreateSpaceBody(p.link.pairId, grant.id, labels)) }
         return when (r) {
-            is SyncResult.Ok -> {
-                store.saveSpace(LinkedSpace(grant.id, grant.epoch, grant.k))
-                WebLinkResult.Ok
+            is SyncResult.Ok -> WebLinkResult.Ok
+            is SyncResult.Error -> {
+                // Refused for good (the code burned, 429, …): the space doesn't exist, so neither does the link here.
+                store.wipe()
+                WebLinkResult.Failed(r.userMessage())
             }
-            is SyncResult.Error -> WebLinkResult.Failed(r.userMessage())
+            // Unknown whether it landed: kept, and the next refresh settles it.
             is SyncResult.Unreachable -> WebLinkResult.Failed(WebLinkCopy.OFFLINE)
         }
     }
@@ -262,6 +311,9 @@ class PairingSession(
                             is WebLinkRepository.CatchUp.Done -> c.space
                             is WebLinkRepository.CatchUp.Lost -> return c.result
                         }
+                        // Two or more rotations since the answer: the envelope would be proven under a key the browser never
+                        // had, and it would drop itself. A fresh code is cheaper than that.
+                        if (sp.epoch - space.epoch > 1) return WebLinkResult.Failed(WebLinkCopy.UNFINISHED)
                         val prev = sp.keyFor(sp.epoch - 1) ?: return WebLinkResult.Failed(WebLinkCopy.UNFINISHED)
                         val members = currentMembers(id, sp) + p.browser.deviceId
                         envelope = SyncKeys.sealKeyFor(sp.k, sp.spaceId, sp.epoch, p.browser.deviceId, p.browser.pub, members.distinct(), prev)
@@ -276,22 +328,6 @@ class PairingSession(
 
     private suspend fun currentMembers(id: LinkIdentity, sp: LinkedSpace): List<String> =
         (api.space(auth(id), sp.spaceId) as? SyncResult.Ok)?.value?.devices?.map { it.id } ?: listOf(id.deviceId)
-
-    /** The browser granted its phone-less space and already added this phone (it does so before replying): confirm, then keep it. */
-    private suspend fun joinedBrowserSpace(id: LinkIdentity, granted: SyncKeys.SpaceGrant): WebLinkResult {
-        repeat(MEMBER_TRIES) { attempt ->
-            when (val r = api.space(auth(id), granted.id)) {
-                is SyncResult.Ok -> {
-                    store.saveSpace(LinkedSpace(granted.id, granted.epoch, granted.k))
-                    return WebLinkResult.Ok
-                }
-                is SyncResult.Error -> if (r.status != 401 || attempt == MEMBER_TRIES - 1) return WebLinkResult.Failed(WebLinkCopy.UNFINISHED)
-                is SyncResult.Unreachable -> if (attempt == MEMBER_TRIES - 1) return WebLinkResult.Failed(WebLinkCopy.OFFLINE)
-            }
-            sleep(RETRY_MS)
-        }
-        return WebLinkResult.Failed(WebLinkCopy.UNFINISHED)
-    }
 
     /** `409 no_reply`: the server hasn't seen the browser's reply land yet (it is on the slot by now); try again shortly. */
     private suspend fun <T> retryNoReply(call: suspend () -> SyncResult<T>): SyncResult<T> {
@@ -337,7 +373,6 @@ class PairingSession(
         const val RETRY_MS = 2_000L
         const val MIN_POLL_MS = 1_000L
         const val NO_REPLY_TRIES = 5
-        const val MEMBER_TRIES = 10
 
         /** "123456" → "123 456", as both screens show it. */
         fun spaced(code: String) = if (code.length == 6) code.substring(0, 3) + " " + code.substring(3) else code
