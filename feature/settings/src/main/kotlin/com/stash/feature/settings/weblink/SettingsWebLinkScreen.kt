@@ -42,6 +42,7 @@ import com.stash.core.data.weblink.WebLinkCopy
 import com.stash.core.data.weblink.WebLinkStatus
 import com.stash.core.ui.components.GlassCard
 import com.stash.feature.settings.components.SettingsGroupCard
+import com.stash.feature.settings.components.SettingsToggleRow
 import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
@@ -57,6 +58,7 @@ fun SettingsWebLinkScreen(onBack: () -> Unit, viewModel: WebLinkViewModel = hilt
     val scanning by viewModel.scanning.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val handoffOn by viewModel.handoffEnabled.collectAsStateWithLifecycle()
 
     var picked by remember { mutableStateOf<LinkedDevice?>(null) }
     var renaming by remember { mutableStateOf<LinkedDevice?>(null) }
@@ -77,6 +79,8 @@ fun SettingsWebLinkScreen(onBack: () -> Unit, viewModel: WebLinkViewModel = hilt
                     onPick = { picked = it },
                     onScan = viewModel::startScan,
                     onUnlinkAll = { unlinkAll = true },
+                    handoffOn = handoffOn,
+                    onHandoff = viewModel::setHandoffEnabled,
                 )
             }
         }
@@ -149,6 +153,8 @@ private fun LinkedList(
     onPick: (LinkedDevice) -> Unit,
     onScan: () -> Unit,
     onUnlinkAll: () -> Unit,
+    handoffOn: Boolean,
+    onHandoff: (Boolean) -> Unit,
 ) {
     SettingsSectionLabel("Linked devices")
     status.problem?.let {
@@ -175,6 +181,17 @@ private fun LinkedList(
         )
     }
     SettingsGroupCard(rows = rows)
+    SettingsSectionLabel("Handoff")
+    SettingsGroupCard(
+        rows = listOf {
+            SettingsToggleRow(
+                title = "Pick up where you left off",
+                subtitle = "Share what's playing with your linked devices.",
+                checked = handoffOn,
+                onCheckedChange = onHandoff,
+            )
+        },
+    )
     SettingsSectionLabel("Unlink")
     GlassCard {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
