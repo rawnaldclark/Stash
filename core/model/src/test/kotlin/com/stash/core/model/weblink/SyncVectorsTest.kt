@@ -104,6 +104,12 @@ class SyncVectorsTest {
         }
     }
 
+    @Test fun `clock - stamps from the future`() {
+        for (c in load("clock-vectors.json")["future"].list) {
+            assertWithMessage(c["name"].s).that(Hlc.fromTheFuture(hlc(c["at"])!!, c["serverAt"].jsonPrimitive.long)).isEqualTo(c["future"].jsonPrimitive.boolean)
+        }
+    }
+
     @Test fun `clock - handoff extrapolation and offer`() {
         val v = load("clock-vectors.json")
         for (c in v["extrapolate"].list) {
@@ -133,6 +139,6 @@ class SyncVectorsTest {
 
     companion object {
         const val IDENTITY_SHA256 = "d1e17c733a5725233f9bf657be3205ecccfca0428dcb722d611ca7a10a7315c0"
-        const val CLOCK_SHA256 = "d257b1e742f14ef9fcc53680843e84f264a9bd7447de3ed1a6a81091d516a345"
+        const val CLOCK_SHA256 = "d381a9073f5b65d051f9c04ddf7dc84cde326f3679f04aa4924a602274e76472"
     }
 }

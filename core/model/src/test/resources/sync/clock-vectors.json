@@ -741,5 +741,47 @@
 			"dismissed": [],
 			"expect": "d_phone"
 		}
+	],
+	"future": [
+		{
+			"name": "just under ten minutes ahead of the row: accepted",
+			"at": [
+				1760083800000,
+				0,
+				"d_phone"
+			],
+			"serverAt": 1760083200000,
+			"future": false
+		},
+		{
+			"name": "more than ten minutes ahead: skipped",
+			"at": [
+				1760083800001,
+				0,
+				"d_phone"
+			],
+			"serverAt": 1760083200000,
+			"future": true
+		},
+		{
+			"name": "microseconds by mistake: skipped",
+			"at": [
+				1760083200000000,
+				0,
+				"d_phone"
+			],
+			"serverAt": 1760083200000,
+			"future": true
+		},
+		{
+			"name": "an old stamp from an outbox: accepted",
+			"at": [
+				1760000000000,
+				3,
+				"d_phone"
+			],
+			"serverAt": 1760083200000,
+			"future": false
+		}
 	]
 }

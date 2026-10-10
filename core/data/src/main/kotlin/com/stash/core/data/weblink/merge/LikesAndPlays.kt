@@ -68,7 +68,8 @@ data class PlaysState<S : SongIdentity>(val plays: List<PlayRec<S>>, val cleared
 
 sealed interface PlayOp<out S : SongIdentity> {
     data class Play<S : SongIdentity>(val s: S, val playedAt: Long) : PlayOp<S>
-    data class ClearPlays(val before: Long, val at: Hlc) : PlayOp<Nothing>
+    /** Without [all] it clears only the sender's own plays; with it ("Clear on all your devices") every play before [before]. */
+    data class ClearPlays(val before: Long, val at: Hlc, val all: Boolean = false) : PlayOp<Nothing>
 }
 
 object PlaysMerge {
@@ -76,8 +77,9 @@ object PlaysMerge {
     fun playId(s: SongIdentity, playedAt: Long): String = "${SongKey.textKey(s)}|$playedAt"
 
     /**
-     * Applies remote play ops in order, from device [origin]. `clearPlays` raises `clearedBefore` and drops plays with
-     * `playedAt < before`; a play older than `clearedBefore` or already present ([playId]) is skipped. The result is sorted newest
+     * Applies remote play ops in order, from device [origin]. A `clearPlays` drops the plays that came from [origin] with
+     * `playedAt < before`; with `all` it drops every play before `before` and raises `clearedBefore`. A play older than
+     * `clearedBefore` or already present ([playId]) is skipped. The result is sorted newest
      * `playedAt` first (stable: existing plays before new ones on a tie).
      */
     fun <S : SongIdentity> apply(state: PlaysState<S>, ops: List<PlayOp<S>>, origin: String): PlaysState<S> {
@@ -86,9 +88,13 @@ object PlaysMerge {
         val ids = plays.mapTo(HashSet()) { playId(it.s, it.playedAt) }
         for (op in ops) {
             when (op) {
-                is PlayOp.ClearPlays -> if (op.before > clearedBefore) {
-                    clearedBefore = op.before
-                    plays = plays.filterTo(mutableListOf()) { it.playedAt >= clearedBefore }
+                is PlayOp.ClearPlays -> if (op.all) {
+                    if (op.before > clearedBefore) {
+                        clearedBefore = op.before
+                        plays = plays.filterTo(mutableListOf()) { it.playedAt >= clearedBefore }
+                    }
+                } else {
+                    plays = plays.filterTo(mutableListOf()) { it.origin != origin || it.playedAt >= op.before }
                 }
                 is PlayOp.Play -> if (op.playedAt >= clearedBefore && ids.add(playId(op.s, op.playedAt))) {
                     plays += PlayRec(op.s, op.playedAt, origin)
@@ -100,11 +106,11 @@ object PlaysMerge {
 
     /**
      * This device's play changes since the base (the play ids it last agreed on, [baseIds], and the clear mark): a `clearPlays`
-     * first when its own mark moved, then its own plays (no origin, not cleared) not in the base, in [local] order.
+     * first when its own mark moved (with `all` only when the user chose "Clear on all your devices", [clearAll]), then its own plays (no origin, not cleared) not in the base, in [local] order.
      */
-    fun <S : SongIdentity> diff(baseIds: Set<String>, baseClearedBefore: Long, local: PlaysState<S>, at: Hlc): List<PlayOp<S>> {
+    fun <S : SongIdentity> diff(baseIds: Set<String>, baseClearedBefore: Long, local: PlaysState<S>, at: Hlc, clearAll: Boolean = false): List<PlayOp<S>> {
         val ops = mutableListOf<PlayOp<S>>()
-        if (local.clearedBefore > baseClearedBefore) ops += PlayOp.ClearPlays(local.clearedBefore, at)
+        if (local.clearedBefore > baseClearedBefore) ops += PlayOp.ClearPlays(local.clearedBefore, at, clearAll)
         for (p in local.plays) {
             if (p.origin != null || p.playedAt < local.clearedBefore || playId(p.s, p.playedAt) in baseIds) continue
             ops += PlayOp.Play(p.s, p.playedAt)

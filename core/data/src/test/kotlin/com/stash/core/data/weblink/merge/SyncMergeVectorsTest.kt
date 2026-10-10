@@ -59,13 +59,14 @@ class SyncMergeVectorsTest {
     private fun playOut(p: PlayRec<SongRef>) = Triple(name(p.s), p.playedAt, p.origin)
     private fun playExpect(e: JsonElement) = Triple(e["s"].s, e["playedAt"].l, if (e.has("origin")) e["origin"].s else null)
     private fun op(e: JsonElement): PlayOp<SongRef> =
-        if (e["t"].s == "play") PlayOp.Play(song(e["s"]), e["playedAt"].l) else PlayOp.ClearPlays(e["before"].l, hlcOf(e["at"])!!)
+        if (e["t"].s == "play") PlayOp.Play(song(e["s"]), e["playedAt"].l) else PlayOp.ClearPlays(e["before"].l, hlcOf(e["at"])!!, all(e))
     private fun opOut(o: PlayOp<SongRef>): Any = when (o) {
         is PlayOp.Play -> listOf("play", name(o.s), o.playedAt)
-        is PlayOp.ClearPlays -> listOf("clearPlays", o.before, o.at)
+        is PlayOp.ClearPlays -> listOf("clearPlays", o.before, o.at, o.all)
     }
     private fun opExpect(e: JsonElement): Any =
-        if (e["t"].s == "play") listOf("play", e["s"].s, e["playedAt"].l) else listOf("clearPlays", e["before"].l, hlcOf(e["at"])!!)
+        if (e["t"].s == "play") listOf("play", e["s"].s, e["playedAt"].l) else listOf("clearPlays", e["before"].l, hlcOf(e["at"])!!, all(e))
+    private fun all(e: JsonElement) = e.has("all") && e["all"].jsonPrimitive.boolean
 
     @Test fun `plays - ids, apply, diff`() {
         for (c in v["plays"]["ids"].list) assertThat(PlaysMerge.playId(song(c["s"]), c["playedAt"].l)).isEqualTo(c["id"].s)
@@ -80,6 +81,7 @@ class SyncMergeVectorsTest {
                 baseClearedBefore = c["base"]["clearedBefore"].l,
                 local = PlaysState(c["local"]["plays"].list.map(::play), c["local"]["clearedBefore"].l),
                 at = hlcOf(c["at"])!!,
+                clearAll = c["clearAll"].jsonPrimitive.boolean,
             )
             assertWithMessage(c["name"].s).that(r.map(::opOut)).isEqualTo(c["expect"].list.map(::opExpect))
         }
@@ -113,6 +115,13 @@ class SyncMergeVectorsTest {
             assertWithMessage(c["name"].s).that(shape(r.local)).isEqualTo(shapeExpect(e["local"]))
             val wantBase = if (e["base"].s == "remote") c["remote"] else c["base"]
             assertWithMessage(c["name"].s).that(shape(r.base)).isEqualTo(shapeExpect(wantBase))
+        }
+    }
+
+    @Test fun `playlists - the stamp of an unpushed local version`() {
+        for (c in v["playlists"]["localAt"].list) {
+            val got = PlaylistMerge.localVersionAt(hlcOf(c["baseAt"]), hlcOf(c["editedAt"]), hlcOf(c["last"]), c["wall"].l, c["device"].s)
+            assertWithMessage(c["name"].s).that(got).isEqualTo(hlcOf(c["expect"]))
         }
     }
 

@@ -9,6 +9,15 @@ data class Hlc(val wall: Long, val counter: Int, val device: String) : Comparabl
     override fun compareTo(other: Hlc): Int = compareValuesBy(this, other, Hlc::wall, Hlc::counter, Hlc::device)
 
     companion object {
+        /** How far past the server's own stamp (`serverAt` of the row or slot that carried it) a stamp may be. */
+        const val MAX_FUTURE_MS = 10L * 60 * 1000
+
+        /**
+         * A stamp from the future: its wall is more than 10 minutes after the `serverAt` of the row that carried it. The op is
+         * skipped, not clamped: every reader sees the same `serverAt`, so all of them skip it alike.
+         */
+        fun fromTheFuture(at: Hlc, serverAt: Long): Boolean = at.wall > serverAt + MAX_FUTURE_MS
+
         /** A local event: stamped after [last] (this device's previous stamp, or null) at corrected time [wall]. */
         fun tick(last: Hlc?, wall: Long, device: String): Hlc =
             if (last == null || wall > last.wall) Hlc(wall, 0, device) else Hlc(last.wall, last.counter + 1, device)

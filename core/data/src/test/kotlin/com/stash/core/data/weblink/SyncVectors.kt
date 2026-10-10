@@ -19,8 +19,8 @@ import java.security.MessageDigest
  * repos and both pins together, or neither.
  */
 internal object SyncVectors {
-    const val MERGE_SHA256 = "ccb606dfaa043185c176c55fb704035ec61d4c8ac1eab8075af7d4ebef484979"
-    const val CRYPTO_SHA256 = "952f3a3fcf4ea5140b66499110e6076f74cac323d964da767d066c4bbcda9e4a"
+    const val MERGE_SHA256 = "058c44637f73f2fda113b79e04598d7cbb85ee7bc32abe6fb95a4bb7185f2296"
+    const val CRYPTO_SHA256 = "f8d96d64b6260b496b1d38c17133ffc21302cc4d859098175c70572f1f22da4b"
 
     fun bytes(name: String): ByteArray =
         requireNotNull(javaClass.getResourceAsStream("/sync/$name")) { "missing test resource sync/$name" }.use { it.readBytes() }

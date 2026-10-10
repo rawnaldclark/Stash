@@ -123,6 +123,14 @@ object PlaylistMerge {
     }
 
     /**
+     * The `at` of this device's version of a playlist when it differs from its base (sync-v1 §7.3): the stamp taken when it was
+     * last edited, if newer than the base's; else a fresh [Hlc.tick] at merge time. Never the base's own `at`, so an unpushed
+     * offline edit can't look older than a remote delete that happened before the merge ran.
+     */
+    fun localVersionAt(baseAt: Hlc?, editedAt: Hlc?, last: Hlc?, wall: Long, device: String): Hlc =
+        if (editedAt != null && (baseAt == null || editedAt > baseAt)) editedAt else Hlc.tick(last, wall, device)
+
+    /**
      * Merges a remote `pl` op into this device's playlist. [phone]: this device is the phone. [base]: the version last agreed on.
      * [local] / [localHash]: this device's current version and its hash, or null when it doesn't have the playlist. [remote],
      * [parent] (the hash the edit started from) and [fromPhone] (the phone wrote it) describe the op.
@@ -185,9 +193,16 @@ object FirstMerge {
 
     const val MAX_PLAYLIST_NAME = 100
 
+    /** The first [n] UTF-16 units of [s], one fewer when the cut would split a surrogate pair. */
+    fun cutUnits(s: String, n: Int): String = when {
+        s.length <= n -> s
+        Character.isHighSurrogate(s[n - 1]) -> s.substring(0, n - 1)
+        else -> s.substring(0, n)
+    }
+
     /**
      * "Combine" keeps two playlists with one name as two: the web's copy becomes "Night drive (web)", then "(web 2)", "(web 3)"…
-     * Names compare folded; the name is cut so name + suffix fits 100 UTF-16 units.
+     * Names compare folded; the name is cut so name + suffix fits 100 UTF-16 units, never splitting a surrogate pair.
      */
     fun combinedName(name: String, taken: Collection<String>): String {
         val t = taken.mapTo(HashSet(), SongKey::fold)
@@ -195,7 +210,7 @@ object FirstMerge {
         var n = 1
         while (true) {
             val suffix = if (n == 1) " (web)" else " (web $n)"
-            val c = name.take(MAX_PLAYLIST_NAME - suffix.length) + suffix
+            val c = cutUnits(name, MAX_PLAYLIST_NAME - suffix.length) + suffix
             if (SongKey.fold(c) !in t) return c
             n++
         }

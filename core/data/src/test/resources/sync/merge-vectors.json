@@ -1009,7 +1009,7 @@
 				}
 			},
 			{
-				"name": "clearPlays removes older plays and raises the mark",
+				"name": "clearPlays with all (\"on all your devices\") removes every older play and raises the mark",
 				"state": {
 					"plays": [
 						{
@@ -1031,7 +1031,8 @@
 							50,
 							0,
 							"d_web"
-						]
+						],
+						"all": true
 					}
 				],
 				"origin": "d_web",
@@ -1064,7 +1065,8 @@
 							50,
 							0,
 							"d_web"
-						]
+						],
+						"all": true
 					}
 				],
 				"origin": "d_web",
@@ -1097,7 +1099,8 @@
 							50,
 							0,
 							"d_web"
-						]
+						],
+						"all": true
 					}
 				],
 				"origin": "d_web",
@@ -1139,6 +1142,98 @@
 					],
 					"clearedBefore": 0
 				}
+			},
+			{
+				"name": "a clear without all drops only the sender's plays: this device's own and other devices' stay",
+				"state": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 300,
+							"origin": "d_web"
+						},
+						{
+							"s": "pink",
+							"playedAt": 300
+						},
+						{
+							"s": "nights",
+							"playedAt": 300,
+							"origin": "d_web2"
+						},
+						{
+							"s": "solo",
+							"playedAt": 700,
+							"origin": "d_web"
+						}
+					],
+					"clearedBefore": 0
+				},
+				"ops": [
+					{
+						"t": "clearPlays",
+						"before": 500,
+						"at": [
+							50,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "solo",
+							"playedAt": 700,
+							"origin": "d_web"
+						},
+						{
+							"s": "pink",
+							"playedAt": 300
+						},
+						{
+							"s": "nights",
+							"playedAt": 300,
+							"origin": "d_web2"
+						}
+					],
+					"clearedBefore": 0
+				}
+			},
+			{
+				"name": "a clear without all leaves the clear mark alone",
+				"state": {
+					"plays": [],
+					"clearedBefore": 0
+				},
+				"ops": [
+					{
+						"t": "clearPlays",
+						"before": 500,
+						"at": [
+							50,
+							0,
+							"d_web"
+						]
+					},
+					{
+						"t": "play",
+						"s": "ivy",
+						"playedAt": 400
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 400,
+							"origin": "d_web"
+						}
+					],
+					"clearedBefore": 0
+				}
 			}
 		],
 		"diff": [
@@ -1174,7 +1269,8 @@
 						"s": "pink",
 						"playedAt": 200
 					}
-				]
+				],
+				"clearAll": false
 			},
 			{
 				"name": "plays from another device never go back",
@@ -1197,10 +1293,11 @@
 					0,
 					"d_phone"
 				],
-				"expect": []
+				"expect": [],
+				"clearAll": false
 			},
 			{
-				"name": "an own clear goes first",
+				"name": "an own clear goes first, for this device's plays only by default",
 				"base": {
 					"ids": [],
 					"clearedBefore": 0
@@ -1234,7 +1331,8 @@
 						"s": "pink",
 						"playedAt": 600
 					}
-				]
+				],
+				"clearAll": false
 			},
 			{
 				"name": "plays under the clear mark are not sent",
@@ -1256,7 +1354,8 @@
 					0,
 					"d_phone"
 				],
-				"expect": []
+				"expect": [],
+				"clearAll": false
 			},
 			{
 				"name": "base ids match by words",
@@ -1280,7 +1379,37 @@
 					0,
 					"d_phone"
 				],
-				"expect": []
+				"expect": [],
+				"clearAll": false
+			},
+			{
+				"name": "\"Clear on all your devices\" sends all",
+				"base": {
+					"ids": [],
+					"clearedBefore": 0
+				},
+				"local": {
+					"plays": [],
+					"clearedBefore": 500
+				},
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"clearAll": true,
+				"expect": [
+					{
+						"t": "clearPlays",
+						"before": 500,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						],
+						"all": true
+					}
+				]
 			}
 		]
 	},
@@ -3312,6 +3441,96 @@
 				"input": "stash-queue/1\n3:100\n1:3\n15:ivy|frank ocean\n17:isrc:USUM71607009\n18:nights|frank ocean\n5:2,0,1\n",
 				"id": "q_IBErtHKiGiuivADoqM6t9w"
 			}
+		],
+		"localAt": [
+			{
+				"name": "edited after the base: the stamp taken at the edit",
+				"baseAt": [
+					10,
+					0,
+					"d_phone"
+				],
+				"editedAt": [
+					20,
+					0,
+					"d_web"
+				],
+				"last": [
+					25,
+					0,
+					"d_web"
+				],
+				"wall": 30,
+				"device": "d_web",
+				"expect": [
+					20,
+					0,
+					"d_web"
+				]
+			},
+			{
+				"name": "no stamp kept for the edit: a fresh tick at merge time",
+				"baseAt": [
+					10,
+					0,
+					"d_phone"
+				],
+				"editedAt": null,
+				"last": [
+					25,
+					0,
+					"d_web"
+				],
+				"wall": 30,
+				"device": "d_web",
+				"expect": [
+					30,
+					0,
+					"d_web"
+				]
+			},
+			{
+				"name": "a stamp no newer than the base: a fresh tick (never the base's own at)",
+				"baseAt": [
+					40,
+					0,
+					"d_phone"
+				],
+				"editedAt": [
+					20,
+					0,
+					"d_web"
+				],
+				"last": [
+					40,
+					1,
+					"d_web"
+				],
+				"wall": 30,
+				"device": "d_web",
+				"expect": [
+					40,
+					2,
+					"d_web"
+				]
+			},
+			{
+				"name": "no base yet: the edit's stamp",
+				"baseAt": null,
+				"editedAt": [
+					20,
+					0,
+					"d_web"
+				],
+				"last": null,
+				"wall": 30,
+				"device": "d_web",
+				"expect": [
+					20,
+					0,
+					"d_web"
+				]
+			}
 		]
 	},
 	"firstMerge": {
@@ -3419,6 +3638,14 @@
 					"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 				],
 				"expect": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (web)"
+			},
+			{
+				"name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀zz",
+				"taken": [
+					"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀zz"
+				],
+				"expect": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (web)",
+				"note": "the cut would split the emoji's surrogate pair: it takes one unit less"
 			}
 		]
 	}
