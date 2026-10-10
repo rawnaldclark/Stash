@@ -22,11 +22,15 @@ data class HandoffDocs(val now: StashNow, val queue: StashQueue)
 object HandoffDocsBuilder {
     /**
      * A library track as a wire song: the library file's Song (no file paths, covers only from the share hosts), marked
-     * `phoneOnly` when a local file is its only source (no ISRC, Spotify or YouTube id). Null without a title or an artist.
+     * `phoneOnly` when a file on this phone is its only source (no ISRC, Spotify or YouTube id), and counted in `leftOut`.
+     * Null without a title or an artist.
      */
     fun songOf(t: Track): WireSong? {
         val song = WebLibraryFile.song(t, addedAt = null) ?: return null
-        val phoneOnly = t.source == MusicSource.LOCAL && song.isrc == null && song.spotifyId == null && song.refs.isNullOrEmpty()
+        // No ISRC, Spotify or YouTube id (what the web can play from), and a file on this phone is its source: an imported local
+        // file, or a download that carries none of those ids (sync-v1 §2.1).
+        val noIds = song.isrc == null && song.spotifyId == null && song.refs.isNullOrEmpty()
+        val phoneOnly = noIds && (t.source == MusicSource.LOCAL || t.isDownloaded)
         return WireSong.of(song, phoneOnly)
     }
 
