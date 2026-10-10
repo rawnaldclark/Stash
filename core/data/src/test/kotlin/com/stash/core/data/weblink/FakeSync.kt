@@ -220,6 +220,35 @@ class FakeSyncServer : SyncApi {
         val (space, _) = member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
         return SyncResult.Ok(space.config)
     }
+
+    /** Handoff slots by `"now:<device>"` / `"queue:<device>"`, stamped by [clock] (strictly increasing per slot). */
+    val handoffSlots = LinkedHashMap<String, StoredSlot>()
+    var clock = 10_000L
+
+    override suspend fun putSlot(auth: DeviceAuth, spaceId: String, slot: String, env: SyncEnvelope): SyncResult<SlotWritten> {
+        calls += "putSlot:$slot"
+        forced("putSlot")?.let { return it }
+        val (space, _) = member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        if (space.rotationDue) return err(409, SyncErrorCode.ROTATION_DUE)
+        if (env.e != space.epoch) return err(409, SyncErrorCode.EPOCH)
+        val name = "$slot:${auth.deviceId}"
+        val at = maxOf(clock, (handoffSlots[name]?.serverAt ?: 0) + 1)
+        handoffSlots[name] = StoredSlot(auth.deviceId, at, env)
+        return SyncResult.Ok(SlotWritten(at))
+    }
+
+    override suspend fun nowSlots(auth: DeviceAuth, spaceId: String): SyncResult<NowSlots> {
+        calls += "nowSlots"
+        member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        val slots = handoffSlots.filterKeys { it.startsWith("now:") }.values.sortedByDescending { it.serverAt }
+        return SyncResult.Ok(NowSlots(slots, clock))
+    }
+
+    override suspend fun queueSlot(auth: DeviceAuth, spaceId: String, deviceId: String): SyncResult<StoredSlot> {
+        calls += "queueSlot"
+        member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        return handoffSlots["queue:$deviceId"]?.let { SyncResult.Ok(it) } ?: err(404, SyncErrorCode.NOT_FOUND)
+    }
 }
 
 

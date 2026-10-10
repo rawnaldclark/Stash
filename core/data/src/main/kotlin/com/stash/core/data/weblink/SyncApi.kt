@@ -141,6 +141,20 @@ data class Rotated(val epoch: Int)
 @Serializable
 data class ConfigSlot(val device: String = "", val serverAt: Long = 0, val env: SyncEnvelope)
 
+@Serializable
+data class SlotBody(val env: SyncEnvelope)
+
+@Serializable
+data class SlotWritten(val serverAt: Long)
+
+/** One device's handoff state as the server keeps it: who wrote it, when (the server's clock), and the envelope. */
+@Serializable
+data class StoredSlot(val device: String = "", val serverAt: Long = 0, val env: SyncEnvelope)
+
+/** `GET …/slots/now`: every device's `now` slot, newest first, and the server's clock. */
+@Serializable
+data class NowSlots(val slots: List<StoredSlot> = emptyList(), val serverTime: Long = 0)
+
 /**
  * The stash-sync routes the phone uses for pairing and device management (spec §6.2, sync-v1 §3.4–3.6). Every id is in the
  * path. A long-poll answers `Ok(null)` while nothing has arrived yet (204).
@@ -163,4 +177,13 @@ interface SyncApi {
 
     /** The mirror config slot, or `Ok(null)` when the space has none. */
     suspend fun config(auth: DeviceAuth, spaceId: String): SyncResult<ConfigSlot?>
+
+    /** Writes this device's own handoff slot ([slot] is `now` or `queue`; spec §4.2, §8.1). */
+    suspend fun putSlot(auth: DeviceAuth, spaceId: String, slot: String, env: SyncEnvelope): SyncResult<SlotWritten>
+
+    /** Every device's `now` slot (spec §8.2). */
+    suspend fun nowSlots(auth: DeviceAuth, spaceId: String): SyncResult<NowSlots>
+
+    /** One device's `queue` slot; `404 not_found` when it published none (or it expired). */
+    suspend fun queueSlot(auth: DeviceAuth, spaceId: String, deviceId: String): SyncResult<StoredSlot>
 }
