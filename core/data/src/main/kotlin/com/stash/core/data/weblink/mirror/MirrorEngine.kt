@@ -193,6 +193,14 @@ class MirrorEngine internal constructor(
         }
     }
 
+    /** Unlinked (here, or another device removed this phone): the mirror's state goes at once; the library stays as it is. */
+    suspend fun forget() = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            guard(Unit) { records.clear() }
+            _status.value = MirrorStatus(linked = false)
+        }
+    }
+
     /** Reads the saved state for the settings screen (no network). */
     suspend fun load() {
         val sp = guard(null) { store.space() }

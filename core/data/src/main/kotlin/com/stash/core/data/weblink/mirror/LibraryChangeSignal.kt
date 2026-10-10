@@ -106,19 +106,27 @@ class LibraryChangeSignal @Inject constructor(
     private val engine: MirrorEngine,
     private val scheduler: MirrorScheduler,
     private val config: WebLinkConfig,
+    private val repo: com.stash.core.data.weblink.WebLinkRepository,
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val triggers = MirrorTriggers(
         status = engine.status,
         load = { engine.load() },
         digest = { s -> digestOf(s) },
         invalidations = invalidations(),
         scheduler = scheduler,
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        scope = scope,
         clock = { android.os.SystemClock.elapsedRealtime() },
     )
 
     fun start() {
-        if (config.enabled) triggers.start()
+        if (!config.enabled) return
+        triggers.start()
+        // Unlinked: the mirror's state goes with the link, at once (its periodic work stops with the status).
+        scope.launch {
+            repo.status.collect { if (it == com.stash.core.data.weblink.WebLinkStatus.NotLinked) engine.forget() }
+        }
     }
 
     fun onForeground() {
