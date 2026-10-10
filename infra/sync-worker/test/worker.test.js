@@ -169,7 +169,7 @@ test("wrangler.toml: sync.stashfm.app only, no workers.dev, SQLite objects, rate
     assert.match(toml, /new_sqlite_classes = \["SyncSpace", "PairSlot", "Quota"\]/);
     assert.doesNotMatch(toml, /PLAYER_KEY\s*=/, "the key is a secret, never in the file");
     const ids = [...toml.matchAll(/namespace_id = "(\d+)"/g)].map((m) => m[1]);
-    assert.deepEqual(ids, ["2030", "2031", "2032"]);
+    assert.deepEqual([...ids].sort(), ["2030", "2031", "2032", "2033"]);
     const share = readFileSync(new URL("../../share-worker/wrangler.toml", import.meta.url), "utf8");
     const relay = readFileSync(new URL("../../lossless-relay/wrangler.toml", import.meta.url), "utf8");
     for (const id of ids) assert.ok(!share.includes(`"${id}"`) && !relay.includes(`"${id}"`), id);
@@ -214,7 +214,7 @@ test("the edge: the safety actions' own limit, browsers only through the player,
     assert.equal((await w.fetch(req("DELETE", p(`/devices/${a.browser.id}`), { device: a.phone }))).status, 204);
     const third = await w.fetch(req("DELETE", p(), { device: a.phone }));
     assert.equal(third.status, 429);
-    assert.equal(w.env.SAFE_RL.counts.get(`d:${a.phone.id}`), 3);
+    assert.equal(w.env.SAFE_RL.counts.get(`t:${a.phone.tokenHash}`), 3);
     // A PLAYER_KEY stored with a trailing newline still matches the player's (trimmed) header.
     w.env.PLAYER_KEY = `${w.env.PLAYER_KEY}\r\n`;
     assert.equal((await w.fetch(req("GET", `/v1/spaces/${b.spaceId}`, { device: b.browser, player: true }))).status, 200);
@@ -249,4 +249,31 @@ test("token hashes are compared with crypto.subtle.timingSafeEqual when the runt
     const ids = new Set(Array.from({ length: 200 }, () => randomId()));
     assert.equal(ids.size, 200);
     for (const id of ids) assert.equal(fromBase64url(id).length, 16);
+});
+
+test("forged device ids can't fill a device's safety or open buckets: the limits key on the presented token's hash", async () => {
+    const w = world({ limits: { safe: 10, open: 3 } });
+    const { phone, browser, spaceId } = await linkNew(w);
+    const p = (x = "") => `/v1/spaces/${spaceId}${x}`;
+    // A removed laptop (or anyone who saw an id) sends the phone's id with tokens of its own, from any IP.
+    for (let i = 0; i < 12; i++) {
+        const forged = await makeDevice("x");
+        const r = await w.fetch(req("DELETE", p(`/devices/${browser.id}`), { device: { ...forged, auth: `Stash-Device ${phone.id}:${forged.token}` }, ip: `198.51.100.${i}` }));
+        assert.equal(r.status, 401, "a bad token is refused as revoked");
+    }
+    for (let i = 0; i < 5; i++) {
+        const forged = await makeDevice("x");
+        await w.fetch(req("GET", p(), { device: { ...forged, auth: `Stash-Device ${phone.id}:${forged.token}` } }));
+    }
+    // The phone's own calls are untouched.
+    assert.equal((await w.fetch(req("GET", p(), { device: phone }))).status, 200);
+    const envelopes = { [phone.id]: { e: 2, n: "A".repeat(16), c: "A".repeat(40), p: phone.pub }, [browser.id]: { e: 2, n: "A".repeat(16), c: "A".repeat(40), p: browser.pub } };
+    assert.equal((await w.fetch(req("POST", p("/rotate"), { device: phone, body: { epoch: 2, envelopes } }))).status, 200);
+    assert.equal((await w.fetch(req("DELETE", p(`/devices/${browser.id}`), { device: phone }))).status, 204);
+    // A real token's own polling of the exempt reads is bounded (OPEN_RL), per token.
+    assert.equal((await w.fetch(req("GET", p("/key/2"), { device: phone }))).status, 200);
+    assert.equal((await w.fetch(req("GET", p(), { device: phone }))).status, 200);
+    const over = await w.fetch(req("GET", p(), { device: phone }));
+    assert.equal(over.status, 429);
+    assert.equal(w.env.OPEN_RL.counts.get(`t:${phone.tokenHash}`), 4);
 });

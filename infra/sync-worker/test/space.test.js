@@ -537,3 +537,19 @@ test("key envelopes stay for every epoch a device hasn't fetched, until it fetch
     await call(phone, "removeDevice", { target: browser.id });
     assert.equal(ctx.sql.exec("SELECT COUNT(*) AS n FROM envelopes WHERE deviceId = ?", browser.id).toArray()[0].n, 0);
 });
+
+test("fetching a newer key out of order keeps the older ones while old-key data still waits for compaction", async () => {
+    const { call, phone, browser } = await setup();
+    await call(phone, "logAppend", {}, env1(32)); // data under epoch 1
+    const rotate = (e) => call(phone, "rotate", {}, { epoch: e, envelopes: { [phone.id]: keyBox(e, phone), [browser.id]: keyBox(e, browser) } });
+    for (const e of [2, 3]) assert.equal((await rotate(e)).status, 200);
+    assert.equal((await call(browser, "get")).body.compactDue, true);
+    // The browser jumps straight to epoch 3 (against sync-v1's order): epoch 2 stays, since the log under 1 isn't compacted.
+    assert.equal((await call(browser, "key", { epoch: 3 })).status, 200);
+    assert.equal((await call(browser, "key", { epoch: 2 })).status, 200);
+    assert.equal((await call(browser, "key", { epoch: 3 })).status, 200);
+    // Once a snapshot under 3 replaces everything older, fetching 3 drops the rest.
+    assert.deepEqual((await call(phone, "snapshotPut", { upto: 1, part: 0, count: 1 }, { env: box(3, 32) })).body, { complete: true });
+    await call(browser, "key", { epoch: 3 });
+    assert.equal(code(await call(browser, "key", { epoch: 2 })), "no_key");
+});

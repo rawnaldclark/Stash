@@ -70,8 +70,13 @@ const PARAMS = {
     count: (s) => pathInt(s, LIMITS.parts),
 };
 
-/** The owner's safety actions: never refused by the daily caps (src/space.js EXEMPT), so they get their own limit per device. */
+/**
+ * The routes the daily caps never refuse (src/space.js EXEMPT) get their own limits instead, keyed on the hash of the token
+ * presented: a caller can only fill the bucket of a token it holds, so forging another device's id (public to members, to a
+ * removed device, to anyone who saw the QR) fills a bucket nobody uses. Calls with a bad token are then refused as revoked.
+ */
 const SAFETY = new Set(["removeDevice", "deleteSpace", "rotate"]);
+const OPENS = new Set(["get", "key"]);
 
 const WITH_BODY = new Set(["join", "label", "rotate", "logAppend", "snapshotPut", "configPut", "nowPut", "queuePut", "inboxPut"]);
 
@@ -251,9 +256,9 @@ export async function handle(request, env, _ctx) {
         if (over) return over;
         const caller = await deviceCaller(request);
         if (!caller) return noAuth();
-        if (SAFETY.has(route.op)) {
-            const safe = await limited(env.SAFE_RL, `d:${caller.deviceId}`);
-            if (safe) return safe;
+        if (SAFETY.has(route.op) || OPENS.has(route.op)) {
+            const own = await limited(SAFETY.has(route.op) ? env.SAFE_RL : env.OPEN_RL, `t:${caller.tokenHash}`);
+            if (own) return own;
         }
         let body;
         if (WITH_BODY.has(route.op)) {

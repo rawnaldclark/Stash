@@ -114,6 +114,7 @@ export function world({ t = 1_760_000_000_000, limits = {} } = {}) {
     env.PAIR_RL = limiter(limits.pair ?? 1000);
     env.QUOTAS = namespace((ctx) => new Quota(ctx, env, { now }));
     env.SAFE_RL = limiter(limits.safe ?? 1000);
+    env.OPEN_RL = limiter(limits.open ?? 1000);
     env.API_RL = limiter(limits.api ?? 100_000);
     const fire = () => { for (const tm of timers.splice(0)) tm.fire(); };
     return { clock, env, timers, fire, fetch: (req) => worker.fetch(req, env, {}) };

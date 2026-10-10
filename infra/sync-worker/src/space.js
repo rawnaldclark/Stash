@@ -138,7 +138,7 @@ export class Space {
                 case "label": return this.setLabel(me, body);
                 case "removeDevice": return this.removeDeviceOp(m, me, params.target, now);
                 case "deleteSpace": return { status: 204, body: null, deleteSpace: true };
-                case "key": return this.key(me, params.epoch);
+                case "key": return this.key(m, me, params.epoch);
                 case "rotate": return this.rotate(m, me, body, now);
                 case "logAfter": return this.logAfter(m, params.seq);
                 case "logAppend": return this.logAppend(m, me, body, now);
@@ -296,12 +296,14 @@ export class Space {
 
     /**
      * The caller's key envelope for one epoch. Envelopes are kept for every epoch the device hasn't fetched (a device several
-     * rotations behind walks them in order); fetching one drops that device's older ones.
+     * rotations behind walks them in order); fetching one drops that device's older ones, but never one whose epoch still
+     * seals data on the server (an old-key log or snapshot waiting for compaction), so fetching out of order loses nothing.
      */
-    key(me, epoch) {
+    key(m, me, epoch) {
         const row = this.one("SELECT epoch, ct FROM envelopes WHERE deviceId = ? AND epoch = ?", me.id, epoch);
         if (!row) return err(404, "no_key", "No key for this device");
-        this.sql.exec("DELETE FROM envelopes WHERE deviceId = ? AND epoch < ?", me.id, epoch);
+        const live = this.one(`SELECT MIN(e) AS e FROM (SELECT MIN(epoch) AS e FROM log UNION ALL SELECT MIN(epoch) FROM snapshot WHERE staged = 0)`).e;
+        this.sql.exec("DELETE FROM envelopes WHERE deviceId = ? AND epoch < ?", me.id, Math.min(epoch, live ?? m.epoch));
         return ok({ epoch: row.epoch, ct: parse(row.ct) });
     }
 

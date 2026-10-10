@@ -42,7 +42,7 @@ Unknown fields are dropped; every stored value is rebuilt from the fields above.
 | `POST /v1/spaces/{sid}/devices` | member (sponsor) | `{ pairId, epoch, envelope? }` → 201 `{ device, type, epoch }`; adds the *other* device of that code (the browser if the caller answered it, the phone if the caller is its browser). `epoch` = the key epoch the newcomer was given; if the space rotated since, `envelope` (its key envelope for the current epoch) is required, else `409 epoch` `{ error, epoch }` before the code is used. A rotation during the join adds the device and sets `rotationDue`. 1 phone + 4 browsers, checked before the code is burned |
 | `PUT /v1/spaces/{sid}/devices/me/label` | member | `{ labelCt }` → 204 |
 | `DELETE /v1/spaces/{sid}/devices/{did\|me}` | member | → 204; cut off at once (token row, envelopes, slots, sends); `rotationDue` set; last device out deletes the space |
-| `GET /v1/spaces/{sid}/key/{epoch}` | member | `{ epoch, ct }` the caller's key envelope; 404 `no_key`. Envelopes are kept for every epoch the device hasn't fetched (at most the last 32), so a device several rotations behind walks them in order; fetching one drops that device's older ones |
+| `GET /v1/spaces/{sid}/key/{epoch}` | member | `{ epoch, ct }` the caller's key envelope; 404 `no_key`. Envelopes are kept for every epoch the device hasn't fetched (at most the last 32), so a device several rotations behind walks them in order; fetching one drops that device's older ones, except epochs that still seal live data (an old-key log or snapshot not yet compacted) |
 | `POST /v1/spaces/{sid}/rotate` | member | `{ epoch: current+1, envelopes: { deviceId: key envelope } (every device, no other), config?: env, labels?: { deviceId: box }, snapshot?: { uptoSeq: head, parts: [env] } }` → `{ epoch }`; another device set → `409 devices_changed` `{ error, epoch, devices: [{ id, type, pub }] }` (retry); without the snapshot inline, `compactDue` until one lands |
 | `GET /v1/spaces/{sid}/log/after/{seq}` | member | `{ entries: [{ seq, device, serverAt, env }], head, more }` (≤ 200 entries or 4 MiB); 409 `snapshot` when `seq` is older than the snapshot |
 | `POST /v1/spaces/{sid}/log` | member | `{ env }` → 201 `{ seq, serverAt }`; 409 `compact` past 2,000 batches or while `compactDue` |
@@ -69,10 +69,13 @@ Unknown fields are dropped; every stored value is rebuilt from the fields above.
 | Snapshot / one send | 16 parts × 1 MiB |
 | Space total | 32 MiB (log, snapshot, slots, sends; a snapshot being uploaded doesn't count) → `413 space_full` |
 | Log | 2,000 batches → `409 compact` (clients compact at 500 or 4 MiB) |
-| Per device per UTC day | 3,000 writes (counted on the device's row), 20,000 reads (counted in memory: a flood brake, not an exact quota, since it starts over when the object is evicted). Per device, so one device can't spend the others' budget. **Never refused**: `GET` the space, `GET key`, removing a device, unlinking everything and rotating (they count, and have `SAFE_RL` instead), so a flooding device can always be seen and removed |
+| Per device per UTC day | 3,000 writes (counted on the device's row), 20,000 reads (counted in memory: a flood brake, not an exact quota, since it starts over when the object is evicted). Per device, so one device can't spend the others' budget. **Never refused**: `GET` the space, `GET key`, removing a device, unlinking everything and rotating (they count, and have `SAFE_RL` / `OPEN_RL` instead), so a flooding device can always be seen and removed |
 | Sends waiting per device | 8 |
 | `PAIR_RL` (2030) | the phone's label/answer/reply calls: 10/min per IP |
-| `SAFE_RL` (2031) | removing a device, unlinking everything, rotating: 10/min per device |
+| `SAFE_RL` (2031) | removing a device, unlinking everything, rotating: 10/min per presented token |
+| `OPEN_RL` (2033) | opening the space and reading a key envelope: 60/min per presented token |
+
+`SAFE_RL` and `OPEN_RL` are keyed on the SHA-256 of the token in the request, never on the device id it claims: ids are known to members, to removed devices and (the browser's) to anyone who saw the QR, so an id key would let a forger fill a real device's bucket. A forged token fills a bucket of its own and is then refused as revoked. Every other key is either the IP (`PAIR_RL`, `API_RL`, the per-IP space quota; the forwarded IP only behind a valid player key) or the player session (only behind a valid player key, hashed by the player from its verified sign-in cookie; the per-session space quota uses the session stored in the slot by that same call).
 | `Quota` objects | pairing codes: 6 per player session per 10 minutes; new spaces: 10 per player session and 20 per phone IP per day (a binding's period is at most 60 s, so these live in a small Durable Object per session or IP, deleted a day after its last use) |
 | `API_RL` (2032) | every space call and the browser's pairing calls: 240/min per IP (IPv6 by /64; the browser's IP as the player forwards it) |
 
@@ -102,7 +105,7 @@ PLAYER_KEY=dev-key node scripts/smoke.mjs    # links a fake phone and browser, u
 Order: this Worker first (the player's service binding needs it), then its secret, then the player. Nothing here changes stashfm.app's other routes.
 
 1. Check that the stashfm.app zone has **no** DNS record named `sync` (a custom domain can't take an existing record). Keep Bot Fight Mode, "I'm Under Attack" and any WAF challenge off for `sync.stashfm.app`: the phone can't solve a challenge.
-2. Deploy. `custom_domain = true` makes wrangler create the `sync.stashfm.app` DNS record and certificate; the first deploy applies the `v1` migration (`new_sqlite_classes = ["SyncSpace", "PairSlot"]`; migrations are one-way, never rename or delete these classes without a new tag) and creates the three ratelimit bindings.
+2. Deploy. `custom_domain = true` makes wrangler create the `sync.stashfm.app` DNS record and certificate; the first deploy applies the `v1` migration (`new_sqlite_classes = ["SyncSpace", "PairSlot", "Quota"]`; stash-sync has never been deployed, so v1 lists all three; after this deploy, migrations are one-way: never edit v1, and add or rename classes only under a new tag) and creates the four ratelimit bindings.
 
    ```powershell
    cd infra/sync-worker
@@ -122,7 +125,7 @@ Order: this Worker first (the player's service binding needs it), then its secre
 4. Deploy the player (`npm run deploy` in `stash-web/player`). Its production env declares `services: [{ binding: "SYNC", service: "stash-sync" }]`, which only resolves once `stash-sync` exists in the same account. If the player ever moves to its own account, drop the binding and set the player var `SYNC_API_URL=https://sync.stashfm.app` instead (same header, public fetch).
 5. Check:
    - `curl -si https://sync.stashfm.app/v1/spaces/AAAAAAAAAAAAAAAAAAAAAA` → 401 `unauthorized`, `cache-control: no-store`.
-   - The migration created three classes (`SyncSpace`, `PairSlot`, `Quota`) and the bindings `PAIR_RL`, `SAFE_RL`, `API_RL`.
+   - The migration created three classes (`SyncSpace`, `PairSlot`, `Quota`) and the bindings `PAIR_RL`, `SAFE_RL`, `OPEN_RL`, `API_RL`.
    - `curl -si -X POST https://sync.stashfm.app/v1/pair -H 'content-type: application/json' -d '{}'` → 403 (no player key).
    - `$env:PLAYER_KEY = (Get-Content -Raw $HOME\.stash\secrets\stash-sync-player-key.txt).Trim(); node scripts/smoke.mjs https://sync.stashfm.app` → "all checks passed" (it deletes the space it made).
    - `curl -s https://<player>/api/sync/pair` without a session → 401/302 from the player's gate.
