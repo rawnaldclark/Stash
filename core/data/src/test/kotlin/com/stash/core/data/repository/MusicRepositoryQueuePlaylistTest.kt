@@ -40,6 +40,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -578,6 +579,48 @@ class MusicRepositoryQueuePlaylistTest {
         repo().deletePlaylistWithCascade(p, alsoBlacklist = false)
         val seen = w.query("SELECT active FROM seen").use { c -> buildList { while (c.moveToNext()) add(c.getInt(0)) } }
         assertEquals(listOf(0, 0, 0), seen)
+    }
+
+    /** Last look L-N1: closing the screen mid-delete must not leave a hidden, half-emptied playlist. */
+    @Test fun `a cascade delete finishes even when its caller is cancelled`() = runTest {
+        val p = playlist("Big")
+        val songs = (0 until 3).map { member(p, it, track("S$it")) }
+        val repo = repo()
+        val job = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { repo.deletePlaylistWithCascade(p, alsoBlacklist = false) }
+        job.cancel() // the screen closed
+        job.join()
+        assertEquals(null, db.playlistDao().getById(p))
+        assertEquals(songs.map { null }, songs.map { db.trackDao().getById(it) })
+    }
+
+    /** Last look L-N1: a delete cut short by the process dying is finished at the next launch; other hidden playlists stay. */
+    @Test fun `a launch sweep finishes a delete left half way, and leaves other hidden playlists alone`() = runTest {
+        val cut = playlist("Cut short")
+        val left = member(cut, 1, track("Left"))
+        val hidden = playlist("A mix switched off")
+        member(hidden, 0, track("Kept"))
+        db.playlistDao().setActiveById(hidden, false)
+        val repo = repo()
+        // What the process left behind: the delete was recorded and the playlist hidden, then the process died.
+        repo.recordDeleteStarted(cut, alsoBlacklist = false)
+        db.playlistDao().setActiveById(cut, false)
+        assertEquals(1, repo.finishInterruptedPlaylistDeletes())
+        assertEquals(null, db.playlistDao().getById(cut))
+        assertEquals(null, db.trackDao().getById(left))
+        assertEquals(false, db.playlistDao().getById(hidden)!!.isActive)
+        assertEquals(0, repo.finishInterruptedPlaylistDeletes()) // done once
+    }
+
+    /** Last look L-N1: a delete that fails shows the playlist again, so it can be deleted again. */
+    @Test fun `a cascade delete that fails shows the playlist again`() = runTest {
+        val p = playlist("Fails")
+        member(p, 0, track("S"))
+        val dao = spyk(db.playlistDao())
+        coEvery { dao.removeTrackFromPlaylist(any(), any()) } throws IllegalStateException("disk")
+        val repo = repo(playlistDao = dao)
+        runCatching { repo.deletePlaylistWithCascade(p, alsoBlacklist = false) }
+        assertEquals(true, db.playlistDao().getById(p)!!.isActive)
+        assertEquals(0, repo.finishInterruptedPlaylistDeletes())
     }
 
     private suspend fun playlist(

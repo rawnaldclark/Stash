@@ -355,6 +355,12 @@ class StashApplication : Application(), Configuration.Provider {
             runCatching { musicRepository.resumeWaitingDownloads() }
                 .onFailure { Log.w("StashStartup", "resuming waiting downloads failed", it) }
         }
+        // A playlist delete cut short by the process dying: its playlist is hidden and half
+        // emptied, so finish it (last look L-N1).
+        applicationScope.launch {
+            runCatching { musicRepository.finishInterruptedPlaylistDeletes() }
+                .onFailure { Log.w("StashStartup", "finishing interrupted playlist deletes failed", it) }
+        }
         applicationScope.launch {
             runCatching { musicRepository.ensureDownloadsMixSeeded() }
                 .onFailure { Log.w("StashStartup", "ensureDownloadsMixSeeded failed", it) }
