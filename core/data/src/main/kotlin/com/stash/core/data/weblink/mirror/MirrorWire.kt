@@ -12,7 +12,6 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
-import kotlinx.serialization.json.addJsonArray
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
@@ -147,6 +146,9 @@ object MirrorWire {
 
     /** Songs a mirrored playlist holds at most (sync-v1 §8). */
     const val MAX_PL_ITEMS = 10_000
+
+    /** A playlist name's length at most, in UTF-16 units (sync-v1 §8). */
+    const val NAME_MAX = 100
 
     val MIRROR_ID = Regex("^m_[A-Za-z0-9]{16}$")
     private val PL_HASH = Regex("^h_[A-Za-z0-9_-]{22}$")
@@ -441,7 +443,4 @@ object MirrorWire {
             st.joined.forEach { j -> addJsonObject { put("kind", j.kind.wire); put("since", j.since); put("device", j.device) } }
         }
     }.toString()
-
-    @Suppress("unused")
-    private fun unusedImports() = buildJsonArray { addJsonArray { } }
 }

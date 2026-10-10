@@ -27,6 +27,10 @@ abstract class WebLinkModule {
 
     @Binds abstract fun bindHandoffChannel(impl: HandoffSync): HandoffChannel
 
+    @Binds abstract fun bindMirrorStore(impl: com.stash.core.data.weblink.mirror.FileMirrorStore): com.stash.core.data.weblink.mirror.MirrorStore
+
+    @Binds abstract fun bindMirrorLibrary(impl: com.stash.core.data.weblink.mirror.RoomMirrorLibrary): com.stash.core.data.weblink.mirror.MirrorLibrary
+
     companion object {
         @Provides
         @Singleton

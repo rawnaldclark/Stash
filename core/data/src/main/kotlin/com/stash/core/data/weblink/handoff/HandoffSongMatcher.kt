@@ -31,11 +31,11 @@ class HandoffSongMatcher @Inject constructor(
      * once per batch, not once per song (every library screen re-queries on each invalidation), and the write lock is never
      * held for long. Same result as [match] one by one.
      */
-    suspend fun matchAll(songs: List<WireSong?>): List<TrackEntity?> = withContext(Dispatchers.IO) {
+    suspend fun matchAll(songs: List<WireSong?>, phoneOnlyByWords: Boolean = false): List<TrackEntity?> = withContext(Dispatchers.IO) {
         val out = ArrayList<TrackEntity?>(songs.size)
         for (chunk in songs.chunked(BATCH)) {
             val rows = try {
-                database.withTransaction { chunk.map { s -> s?.let { matchOne(it) } } }
+                database.withTransaction { chunk.map { s -> s?.let { matchOne(it, phoneOnlyByWords) } } }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -58,8 +58,12 @@ class HandoffSongMatcher @Inject constructor(
         }
     }
 
-    private suspend fun matchOne(song: WireSong): TrackEntity? {
-        if (song.phoneOnly) return null
+    /**
+     * [phoneOnlyByWords]: a `phoneOnly` song is this phone's own file (a mirrored playlist names it), found by its words, never
+     * made; without it, a `phoneOnly` song has no row here (a handoff leaves it out).
+     */
+    private suspend fun matchOne(song: WireSong, phoneOnlyByWords: Boolean = false): TrackEntity? {
+        if (song.phoneOnly) return if (phoneOnlyByWords) byWords(song) else null
         return song.isrc?.let { trackDao.findByIsrc(it) }
             ?: song.youtubeId?.let { trackDao.findByYoutubeId(it) }
             ?: song.spotifyId?.let { trackDao.findBySpotifyUri("spotify:track:$it") }

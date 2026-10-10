@@ -149,6 +149,8 @@ abstract class StashDatabase : RoomDatabase() {
 
     abstract fun webLibraryExportDao(): WebLibraryExportDao
 
+    abstract fun mirrorDao(): com.stash.core.data.db.dao.MirrorDao
+
 
     companion object {
         const val DATABASE_NAME = "stash.db"
