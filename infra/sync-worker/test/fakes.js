@@ -4,7 +4,7 @@
  * and ratelimits bindings. Plus devices, boxes and envelopes shaped like the clients' (random bytes stand in for ciphertext).
  */
 import { DatabaseSync } from "node:sqlite";
-import { webcrypto } from "node:crypto";
+import { randomBytes, webcrypto } from "node:crypto";
 import { base64url, sha256Hex } from "../src/http.js";
 import { SyncSpace } from "../src/sync-space.js";
 import { PairSlot } from "../src/pair-slot.js";
@@ -122,7 +122,7 @@ export function world({ t = 1_760_000_000_000, limits = {} } = {}) {
     return { clock, env, timers, fire, fetch: (req) => worker.fetch(req, env, {}) };
 }
 
-const random = (n) => webcrypto.getRandomValues(new Uint8Array(n));
+const random = (n) => new Uint8Array(randomBytes(n));
 
 /** An encrypted value of `bytes` random bytes: `{ n, c }`, plus `e` when given. */
 export function box(e, bytes = 48) {
