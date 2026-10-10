@@ -30,7 +30,19 @@ class HandoffOfferAndRestoreTest {
         assertThat(o.deviceName).isEqualTo("Chrome on Windows")
         assertThat(o.positionMs).isEqualTo(151_000)
         assertThat(o.stillPlaying).isFalse()
-        assertThat(o.key).isEqualTo("d_web@990000")
+        assertThat(o.key).isEqualTo("d_web#q_abc#0")
+    }
+
+    @Test
+    fun `a dismissed state stays dismissed through that device's heartbeats, and a new song there is a new offer`() {
+        val first = PublishedState("d_web", "Chrome", 990_000, now(true, 10_000))
+        val dismissed = listOf(HandoffOfferPicker.pick(read(first), 0, false, emptyList(), 0)!!.key)
+        // A minute later the browser republishes the same song (a new serverAt): still dismissed.
+        val heartbeat = PublishedState("d_web", "Chrome", 1_050_000, now(true, 70_000))
+        assertThat(HandoffOfferPicker.pick(read(heartbeat, serverTime = 1_060_000), 0, false, dismissed, 0)).isNull()
+        // The next song in that queue is something new to offer.
+        val next = PublishedState("d_web", "Chrome", 1_250_000, now(true, 1_000, song = song(2), index = 1))
+        assertThat(HandoffOfferPicker.pick(read(next, serverTime = 1_260_000), 0, false, dismissed, 0)).isNotNull()
     }
 
     @Test
@@ -52,7 +64,7 @@ class HandoffOfferAndRestoreTest {
     fun `no offer while playing here, when dismissed, older than own playback, over 12 hours, or without a song`() {
         val st = PublishedState("d_web", "Chrome", 990_000, now(false, 1_000))
         assertThat(HandoffOfferPicker.pick(read(st), 0, true, emptyList(), 0)).isNull()
-        assertThat(HandoffOfferPicker.pick(read(st), 0, false, listOf("d_web@990000"), 0)).isNull()
+        assertThat(HandoffOfferPicker.pick(read(st), 0, false, listOf("d_web#q_abc#0"), 0)).isNull()
         assertThat(HandoffOfferPicker.pick(read(st, own = 995_000), HandoffOfferPicker.ownLastAt(read(st, own = 995_000), 0, 0), false, emptyList(), 0)).isNull()
         assertThat(HandoffOfferPicker.pick(read(st, serverTime = 990_000 + 12 * 3_600_000L), 0, false, emptyList(), 0)).isNull()
         assertThat(HandoffOfferPicker.pick(read(PublishedState("d_web", "Chrome", 990_000, now(false, 0, song = null))), 0, false, emptyList(), 0)).isNull()
@@ -168,9 +180,26 @@ class HandoffOfferAndRestoreTest {
         val big = (1..2_500).map { Track(id = it.toLong(), title = "S$it", artist = "A") }
         val s = PlayerState(currentTrack = big[1_000], queue = big, currentIndex = 1_000)
         val docs = HandoffDocsBuilder.build(s, big.map(HandoffDocsBuilder::songOf), 0, 1.0)!!
-        assertThat(docs.queue.items).hasSize(1_600) // 900 … 2,499: at most 2,000 from 100 before the current song
-        assertThat(docs.queue.offset).isEqualTo(900)
-        assertThat(docs.queue.index).isEqualTo(100)
+        // 100 before the current song would leave 1,600 to the end: the window moves back so it still holds 2,000 (as the web).
+        assertThat(docs.queue.items).hasSize(2_000)
+        assertThat(docs.queue.offset).isEqualTo(500)
+        assertThat(docs.queue.index).isEqualTo(500)
         assertThat(docs.now.song!!.title).isEqualTo("S1001")
+        // Early in a long queue it starts 100 before the current song.
+        val early = HandoffDocsBuilder.build(s.copy(currentTrack = big[300], currentIndex = 300), big.map(HandoffDocsBuilder::songOf), 0, 1.0)!!
+        assertThat(early.queue.offset).isEqualTo(200)
+        assertThat(early.queue.index).isEqualTo(100)
+    }
+
+    @Test
+    fun `the publisher's window of songs builds the same documents as the whole queue`() {
+        val big = (1..2_500).map { Track(id = it.toLong(), title = "S$it", artist = "A") }
+        val s = PlayerState(currentTrack = big[1_000], queue = big, currentIndex = 1_000)
+        val w = HandoffDocsBuilder.window(s)
+        val whole = HandoffDocsBuilder.build(s, big.map(HandoffDocsBuilder::songOf), 0, 1.0)!!
+        val windowed = HandoffDocsBuilder.build(s, big.subList(w.first, w.last + 1).map(HandoffDocsBuilder::songOf), 0, 1.0, w.first)!!
+        assertThat(windowed).isEqualTo(whole)
+        // A list that is neither the queue nor the window is refused.
+        assertThat(HandoffDocsBuilder.build(s, big.take(10).map(HandoffDocsBuilder::songOf), 0, 1.0, 3)).isNull()
     }
 }

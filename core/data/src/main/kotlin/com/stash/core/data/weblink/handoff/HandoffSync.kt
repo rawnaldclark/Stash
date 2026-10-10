@@ -13,6 +13,9 @@ import com.stash.core.data.weblink.store.LinkedSpace
 import com.stash.core.data.weblink.store.WebLinkStore
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -58,6 +61,12 @@ interface HandoffChannel {
 
     /** [device]'s queue, or null (none published, unreadable, offline). */
     suspend fun readQueue(device: String): StashQueue?
+
+    /**
+     * Where this phone's slots live now: `"<spaceId>@<epoch>"`, null when not linked. A rotation or a re-link drops every slot
+     * on the server, so a publisher that sees this change sends its queue again.
+     */
+    suspend fun scope(): String? = null
 }
 
 /**
@@ -73,9 +82,30 @@ class HandoffSync @Inject constructor(
 ) : HandoffChannel {
     private val lock = Mutex()
 
-    override suspend fun linked(): Boolean = store.space() != null
+    override suspend fun linked(): Boolean = guard(false) { store.space() != null }
 
-    override suspend fun publish(now: StashNow, queue: StashQueue?): PublishOutcome = lock.withLock {
+    override suspend fun scope(): String? = guard(null) { store.space()?.let { "${it.spaceId}@${it.epoch}" } }
+
+    /**
+     * Every store and crypto use is guarded (Phase 3 S4): a passing Keystore or database failure throws
+     * [com.stash.core.data.weblink.store.LinkStoreUnavailable], and these calls run from the playback service and the app's
+     * foreground, where an exception would crash the app. A failed publish counts as offline (retried with a backoff); a
+     * failed read as nothing to offer. The work runs on IO (sealing, gzip, JSON), never on the caller's thread.
+     */
+    private suspend inline fun <T> guard(fallback: T, crossinline block: suspend () -> T): T = withContext(Dispatchers.IO) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "handoff call failed: ${e.javaClass.simpleName}")
+            fallback
+        }
+    }
+
+    override suspend fun publish(now: StashNow, queue: StashQueue?): PublishOutcome = guard(PublishOutcome.Offline) { publishLocked(now, queue) }
+
+    private suspend fun publishLocked(now: StashNow, queue: StashQueue?): PublishOutcome = lock.withLock {
         val nowText = HandoffWire.nowJson(now)
         val queueText = queue?.let(HandoffWire::queueJson)
         var queueSent = queueText == null
@@ -106,7 +136,9 @@ class HandoffSync @Inject constructor(
         PublishOutcome.Refused("unfinished")
     }
 
-    override suspend fun readNow(): NowRead? = lock.withLock {
+    override suspend fun readNow(): NowRead? = guard(null) { readNowLocked() }
+
+    private suspend fun readNowLocked(): NowRead? = lock.withLock {
         repeat(2) { attempt ->
             val id = store.identity() ?: return@withLock null
             val sp = store.space() ?: return@withLock null
@@ -124,7 +156,7 @@ class HandoffSync @Inject constructor(
             var newer = false
             val states = read.slots.filter { it.device != id.deviceId }.mapNotNull { slot ->
                 try {
-                    PublishedState(slot.device, names[slot.device] ?: DEFAULT_NAME, slot.serverAt, HandoffWire.readNow(open(sp, SyncCrypto.Place.now(slot.device), slot)))
+                    PublishedState(slot.device, names[slot.device] ?: DEFAULT_NAME, slot.serverAt, HandoffWire.readNow(open(sp, SyncCrypto.Place.now(slot.device), slot, MAX_NOW_PLAIN)))
                 } catch (e: HandoffWireException) {
                     if (e.newer) newer = true
                     Log.w(TAG, "now slot of ${slot.device.take(6)}… unreadable: ${e.message}")
@@ -140,7 +172,9 @@ class HandoffSync @Inject constructor(
         null
     }
 
-    override suspend fun readQueue(device: String): StashQueue? = lock.withLock {
+    override suspend fun readQueue(device: String): StashQueue? = guard(null) { readQueueLocked(device) }
+
+    private suspend fun readQueueLocked(device: String): StashQueue? = lock.withLock {
         val id = store.identity() ?: return@withLock null
         val sp = store.space() ?: return@withLock null
         val slot = when (val r = api.queueSlot(DeviceAuth(id.deviceId, id.token), sp.spaceId, device)) {
@@ -148,7 +182,7 @@ class HandoffSync @Inject constructor(
             else -> return@withLock null
         }
         try {
-            HandoffWire.readQueue(open(sp, SyncCrypto.Place.queue(device), slot))
+            HandoffWire.readQueue(open(sp, SyncCrypto.Place.queue(device), slot, MAX_QUEUE_PLAIN))
         } catch (e: HandoffWireException) {
             Log.w(TAG, "queue of ${device.take(6)}… unreadable: ${e.message}")
             null
@@ -158,9 +192,10 @@ class HandoffSync @Inject constructor(
         }
     }
 
-    private fun open(sp: LinkedSpace, place: String, slot: StoredSlot): String {
+    /** Opens a slot, refusing to inflate past [max] bytes: a linked device can't make this phone inflate 64 MiB on a tap (N7). */
+    private fun open(sp: LinkedSpace, place: String, slot: StoredSlot, max: Int): String {
         val k = sp.keyFor(slot.env.e) ?: throw SyncCryptoException("no key for epoch ${slot.env.e}")
-        return SyncCrypto.open(SyncCrypto.dataKey(k, sp.spaceId), sp.spaceId, place, slot.env)
+        return SyncCrypto.open(SyncCrypto.dataKey(k, sp.spaceId), sp.spaceId, place, slot.env, max)
     }
 
     private fun needsRefresh(r: SyncResult.Error) =
@@ -189,6 +224,10 @@ class HandoffSync @Inject constructor(
         const val SLOT_NOW = "now"
         const val SLOT_QUEUE = "queue"
         const val DEFAULT_NAME = "Stash on the web"
+
+        /** A `now` is under 2 KiB of JSON; a queue of 2,000 songs well under 4 MiB. */
+        const val MAX_NOW_PLAIN = 64 * 1024
+        const val MAX_QUEUE_PLAIN = 4 * 1024 * 1024
 
         /** Marker outcome: refresh the link and try once more. */
         val RETRY = PublishOutcome.Refused("retry")

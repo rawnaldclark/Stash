@@ -35,19 +35,34 @@ object HandoffDocsBuilder {
     }
 
     /**
-     * @param songs one per row of [state]'s queue (play order), null where a song can't travel.
+     * The rows of [state]'s queue that travel: all of them up to 2,000, else 2,000 starting 100 songs before the current one,
+     * moved back so a window near the end still holds 2,000 (sync-v1 §5.1; the web clamps the same way).
+     */
+    fun window(state: PlayerState): IntRange {
+        val n = state.queue.size
+        if (n == 0) return IntRange.EMPTY
+        val cur = state.currentIndex.coerceIn(0, n - 1)
+        val start = if (n > HandoffWire.MAX_QUEUE) (cur - HandoffWire.WINDOW_BEFORE).coerceAtMost(n - HandoffWire.MAX_QUEUE).coerceAtLeast(0) else 0
+        return start until minOf(n, start + HandoffWire.MAX_QUEUE)
+    }
+
+    /**
+     * @param songs the wire songs of [state]'s queue (play order), null where a song can't travel: either one per row of the
+     *   whole queue ([songsStart] 0), or exactly the rows of [window] starting at [songsStart] (the publisher reads only those).
      * @param positionMs where the current song is now.
      */
-    fun build(state: PlayerState, songs: List<WireSong?>, positionMs: Long, rate: Double): HandoffDocs? {
+    fun build(state: PlayerState, songs: List<WireSong?>, positionMs: Long, rate: Double, songsStart: Int = 0): HandoffDocs? {
         val n = state.queue.size
-        if (n == 0 || songs.size != n) return null
+        if (n == 0) return null
+        val w = window(state)
+        val whole = songsStart == 0 && songs.size == n
+        if (!whole && !(songsStart == w.first && songs.size == w.count())) return null
+        val at = { i: Int -> songs.getOrNull(i - songsStart) }
         val cur = state.currentIndex.coerceIn(0, n - 1)
-        // Over 2,000: a window that starts 100 songs before the current one (sync-v1 §5.1).
-        val start = if (n > HandoffWire.MAX_QUEUE) (cur - HandoffWire.WINDOW_BEFORE).coerceAtLeast(0) else 0
-        val end = minOf(n, start + HandoffWire.MAX_QUEUE)
-        val kept = (start until end).filter { songs[it] != null }
+        val kept = w.filter { at(it) != null }
         if (kept.isEmpty()) return null
-        val items = kept.map { songs[it]!! }
+        val items = kept.map { at(it)!! }
+        val start = w.first
         // The current song, or (when it can't travel) the next one that can.
         val index = kept.indexOfFirst { it >= cur }.takeIf { it >= 0 } ?: (kept.size - 1)
         val slots = state.shuffleTimelineSlots
@@ -58,7 +73,7 @@ object HandoffDocsBuilder {
         }
         val queue = StashQueue(SyncHashes.queueId(items, start, original), items, index, start, original)
         // A current song that can't travel (no title or artist) hands over the next one, from its start.
-        val currentTravels = songs[cur] != null
+        val currentTravels = at(cur) != null
         val now = StashNow(
             playing = state.isPlaying || state.isBuffering,
             positionMs = if (currentTravels) positionMs.coerceAtLeast(0) else 0L,

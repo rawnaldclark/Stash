@@ -209,9 +209,9 @@ object SyncCrypto {
     }
 
     /** The JSON text of an envelope sealed for (spaceId, place); the epoch in the AAD is the envelope's own [SyncEnvelope.e]. */
-    fun open(key: ByteArray, spaceId: String, place: String, env: SyncEnvelope): String {
+    fun open(key: ByteArray, spaceId: String, place: String, env: SyncEnvelope, max: Int = MAX_PLAINTEXT): String {
         if (env.e < 0) throw SyncCryptoException("bad envelope")
-        return utf8(gunzip(aesOpen(key, b64(env.n), aad(spaceId, env.e, place), b64(env.c))))
+        return utf8(gunzip(aesOpen(key, b64(env.n), aad(spaceId, env.e, place), b64(env.c)), max))
     }
 
     /**
