@@ -1,0 +1,745 @@
+{
+	"kind": "stash-sync-clock-vectors",
+	"v": 1,
+	"note": "Clocks of sync-v1 (docs/sync-v1.md \"Clocks\"): HLC order, tick and receive, the server-time offset, skew scenarios, handoff timing. Frozen: see \"Test vectors\".",
+	"compare": [
+		{
+			"a": [
+				1000,
+				0,
+				"d_a"
+			],
+			"b": [
+				1000,
+				0,
+				"d_b"
+			],
+			"cmp": -1
+		},
+		{
+			"a": [
+				1000,
+				1,
+				"d_a"
+			],
+			"b": [
+				1000,
+				0,
+				"d_b"
+			],
+			"cmp": 1
+		},
+		{
+			"a": [
+				999,
+				5,
+				"d_z"
+			],
+			"b": [
+				1000,
+				0,
+				"d_a"
+			],
+			"cmp": -1
+		},
+		{
+			"a": [
+				1000,
+				2,
+				"d_a"
+			],
+			"b": [
+				1000,
+				2,
+				"d_a"
+			],
+			"cmp": 0
+		},
+		{
+			"a": [
+				1000,
+				0,
+				"d_B"
+			],
+			"b": [
+				1000,
+				0,
+				"d_a"
+			],
+			"cmp": -1
+		},
+		{
+			"a": [
+				1000,
+				0,
+				"d_web2"
+			],
+			"b": [
+				1000,
+				0,
+				"d_web"
+			],
+			"cmp": 1
+		}
+	],
+	"tick": [
+		{
+			"name": "first stamp",
+			"last": null,
+			"wall": 1000,
+			"device": "d_phone",
+			"expect": [
+				1000,
+				0,
+				"d_phone"
+			]
+		},
+		{
+			"name": "time moved on",
+			"last": [
+				1000,
+				0,
+				"d_phone"
+			],
+			"wall": 1001,
+			"device": "d_phone",
+			"expect": [
+				1001,
+				0,
+				"d_phone"
+			]
+		},
+		{
+			"name": "same millisecond",
+			"last": [
+				1000,
+				0,
+				"d_phone"
+			],
+			"wall": 1000,
+			"device": "d_phone",
+			"expect": [
+				1000,
+				1,
+				"d_phone"
+			]
+		},
+		{
+			"name": "the clock went back: stays after the last stamp",
+			"last": [
+				1000,
+				3,
+				"d_phone"
+			],
+			"wall": 900,
+			"device": "d_phone",
+			"expect": [
+				1000,
+				4,
+				"d_phone"
+			]
+		}
+	],
+	"recv": [
+		{
+			"name": "all three equal: max counter + 1",
+			"last": [
+				1000,
+				0,
+				"d_phone"
+			],
+			"remote": [
+				1000,
+				2,
+				"d_web"
+			],
+			"wall": 1000,
+			"device": "d_phone",
+			"expect": [
+				1000,
+				3,
+				"d_phone"
+			]
+		},
+		{
+			"name": "last is ahead",
+			"last": [
+				1000,
+				5,
+				"d_phone"
+			],
+			"remote": [
+				900,
+				9,
+				"d_web"
+			],
+			"wall": 950,
+			"device": "d_phone",
+			"expect": [
+				1000,
+				6,
+				"d_phone"
+			]
+		},
+		{
+			"name": "the remote is ahead",
+			"last": [
+				1000,
+				0,
+				"d_phone"
+			],
+			"remote": [
+				2000,
+				4,
+				"d_web"
+			],
+			"wall": 1500,
+			"device": "d_phone",
+			"expect": [
+				2000,
+				5,
+				"d_phone"
+			]
+		},
+		{
+			"name": "the wall clock is ahead",
+			"last": [
+				1000,
+				0,
+				"d_phone"
+			],
+			"remote": [
+				900,
+				0,
+				"d_web"
+			],
+			"wall": 3000,
+			"device": "d_phone",
+			"expect": [
+				3000,
+				0,
+				"d_phone"
+			]
+		},
+		{
+			"name": "no last stamp, the remote ahead",
+			"last": null,
+			"remote": [
+				2000,
+				1,
+				"d_web"
+			],
+			"wall": 1000,
+			"device": "d_phone",
+			"expect": [
+				2000,
+				2,
+				"d_phone"
+			]
+		},
+		{
+			"name": "no last stamp, the wall ahead",
+			"last": null,
+			"remote": [
+				500,
+				1,
+				"d_web"
+			],
+			"wall": 1000,
+			"device": "d_phone",
+			"expect": [
+				1000,
+				0,
+				"d_phone"
+			]
+		}
+	],
+	"offset": [
+		{
+			"name": "no samples",
+			"samples": [],
+			"expect": 0
+		},
+		{
+			"name": "one sample: server time minus the request's midpoint (floored)",
+			"samples": [
+				{
+					"sent": 1000,
+					"received": 1201,
+					"serverTime": 5000
+				}
+			],
+			"expect": 3900
+		},
+		{
+			"name": "a slow local clock",
+			"samples": [
+				{
+					"sent": 1000,
+					"received": 1001,
+					"serverTime": 0
+				}
+			],
+			"expect": -1000
+		},
+		{
+			"name": "five samples: the median ignores an outlier",
+			"samples": [
+				{
+					"sent": 1760083199999,
+					"received": 1760083200001,
+					"serverTime": 1760083200010
+				},
+				{
+					"sent": 1760083209999,
+					"received": 1760083210001,
+					"serverTime": 1760083210012
+				},
+				{
+					"sent": 1760083219999,
+					"received": 1760083220001,
+					"serverTime": 1760083220500
+				},
+				{
+					"sent": 1760083229999,
+					"received": 1760083230001,
+					"serverTime": 1760083230011
+				},
+				{
+					"sent": 1760083239999,
+					"received": 1760083240001,
+					"serverTime": 1760083240009
+				}
+			],
+			"expect": 11
+		},
+		{
+			"name": "only the newest five count",
+			"samples": [
+				{
+					"sent": 1760083199999,
+					"received": 1760083200001,
+					"serverTime": 1760083209999
+				},
+				{
+					"sent": 1760083209999,
+					"received": 1760083210001,
+					"serverTime": 1760083210004
+				},
+				{
+					"sent": 1760083219999,
+					"received": 1760083220001,
+					"serverTime": 1760083220001
+				},
+				{
+					"sent": 1760083229999,
+					"received": 1760083230001,
+					"serverTime": 1760083230003
+				},
+				{
+					"sent": 1760083239999,
+					"received": 1760083240001,
+					"serverTime": 1760083240002
+				},
+				{
+					"sent": 1760083249999,
+					"received": 1760083250001,
+					"serverTime": 1760083250100
+				}
+			],
+			"expect": 3
+		},
+		{
+			"name": "an even count: the lower median",
+			"samples": [
+				{
+					"sent": 1760083199999,
+					"received": 1760083200001,
+					"serverTime": 1760083200005
+				},
+				{
+					"sent": 1760083209999,
+					"received": 1760083210001,
+					"serverTime": 1760083210001
+				},
+				{
+					"sent": 1760083219999,
+					"received": 1760083220001,
+					"serverTime": 1760083220007
+				},
+				{
+					"sent": 1760083229999,
+					"received": 1760083230001,
+					"serverTime": 1760083230003
+				}
+			],
+			"expect": 3
+		}
+	],
+	"skew": [
+		{
+			"name": "the phone's clock is an hour fast; the web unlikes 5 s after the phone liked: the web wins",
+			"a": {
+				"device": "d_phone",
+				"local": 1760086800000,
+				"samples": [
+					{
+						"sent": 1760086739999,
+						"received": 1760086740001,
+						"serverTime": 1760083140000
+					}
+				]
+			},
+			"b": {
+				"device": "d_web",
+				"local": 1760083205000,
+				"samples": [
+					{
+						"sent": 1760083139999,
+						"received": 1760083140001,
+						"serverTime": 1760083140000
+					}
+				]
+			},
+			"newer": "b",
+			"naiveNewer": "a"
+		},
+		{
+			"name": "the web's clock is 10 minutes slow; it edits 1 s after the phone: the web wins",
+			"a": {
+				"device": "d_phone",
+				"local": 1760083200000,
+				"samples": [
+					{
+						"sent": 1760083139999,
+						"received": 1760083140001,
+						"serverTime": 1760083140000
+					}
+				]
+			},
+			"b": {
+				"device": "d_web",
+				"local": 1760082601000,
+				"samples": [
+					{
+						"sent": 1760082539999,
+						"received": 1760082540001,
+						"serverTime": 1760083140000
+					}
+				]
+			},
+			"newer": "b",
+			"naiveNewer": "a"
+		},
+		{
+			"name": "the same corrected millisecond: the device id decides",
+			"a": {
+				"device": "d_phone",
+				"local": 1760083200007,
+				"samples": [
+					{
+						"sent": 1760083139999,
+						"received": 1760083140001,
+						"serverTime": 1760083139993
+					}
+				]
+			},
+			"b": {
+				"device": "d_web",
+				"local": 1760083199997,
+				"samples": [
+					{
+						"sent": 1760083139999,
+						"received": 1760083140001,
+						"serverTime": 1760083140003
+					}
+				]
+			},
+			"newer": "b",
+			"naiveNewer": "a"
+		}
+	],
+	"extrapolate": [
+		{
+			"name": "playing: position plus elapsed server time",
+			"state": {
+				"playing": true,
+				"positionMs": 151000,
+				"rate": 1
+			},
+			"serverAt": 1000,
+			"serverTime": 31000,
+			"expect": 181000
+		},
+		{
+			"name": "paused: as published",
+			"state": {
+				"playing": false,
+				"positionMs": 151000,
+				"rate": 1
+			},
+			"serverAt": 1000,
+			"serverTime": 31000,
+			"expect": 151000
+		},
+		{
+			"name": "rate 1.5",
+			"state": {
+				"playing": true,
+				"positionMs": 1000,
+				"rate": 1.5
+			},
+			"serverAt": 0,
+			"serverTime": 1000,
+			"expect": 2500
+		},
+		{
+			"name": "rate 1.25, floored",
+			"state": {
+				"playing": true,
+				"positionMs": 1000,
+				"rate": 1.25
+			},
+			"serverAt": 0,
+			"serverTime": 333,
+			"expect": 1416
+		},
+		{
+			"name": "no rate: 1",
+			"state": {
+				"playing": true,
+				"positionMs": 0
+			},
+			"serverAt": 0,
+			"serverTime": 5000,
+			"expect": 5000
+		},
+		{
+			"name": "past the song's end: the published position",
+			"state": {
+				"playing": true,
+				"positionMs": 151000,
+				"rate": 1,
+				"durationMs": 184000
+			},
+			"serverAt": 0,
+			"serverTime": 60000,
+			"expect": 151000
+		},
+		{
+			"name": "exactly at the end: kept",
+			"state": {
+				"playing": true,
+				"positionMs": 150000,
+				"rate": 1,
+				"durationMs": 184000
+			},
+			"serverAt": 0,
+			"serverTime": 34000,
+			"expect": 184000
+		},
+		{
+			"name": "a server time before serverAt: no time elapsed",
+			"state": {
+				"playing": true,
+				"positionMs": 1000,
+				"rate": 1
+			},
+			"serverAt": 5000,
+			"serverTime": 4000,
+			"expect": 1000
+		}
+	],
+	"offer": [
+		{
+			"name": "a newer state from the phone",
+			"states": [
+				{
+					"device": "d_phone",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760083260000,
+			"ownLastAt": 1760083199999,
+			"playingHere": false,
+			"dismissed": [],
+			"expect": "d_phone"
+		},
+		{
+			"name": "this device's own state is never offered",
+			"states": [
+				{
+					"device": "d_web",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760083260000,
+			"ownLastAt": 0,
+			"playingHere": false,
+			"dismissed": [],
+			"expect": null
+		},
+		{
+			"name": "not while this device plays",
+			"states": [
+				{
+					"device": "d_phone",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760083260000,
+			"ownLastAt": 0,
+			"playingHere": true,
+			"dismissed": [],
+			"expect": null
+		},
+		{
+			"name": "not older than this device's own last playback",
+			"states": [
+				{
+					"device": "d_phone",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760083260000,
+			"ownLastAt": 1760083200000,
+			"playingHere": false,
+			"dismissed": [],
+			"expect": null
+		},
+		{
+			"name": "12 hours old: no longer offered",
+			"states": [
+				{
+					"device": "d_phone",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760126400000,
+			"ownLastAt": 0,
+			"playingHere": false,
+			"dismissed": [],
+			"expect": null
+		},
+		{
+			"name": "just under 12 hours: offered",
+			"states": [
+				{
+					"device": "d_phone",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760126399999,
+			"ownLastAt": 0,
+			"playingHere": false,
+			"dismissed": [],
+			"expect": "d_phone"
+		},
+		{
+			"name": "that exact state dismissed",
+			"states": [
+				{
+					"device": "d_phone",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760083260000,
+			"ownLastAt": 0,
+			"playingHere": false,
+			"dismissed": [
+				"d_phone@1760083200000"
+			],
+			"expect": null
+		},
+		{
+			"name": "an earlier state dismissed: a newer one is offered",
+			"states": [
+				{
+					"device": "d_phone",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760083260000,
+			"ownLastAt": 0,
+			"playingHere": false,
+			"dismissed": [
+				"d_phone@1760083199000"
+			],
+			"expect": "d_phone"
+		},
+		{
+			"name": "no song: skipped",
+			"states": [
+				{
+					"device": "d_phone",
+					"serverAt": 1760083200000,
+					"hasSong": false
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760083260000,
+			"ownLastAt": 0,
+			"playingHere": false,
+			"dismissed": [],
+			"expect": null
+		},
+		{
+			"name": "the newest of two",
+			"states": [
+				{
+					"device": "d_phone",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				},
+				{
+					"device": "d_web2",
+					"serverAt": 1760083200005,
+					"hasSong": true
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760083260000,
+			"ownLastAt": 0,
+			"playingHere": false,
+			"dismissed": [],
+			"expect": "d_web2"
+		},
+		{
+			"name": "a tie: the smaller device id",
+			"states": [
+				{
+					"device": "d_web2",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				},
+				{
+					"device": "d_phone",
+					"serverAt": 1760083200000,
+					"hasSong": true
+				}
+			],
+			"me": "d_web",
+			"serverTime": 1760083260000,
+			"ownLastAt": 0,
+			"playingHere": false,
+			"dismissed": [],
+			"expect": "d_phone"
+		}
+	]
+}

@@ -1,0 +1,601 @@
+{
+	"kind": "stash-sync-identity-vectors",
+	"v": 1,
+	"note": "Track identity of sync-v1 (docs/sync-v1.md \"Track identity\"): the web player's src/lib/identity.ts rules. Frozen: see \"Test vectors\".",
+	"fold": [
+		{
+			"in": "Café   Del-Mar!",
+			"out": "cafe del mar",
+			"note": "accents, runs of punctuation and spaces"
+		},
+		{
+			"in": "Pink + White",
+			"out": "pink white",
+			"note": "a symbol between words"
+		},
+		{
+			"in": "Song (feat. Someone)",
+			"out": "song",
+			"note": "bracketed featuring credit: dropped"
+		},
+		{
+			"in": "Song [ft. Someone]",
+			"out": "song",
+			"note": "square brackets, ft."
+		},
+		{
+			"in": "Song (Featuring Someone)",
+			"out": "song",
+			"note": "featuring, capitalised"
+		},
+		{
+			"in": "Song (FEAT. Someone)",
+			"out": "song",
+			"note": "FEAT. in capitals"
+		},
+		{
+			"in": "Song (feat Someone)",
+			"out": "song",
+			"note": "feat without a dot"
+		},
+		{
+			"in": "Song (feat.Someone)",
+			"out": "song",
+			"note": "no space after the dot"
+		},
+		{
+			"in": "Song ( feat. A & B )",
+			"out": "song",
+			"note": "spaces inside the bracket"
+		},
+		{
+			"in": "Song (ft)",
+			"out": "song",
+			"note": "ft alone"
+		},
+		{
+			"in": "Song (featuring)",
+			"out": "song",
+			"note": "featuring alone"
+		},
+		{
+			"in": "Song (feat. Ünïcödé)",
+			"out": "song",
+			"note": "accented credit"
+		},
+		{
+			"in": "Song (feat. A) (Live)",
+			"out": "song live",
+			"note": "credit dropped, (Live) kept"
+		},
+		{
+			"in": "Song (feat. A (B Remix))",
+			"out": "song",
+			"note": "a nested bracket ends the credit at the first closing bracket"
+		},
+		{
+			"in": "Song (Featherweight)",
+			"out": "song featherweight",
+			"note": "feat inside a word: kept"
+		},
+		{
+			"in": "Song (Ftw)",
+			"out": "song ftw",
+			"note": "ft inside a word: kept"
+		},
+		{
+			"in": "Song (feats)",
+			"out": "song feats",
+			"note": "feats is not feat: kept"
+		},
+		{
+			"in": "Song - feat. Someone",
+			"out": "song feat someone",
+			"note": "an unbracketed credit is kept"
+		},
+		{
+			"in": "Song (with Someone)",
+			"out": "song with someone",
+			"note": "with is not a featuring marker"
+		},
+		{
+			"in": "Song (Live)",
+			"out": "song live",
+			"note": "version markers are identity"
+		},
+		{
+			"in": "Song (Remastered 2011)",
+			"out": "song remastered 2011",
+			"note": "remaster is identity"
+		},
+		{
+			"in": "Song [Live at Wembley]",
+			"out": "song live at wembley",
+			"note": "square-bracket version"
+		},
+		{
+			"in": "Dance (Without You)",
+			"out": "dance without you",
+			"note": "a bracketed title part"
+		},
+		{
+			"in": "Beyoncé",
+			"out": "beyonce",
+			"note": "acute accent"
+		},
+		{
+			"in": "Sigur Rós",
+			"out": "sigur ros",
+			"note": "acute accent"
+		},
+		{
+			"in": "Motörhead",
+			"out": "motorhead",
+			"note": "umlaut"
+		},
+		{
+			"in": "Tiësto",
+			"out": "tiesto",
+			"note": "diaeresis"
+		},
+		{
+			"in": "Ångström",
+			"out": "angstrom",
+			"note": "ring above"
+		},
+		{
+			"in": "é combining",
+			"out": "e combining",
+			"note": "a combining accent"
+		},
+		{
+			"in": "Øresund",
+			"out": "øresund",
+			"note": "Ø has no decomposition: kept"
+		},
+		{
+			"in": "Łódź",
+			"out": "łodz",
+			"note": "Ł has no decomposition: kept; ó and ź lose their marks"
+		},
+		{
+			"in": "Straße",
+			"out": "straße",
+			"note": "ß is not case-folded"
+		},
+		{
+			"in": "İstanbul",
+			"out": "istanbul",
+			"note": "dotted capital I: decomposed before lower-casing"
+		},
+		{
+			"in": "ΟΔΟΣ",
+			"out": "οδος",
+			"note": "Greek: final sigma when lower-cased"
+		},
+		{
+			"in": "Сплин",
+			"out": "сплин",
+			"note": "Cyrillic"
+		},
+		{
+			"in": "ﬁre",
+			"out": "fire",
+			"note": "the fi ligature: NFKD"
+		},
+		{
+			"in": "Ｈｅｌｌｏ Ｗｏｒｌｄ",
+			"out": "hello world",
+			"note": "full-width letters: NFKD"
+		},
+		{
+			"in": "Song (ｆｅａｔ. X)",
+			"out": "song",
+			"note": "full-width feat: NFKD before the credit rule"
+		},
+		{
+			"in": "x² ①",
+			"out": "x2 1",
+			"note": "superscript and circled digits: NFKD"
+		},
+		{
+			"in": "Ⅻ",
+			"out": "xii",
+			"note": "a Roman numeral (Nl): NFKD to letters"
+		},
+		{
+			"in": "Ǆ",
+			"out": "dz",
+			"note": "DŽ digraph: NFKD"
+		},
+		{
+			"in": "東京事変",
+			"out": "東京事変",
+			"note": "CJK"
+		},
+		{
+			"in": "ガ ｶﾞ",
+			"out": "カ カ",
+			"note": "katakana voiced mark (half-width too): stripped"
+		},
+		{
+			"in": "안녕",
+			"out": "안녕",
+			"note": "Hangul: NFKD to jamo"
+		},
+		{
+			"in": "مَرْحَبًا",
+			"out": "مرحبا",
+			"note": "Arabic harakat: stripped"
+		},
+		{
+			"in": "नमस्ते",
+			"out": "नमसत",
+			"note": "Devanagari signs are marks: stripped (both sides alike)"
+		},
+		{
+			"in": "שלום",
+			"out": "שלום",
+			"note": "Hebrew"
+		},
+		{
+			"in": "AC/DC",
+			"out": "ac dc",
+			"note": "slash"
+		},
+		{
+			"in": "P!nk",
+			"out": "p nk",
+			"note": "punctuation inside a word splits it"
+		},
+		{
+			"in": "M.I.A.",
+			"out": "m i a",
+			"note": "dotted initials"
+		},
+		{
+			"in": "Ke$ha",
+			"out": "ke ha",
+			"note": "dollar sign"
+		},
+		{
+			"in": "Rock’n’Roll",
+			"out": "rock n roll",
+			"note": "curly apostrophes"
+		},
+		{
+			"in": "😀 Happy",
+			"out": "happy",
+			"note": "emoji"
+		},
+		{
+			"in": "   ",
+			"out": "",
+			"note": "only spaces"
+		},
+		{
+			"in": "",
+			"out": "",
+			"note": "empty"
+		},
+		{
+			"in": "Song\t(feat. X)",
+			"out": "song",
+			"note": "a tab before the bracket"
+		},
+		{
+			"in": "Song ( feat. X)",
+			"out": "song",
+			"note": "no-break space inside: NFKD makes it a space"
+		},
+		{
+			"in": "Song (　feat. X)",
+			"out": "song",
+			"note": "ideographic space inside: NFKD makes it a space"
+		},
+		{
+			"in": "Song (﻿feat. X)",
+			"out": "song",
+			"note": "U+FEFF inside: JavaScript \\s matches it, so the credit is dropped"
+		},
+		{
+			"in": "Song (feat. X)",
+			"out": "song feat x",
+			"note": "U+0085 inside: JavaScript \\s does not match it, so the credit is kept"
+		},
+		{
+			"in": "Song ( feat. X)",
+			"out": "song",
+			"note": "U+1680 ogham space inside: \\s matches"
+		},
+		{
+			"in": "Song​(feat. X)",
+			"out": "song",
+			"note": "a zero-width space before the bracket"
+		},
+		{
+			"in": "Song ( feat. X)",
+			"out": "song",
+			"note": "line separator inside: \\s matches"
+		}
+	],
+	"keys": [
+		{
+			"title": "Pink + White",
+			"artist": "Frank Ocean",
+			"key": "pink white|frank ocean",
+			"textKey": "pink white|frank ocean",
+			"note": "words"
+		},
+		{
+			"title": "Pink + White",
+			"artist": "Frank Ocean",
+			"isrc": "USUM71607009",
+			"key": "isrc:USUM71607009",
+			"textKey": "pink white|frank ocean",
+			"note": "ISRC wins"
+		},
+		{
+			"title": "Pink + White",
+			"artist": "Frank Ocean",
+			"isrc": "usum71607009",
+			"key": "isrc:USUM71607009",
+			"textKey": "pink white|frank ocean",
+			"note": "ISRC upper-cased"
+		},
+		{
+			"title": "Pink + White",
+			"artist": "Frank Ocean",
+			"isrc": "",
+			"key": "pink white|frank ocean",
+			"textKey": "pink white|frank ocean",
+			"note": "an empty ISRC is no ISRC"
+		},
+		{
+			"title": "Song",
+			"artist": "Artist (feat. B)",
+			"key": "song|artist",
+			"textKey": "song|artist",
+			"note": "credit in the artist"
+		},
+		{
+			"title": "Song (feat. B)",
+			"artist": "Artist",
+			"key": "song|artist",
+			"textKey": "song|artist",
+			"note": "credit in the title"
+		},
+		{
+			"title": "Song (Live)",
+			"artist": "Artist",
+			"key": "song live|artist",
+			"textKey": "song live|artist",
+			"note": "live is another recording"
+		},
+		{
+			"title": "Halo",
+			"artist": "Beyoncé",
+			"key": "halo|beyonce",
+			"textKey": "halo|beyonce",
+			"note": "accent in the artist"
+		},
+		{
+			"title": "Under",
+			"artist": "X",
+			"key": "under|x",
+			"textKey": "under|x",
+			"note": "never merges inside words"
+		},
+		{
+			"title": "Un der",
+			"artist": "X",
+			"key": "un der|x",
+			"textKey": "un der|x",
+			"note": "never merges inside words"
+		},
+		{
+			"title": "a|b",
+			"artist": "c",
+			"key": "a b|c",
+			"textKey": "a b|c",
+			"note": "a pipe in the title is folded away"
+		},
+		{
+			"title": "Song",
+			"artist": "Mithoon",
+			"key": "song|mithoon",
+			"textKey": "song|mithoon",
+			"note": "artist words"
+		},
+		{
+			"title": "Song",
+			"artist": "Mithoon Kumar",
+			"key": "song|mithoon kumar",
+			"textKey": "song|mithoon kumar",
+			"note": "artist words"
+		}
+	],
+	"songs": {
+		"words": {
+			"title": "Pink + White",
+			"artist": "Frank Ocean"
+		},
+		"isrcA": {
+			"title": "Pink + White",
+			"artist": "Frank Ocean",
+			"isrc": "usum71607009"
+		},
+		"isrcB": {
+			"title": "Pink + White",
+			"artist": "Frank Ocean",
+			"isrc": "USUM71600001"
+		},
+		"live": {
+			"title": "Pink + White (Live)",
+			"artist": "Frank Ocean"
+		},
+		"keyedA": {
+			"title": "Pink + White",
+			"artist": "Frank Ocean",
+			"key": "isrc:USUM71607009"
+		},
+		"folded": {
+			"title": "pink white",
+			"artist": "FRANK OCEAN"
+		},
+		"feat": {
+			"title": "Pink + White (feat. Beyoncé)",
+			"artist": "Frank Ocean"
+		},
+		"sameIsrcOtherWords": {
+			"title": "Pink and White",
+			"artist": "Frank Ocean",
+			"isrc": "USUM71607009"
+		},
+		"ivy": {
+			"title": "Ivy",
+			"artist": "Frank Ocean"
+		}
+	},
+	"sameSong": [
+		{
+			"a": "words",
+			"b": "isrcA",
+			"same": true,
+			"note": "the words and an ISRC: one song"
+		},
+		{
+			"a": "isrcA",
+			"b": "words",
+			"same": true,
+			"note": "symmetric"
+		},
+		{
+			"a": "isrcA",
+			"b": "isrcB",
+			"same": false,
+			"note": "two different ISRCs: two recordings"
+		},
+		{
+			"a": "words",
+			"b": "live",
+			"same": false,
+			"note": "(Live) is another recording"
+		},
+		{
+			"a": "keyedA",
+			"b": "isrcB",
+			"same": false,
+			"note": "a stored isrc: key counts as the ISRC"
+		},
+		{
+			"a": "keyedA",
+			"b": "isrcA",
+			"same": true,
+			"note": "stored key and the same ISRC"
+		},
+		{
+			"a": "words",
+			"b": "folded",
+			"same": true,
+			"note": "case and punctuation"
+		},
+		{
+			"a": "words",
+			"b": "feat",
+			"same": true,
+			"note": "a featuring credit"
+		},
+		{
+			"a": "isrcA",
+			"b": "sameIsrcOtherWords",
+			"same": true,
+			"note": "one ISRC, other words: same key"
+		},
+		{
+			"a": "words",
+			"b": "sameIsrcOtherWords",
+			"same": false,
+			"note": "other words, one side has an ISRC: different text"
+		},
+		{
+			"a": "words",
+			"b": "ivy",
+			"same": false,
+			"note": "another song"
+		}
+	],
+	"songIndex": [
+		{
+			"entries": [
+				"words"
+			],
+			"find": [
+				{
+					"q": "isrcA",
+					"v": "words"
+				},
+				{
+					"q": "folded",
+					"v": "words"
+				},
+				{
+					"q": "isrcB",
+					"v": "words"
+				},
+				{
+					"q": "ivy",
+					"v": null
+				}
+			]
+		},
+		{
+			"entries": [
+				"isrcA",
+				"isrcB"
+			],
+			"find": [
+				{
+					"q": "words",
+					"v": "isrcA"
+				},
+				{
+					"q": "isrcA",
+					"v": "isrcA"
+				},
+				{
+					"q": "isrcB",
+					"v": "isrcB"
+				},
+				{
+					"q": "keyedA",
+					"v": "isrcA"
+				},
+				{
+					"q": "live",
+					"v": null
+				}
+			]
+		},
+		{
+			"entries": [
+				"isrcB",
+				"words"
+			],
+			"find": [
+				{
+					"q": "isrcA",
+					"v": "words"
+				},
+				{
+					"q": "words",
+					"v": "words"
+				},
+				{
+					"q": "isrcB",
+					"v": "isrcB"
+				}
+			]
+		}
+	]
+}
