@@ -252,7 +252,8 @@ class StashPlaybackService : MediaLibraryService() {
          * (the speaker drops back to its idle screen and has to be picked
          * again), so a paused speaker gets longer than the phone does: long
          * enough for a phone call or dinner, not forever. The cost of waiting
-         * is the wake and Wi-Fi locks the cast holds.
+         * is the foreground service and the speaker connection; the wake and
+         * Wi-Fi locks are already let go while the speaker is paused.
          */
         internal const val CAST_IDLE_STOP_TIMEOUT_MS = 30 * 60_000L
     }
@@ -679,6 +680,7 @@ class StashPlaybackService : MediaLibraryService() {
             val idle = isPlayerIdle(player.playWhenReady, player.playbackState)
             castIdleSinceMs = if (idle) castIdleSinceMs ?: android.os.SystemClock.elapsedRealtime() else null
             playerIdle.value = idle
+            updateCastLocks(idle)
             if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
                 updateDiscordPresence(player.currentMediaItem, player.isPlaying)
                 if (player.isPlaying) {
@@ -741,10 +743,10 @@ class StashPlaybackService : MediaLibraryService() {
         wrapper.attach(master, remote, positionMs, playWhenReady)
         wrapper.addListener(castListener)
         mediaSession?.player = wrapper
-        acquireCastLocks()
         val idle = isPlayerIdle(wrapper.playWhenReady, wrapper.playbackState)
         castIdleSinceMs = if (idle) android.os.SystemClock.elapsedRealtime() else null
         playerIdle.value = idle
+        updateCastLocks(idle)
         android.util.Log.i("StashPlayback", "cast: playing on the speaker from ${positionMs}ms")
         playbackDiagnosticsLog.recordCast("playback moved to the speaker")
         updateCustomLayout()
@@ -844,6 +846,18 @@ class StashPlaybackService : MediaLibraryService() {
             if (!ready) playbackDiagnosticsLog.recordCast("song prepare failed: $scheme")
             done(ready)
         }
+    }
+
+    /**
+     * Holds the cast locks only while the speaker plays (or is about to):
+     * a paused, ended or failed speaker asks the media server for nothing, so
+     * there is no reason to keep the CPU and Wi-Fi awake for it. Play takes
+     * them again as soon as the session reports it.
+     *
+     * Visibility is `internal` so unit tests can invoke it directly.
+     */
+    internal fun updateCastLocks(idle: Boolean) {
+        if (idle) releaseCastLocks() else acquireCastLocks()
     }
 
     /** The phone serves audio while the screen is off, so the CPU and Wi-Fi must stay awake. */
