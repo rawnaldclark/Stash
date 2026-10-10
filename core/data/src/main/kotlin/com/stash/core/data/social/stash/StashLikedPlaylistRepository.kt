@@ -7,6 +7,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import javax.inject.Inject
+import kotlinx.coroutines.flow.first
 import javax.inject.Singleton
 
 /**
@@ -56,6 +57,50 @@ class StashLikedPlaylistRepository @Inject constructor(
         // Reuse existing helper for trackCount + position handling.
         // Mirrors linkTrackToDownloadsMix at MusicRepositoryImpl.kt:294.
         musicRepository.addTrackToPlaylist(trackId = trackId, playlistId = playlistId)
+    }
+
+    /**
+     * Likes from another device or a library file (link-sync spec §2.3, §7.1): each `(trackId, likedAt)` becomes a Stash like
+     * at its own time, added to Liked Songs, never sent to Spotify or YouTube Music (nothing here fans out). A track already in
+     * Liked Songs is left as it is, and an existing like keeps its time. One recount at the end, not one per song.
+     *
+     * @return how many were newly liked.
+     */
+    suspend fun addAllFrom(likes: List<Pair<Long, Long>>, recount: Boolean = true): Int {
+        if (likes.isEmpty()) return 0
+        val firstArt = likes.firstNotNullOfOrNull { (id, _) ->
+            trackDao.getById(id)?.let { t -> sequenceOf(t.albumArtPath, t.albumArtUrl).firstOrNull { !it.isNullOrBlank() } }
+        }
+        val playlistId = ensureSeeded(firstArt)
+        // One read of what Liked Songs holds, not one per song (review S1).
+        val active = playlistDao.getCrossRefsForPlaylist(playlistId).filter { it.removedAt == null }.mapTo(HashSet()) { it.trackId }
+        var position = playlistDao.getNextPosition(playlistId)
+        var added = 0
+        for ((trackId, likedAt) in likes.distinctBy { it.first }) {
+            if (trackId in active) continue
+            if (trackDao.getById(trackId) == null) continue
+            trackDao.likeIfNotAlreadyLiked(trackId, likedAt)
+            playlistDao.insertCrossRef(
+                com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+                    playlistId = playlistId,
+                    trackId = trackId,
+                    position = position++,
+                    addedAt = java.time.Instant.ofEpochMilli(likedAt),
+                    locallyAdded = true,
+                ),
+            )
+            active += trackId
+            added++
+        }
+        if (recount) recount()
+        return added
+    }
+
+    /** Recounts Liked Songs' cached song count (once after a batch of [addAllFrom] calls made with `recount = false`). */
+    suspend fun recount() {
+        val playlistId = playlistDao.findBySourceId(STASH_LIKED_SOURCE_ID)?.id ?: return
+        val count = trackDao.getByPlaylist(playlistId, includeStreamable = true).first().size
+        playlistDao.updateTrackCount(playlistId, count)
     }
 
     /**

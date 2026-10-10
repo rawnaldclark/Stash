@@ -34,7 +34,7 @@ interface TrackSkipEventDao {
                (SELECT COUNT(*) FROM track_skip_events s
                   WHERE s.track_id = t.id AND s.skipped_at >= :sinceMs) AS skips,
                (SELECT COUNT(*) FROM listening_events le
-                  WHERE le.track_id = t.id AND le.started_at >= :sinceMs) AS plays
+                  WHERE le.track_id = t.id AND le.started_at >= :sinceMs AND le.origin_device IS NULL) AS plays
         FROM tracks t
         WHERE t.id IN (:trackIds)
         """

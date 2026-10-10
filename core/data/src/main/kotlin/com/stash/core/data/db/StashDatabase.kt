@@ -99,7 +99,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         ArtistImageEntity::class,
         SharedMixEntity::class,
     ],
-    version = 53,
+    version = 54,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1414,6 +1414,18 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v53 → v54: adds `listening_events.origin_device`, the device a play came
+         * from when it wasn't played on this phone (link-sync spec §7.2: a Stash on
+         * the web library file or send, later the mirror). Nullable, no default:
+         * every existing row is this phone's own play.
+         */
+        val MIGRATION_53_54 = object : Migration(53, 54) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE listening_events ADD COLUMN origin_device TEXT")
+            }
+        }
+
+        /**
          * The complete migration chain, shared by every builder of a
          * [StashDatabase]: the DI singleton in
          * [com.stash.core.data.di.DatabaseModule] AND the throwaway instance
@@ -1479,6 +1491,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_50_51,
                 MIGRATION_51_52,
                 MIGRATION_52_53,
+                MIGRATION_53_54,
             )
         }
     }

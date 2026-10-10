@@ -155,6 +155,21 @@ data class StoredSlot(val device: String = "", val serverAt: Long = 0, val env: 
 @Serializable
 data class NowSlots(val slots: List<StoredSlot> = emptyList(), val serverTime: Long = 0)
 
+/** `PUT …/inbox/{to}/{sendId}/{part}/{count}`: whether every part of that send is in. */
+@Serializable
+data class InboxPut(val complete: Boolean = false)
+
+/** One complete send waiting for this device (`GET …/inbox`). */
+@Serializable
+data class InboxListing(val sendId: String, val from: String, val count: Int, val bytes: Long = 0, val serverAt: Long = 0)
+
+@Serializable
+data class InboxList(val sends: List<InboxListing> = emptyList())
+
+/** One part of a send (`GET …/inbox/{sendId}/{part}`). */
+@Serializable
+data class InboxPart(val sendId: String, val part: Int, val count: Int, val from: String = "", val serverAt: Long = 0, val env: SyncEnvelope)
+
 /**
  * The stash-sync routes the phone uses for pairing and device management (spec §6.2, sync-v1 §3.4–3.6). Every id is in the
  * path. A long-poll answers `Ok(null)` while nothing has arrived yet (204).
@@ -186,4 +201,15 @@ interface SyncApi {
 
     /** One device's `queue` slot; `404 not_found` when it published none (or it expired). */
     suspend fun queueSlot(auth: DeviceAuth, spaceId: String, deviceId: String): SyncResult<StoredSlot>
+
+    /** One part of a one-off send to [to] (spec §6.2, sync-v1 §3.3, §5.5). */
+    suspend fun putInbox(auth: DeviceAuth, spaceId: String, to: String, sendId: String, part: Int, count: Int, env: SyncEnvelope): SyncResult<InboxPut>
+
+    /** The complete sends addressed to this device, newest first. */
+    suspend fun inbox(auth: DeviceAuth, spaceId: String): SyncResult<InboxList>
+
+    suspend fun inboxPart(auth: DeviceAuth, spaceId: String, sendId: String, part: Int): SyncResult<InboxPart>
+
+    /** Deletes a send (the receiver, done with it; or the sender, taking it back). */
+    suspend fun deleteInbox(auth: DeviceAuth, spaceId: String, sendId: String): SyncResult<Unit>
 }

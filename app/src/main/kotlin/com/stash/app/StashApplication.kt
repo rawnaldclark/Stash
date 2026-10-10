@@ -197,6 +197,9 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
+    @Inject
+    lateinit var webLinkInbox: com.stash.core.data.weblink.inbox.WebLinkInbox
+
     /**
      * The signed runtime relay list — the APK ships no relay hostname. Started
      * from [onCreate]: loads the cached config, then fetches and signature-checks
@@ -299,6 +302,8 @@ class StashApplication : Application(), Configuration.Provider {
                     playerRepository.warmUp()
                     // Link Stash on the web: is another device's song waiting to be continued here? (at most every 30 s)
                     handoffOffers.onForeground()
+                    // ...and did a linked browser send something here? (at most every 30 s; nothing in the background)
+                    webLinkInbox.onForeground()
                 }
 
                 override fun onStop(owner: LifecycleOwner) {

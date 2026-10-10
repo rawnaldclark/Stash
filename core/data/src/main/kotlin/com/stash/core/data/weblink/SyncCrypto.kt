@@ -242,12 +242,12 @@ object SyncCrypto {
     }
 
     /** The JSON text of the parts of [sealParts], given in order (one epoch). */
-    fun openParts(key: ByteArray, spaceId: String, placeOf: (part: Int, count: Int) -> String, envs: List<SyncEnvelope>): String {
+    fun openParts(key: ByteArray, spaceId: String, placeOf: (part: Int, count: Int) -> String, envs: List<SyncEnvelope>, max: Int = MAX_PLAINTEXT): String {
         val count = envs.size
         if (count !in 1..MAX_PARTS || envs.any { it.e != envs[0].e || it.e < 0 }) throw SyncCryptoException("bad envelope")
         val gz = ByteArrayOutputStream()
         envs.forEachIndexed { i, env -> gz.write(aesOpen(key, b64(env.n), aad(spaceId, env.e, placeOf(i, count)), b64(env.c))) }
-        return utf8(gunzip(gz.toByteArray()))
+        return utf8(gunzip(gz.toByteArray(), max))
     }
 
     /** A device token's server-side form: base64url(SHA-256(token bytes)). */

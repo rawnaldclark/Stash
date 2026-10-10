@@ -78,4 +78,14 @@ data class ListeningEventEntity(
      */
     @ColumnInfo(name = "completed_at")
     val completedAt: Long? = null,
+
+    /**
+     * v54 (link-sync spec §7.2): the device a play came from when it was not
+     * played here (a Stash on the web library file or send, later the mirror);
+     * NULL for this phone's own plays. Such a play shows in History and in a
+     * later export, and never feeds Stash Mixes, play statistics, auto-save or
+     * a scrobble destination (see [com.stash.core.data.db.dao.ListeningEventDao]).
+     */
+    @ColumnInfo(name = "origin_device")
+    val originDevice: String? = null,
 )
