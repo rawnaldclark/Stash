@@ -214,6 +214,7 @@ fun LibraryScreen(
             onRemovePlaylist = viewModel::removePlaylist,
             onDeletePlaylist = viewModel::deletePlaylist,
             isMirrored = viewModel::isMirrored,
+            canDeleteEverywhere = viewModel::canDeleteEverywhere,
             followedPlaylistIds = followedPlaylistIds,
             onUnfollowPlaylist = viewModel::unfollowPlaylist,
             onSetPlaylistImage = viewModel::setPlaylistImage,
@@ -471,6 +472,7 @@ private fun LibraryContent(
     onRemovePlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist, Boolean, Boolean) -> Unit,
     isMirrored: (Long) -> Boolean = { false },
+    canDeleteEverywhere: (Long) -> Boolean = { false },
     followedPlaylistIds: Set<Long> = emptySet(),
     onUnfollowPlaylist: (Playlist) -> Unit = {},
     onSetPlaylistImage: (Long, Uri) -> Unit,
@@ -671,6 +673,7 @@ private fun LibraryContent(
                         onRemovePlaylist = onRemovePlaylist,
                         onDeletePlaylist = onDeletePlaylist,
                         isMirrored = isMirrored,
+                        canDeleteEverywhere = canDeleteEverywhere,
                         followedPlaylistIds = followedPlaylistIds,
                         onUnfollowPlaylist = onUnfollowPlaylist,
                         onSetPlaylistImage = onSetPlaylistImage,
@@ -1108,6 +1111,7 @@ private fun PlaylistsGrid(
     onRemovePlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist, Boolean, Boolean) -> Unit,
     isMirrored: (Long) -> Boolean = { false },
+    canDeleteEverywhere: (Long) -> Boolean = { false },
     followedPlaylistIds: Set<Long> = emptySet(),
     onUnfollowPlaylist: (Playlist) -> Unit = {},
     onSetPlaylistImage: (Long, Uri) -> Unit,
@@ -1415,6 +1419,8 @@ private fun PlaylistsGrid(
         var alsoBlacklist by remember(playlist.id) { mutableStateOf(false) }
         // A playlist that mirrors with Stash on the web (spec §2.4): delete it everywhere, or only here (it stops mirroring).
         val mirrored = remember(playlist.id) { isMirrored(playlist.id) }
+        // "Everywhere" only when this phone sends playlists and has joined them, or for a read-only one (as the web; R-S4).
+        val offerEverywhere = remember(playlist.id) { canDeleteEverywhere(playlist.id) }
         var everywhere by remember(playlist.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { playlistToDelete = null },
@@ -1425,7 +1431,14 @@ private fun PlaylistsGrid(
                         "\"${playlist.name}\" and all its tracks will be removed from " +
                             "your library and deleted from disk. This cannot be undone.",
                     )
-                    if (mirrored) {
+                    if (mirrored && !offerEverywhere) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "It stops mirroring here; your other devices keep their copy.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (mirrored && offerEverywhere) {
                         Spacer(modifier = Modifier.height(12.dp))
                         listOf(true to "Everywhere — on all your linked devices", false to "Only here — and stop mirroring it").forEach { (all, label) ->
                             Row(

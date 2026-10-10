@@ -82,6 +82,8 @@ data class MirrorStatus(
     val pushDigest: String? = null,
     /** The last run reached the service and did everything there was to do (R-B1: only then is "changed meanwhile" asked). */
     val lastRunOk: Boolean = false,
+    /** This phone's mirrored playlists that are read-only elsewhere (synced from Spotify / YouTube Music). */
+    val readOnly: Set<Long> = emptySet(),
 ) {
     companion object {
         const val OTHERS = "your browsers"
@@ -191,6 +193,18 @@ class MirrorEngine internal constructor(
     }
 
     /**
+     * A delete of [localId] here can go "Everywhere" (sync-v1 §7.3, as the web's `deleteChoices`; review R-S4): only when this
+     * phone sends playlists and has joined them, or the playlist is read-only (only the phone writes those). Otherwise only
+     * "Only here".
+     */
+    fun canDeleteEverywhere(localId: Long): Boolean {
+        if (!isMirrored(localId)) return false
+        val s = _status.value
+        val cfg = s.config ?: return false
+        return (cfg.playlists.dir.phoneSends && Kind.PLAYLISTS in s.joined) || localId in s.readOnly
+    }
+
+    /**
      * Before [localId] is deleted or removed here (spec §2.4; review B5, S2, S5). [everywhere]: the listener chose "Everywhere",
      * so the next run sends it as deleted on every device. Otherwise ("Only here", the default, and every delete that asks
      * nothing) it is let go: kept on the other devices, taken out of the shared choice by the next run that reaches the service
@@ -201,7 +215,8 @@ class MirrorEngine internal constructor(
         mutex.withLock {
             val r = guard(null) { records.load() } ?: return@withLock
             val mid = r.map.entries.firstOrNull { it.value.localId == localId }?.key ?: return@withLock
-            if (everywhere) {
+            val allowed = everywhere && canDeleteEverywhere(localId)
+            if (allowed) {
                 // Stamped now: a delete chosen offline still beats an older edit elsewhere when it goes, and loses to a newer one.
                 val wall = clock() + ClockOffset.of(r.samples.map { ClockOffset.Sample(it.sent, it.received, it.serverTime) })
                 val stamp = Hlc.tick(r.last, wall, store.identity()?.deviceId ?: "d_00000000")
@@ -271,6 +286,8 @@ class MirrorEngine internal constructor(
                 linked = sp != null, config = cfg, question = r?.question, waiting = r?.waiting ?: false,
                 joined = if (r != null && cfg != null) Kind.entries.filter { k -> cfg.of(k).dir != Dir.OFF && r.joined[k] == cfg.of(k).since }.toSet() else emptySet(),
                 mirrored = r?.map?.mapValues { e -> e.value.localId } ?: emptyMap(),
+                readOnly = r?.let { rec -> rec.map.filter { (mid, _) -> rec.basePlaylists[mid]?.ro == true }.values.map { m -> m.localId }.toSet() } ?: emptySet(),
+                heldRemovals = r?.heldRemovals ?: 0,
                 syncedAt = r?.lastRunAt?.takeIf { r.lastResult == RESULT_OK } ?: it.syncedAt,
             )
         }
@@ -417,6 +434,7 @@ class MirrorEngine internal constructor(
                 config = cfg, question = r.question, waiting = r.waiting,
                 joined = Kind.entries.filter { k -> joinedNow(c, k) }.toSet(), mirrored = r.map.mapValues { e -> e.value.localId },
                 heldRemovals = r.heldRemovals, pushDigest = c.pushDigest,
+                readOnly = r.map.filter { (mid, _) -> r.basePlaylists[mid]?.ro == true }.values.map { it.localId }.toSet(),
             )
         }
         Log.i(TAG, "run: seen ${r.seen}, ${r.view.likes.size} likes, ${r.view.plays.size} plays, ${r.view.playlists.size} playlists in the space")

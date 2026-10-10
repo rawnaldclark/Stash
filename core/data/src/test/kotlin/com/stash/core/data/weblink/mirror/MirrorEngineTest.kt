@@ -279,6 +279,22 @@ class MirrorEngineTest {
         assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>().none { it.items == null }).isTrue()
     }
 
+    @Test fun `R-S4 - Everywhere is offered only when the phone sends playlists and has joined, otherwise it is Only here`() = runTest {
+        link()
+        val p = lib.addPlaylist("Run", listOf(song("R1")))
+        engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYLISTS to Dir.BOTH), add = listOf(p)))
+        assertThat(engine.canDeleteEverywhere(p)).isTrue()
+        engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYLISTS to Dir.TO_PHONE)))
+        assertThat(engine.isMirrored(p)).isTrue()
+        assertThat(engine.canDeleteEverywhere(p)).isFalse()
+        val mid = web.config()!!.ids.single()
+        engine.beforeDelete(p, everywhere = true) // a stale dialog: refused, Only here
+        lib.playlists.remove(p)
+        run()
+        assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>().none { it.items == null }).isTrue()
+        assertThat(web.config()!!.ids).doesNotContain(mid)
+    }
+
     @Test fun `B5 - Everywhere, chosen in the dialog, deletes it on every device`() = runTest {
         link()
         val p = lib.addPlaylist("Run", listOf(song("R1")))

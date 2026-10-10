@@ -111,6 +111,9 @@ class LibraryViewModel @Inject constructor(
     /** The playlist mirrors with Stash on the web: deleting it asks Everywhere / Only here (spec §2.4). */
     fun isMirrored(playlistId: Long): Boolean = mirror?.isMirrored(playlistId) == true
 
+    /** "Everywhere" can be offered: this phone sends playlists and has joined them, or the playlist is read-only (R-S4). */
+    fun canDeleteEverywhere(playlistId: Long): Boolean = mirror?.canDeleteEverywhere(playlistId) == true
+
     /** Active follows are read-only: the long-press sheet offers Unfollow in place of edits. */
     val followedPlaylistIds: StateFlow<Set<Long>> = sharedMixRepository.observeActiveFollowedIds()
         .map { it.toSet() }
