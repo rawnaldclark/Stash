@@ -39,7 +39,7 @@ import { authUrl, mintTicket, playerNext, playerOrigin, playerPath, playerReturn
 import { clearedCookie, cookieValue, currentSession, hasAccess, readSession, rememberAccess, sessionCookie, sessionSecret, signSession } from "./session.js";
 
 /** HTML pages anyone can see. Files (CSS, images, fonts, XML) are always public. */
-const PUBLIC_PAGES = new Set(["/privacy"]);
+const PUBLIC_PAGES = new Set(["/privacy", "/link"]);
 const REQUEST_TTL_S = 30 * 24 * 3600;
 const MAX_NOTE = 500;
 
