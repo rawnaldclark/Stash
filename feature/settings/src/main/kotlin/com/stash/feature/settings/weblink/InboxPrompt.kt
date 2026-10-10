@@ -77,12 +77,23 @@ class InboxViewModel @Inject constructor(
     fun choose(send: IncomingSend) {
         if (_step.value is InboxStep.Opening || _step.value is InboxStep.Adding) return
         _step.value = InboxStep.Opening(send)
-        viewModelScope.launch {
+        openJob = viewModelScope.launch {
             _step.value = when (val o = inbox.open(send.sendId)) {
                 is OpenedSend.Ok -> InboxStep.Choosing(send, o.content, WebLibraryImportViewModel.pickOf(o.content))
                 is OpenedSend.Failed -> InboxStep.Added(o.message)
             }
         }
+    }
+
+    private var openJob: kotlinx.coroutines.Job? = null
+
+    /** Cancel on "Opening…" (review N21): the download stops; the send stays listed. */
+    fun cancelOpening() {
+        val st = _step.value as? InboxStep.Opening ?: return
+        openJob?.cancel()
+        openJob = null
+        _step.value = null
+        viewModelScope.launch { inbox.release(st.send.sendId) }
     }
 
     fun updatePick(pick: LibraryPick) {
@@ -120,7 +131,10 @@ class InboxViewModel @Inject constructor(
     }
 
     fun stepDone() {
-        if (_step.value !is InboxStep.Adding && _step.value !is InboxStep.Opening) _step.value = null
+        val st = _step.value
+        if (st is InboxStep.Adding || st is InboxStep.Opening) return
+        if (st is InboxStep.Choosing) viewModelScope.launch { inbox.release(st.send.sendId) }
+        _step.value = null
     }
 }
 
@@ -195,10 +209,10 @@ fun InboxStepDialogs(step: InboxStep?, viewModel: InboxViewModel) {
             onDismiss = viewModel::stepDone,
         )
         is InboxStep.Opening -> AlertDialog(
-            onDismissRequest = {},
+            onDismissRequest = viewModel::cancelOpening,
             containerColor = MaterialTheme.colorScheme.surface,
             text = { Text("Opening what ${st.send.name} sent…", style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = {},
+            confirmButton = { TextButton(onClick = viewModel::cancelOpening) { Text("Cancel") } },
         )
         is InboxStep.Adding -> AlertDialog(
             onDismissRequest = {},

@@ -213,6 +213,7 @@ fun LibraryScreen(
             onAddPlaylistToQueue = viewModel::addPlaylistToQueue,
             onRemovePlaylist = viewModel::removePlaylist,
             onDeletePlaylist = viewModel::deletePlaylist,
+            isMirrored = viewModel::isMirrored,
             followedPlaylistIds = followedPlaylistIds,
             onUnfollowPlaylist = viewModel::unfollowPlaylist,
             onSetPlaylistImage = viewModel::setPlaylistImage,
@@ -468,7 +469,8 @@ private fun LibraryContent(
     onPlayPlaylist: (Playlist) -> Unit,
     onAddPlaylistToQueue: (Playlist) -> Unit,
     onRemovePlaylist: (Playlist) -> Unit,
-    onDeletePlaylist: (Playlist, Boolean) -> Unit,
+    onDeletePlaylist: (Playlist, Boolean, Boolean) -> Unit,
+    isMirrored: (Long) -> Boolean = { false },
     followedPlaylistIds: Set<Long> = emptySet(),
     onUnfollowPlaylist: (Playlist) -> Unit = {},
     onSetPlaylistImage: (Long, Uri) -> Unit,
@@ -668,6 +670,7 @@ private fun LibraryContent(
                         onAddPlaylistToQueue = onAddPlaylistToQueue,
                         onRemovePlaylist = onRemovePlaylist,
                         onDeletePlaylist = onDeletePlaylist,
+                        isMirrored = isMirrored,
                         followedPlaylistIds = followedPlaylistIds,
                         onUnfollowPlaylist = onUnfollowPlaylist,
                         onSetPlaylistImage = onSetPlaylistImage,
@@ -1103,7 +1106,8 @@ private fun PlaylistsGrid(
     onPlayPlaylist: (Playlist) -> Unit,
     onAddPlaylistToQueue: (Playlist) -> Unit,
     onRemovePlaylist: (Playlist) -> Unit,
-    onDeletePlaylist: (Playlist, Boolean) -> Unit,
+    onDeletePlaylist: (Playlist, Boolean, Boolean) -> Unit,
+    isMirrored: (Long) -> Boolean = { false },
     followedPlaylistIds: Set<Long> = emptySet(),
     onUnfollowPlaylist: (Playlist) -> Unit = {},
     onSetPlaylistImage: (Long, Uri) -> Unit,
@@ -1409,6 +1413,9 @@ private fun PlaylistsGrid(
     // ── Delete confirmation dialog ──────────────────────────────────────
     playlistToDelete?.let { playlist ->
         var alsoBlacklist by remember(playlist.id) { mutableStateOf(false) }
+        // A playlist that mirrors with Stash on the web (spec §2.4): delete it everywhere, or only here (it stops mirroring).
+        val mirrored = remember(playlist.id) { isMirrored(playlist.id) }
+        var everywhere by remember(playlist.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { playlistToDelete = null },
             title = { Text("Delete \"${playlist.name}\"?") },
@@ -1418,6 +1425,18 @@ private fun PlaylistsGrid(
                         "\"${playlist.name}\" and all its tracks will be removed from " +
                             "your library and deleted from disk. This cannot be undone.",
                     )
+                    if (mirrored) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        listOf(true to "Everywhere — on all your linked devices", false to "Only here — and stop mirroring it").forEach { (all, label) ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().clickable { everywhere = all },
+                            ) {
+                                androidx.compose.material3.RadioButton(selected = everywhere == all, onClick = { everywhere = all })
+                                Text(label, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1445,7 +1464,7 @@ private fun PlaylistsGrid(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onDeletePlaylist(playlist, alsoBlacklist)
+                        onDeletePlaylist(playlist, alsoBlacklist, everywhere)
                         playlistToDelete = null
                     },
                 ) {

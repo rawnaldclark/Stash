@@ -208,8 +208,11 @@ class WebLibraryImporter internal constructor(
         val pairs = plan.likes.indices.mapNotNull { i -> rows[i]?.let { it.id to plan.likes[i].likedAt } }
         // In transactions of [LIKES_BATCH]: one commit (and one library invalidation) per batch, not two writes per like (review S1).
         var added = 0
-        for (chunk in pairs.chunked(LIKES_BATCH)) added += database.withTransaction { liked.addAllFrom(chunk, recount = false) }
-        liked.recount()
+        try {
+            for (chunk in pairs.chunked(LIKES_BATCH)) added += database.withTransaction { liked.addAllFrom(chunk, recount = false) }
+        } finally {
+            liked.recount() // also after a batch that failed: the batches before it are in (review N20)
+        }
         return r.copy(likesAdded = added, likesSkipped = r.likesSkipped + plan.likes.size - added)
     }
 

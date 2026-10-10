@@ -31,7 +31,22 @@ class FakeSyncServer : SyncApi {
         val devices = LinkedHashMap<String, Dev>()
         val envelopes = HashMap<Pair<String, Int>, SyncEnvelope>()
         var config: ConfigSlot? = null
+        val log = mutableListOf<LogEntry>()
+        var head = 0L
+        var compactDue = false
+        var snapUpto = 0L
+        var snapshot: List<SnapshotPartInfo> = emptyList()
+        val staged = HashMap<Int, SnapshotPartInfo>()
     }
+
+    /** The server's clock for log rows and the config slot (advances by one per write). */
+    var serverNow = 1_000_000L
+
+    /** When set: that many more log posts land, then every post is unreachable (a run cut short mid-push). */
+    var failPostsAfter: Int? = null
+
+    /** Log batches before `409 compact` (the Worker's is 2,000). */
+    var logLimit = 2_000
 
     val slots = HashMap<String, Slot>()
     val spaces = HashMap<String, Space>()
@@ -158,7 +173,10 @@ class FakeSyncServer : SyncApi {
                 epoch = space.epoch,
                 rotationDue = space.rotationDue,
                 devices = space.devices.values.map { SpaceDevice(it.id, it.type, it.pub, it.labelCt, 1_000, it.lastSeenAt) },
-                serverTime = 5_000,
+                serverTime = serverNow,
+                head = space.head,
+                compactDue = space.compactDue,
+                snapshot = space.snapshot.firstOrNull()?.let { SnapshotMeta(it.uptoSeq, it.count, it.epoch) },
             ),
         )
     }
@@ -211,7 +229,8 @@ class FakeSyncServer : SyncApi {
         space.rotationDue = false
         body.envelopes.forEach { (id, env) -> space.envelopes[id to body.epoch] = env }
         body.labels?.forEach { (id, env) -> space.devices[id]?.labelCt = env }
-        body.config?.let { space.config = ConfigSlot("", 9_000, it) }
+        body.config?.let { space.config = ConfigSlot("", ++serverNow, it) }
+        if (space.log.isNotEmpty() || space.snapshot.isNotEmpty()) space.compactDue = true
         return SyncResult.Ok(Rotated(body.epoch))
     }
 
@@ -219,6 +238,64 @@ class FakeSyncServer : SyncApi {
         calls += "config"
         val (space, _) = member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
         return SyncResult.Ok(space.config)
+    }
+
+    override suspend fun putConfig(auth: DeviceAuth, spaceId: String, env: SyncEnvelope, ifMatch: Long): SyncResult<SlotWritten> {
+        calls += "putConfig"
+        forced("putConfig")?.let { return it }
+        val (space, me) = member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        if (space.rotationDue) return err(409, SyncErrorCode.ROTATION_DUE)
+        if (env.e != space.epoch) return err(409, SyncErrorCode.EPOCH)
+        if ((space.config?.serverAt ?: 0L) != ifMatch) return err(412, SyncErrorCode.CHANGED)
+        space.config = ConfigSlot(me.id, ++serverNow, env)
+        return SyncResult.Ok(SlotWritten(serverNow))
+    }
+
+    override suspend fun logAfter(auth: DeviceAuth, spaceId: String, seq: Long): SyncResult<LogPage> {
+        calls += "logAfter:$seq"
+        forced("logAfter")?.let { return it }
+        val (space, _) = member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        if (seq < space.snapUpto) return err(409, SyncErrorCode.SNAPSHOT)
+        val after = space.log.filter { it.seq > seq }
+        return SyncResult.Ok(LogPage(after.take(200), space.head, after.size > 200))
+    }
+
+    override suspend fun postLog(auth: DeviceAuth, spaceId: String, env: SyncEnvelope): SyncResult<LogPosted> {
+        calls += "postLog"
+        forced("postLog")?.let { return it }
+        failPostsAfter?.let { n -> if (n <= 0) return SyncResult.Unreachable("offline") else failPostsAfter = n - 1 }
+        val (space, me) = member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        if (space.rotationDue) return err(409, SyncErrorCode.ROTATION_DUE)
+        if (env.e != space.epoch) return err(409, SyncErrorCode.EPOCH)
+        if (space.compactDue || space.head - space.snapUpto >= logLimit) return err(409, SyncErrorCode.COMPACT)
+        val e = LogEntry(++space.head, me.id, ++serverNow, env)
+        space.log += e
+        return SyncResult.Ok(LogPosted(e.seq, e.serverAt))
+    }
+
+    override suspend fun putSnapshot(auth: DeviceAuth, spaceId: String, uptoSeq: Long, part: Int, count: Int, env: SyncEnvelope): SyncResult<SnapshotPut> {
+        calls += "putSnapshot:$uptoSeq:$part/$count"
+        forced("putSnapshot")?.let { return it }
+        val (space, _) = member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        if (space.rotationDue) return err(409, SyncErrorCode.ROTATION_DUE)
+        if (env.e != space.epoch) return err(409, SyncErrorCode.EPOCH)
+        if (uptoSeq > space.head || uptoSeq < space.snapUpto) return err(409, SyncErrorCode.STALE)
+        if (space.compactDue && uptoSeq != space.head) return err(409, SyncErrorCode.STALE)
+        if (space.staged.values.any { it.uptoSeq != uptoSeq || it.count != count }) space.staged.clear()
+        space.staged[part] = SnapshotPartInfo(uptoSeq, part, count, env.e, env)
+        if (space.staged.size < count) return SyncResult.Ok(SnapshotPut(false))
+        space.snapshot = (0 until count).map { space.staged.getValue(it) }
+        space.staged.clear()
+        space.log.removeAll { it.seq <= uptoSeq }
+        space.snapUpto = uptoSeq
+        space.compactDue = false
+        return SyncResult.Ok(SnapshotPut(true))
+    }
+
+    override suspend fun snapshotPart(auth: DeviceAuth, spaceId: String, part: Int): SyncResult<SnapshotPartInfo> {
+        calls += "snapshotPart:$part"
+        val (space, _) = member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        return space.snapshot.getOrNull(part)?.let { SyncResult.Ok(it) } ?: err(404, SyncErrorCode.NOT_FOUND)
     }
 
     /** Handoff slots by `"now:<device>"` / `"queue:<device>"`, stamped by [clock] (strictly increasing per slot). */

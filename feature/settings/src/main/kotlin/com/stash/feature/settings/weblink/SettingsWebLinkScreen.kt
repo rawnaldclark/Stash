@@ -62,7 +62,10 @@ fun SettingsWebLinkScreen(
     viewModel: WebLinkViewModel = hiltViewModel(),
     exportVm: WebLibraryExportViewModel = hiltViewModel(),
     inboxVm: InboxViewModel = hiltViewModel(),
+    mirrorVm: MirrorViewModel = hiltViewModel(),
 ) {
+    val mirror by mirrorVm.status.collectAsStateWithLifecycle()
+    val mirrorMessage by mirrorVm.message.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
     val pairing by viewModel.pairing.collectAsStateWithLifecycle()
     val scanning by viewModel.scanning.collectAsStateWithLifecycle()
@@ -82,6 +85,7 @@ fun SettingsWebLinkScreen(
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
         viewModel.refresh()
         inboxVm.refresh()
+        mirrorVm.refresh()
         onPauseOrDispose { }
     }
 
@@ -104,6 +108,7 @@ fun SettingsWebLinkScreen(
                     sends = sends,
                     onSendLibrary = exportVm::openPicker,
                     onOpenSend = { openSend = it },
+                    mirror = { MirrorSection(mirror, mirrorVm) },
                 )
             }
         }
@@ -155,6 +160,15 @@ fun SettingsWebLinkScreen(
             onDismiss = { unlinkAll = false },
         )
     }
+    mirrorMessage?.let { m ->
+        AlertDialog(
+            onDismissRequest = mirrorVm::messageShown,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = MaterialTheme.shapes.large,
+            text = { Text(m, style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = { TextButton(onClick = mirrorVm::messageShown) { Text("OK") } },
+        )
+    }
     message?.let { m ->
         AlertDialog(
             onDismissRequest = viewModel::messageShown,
@@ -194,6 +208,7 @@ private fun LinkedList(
     sends: List<IncomingSend>,
     onSendLibrary: () -> Unit,
     onOpenSend: (IncomingSend) -> Unit,
+    mirror: @Composable () -> Unit,
 ) {
     SettingsSectionLabel("Linked devices")
     status.problem?.let {
@@ -231,6 +246,7 @@ private fun LinkedList(
             )
         },
     )
+    mirror()
     SettingsSectionLabel("Your library")
     SettingsGroupCard(
         rows = listOf {

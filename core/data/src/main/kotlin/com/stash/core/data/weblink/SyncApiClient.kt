@@ -85,6 +85,25 @@ class SyncApiClient @Inject constructor(okHttpClient: OkHttpClient, private val 
     override suspend fun config(auth: DeviceAuth, spaceId: String) =
         call("GET", "/v1/spaces/$spaceId/slots/config", ConfigSlot.serializer(), auth, emptyOk = true)
 
+    override suspend fun putConfig(auth: DeviceAuth, spaceId: String, env: SyncEnvelope, ifMatch: Long) =
+        call(
+            "PUT", "/v1/spaces/$spaceId/slots/config", SlotWritten.serializer(), auth,
+            SyncJson.encodeToString(SlotBody.serializer(), SlotBody(env)), extra = mapOf("If-Match" to ifMatch.toString()),
+        ).notNull()
+
+    override suspend fun logAfter(auth: DeviceAuth, spaceId: String, seq: Long) =
+        call("GET", "/v1/spaces/$spaceId/log/after/$seq", LogPage.serializer(), auth).notNull()
+
+    override suspend fun postLog(auth: DeviceAuth, spaceId: String, env: SyncEnvelope) =
+        call("POST", "/v1/spaces/$spaceId/log", LogPosted.serializer(), auth, SyncJson.encodeToString(SlotBody.serializer(), SlotBody(env))).notNull()
+
+    override suspend fun putSnapshot(auth: DeviceAuth, spaceId: String, uptoSeq: Long, part: Int, count: Int, env: SyncEnvelope) =
+        call("PUT", "/v1/spaces/$spaceId/snapshot/$uptoSeq/$part/$count", SnapshotPut.serializer(), auth, SyncJson.encodeToString(SlotBody.serializer(), SlotBody(env)))
+            .notNull()
+
+    override suspend fun snapshotPart(auth: DeviceAuth, spaceId: String, part: Int) =
+        call("GET", "/v1/spaces/$spaceId/snapshot/$part", SnapshotPartInfo.serializer(), auth).notNull()
+
     override suspend fun putSlot(auth: DeviceAuth, spaceId: String, slot: String, env: SyncEnvelope) =
         call("PUT", "/v1/spaces/$spaceId/slots/$slot", SlotWritten.serializer(), auth, SyncJson.encodeToString(SlotBody.serializer(), SlotBody(env)))
             .notNull()
@@ -124,7 +143,8 @@ class SyncApiClient @Inject constructor(okHttpClient: OkHttpClient, private val 
         auth: DeviceAuth? = null,
         body: String? = null,
         emptyOk: Boolean = false,
-    ): SyncResult<T?> = when (val r = exchange(method, path, auth, body)) {
+        extra: Map<String, String> = emptyMap(),
+    ): SyncResult<T?> = when (val r = exchange(method, path, auth, body, extra)) {
         is Raw.Failed -> SyncResult.Unreachable(r.cause)
         is Raw.Answer -> when {
             r.code == 204 && emptyOk -> SyncResult.Ok(null)
@@ -143,11 +163,12 @@ class SyncApiClient @Inject constructor(okHttpClient: OkHttpClient, private val 
         class Failed(val cause: String?) : Raw
     }
 
-    private suspend fun exchange(method: String, path: String, auth: DeviceAuth?, body: String?): Raw {
+    private suspend fun exchange(method: String, path: String, auth: DeviceAuth?, body: String?, extra: Map<String, String> = emptyMap()): Raw {
         val req = Request.Builder()
             .url(config.baseUrl + path)
             .header("Accept", "application/json")
             .apply { if (auth != null) header("Authorization", auth.header) }
+            .apply { extra.forEach { (k, v) -> header(k, v) } }
             .method(method, body?.toRequestBody(JSON) ?: if (method == "POST" || method == "PUT") EMPTY else null)
             .build()
         return try {
