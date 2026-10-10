@@ -404,6 +404,26 @@ class MirrorEngineTest {
         assertThat(likeOps(me).count { !it.on }).isEqualTo(80)
     }
 
+    @Test fun `F-N4 - Use this phone's with nothing to unlike doesn't let a later mass removal through unheld`() = runTest {
+        link()
+        repeat(300) { lib.like(song("P$it")) }
+        lib.like(song("X"))
+        lib.like(song("W")) // the browser's one is liked here too: Use this phone's then unlikes nothing
+        web.configure(likes = Dir.BOTH)
+        val since = web.head
+        web.post(*(0 until 300).map { MirrorOp.Like(song("P$it"), true, web.at()) }.toTypedArray(), MirrorOp.Like(song("W"), true, web.at()), MirrorOp.Joined(Kind.LIKES, since))
+        run()
+        val q = engine.status.value.question
+        assertThat(q).isNotNull()
+        engine.answer(FirstMergeChoice.MINE, q)
+        assertThat(engine.status.value.joined).contains(Kind.LIKES)
+        assertThat(likeOps(me).none { !it.on }).isTrue()
+        repeat(200) { lib.unlike(song("P$it")) }
+        run()
+        assertThat(engine.status.value.heldRemovals).isEqualTo(200) // F-N7: 200 or more is held
+        assertThat(likeOps(me).none { !it.on }).isTrue()
+    }
+
     @Test fun `R-N1 R-N2 - the answer binds to the counts shown, and a re-ask says the likes changed`() = runTest {
         link()
         browserTurnsLikesOn()
@@ -485,6 +505,38 @@ class MirrorEngineTest {
         web.post(MirrorOp.Play(song("Old"), 3_000))
         run()
         assertThat(lib.plays.map { it.s.title }).containsExactly("Mine 2")
+    }
+
+    @Test fun `F-N1 - a clear-all read on a join drops other devices' older plays here, never the phone's own`() = runTest {
+        link()
+        lib.plays += PlayRec(song("Mine"), 1_000)
+        lib.plays += PlayRec(song("Other old"), 1_500, "d_other0000000000")
+        web.configure(plays = Dir.BOTH)
+        val since = web.head
+        web.post(MirrorOp.ClearPlays(2_000, web.at(), all = true), MirrorOp.Joined(Kind.PLAYS, since))
+        run()
+        assertThat(lib.plays.map { it.s.title }).contains("Mine")
+        assertThat(lib.plays.map { it.s.title }).doesNotContain("Other old")
+    }
+
+    @Test fun `F-N1 - a clear-all read from a snapshot drops older plays of a device the snapshot no longer lists`() = runTest {
+        link()
+        web.configure(plays = Dir.BOTH)
+        val since = web.head
+        web.post(MirrorOp.Joined(Kind.PLAYS, since))
+        run()
+        web.post(MirrorOp.ClearPlays(2_500, web.at(), all = true))
+        server.logLimit = server.spaces.getValue(web.spaceId).head.toInt()
+        lib.plays += PlayRec(song("Mine new"), 4_000)
+        assertThat(run()).isEqualTo(MirrorRun.Done)
+        assertThat(web.snapshot()).isNotNull()
+        // A phone that lost its state, holding an older play of a device whose plays were all cleared.
+        lib.plays += PlayRec(song("Gone old"), 1_500, "d_gone00000000000")
+        lib.plays += PlayRec(song("Mine old"), 1_200)
+        records.record = null
+        run()
+        assertThat(lib.plays.map { it.s.title }).containsAtLeast("Mine new", "Mine old")
+        assertThat(lib.plays.map { it.s.title }).doesNotContain("Gone old")
     }
 
     @Test fun `only the newest 5,000 of the phone's own plays go on a first merge`() = runTest {

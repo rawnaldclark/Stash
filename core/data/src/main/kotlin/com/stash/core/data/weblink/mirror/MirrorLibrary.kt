@@ -45,6 +45,9 @@ interface MirrorLibrary {
     /** Drops the plays that came from [origin] and started before [before]. */
     suspend fun dropPlaysFrom(origin: String, before: Long)
 
+    /** Drops every other device's plays that started before [before]; never this phone's own (sync-v1 §7.2). */
+    suspend fun dropOthersBefore(before: Long)
+
     /**
      * "Clear on all your devices" from another device: drops the plays before [before] that the mirror covers (every play from
      * another device, and this phone's own from [floor] on).

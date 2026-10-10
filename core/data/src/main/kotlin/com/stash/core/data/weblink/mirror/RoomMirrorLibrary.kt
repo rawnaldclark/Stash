@@ -142,6 +142,8 @@ class RoomMirrorLibrary internal constructor(
 
     override suspend fun dropPlaysFrom(origin: String, before: Long) = io { dao.dropPlaysFrom(origin, before); Unit }
 
+    override suspend fun dropOthersBefore(before: Long) = io { dao.dropOthersBefore(before); Unit }
+
     override suspend fun dropPlaysBefore(before: Long, floor: Long) = io { dao.dropPlaysBefore(before, floor); Unit }
 
     override suspend fun playlists(): List<LocalPlaylist> = io {

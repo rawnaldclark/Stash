@@ -69,6 +69,10 @@ class FakeMirrorLibrary : MirrorLibrary {
         plays.removeAll { it.origin == origin && it.playedAt < before }
     }
 
+    override suspend fun dropOthersBefore(before: Long) {
+        plays.removeAll { it.origin != null && it.playedAt < before }
+    }
+
     override suspend fun dropPlaysBefore(before: Long, floor: Long) {
         plays.removeAll { it.playedAt < before && (it.origin != null || it.playedAt >= floor) }
     }

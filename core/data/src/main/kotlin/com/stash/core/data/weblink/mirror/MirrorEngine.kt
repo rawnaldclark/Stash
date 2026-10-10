@@ -258,6 +258,7 @@ class MirrorEngine internal constructor(
         // Gone here with no recorded choice (an unfollow, a mix deleted from Home, a dialog shown before anything loaded): Only
         // here, decided before the pull applies anything, so a remote edit read in this run can't bring it back (R-S2).
         // An Everywhere recorded but its playlist is still here long after: the delete never happened (a crash): forget it (R-N6).
+        // A delete that started is never "still here", however long its cascade takes: the playlist is hidden first (F-N3).
         val w = wall(c)
         r.everywhere = r.everywhere.filter { (mid, at) ->
             val m = r.map[mid]
@@ -637,7 +638,8 @@ class MirrorEngine internal constructor(
                 // A clear for every device this phone didn't see happen: plays from other devices before it go; its own stay.
                 r.clearMark = st.playsClearedBefore
                 r.basePlays = r.basePlays.copy(clearedBefore = maxOf(r.basePlays.clearedBefore, st.playsClearedBefore))
-                r.view.plays.map { it.device }.distinct().filter { it != c.me }.forEach { lib.dropPlaysFrom(it, st.playsClearedBefore) }
+                // Every other device's, also one the snapshot no longer lists because all its plays were cleared (sync-v1 §7.2).
+                lib.dropOthersBefore(st.playsClearedBefore)
             }
             lib.addPlays(st.plays.filter { it.device != c.me && it.playedAt >= r.clearMark }.map { PlayRec(it.s, it.playedAt, it.device) })
         }
@@ -847,7 +849,12 @@ class MirrorEngine internal constructor(
                 Kind.PLAYS -> {
                     // Plays are a grow-only set: the first merge always combines (sync-v1 §7.2, §7.4).
                     if (kc.dir.phoneApplies) {
-                        if (view.clearedBefore > r.clearMark) r.clearMark = view.clearedBefore // older plays from others don't come in
+                        if (view.clearedBefore > r.clearMark) {
+                            // Older plays from other devices don't come in, and the ones already here go; this phone's own stay
+                            // (sync-v1 §7.2, final check F-N1).
+                            r.clearMark = view.clearedBefore
+                            lib.dropOthersBefore(view.clearedBefore)
+                        }
                         lib.addPlays(view.plays.filter { it.device != c.me && it.playedAt >= r.clearMark }.map { PlayRec(it.s, it.playedAt, it.device) })
                     }
                     // Only the newest 5,000 of this phone's own plays go on a first merge; older ones count as in the base.
@@ -975,7 +982,7 @@ class MirrorEngine internal constructor(
             // One run that would remove a big part of the likes is held for the listener to confirm (N7).
             val offs = likeOps.count { !it.on }
             val onCount = r.baseLikes.count { it.on }
-            if (!r.allowRemovals && (offs > MASS_REMOVALS || (offs >= MASS_REMOVALS_MIN && offs * 4 > onCount))) {
+            if (!r.allowRemovals && (offs >= MASS_REMOVALS || (offs >= MASS_REMOVALS_MIN && offs * 4 > onCount))) {
                 likeOps = likeOps.filter { it.on }
                 r.heldRemovals = offs
                 Log.w(TAG, "holding $offs unlikes for the listener to confirm")
@@ -1056,12 +1063,13 @@ class MirrorEngine internal constructor(
                 val sentMarks = batch.filterIsInstance<MirrorOp.Joined>().map { PendingMark(it.kind, it.since) }
                 if (sentMarks.isNotEmpty()) r.marks = r.marks.filter { it !in sentMarks }
             }
-            if (r.allowRemovals && ops.any { it is MirrorOp.Like && !it.on }) r.allowRemovals = false
             r.lastPushAt = clock()
             Log.i(TAG, "pushed ${ops.size} op(s)")
         } else {
             r.marks = emptyList()
         }
+        // A confirmed "Use this phone's" covers this push only, whether it held unlikes or not (final check F-N4).
+        r.allowRemovals = false
         // The plays base keeps only own plays still here, then its floor moves up (the oldest fall off it).
         ownHere?.let { here -> r.basePlays = movedFloor(c, r.basePlays.copy(ids = r.basePlays.ids.filterTo(HashSet()) { it in here })) }
         if (gone.isNotEmpty()) settleLetGo(c)
@@ -1179,7 +1187,7 @@ class MirrorEngine internal constructor(
         const val FULL = "Your linked devices hold too much to mirror more."
         const val CANT_COMPACT = "Mirroring waits for your browser to catch up."
 
-        /** More unlikes than this in one run are held for the listener (N7); so are this many or more when over a quarter. */
+        /** This many unlikes or more in one run are held for the listener (N7); so are [MASS_REMOVALS_MIN] or more when over a quarter. */
         const val MASS_REMOVALS = 200
         const val MASS_REMOVALS_MIN = 50
 

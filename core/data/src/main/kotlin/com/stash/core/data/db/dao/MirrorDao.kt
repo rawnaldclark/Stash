@@ -96,6 +96,9 @@ interface MirrorDao {
     @Query("DELETE FROM listening_events WHERE origin_device = :origin AND started_at < :before")
     suspend fun dropPlaysFrom(origin: String, before: Long): Int
 
+    @Query("DELETE FROM listening_events WHERE origin_device IS NOT NULL AND started_at < :before")
+    suspend fun dropOthersBefore(before: Long): Int
+
     /**
      * "Clear on all your devices" from another device: every play from another device before [before], and this phone's own
      * plays before it that the mirror ever covered (from [floor] on): not the older History the mirror never sent.
