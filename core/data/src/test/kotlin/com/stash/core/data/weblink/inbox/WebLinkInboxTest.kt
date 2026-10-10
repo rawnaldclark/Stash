@@ -244,8 +244,21 @@ class WebLinkInboxTest {
         assertThat(inbox.send(chrome.deviceId, document(likes = 3))).isEqualTo(SendOutcome.Failed(WebLinkCopy.OFFLINE))
         assertThat(server.sends).hasSize(1)
         val first = server.sends.keys.single()
-        assertThat(inbox.send(chrome.deviceId, document(likes = 3))).isEqualTo(SendOutcome.Sent)
+        // The same document again, stamped later (every tap writes a new exportedAt): same id, replacing it.
+        assertThat(inbox.send(chrome.deviceId, document(likes = 3).replace("2026-10-10T00:00:00.000Z", "2026-10-10T00:05:00.000Z"))).isEqualTo(SendOutcome.Sent)
         assertThat(server.sends.keys).containsExactly(first)
+    }
+
+    @Test fun `S12 - a different document after a lost answer gets an id of its own`() = runTest {
+        val chrome = link()
+        val inbox = inbox(partBytes = 100_000)
+        server.landThenLose = true
+        assertThat(inbox.send(chrome.deviceId, document(likes = 3))).isEqualTo(SendOutcome.Failed(WebLinkCopy.OFFLINE))
+        val first = server.sends.keys.single()
+        assertThat(inbox.send(chrome.deviceId, document(likes = 4))).isEqualTo(SendOutcome.Sent)
+        // The earlier send is taken back, and the new one has an id of its own.
+        assertThat(server.sends.keys).hasSize(1)
+        assertThat(server.sends.keys).doesNotContain(first)
     }
 
     @Test fun `a store that throws is nothing to show, never a crash`() = runTest {
