@@ -6,18 +6,22 @@
 #
 # Figures that come straight from code. Check them when that code changes:
 #   relay counts kept 7 days plus today  QUOTA_KEEP_DAYS, infra/lossless-relay/src/db.js
+#   linked device removed after 90 days  DEVICE_IDLE_DAYS, infra/sync-worker/src/space.js
+#   what's playing kept 7 days           SLOT_KEEP_DAYS, infra/sync-worker/src/space.js
+#   a send kept 7 days                   SEND_KEEP_DAYS, infra/sync-worker/src/space.js
 #   Last.fm proxy answers kept 14 days   CACHE_TTL_SECONDS, infra/lastfm-proxy/src/index.js
 #   Qobuz login retried once a minute    DEAD_COOLDOWN_MS, data/download/.../qbdlx/QbdlxCredentialStore.kt
 #   early-access emails hashed with a     EMAIL_PEPPER, required: the site's sign-in refuses to run without
 #   secret ("pepper")                     it (missingForGate in web/worker/index.js), and the import too
 #
 # Shown as "Last updated" on the page. Change it whenever this file changes.
-updated: 2026-10-07
+updated: 2026-10-10
 ---
 
 ## The short version
 
 - There's no Stash account, no analytics, and no third-party crash reporters.
+- Linking Stash on the web needs no account. What you choose to share between your devices is end-to-end encrypted.
 - Your credentials live on your phone. The Spotify, YouTube and Discord tokens are encrypted with AES-256-GCM via Google's [Tink](https://developers.google.com/tink), keyed per install in Android's hardware-backed Keystore; the rest (Qobuz, Last.fm, ListenBrainz) sit in app-private storage. When yt-dlp runs, Stash gives it a temporary copy of your YouTube cookie in a private file only Stash can read, and deletes it as soon as yt-dlp is done.
 - Each credential is only ever sent to the service it belongs to, over TLS 1.2 or higher. A handful of hosts the project runs are contacted too, and none of them ever receives a credential.
 - Stash is free software under the GNU General Public License, version 3 or later, and every line of code is open source, so anything on this page can be checked in the [source code](https://github.com/rawnaldclark/Stash).
@@ -69,7 +73,7 @@ LRCLIB, iTunes Search and paxsenix see a `Stash/<version>` User-Agent. iTunes Se
 
 - **Discord** (`discord.com`, `cdn.discordapp.com`): optional Rich Presence, only if you connect your account. While a song plays, Stash sends Discord its title, artist, album, a link to its cover and how far into the song you are; pausing clears it. Stash sets this status through your account's own session, which it gets from the sign-in window. If Discord needs your permission first, Settings opens Discord's permission page in your browser. Agreeing sends your browser on to a blank page at `paraliyzed.net`, with a one-time code in the address that Stash doesn't use. The README's [First-time setup](https://github.com/rawnaldclark/Stash#first-time-setup) explains exactly how it works and what that means for your account, so read it before you connect.
 
-### Sharing, Listen Together and Community
+### Sharing, linking and Listen Together
 
 These features use a Worker the project runs. It answers at `stashfm.app`, the domain this website is on, and at its first address, `stash-share.rawnaldclark.workers.dev`. Depending on its version, Stash uses one address or the other. Versions that use `stashfm.app` switch to the other address when `stashfm.app` can't be reached.
 
@@ -79,6 +83,8 @@ These features use a Worker the project runs. It answers at `stashfm.app`, the d
 - **Community**, only while you've turned it on in Home layout. The first time you post or vote, your phone makes a random key that identifies it; posting, voting and taking a post down send it. Home reads the list each time it shows the section, and opening a post reads that post. Once your phone has a key, reads carry it, so your own votes and posts show as yours, and they send nothing else about you. Posting sends the playlist's or song's details (the same descriptors as a shared mix, with album-art links) and your display name; voting sends which post and which way. Posts are public to anyone, with your display name; vote counts are public, but who voted which way isn't.
 
   The server never stores your key or IP address as they are. Rate limiting uses your IP address without keeping it. Each post and vote is kept with a scrambled form of your key (a hash), and a scrambled form of your IP address (a salted hash) used for the limits per connection; for IPv6, Community uses only the part of the address that identifies your connection. A vote (which post, which way, when) is kept until you take it back or its post is deleted. If the owner blocks your phone, a record of the block (the key's hash, when, and which post) is kept until it's lifted. A post leaves Community as soon as it's taken down, or 30 days after posting; a once-a-day cleanup then deletes it and its votes 30–31 days after posting, or 1–2 days after a take-down, whichever comes first. Anything Community deletes stays restorable by the owner from Cloudflare's always-on database backups for up to 30 days.
+
+- **Linking Stash on the web**: a separate Worker the project runs, at `sync.stashfm.app`, used only after you link Stash on the web (Settings › Library & Storage › Link Stash on the web). It stores, end-to-end encrypted with a key only your linked devices have, what you chose to share between them: what's playing and your queue (when "Pick up where you left off" is on), the likes, plays and playlists you chose to mirror, and anything you send to the other device. The Worker can't read any of it; it sees sizes, times and a random id per device. Each device checks it when Stash opens and sends to it when what's playing or your mirrored library changes; while mirroring is on, the app also checks every 6 hours in the background and Stash on the web every few minutes while it's open. Logins, files, downloads and settings never go. Your IP address is used for rate limiting and isn't stored. A device that hasn't been seen for 90 days is removed, and a link with no devices left is deleted; what's playing is deleted after 7 days, and a send after 7 days or when it's received. Unlinking cuts a device off at once. Cloudflare's 30-day recovery history holds only the encrypted data.
 
 ### Updates and housekeeping
 
