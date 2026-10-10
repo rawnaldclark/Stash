@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { SyncSpace } from "../src/sync-space.js";
 import { DEVICE_IDLE_DAYS, RETENTION_EVERY_MS, SEEN_WRITE_MS, SLOT_KEEP_DAYS, STAGING_KEEP_MS } from "../src/space.js";
 import { LIMITS } from "../src/validate.js";
-import { box, fakeCtx, makeDevice, record } from "./fakes.js";
+import { box, fakeCtx, keyBox, makeDevice, record } from "./fakes.js";
 
 const T0 = 1_760_000_000_000;
 const DAY = 86_400_000;
@@ -266,14 +266,14 @@ test("key rotation: epoch + 1, one envelope per device, config re-encrypted, old
     await call(phone, "nowPut", {}, env1(64));
     await call(phone, "inboxPut", { to: browser.id, sendId: "send_rot1", part: 0, count: 1 }, env1(64));
     for (let i = 0; i < 3; i++) await call(phone, "logAppend", {}, env1(64));
-    const envelopes = { [phone.id]: box(), [browser.id]: box() };
+    const envelopes = { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) };
 
     assert.equal(code(await call(phone, "rotate", {}, { epoch: 3, envelopes, config: box(3) })), "epoch");
-    assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes: { [phone.id]: box() }, config: box(2) })).status, 400, "every device needs one");
-    assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes: { ...envelopes, d_stranger1: box() }, config: box(2) })).status, 400, "and nobody else");
+    assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes: { [phone.id]: keyBox(2, phone) }, config: box(2) })).status, 400, "every device needs one");
+    assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes: { ...envelopes, d_stranger1: keyBox(2, phone) }, config: box(2) })).status, 400, "and nobody else");
     assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes })).status, 400, "the config must come along");
     assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes, config: box(1) })).status, 400, "under the new key");
-    const labels = { [browser.id]: box() };
+    const labels = { [browser.id]: box(2) };
     const r = await call(phone, "rotate", {}, { epoch: 2, envelopes, config: box(2), labels });
     assert.deepEqual(r, { status: 200, body: { epoch: 2 } });
     assert.equal(code(await call(browser, "rotate", {}, { epoch: 2, envelopes, config: box(2) })), "epoch", "a second rotator loses the race");
@@ -299,7 +299,7 @@ test("key rotation: epoch + 1, one envelope per device, config re-encrypted, old
 test("rotation with the snapshot inline replaces the old log at once; it must cover the whole log", async () => {
     const { call, phone, browser } = await setup();
     for (let i = 0; i < 3; i++) await call(phone, "logAppend", {}, env1(64));
-    const envelopes = { [phone.id]: box(), [browser.id]: box() };
+    const envelopes = { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) };
     assert.equal(code(await call(phone, "rotate", {}, { epoch: 2, envelopes, snapshot: { uptoSeq: 2, parts: [box(2)] } })), "stale");
     assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes, snapshot: { uptoSeq: 3, parts: [box(1)] } })).status, 400);
     assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes, snapshot: { uptoSeq: 3, parts: [box(2), box(2)] } })).status, 200);

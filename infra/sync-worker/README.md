@@ -16,12 +16,13 @@ Links Stash for Android with Stash on the web: QR pairing, the mirror log and sn
 | Space id | 22–64 base64url characters, minted by the phone (128 random bits) |
 | Pair id | 22 base64url characters, minted by the server |
 | Device token | 32 random bytes, base64url (43 characters); sent as `Authorization: Stash-Device <deviceId>:<token>` |
-| `tokenHash` | lowercase hex SHA-256 of the token's ASCII; the only thing stored; compared in constant time |
+| `tokenHash` | base64url(SHA-256(the token's 32 bytes)), 43 characters (sync-v1); the only thing stored; compared in constant time |
 | `pub`, `phonePub` | P-256 public key, uncompressed (65 bytes, 0x04 first), base64url (87 characters) |
-| Box (`labelCt`, pairing `ct`, key envelope) | `{ e?, n, c }`: `n` 12-byte nonce (16 chars), `c` ciphertext+tag (≥ 22 chars), base64url |
-| Envelope (`env`) | a box whose `e` must equal the space's current epoch (else `409 epoch`) |
+| Box (`labelCt`, pairing `ct`) | sync-v1 envelope `{ e, n, c }`: epoch (0 for pairing messages), 12-byte nonce (16 chars), ciphertext+tag (≥ 22 chars), base64url |
+| Key envelope (`rotate`) | `{ e, n, c, p }`: `e` = the new epoch, `p` the sender's ephemeral P-256 key |
+| Envelope (`env`) | `{ e, n, c }` whose `e` must equal the space's current epoch (else `409 epoch`) |
 
-Unknown fields are dropped; every stored value is rebuilt from the fields above.
+Unknown fields are dropped; every stored value is rebuilt from the fields above. The formats are `player/docs/sync-v1.md`'s (crypto vectors in `player/src/lib/sync/fixtures/crypto-vectors.json`; the token-hash vector is tested here).
 
 ## Routes
 

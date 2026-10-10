@@ -44,6 +44,13 @@ export async function sha256Hex(text) {
     return Array.from(d, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** A device token's server-side form (sync-v1 "tokenHash"): base64url(SHA-256(token bytes)). The token is base64url too. */
+export async function tokenHashOf(token) {
+    const bytes = fromBase64url(token);
+    if (!bytes) return null;
+    return base64url(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
+}
+
 /** Constant-time equality of two strings of the same length (lengths are public: hashes are fixed-size). */
 export function sameText(a, b) {
     if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;

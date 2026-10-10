@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import worker, { spaceRoute } from "../src/index.js";
-import { box, makeDevice, req, world } from "./fakes.js";
+import { parseDeviceAuth, tokenHashOf } from "../src/http.js";
+import { cleanBox, cleanEnv } from "../src/validate.js";
+import { box, keyBox, makeDevice, req, world } from "./fakes.js";
 import { linkNew } from "./link.js";
 
 const MiB = 1024 * 1024;
@@ -121,8 +123,8 @@ test("the member API end to end over HTTP: log, snapshot, slots with If-Match, q
     assert.equal((await call("GET", "/inbox/send_0001/0", asBrowser)).status, 200);
     assert.equal((await call("DELETE", "/inbox/send_0001", asBrowser)).status, 204);
 
-    assert.equal((await call("PUT", "/devices/me/label", { device: phone, body: { labelCt: box() } })).status, 204);
-    const envelopes = { [phone.id]: box(), [browser.id]: box() };
+    assert.equal((await call("PUT", "/devices/me/label", { device: phone, body: { labelCt: box(1) } })).status, 204);
+    const envelopes = { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) };
     assert.equal((await call("POST", "/rotate", { device: phone, body: { epoch: 2, envelopes, config: box(2) } })).status, 200);
     assert.deepEqual((await call("GET", "/key/2", asBrowser)).body, { epoch: 2, ct: envelopes[browser.id] });
     assert.equal((await call("POST", "/log", { device: phone, body: { env: box(1) } })).body.error.code, "epoch");
@@ -169,4 +171,19 @@ test("wrangler.toml: sync.stashfm.app only, no workers.dev, SQLite objects, rate
     const share = readFileSync(new URL("../../share-worker/wrangler.toml", import.meta.url), "utf8");
     const relay = readFileSync(new URL("../../lossless-relay/wrangler.toml", import.meta.url), "utf8");
     for (const id of ids) assert.ok(!share.includes(`"${id}"`) && !relay.includes(`"${id}"`), id);
+});
+
+test("sync-v1 shapes: the token hash vector, epoch-0 pairing boxes, key envelopes need p, data envelopes drop it", async () => {
+    // player/src/lib/sync/fixtures/crypto-vectors.json "tokenHash"
+    assert.equal(await tokenHashOf("wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8"), "7AceCgE2yDfAUc7mp3E-266mk2cS0aPKN-hP7jIm5h0");
+    assert.deepEqual(parseDeviceAuth("Stash-Device d_P7x2Lk9QwZr4Tn8M:wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8"), { deviceId: "d_P7x2Lk9QwZr4Tn8M", token: "wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8" });
+    const d = await makeDevice("p");
+    assert.deepEqual(Object.keys(cleanBox(box(0), 1024)), ["e", "n", "c"]);
+    assert.equal(cleanBox({ ...box(0), e: -1 }, 1024), null);
+    assert.equal(cleanBox({ n: box().n, c: box().c }, 1024), null, "e is always there");
+    assert.equal(cleanBox(box(2), 1024, { pub: true }), null, "a key envelope carries its ephemeral key");
+    assert.equal(cleanBox({ ...box(2), p: "nope" }, 1024), null);
+    assert.equal(cleanBox(keyBox(2, d), 1024, { pub: true }).p, d.pub);
+    assert.deepEqual(Object.keys(cleanEnv(keyBox(1, d), 1024)), ["e", "n", "c"]);
+    assert.equal(cleanEnv(box(0), 1024), null, "space data is never epoch 0");
 });

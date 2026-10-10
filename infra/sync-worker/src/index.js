@@ -8,7 +8,7 @@
  * anything else, so pairing slots can only be opened from a signed-in player session (no open relay).
  * Every id is in the path, never in a query (the stashfm.app zone's cache ignores query strings); every answer is no-store.
  */
-import { answer, fail, limitKey, parseDeviceAuth, PLAYER_HEADER, randomId, rpc, sameSecret, sha256Hex } from "./http.js";
+import { answer, fail, limitKey, parseDeviceAuth, PLAYER_HEADER, randomId, rpc, sameSecret, tokenHashOf } from "./http.js";
 import { isDeviceId, isPairId, isSendId, isSpaceId, LIMITS, pathInt } from "./validate.js";
 
 export { SyncSpace } from "./sync-space.js";
@@ -130,7 +130,8 @@ async function limited(binding, key) {
 /** The caller's device from `Authorization: Stash-Device <id>:<token>`: its id and the token's SHA-256 (the token goes no further). */
 async function deviceCaller(request) {
     const auth = parseDeviceAuth(request.headers.get("authorization"));
-    return auth ? { deviceId: auth.deviceId, tokenHash: await sha256Hex(auth.token) } : null;
+    const tokenHash = auth && (await tokenHashOf(auth.token));
+    return tokenHash ? { deviceId: auth.deviceId, tokenHash } : null;
 }
 const noAuth = () => fail(401, "unauthorized", "Sign the request with this device's token");
 

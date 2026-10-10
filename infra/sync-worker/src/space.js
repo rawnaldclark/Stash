@@ -271,8 +271,8 @@ export class Space {
         const env = body.envelopes;
         if (!env || typeof env !== "object" || Array.isArray(env)) return bad("No envelopes");
         if (Object.keys(env).length !== ids.length || !ids.every((id) => Object.hasOwn(env, id))) return bad("One envelope per device, no more");
-        const envelopes = ids.map((id) => [id, cleanBox(env[id], LIMITS.keyChars)]);
-        if (envelopes.some(([, b]) => !b)) return bad("Not an envelope");
+        const envelopes = ids.map((id) => [id, cleanBox(env[id], LIMITS.keyChars, { pub: true })]);
+        if (envelopes.some(([, b]) => !b || b.e !== epoch)) return bad("Not a key envelope for the new epoch");
         let labels = [];
         if (body.labels !== undefined) {
             if (!body.labels || typeof body.labels !== "object" || Array.isArray(body.labels)) return bad("Not labels");

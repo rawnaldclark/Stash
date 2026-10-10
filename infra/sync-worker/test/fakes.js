@@ -5,7 +5,7 @@
  */
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, webcrypto } from "node:crypto";
-import { base64url, sha256Hex } from "../src/http.js";
+import { base64url, tokenHashOf } from "../src/http.js";
 import { SyncSpace } from "../src/sync-space.js";
 import { PairSlot } from "../src/pair-slot.js";
 import worker from "../src/index.js";
@@ -118,9 +118,9 @@ export function world({ t = 1_760_000_000_000, limits = {} } = {}) {
 
 const random = (n) => new Uint8Array(randomBytes(n));
 
-/** An encrypted value of `bytes` random bytes: `{ n, c }`, plus `e` when given. */
-export function box(e, bytes = 48) {
-    return { ...(e === undefined ? {} : { e }), n: base64url(random(12)), c: base64url(random(bytes)) };
+/** An encrypted value of `bytes` random bytes, `{ e, n, c }` (epoch 0: a pairing message), plus `p` for a key envelope. */
+export function box(e = 0, bytes = 48, p) {
+    return { e, n: base64url(random(12)), c: base64url(random(bytes)), ...(p ? { p } : {}) };
 }
 
 export async function makeDevice(prefix = "d") {
@@ -128,8 +128,8 @@ export async function makeDevice(prefix = "d") {
     const pair = await webcrypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
     const pub = base64url(new Uint8Array(await webcrypto.subtle.exportKey("raw", pair.publicKey)));
     const id = `${prefix}_${base64url(random(9))}`;
-    const tokenHash = await sha256Hex(token);
-    return { id, token, tokenHash, pub, labelCt: box(), auth: `Stash-Device ${id}:${token}`, caller: { deviceId: id, tokenHash } };
+    const tokenHash = await tokenHashOf(token);
+    return { id, token, tokenHash, pub, labelCt: box(1), auth: `Stash-Device ${id}:${token}`, caller: { deviceId: id, tokenHash } };
 }
 
 /** The record a device introduces itself with at pairing. */
@@ -145,3 +145,6 @@ export function req(method, path, { body, device, player = false, headers = {}, 
     if (body !== undefined) h["content-type"] = "application/json";
     return new Request(ORIGIN + path, { method, headers: h, body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body) });
 }
+
+/** A key envelope (ECIES) for `epoch`: a box with the sender's ephemeral public key (any valid point will do here). */
+export const keyBox = (epoch, d) => box(epoch, 64, d.pub);

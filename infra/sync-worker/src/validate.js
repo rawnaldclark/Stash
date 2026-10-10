@@ -12,8 +12,8 @@ export const isDeviceId = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{8,64}$
 export const isSendId = isDeviceId;
 export const isSpaceId = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{22,64}$/.test(v);
 export const isPairId = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{22}$/.test(v);
-/** SHA-256 of the device token (the token's ASCII), lowercase hex. */
-export const isTokenHash = (v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
+/** The device token's server-side form (sync-v1): base64url(SHA-256(the token's 32 bytes)), 43 characters. */
+export const isTokenHash = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{43}$/.test(v);
 export const DEVICE_TYPES = ["phone", "web"];
 
 /** A P-256 public key, uncompressed (65 bytes, 0x04 first), base64url. */
@@ -27,20 +27,24 @@ export function isPub(v) {
 const isNonce = (v) => typeof v === "string" && v.length === 16 && B64URL.test(v);
 
 /**
- * An encrypted value `{ e?, n, c }` (spec §5: epoch, nonce, ciphertext+tag, base64url). `epoch: true` makes `e` required.
+ * An encrypted value as sync-v1 writes it: `{ e, n, c, p? }` (epoch, 12-byte nonce, ciphertext+tag, and on a key envelope
+ * the sender's ephemeral public key), base64url. Pairing messages use epoch 0. `pub: true` requires `p` (key envelopes).
  * Returns the rebuilt value or null.
  */
-export function cleanBox(v, maxC, { epoch = false } = {}) {
+export function cleanBox(v, maxC, { minEpoch = 0, pub = false } = {}) {
     if (!v || typeof v !== "object" || Array.isArray(v)) return null;
-    const { e, n, c } = v;
+    const { e, n, c, p } = v;
     if (!isNonce(n) || typeof c !== "string" || c.length < 22 || c.length > maxC || !B64URL.test(c)) return null;
-    if (e === undefined) return epoch ? null : { n, c };
-    if (!Number.isSafeInteger(e) || e < 1 || e > 2 ** 31) return null;
-    return { e, n, c };
+    if (!Number.isSafeInteger(e) || e < minEpoch || e > 2 ** 31) return null;
+    if (p === undefined) return pub ? null : { e, n, c };
+    return isPub(p) ? { e, n, c, p } : null;
 }
 
-/** An envelope that must carry the space's epoch: log batches, slots, snapshot parts, sends. */
-export const cleanEnv = (v, maxC) => cleanBox(v, maxC, { epoch: true });
+/** An envelope of space data (log batches, slots, snapshot parts, sends): epoch 1 or more, no `p`. */
+export function cleanEnv(v, maxC) {
+    const b = cleanBox(v, maxC, { minEpoch: 1 });
+    return b && { e: b.e, n: b.n, c: b.c };
+}
 
 /** A device as introduced at pairing: `{ id, tokenHash, pub, labelCt }`. */
 export function cleanDevice(v, type) {

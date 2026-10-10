@@ -18,14 +18,15 @@ if (!KEY) {
 }
 
 const b64 = (bytes) => Buffer.from(bytes).toString("base64url");
-const box = (e, n = 48) => ({ ...(e ? { e } : {}), n: b64(randomBytes(12)), c: b64(randomBytes(n)) });
+const box = (e = 0, n = 48, p) => ({ e, n: b64(randomBytes(12)), c: b64(randomBytes(n)), ...(p ? { p } : {}) });
 
 async function device(prefix) {
-    const token = b64(randomBytes(32));
+    const tokenBytes = randomBytes(32);
+    const token = b64(tokenBytes);
     const pair = await webcrypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
     const pub = b64(new Uint8Array(await webcrypto.subtle.exportKey("raw", pair.publicKey)));
     const id = `${prefix}_${b64(randomBytes(9))}`;
-    return { id, token, pub, record: { id, tokenHash: createHash("sha256").update(token).digest("hex"), pub, labelCt: box() } };
+    return { id, token, pub, record: { id, tokenHash: createHash("sha256").update(tokenBytes).digest("base64url"), pub, labelCt: box() } };
 }
 
 let failures = 0;
@@ -73,7 +74,7 @@ expect("config: blind overwrite", await call("PUT", s("/slots/config"), { dev: b
 expect("config: with If-Match", await call("PUT", s("/slots/config"), { dev: browser, player: true, body: { env: box(1) }, headers: { "If-Match": String(cfg.body?.serverAt) } }), 200);
 expect("send: one part", await call("PUT", s(`/inbox/${browser.id}/smoke_send/0/1`), { dev: phone, body: { env: box(1) } }), 200);
 expect("send: listed", await call("GET", s("/inbox"), { dev: browser, player: true }), 200);
-expect("rotate to epoch 2", await call("POST", s("/rotate"), { dev: phone, body: { epoch: 2, envelopes: { [phone.id]: box(), [browser.id]: box() }, config: box(2) } }), 200);
+expect("rotate to epoch 2", await call("POST", s("/rotate"), { dev: phone, body: { epoch: 2, envelopes: { [phone.id]: box(2, 64, phone.pub), [browser.id]: box(2, 64, browser.pub) }, config: box(2) } }), 200);
 expect("key for epoch 2", await call("GET", s("/key/2"), { dev: browser, player: true }), 200);
 expect("remove the browser", await call("DELETE", s(`/devices/${browser.id}`), { dev: phone }), 204);
 expect("the browser is cut off", await call("GET", s(), { dev: browser, player: true }), 401);
