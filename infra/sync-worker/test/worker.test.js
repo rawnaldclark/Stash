@@ -1,0 +1,279 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import worker, { spaceRoute } from "../src/index.js";
+import { fromBase64url, parseDeviceAuth, randomId, sameText, tokenHashOf } from "../src/http.js";
+import { cleanBox, cleanEnv } from "../src/validate.js";
+import { box, keyBox, makeDevice, req, world } from "./fakes.js";
+import { linkNew, newSpaceId } from "./link.js";
+
+const MiB = 1024 * 1024;
+
+test("routes: the allow-list, ids only in the path, 405 with Allow, the reserved ws route", () => {
+    assert.deepEqual(spaceRoute([], "GET"), { op: "get", params: {} });
+    assert.deepEqual(spaceRoute(["devices", "me", "label"], "PUT"), { op: "label", params: {} });
+    assert.deepEqual(spaceRoute(["devices", "me"], "DELETE"), { op: "removeDevice", params: { target: "me" } });
+    assert.deepEqual(spaceRoute(["snapshot", "812", "0", "16"], "PUT"), { op: "snapshotPut", params: { upto: 812, part: 0, count: 16 } });
+    assert.deepEqual(spaceRoute(["inbox", "d_12345678", "send_123", "1", "2"], "PUT").params, { to: "d_12345678", sendId: "send_123", part: 1, count: 2 });
+    assert.deepEqual(spaceRoute(["slots", "config"], "POST"), { allow: "GET, PUT" });
+    for (const s of [["snapshot", "1", "16", "16"], ["snapshot", "1", "0", "17"], ["log", "after", "-1"], ["log", "after", "01"], ["key", "x"], ["slots", "queue", "short"], ["nope"]]) {
+        assert.equal(spaceRoute(s, s[0] === "snapshot" ? "PUT" : "GET"), null, s.join("/"));
+    }
+});
+
+test("every answer is no-store and carries the server time; queries, unknown routes and wrong methods are refused", async () => {
+    const w = world();
+    const { phone, spaceId } = await linkNew(w);
+    const cases = [
+        [req("GET", `/v1/spaces/${spaceId}?x=1`, { device: phone }), 400],
+        [req("GET", "/v1/nothing"), 404],
+        [req("GET", "/"), 404],
+        [req("GET", `/v1/spaces/${spaceId}/ws`, { device: phone }), 404],
+        [req("PATCH", `/v1/spaces/${spaceId}`, { device: phone }), 405],
+        [req("GET", "/v1/spaces"), 405],
+        [req("GET", "/v1/pair"), 405],
+        [req("GET", "/v1/spaces/short"), 404],
+        [req("GET", `/v1/spaces/${spaceId}`, { device: phone }), 200],
+    ];
+    for (const [r, status] of cases) {
+        const res = await w.fetch(r);
+        assert.equal(res.status, status, r.url);
+        assert.equal(res.headers.get("cache-control"), "no-store", r.url);
+        assert.match(res.headers.get("x-stash-server-time"), /^\d+$/);
+        if (status !== 200) assert.ok((await res.json()).error.code, r.url);
+    }
+    assert.equal((await w.fetch(req("PATCH", `/v1/spaces/${spaceId}`, { device: phone }))).headers.get("allow"), "GET, DELETE");
+});
+
+test("bodies: JSON only, 1 MiB at most (read no further), parsed or refused", async () => {
+    const w = world();
+    const { phone, spaceId } = await linkNew(w);
+    const path = `/v1/spaces/${spaceId}/log`;
+    assert.equal((await w.fetch(new Request(`https://sync.stashfm.app${path}`, { method: "POST", headers: { Authorization: phone.auth, "content-type": "text/plain" }, body: "{}" }))).status, 415);
+    assert.equal((await w.fetch(req("POST", path, { device: phone, body: "{not json" }))).status, 400);
+    const huge = JSON.stringify({ env: { e: 1, n: "A".repeat(16), c: "A".repeat(MiB + 10) } });
+    const big = await w.fetch(req("POST", path, { device: phone, body: huge }));
+    assert.equal(big.status, 413);
+    assert.equal((await big.json()).error.code, "too_large");
+    // Without a content-length the stream is cut off at the cap, not buffered whole.
+    let pulled = 0;
+    const stream = new ReadableStream({
+        pull(c) {
+            pulled += 64 * 1024;
+            if (pulled > 8 * MiB) c.close();
+            else c.enqueue(new Uint8Array(64 * 1024).fill(65));
+        },
+    });
+    const chunked = new Request(`https://sync.stashfm.app${path}`, { method: "POST", headers: { Authorization: phone.auth, "content-type": "application/json" }, body: stream, duplex: "half" });
+    assert.equal((await w.fetch(chunked)).status, 413);
+    assert.ok(pulled < 2 * MiB, `read ${pulled} bytes`);
+    assert.equal((await w.fetch(req("POST", path, { device: phone, body: { env: box(1) } }))).status, 201);
+});
+
+test("device auth: a missing or malformed header is 401 unauthorized; a removed device and an unknown space are both 401 revoked", async () => {
+    const w = world();
+    const { phone, browser, spaceId } = await linkNew(w);
+    const path = `/v1/spaces/${spaceId}`;
+    for (const auth of [undefined, "Bearer x", `Stash-Device ${phone.id}`, `Stash-Device ${phone.id}:short`, `Stash-Device x:${phone.token}`]) {
+        const res = await w.fetch(new Request(`https://sync.stashfm.app${path}`, { headers: auth ? { Authorization: auth } : {} }));
+        assert.equal(res.status, 401, String(auth));
+        assert.equal((await res.json()).error.code, "unauthorized");
+    }
+    assert.equal((await w.fetch(req("DELETE", `${path}/devices/${browser.id}`, { device: phone }))).status, 204);
+    const cut = await w.fetch(req("GET", path, { device: browser, player: true }));
+    assert.equal(cut.status, 401);
+    assert.equal((await cut.json()).error.code, "revoked");
+
+    // A space that doesn't exist answers exactly like one the caller isn't in: no existence oracle.
+    const ghost = "G".repeat(22);
+    const gone = await w.fetch(req("GET", `/v1/spaces/${ghost}`, { device: phone }));
+    const stranger = await w.fetch(req("GET", path, { device: await makeDevice("x") }));
+    assert.equal(gone.status, 401);
+    assert.deepEqual(await gone.json(), await stranger.json());
+    assert.deepEqual(w.env.SPACES.ctxs.get(ghost).sql.tables(), [], "a probe leaves no storage behind");
+
+    assert.equal((await w.fetch(req("DELETE", path, { device: phone }))).status, 204);
+    assert.equal((await (await w.fetch(req("GET", path, { device: phone }))).json()).error.code, "revoked");
+});
+
+test("the member API end to end over HTTP: log, snapshot, slots with If-Match, queue, sends, key, label", async () => {
+    const w = world();
+    const { phone, browser, spaceId } = await linkNew(w);
+    const p = (path) => `/v1/spaces/${spaceId}${path}`;
+    const asBrowser = { device: browser, player: true };
+    const call = async (method, path, opts) => {
+        const res = await w.fetch(req(method, p(path), opts));
+        return { status: res.status, body: res.status === 204 ? null : await res.json(), res };
+    };
+    assert.deepEqual((await call("POST", "/log", { device: phone, body: { env: box(1) } })).body, { seq: 1, serverAt: w.clock.t });
+    assert.equal((await call("GET", "/log/after/0", asBrowser)).body.entries[0].device, phone.id);
+    assert.deepEqual((await call("PUT", "/snapshot/1/0/1", { ...asBrowser, body: { env: box(1) } })).body, { complete: true });
+    assert.equal((await call("GET", "/snapshot/0", { device: phone })).body.uptoSeq, 1);
+
+    const c1 = await call("PUT", "/slots/config", { device: phone, body: { env: box(1) } });
+    assert.equal(c1.status, 200);
+    assert.equal((await call("PUT", "/slots/config", { ...asBrowser, body: { env: box(1) } })).status, 412);
+    assert.equal((await call("PUT", "/slots/config", { ...asBrowser, body: { env: box(1) }, headers: { "If-Match": String(c1.body.serverAt) } })).status, 200);
+
+    assert.equal((await call("PUT", "/slots/now", { ...asBrowser, body: { env: box(1) } })).status, 200);
+    assert.equal((await call("GET", "/slots/now", { device: phone })).body.slots[0].device, browser.id);
+    assert.equal((await call("PUT", "/slots/queue", { device: phone, body: { env: box(1, 2000) } })).status, 200);
+    assert.equal((await call("GET", `/slots/queue/${phone.id}`, asBrowser)).status, 200);
+
+    assert.deepEqual((await call("PUT", `/inbox/${browser.id}/send_0001/0/1`, { device: phone, body: { env: box(1) } })).body, { complete: true });
+    assert.equal((await call("GET", "/inbox", asBrowser)).body.sends[0].sendId, "send_0001");
+    assert.equal((await call("GET", "/inbox/send_0001/0", asBrowser)).status, 200);
+    assert.equal((await call("DELETE", "/inbox/send_0001", asBrowser)).status, 204);
+
+    assert.equal((await call("PUT", "/devices/me/label", { device: phone, body: { labelCt: box(1) } })).status, 204);
+    const envelopes = { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) };
+    assert.equal((await call("POST", "/rotate", { device: phone, body: { epoch: 2, envelopes, config: box(2) } })).status, 200);
+    assert.deepEqual((await call("GET", "/key/2", asBrowser)).body, { epoch: 2, ct: envelopes[browser.id] });
+    assert.equal((await call("POST", "/log", { device: phone, body: { env: box(1) } })).body.error.code, "epoch");
+});
+
+test("the space API is rate limited per IP (the browser's by the IP the player forwards)", async () => {
+    const w = world({ limits: { api: 5 } });
+    const { phone, spaceId } = await linkNew(w); // opening the code, the reply and creating the space used three
+    assert.equal((await w.fetch(req("GET", `/v1/spaces/${spaceId}`, { device: phone }))).status, 200);
+    assert.equal((await w.fetch(req("GET", `/v1/spaces/${spaceId}`, { device: phone }))).status, 200);
+    const over = await w.fetch(req("GET", `/v1/spaces/${spaceId}`, { device: phone }));
+    assert.equal(over.status, 429);
+    assert.equal((await over.json()).error.code, "rate_limited");
+    const viaPlayer = await w.fetch(req("GET", `/v1/spaces/${spaceId}`, { device: phone, player: true, headers: { "X-Stash-Client-IP": "198.51.100.20" } }));
+    assert.equal(viaPlayer.status, 200);
+});
+
+test("a throw anywhere becomes a retryable 503", async () => {
+    const w = world();
+    const device = await makeDevice("p");
+    w.env.SPACES = { idFromName: (n) => n, get: () => ({ fetch: async () => { throw new Error("storage reset"); } }) };
+    const errors = [];
+    const log = console.error;
+    console.error = (e) => errors.push(e);
+    try {
+        const res = await worker.fetch(req("GET", `/v1/spaces/${"A".repeat(22)}`, { device }), w.env, {});
+        assert.equal(res.status, 503);
+        assert.equal(res.headers.get("retry-after"), "2");
+        assert.equal(res.headers.get("cache-control"), "no-store");
+    } finally {
+        console.error = log;
+    }
+    assert.equal(errors.length, 1);
+});
+
+test("wrangler.toml: sync.stashfm.app only, no workers.dev, SQLite objects, ratelimit namespaces nobody else uses", () => {
+    const toml = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+    assert.match(toml, /^workers_dev = false$/m);
+    assert.match(toml, /pattern = "sync\.stashfm\.app", custom_domain = true/);
+    assert.match(toml, /new_sqlite_classes = \["SyncSpace", "PairSlot", "Quota"\]/);
+    assert.doesNotMatch(toml, /PLAYER_KEY\s*=/, "the key is a secret, never in the file");
+    const ids = [...toml.matchAll(/namespace_id = "(\d+)"/g)].map((m) => m[1]);
+    assert.deepEqual([...ids].sort(), ["2030", "2031", "2032", "2033"]);
+    const share = readFileSync(new URL("../../share-worker/wrangler.toml", import.meta.url), "utf8");
+    const relay = readFileSync(new URL("../../lossless-relay/wrangler.toml", import.meta.url), "utf8");
+    for (const id of ids) assert.ok(!share.includes(`"${id}"`) && !relay.includes(`"${id}"`), id);
+});
+
+test("sync-v1 shapes: the token hash vector, epoch-0 pairing boxes, key envelopes need p, data envelopes drop it", async () => {
+    // player/src/lib/sync/fixtures/crypto-vectors.json "tokenHash"
+    assert.equal(await tokenHashOf("wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8"), "7AceCgE2yDfAUc7mp3E-266mk2cS0aPKN-hP7jIm5h0");
+    assert.deepEqual(parseDeviceAuth("Stash-Device d_P7x2Lk9QwZr4Tn8M:wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8"), { deviceId: "d_P7x2Lk9QwZr4Tn8M", token: "wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8" });
+    const d = await makeDevice("p");
+    assert.deepEqual(Object.keys(cleanBox(box(0), 1024)), ["e", "n", "c"]);
+    assert.equal(cleanBox({ ...box(0), e: -1 }, 1024), null);
+    assert.equal(cleanBox({ n: box().n, c: box().c }, 1024), null, "e is always there");
+    assert.equal(cleanBox(box(2), 1024, { pub: true }), null, "a key envelope carries its ephemeral key");
+    assert.equal(cleanBox({ ...box(2), p: "nope" }, 1024), null);
+    assert.equal(cleanBox(keyBox(2, d), 1024, { pub: true }).p, d.pub);
+    assert.deepEqual(Object.keys(cleanEnv(keyBox(1, d), 1024)), ["e", "n", "c"]);
+    assert.equal(cleanEnv(box(0), 1024), null, "space data is never epoch 0");
+});
+
+test("the edge: the safety actions' own limit, browsers only through the player, a trimmed key, queue names, cross-space tokens", async () => {
+    const w = world({ limits: { safe: 2 } });
+    const a = await linkNew(w);
+    const b = await linkNew(w);
+    const p = (x = "") => `/v1/spaces/${a.spaceId}${x}`;
+    // A browser token straight to sync.stashfm.app (around the player and its sign-in) is refused.
+    assert.equal((await w.fetch(req("GET", p(), { device: a.browser }))).status, 403);
+    assert.equal((await w.fetch(req("GET", p(), { device: a.browser, player: true }))).status, 200);
+    // `me` names only the caller's own removal, never a queue.
+    assert.equal((await w.fetch(req("GET", p("/slots/queue/me"), { device: a.phone }))).status, 404);
+    // Tokens of one space open nothing in another.
+    for (const d of [b.phone]) {
+        const r = await w.fetch(req("GET", p(), { device: d }));
+        assert.equal(r.status, 401);
+        assert.equal((await r.json()).error.code, "revoked");
+        assert.equal((await w.fetch(req("DELETE", p(), { device: d }))).status, 401);
+    }
+    assert.equal((await w.fetch(req("GET", p(), { device: a.phone }))).status, 200, "and leave it untouched");
+    // Removing, rotating and unlinking have their own per-device limit (they skip the daily caps).
+    const envelopes = { [a.phone.id]: { e: 2, n: "A".repeat(16), c: "A".repeat(40), p: a.phone.pub }, [a.browser.id]: { e: 2, n: "A".repeat(16), c: "A".repeat(40), p: a.browser.pub } };
+    assert.equal((await w.fetch(req("POST", p("/rotate"), { device: a.phone, body: { epoch: 2, envelopes } }))).status, 200);
+    assert.equal((await w.fetch(req("DELETE", p(`/devices/${a.browser.id}`), { device: a.phone }))).status, 204);
+    const third = await w.fetch(req("DELETE", p(), { device: a.phone }));
+    assert.equal(third.status, 429);
+    assert.equal(w.env.SAFE_RL.counts.get(`t:${a.phone.tokenHash}`), 3);
+    // A PLAYER_KEY stored with a trailing newline still matches the player's (trimmed) header.
+    w.env.PLAYER_KEY = `${w.env.PLAYER_KEY}\r\n`;
+    assert.equal((await w.fetch(req("GET", `/v1/spaces/${b.spaceId}`, { device: b.browser, player: true }))).status, 200);
+    assert.ok(newSpaceId());
+});
+
+test("token hashes are compared with crypto.subtle.timingSafeEqual when the runtime has it; pair ids are 16 random bytes", async () => {
+    const calls = [];
+    const subtle = globalThis.crypto.subtle;
+    const had = Object.getOwnPropertyDescriptor(subtle, "timingSafeEqual");
+    Object.defineProperty(subtle, "timingSafeEqual", {
+        configurable: true,
+        value: (a, b) => {
+            calls.push([a.byteLength, b.byteLength]);
+            return a.every((x, i) => x === b[i]);
+        },
+    });
+    try {
+        assert.equal(sameText("abc", "abc"), true);
+        assert.equal(sameText("abc", "abd"), false);
+        assert.equal(sameText("abc", "abcd"), false, "different lengths never reach the compare");
+        assert.deepEqual(calls, [[3, 3], [3, 3]]);
+        const w = world();
+        const { phone, spaceId } = await linkNew(w);
+        calls.length = 0;
+        assert.equal((await w.fetch(req("GET", `/v1/spaces/${spaceId}`, { device: phone }))).status, 200);
+        assert.deepEqual(calls, [[43, 43]], "the device token hash");
+    } finally {
+        if (had) Object.defineProperty(subtle, "timingSafeEqual", had);
+        else delete subtle.timingSafeEqual;
+    }
+    const ids = new Set(Array.from({ length: 200 }, () => randomId()));
+    assert.equal(ids.size, 200);
+    for (const id of ids) assert.equal(fromBase64url(id).length, 16);
+});
+
+test("forged device ids can't fill a device's safety or open buckets: the limits key on the presented token's hash", async () => {
+    const w = world({ limits: { safe: 10, open: 3 } });
+    const { phone, browser, spaceId } = await linkNew(w);
+    const p = (x = "") => `/v1/spaces/${spaceId}${x}`;
+    // A removed laptop (or anyone who saw an id) sends the phone's id with tokens of its own, from any IP.
+    for (let i = 0; i < 12; i++) {
+        const forged = await makeDevice("x");
+        const r = await w.fetch(req("DELETE", p(`/devices/${browser.id}`), { device: { ...forged, auth: `Stash-Device ${phone.id}:${forged.token}` }, ip: `198.51.100.${i}` }));
+        assert.equal(r.status, 401, "a bad token is refused as revoked");
+    }
+    for (let i = 0; i < 5; i++) {
+        const forged = await makeDevice("x");
+        await w.fetch(req("GET", p(), { device: { ...forged, auth: `Stash-Device ${phone.id}:${forged.token}` } }));
+    }
+    // The phone's own calls are untouched.
+    assert.equal((await w.fetch(req("GET", p(), { device: phone }))).status, 200);
+    const envelopes = { [phone.id]: { e: 2, n: "A".repeat(16), c: "A".repeat(40), p: phone.pub }, [browser.id]: { e: 2, n: "A".repeat(16), c: "A".repeat(40), p: browser.pub } };
+    assert.equal((await w.fetch(req("POST", p("/rotate"), { device: phone, body: { epoch: 2, envelopes } }))).status, 200);
+    assert.equal((await w.fetch(req("DELETE", p(`/devices/${browser.id}`), { device: phone }))).status, 204);
+    // A real token's own polling of the exempt reads is bounded (OPEN_RL), per token.
+    assert.equal((await w.fetch(req("GET", p("/key/2"), { device: phone }))).status, 200);
+    assert.equal((await w.fetch(req("GET", p(), { device: phone }))).status, 200);
+    const over = await w.fetch(req("GET", p(), { device: phone }));
+    assert.equal(over.status, 429);
+    assert.equal(w.env.OPEN_RL.counts.get(`t:${phone.tokenHash}`), 4);
+});

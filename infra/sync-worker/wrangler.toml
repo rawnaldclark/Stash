@@ -1,0 +1,64 @@
+name = "stash-sync"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# One address: sync.stashfm.app (spec 2026-10-10 §6.1). *.workers.dev is blocked on some networks abroad, so it stays off.
+# `custom_domain = true` makes `wrangler deploy` create the DNS record and certificate for sync.stashfm.app in the
+# stashfm.app zone (main Cloudflare account) by itself.
+workers_dev = false
+routes = [
+  { pattern = "sync.stashfm.app", custom_domain = true },
+]
+
+# Secret (never in this file): PLAYER_KEY, the value the player Worker sends as X-Stash-Player-Key (README "Deploy").
+
+# One SQLite Durable Object per sync space, and one short-lived one per pairing code.
+[[durable_objects.bindings]]
+name = "SPACES"
+class_name = "SyncSpace"
+
+[[durable_objects.bindings]]
+name = "PAIRS"
+class_name = "PairSlot"
+
+# What a ratelimits binding can't count (its longest period is 60 s): pairing codes per session per 10 minutes, new spaces
+# per session and per phone IP per day. One small object per session or IP, deleted a day after its last use.
+[[durable_objects.bindings]]
+name = "QUOTAS"
+class_name = "Quota"
+
+# stash-sync has never been deployed (checked 2026-10-10: `wrangler deployments list` → 10007), so v1 still lists every class.
+# After the first deploy, never edit v1: a new class needs a new tag.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SyncSpace", "PairSlot", "Quota"]
+
+# Rate limits per client (spec §6.4). A ratelimits binding carries ONE fixed limit and a period of 10 or 60 s.
+# namespace_id must be unique in the account: 1001 (lossless relay), 2001–2009 (share), 2020–2021 (mailer) are taken.
+
+# The phone's pairing calls (read the label, answer, read the reply), per IP.
+[[ratelimits]]
+name = "PAIR_RL"
+namespace_id = "2030"
+simple = { limit = 10, period = 60 }
+
+# The owner's safety actions (remove a device, unlink everything, rotate the key), per presented token (its hash), never per
+# claimed device id: a forger can't fill another device's bucket. The daily caps never refuse
+# them (so a flooding device can't block its own removal); this keeps them from being a flood of their own.
+[[ratelimits]]
+name = "SAFE_RL"
+namespace_id = "2031"
+simple = { limit = 10, period = 60 }
+
+# Opening the space and reading a key envelope (GET /v1/spaces/{sid}, …/key/{epoch}), per presented token: the daily read
+# cap never refuses them, so they get their own bucket (the 401 retry loop while a join lands fits easily).
+[[ratelimits]]
+name = "OPEN_RL"
+namespace_id = "2033"
+simple = { limit = 60, period = 60 }
+
+# Every space call and the browser's pairing calls, per IP (the player forwards the browser's IP).
+[[ratelimits]]
+name = "API_RL"
+namespace_id = "2032"
+simple = { limit = 240, period = 60 }
