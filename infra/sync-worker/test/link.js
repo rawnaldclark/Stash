@@ -17,6 +17,12 @@ export async function openCode(w, browser, headers = { "X-Stash-Session": "sess_
 
 export const answerBody = (phone) => ({ phonePub: phone.pub, ct: box(), device: record(phone) });
 
+/** The browser's reply once its user confirmed (sync-v1 R7): the phone creates or joins only after it. */
+export async function confirm(w, pairId, browser) {
+    const res = await w.fetch(req("POST", `/v1/pair/${pairId}/reply`, { player: true, device: browser, body: { ct: box() } }));
+    assert.equal(res.status, 201);
+}
+
 /** What the phone reads before answering: the label and the browser's id and key. */
 export async function readLabel(w, pairId) {
     const res = await w.fetch(req("GET", `/v1/pair/${pairId}/label`));
@@ -32,6 +38,7 @@ export async function linkNew(w, { headers } = {}) {
     await readLabel(w, pairId);
     const spaceId = newSpaceId();
     assert.equal((await w.fetch(req("POST", `/v1/pair/${pairId}/answer`, { body: answerBody(phone) }))).status, 201);
+    await confirm(w, pairId, browser);
     const created = await w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, spaceId, labels: { [phone.id]: box(1), [browser.id]: box(1) } } }));
     assert.equal(created.status, 201);
     assert.deepEqual(await created.json(), { spaceId, epoch: 1 });
@@ -43,6 +50,7 @@ export async function joinBrowser(w, spaceId, sponsor, { epoch = 1, envelope } =
     const b = await makeDevice("w");
     const { pairId } = await openCode(w, b);
     await w.fetch(req("POST", `/v1/pair/${pairId}/answer`, { body: answerBody(sponsor) }));
+    await confirm(w, pairId, b);
     const res = await w.fetch(req("POST", `/v1/spaces/${spaceId}/devices`, { device: sponsor, body: { pairId, epoch, labelCt: box(1), ...(envelope ? { envelope } : {}) } }));
     return { device: b, pairId, res };
 }

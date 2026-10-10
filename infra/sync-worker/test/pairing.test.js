@@ -4,7 +4,7 @@ import { webcrypto } from "node:crypto";
 import { base64url } from "../src/http.js";
 import { PAIR_TTL_MS, CLAIM_GRACE_MS, POLL_MS, answerSlot, claimSlot, openSlot, pollSlot, readLabel } from "../src/pair.js";
 import { box, makeDevice, record, req, world } from "./fakes.js";
-import { answerBody, labelsFor, linkNew, newSpaceId, openCode } from "./link.js";
+import { answerBody, confirm, labelsFor, linkNew, newSpaceId, openCode } from "./link.js";
 import { QUOTAS } from "../src/quota.js";
 
 test("a first link: code, label, answer, poll, space; both devices are members and nothing is cached", async () => {
@@ -33,7 +33,11 @@ test("a first link: code, label, answer, poll, space; both devices are members a
     for (const weak of ["s_short", "S".repeat(22), `s_${"A".repeat(21)}B`, spaceId + "x"]) {
         assert.equal((await w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, labels: labelsFor(phone, browser), spaceId: weak } }))).status, 400, `weak id ${weak}`);
     }
-    assert.equal((await w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, labels: labelsFor(phone, browser), spaceId } }))).status, 201);
+    const early = await w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, labels: labelsFor(phone, browser), spaceId } }));
+    assert.equal(early.status, 409, "not before the browser's user confirmed");
+    assert.equal((await early.json()).error.code, "no_reply");
+    await confirm(w, pairId, browser);
+    assert.equal((await w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, labels: labelsFor(phone, browser), spaceId } }))).status, 201, "the refusal didn't burn the code");
     for (const d of [phone, browser]) {
         const res = await w.fetch(req("GET", `/v1/spaces/${spaceId}`, { device: d, player: d === browser }));
         assert.equal(res.status, 200);
@@ -70,6 +74,7 @@ test("only the answering phone can create the space; only the browser can poll; 
     const { pairId } = await openCode(w, browser);
     assert.equal((await w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, labels: labelsFor(phone, browser), spaceId: newSpaceId() } }))).status, 409, "no answer yet");
     await w.fetch(req("POST", `/v1/pair/${pairId}/answer`, { body: answerBody(phone) }));
+    await confirm(w, pairId, browser);
     assert.equal((await w.fetch(req("GET", `/v1/pair/${pairId}`, { player: true, device: stranger }))).status, 403);
     assert.equal((await w.fetch(req("GET", `/v1/pair/${pairId}`, { player: true, device: { ...browser, auth: `Stash-Device ${browser.id}:${stranger.token}` } }))).status, 403);
     assert.equal((await w.fetch(req("POST", "/v1/spaces", { device: stranger, body: { pairId, labels: labelsFor(phone, browser), spaceId: newSpaceId() } }))).status, 403);
@@ -144,6 +149,9 @@ test("a phone with a space adds a browser; 4 browsers at most, refused before th
         const b = await makeDevice("w");
         const { pairId } = await openCode(w, b);
         await w.fetch(req("POST", `/v1/pair/${pairId}/answer`, { body: answerBody(phone) }));
+        const early = await w.fetch(req("POST", `/v1/spaces/${spaceId}/devices`, { device: phone, body: { pairId, epoch: 1, labelCt: box(1) } }));
+        if (i < 3) assert.equal((await early.json()).error.code, "no_reply", "the phone joins only after the reply");
+        await confirm(w, pairId, b);
         const res = await w.fetch(req("POST", `/v1/spaces/${spaceId}/devices`, { device: phone, body: { pairId, epoch: 1, labelCt: box(1) } }));
         if (i < 3) {
             assert.equal(res.status, 201);
@@ -254,6 +262,10 @@ test("pure slot rules: shapes, the same device on both sides, claim modes", asyn
     assert.equal(readLabel(answered, t).status, 409);
     assert.equal(pollSlot(answered, phone.caller, t).status, 403);
     assert.equal(claimSlot(answered, browser.caller, "create", t).status, 403, "only the phone creates");
+    assert.equal(claimSlot(answered, phone.caller, "create", t).body.error.code, "no_reply");
+    assert.equal(claimSlot(answered, phone.caller, "join", t).body.error.code, "no_reply");
+    assert.deepEqual(claimSlot(answered, browser.caller, "join", t).body.add.id, phone.id, "the browser as sponsor replies after");
+    answered.reply = { ct: box(), at: t };
     assert.deepEqual(claimSlot(answered, browser.caller, "join", t).body.add.id, phone.id);
     assert.deepEqual(claimSlot(answered, phone.caller, "join", t).body.add.id, browser.id);
     assert.equal(claimSlot(answered, phone.caller, "create", t + PAIR_TTL_MS + CLAIM_GRACE_MS).status, 410);
@@ -286,6 +298,7 @@ test("the space and the join carry the labels re-sealed under the data key; they
     const browser = await makeDevice("w");
     const { pairId } = await openCode(w, browser);
     await w.fetch(req("POST", `/v1/pair/${pairId}/answer`, { body: answerBody(phone) }));
+    await confirm(w, pairId, browser);
     const spaceId = newSpaceId();
     const create = (labels) => w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, spaceId, labels } }));
     for (const bad of [undefined, {}, { [phone.id]: box(1) }, { [phone.id]: box(1), [browser.id]: box(1), d_extra_12: box(1) },
@@ -303,6 +316,7 @@ test("the space and the join carry the labels re-sealed under the data key; they
     const laptop = await makeDevice("w");
     const { pairId: p2 } = await openCode(w, laptop);
     await w.fetch(req("POST", `/v1/pair/${p2}/answer`, { body: answerBody(phone) }));
+    await confirm(w, p2, laptop);
     const join = (body) => w.fetch(req("POST", `/v1/spaces/${spaceId}/devices`, { device: phone, body: { pairId: p2, epoch: 1, ...body } }));
     assert.equal((await join({})).status, 400);
     assert.equal((await join({ labelCt: box(0) })).status, 400, "not a pairing label");

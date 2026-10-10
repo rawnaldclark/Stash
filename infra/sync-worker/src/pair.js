@@ -83,6 +83,7 @@ export function readReply(s, caller, now) {
 
 /**
  * Burns the slot for the device that completes membership (§5.1 step 5).
+ * The phone (create, or join as the sponsor) needs the browser's reply first (`409 no_reply`); the browser as sponsor replies after.
  * `create`: the phone that answered makes a new space with both devices → `{ phone, browser, session }`.
  * `join`: either device, already a member of a space, adds the other → `{ add }` (the browser's or the phone's record).
  */
@@ -91,11 +92,17 @@ export function claimSlot(s, caller, mode, now) {
     if (!s.answer) return err(409, "pending", "No answer yet");
     if (s.claimed) return used();
     const phone = s.answer.device;
+    // sync-v1 (R7): the browser always replies once its user has confirmed; the phone creates or joins only after that.
+    const noReply = () => err(409, "no_reply", "The browser hasn't confirmed this code yet");
     let body;
     if (mode === "create") {
         if (!is(caller, phone)) return forbidden();
+        if (!s.reply) return noReply();
         body = { phone, browser: s.browser, session: s.session };
-    } else if (is(caller, phone)) body = { add: s.browser };
+    } else if (is(caller, phone)) {
+        if (!s.reply) return noReply();
+        body = { add: s.browser };
+    }
     else if (is(caller, s.browser)) body = { add: phone };
     else return forbidden();
     return { status: 200, body, state: { ...s, claimed: true } };

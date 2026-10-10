@@ -133,8 +133,8 @@ test("the member API end to end over HTTP: log, snapshot, slots with If-Match, q
 });
 
 test("the space API is rate limited per IP (the browser's by the IP the player forwards)", async () => {
-    const w = world({ limits: { api: 4 } });
-    const { phone, spaceId } = await linkNew(w); // opening the code and creating the space used two
+    const w = world({ limits: { api: 5 } });
+    const { phone, spaceId } = await linkNew(w); // opening the code, the reply and creating the space used three
     assert.equal((await w.fetch(req("GET", `/v1/spaces/${spaceId}`, { device: phone }))).status, 200);
     assert.equal((await w.fetch(req("GET", `/v1/spaces/${spaceId}`, { device: phone }))).status, 200);
     const over = await w.fetch(req("GET", `/v1/spaces/${spaceId}`, { device: phone }));
