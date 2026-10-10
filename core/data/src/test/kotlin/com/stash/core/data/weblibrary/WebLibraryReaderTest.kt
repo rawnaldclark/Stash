@@ -15,6 +15,19 @@ class WebLibraryReaderTest {
 
     private fun read(json: String) = WebLibraryReader.read(json, now)
 
+    @Test fun `N18 - a send of exactly 1,000,000 arrays and objects is read, one more is refused`() {
+        fun doc(containers: Int) = buildString {
+            append("{\"kind\":\"stash-web-library\",\"v\":1,\"history\":[") // the root object and this array: 2
+            repeat(containers - 2) { if (it > 0) append(','); append("{}") }
+            append("]}")
+        }
+        WebLibraryReader.checkShape(doc(1_000_000), WebLibraryReader.SEND_SHAPE)
+        val e = org.junit.Assert.assertThrows(WebLibraryReadException::class.java) { WebLibraryReader.checkShape(doc(1_000_001), WebLibraryReader.SEND_SHAPE) }
+        org.junit.Assert.assertEquals(WebLibraryReader.TOO_BIG, e.message)
+        // A bracket inside a string is not a container.
+        WebLibraryReader.checkShape("{\"a\":\"[[[[{{{{\"}", WebLibraryReader.Shape(2, 1, 10))
+    }
+
     @Test fun `the app's own golden export reads back whole`() {
         val c = read(File("src/test/resources/weblibrary/golden-v1.json").readText())
         assertEquals(listOf("Halo", "Pink + White", "Nights"), c.likes.map { it.song.title })

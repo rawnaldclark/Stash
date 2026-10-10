@@ -120,7 +120,10 @@ class InboxViewModel @Inject constructor(
     }
 
     fun stepDone() {
-        if (_step.value !is InboxStep.Adding && _step.value !is InboxStep.Opening) _step.value = null
+        val st = _step.value
+        if (st is InboxStep.Adding || st is InboxStep.Opening) return
+        if (st is InboxStep.Choosing) viewModelScope.launch { inbox.release(st.send.sendId) }
+        _step.value = null
     }
 }
 

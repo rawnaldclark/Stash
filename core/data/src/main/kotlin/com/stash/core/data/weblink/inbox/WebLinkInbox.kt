@@ -405,6 +405,9 @@ class WebLinkInbox internal constructor(
         parts[0] to parts.getOrElse(1) { CANT_READ }
     }
 
+    /** Choose was closed without adding: the read send (up to 16 MiB) isn't kept in memory (review N22). */
+    suspend fun release(sendId: String) = lock.withLock { opened.remove(sendId); Unit }
+
     /** Add: opens the send (unless it is already), merges it as a file import does (only [selection]), then deletes it on the server. */
     suspend fun add(sendId: String, selection: ImportSelection = ImportSelection.ALL): AddOutcome {
         val o = when (val r = open(sendId)) {
