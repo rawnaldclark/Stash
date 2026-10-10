@@ -30,7 +30,7 @@ class HandoffOfferAndRestoreTest {
         assertThat(o.deviceName).isEqualTo("Chrome on Windows")
         assertThat(o.positionMs).isEqualTo(151_000)
         assertThat(o.stillPlaying).isFalse()
-        assertThat(o.key).isEqualTo("d_web#q_abc#0")
+        assertThat(o.key).isEqualTo("d_web|q_abc|song 1|artist 1")
     }
 
     @Test
@@ -64,7 +64,7 @@ class HandoffOfferAndRestoreTest {
     fun `no offer while playing here, when dismissed, older than own playback, over 12 hours, or without a song`() {
         val st = PublishedState("d_web", "Chrome", 990_000, now(false, 1_000))
         assertThat(HandoffOfferPicker.pick(read(st), 0, true, emptyList(), 0)).isNull()
-        assertThat(HandoffOfferPicker.pick(read(st), 0, false, listOf("d_web#q_abc#0"), 0)).isNull()
+        assertThat(HandoffOfferPicker.pick(read(st), 0, false, listOf("d_web|q_abc|song 1|artist 1"), 0)).isNull()
         assertThat(HandoffOfferPicker.pick(read(st, own = 995_000), HandoffOfferPicker.ownLastAt(read(st, own = 995_000), 0, 0), false, emptyList(), 0)).isNull()
         assertThat(HandoffOfferPicker.pick(read(st, serverTime = 990_000 + 12 * 3_600_000L), 0, false, emptyList(), 0)).isNull()
         assertThat(HandoffOfferPicker.pick(read(PublishedState("d_web", "Chrome", 990_000, now(false, 0, song = null))), 0, false, emptyList(), 0)).isNull()
