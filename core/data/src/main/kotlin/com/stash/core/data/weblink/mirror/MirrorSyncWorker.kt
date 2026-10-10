@@ -55,6 +55,7 @@ class MirrorSyncWorker @AssistedInject constructor(
         const val WORK_NOW = "stash_mirror_now"
         const val WORK_PLAYS = "stash_mirror_plays"
         const val WORK_FOLLOW = "stash_mirror_follow"
+        const val WORK_FOLLOW_PLAYS = "stash_mirror_follow_plays"
         const val PLAYS_DELAY_MIN = 15L
         const val WORK_PERIODIC = "stash_mirror_periodic"
         const val MAX_RETRIES = 5
@@ -122,8 +123,12 @@ class WorkManagerMirrorScheduler @Inject constructor(@ApplicationContext private
     }
 
     override fun followUp(playsOnly: Boolean) {
-        val r = if (playsOnly) MirrorSyncWorker.playsRequest() else MirrorSyncWorker.changeRequest()
-        wm.enqueueUniqueWork(MirrorSyncWorker.WORK_FOLLOW, ExistingWorkPolicy.APPEND_OR_REPLACE, r)
+        // Plays wait 15 minutes under a name of their own: a change follow-up never queues behind them (last look L-N2).
+        if (playsOnly) {
+            wm.enqueueUniqueWork(MirrorSyncWorker.WORK_FOLLOW_PLAYS, ExistingWorkPolicy.APPEND_OR_REPLACE, MirrorSyncWorker.playsRequest())
+        } else {
+            wm.enqueueUniqueWork(MirrorSyncWorker.WORK_FOLLOW, ExistingWorkPolicy.APPEND_OR_REPLACE, MirrorSyncWorker.changeRequest())
+        }
     }
 
     override fun playsChanged() {
@@ -144,6 +149,7 @@ class WorkManagerMirrorScheduler @Inject constructor(@ApplicationContext private
             wm.cancelUniqueWork(MirrorSyncWorker.WORK_CHANGE)
             wm.cancelUniqueWork(MirrorSyncWorker.WORK_PLAYS)
             wm.cancelUniqueWork(MirrorSyncWorker.WORK_FOLLOW)
+            wm.cancelUniqueWork(MirrorSyncWorker.WORK_FOLLOW_PLAYS)
         }
     }
 }

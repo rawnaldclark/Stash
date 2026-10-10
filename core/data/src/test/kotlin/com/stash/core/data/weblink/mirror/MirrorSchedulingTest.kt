@@ -212,11 +212,26 @@ class MirrorSchedulingTest {
         assertThat(spec(f).initialDelay).isEqualTo(10_000L)
         // A change made during a follow-up run: another follow-up after it, not dropped.
         dao.setState(WorkInfo.State.RUNNING, f.id.toString())
-        s.followUp(playsOnly = true)
+        s.followUp(playsOnly = false)
         assertThat(infos(MirrorSyncWorker.WORK_FOLLOW).filter { !it.state.isFinished }).hasSize(2)
         s.periodic(true)
         s.periodic(false)
         assertThat(infos(MirrorSyncWorker.WORK_FOLLOW).filter { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }).isEmpty()
+    }
+
+    @Test fun `L-N2 - a change follow-up never waits behind a plays follow-up's 15 minutes`() {
+        val s = WorkManagerMirrorScheduler(context)
+        s.followUp(playsOnly = true)
+        s.followUp(playsOnly = false)
+        val change = infos(MirrorSyncWorker.WORK_FOLLOW).filter { !it.state.isFinished }
+        assertThat(change).hasSize(1)
+        assertThat(change.single().state).isEqualTo(WorkInfo.State.ENQUEUED) // not BLOCKED behind another request
+        assertThat(spec(change.single()).initialDelay).isEqualTo(10_000L)
+        val plays = infos(MirrorSyncWorker.WORK_FOLLOW_PLAYS).single { !it.state.isFinished }
+        assertThat(spec(plays).initialDelay).isEqualTo(MirrorSyncWorker.PLAYS_DELAY_MIN * 60_000L)
+        s.periodic(true)
+        s.periodic(false)
+        assertThat(infos(MirrorSyncWorker.WORK_FOLLOW_PLAYS).single().state).isEqualTo(WorkInfo.State.CANCELLED)
     }
 
     @Test fun `no background run while nothing mirrors, and the foreground asks at most once a minute while linked`() = runTest {
