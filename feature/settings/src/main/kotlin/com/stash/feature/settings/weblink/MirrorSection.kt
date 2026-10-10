@@ -96,6 +96,9 @@ class MirrorViewModel @Inject constructor(
 
     fun answer(choice: FirstMergeChoice) = act { engine.answer(choice) }
 
+    /** Unlikes held back because one run would remove many (review N7): send them, or keep the likes. */
+    fun releaseRemovals(send: Boolean) = act { engine.releaseRemovals(send) }
+
     fun messageShown() {
         _message.value = null
     }
@@ -177,6 +180,19 @@ fun MirrorSection(status: MirrorStatus, vm: MirrorViewModel) {
         )
     }
     SettingsGroupCard(rows = rows)
+    if (status.heldRemovals > 0) {
+        Text(
+            "Mirroring is holding ${status.heldRemovals} unlikes from this phone. Send them to ${status.otherName}, or keep those likes?",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = { vm.releaseRemovals(false) }) { Text("Keep the likes") }
+            TextButton(
+                onClick = { vm.releaseRemovals(true) },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text("Send the unlikes") }
+        }
+    }
     status.problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
 
     picking?.let { kind ->

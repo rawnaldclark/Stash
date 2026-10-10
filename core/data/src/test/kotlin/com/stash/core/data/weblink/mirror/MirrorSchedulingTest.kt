@@ -79,10 +79,12 @@ class MirrorSchedulingTest {
 
     private class Recorder : MirrorScheduler {
         var changed = 0
+        var plays = 0
         var now = 0
         val periodic = mutableListOf<Boolean>()
         override fun changed() { changed++ }
         override fun now() { now++ }
+        override fun playsChanged() { plays++ }
         override fun periodic(on: Boolean) { periodic += on }
     }
 
@@ -122,6 +124,33 @@ class MirrorSchedulingTest {
         inv.emit(Unit)
         scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
         assertThat(rec.changed).isEqualTo(2)
+        scope.cancel()
+    }
+
+    @Test fun `S6 - a change made during a run gets a run of its own, and N3 - plays alone wait longer`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        val status = MutableStateFlow(on)
+        val inv = MutableSharedFlow<Unit>(extraBufferCapacity = 16)
+        var digest = "l:1#p:1"
+        val rec = Recorder()
+        val t = MirrorTriggers(status, {}, { digest }, inv, rec, scope, { testScheduler.currentTime })
+        t.start()
+        scope.runCurrent()
+        // A run: its push read "l:1#p:1"; a heart tapped meanwhile moved likes; the invalidation came while busy and was dropped.
+        status.value = on.copy(busy = true)
+        scope.runCurrent()
+        digest = "l:2#p:1"
+        inv.emit(Unit)
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        status.value = on.copy(pushDigest = "l:1#p:1")
+        scope.runCurrent()
+        assertThat(rec.changed).isEqualTo(1)
+        // Only a new play: the longer wait.
+        digest = "l:2#p:2"
+        inv.emit(Unit)
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        assertThat(rec.changed).isEqualTo(1)
+        assertThat(rec.plays).isEqualTo(1)
         scope.cancel()
     }
 

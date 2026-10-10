@@ -53,6 +53,8 @@ class MirrorSyncWorker @AssistedInject constructor(
         private const val TAG = "WebLinkMirror"
         const val WORK_CHANGE = "stash_mirror_change"
         const val WORK_NOW = "stash_mirror_now"
+        const val WORK_PLAYS = "stash_mirror_plays"
+        const val PLAYS_DELAY_MIN = 15L
         const val WORK_PERIODIC = "stash_mirror_periodic"
         const val MAX_RETRIES = 5
         const val CHANGE_DELAY_S = 10L
@@ -63,6 +65,12 @@ class MirrorSyncWorker @AssistedInject constructor(
         fun changeRequest(): OneTimeWorkRequest = OneTimeWorkRequestBuilder<MirrorSyncWorker>()
             .setConstraints(network)
             .setInitialDelay(CHANGE_DELAY_S, TimeUnit.SECONDS)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+
+        fun playsRequest(): OneTimeWorkRequest = OneTimeWorkRequestBuilder<MirrorSyncWorker>()
+            .setConstraints(network)
+            .setInitialDelay(PLAYS_DELAY_MIN, TimeUnit.MINUTES)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
 
@@ -83,6 +91,9 @@ interface MirrorScheduler {
     /** The library changed in a kind that mirrors: a run 10 s from now (a pending one is replaced, so a burst is one run). */
     fun changed()
 
+    /** Only new plays: a run within 15 minutes (a pending one stays), so playback doesn't wake the radio per song (N3). */
+    fun playsChanged()
+
     /** The app came to the foreground. */
     fun now()
 
@@ -99,6 +110,10 @@ class WorkManagerMirrorScheduler @Inject constructor(@ApplicationContext private
         wm.enqueueUniqueWork(MirrorSyncWorker.WORK_CHANGE, ExistingWorkPolicy.REPLACE, MirrorSyncWorker.changeRequest())
     }
 
+    override fun playsChanged() {
+        wm.enqueueUniqueWork(MirrorSyncWorker.WORK_PLAYS, ExistingWorkPolicy.KEEP, MirrorSyncWorker.playsRequest())
+    }
+
     override fun now() {
         wm.enqueueUniqueWork(MirrorSyncWorker.WORK_NOW, ExistingWorkPolicy.KEEP, MirrorSyncWorker.nowRequest())
     }
@@ -111,6 +126,7 @@ class WorkManagerMirrorScheduler @Inject constructor(@ApplicationContext private
         } else {
             wm.cancelUniqueWork(MirrorSyncWorker.WORK_PERIODIC)
             wm.cancelUniqueWork(MirrorSyncWorker.WORK_CHANGE)
+            wm.cancelUniqueWork(MirrorSyncWorker.WORK_PLAYS)
         }
     }
 }

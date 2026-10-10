@@ -50,8 +50,14 @@ class MirrorTriggers internal constructor(
             var wasBusy = false
             status.collect { s ->
                 scheduler.periodic(s.linked && s.config?.anyOn == true)
-                // A run just ended: what it wrote is the new starting point, so its own writes don't ask for another run.
-                if (wasBusy && !s.busy && s.config?.anyOn == true) lastDigest = guard { digest(s) }
+                if (wasBusy && !s.busy && s.config?.anyOn == true) {
+                    // A run just ended. Its own writes came before its push read the library, so they are in the digest the push
+                    // took; anything that differs from that was changed during the run (a heart tapped meanwhile) and goes in a
+                    // run of its own (review S6). What is now is the new starting point.
+                    val d = guard { digest(s) }
+                    if (d != null && s.pushDigest != null && d != s.pushDigest) ask(s.pushDigest, d)
+                    lastDigest = d
+                }
                 wasBusy = s.busy
             }
         }
@@ -61,11 +67,20 @@ class MirrorTriggers internal constructor(
                 if (!mirroring || s.busy) return@collect
                 val d = guard { digest(s) } ?: return@collect
                 if (d != lastDigest) {
+                    val before = lastDigest
                     lastDigest = d
-                    scheduler.changed()
+                    ask(before, d)
                 }
             }
         }
+    }
+
+    /**
+     * A change between [before] and [now]: in likes or playlists, a run 10 s from now; only new plays (one per finished song while
+     * plays mirror), a run within 15 minutes, so a listening session costs a few runs, not one per song (review N3).
+     */
+    private fun ask(before: String?, now: String) {
+        if (before != null && before.substringBefore(PLAYS_SEP) == now.substringBefore(PLAYS_SEP)) scheduler.playsChanged() else scheduler.changed()
     }
 
     /**
@@ -96,6 +111,9 @@ class MirrorTriggers internal constructor(
         const val DEBOUNCE_MS = 5_000L
         const val FOREGROUND_GAP_MS = 60_000L
         val TABLES = arrayOf("tracks", "playlists", "playlist_tracks", "listening_events")
+
+        /** A digest is `<likes and playlists>#<plays>`: a change after this is plays only. */
+        const val PLAYS_SEP = '#'
     }
 }
 
@@ -109,6 +127,11 @@ class LibraryChangeSignal @Inject constructor(
     private val repo: com.stash.core.data.weblink.WebLinkRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    init {
+        // The push reads this when it reads the library, so the end of a run can tell what changed meanwhile (S6).
+        engine.digester = { s -> digestOf(s) }
+    }
 
     private val triggers = MirrorTriggers(
         status = engine.status,
@@ -149,12 +172,13 @@ class LibraryChangeSignal @Inject constructor(
         val dao = database.mirrorDao()
         return buildString {
             if (cfg.likes.dir != Dir.OFF) append("l:").append(dao.likesDigest())
-            if (cfg.plays.dir != Dir.OFF) append("|p:").append(dao.playsDigest())
             if (cfg.playlists.dir != Dir.OFF) {
                 val ids = s.mirrored.filterKeys { it in cfg.ids }.values.toList()
                 if (ids.isNotEmpty()) append("|pl:").append(dao.playlistsDigest(ids))
                 if (cfg.newOnes) append("|n:").append(dao.playlistSetDigest())
             }
+            append(MirrorTriggers.PLAYS_SEP)
+            if (cfg.plays.dir != Dir.OFF) append("p:").append(dao.playsDigest())
         }
     }
 }
