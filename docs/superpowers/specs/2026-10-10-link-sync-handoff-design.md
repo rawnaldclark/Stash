@@ -60,7 +60,12 @@ Copy is final-draft: short, plain. Each side uses its own settings components (a
 > In Stash on your phone: Settings › Library & Storage › Link Stash on the web.
 > *Waiting for your phone…*
 
-The code renews itself every 3 minutes while shown ("New code" button after 3 renewals, so an idle tab stops asking). When the phone answers: "Linked to **Pixel 6**".
+The code renews itself every 3 minutes while shown ("New code" button after 3 renewals, so an idle tab stops asking). When the phone answers, the browser asks too, with the same six digits the phone shows:
+> **Link Pixel 6?**
+> Check that your phone shows **123 456**.
+> [Link] [Cancel]
+
+Then: "Linked to **Pixel 6**". Nothing is shared, joined or left before this tap (the code stops someone who photographed the QR).
 
 **App** (Settings › Library & Storage › Link Stash on the web, not linked):
 > **Link a browser** — "Open play.stashfm.app › Settings › Your phone"
@@ -68,9 +73,9 @@ The code renews itself every 3 minutes while shown ("New code" button after 3 re
 
 Scan opens a full-screen camera view with a square cutout. Under it: "Point at the code on your computer." First open asks for the camera. Denied: "Stash needs the camera to scan the code. You can also scan it with your camera app." with [Allow camera]. A QR that isn't a Stash code: "That's not a Stash code."
 
-After a scan, a confirm sheet (prevents linking a stranger's browser by scanning their code):
+After a scan, a confirm sheet (prevents linking a stranger's browser by scanning their code; the label alone is text the browser chose, the code is not):
 > **Link Chrome on Windows?**
-> It will see what you're playing here, and you can choose to mirror your library with it.
+> Check that your computer shows **123 456**. It will see what you're playing here, and you can choose to mirror your library with it.
 > [Link] [Cancel]
 
 Then: "Linked. Nothing is mirrored yet." with [Set up mirroring] / [Done].
@@ -257,7 +262,7 @@ The server stamps each slot write with its own time (`serverAt`); readers use `s
 | Space key `K` | 32 random bytes, with an `epoch` number (starts at 1). |
 | Data key | `HKDF-SHA256(K, salt = spaceId, info = "stash-sync v1 data")` → AES-256-GCM. |
 | Envelope | `{ "e": epoch, "n": <12-byte random nonce>, "c": <ciphertext+tag> }`, base64url. AAD = `stash-sync/1|<spaceId>|<epoch>|<place>` where place is `log`, `snapshot:<uptoSeq>:<part>/<count>`, `config`, `now:<deviceId>`, `queue:<deviceId>`, `inbox:<toDeviceId>:<sendId>:<part>/<count>`, `label:<deviceId>`, `key:<deviceId>` (pairing messages: spaceId `pair`, epoch 0, places `label`, `answer:<pairId>`, `reply:<pairId>`). The server can't move a blob to another place, part or send unnoticed. A snapshot or send is gzipped once and cut into ≤ 768,000-byte slices, each sealed at its own part place (`player/docs/sync-v1.md` §3.3). |
-| Device key | Each device makes a long-term P-256 key pair on first link. Web: non-extractable `CryptoKey` in IndexedDB. App: Android Keystore on API 31+ (ECDH in Keystore), otherwise a software key wrapped with the Tink keyset (minSdk 26). Public key registered on the server; used only for key rotation. |
+| Device key | Each device makes a long-term P-256 key pair on first link. Web: non-extractable `CryptoKey` in IndexedDB. App: Android Keystore on API 31+ (ECDH in Keystore), otherwise a software key wrapped with the Tink keyset (minSdk 26). Public key registered on the server, and also inside the device's own encrypted label (`stash-label.pub`): other devices trust only the label's copy. Used only for key rotation. |
 | Device auth | Each device makes a random 32-byte token; the server stores `SHA-256(token)`. Requests send `Authorization: Stash-Device <deviceId>:<token>`; compared in constant time. Removing a device deletes its row: it is cut off at once. |
 | Pairing | §5.1. |
 | Rotation | §5.2. |
@@ -270,11 +275,18 @@ The server stamps each slot write with its own time (`serverAt`); readers use `s
 4. **Browser** (long-polling the slot) derives `Kpair`, decrypts. If the phone sent a space, the browser now holds `K`. If the phone has none and the browser is in a phone-less space, the browser answers with its space the same way (`POST …/pair/{id}/reply`). If neither has one, the phone creates it (step 5) and the browser learns `K` from the phone's message (the phone mints `K` before step 3).
 5. **Server** completes membership in one call made by the device that holds the space (the "sponsor"): `POST /v1/spaces { pairId, spaceId }` (new; the server takes both device records from the answered slot and burns the `pairId`) or `POST /v1/spaces/{id}/devices { pairId }` (join; sponsor-authenticated, adds the other device of that code, also burns it). When the browser is the sponsor it joins the phone **before** posting its reply, so the phone is a member when it reads it. Each device then writes its label under the data key (`label:<deviceId>`): the pairing labels are under the pair secret. A slot answers once; a second answer gets `409 used` and the phone shows "This code was already used. Show a new one on your computer." The exact flows: `player/docs/sync-v1.md` §3.4.
 
-**What this resists.** A photographed QR after use: dead slot, no key in it. A photo used *before* the phone (a race within 3 minutes): the attacker's device would be the one linked to the browser, and the real phone gets "already used" while the browser shows the attacker's device name: visible, and the attacker gets the browser's empty side, not the phone's library. The server: sees public keys and ciphertext only; swapping `eB.pub` is impossible because the QR carries it. Scanning a stranger's code: the confirm sheet names the browser and says what it will see.
+**The pairing code.** Both sides derive six digits from `Kpair` (`HKDF(Kpair, info = "stash-sync pair sas")`) and show them; each side's user confirms before anything is shared. The browser confirms before it uses a granted space, adds a phone to its own space, posts its reply or leaves an old space.
+
+**What this resists.** A photographed QR after use: dead slot, no key in it. A photo used *before* the phone (a race within 3 minutes): the attacker's answer reaches the browser first, but its code differs from anything the user's phone shows (their phone gets "already used"), so the user cancels on the browser; before the code, a browser in a phone-less space would have handed its space key to that attacker, and a browser joining the attacker's space would have left its own. The server: sees public keys and ciphertext only; swapping `eB.pub` is impossible because the QR carries it. Scanning a stranger's code: the confirm sheet names the browser and says what it will see.
 
 ### 5.2 Key rotation
 
 On any device removal, the remover (or, if a device removed itself, the next remaining device to connect, told by `rotationDue: true`) mints `K'` with `epoch + 1`, encrypts it to every remaining device's public key (ECIES: ephemeral P-256 ECDH + HKDF + AES-GCM), uploads the envelopes and a fresh snapshot under `K'` in one `POST /rotate`. The server then deletes the old log, snapshot, slots and envelopes. Writes under an old epoch get `409 epoch` (the client fetches its envelope and retries). A removed device already can't read (its token is gone); rotation also protects against a removed device that kept `K` plus a later server-side leak.
+
+- **Proof.** Each key envelope's document carries `members` and an HMAC under a key derived from the **previous** `K` over the space, new epoch, device, new key and members. A device accepts only the next epoch, only as a member, only with a valid proof. The server never holds a `K`, so it can't mint a rotation and hand devices a key it knows.
+- **Keys from labels only.** Rotators seal only to public keys found in a `stash-label` they decrypted (pairing label, or `label:<id>` under the data key); a key the server lists that differs, or a device without a sealed label, gets no envelope. So the server can't substitute its own key for a browser's.
+- **No writes under a key due to change.** While `rotationDue` is set the server answers writes with `409 rotation_due`; the device rotates first.
+- **Threat model.** Protected: a curious or compromised server (sees ciphertext, sizes, times; can't read, mint keys or join); a removed device (cut off at once; can't read anything written after it, which is under `K'`). Not protected: a removed device that kept the old `K` *and* colludes with the server can forge the very next rotation before the real one lands; once a device accepted epoch `e`, a forgery for `e` is refused and `e + 1` needs `K'`. Closing that window needs per-device signing keys (a later version). The server can also withhold or replay log batches (merges are idempotent, so a device can lag, not diverge) and show a stale handoff card.
 
 ---
 
@@ -382,7 +394,7 @@ A sync run on a device: pull (`log/after/{seen}`, or the snapshot if `seen` is o
   - Queries that only show or export history (`WebLibraryExportDao.recentPlays`, the History screen) include them.
   - A DAO test inserts one local and one remote play of the same track and asserts every mix-feeding query sees only the local one; its comment is the checklist for any query added later.
 - On the web, plays from the phone are ordinary History entries; for symmetry `HistRec` gains `origin?: deviceId` and Daily Discover (`player/src/lib/discover/`) ignores entries that have it.
-- `clearPlays` (web *Clear history*, app's clear) mirrors as "delete plays before t" when plays mirror both ways.
+- `clearPlays` (web *Clear history*, app's clear) mirrors as "delete the plays **I** sent before t" when plays mirror both ways: clearing the web's history never touches the phone's own plays. Clearing everyone's is an explicit choice, with the count of what goes: **Clear history?** ○ Only here *(preselected)* ○ Also on Pixel 6 · "Removes 14,212 plays there" (sends `all: true`).
 - The web keeps the newest 5,000 (`HISTORY_CAP`); the phone keeps all. Only plays from the last 5,000 on the sending side are pushed on first merge.
 
 ### 7.3 Playlists (three-way merge)
@@ -408,6 +420,9 @@ Each side keeps, per mirrored playlist, the base version it last agreed on (`bas
 
 - Every response carries `serverTime`; each device keeps `offset = serverTime − localTime`, where each sample is `serverTime − floor((sent + received) / 2)` and the offset is the lower median of the newest 5 samples, and uses `wall = local + offset` for HLC.
 - HLC update: `wall' = max(wall, last.wall, received.wall)`; counter bumps on ties; deviceId breaks the final tie. A device with a wrong clock therefore can't win every conflict.
+- An op stamped more than 10 minutes after its log row's `serverAt` is skipped (not clamped: every reader sees the same `serverAt`), so one bad clock or a µs stamp can't win every conflict or drag every clock forward.
+- The mirror config is never rolled back: a device ignores a config older (by `at`) than the newest it applied.
+- An unpushed local playlist edit carries the `tick` taken when it was made (or, if none was kept, one at merge time), never the base's `at`, so a remote delete can't silently beat a later offline edit.
 - Handoff ages and ordering use the server's `serverAt` only.
 
 ### 7.5 Turning mirroring on, first merge
@@ -549,6 +564,8 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 12. Airplane mode on the phone, change a like, kill the app, reopen online → change syncs (WorkManager).
 13. Unlink everything → both sides unlinked, libraries intact; `GET` the space id → 404.
 14. Battery: an hour of playback with handoff on vs off, Battery Historian / `dumpsys batterystats`: no wake locks or alarms attributable to sync beyond the network calls.
+15. Crypto on real providers: `./gradlew :core:data:connectedDebugAndroidTest --tests '*SyncCryptoAndroidTest*'` (or `-Pandroid.testInstrumentationRunnerArguments.class=com.stash.core.data.weblink.SyncCryptoAndroidTest`) on an API 26 emulator and on the Pixel 6 (API 31+: the Keystore ECDH case runs). The JVM unit tests use SunEC; this proves Conscrypt and the Keystore agree with the fixtures.
+16. Pairing code: photograph the browser's QR, answer it from the Pixel 5 first; the browser shows the Pixel 5's code, which differs from the Pixel 6's sheet (which says "already used"); Cancel on the browser leaves both libraries and spaces as they were.
 
 ## 14. Implementation order
 
@@ -586,3 +603,9 @@ No questions remain open.
 8. **Snapshot plays** carry `device` (§4.3) so a device reading a snapshot can set `origin`.
 9. **Clock offset** (§7.4) is defined exactly: per-sample midpoint, lower median of the newest 5.
 10. **Copy** (§2.4): "Removes 46 likes here" was the shared count; it is 166 (212 − 46).
+11. **Crypto review** (2026-10-10, before freezing v1), each now in `player/docs/sync-v1.md`:
+    - Rotations are **proven** under the previous key (`stash-key` gains `members` and `proof`), accepted one epoch at a time; device keys are trusted only from **sealed labels** (`stash-label` gains `deviceId` and `pub`; pairing labels sit at `label:<deviceId>`; the answer's label carries the phone's key, `devicePub` is gone). Threat model in §5.2.
+    - A six-digit **pairing code** from `Kpair`, confirmed on both screens; the browser confirms before it shares, joins or leaves anything (§2.2, §5.1).
+    - `409 rotation_due` blocks writes under a key due to change; the config can't be rolled back; stamps over 10 minutes past `serverAt` are skipped; an unpushed playlist edit's stamp is defined (§5.2, §7.4).
+    - *Clear history* clears only the sender's plays unless the user picks "Also on Pixel 6" (§7.2).
+    - Readers: gzip must end with the whole output's CRC and length; values are checked by JSON type; writers are pinned by the fixtures; an instrumented test covers Conscrypt and the Keystore (§13 step 15).
