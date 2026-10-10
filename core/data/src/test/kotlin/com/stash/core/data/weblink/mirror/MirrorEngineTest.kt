@@ -372,15 +372,71 @@ class MirrorEngineTest {
 
     @Test fun `N7 - one run that would unlike a big part of the likes is held until the listener sends it`() = runTest {
         link()
-        repeat(40) { lib.like(song("L$it")) }
+        repeat(100) { lib.like(song("L$it")) }
         engine.configure(MirrorChange(dirs = mapOf(Kind.LIKES to Dir.BOTH)))
-        repeat(15) { lib.unlike(song("L$it")) }
+        repeat(60) { lib.unlike(song("L$it")) }
         run()
-        assertThat(engine.status.value.heldRemovals).isEqualTo(15)
+        assertThat(engine.status.value.heldRemovals).isEqualTo(60)
         assertThat(likeOps(me).none { !it.on }).isTrue()
         engine.releaseRemovals(send = true)
-        assertThat(likeOps(me).count { !it.on }).isEqualTo(15)
+        assertThat(likeOps(me).count { !it.on }).isEqualTo(60)
         assertThat(engine.status.value.heldRemovals).isEqualTo(0)
+    }
+
+    @Test fun `R-N3 - a few unlikes are never held, and a confirmed Use this phone's is never held`() = runTest {
+        link()
+        repeat(20) { lib.like(song("L$it")) }
+        engine.configure(MirrorChange(dirs = mapOf(Kind.LIKES to Dir.BOTH)))
+        repeat(6) { lib.unlike(song("L$it")) }
+        run()
+        assertThat(likeOps(me).count { !it.on }).isEqualTo(6)
+    }
+
+    @Test fun `R-N3 - Use this phone's over many of the browser's likes sends every tombstone it confirmed`() = runTest {
+        link()
+        lib.like(song("A"))
+        web.configure(likes = Dir.BOTH)
+        val since = web.head
+        web.post(*(0 until 80).map { MirrorOp.Like(song("W$it"), true, web.at()) }.toTypedArray(), MirrorOp.Joined(Kind.LIKES, since))
+        run()
+        engine.answer(FirstMergeChoice.MINE, engine.status.value.question)
+        assertThat(engine.status.value.heldRemovals).isEqualTo(0)
+        assertThat(likeOps(me).count { !it.on }).isEqualTo(80)
+    }
+
+    @Test fun `R-N1 R-N2 - the answer binds to the counts shown, and a re-ask says the likes changed`() = runTest {
+        link()
+        browserTurnsLikesOn()
+        run()
+        val shown = engine.status.value.question!!
+        web.post(MirrorOp.Like(song("D"), true, web.at()))
+        run() // a background run saves a newer question meanwhile
+        assertThat(engine.status.value.question!!.there).isEqualTo(3)
+        engine.answer(FirstMergeChoice.MINE, shown) // what the listener saw: 2 there
+        assertThat(likeOps(me).none { !it.on }).isTrue()
+        assertThat(engine.status.value.question!!.changedSinceAnswer).isTrue()
+    }
+
+    @Test fun `R-N5 - a repeat the phone removed is not put back`() = runTest {
+        link()
+        val id = webPlaylist("m_WebPlaylist00007", listOf("A", "B", "A"))
+        assertThat(lib.playlists.getValue(id).items.map { it.title }).containsExactly("A", "B").inOrder()
+        lib.playlists.getValue(id).items = listOf(song("B"))
+        run()
+        assertThat(lastPl()!!.items!!.map { it.title }).containsExactly("B")
+    }
+
+    @Test fun `R-N6 - an Everywhere recorded but never carried out (a crash before the delete) goes stale`() = runTest {
+        link()
+        val p = lib.addPlaylist("Run", listOf(song("R1")))
+        engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYLISTS to Dir.BOTH), add = listOf(p)))
+        engine.beforeDelete(p, everywhere = true) // and then the app died: the playlist was never deleted
+        clock += 3 * 60_000
+        server.serverNow += 3 * 60_000
+        run()
+        lib.playlists.remove(p) // later, removed by a path that asks nothing
+        run()
+        assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>().none { it.items == null }).isTrue()
     }
 
     @Test fun `N1 - a state file that can't be read back keeps the playlist mapping, so a rejoin doesn't copy the phone's playlists`() = runTest {

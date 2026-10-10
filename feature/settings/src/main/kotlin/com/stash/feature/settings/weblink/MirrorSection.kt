@@ -94,7 +94,7 @@ class MirrorViewModel @Inject constructor(
 
     fun setNewOnes(on: Boolean) = act { engine.configure(MirrorChange(newOnes = on)) }
 
-    fun answer(choice: FirstMergeChoice) = act { engine.answer(choice) }
+    fun answer(choice: FirstMergeChoice, shown: LikesQuestion) = act { engine.answer(choice, shown) }
 
     /** Unlikes held back because one run would remove many (review N7): send them, or keep the likes. */
     fun releaseRemovals(send: Boolean) = act { engine.releaseRemovals(send) }
@@ -217,7 +217,7 @@ fun MirrorSection(status: MirrorStatus, vm: MirrorViewModel) {
             onDismiss = { choosing = false },
         )
     }
-    status.question?.let { q -> FirstMergeDialog(q, onAnswer = vm::answer) }
+    status.question?.let { q -> FirstMergeDialog(q, onAnswer = { vm.answer(it, q) }) }
 }
 
 @Composable
@@ -324,6 +324,13 @@ private fun FirstMergeDialog(q: LikesQuestion, onAnswer: (FirstMergeChoice) -> U
         title = { Text("Your likes: ${q.there} on ${q.thereName}, ${q.here} here", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column {
+                if (q.changedSinceAnswer) {
+                    Text(
+                        "Your likes changed since you answered. Check the numbers again.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 @Composable
                 fun option(c: FirstMergeChoice, title: String, detail: String, red: Boolean = false) {
                     Row(Modifier.fillMaxWidth().clickable { choice = c; confirming = false }.padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {

@@ -146,6 +146,8 @@ data class LikesQuestion(
     val since: Long,
     /** Likes here only through Spotify / YouTube Music and not there: a "use the browser's" can't remove those. */
     val externalHere: Int = 0,
+    /** Asked again: the likes changed after the listener answered (R-N2). */
+    val changedSinceAnswer: Boolean = false,
 )
 
 @Serializable
@@ -164,7 +166,7 @@ data class LikesAnswer(
  * songs come before it; [after]: the held song right before it as this phone lists it (null: at the start).
  */
 @Serializable
-data class Ghost(val s: WireSong, val heldBefore: Int, val after: WireSong? = null)
+data class Ghost(val s: WireSong, val heldBefore: Int, val after: WireSong? = null, val heldOf: Int = 0)
 
 /** The first-merge answers: keep both, take the browsers' (`THEIRS`), or this phone's (`MINE`). */
 enum class FirstMergeChoice { COMBINE, THEIRS, MINE }

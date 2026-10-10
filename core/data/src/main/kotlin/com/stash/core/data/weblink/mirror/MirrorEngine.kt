@@ -178,8 +178,9 @@ class MirrorEngine internal constructor(
     suspend fun configure(change: MirrorChange): MirrorRun = attempt { c -> writeConfig(c, change) }
 
     /** The first-merge answer for likes. */
-    suspend fun answer(choice: FirstMergeChoice): MirrorRun = attempt { c ->
-        c.r.question?.let { q -> c.r.answer = LikesAnswer(q.since, choice, q.here, q.there, q.both) }
+    suspend fun answer(choice: FirstMergeChoice, shown: LikesQuestion? = null): MirrorRun = attempt { c ->
+        // Bound to the counts on the listener's screen, not to whatever question a background run saved since (R-N1).
+        (shown ?: c.r.question)?.let { q -> c.r.answer = LikesAnswer(q.since, choice, q.here, q.there, q.both) }
     }
 
     /** Hook for the change signal's digest (S6): read when a push reads the library. */
@@ -256,6 +257,12 @@ class MirrorEngine internal constructor(
         val r = c.r
         // Gone here with no recorded choice (an unfollow, a mix deleted from Home, a dialog shown before anything loaded): Only
         // here, decided before the pull applies anything, so a remote edit read in this run can't bring it back (R-S2).
+        // An Everywhere recorded but its playlist is still here long after: the delete never happened (a crash): forget it (R-N6).
+        val w = wall(c)
+        r.everywhere = r.everywhere.filter { (mid, at) ->
+            val m = r.map[mid]
+            m == null || w - at.wall < STALE_INTENT_MS || lib.playlist(m.localId) == null
+        }
         val gone = r.map.filter { (mid, m) -> mid in c.cfg.ids && mid !in r.everywhere && lib.playlist(m.localId) == null }.keys
         if (gone.isNotEmpty()) letGo(r, gone)
         val pending = r.letGo.filter { it in c.cfg.ids }
@@ -747,7 +754,7 @@ class MirrorEngine internal constructor(
             if (held.getOrElse(i) { false }) {
                 k++
             } else {
-                out += Ghost(s, k, heldNow.getOrNull(k - 1))
+                out += Ghost(s, k, heldNow.getOrNull(k - 1), heldOf = heldNow.count { SongKey.sameSong(it, s) })
             }
         }
         return out
@@ -761,7 +768,9 @@ class MirrorEngine internal constructor(
         if (ghosts.isNullOrEmpty()) return items
         val out = items.toMutableList()
         var cursor = 0
-        for ((_, group) in ghosts.groupBy { it.heldBefore }.toSortedMap()) {
+        // A ghost of a song the phone added or removed since (its count here moved) is the listener's edit: not put back (R-N5).
+        val live = ghosts.filter { g -> items.count { SongKey.sameSong(it, g.s) } == g.heldOf }
+        for ((_, group) in live.groupBy { it.heldBefore }.toSortedMap()) {
             val after = group.first().after
             if (after != null) {
                 val i = (cursor until out.size).firstOrNull { SongKey.sameSong(out[it], after) }
@@ -891,6 +900,7 @@ class MirrorEngine internal constructor(
         val n = FirstMerge.counts(here.map { it.s }, there)
         // An answer applies only while the counts the listener saw still hold; else ask again with the new ones (S11, sync-v1 §7.4).
         val answer = r.answer?.takeIf { it.since == kc.since && it.here == n.a && it.there == n.b && it.both == n.both }
+        val reasked = r.answer != null && answer == null && r.answer!!.since == kc.since
         if (r.answer != null && answer == null) r.answer = null
         val choice = when {
             there.isEmpty() || (n.onlyA == 0 && n.onlyB == 0) -> FirstMergeChoice.COMBINE
@@ -905,6 +915,7 @@ class MirrorEngine internal constructor(
                 oneWay = !kc.dir.phoneSends, here = n.a, there = n.b, both = n.both, combined = n.combined,
                 thereName = _status.value.otherName, since = kc.since,
                 externalHere = here.count { it.external && !thereIdx.has(it.s) },
+                changedSinceAnswer = reasked || (r.question?.changedSinceAnswer == true && r.question?.since == kc.since),
             )
             return
         }
@@ -913,7 +924,9 @@ class MirrorEngine internal constructor(
         when (choice) {
             FirstMergeChoice.COMBINE -> lib.setLikes(taken, emptyList(), at)
             FirstMergeChoice.THEIRS -> lib.setLikes(taken, here.filter { !thereIdx.has(it.s) }.map { it.s }, at)
-            FirstMergeChoice.MINE -> Unit // the library stays; the diff sends this phone's likes and an unlike for each extra there
+            // The library stays; the diff sends this phone's likes and an unlike for each extra there. Confirmed with red counts
+            // and a second tap: the mass-removal hold must not catch it (R-N3).
+            FirstMergeChoice.MINE -> r.allowRemovals = true
         }
         r.baseLikes = view.likes.map { BaseLike(it.s, it.on, it.at) }
         if (choice != FirstMergeChoice.MINE) settleUnheld(c, taken)
@@ -962,7 +975,7 @@ class MirrorEngine internal constructor(
             // One run that would remove a big part of the likes is held for the listener to confirm (N7).
             val offs = likeOps.count { !it.on }
             val onCount = r.baseLikes.count { it.on }
-            if (!r.allowRemovals && (offs > MASS_REMOVALS || (onCount >= 20 && offs * 4 > onCount))) {
+            if (!r.allowRemovals && (offs > MASS_REMOVALS || (offs >= MASS_REMOVALS_MIN && offs * 4 > onCount))) {
                 likeOps = likeOps.filter { it.on }
                 r.heldRemovals = offs
                 Log.w(TAG, "holding $offs unlikes for the listener to confirm")
@@ -1166,8 +1179,12 @@ class MirrorEngine internal constructor(
         const val FULL = "Your linked devices hold too much to mirror more."
         const val CANT_COMPACT = "Mirroring waits for your browser to catch up."
 
-        /** More unlikes than this in one run are held for the listener (N7). */
+        /** More unlikes than this in one run are held for the listener (N7); so are this many or more when over a quarter. */
         const val MASS_REMOVALS = 200
+        const val MASS_REMOVALS_MIN = 50
+
+        /** An Everywhere intent whose playlist is still here after this long is stale (a crash before the delete: R-N6). */
+        const val STALE_INTENT_MS = 2L * 60 * 1000
 
 
         private const val ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
