@@ -104,7 +104,7 @@ fun SettingsHubScreen(
             SettingsSearchItem(
                 title = "Library & Storage",
                 subtitle = "Storage location, backups, downloads",
-                keywords = listOf("storage", "backup", "export", "import", "download", "move library", "web", "browser"),
+                keywords = listOf("storage", "backup", "export", "import", "download", "move library", "web", "browser", "link", "pair"),
                 icon = Icons.Rounded.FolderOpen,
                 onSelect = onOpenLibraryStorage,
             ),

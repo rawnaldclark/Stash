@@ -28,8 +28,15 @@ truth = "1.4.4"
 robolectric = "4.13"
 androidxTestCore = "1.6.1"
 mockk = "1.13.13"
+camerax = "1.4.2"
+zxing = "3.5.3"
 
 [libraries]
+# Link Stash on the web: the QR scanner (CameraX + ZXing core, no Google Play services)
+camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 # Compose
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }

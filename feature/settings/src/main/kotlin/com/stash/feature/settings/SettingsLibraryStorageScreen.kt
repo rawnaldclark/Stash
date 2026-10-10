@@ -167,6 +167,8 @@ fun SettingsLibraryStorageScreen(
     onBack: () -> Unit,
     onNavigateToLibraryHealth: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Link Stash on the web (spec 2026-10-10 link-sync §2.1); null while the feature is switched off (release builds). */
+    onNavigateToWebLink: (() -> Unit)? = null,
     viewModel: SettingsViewModel = hiltViewModel(),
     webExport: WebLibraryExportViewModel = hiltViewModel(),
 ) {
@@ -315,16 +317,24 @@ fun SettingsLibraryStorageScreen(
 
         // -- Library Health ---------------------------------------------------
         SettingsSectionLabel("Library")
-        SettingsGroupCard(
-            rows = listOf(
-                {
-                    SettingsNavRow(
-                        title = "Library Health",
-                        onClick = onNavigateToLibraryHealth,
-                    )
-                },
-            ),
+        val libraryRows = mutableListOf<@Composable () -> Unit>(
+            {
+                SettingsNavRow(
+                    title = "Library Health",
+                    onClick = onNavigateToLibraryHealth,
+                )
+            },
         )
+        if (onNavigateToWebLink != null) {
+            libraryRows += {
+                SettingsNavRow(
+                    title = "Link Stash on the web",
+                    subtitle = "Pick up where you left off, mirror, send your library",
+                    onClick = onNavigateToWebLink,
+                )
+            }
+        }
+        SettingsGroupCard(rows = libraryRows)
 
         // -- Storage ----------------------------------------------------------
         SettingsSectionLabel("Storage")

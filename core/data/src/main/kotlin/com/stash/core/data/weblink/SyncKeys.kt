@@ -78,9 +78,26 @@ object SyncKeys {
         if (d.str("deviceId") != deviceId) bad("bad label")
         val pub = b64(d.str("pub") ?: bad("bad label"))
         if (!isPubBytes(pub)) bad("bad label")
-        val trimmed = name.trim()
+        val trimmed = cleanName(name)
         val cut = trimmed.substring(0, trimmed.offsetByCodePoints(0, minOf(MAX_LABEL, trimmed.codePointCount(0, trimmed.length))))
         return Label(cut.ifEmpty { if (type == "phone") "Phone" else "Browser" }, type, deviceId, pub)
+    }
+
+    /**
+     * A device name as shown on the confirm sheet and in the list: controls, bidi controls and zero-width characters become
+     * spaces (a name can't reorder or hide the words around it), whitespace runs one space, trimmed. The web's `cleanText`.
+     */
+    fun cleanName(name: String): String {
+        val sb = StringBuilder(name.length)
+        var i = 0
+        while (i < name.length) {
+            val c = name.codePointAt(i)
+            val unsafe = c in 0x00..0x1f || c in 0x7f..0x9f || c == 0x61c || c in 0x200b..0x200f ||
+                c in 0x2028..0x202e || c in 0x2060..0x2069 || c == 0xfeff
+            if (unsafe) sb.append(' ') else sb.appendCodePoint(c)
+            i += Character.charCount(c)
+        }
+        return sb.toString().replace(Regex("[\\s\u1680\u2000-\u200A\u202F\u205F\u3000]+"), " ").trim()
     }
 
     fun readLabel(text: String, deviceId: String): Label = readLabel(parseObject(text, "bad label"), deviceId)
