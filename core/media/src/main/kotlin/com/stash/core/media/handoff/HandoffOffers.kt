@@ -12,6 +12,7 @@ import com.stash.core.data.weblink.handoff.StashNow
 import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.weblink.HandoffTiming
+import com.stash.core.model.weblink.SongKey
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -42,7 +43,7 @@ data class HandoffOffer(
     val readAtElapsed: Long,
 ) {
     /**
-     * What a dismissal remembers: the device and *what* it offered (its queue and place), not when it said so. A browser
+     * What a dismissal remembers: the device and *what* it offered (its queue and song), not when it said so. A browser
      * republishes every minute while it plays, so a key with the server's stamp would bring a dismissed card back on the next
      * foreground (Phase 4 review S2). A new song or queue there is a new offer.
      */
@@ -57,8 +58,11 @@ data class HandoffOffer(
     }
 }
 
-/** A dismissal's key for [device]'s state [now]: `"<device>#<queueId>#<index>"` (local only, never on the wire). */
-fun dismissKey(device: String, now: StashNow): String = "$device#${now.queueId}#${now.index}"
+/**
+ * A dismissal's key for [device]'s state [now] (sync-v1 §4): `"<device>|<queueId>|<keyOf(song)>"`, kept on this phone only. It
+ * stays dismissed while that device plays on in the same song and queue; another song or queue from it is a new offer.
+ */
+fun dismissKey(device: String, now: StashNow): String = "$device|${now.queueId}|${now.song?.let(SongKey::keyOf).orEmpty()}"
 
 /** The offer rules (spec §2.5, §8.2; sync-v1 §4), pure. */
 object HandoffOfferPicker {
