@@ -13,6 +13,14 @@ import kotlinx.coroutines.flow.Flow
  * DAO for the [ListeningEventEntity] table. Kept small: the features that
  * consume listening history (Last.fm scrobbler, Stash Mixes generator)
  * do their own joins against `tracks` in their own queries.
+ *
+ * **Plays from another device** (`origin_device` set: a Stash on the web
+ * library file or send, later the mirror; link-sync spec §7.2) show in History
+ * and a later export, nothing else: every query here that feeds mixes,
+ * recommendations, play statistics, auto-save or a scrobble destination has
+ * `origin_device IS NULL`, and they are written with [insert], never
+ * [recordCompletedListen]. A query added later that ranks taste or submits
+ * listens needs the same filter (`RemotePlaysDaoTest` is the checklist).
  */
 @Dao
 interface ListeningEventDao {
@@ -45,16 +53,16 @@ interface ListeningEventDao {
         UPDATE tracks
         SET play_count = (
                 SELECT COUNT(*) FROM listening_events
-                WHERE track_id = tracks.id
+                WHERE track_id = tracks.id AND origin_device IS NULL
             ),
             last_played = (
                 SELECT MAX(COALESCE(completed_at, started_at)) FROM listening_events
-                WHERE track_id = tracks.id
+                WHERE track_id = tracks.id AND origin_device IS NULL
             )
         WHERE play_count = 0
           AND EXISTS (
               SELECT 1 FROM listening_events
-              WHERE track_id = tracks.id
+              WHERE track_id = tracks.id AND origin_device IS NULL
           )
         """
     )
@@ -76,7 +84,7 @@ interface ListeningEventDao {
     @Query(
         """
         SELECT * FROM listening_events
-        WHERE scrobbled = 0
+        WHERE scrobbled = 0 AND origin_device IS NULL
         ORDER BY started_at ASC
         LIMIT :limit
         """
@@ -84,7 +92,7 @@ interface ListeningEventDao {
     suspend fun pendingScrobbles(limit: Int = 100): List<ListeningEventEntity>
 
     /** Count of unscrobbled events. Useful for Settings UI ("12 pending"). */
-    @Query("SELECT COUNT(*) FROM listening_events WHERE scrobbled = 0")
+    @Query("SELECT COUNT(*) FROM listening_events WHERE scrobbled = 0 AND origin_device IS NULL")
     fun pendingScrobbleCount(): Flow<Int>
 
     /**
@@ -96,7 +104,7 @@ interface ListeningEventDao {
     @Query(
         """
         SELECT * FROM listening_events
-        WHERE yt_scrobbled = 0
+        WHERE yt_scrobbled = 0 AND origin_device IS NULL
         ORDER BY started_at ASC
         LIMIT :limit
         """
@@ -134,6 +142,7 @@ interface ListeningEventDao {
         WHERE track_id = :trackId
           AND completed_at IS NOT NULL
           AND completed_at > :sinceMs
+          AND origin_device IS NULL
         """
     )
     suspend fun distinctDaysCompletedFor(trackId: Long, sinceMs: Long): Int
@@ -144,7 +153,7 @@ interface ListeningEventDao {
      * trigger pattern as LastFmScrobbler's `pendingScrobbleCount()`
      * Flow. Returns null if no completion ever recorded.
      */
-    @Query("SELECT MAX(completed_at) FROM listening_events WHERE completed_at IS NOT NULL")
+    @Query("SELECT MAX(completed_at) FROM listening_events WHERE completed_at IS NOT NULL AND origin_device IS NULL")
     fun observeMostRecentCompletion(): Flow<Long?>
 
     /**
@@ -156,13 +165,13 @@ interface ListeningEventDao {
      */
     @Query("""
         SELECT * FROM listening_events
-        WHERE completed_at = :completedAtMs
+        WHERE completed_at = :completedAtMs AND origin_device IS NULL
         ORDER BY id DESC LIMIT 1
     """)
     suspend fun findByCompletedAt(completedAtMs: Long): ListeningEventEntity?
 
     /** Count of unscrobbled-to-YT events. Drives the Settings health badge. */
-    @Query("SELECT COUNT(*) FROM listening_events WHERE yt_scrobbled = 0")
+    @Query("SELECT COUNT(*) FROM listening_events WHERE yt_scrobbled = 0 AND origin_device IS NULL")
     fun pendingYtScrobbleCount(): Flow<Int>
 
     /**
@@ -174,7 +183,7 @@ interface ListeningEventDao {
         """
         SELECT track_id AS trackId, COUNT(*) AS plays
         FROM listening_events
-        WHERE started_at >= :sinceEpochMs
+        WHERE started_at >= :sinceEpochMs AND origin_device IS NULL
         GROUP BY track_id
         ORDER BY plays DESC
         LIMIT :limit
@@ -196,7 +205,7 @@ interface ListeningEventDao {
         """
         SELECT track_id AS trackId, COUNT(*) AS plays
         FROM listening_events
-        WHERE started_at >= :sinceEpochMs
+        WHERE started_at >= :sinceEpochMs AND origin_device IS NULL
         GROUP BY track_id
         """
     )
@@ -227,7 +236,7 @@ interface ListeningEventDao {
         """
         SELECT track_id AS trackId, COUNT(*) AS plays, MAX(started_at) AS latestPlayedAt
         FROM listening_events
-        WHERE started_at >= :sinceEpochMs
+        WHERE started_at >= :sinceEpochMs AND origin_device IS NULL
         GROUP BY track_id
         """
     )
@@ -239,7 +248,7 @@ interface ListeningEventDao {
                COUNT(*) AS total,
                SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed
         FROM listening_events
-        WHERE track_id IN (:trackIds) AND started_at >= :sinceMs
+        WHERE track_id IN (:trackIds) AND started_at >= :sinceMs AND origin_device IS NULL
         GROUP BY track_id
         """
     )
@@ -262,7 +271,7 @@ interface ListeningEventDao {
     @Query(
         """
         SELECT DISTINCT track_id FROM listening_events
-        WHERE started_at >= :sinceEpochMs
+        WHERE started_at >= :sinceEpochMs AND origin_device IS NULL
         """
     )
     suspend fun getTrackIdsPlayedSince(sinceEpochMs: Long): List<Long>
@@ -277,7 +286,7 @@ interface ListeningEventDao {
         SELECT t.artist AS artist, COUNT(*) AS plays
         FROM listening_events le
         INNER JOIN tracks t ON t.id = le.track_id
-        WHERE le.started_at >= :sinceEpochMs
+        WHERE le.started_at >= :sinceEpochMs AND le.origin_device IS NULL
         GROUP BY LOWER(t.artist)
         ORDER BY plays DESC
         LIMIT :limit
@@ -289,7 +298,7 @@ interface ListeningEventDao {
      * Which of [trackIds] the user has ever played. Lets the mix
      * survivor rotation serve unheard discoveries before repeats.
      */
-    @Query("SELECT DISTINCT track_id FROM listening_events WHERE track_id IN (:trackIds)")
+    @Query("SELECT DISTINCT track_id FROM listening_events WHERE track_id IN (:trackIds) AND origin_device IS NULL")
     suspend fun getPlayedTrackIdsAmongRaw(trackIds: List<Long>): List<Long>
 
     /**
@@ -315,7 +324,7 @@ interface ListeningEventDao {
         SELECT t.artist AS artist, t.title AS title
         FROM listening_events e
         INNER JOIN tracks t ON t.id = e.track_id
-        WHERE e.started_at >= :sinceEpochMs
+        WHERE e.started_at >= :sinceEpochMs AND e.origin_device IS NULL
         GROUP BY e.track_id
         ORDER BY COUNT(*) DESC
         LIMIT :limit
