@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.ByteArrayOutputStream
@@ -288,5 +289,13 @@ class SyncCryptoTest {
         val pub = good.copyOf().also { it[64] = (it[64].toInt() xor 1).toByte() }
         assertThrows(SyncCryptoException::class.java) { SyncCrypto.publicKey(pub) }
         assertThrows(SyncCryptoException::class.java) { SyncCrypto.publicKey(ByteArray(64)) }
+    }
+
+    @Test fun `a send inflates to exactly 16,777,216 bytes, and not one more (sync-v1 5_5)`() {
+        val max = com.stash.core.data.weblink.inbox.WebLinkInbox.MAX_SEND_PLAIN
+        assertEquals(16_777_216, max)
+        assertEquals(max, SyncCrypto.gunzip(SyncCrypto.gzip(ByteArray(max)), max).size)
+        val e = org.junit.Assert.assertThrows(SyncCryptoException::class.java) { SyncCrypto.gunzip(SyncCrypto.gzip(ByteArray(max + 1)), max) }
+        assertEquals("too big", e.message)
     }
 }

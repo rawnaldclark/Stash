@@ -175,7 +175,7 @@ class MirrorEngine internal constructor(
 
     /** The first-merge answer for likes. */
     suspend fun answer(choice: FirstMergeChoice): MirrorRun = attempt { c ->
-        c.r.question?.let { q -> c.r.answer = LikesAnswer(q.since, choice, q.fingerprint) }
+        c.r.question?.let { q -> c.r.answer = LikesAnswer(q.since, choice, q.here, q.there, q.both) }
     }
 
     /** Hook for the change signal's digest (S6): read when a push reads the library. */
@@ -200,7 +200,11 @@ class MirrorEngine internal constructor(
             val r = guard(null) { records.load() } ?: return@withLock
             val mid = r.map.entries.firstOrNull { it.value.localId == localId }?.key ?: return@withLock
             if (everywhere) {
-                r.everywhere = r.everywhere + mid
+                // Stamped now: a delete chosen offline still beats an older edit elsewhere when it goes, and loses to a newer one.
+                val wall = clock() + ClockOffset.of(r.samples.map { ClockOffset.Sample(it.sent, it.received, it.serverTime) })
+                val stamp = Hlc.tick(r.last, wall, store.identity()?.deviceId ?: "d_00000000")
+                r.last = stamp
+                r.everywhere = r.everywhere + (mid to stamp)
             } else {
                 letGo(r, setOf(mid))
             }
@@ -555,7 +559,12 @@ class MirrorEngine internal constructor(
         r.logBytes += e.env.c.length
         if (batch != null && batch.device == e.device) {
             val w = wall(c)
-            val ops = batch.ops.filter { op -> op.stamp?.let { !Hlc.fromTheFuture(it, e.serverAt) } ?: true }
+            val ops = batch.ops.filter { op ->
+                when {
+                    op is MirrorOp.Play -> op.playedAt <= e.serverAt + Hlc.MAX_FUTURE_MS // a play from the future is skipped (N16)
+                    else -> op.stamp?.let { !Hlc.fromTheFuture(it, e.serverAt) } ?: true
+                }
+            }
             for (op in ops) op.stamp?.let { r.last = Hlc.recv(r.last, it, w, c.me) }
             val fromPhone = e.device == c.me
             r.view = MirrorView.applyBatch(r.view, e.device, e.seq, ops, fromPhone)
@@ -739,6 +748,11 @@ class MirrorEngine internal constructor(
     private suspend fun applyPl(c: Ctx, op: MirrorOp.Pl, hash: String) {
         val r = c.r
         if (op.id in r.letGo) return // let go here: the shared choice drops it on this run; nothing brings it back
+        r.everywhere[op.id]?.let { chosen ->
+            // Deleted here with "Everywhere", not sent yet: an older remote edit loses (the delete goes); a newer one wins.
+            if (op.at <= chosen) return
+            r.everywhere = r.everywhere - op.id
+        }
         val local = localVersion(c, op.id)
         val localHash = local?.let { SyncHashes.playlistHash(it.name, it.items, it.follow) }
         val base = r.basePlaylists[op.id]?.version()
@@ -844,9 +858,8 @@ class MirrorEngine internal constructor(
         val there = view.likes.filter { it.on }.map { it.s }
         val here = lib.likes()
         val n = FirstMerge.counts(here.map { it.s }, there)
-        val fingerprint = fingerprintOf(here.map { it.s }, there)
-        // An answer applies only to the songs the listener saw counted; if either side changed since, ask again (S11).
-        val answer = r.answer?.takeIf { it.since == kc.since && it.fingerprint == fingerprint }
+        // An answer applies only while the counts the listener saw still hold; else ask again with the new ones (S11, sync-v1 §7.4).
+        val answer = r.answer?.takeIf { it.since == kc.since && it.here == n.a && it.there == n.b && it.both == n.both }
         if (r.answer != null && answer == null) r.answer = null
         val choice = when {
             there.isEmpty() || (n.onlyA == 0 && n.onlyB == 0) -> FirstMergeChoice.COMBINE
@@ -860,7 +873,7 @@ class MirrorEngine internal constructor(
             r.question = LikesQuestion(
                 oneWay = !kc.dir.phoneSends, here = n.a, there = n.b, both = n.both, combined = n.combined,
                 thereName = _status.value.otherName, since = kc.since,
-                externalHere = here.count { it.external && !thereIdx.has(it.s) }, fingerprint = fingerprint,
+                externalHere = here.count { it.external && !thereIdx.has(it.s) },
             )
             return
         }
@@ -952,8 +965,9 @@ class MirrorEngine internal constructor(
                         // that asked nothing): Only here. It stays on the other devices (review B5, S5).
                         gone += mid
                     } else if (base != null && base.items != null && (cfg.playlists.dir.phoneSends || base.ro)) {
-                        ops += MirrorOp.Pl(mid, at, base.hash, base.name, null, null, base.ro)
-                        plBases[mid] = BasePl(base.name, null, null, base.ro, at, SyncHashes.playlistHash(base.name, null, null))
+                        val chosenAt = r.everywhere.getValue(mid)
+                        ops += MirrorOp.Pl(mid, chosenAt, base.hash, base.name, null, null, base.ro)
+                        plBases[mid] = BasePl(base.name, null, null, base.ro, chosenAt, SyncHashes.playlistHash(base.name, null, null))
                     }
                     continue
                 }
@@ -1118,11 +1132,6 @@ class MirrorEngine internal constructor(
         /** More unlikes than this in one run are held for the listener (N7). */
         const val MASS_REMOVALS = 200
 
-        /** Which sets of liked songs a first-merge question counted (S11): SHA-256 of the sorted identity keys of each side. */
-        fun fingerprintOf(here: List<SongIdentity>, there: List<SongIdentity>): String {
-            val text = here.map(SongKey::keyOf).sorted().joinToString("\n") + "\u0000" + there.map(SongKey::keyOf).sorted().joinToString("\n")
-            return com.stash.core.data.weblink.Base64Url.encode(SyncCrypto.sha256(text.toByteArray(Charsets.UTF_8)).copyOf(16))
-        }
 
         private const val ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 

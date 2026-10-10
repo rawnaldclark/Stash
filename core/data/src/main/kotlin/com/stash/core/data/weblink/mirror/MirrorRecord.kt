@@ -146,12 +146,17 @@ data class LikesQuestion(
     val since: Long,
     /** Likes here only through Spotify / YouTube Music and not there: a "use the browser's" can't remove those. */
     val externalHere: Int = 0,
-    /** Which sets of songs these counts are of: an answer applies only to the same sets (Phase 6 review S11). */
-    val fingerprint: String = "",
 )
 
 @Serializable
-data class LikesAnswer(val since: Long, val choice: FirstMergeChoice, val fingerprint: String = "")
+data class LikesAnswer(
+    val since: Long,
+    val choice: FirstMergeChoice,
+    /** The counts the listener answered (sync-v1 §7.4): the answer applies only while they still hold (review S11). */
+    val here: Int = -1,
+    val there: Int = -1,
+    val both: Int = -1,
+)
 
 /**
  * A song of a mirrored playlist this phone couldn't hold (no row for it, or a repeat the library keeps once): carried in every
@@ -214,8 +219,11 @@ data class MirrorRecord(
     var digest: String? = null,
     /** Per mirror id, the songs this phone couldn't hold, carried in every version it sends (B2). */
     var ghosts: Map<String, List<Ghost>> = emptyMap(),
-    /** Mirror ids deleted here with "Everywhere": the only way a delete here goes to every device (B5, S5). */
-    var everywhere: Set<String> = emptySet(),
+    /**
+     * Mirror ids deleted here with "Everywhere", with the stamp of that choice: the only way a delete here goes to every device
+     * (B5, S5). Kept until a batch carries it; a remote edit older than it loses, a newer one wins and drops it (sync-v1 §7.3).
+     */
+    var everywhere: Map<String, Hlc> = emptyMap(),
     /** Mirror ids let go here ("Only here", or deleted without a choice) that the shared settings still list: written by the next run (S2). */
     var letGo: Set<String> = emptySet(),
     /** Unlikes held back because one run would remove too many (N7); the listener sends or keeps them. */

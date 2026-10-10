@@ -28,6 +28,16 @@ class WebLibraryReaderTest {
         WebLibraryReader.checkShape("{\"a\":\"[[[[{{{{\"}", WebLibraryReader.Shape(2, 1, 10))
     }
 
+    @Test fun `the send shape's other edges - 32 deep passes, 33 doesn't, and 3,000,000 values pass, 3,000,001 don't`() {
+        val deep = { n: Int -> "[".repeat(n) + "]".repeat(n) }
+        WebLibraryReader.checkShape(deep(32), WebLibraryReader.SEND_SHAPE)
+        org.junit.Assert.assertThrows(WebLibraryReadException::class.java) { WebLibraryReader.checkShape(deep(33), WebLibraryReader.SEND_SHAPE) }
+        // Values: every { or [ plus every comma. One root array (1) and n - 1 numbers after commas.
+        val values = { n: Int -> buildString { append('['); append('1'); repeat(n - 1) { append(",1") }; append(']') } }
+        WebLibraryReader.checkShape(values(3_000_000), WebLibraryReader.SEND_SHAPE)
+        org.junit.Assert.assertThrows(WebLibraryReadException::class.java) { WebLibraryReader.checkShape(values(3_000_001), WebLibraryReader.SEND_SHAPE) }
+    }
+
     @Test fun `the app's own golden export reads back whole`() {
         val c = read(File("src/test/resources/weblibrary/golden-v1.json").readText())
         assertEquals(listOf("Halo", "Pink + White", "Nights"), c.likes.map { it.song.title })
