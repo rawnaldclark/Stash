@@ -26,4 +26,9 @@ abstract class DiagnosticsModule {
     @Binds
     @IntoSet
     abstract fun backgroundWorkDiagnostics(impl: BackgroundWorkDiagnosticsContributor): DiagnosticsContributor
+
+    /** The diagnostics bundle's "Link Stash on the web" section: linked, devices, mirror settings and last run (never ids or keys). */
+    @Binds
+    @IntoSet
+    abstract fun syncDiagnostics(impl: com.stash.core.data.weblink.SyncDiagnosticsContributor): DiagnosticsContributor
 }

@@ -200,6 +200,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var webLinkInbox: com.stash.core.data.weblink.inbox.WebLinkInbox
 
+    /** Link Stash on the web's mirror: runs after a library change in a kind that mirrors, on foreground, and every 6 h. */
+    @Inject
+    lateinit var mirrorSignal: com.stash.core.data.weblink.mirror.LibraryChangeSignal
+
     /**
      * The signed runtime relay list — the APK ships no relay hostname. Started
      * from [onCreate]: loads the cached config, then fetches and signature-checks
@@ -284,6 +288,7 @@ class StashApplication : Application(), Configuration.Provider {
         // up. Registered here (before the applicationScope.launch blocks)
         // so it's observing as early as possible; the first STARTED event
         // doesn't fire until after onCreate completes anyway.
+        mirrorSignal.start()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
@@ -304,6 +309,8 @@ class StashApplication : Application(), Configuration.Provider {
                     handoffOffers.onForeground()
                     // ...and did a linked browser send something here? (at most every 30 s; nothing in the background)
                     webLinkInbox.onForeground()
+                    // ...and is anything mirrored waiting to come in or go out? (at most once a minute, only while mirroring)
+                    mirrorSignal.onForeground()
                 }
 
                 override fun onStop(owner: LifecycleOwner) {

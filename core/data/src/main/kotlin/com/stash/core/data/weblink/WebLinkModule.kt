@@ -29,6 +29,8 @@ abstract class WebLinkModule {
 
     @Binds abstract fun bindMirrorStore(impl: com.stash.core.data.weblink.mirror.FileMirrorStore): com.stash.core.data.weblink.mirror.MirrorStore
 
+    @Binds abstract fun bindMirrorScheduler(impl: com.stash.core.data.weblink.mirror.WorkManagerMirrorScheduler): com.stash.core.data.weblink.mirror.MirrorScheduler
+
     @Binds abstract fun bindMirrorLibrary(impl: com.stash.core.data.weblink.mirror.RoomMirrorLibrary): com.stash.core.data.weblink.mirror.MirrorLibrary
 
     companion object {
