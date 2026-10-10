@@ -29,10 +29,10 @@ const SEND_MS = SEND_KEEP_DAYS * DAY_MS;
 
 const SCHEMA = [
     `CREATE TABLE IF NOT EXISTS meta (id INTEGER PRIMARY KEY CHECK (id = 1), spaceId TEXT NOT NULL, createdAt INTEGER NOT NULL,
-        epoch INTEGER NOT NULL, rotationDue INTEGER NOT NULL, bytesUsed INTEGER NOT NULL, writesToday INTEGER NOT NULL,
-        day INTEGER NOT NULL, head INTEGER NOT NULL, snapUpto INTEGER NOT NULL)`,
+        epoch INTEGER NOT NULL, rotationDue INTEGER NOT NULL, compactDue INTEGER NOT NULL, bytesUsed INTEGER NOT NULL,
+        head INTEGER NOT NULL, snapUpto INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, type TEXT NOT NULL, tokenHash TEXT NOT NULL, pub TEXT NOT NULL,
-        labelCt TEXT NOT NULL, addedAt INTEGER NOT NULL, lastSeenAt INTEGER NOT NULL)`,
+        labelCt TEXT NOT NULL, addedAt INTEGER NOT NULL, lastSeenAt INTEGER NOT NULL, writesToday INTEGER NOT NULL, day INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS envelopes (deviceId TEXT NOT NULL, epoch INTEGER NOT NULL, ct TEXT NOT NULL, PRIMARY KEY (deviceId, epoch))`,
     `CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY, deviceId TEXT NOT NULL, epoch INTEGER NOT NULL, serverAt INTEGER NOT NULL, body TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS snapshot (staged INTEGER NOT NULL, part INTEGER NOT NULL, count INTEGER NOT NULL, uptoSeq INTEGER NOT NULL,
@@ -42,11 +42,18 @@ const SCHEMA = [
         count INTEGER NOT NULL, epoch INTEGER NOT NULL, serverAt INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY (sendId, part))`,
 ];
 
-/** Operations that change the space; they count against the daily write cap. Everything else is a read. */
+/** Operations that change the space; they count against the caller's daily write cap. Everything else is a read. */
 const WRITES = new Set(["label", "removeDevice", "deleteSpace", "rotate", "logAppend", "snapshotPut", "configPut", "nowPut", "queuePut", "inboxPut", "inboxDelete", "join"]);
+/**
+ * The owner's safety actions and what they need: never refused by the daily caps, so a device that floods the space (a stolen
+ * laptop, a client in a loop) can't stop the others from seeing it, removing it, rotating the key or unlinking everything.
+ * They have their own per-device rate limit at the Worker (SAFE_RL).
+ */
+const EXEMPT = new Set(["get", "key", "removeDevice", "deleteSpace", "rotate"]);
 
-const gone = () => err(404, "gone", "This link no longer exists");
+/** A space that doesn't exist and a device that isn't in it get the same answer, so nobody learns which ids exist. */
 const revoked = () => err(401, "revoked", "This device is no longer linked");
+const gone = revoked;
 const epochErr = () => err(409, "epoch", "The key changed: fetch your key and try again");
 const notFound = (what = "Nothing here") => err(404, "not_found", what);
 const bad = (what) => err(400, "bad_request", what);
@@ -63,8 +70,11 @@ export class Space {
         this.tx = transaction ?? ((fn) => fn());
         this.now = now ?? (() => Date.now());
         this.claimPair = claimPair;
-        /** Reads per day are counted in memory: a flood keeps the object awake, which is when the count matters. */
-        this.reads = { day: -1, n: 0 };
+        /**
+         * Reads per device are counted in memory: a brake on floods (a flood keeps the object awake, which is when it matters),
+         * not an exact daily quota, since the count starts over when the object is evicted.
+         */
+        this.reads = new Map();
     }
 
     rows(q, ...b) {
@@ -92,25 +102,26 @@ export class Space {
         return this.tx(() => {
             if (this.meta()) return err(409, "exists", "This link id is taken");
             for (const q of SCHEMA) this.sql.exec(q);
-            this.sql.exec("INSERT INTO meta VALUES (1, ?, ?, 1, 0, 0, 1, ?, 0, 0)", spaceId, now, Math.floor(now / DAY_MS));
+            this.sql.exec("INSERT INTO meta VALUES (1, ?, ?, 1, 0, 0, 0, 0, 0)", spaceId, now);
             for (const d of [phone, browser]) this.insertDevice(d, now);
             return { status: 201, body: { spaceId, epoch: 1 } };
         });
     }
 
     insertDevice(d, now) {
-        this.sql.exec("INSERT INTO devices VALUES (?, ?, ?, ?, ?, ?, ?)", d.id, d.type, d.tokenHash, d.pub, JSON.stringify(d.labelCt), now, now);
+        this.sql.exec("INSERT INTO devices VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)", d.id, d.type, d.tokenHash, d.pub, JSON.stringify(d.labelCt), now, now);
     }
 
     // ---------------------------------------------------------------- the front door
 
     /**
-     * One authenticated request: `{ op, caller: { deviceId, tokenHash }, params, body, ifMatch }`.
-     * Checks the space, the device (constant-time), its idleness and the daily caps, then runs the operation.
+     * One authenticated request: `{ op, caller: { deviceId, tokenHash }, params, body, ifMatch, player }`.
+     * Checks the space, the device (constant-time), how it came (a browser only through the player), its idleness and its
+     * daily caps, then runs the operation.
      */
-    async call({ op, caller, params = {}, body, ifMatch }) {
+    async call({ op, caller, params = {}, body, ifMatch, player = false }) {
         const now = this.now();
-        const pre = this.tx(() => this.admit(op, caller, now));
+        const pre = this.tx(() => this.admit(op, caller, now, player));
         if (pre.status) return pre;
         const me = pre.device;
         if (op === "join") return this.join(me, body);
@@ -120,7 +131,7 @@ export class Space {
             switch (op) {
                 case "get": return this.info(m, me, now);
                 case "label": return this.setLabel(me, body);
-                case "removeDevice": return this.removeDeviceOp(m, me, params.did, now);
+                case "removeDevice": return this.removeDeviceOp(m, me, params.target, now);
                 case "deleteSpace": return { status: 204, body: null, deleteSpace: true };
                 case "key": return this.key(me, params.epoch);
                 case "rotate": return this.rotate(m, me, body, now);
@@ -144,24 +155,29 @@ export class Space {
     }
 
     /** `{ device }` when the caller may go on, else a ready error. */
-    admit(op, caller, now) {
+    admit(op, caller, now, player) {
         const m = this.meta();
         if (!m) return gone();
         const d = caller && this.one("SELECT * FROM devices WHERE id = ?", caller.deviceId);
         if (!d || !sameText(caller.tokenHash, d.tokenHash)) return revoked();
+        // A browser's token works only through the player, so it can't outlive the player's sign-in by calling here directly.
+        if (d.type === "web" && !player) return err(403, "forbidden", "Only through Stash on the web");
         if (now - d.lastSeenAt > IDLE_MS) {
             // Retention may not have run yet: an idle device is cut off exactly at 90 days (tombstones are only kept that long).
             return this.removeDevice(d.id) ? { ...revoked(), deleteSpace: true } : revoked();
         }
         const day = Math.floor(now / DAY_MS);
         const retryAfter = { "Retry-After": String(Math.ceil(((day + 1) * DAY_MS - now) / 1000)) };
+        // Per device, so one device can't use up the others' budget; the safety actions are counted but never refused.
+        const exempt = EXEMPT.has(op);
         if (WRITES.has(op)) {
-            const n = m.day === day ? m.writesToday : 0;
-            if (n >= LIMITS.writesPerDay) return err(429, "daily_limit", "This link made too many changes today", retryAfter);
-            this.sql.exec("UPDATE meta SET writesToday = ?, day = ? WHERE id = 1", n + 1, day);
+            const n = d.day === day ? d.writesToday : 0;
+            if (n >= LIMITS.writesPerDay && !exempt) return err(429, "daily_limit", "This device made too many changes today", retryAfter);
+            this.sql.exec("UPDATE devices SET writesToday = ?, day = ? WHERE id = ?", n + 1, day, d.id);
         } else {
-            if (this.reads.day !== day) this.reads = { day, n: 0 };
-            if (++this.reads.n > LIMITS.readsPerDay) return err(429, "daily_limit", "This link made too many requests today", retryAfter);
+            let r = this.reads.get(d.id);
+            if (!r || r.day !== day) this.reads.set(d.id, (r = { day, n: 0 }));
+            if (++r.n > LIMITS.readsPerDay && !exempt) return err(429, "daily_limit", "This device made too many requests today", retryAfter);
         }
         if (now - d.lastSeenAt >= SEEN_WRITE_MS) {
             this.sql.exec("UPDATE devices SET lastSeenAt = ? WHERE id = ?", now, d.id);
@@ -181,6 +197,7 @@ export class Space {
             me: me.id,
             epoch: m.epoch,
             rotationDue: m.rotationDue === 1,
+            compactDue: m.compactDue === 1,
             head: m.head,
             snapshot: s ? { uptoSeq: s.uptoSeq, parts: s.count, epoch: s.epoch } : null,
             devices,
@@ -219,26 +236,47 @@ export class Space {
     }
 
     /**
-     * Adds the other device of a completed pairing (§5.1 step 5). The caller is already a member; the slot is burned by
-     * the claim. The caps are checked before the claim (so a full space doesn't waste the code) and again after it.
+     * Adds the other device of a completed pairing (§5.1 step 5): `{ pairId, epoch, envelope? }`. `epoch` is the key epoch
+     * the sponsor handed the newcomer in the pairing message. If the space has rotated since, the sponsor must also send the
+     * newcomer's key envelope for the current epoch (sealed to its device key: the browser's is in the slot's label, the
+     * phone's in its answer); without one the answer is a retryable `409 epoch` with the current epoch, before the code is
+     * used. The caller is already a member; the slot is burned by the claim. The caps are checked before the claim (so a
+     * full space doesn't waste the code) and again after it. If the key changes while the code is being claimed, the device
+     * is still added and `rotationDue` is set, so the next rotation gives it the key.
      */
     async join(me, body) {
         const pairId = body?.pairId;
-        if (!isPairId(pairId)) return bad("Not a pairing");
-        const capped = this.tx(() => this.capFor(me.type === "phone" ? "web" : "phone"));
-        if (capped) return capped;
+        const given = body?.epoch;
+        if (!isPairId(pairId) || !Number.isSafeInteger(given) || given < 1) return bad("Need pairId and epoch");
+        let envelope = null;
+        if (body.envelope !== undefined) {
+            envelope = cleanBox(body.envelope, LIMITS.keyChars, { pub: true });
+            if (!envelope) return bad("Not a key envelope");
+        }
+        const pre = this.tx(() => {
+            const m = this.meta();
+            if (!m) return gone();
+            if (given !== m.epoch && envelope?.e !== m.epoch) {
+                return { status: 409, body: { error: { code: "epoch", message: "The key changed: send the new device its key" }, epoch: m.epoch } };
+            }
+            return this.capFor(me.type === "phone" ? "web" : "phone");
+        });
+        if (pre) return pre;
         if (!this.claimPair) return err(503, "unavailable", "Pairing is not available");
         const r = await this.claimPair(pairId, { deviceId: me.id, tokenHash: me.tokenHash }, "join");
         if (r.status !== 200) return r;
         const add = r.body.add;
         return this.tx(() => {
-            if (!this.meta()) return gone();
+            const m = this.meta();
+            if (!m) return gone();
             if (!this.one("SELECT id FROM devices WHERE id = ?", me.id)) return revoked();
             if (this.one("SELECT id FROM devices WHERE id = ?", add.id)) return err(409, "member", "That device is already linked");
             const full = this.capFor(add.type);
             if (full) return full;
             this.insertDevice(add, this.now());
-            return { status: 201, body: { device: add.id, type: add.type } };
+            if (envelope && envelope.e === m.epoch) this.sql.exec("INSERT OR REPLACE INTO envelopes VALUES (?, ?, ?)", add.id, m.epoch, JSON.stringify(envelope));
+            else if (given !== m.epoch) this.sql.exec("UPDATE meta SET rotationDue = 1 WHERE id = 1"); // rotated during the claim
+            return { status: 201, body: { device: add.id, type: add.type, epoch: m.epoch } };
         });
     }
 
@@ -259,9 +297,13 @@ export class Space {
     /**
      * Key rotation (§5.2): `{ epoch: current + 1, envelopes: { deviceId: box } for every device, labels?, config?, snapshot? }`.
      * The old envelopes, the `now`/`queue` slots and the sends go at once; the config comes re-encrypted in the same call.
-     * The log and snapshot under the old key stay until a snapshot under the new key is complete: inline here when it fits
-     * in one request (`snapshot: { uptoSeq: head, parts: [env…] }`), else through the usual snapshot upload right after.
-     * Remaining devices still hold the old key, so they can read what is left meanwhile; a removed device can't (no token).
+     * A device set that changed since the rotator read it (a join, a removal, the idle sweep) is a retryable
+     * `409 devices_changed` carrying the current devices and epoch.
+     * The log and snapshot under the old key are replaced by a snapshot under the new key: inline here when it fits in one
+     * request (`snapshot: { uptoSeq: head, parts: [env…] }`). Otherwise `compactDue` is set: new batches are refused
+     * (`409 compact`) until any device uploads a snapshot of the whole log under the new key (the usual chunked upload,
+     * `uptoSeq = head`), which deletes the old-key log and snapshot. Remaining devices still hold the old key, so they can
+     * read what is left meanwhile; a removed device can't (no token). A space nobody opens again expires after 90 days.
      */
     rotate(m, me, body, now) {
         const epoch = body?.epoch;
@@ -270,7 +312,10 @@ export class Space {
         const ids = this.rows("SELECT id FROM devices").map((d) => d.id);
         const env = body.envelopes;
         if (!env || typeof env !== "object" || Array.isArray(env)) return bad("No envelopes");
-        if (Object.keys(env).length !== ids.length || !ids.every((id) => Object.hasOwn(env, id))) return bad("One envelope per device, no more");
+        if (Object.keys(env).length !== ids.length || !ids.every((id) => Object.hasOwn(env, id))) {
+            const devices = this.rows("SELECT id, type, pub FROM devices ORDER BY addedAt, id");
+            return { status: 409, body: { error: { code: "devices_changed", message: "The devices changed: seal the key for these and try again" }, epoch: m.epoch, devices } };
+        }
         const envelopes = ids.map((id) => [id, cleanBox(env[id], LIMITS.keyChars, { pub: true })]);
         if (envelopes.some(([, b]) => !b || b.e !== epoch)) return bad("Not a key envelope for the new epoch");
         let labels = [];
@@ -294,7 +339,8 @@ export class Space {
             snapshot = { uptoSeq: s.uptoSeq, parts };
         }
 
-        this.sql.exec("UPDATE meta SET epoch = ?, rotationDue = 0 WHERE id = 1", epoch);
+        const oldData = m.head > m.snapUpto || !!this.one("SELECT part FROM snapshot WHERE staged = 0 LIMIT 1");
+        this.sql.exec("UPDATE meta SET epoch = ?, rotationDue = 0, compactDue = ? WHERE id = 1", epoch, snapshot || !oldData ? 0 : 1);
         this.sql.exec("DELETE FROM envelopes");
         for (const [id, b] of envelopes) this.sql.exec("INSERT INTO envelopes VALUES (?, ?, ?)", id, epoch, JSON.stringify(b));
         for (const [id, b] of labels) this.sql.exec("UPDATE devices SET labelCt = ? WHERE id = ?", JSON.stringify(b), id);
@@ -339,6 +385,7 @@ export class Space {
         const env = cleanEnv(body?.env, LIMITS.blobChars);
         if (!env) return bad("Not an envelope");
         if (env.e !== m.epoch) return epochErr();
+        if (m.compactDue) return err(409, "compact", "The key changed: upload a snapshot under the new key first");
         if (m.head - m.snapUpto >= LIMITS.logBatches) return err(409, "compact", "The log is full: compact it first");
         const text = JSON.stringify(env);
         if (m.bytesUsed + text.length > LIMITS.spaceBytes) return spaceFull();
@@ -362,6 +409,7 @@ export class Space {
         if (env.e !== m.epoch) return epochErr();
         if (upto > m.head) return bad("Past the end of the log");
         if (upto < m.snapUpto) return err(409, "stale", "A newer snapshot exists");
+        if (m.compactDue && upto !== m.head) return err(409, "stale", "After a key change the snapshot must cover the whole log");
         this.sql.exec("DELETE FROM snapshot WHERE staged = 1 AND (uptoSeq <> ? OR count <> ? OR epoch <> ?)", upto, count, env.e);
         this.sql.exec("INSERT OR REPLACE INTO snapshot VALUES (1, ?, ?, ?, ?, ?, ?)", part, count, upto, env.e, now, JSON.stringify(env));
         const have = this.one("SELECT COUNT(*) AS n FROM snapshot WHERE staged = 1").n;
@@ -369,7 +417,7 @@ export class Space {
         this.sql.exec("DELETE FROM snapshot WHERE staged = 0");
         this.sql.exec("UPDATE snapshot SET staged = 0 WHERE staged = 1");
         this.sql.exec("DELETE FROM log WHERE seq <= ?", upto);
-        this.sql.exec("UPDATE meta SET snapUpto = ? WHERE id = 1", upto);
+        this.sql.exec("UPDATE meta SET snapUpto = ?, compactDue = 0 WHERE id = 1", upto);
         this.recount();
         return ok({ complete: true });
     }

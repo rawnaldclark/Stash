@@ -1,13 +1,15 @@
 /**
  * Just enough of the Durable Object runtime for the tests: SQLite storage (node:sqlite behind the `sql.exec` cursor API),
  * the key-value API, transactionSync, the alarm, namespaces whose RPC results are structured-cloned like the real ones,
- * and ratelimits bindings. Plus devices, boxes and envelopes shaped like the clients' (random bytes stand in for ciphertext).
+ * and ratelimits bindings. The fake storage is synchronous and one object runs one call at a time only because the tests await
+ * each call: the tests prove the rules (one answer, one claim, caps re-checked after an await), not the runtime's input gates. Plus devices, boxes and envelopes shaped like the clients' (random bytes stand in for ciphertext).
  */
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, webcrypto } from "node:crypto";
 import { base64url, tokenHashOf } from "../src/http.js";
 import { SyncSpace } from "../src/sync-space.js";
 import { PairSlot } from "../src/pair-slot.js";
+import { Quota } from "../src/quota.js";
 import worker from "../src/index.js";
 
 export function sqlStorage() {
@@ -110,7 +112,8 @@ export function world({ t = 1_760_000_000_000, limits = {} } = {}) {
     env.PAIRS = namespace((ctx) => new PairSlot(ctx, env, { now, sleep }));
     env.SPACES = namespace((ctx) => new SyncSpace(ctx, env, { now }));
     env.PAIR_RL = limiter(limits.pair ?? 1000);
-    env.PAIR_OPEN_RL = limiter(limits.open ?? 1000);
+    env.QUOTAS = namespace((ctx) => new Quota(ctx, env, { now }));
+    env.SAFE_RL = limiter(limits.safe ?? 1000);
     env.API_RL = limiter(limits.api ?? 100_000);
     const fire = () => { for (const tm of timers.splice(0)) tm.fire(); };
     return { clock, env, timers, fire, fetch: (req) => worker.fetch(req, env, {}) };

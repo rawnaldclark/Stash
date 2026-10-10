@@ -1,10 +1,10 @@
 /** Pairing steps shared by the tests: a code opened through the player, a phone's answer, a whole first link. */
 import assert from "node:assert/strict";
-import { webcrypto } from "node:crypto";
-import { base64url } from "../src/http.js";
+import { randomBytes } from "node:crypto";
 import { box, makeDevice, record, req } from "./fakes.js";
 
-export const spaceIdNew = () => base64url(webcrypto.getRandomValues(new Uint8Array(16)));
+/** A space id as a phone mints it (sync-v1): `s_` + 16 random bytes, base64url. */
+export const newSpaceId = () => `s_${randomBytes(16).toString("base64url")}`;
 
 /** Opens a code in the browser (through the player), and returns its id. */
 export async function openCode(w, browser, headers = { "X-Stash-Session": "sess_abcdef12" }) {
@@ -17,16 +17,32 @@ export async function openCode(w, browser, headers = { "X-Stash-Session": "sess_
 
 export const answerBody = (phone) => ({ phonePub: phone.pub, ct: box(), device: record(phone) });
 
-/** The whole first link (§5.1, neither device has a space): browser code, phone answer, browser poll, phone creates. */
-export async function linkNew(w) {
+/** What the phone reads before answering: the label and the browser's id and key. */
+export async function readLabel(w, pairId) {
+    const res = await w.fetch(req("GET", `/v1/pair/${pairId}/label`));
+    assert.equal(res.status, 200);
+    return res.json();
+}
+
+/** The whole first link (§5.1, neither device has a space): browser code, phone answer, phone creates the space. */
+export async function linkNew(w, { headers } = {}) {
     const phone = await makeDevice("p");
     const browser = await makeDevice("w");
-    const { pairId } = await openCode(w, browser);
+    const { pairId } = await openCode(w, browser, headers);
+    await readLabel(w, pairId);
+    const spaceId = newSpaceId();
     assert.equal((await w.fetch(req("POST", `/v1/pair/${pairId}/answer`, { body: answerBody(phone) }))).status, 201);
-    const spaceId = spaceIdNew();
     const created = await w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, spaceId } }));
     assert.equal(created.status, 201);
     assert.deepEqual(await created.json(), { spaceId, epoch: 1 });
     return { phone, browser, spaceId, pairId };
 }
 
+/** A second device joins through a new code: `sponsor` is already a member, `epoch` is the key epoch it hands over. */
+export async function joinBrowser(w, spaceId, sponsor, { epoch = 1, envelope } = {}) {
+    const b = await makeDevice("w");
+    const { pairId } = await openCode(w, b);
+    await w.fetch(req("POST", `/v1/pair/${pairId}/answer`, { body: answerBody(sponsor) }));
+    const res = await w.fetch(req("POST", `/v1/spaces/${spaceId}/devices`, { device: sponsor, body: { pairId, epoch, ...(envelope ? { envelope } : {}) } }));
+    return { device: b, pairId, res };
+}

@@ -21,9 +21,15 @@ class_name = "SyncSpace"
 name = "PAIRS"
 class_name = "PairSlot"
 
+# What a ratelimits binding can't count (its longest period is 60 s): pairing codes per session per 10 minutes, new spaces
+# per session and per phone IP per day. One small object per session or IP, deleted a day after its last use.
+[[durable_objects.bindings]]
+name = "QUOTAS"
+class_name = "Quota"
+
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["SyncSpace", "PairSlot"]
+new_sqlite_classes = ["SyncSpace", "PairSlot", "Quota"]
 
 # Rate limits per client (spec §6.4). A ratelimits binding carries ONE fixed limit and a period of 10 or 60 s.
 # namespace_id must be unique in the account: 1001 (lossless relay), 2001–2009 (share), 2020–2021 (mailer) are taken.
@@ -34,12 +40,12 @@ name = "PAIR_RL"
 namespace_id = "2030"
 simple = { limit = 10, period = 60 }
 
-# Opening a pairing code, per player session (X-Stash-Session). The spec's "6 per session per 10 min" can't be a
-# binding (60 s is the longest period), so it is 3 a minute: a code renews every 3 minutes while shown.
+# The owner's safety actions (remove a device, unlink everything, rotate the key), per device. The daily caps never refuse
+# them (so a flooding device can't block its own removal); this keeps them from being a flood of their own.
 [[ratelimits]]
-name = "PAIR_OPEN_RL"
+name = "SAFE_RL"
 namespace_id = "2031"
-simple = { limit = 3, period = 60 }
+simple = { limit = 10, period = 60 }
 
 # Every space call and the browser's pairing calls, per IP (the player forwards the browser's IP).
 [[ratelimits]]

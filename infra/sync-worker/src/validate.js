@@ -11,6 +11,15 @@ const B64URL = /^[A-Za-z0-9_-]+$/;
 export const isDeviceId = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(v);
 export const isSendId = isDeviceId;
 export const isSpaceId = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{22,64}$/.test(v);
+/**
+ * A space id a phone may create (sync-v1: `s_` + 16 random bytes in strict base64url). Stricter than isSpaceId, which only
+ * routes: the server can't see the randomness, but it can insist on the full 128 bits.
+ */
+export function isNewSpaceId(v) {
+    if (typeof v !== "string" || !/^s_[A-Za-z0-9_-]{22}$/.test(v)) return false;
+    const b = fromBase64url(v.slice(2));
+    return !!b && b.length === 16 && /[AQgw]$/.test(v); // 22 characters carry 132 bits: the last 4 must be zero
+}
 export const isPairId = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{22}$/.test(v);
 /** The device token's server-side form (sync-v1): base64url(SHA-256(the token's 32 bytes)), 43 characters. */
 export const isTokenHash = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{43}$/.test(v);

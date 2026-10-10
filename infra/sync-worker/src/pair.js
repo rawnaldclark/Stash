@@ -23,18 +23,19 @@ const forbidden = () => err(403, "forbidden", "Not a device of this code");
 const alive = (s, now) => !!s && now < s.expiresAt + CLAIM_GRACE_MS;
 const is = (caller, rec) => !!caller && !!rec && caller.deviceId === rec.id && sameText(caller.tokenHash, rec.tokenHash);
 
-export function openSlot(pairId, device, now) {
+/** `session` is the player session's hash, for the per-session space quota. */
+export function openSlot(pairId, device, now, { session = null } = {}) {
     const browser = cleanDevice(device, "web");
     if (!browser) return err(400, "bad_request", "Not a device");
-    const state = { v: 1, pairId, browser, createdAt: now, expiresAt: now + PAIR_TTL_MS, answer: null, reply: null, claimed: false };
+    const state = { v: 1, pairId, browser, session, createdAt: now, expiresAt: now + PAIR_TTL_MS, answer: null, reply: null, claimed: false };
     return { status: 201, body: { pairId, expiresAt: state.expiresAt }, state };
 }
 
-/** The phone reads the browser's encrypted label for its confirm sheet. */
+/** The phone reads the browser's encrypted label for its confirm sheet, and its device id and key (to seal it a key envelope). */
 export function readLabel(s, now) {
     if (!s || now >= s.expiresAt) return expired();
     if (s.answer || s.claimed) return used();
-    return ok({ labelCt: s.browser.labelCt, expiresAt: s.expiresAt });
+    return ok({ labelCt: s.browser.labelCt, expiresAt: s.expiresAt, browser: { id: s.browser.id, pub: s.browser.pub } });
 }
 
 /** The phone's answer: `{ phonePub, ct, device: { id, tokenHash, pub, labelCt } }`. One per slot. */
@@ -58,14 +59,17 @@ export function pollSlot(s, caller, now) {
     return { status: 204, body: null };
 }
 
-/** The browser's reply when it holds the space and the phone has none (§5.1 step 4): `{ ct }`. One per slot. */
+/**
+ * The browser's reply when it holds the space and the phone has none (§5.1 step 4): `{ ct }`. One per slot. sync-v1 has the
+ * browser add the phone first (which claims the slot) and reply after, so a claimed slot still takes its one reply.
+ */
 export function replySlot(s, caller, body, now) {
     const ct = cleanBox(body?.ct, LIMITS.pairChars);
     if (!ct) return err(400, "bad_request", "Not a reply");
     if (!alive(s, now)) return expired();
     if (!is(caller, s.browser)) return forbidden();
     if (!s.answer) return err(409, "pending", "No answer yet");
-    if (s.reply || s.claimed) return used();
+    if (s.reply) return used();
     return { status: 201, body: null, state: { ...s, reply: { ct, at: now } } };
 }
 
@@ -79,7 +83,7 @@ export function readReply(s, caller, now) {
 
 /**
  * Burns the slot for the device that completes membership (§5.1 step 5).
- * `create`: the phone that answered makes a new space with both devices → `{ phone, browser }`.
+ * `create`: the phone that answered makes a new space with both devices → `{ phone, browser, session }`.
  * `join`: either device, already a member of a space, adds the other → `{ add }` (the browser's or the phone's record).
  */
 export function claimSlot(s, caller, mode, now) {
@@ -90,9 +94,15 @@ export function claimSlot(s, caller, mode, now) {
     let body;
     if (mode === "create") {
         if (!is(caller, phone)) return forbidden();
-        body = { phone, browser: s.browser };
+        body = { phone, browser: s.browser, session: s.session };
     } else if (is(caller, phone)) body = { add: s.browser };
     else if (is(caller, s.browser)) body = { add: phone };
     else return forbidden();
     return { status: 200, body, state: { ...s, claimed: true } };
+}
+
+/** Un-burns a slot whose space couldn't be made (quota, storage error), so the same code can be tried again. */
+export function releaseSlot(s, now) {
+    if (!alive(s, now) || !s.claimed) return { status: 204, body: null };
+    return { status: 204, body: null, state: { ...s, claimed: false } };
 }

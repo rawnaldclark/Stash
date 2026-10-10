@@ -18,7 +18,8 @@ async function setup() {
     const phone = await makeDevice("p");
     const browser = await makeDevice("w");
     assert.equal((await so.create({ spaceId: SPACE_ID, phone: dev(phone, "phone"), browser: dev(browser, "web") })).status, 201);
-    const call = (d, op, params = {}, body, ifMatch) => so.call({ op, caller: d.caller, params, body, ifMatch });
+    // Browsers come through the player (the Worker sets `player`); phones don't need it.
+    const call = (d, op, params = {}, body, ifMatch, player = true) => so.call({ op, caller: d.caller, params, body, ifMatch, player });
     const addBrowser = async () => {
         const b = await makeDevice("w");
         ctx.storage.transactionSync(() => so.space.insertDevice(dev(b, "web"), clock.t));
@@ -133,24 +134,67 @@ test("a space holds 32 MiB at most: 413 space_full (a send says to save a file i
     });
 });
 
-test("daily caps: 3,000 writes and 20,000 reads per space, reset the next UTC day", async () => {
-    const { clock, call, phone } = await setup();
-    await withLimit("writesPerDay", 4, async () => {
+test("daily caps per device: 3,000 writes and 20,000 reads, reset the next UTC day", async () => {
+    const { clock, call, phone, browser } = await setup();
+    await withLimit("writesPerDay", 3, async () => {
         await withLimit("readsPerDay", 3, async () => {
-            // create counted as the first write of the day
             for (let i = 0; i < 3; i++) assert.equal((await call(phone, "nowPut", {}, env1(16))).status, 200);
             const over = await call(phone, "nowPut", {}, env1(16));
             assert.equal(over.status, 429);
             assert.equal(code(over), "daily_limit");
             const next = Math.ceil((Math.floor(T0 / DAY) + 1) * DAY - T0) / 1000;
             assert.equal(over.headers["Retry-After"], String(Math.ceil(next)));
+            assert.equal((await call(browser, "nowPut", {}, env1(16))).status, 200, "another device has its own budget");
             for (let i = 0; i < 3; i++) assert.equal((await call(phone, "nowGet")).status, 200);
             assert.equal((await call(phone, "nowGet")).status, 429);
+            assert.equal((await call(browser, "nowGet")).status, 200);
             clock.t = (Math.floor(T0 / DAY) + 1) * DAY;
             assert.equal((await call(phone, "nowPut", {}, env1(16))).status, 200);
             assert.equal((await call(phone, "nowGet")).status, 200);
         });
     });
+});
+
+test("a stolen laptop that floods the space can't stop the phone from seeing it, removing it, rotating or unlinking", async () => {
+    const { call, phone, browser } = await setup();
+    await withLimit("writesPerDay", 50, async () => {
+        await withLimit("readsPerDay", 50, async () => {
+            // The laptop spends its whole budget, and the phone spends its own too (a busy day).
+            for (let i = 0; i < 50; i++) await call(browser, "nowPut", {}, env1(16));
+            for (let i = 0; i < 50; i++) await call(browser, "nowGet");
+            for (let i = 0; i < 50; i++) await call(phone, "nowPut", {}, env1(16));
+            for (let i = 0; i < 50; i++) await call(phone, "nowGet");
+            assert.equal((await call(browser, "nowPut", {}, env1(16))).status, 429);
+            assert.equal((await call(phone, "nowGet")).status, 429);
+            // The safety actions still go through.
+            const list = await call(phone, "get");
+            assert.equal(list.status, 200, "the device list the Remove screen needs");
+            assert.equal((await call(phone, "removeDevice", { target: browser.id })).status, 204);
+            assert.equal(code(await call(browser, "get")), "revoked", "cut off at once");
+            const r = await call(phone, "rotate", {}, { epoch: 2, envelopes: { [phone.id]: keyBox(2, phone) } });
+            assert.equal(r.status, 200);
+            assert.equal((await call(phone, "key", { epoch: 2 })).status, 200);
+            assert.equal((await call(phone, "deleteSpace")).status, 204);
+        });
+    });
+});
+
+test("a browser's token works only through the player; a phone's works directly", async () => {
+    const { call, phone, browser } = await setup();
+    const direct = await call(browser, "get", {}, undefined, undefined, false);
+    assert.equal(direct.status, 403);
+    assert.equal(code(direct), "forbidden");
+    assert.equal((await call(browser, "get")).status, 200);
+    assert.equal((await call(phone, "get", {}, undefined, undefined, false)).status, 200);
+});
+
+test("a token from one space opens nothing in another", async () => {
+    const a = await setup();
+    const b = await setup();
+    // setup() reuses one space id, so give b's objects another one: what matters is the storage, which is separate.
+    for (const d of [a.phone, a.browser]) assert.equal(code(await b.call(d, "get")), "revoked");
+    assert.equal(code(await b.call(a.phone, "removeDevice", { target: b.phone.id })), "revoked");
+    assert.equal((await b.call(b.phone, "get")).body.devices.length, 2);
 });
 
 test("handoff slots: every device's now, newest first, stamped by the server, gone after 7 days; queues by device", async () => {
@@ -225,8 +269,8 @@ test("removing a device cuts it off at once, clears its slots and sends, and ask
     await call(laptop, "nowPut", {}, env1(64));
     await call(laptop, "queuePut", {}, env1(64));
     await call(phone, "inboxPut", { to: laptop.id, sendId: "send_lap1", part: 0, count: 1 }, env1(64));
-    assert.equal((await call(phone, "removeDevice", { did: "d_unknown_1" })).status, 404);
-    assert.equal((await call(phone, "removeDevice", { did: laptop.id })).status, 204);
+    assert.equal((await call(phone, "removeDevice", { target: "d_unknown_1" })).status, 404);
+    assert.equal((await call(phone, "removeDevice", { target: laptop.id })).status, 204);
     for (const op of ["get", "nowGet", "inboxList"]) {
         const r = await call(laptop, op);
         assert.equal(r.status, 401, op);
@@ -244,19 +288,19 @@ test("removing a device cuts it off at once, clears its slots and sends, and ask
 test("the last device leaving, or unlink everything, deletes all storage and the alarm", async () => {
     const a = await setup();
     assert.ok(a.ctx.alarm);
-    assert.equal((await a.call(a.phone, "removeDevice", { did: "me" })).status, 204);
-    assert.equal((await a.call(a.browser, "removeDevice", { did: "me" })).status, 204);
+    assert.equal((await a.call(a.phone, "removeDevice", { target: "me" })).status, 204);
+    assert.equal((await a.call(a.browser, "removeDevice", { target: "me" })).status, 204);
     assert.deepEqual(a.ctx.sql.tables(), []);
     assert.equal(a.ctx.alarm, null);
-    assert.equal(code(await a.call(a.browser, "get")), "gone");
+    assert.equal(code(await a.call(a.browser, "get")), "revoked");
 
     const b = await setup();
     assert.equal((await b.call(b.browser, "deleteSpace")).status, 204);
     assert.deepEqual(b.ctx.sql.tables(), []);
     assert.equal(b.ctx.alarm, null);
     const r = await b.call(b.phone, "get");
-    assert.equal(r.status, 404);
-    assert.equal(code(r), "gone");
+    assert.equal(r.status, 401, "a deleted space answers like a removed device");
+    assert.equal(code(r), "revoked");
     assert.deepEqual(b.ctx.sql.tables(), [], "asking about a space that isn't there creates nothing");
 });
 
@@ -269,8 +313,8 @@ test("key rotation: epoch + 1, one envelope per device, config re-encrypted, old
     const envelopes = { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) };
 
     assert.equal(code(await call(phone, "rotate", {}, { epoch: 3, envelopes, config: box(3) })), "epoch");
-    assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes: { [phone.id]: keyBox(2, phone) }, config: box(2) })).status, 400, "every device needs one");
-    assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes: { ...envelopes, d_stranger1: keyBox(2, phone) }, config: box(2) })).status, 400, "and nobody else");
+    assert.equal(code(await call(phone, "rotate", {}, { epoch: 2, envelopes: { [phone.id]: keyBox(2, phone) }, config: box(2) })), "devices_changed", "every device needs one");
+    assert.equal(code(await call(phone, "rotate", {}, { epoch: 2, envelopes: { ...envelopes, d_stranger1: keyBox(2, phone) }, config: box(2) })), "devices_changed", "and nobody else");
     assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes })).status, 400, "the config must come along");
     assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes, config: box(1) })).status, 400, "under the new key");
     const labels = { [browser.id]: box(2) };
@@ -290,9 +334,10 @@ test("key rotation: epoch + 1, one envelope per device, config re-encrypted, old
     assert.equal(code(await call(phone, "logAppend", {}, env1(16))), "epoch");
     // The old log stays readable (for devices that still hold the old key) until a snapshot under the new key is complete.
     assert.equal((await call(browser, "logAfter", { seq: 0 })).body.entries.length, 3);
+    assert.equal(code(await call(phone, "logAppend", {}, { env: box(2, 16) })), "compact", "nothing new until the snapshot under the new key");
+    assert.deepEqual((await call(phone, "snapshotPut", { upto: 3, part: 0, count: 1 }, { env: box(2, 64) })).body, { complete: true });
+    assert.deepEqual((await call(browser, "logAfter", { seq: 3 })).body.entries, []);
     assert.equal((await call(phone, "logAppend", {}, { env: box(2, 16) })).status, 201);
-    assert.deepEqual((await call(phone, "snapshotPut", { upto: 4, part: 0, count: 1 }, { env: box(2, 64) })).body, { complete: true });
-    assert.deepEqual((await call(browser, "logAfter", { seq: 4 })).body.entries, []);
     assert.equal(code(await call(browser, "logAfter", { seq: 0 })), "snapshot");
 });
 
@@ -358,4 +403,91 @@ test("lastSeenAt is written at most hourly; the alarm comes back if lost", async
     ctx.alarm = null;
     await call(phone, "get");
     assert.equal(ctx.alarm, clock.t + RETENTION_EVERY_MS);
+});
+
+test("a rotation that can't carry the snapshot leaves compactDue: no new batches until a whole-log snapshot under the new key", async () => {
+    const { call, phone, browser } = await setup();
+    for (let i = 0; i < 3; i++) await call(phone, "logAppend", {}, env1(64));
+    const envelopes = { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) };
+    assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes })).status, 200);
+    let info = (await call(browser, "get")).body;
+    assert.equal(info.rotationDue, false);
+    assert.equal(info.compactDue, true, "any device can see the job isn't finished");
+    const refused = await call(browser, "logAppend", {}, { env: box(2, 32) });
+    assert.equal(refused.status, 409);
+    assert.equal(code(refused), "compact");
+    assert.equal(code(await call(browser, "snapshotPut", { upto: 2, part: 0, count: 1 }, { env: box(2, 32) })), "stale", "it must cover the whole log");
+    // The other device does it, in parts (the large-library path).
+    assert.deepEqual((await call(browser, "snapshotPut", { upto: 3, part: 0, count: 2 }, { env: box(2, 32) })).body, { complete: false });
+    assert.deepEqual((await call(browser, "snapshotPut", { upto: 3, part: 1, count: 2 }, { env: box(2, 32) })).body, { complete: true });
+    info = (await call(phone, "get")).body;
+    assert.equal(info.compactDue, false);
+    assert.deepEqual(info.snapshot, { uptoSeq: 3, parts: 2, epoch: 2 });
+    assert.equal(code(await call(phone, "logAfter", { seq: 0 })), "snapshot", "the old-key log is gone");
+    assert.equal((await call(phone, "logAppend", {}, { env: box(2, 32) })).status, 201);
+});
+
+test("a rotation of a space with nothing stored needs no snapshot", async () => {
+    const { call, phone, browser } = await setup();
+    const envelopes = { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) };
+    assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes })).status, 200);
+    assert.equal((await call(phone, "get")).body.compactDue, false);
+    assert.equal((await call(phone, "logAppend", {}, { env: box(2, 32) })).status, 201);
+});
+
+test("a rotation racing a device-list change gets a retryable 409 with the current devices", async () => {
+    const { call, phone, browser, addBrowser } = await setup();
+    const envelopes = { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) };
+    const laptop = await addBrowser(); // joined after the rotator read the list
+    const r = await call(phone, "rotate", {}, { epoch: 2, envelopes });
+    assert.equal(r.status, 409);
+    assert.equal(code(r), "devices_changed");
+    assert.equal(r.body.epoch, 1);
+    assert.deepEqual(r.body.devices.map((d) => d.id).sort(), [phone.id, browser.id, laptop.id].sort());
+    assert.ok(r.body.devices.every((d) => d.pub && d.type));
+    assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes: { ...envelopes, [laptop.id]: keyBox(2, laptop) } })).status, 200, "the retry");
+});
+
+test("join checks the epoch the newcomer was given: stale without its envelope is a retryable 409 before the code is used", async () => {
+    const clock = { t: T0 };
+    const ctx = fakeCtx();
+    const claims = [];
+    let beforeClaim = async () => {};
+    const laptop = await makeDevice("w");
+    const so = new SyncSpace(ctx, {}, { now: () => clock.t });
+    so.space.claimPair = async (pairId, caller, mode) => {
+        claims.push(pairId);
+        await beforeClaim();
+        return { status: 200, body: { add: { ...record(laptop), type: "web" } } };
+    };
+    const phone = await makeDevice("p");
+    const browser = await makeDevice("w");
+    await so.create({ spaceId: SPACE_ID, phone: dev(phone, "phone"), browser: dev(browser, "web") });
+    const call = (d, op, params = {}, body) => so.call({ op, caller: d.caller, params, body, player: true });
+    const pairId = "P".repeat(22);
+    assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes: { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) } })).status, 200);
+
+    assert.equal((await call(phone, "join", {}, { pairId })).status, 400, "epoch is required");
+    const stale = await call(phone, "join", {}, { pairId, epoch: 1 });
+    assert.equal(stale.status, 409);
+    assert.equal(code(stale), "epoch");
+    assert.equal(stale.body.epoch, 2);
+    assert.equal(claims.length, 0, "the code wasn't used");
+    // The retry carries the newcomer's envelope for the current epoch; the newcomer can open the key at once.
+    const env = keyBox(2, laptop);
+    const ok2 = await call(phone, "join", {}, { pairId, epoch: 1, envelope: env });
+    assert.deepEqual(ok2.body, { device: laptop.id, type: "web", epoch: 2 });
+    assert.deepEqual((await call(laptop, "key", { epoch: 2 })).body, { epoch: 2, ct: env });
+    assert.equal((await call(laptop, "get")).body.rotationDue, false);
+
+    // A rotation that lands while the code is being claimed: the device is added and the next rotation must include it.
+    await call(phone, "removeDevice", { target: laptop.id });
+    await call(phone, "rotate", {}, { epoch: 3, envelopes: { [phone.id]: keyBox(3, phone), [browser.id]: keyBox(3, browser) } });
+    beforeClaim = async () => {
+        await call(phone, "rotate", {}, { epoch: 4, envelopes: { [phone.id]: keyBox(4, phone), [browser.id]: keyBox(4, browser) } });
+    };
+    const raced = await call(phone, "join", {}, { pairId, epoch: 3 });
+    assert.equal(raced.status, 201);
+    assert.equal(raced.body.epoch, 4);
+    assert.equal((await call(phone, "get")).body.rotationDue, true);
 });

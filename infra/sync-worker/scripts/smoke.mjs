@@ -56,7 +56,7 @@ expect("phone reads the label", await call("GET", `/v1/pair/${pairId}/label`), 2
 expect("phone answers", await call("POST", `/v1/pair/${pairId}/answer`, { body: { phonePub: phone.pub, ct: box(), device: phone.record } }), 201);
 expect("a second answer", await call("POST", `/v1/pair/${pairId}/answer`, { body: { phonePub: phone.pub, ct: box(), device: phone.record } }), 409);
 expect("browser polls (player)", await call("GET", `/v1/pair/${pairId}`, { player: true, dev: browser }), 200);
-const spaceId = b64(randomBytes(16));
+const spaceId = `s_${b64(randomBytes(16))}`;
 expect("phone creates the space", await call("POST", "/v1/spaces", { dev: phone, body: { pairId, spaceId } }), 201);
 
 const s = (p = "") => `/v1/spaces/${spaceId}${p}`;

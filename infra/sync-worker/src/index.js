@@ -9,10 +9,11 @@
  * Every id is in the path, never in a query (the stashfm.app zone's cache ignores query strings); every answer is no-store.
  */
 import { answer, fail, limitKey, parseDeviceAuth, PLAYER_HEADER, randomId, rpc, sameSecret, tokenHashOf } from "./http.js";
-import { isDeviceId, isPairId, isSendId, isSpaceId, LIMITS, pathInt } from "./validate.js";
+import { cleanDevice, isDeviceId, isNewSpaceId, isPairId, isSendId, isSpaceId, LIMITS, pathInt } from "./validate.js";
 
 export { SyncSpace } from "./sync-space.js";
 export { PairSlot } from "./pair-slot.js";
+export { Quota } from "./quota.js";
 
 /** Only functions and classes may be exported from the main module (workerd refuses other values), so constants live in http.js. */
 
@@ -39,7 +40,7 @@ const SPACE_ROUTES = [
     ["", { GET: "get", DELETE: "deleteSpace" }],
     ["devices", { POST: "join" }],
     ["devices/me/label", { PUT: "label" }],
-    ["devices/:did", { DELETE: "removeDevice" }],
+    ["devices/:target", { DELETE: "removeDevice" }],
     ["key/:epoch", { GET: "key" }],
     ["rotate", { POST: "rotate" }],
     ["log", { POST: "logAppend" }],
@@ -57,7 +58,9 @@ const SPACE_ROUTES = [
 ].map(([p, methods]) => [p ? p.split("/") : [], methods]);
 
 const PARAMS = {
-    did: (s) => (s === "me" || isDeviceId(s) ? s : null),
+    /** Only removal takes `me`; a queue is always named by its device's id. */
+    target: (s) => (s === "me" || isDeviceId(s) ? s : null),
+    did: (s) => (isDeviceId(s) ? s : null),
     to: (s) => (isDeviceId(s) ? s : null),
     sendId: (s) => (isSendId(s) ? s : null),
     epoch: (s) => pathInt(s, 2 ** 31),
@@ -66,6 +69,9 @@ const PARAMS = {
     part: (s) => pathInt(s, LIMITS.parts - 1),
     count: (s) => pathInt(s, LIMITS.parts),
 };
+
+/** The owner's safety actions: never refused by the daily caps (src/space.js EXEMPT), so they get their own limit per device. */
+const SAFETY = new Set(["removeDevice", "deleteSpace", "rotate"]);
 
 const WITH_BODY = new Set(["join", "label", "rotate", "logAppend", "snapshotPut", "configPut", "nowPut", "queuePut", "inboxPut"]);
 
@@ -135,6 +141,12 @@ async function deviceCaller(request) {
 }
 const noAuth = () => fail(401, "unauthorized", "Sign the request with this device's token");
 
+/** A Quota object's take (src/quota.js): null when allowed, else the 429. */
+async function overQuota(env, name, kind) {
+    const q = await rpc(env.QUOTAS.get(env.QUOTAS.idFromName(name)), "take", { kind });
+    return q.ok ? null : fail(429, "rate_limited", "Too many new links, try again later", { "Retry-After": String(Math.max(1, q.retryAfter)) });
+}
+
 export async function handle(request, env, _ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -143,24 +155,29 @@ export async function handle(request, env, _ctx) {
 
     // Player requests: the forwarding header must be right when present (a wrong key is never treated as a phone).
     const keyHeader = request.headers.get(PLAYER_HEADER);
-    const player = keyHeader !== null && (await sameSecret(keyHeader, env.PLAYER_KEY));
+    // Both sides trimmed: headers arrive whitespace-trimmed, and a secret put from a file may end in a newline.
+    const player = keyHeader !== null && (await sameSecret(keyHeader.trim(), env.PLAYER_KEY?.trim()));
     if (keyHeader !== null && !player) return fail(403, "forbidden", "Not the player");
     const fwdIp = request.headers.get("X-Stash-Client-IP");
     const ip = limitKey(player && fwdIp && fwdIp.length <= 64 && /^[0-9A-Fa-f:.]+$/.test(fwdIp) ? fwdIp : request.headers.get("CF-Connecting-IP") || "?");
-    const playerOnly = () => (env.PLAYER_KEY ? fail(403, "forbidden", "Only through Stash on the web") : fail(503, "unavailable", "Pairing is not set up"));
+    const playerOnly = () => (env.PLAYER_KEY?.trim() ? fail(403, "forbidden", "Only through Stash on the web") : fail(503, "unavailable", "Pairing is not set up"));
 
     // ------------------------------------------------------------ pairing
     if (path === "/v1/pair") {
         if (method !== "POST") return methodNotAllowed("POST");
         if (!player) return playerOnly();
-        const session = request.headers.get("X-Stash-Session");
-        const sessionKey = session && /^[A-Za-z0-9_-]{8,64}$/.test(session) ? `s:${session}` : `ip:${ip}`;
-        const over = (await limited(env.PAIR_OPEN_RL, sessionKey)) ?? (await limited(env.API_RL, ip));
+        const header = request.headers.get("X-Stash-Session");
+        const session = header && /^[A-Za-z0-9_-]{8,64}$/.test(header) ? `s:${header}` : `ip:${ip}`;
+        const over = await limited(env.API_RL, ip);
         if (over) return over;
         const r = await readJson(request);
         if ("response" in r) return r.response;
+        if (!cleanDevice(r.value?.device, "web")) return fail(400, "bad_request", "Not a device");
+        // 6 codes per session per 10 minutes (spec §6.4), counted where a binding can't: a Quota object per session.
+        const quota = await overQuota(env, session, "code");
+        if (quota) return quota;
         const pairId = randomId();
-        return answer(await rpc(env.PAIRS.get(env.PAIRS.idFromName(pairId)), "open", { pairId, device: r.value?.device }));
+        return answer(await rpc(env.PAIRS.get(env.PAIRS.idFromName(pairId)), "open", { pairId, device: r.value?.device, session }));
     }
     let m = /^\/v1\/pair\/([^/]+)(?:\/(label|answer|reply))?$/.exec(path);
     if (m) {
@@ -197,11 +214,29 @@ export async function handle(request, env, _ctx) {
         const r = await readJson(request);
         if ("response" in r) return r.response;
         const { pairId, spaceId } = r.value ?? {};
-        if (!isPairId(pairId) || !isSpaceId(spaceId)) return fail(400, "bad_request", "Need pairId and spaceId");
-        // The phone that answered the slot creates the space; the claim burns the slot and hands over both devices.
-        const claim = await rpc(env.PAIRS.get(env.PAIRS.idFromName(pairId)), "claim", { caller, mode: "create" });
+        if (!isPairId(pairId) || !isNewSpaceId(spaceId)) return fail(400, "bad_request", "Need pairId and spaceId (s_ + 16 random bytes)");
+        // The phone that answered the slot creates the space under the id it minted (sync-v1: it seals that id into its answer);
+        // the claim hands over both devices and holds the code while the space is made. The code is burned only if that
+        // succeeds: a refusal (quota, a taken id) or an error releases it, so the same code can be tried again.
+        const slot = env.PAIRS.get(env.PAIRS.idFromName(pairId));
+        const claim = await rpc(slot, "claim", { caller, mode: "create" });
         if (claim.status !== 200) return answer(claim);
-        return answer(await rpc(env.SPACES.get(env.SPACES.idFromName(spaceId)), "create", { spaceId, phone: claim.body.phone, browser: claim.body.browser }));
+        const { phone, browser, session } = claim.body;
+        let made;
+        try {
+            // At most 10 new spaces a day from one player session's codes, and 20 from one phone IP.
+            const quota = (session ? await overQuota(env, session, "space") : null) ?? (await overQuota(env, `ip:${ip}`, "spaceIp"));
+            if (quota) {
+                await rpc(slot, "release");
+                return quota;
+            }
+            made = await rpc(env.SPACES.get(env.SPACES.idFromName(spaceId)), "create", { spaceId, phone, browser });
+        } catch (e) {
+            await rpc(slot, "release").catch(() => {});
+            throw e;
+        }
+        if (made.status !== 201) await rpc(slot, "release");
+        return answer(made);
     }
     m = /^\/v1\/spaces\/([^/]+)((?:\/[^/]+)*)$/.exec(path);
     if (m) {
@@ -216,6 +251,10 @@ export async function handle(request, env, _ctx) {
         if (over) return over;
         const caller = await deviceCaller(request);
         if (!caller) return noAuth();
+        if (SAFETY.has(route.op)) {
+            const safe = await limited(env.SAFE_RL, `d:${caller.deviceId}`);
+            if (safe) return safe;
+        }
         let body;
         if (WITH_BODY.has(route.op)) {
             const r = await readJson(request);
@@ -223,7 +262,7 @@ export async function handle(request, env, _ctx) {
             body = r.value;
         }
         const ifMatch = route.op === "configPut" ? request.headers.get("if-match") : undefined;
-        return answer(await rpc(env.SPACES.get(env.SPACES.idFromName(spaceId)), "call", { op: route.op, caller, params: route.params, body, ifMatch }));
+        return answer(await rpc(env.SPACES.get(env.SPACES.idFromName(spaceId)), "call", { op: route.op, caller, params: route.params, body, ifMatch, player }));
     }
     return notFound();
 }

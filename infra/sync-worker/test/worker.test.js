@@ -5,14 +5,14 @@ import worker, { spaceRoute } from "../src/index.js";
 import { parseDeviceAuth, tokenHashOf } from "../src/http.js";
 import { cleanBox, cleanEnv } from "../src/validate.js";
 import { box, keyBox, makeDevice, req, world } from "./fakes.js";
-import { linkNew } from "./link.js";
+import { linkNew, newSpaceId } from "./link.js";
 
 const MiB = 1024 * 1024;
 
 test("routes: the allow-list, ids only in the path, 405 with Allow, the reserved ws route", () => {
     assert.deepEqual(spaceRoute([], "GET"), { op: "get", params: {} });
     assert.deepEqual(spaceRoute(["devices", "me", "label"], "PUT"), { op: "label", params: {} });
-    assert.deepEqual(spaceRoute(["devices", "me"], "DELETE"), { op: "removeDevice", params: { did: "me" } });
+    assert.deepEqual(spaceRoute(["devices", "me"], "DELETE"), { op: "removeDevice", params: { target: "me" } });
     assert.deepEqual(spaceRoute(["snapshot", "812", "0", "16"], "PUT"), { op: "snapshotPut", params: { upto: 812, part: 0, count: 16 } });
     assert.deepEqual(spaceRoute(["inbox", "d_12345678", "send_123", "1", "2"], "PUT").params, { to: "d_12345678", sendId: "send_123", part: 1, count: 2 });
     assert.deepEqual(spaceRoute(["slots", "config"], "POST"), { allow: "GET, PUT" });
@@ -70,7 +70,7 @@ test("bodies: JSON only, 1 MiB at most (read no further), parsed or refused", as
     assert.equal((await w.fetch(req("POST", path, { device: phone, body: { env: box(1) } }))).status, 201);
 });
 
-test("device auth: a missing or malformed header is 401 unauthorized; a removed device is 401 revoked; an unknown space is 404 gone", async () => {
+test("device auth: a missing or malformed header is 401 unauthorized; a removed device and an unknown space are both 401 revoked", async () => {
     const w = world();
     const { phone, browser, spaceId } = await linkNew(w);
     const path = `/v1/spaces/${spaceId}`;
@@ -84,14 +84,16 @@ test("device auth: a missing or malformed header is 401 unauthorized; a removed 
     assert.equal(cut.status, 401);
     assert.equal((await cut.json()).error.code, "revoked");
 
+    // A space that doesn't exist answers exactly like one the caller isn't in: no existence oracle.
     const ghost = "G".repeat(22);
     const gone = await w.fetch(req("GET", `/v1/spaces/${ghost}`, { device: phone }));
-    assert.equal(gone.status, 404);
-    assert.equal((await gone.json()).error.code, "gone");
+    const stranger = await w.fetch(req("GET", path, { device: await makeDevice("x") }));
+    assert.equal(gone.status, 401);
+    assert.deepEqual(await gone.json(), await stranger.json());
     assert.deepEqual(w.env.SPACES.ctxs.get(ghost).sql.tables(), [], "a probe leaves no storage behind");
 
     assert.equal((await w.fetch(req("DELETE", path, { device: phone }))).status, 204);
-    assert.equal((await (await w.fetch(req("GET", path, { device: phone }))).json()).error.code, "gone");
+    assert.equal((await (await w.fetch(req("GET", path, { device: phone }))).json()).error.code, "revoked");
 });
 
 test("the member API end to end over HTTP: log, snapshot, slots with If-Match, queue, sends, key, label", async () => {
@@ -164,7 +166,7 @@ test("wrangler.toml: sync.stashfm.app only, no workers.dev, SQLite objects, rate
     const toml = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
     assert.match(toml, /^workers_dev = false$/m);
     assert.match(toml, /pattern = "sync\.stashfm\.app", custom_domain = true/);
-    assert.match(toml, /new_sqlite_classes = \["SyncSpace", "PairSlot"\]/);
+    assert.match(toml, /new_sqlite_classes = \["SyncSpace", "PairSlot", "Quota"\]/);
     assert.doesNotMatch(toml, /PLAYER_KEY\s*=/, "the key is a secret, never in the file");
     const ids = [...toml.matchAll(/namespace_id = "(\d+)"/g)].map((m) => m[1]);
     assert.deepEqual(ids, ["2030", "2031", "2032"]);
@@ -186,4 +188,35 @@ test("sync-v1 shapes: the token hash vector, epoch-0 pairing boxes, key envelope
     assert.equal(cleanBox(keyBox(2, d), 1024, { pub: true }).p, d.pub);
     assert.deepEqual(Object.keys(cleanEnv(keyBox(1, d), 1024)), ["e", "n", "c"]);
     assert.equal(cleanEnv(box(0), 1024), null, "space data is never epoch 0");
+});
+
+test("the edge: the safety actions' own limit, browsers only through the player, a trimmed key, queue names, cross-space tokens", async () => {
+    const w = world({ limits: { safe: 2 } });
+    const a = await linkNew(w);
+    const b = await linkNew(w);
+    const p = (x = "") => `/v1/spaces/${a.spaceId}${x}`;
+    // A browser token straight to sync.stashfm.app (around the player and its sign-in) is refused.
+    assert.equal((await w.fetch(req("GET", p(), { device: a.browser }))).status, 403);
+    assert.equal((await w.fetch(req("GET", p(), { device: a.browser, player: true }))).status, 200);
+    // `me` names only the caller's own removal, never a queue.
+    assert.equal((await w.fetch(req("GET", p("/slots/queue/me"), { device: a.phone }))).status, 404);
+    // Tokens of one space open nothing in another.
+    for (const d of [b.phone]) {
+        const r = await w.fetch(req("GET", p(), { device: d }));
+        assert.equal(r.status, 401);
+        assert.equal((await r.json()).error.code, "revoked");
+        assert.equal((await w.fetch(req("DELETE", p(), { device: d }))).status, 401);
+    }
+    assert.equal((await w.fetch(req("GET", p(), { device: a.phone }))).status, 200, "and leave it untouched");
+    // Removing, rotating and unlinking have their own per-device limit (they skip the daily caps).
+    const envelopes = { [a.phone.id]: { e: 2, n: "A".repeat(16), c: "A".repeat(40), p: a.phone.pub }, [a.browser.id]: { e: 2, n: "A".repeat(16), c: "A".repeat(40), p: a.browser.pub } };
+    assert.equal((await w.fetch(req("POST", p("/rotate"), { device: a.phone, body: { epoch: 2, envelopes } }))).status, 200);
+    assert.equal((await w.fetch(req("DELETE", p(`/devices/${a.browser.id}`), { device: a.phone }))).status, 204);
+    const third = await w.fetch(req("DELETE", p(), { device: a.phone }));
+    assert.equal(third.status, 429);
+    assert.equal(w.env.SAFE_RL.counts.get(`d:${a.phone.id}`), 3);
+    // A PLAYER_KEY stored with a trailing newline still matches the player's (trimmed) header.
+    w.env.PLAYER_KEY = `${w.env.PLAYER_KEY}\r\n`;
+    assert.equal((await w.fetch(req("GET", `/v1/spaces/${b.spaceId}`, { device: b.browser, player: true }))).status, 200);
+    assert.ok(newSpaceId());
 });

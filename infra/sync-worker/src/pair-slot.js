@@ -4,7 +4,7 @@
  * (browser waiting for the answer, phone waiting for the reply) wait in memory for the write that wakes them.
  * Only this object ever holds a request open, and only while a code is on screen (spec §6.6).
  */
-import { CLAIM_GRACE_MS, POLL_MS, answerSlot, claimSlot, openSlot, pollSlot, readLabel, readReply, replySlot } from "./pair.js";
+import { CLAIM_GRACE_MS, POLL_MS, answerSlot, claimSlot, openSlot, pollSlot, readLabel, readReply, releaseSlot, replySlot } from "./pair.js";
 import { err, serveRpc } from "./http.js";
 
 /** Resolves after `ms`, or as soon as `signal` aborts (the timer is then cleared, so nothing outlives the request). */
@@ -26,7 +26,7 @@ export class PairSlot {
 
     /** The Worker's calls (src/http.js rpc). */
     fetch(request) {
-        return serveRpc(request, this, ["open", "label", "answer", "reply", "claim", "poll", "readReply"]);
+        return serveRpc(request, this, ["open", "label", "answer", "reply", "claim", "release", "poll", "readReply"]);
     }
 
     async load() {
@@ -43,9 +43,9 @@ export class PairSlot {
         return { status: r.status, body: r.body ?? null, ...(r.headers ? { headers: r.headers } : {}) };
     }
 
-    async open({ pairId, device }) {
+    async open({ pairId, device, session }) {
         if (await this.load()) return err(409, "exists", "Slot exists");
-        const r = openSlot(pairId, device, this.now());
+        const r = openSlot(pairId, device, this.now(), { session });
         if (r.state) await this.ctx.storage.setAlarm(r.state.expiresAt + CLAIM_GRACE_MS);
         return this.commit(r);
     }
@@ -64,6 +64,10 @@ export class PairSlot {
 
     async claim({ caller, mode }) {
         return this.commit(claimSlot(await this.load(), caller, mode, this.now()));
+    }
+
+    async release() {
+        return this.commit(releaseSlot(await this.load(), this.now()));
     }
 
     /** The browser's long-poll for the answer. */
