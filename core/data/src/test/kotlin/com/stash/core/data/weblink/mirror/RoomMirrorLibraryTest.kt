@@ -131,6 +131,71 @@ class RoomMirrorLibraryTest {
         assertThat(lib.playlist(put.id)!!.items.map { it.title to it.artist }).containsExactly("Song A - Remastered 2011" to "The Band feat. Someone")
     }
 
+    // ------------------------------------------------------------------------------------------------ final check F-B1
+
+    private val variant = com.stash.core.data.weblink.handoff.WireSong("Song A - Remastered 2011", "The Band", refs = mapOf("youtube" to "AAAAAAAAAAA"))
+    private val own = com.stash.core.data.weblink.handoff.WireSong("Song A", "The Band", refs = mapOf("youtube" to "AAAAAAAAAAA"))
+    private val hlc = com.stash.core.model.weblink.Hlc(1, 0, "d_00000000")
+
+    private suspend fun rowA() = db.trackDao().insert(
+        TrackEntity(title = "Song A", artist = "The Band", youtubeId = "AAAAAAAAAAA", isStreamable = true, canonicalTitle = "song a", canonicalArtist = "the band"),
+    )
+
+    private fun trackCount() = db.query("SELECT COUNT(*) FROM tracks", null).use { it.moveToFirst(); it.getInt(0) }
+
+    @Test fun `F-B1 - a liked row never takes a variant's identity - no unlike of it, no like nobody made`() = runTest {
+        val a = rowA()
+        lib.setLikes(on = listOf(own), off = emptyList(), at = 1) // Song A liked and mirrored as itself
+        val before = trackCount()
+        lib.setLikes(on = listOf(variant), off = emptyList(), at = 2) // a web like of the variant with A's video
+        assertThat(trackCount()).isEqualTo(before + 1) // a row of its own
+        assertThat(lib.likes().map { it.s.title }).containsExactly("Song A", "Song A - Remastered 2011")
+        val base = listOf(com.stash.core.data.weblink.merge.LikeRec(own, true, hlc), com.stash.core.data.weblink.merge.LikeRec(variant, true, hlc))
+        assertThat(com.stash.core.data.weblink.merge.LikesMerge.diff(base, lib.likes(), hlc)).isEmpty()
+        assertThat(db.trackDao().getById(a)!!.title).isEqualTo("Song A")
+    }
+
+    @Test fun `F-B1 - a played row never takes a variant's identity - its plays are not sent again`() = runTest {
+        val a = rowA()
+        db.listeningEventDao().recordCompletedListen(ListeningEventEntity(trackId = a, startedAt = 1_000, completedAt = 1_200))
+        val ownBefore = lib.ownPlays(0).map { com.stash.core.data.weblink.merge.PlaysMerge.playId(it.s, it.playedAt) }
+        lib.addPlays(listOf(PlayRec(variant, 5_000, "d_web000000000001"))) // a web play of the variant
+        assertThat(lib.ownPlays(0).map { com.stash.core.data.weblink.merge.PlaysMerge.playId(it.s, it.playedAt) }).isEqualTo(ownBefore)
+    }
+
+    @Test fun `F-B1 - a playlist of A and its variant onto one row stays A and the variant, nothing to push`() = runTest {
+        rowA()
+        val put = lib.putPlaylist(null, "m_CCCCCCCCCCCCCCCC", "Mix", listOf(own, variant))
+        assertThat(put.held).containsExactly(true, true).inOrder()
+        assertThat(lib.playlist(put.id)!!.items.map { it.title }).containsExactly("Song A", "Song A - Remastered 2011").inOrder()
+    }
+
+    @Test fun `F-B1 - a row in a playlist never takes a variant's identity`() = runTest {
+        val a = rowA()
+        val other = lib.putPlaylist(null, "m_DDDDDDDDDDDDDDDD", "Other", listOf(own))
+        lib.setLikes(on = listOf(variant), off = emptyList(), at = 2)
+        assertThat(lib.playlist(other.id)!!.items.map { it.title }).containsExactly("Song A")
+        assertThat(db.trackDao().getById(a)!!.stashLikedAt).isNull()
+    }
+
+    @Test fun `F-B1 - a row already standing for the variant never takes the original too`() = runTest {
+        val a = rowA()
+        lib.addPlays(listOf(PlayRec(variant, 5_000, "d_web000000000001"))) // no history: the row stands for the variant
+        lib.setLikes(on = listOf(own), off = emptyList(), at = 2)          // then the original arrives
+        assertThat(db.trackDao().getById(a)!!.stashLikedAt).isNull()
+        assertThat(lib.likes().map { it.s.title }).containsExactly("Song A")
+        lib.setLikes(on = listOf(own), off = emptyList(), at = 3)          // again: the same second row, no third
+        assertThat(trackCount()).isEqualTo(2)
+    }
+
+    @Test fun `F-N9 - an alias goes with its row, and when the row's words become another song`() = runTest {
+        val a = rowA()
+        lib.addPlays(listOf(PlayRec(variant, 5_000, "d_web000000000001")))
+        db.query("UPDATE tracks SET title = 'Something Else' WHERE id = $a", null).use { it.moveToFirst() }
+        db.listeningEventDao().recordCompletedListen(ListeningEventEntity(trackId = a, startedAt = 9_000, completedAt = 9_200))
+        assertThat(lib.ownPlays(0).map { it.s.title }).containsExactly("Something Else")
+    }
+
     @Test fun `plays from another device go to History with their origin, once, and never touch play counts or mix inputs`() = runTest {
         val mine = track("Mine")
         db.listeningEventDao().recordCompletedListen(ListeningEventEntity(trackId = mine, startedAt = 1_000, completedAt = 1_200))

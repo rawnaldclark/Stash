@@ -7,9 +7,11 @@ import com.stash.core.data.db.dao.MirrorDao
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.social.stash.StashLikedPlaylistRepository
 import com.stash.core.data.weblibrary.WebLibraryFile
 import com.stash.core.data.weblink.handoff.HandoffSongMatcher
+import com.stash.core.data.weblink.handoff.MirrorIdentities
 import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.data.weblink.merge.Follow
 import com.stash.core.data.weblink.merge.LikedSong
@@ -53,18 +55,39 @@ class RoomMirrorLibrary internal constructor(
     /**
      * A row matched to a song whose words differ a little (an id match, review S4) stands for that song in the mirror: it is
      * read back under the song's identity, so the next diff sees the same song, unlikes find it both ways, and the phone's own
-     * words never replace the other side's (review R-S3).
+     * words never replace the other side's (review R-S3). The matcher allows that only for a row with no mirror history, so no
+     * identity the mirror already sent is ever rewritten (final check F-B1).
      */
-    private fun remember(songs: List<WireSong>, rows: List<com.stash.core.data.db.entity.TrackEntity?>) {
+    private suspend fun remember(songs: List<WireSong>, rows: List<TrackEntity?>) {
         val add = HashMap<Long, WireSong>()
         songs.forEachIndexed { i, s ->
             val row = rows.getOrNull(i) ?: return@forEachIndexed
             if (!SongKey.sameSong(SongRef(row.title, row.artist, row.isrc), s)) add[row.id] = s
         }
         if (add.isNotEmpty()) aliases.put(add)
+        // Rows deleted since are let go (final check F-N9).
+        val keys = aliases.keys()
+        if (keys.isNotEmpty()) {
+            val alive = keys.chunked(BATCH).flatMapTo(HashSet()) { dao.existingTracks(it) }
+            aliases.remove(keys.filterNot { it in alive })
+        }
     }
 
-    private fun wire(row: MirrorDao.MirrorSong): WireSong? = aliases.get(row.id) ?: songOf(row)
+    /** A row's alias, unless its words were changed to another recording since (final check F-N9). */
+    private fun aliasOf(id: Long, title: String, artist: String, isrc: String?): WireSong? {
+        val a = aliases.get(id) ?: return null
+        val row = TrackEntity(id = id, title = title, artist = artist, isrc = isrc)
+        if (HandoffSongMatcher.sameRecording(row, a)) return a
+        aliases.remove(listOf(id))
+        return null
+    }
+
+    private val identities = object : MirrorIdentities {
+        override fun aliasOf(row: TrackEntity): WireSong? = aliasOf(row.id, row.title, row.artist, row.isrc)
+        override suspend fun hasHistory(trackId: Long): Boolean = dao.hasHistory(trackId)
+    }
+
+    private fun wire(row: MirrorDao.MirrorSong): WireSong? = aliasOf(row.id, row.title, row.artist, row.isrc) ?: songOf(row)
 
     override suspend fun forget() = io { aliases.clear() }
 
@@ -78,7 +101,7 @@ class RoomMirrorLibrary internal constructor(
 
     override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long) = io {
         if (on.isNotEmpty()) {
-            val rows = matcher.matchAll(on, mirror = true)
+            val rows = matcher.matchAll(on, mirror = true, identities = identities)
             remember(on, rows)
             val ids = rows.mapNotNull { it?.id }
             for (chunk in ids.chunked(BATCH)) database.withTransaction { liked.addAllFrom(chunk.map { it to at }, recount = false) }
@@ -105,7 +128,7 @@ class RoomMirrorLibrary internal constructor(
             .mapTo(HashSet()) { PlaysMerge.playId(SongRef(it.title, it.artist, it.isrc), it.startedAt) }
         val fresh = plays.filter { here.add(PlaysMerge.playId(it.s, it.playedAt)) }
         if (fresh.isEmpty()) return@io
-        val rows = matcher.matchAll(fresh.map { it.s }, mirror = true)
+        val rows = matcher.matchAll(fresh.map { it.s }, mirror = true, identities = identities)
         remember(fresh.map { it.s }, rows)
         val events = database.listeningEventDao()
         database.withTransaction {
@@ -144,7 +167,7 @@ class RoomMirrorLibrary internal constructor(
     override suspend fun putPlaylist(localId: Long?, mirrorId: String, name: String, items: List<WireSong>): PutPlaylist = io {
         val playlists = database.playlistDao()
         // Throws (MirrorMatchException) when a batch couldn't be matched: nothing is written then (review B2).
-        val rows = matcher.matchAll(items, mirror = true)
+        val rows = matcher.matchAll(items, mirror = true, identities = identities)
         remember(items, rows)
         val seen = HashSet<Long>()
         // A repeat of one row is kept once here (one cross-ref per song); the engine carries the others (review B2).
@@ -213,6 +236,8 @@ class RoomMirrorLibrary internal constructor(
 interface AliasStore {
     fun get(trackId: Long): WireSong?
     fun put(entries: Map<Long, WireSong>)
+    fun keys(): List<Long>
+    fun remove(ids: Collection<Long>)
     fun clear()
 }
 
@@ -220,6 +245,8 @@ internal class MemoryAliasStore : AliasStore {
     private val map = HashMap<Long, WireSong>()
     override fun get(trackId: Long) = map[trackId]
     override fun put(entries: Map<Long, WireSong>) = map.putAll(entries)
+    override fun keys() = map.keys.toList()
+    override fun remove(ids: Collection<Long>) { ids.forEach { map.remove(it) } }
     override fun clear() = map.clear()
 }
 
@@ -242,8 +269,19 @@ internal class PrefsAliasStore(private val prefs: android.content.SharedPreferen
     override fun get(trackId: Long): WireSong? = synchronized(lock) { all()[trackId] }
 
     override fun put(entries: Map<Long, WireSong>) = synchronized(lock) {
+        all().putAll(entries)
+        write()
+    }
+
+    override fun keys(): List<Long> = synchronized(lock) { all().keys.toList() }
+
+    override fun remove(ids: Collection<Long>) = synchronized(lock) {
         val m = all()
-        m.putAll(entries)
+        if (ids.count { m.remove(it) != null } > 0) write()
+    }
+
+    private fun write() {
+        val m = all()
         val json = kotlinx.serialization.json.JsonObject(m.entries.associate { (k, v) -> k.toString() to com.stash.core.data.weblink.handoff.HandoffWire.songJson(v) })
         prefs.edit().putString(KEY, json.toString()).apply()
     }

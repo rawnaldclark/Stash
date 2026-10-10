@@ -128,6 +128,20 @@ interface MirrorDao {
     )
     suspend fun playlists(): List<PlaylistEntity>
 
+    /** [trackId] has a like, a play (any device's) or a place in a playlist: the mirror may know it by its own words. */
+    @Query(
+        """
+        SELECT EXISTS (SELECT 1 FROM tracks WHERE id = :trackId AND stash_liked_at IS NOT NULL)
+          OR EXISTS (SELECT 1 FROM listening_events WHERE track_id = :trackId)
+          OR EXISTS (SELECT 1 FROM playlist_tracks WHERE track_id = :trackId AND removed_at IS NULL)
+        """,
+    )
+    suspend fun hasHistory(trackId: Long): Boolean
+
+    /** Which of [ids] are still rows. */
+    @Query("SELECT id FROM tracks WHERE id IN (:ids)")
+    suspend fun existingTracks(ids: List<Long>): List<Long>
+
     /** A playlist's songs in order (removed ones left out). */
     @Query(
         """

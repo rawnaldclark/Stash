@@ -31,11 +31,20 @@ class HandoffSongMatcher @Inject constructor(
      * once per batch, not once per song (every library screen re-queries on each invalidation), and the write lock is never
      * held for long. Same result as [match] one by one.
      */
-    suspend fun matchAll(songs: List<WireSong?>, mirror: Boolean = false): List<TrackEntity?> = withContext(Dispatchers.IO) {
+    suspend fun matchAll(songs: List<WireSong?>, mirror: Boolean = false, identities: MirrorIdentities? = null): List<TrackEntity?> = withContext(Dispatchers.IO) {
         val out = ArrayList<TrackEntity?>(songs.size)
+        // The song each row was taken for in this call: a row stands for one song only (final check F-B1).
+        val claims = HashMap<Long, WireSong>()
         for (chunk in songs.chunked(BATCH)) {
             val rows = try {
-                database.withTransaction { chunk.map { s -> s?.let { matchOne(it, mirror) } } }
+                database.withTransaction {
+                    chunk.map { s ->
+                        s?.let { song ->
+                            if (!mirror) return@let matchOne(song)
+                            matchMirror(song, Claims(claims, identities))?.also { claims.putIfAbsent(it.id, song) }
+                        }
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -69,30 +78,53 @@ class HandoffSongMatcher @Inject constructor(
      * hit that other row, so nothing of this song (its ISRC above all) is ever written onto it (Phase 6 review B1).
      * Without [mirror], a `phoneOnly` song has no row here (a handoff leaves it out).
      */
-    private suspend fun matchOne(song: WireSong, mirror: Boolean = false): TrackEntity? {
-        if (song.phoneOnly) return if (mirror) byWords(song) else null
-        if (!mirror) {
-            return song.isrc?.let { trackDao.findByIsrc(it) }
-                ?: song.youtubeId?.let { trackDao.findByYoutubeId(it) }
-                ?: song.spotifyId?.let { trackDao.findBySpotifyUri("spotify:track:$it") }
-                ?: byWords(song)
-                ?: trackDao.getById(musicRepository.ensureExactTrackPersisted(song.toSharedTrack()))
+    private suspend fun matchOne(song: WireSong): TrackEntity? {
+        if (song.phoneOnly) return null
+        return song.isrc?.let { trackDao.findByIsrc(it) }
+            ?: song.youtubeId?.let { trackDao.findByYoutubeId(it) }
+            ?: song.spotifyId?.let { trackDao.findBySpotifyUri("spotify:track:$it") }
+            ?: byWords(song)
+            ?: trackDao.getById(musicRepository.ensureExactTrackPersisted(song.toSharedTrack()))
+    }
+
+    /** What the mirror already knows about rows: within one call ([claims]) and from before ([identities]). */
+    private class Claims(val claims: Map<Long, WireSong>, val identities: MirrorIdentities?) {
+        /** The song [row] already stands for in the mirror under other words than its own, else null (its own words). */
+        fun standsFor(row: TrackEntity): WireSong? = claims[row.id] ?: identities?.aliasOf(row)
+
+        /**
+         * [row] may stand for [song]: it already does, or it has no other identity and it is [song] by its words; or, for a
+         * row found by an id, it is the same recording under slightly different words (review S4) and has no mirror history
+         * at all (never liked, played, or listed), so taking the song's identity rewrites nothing (final check F-B1).
+         */
+        suspend fun fits(row: TrackEntity, song: WireSong, byId: Boolean): Boolean {
+            standsFor(row)?.let { return SongKey.sameSong(it, song) }
+            if (SongKey.sameSong(SongRef(row.title, row.artist, row.isrc), song)) return true
+            return byId && identities != null && sameRecording(row, song) && !identities.hasHistory(row.id)
         }
+    }
+
+    private suspend fun matchMirror(song: WireSong, c: Claims): TrackEntity? {
+        if (song.phoneOnly) return byWords(song, c)
         var isrcTaken = false
         var youtubeTaken = false
         var spotifyTaken = false
-        song.isrc?.let { trackDao.findByIsrc(it) }?.let { if (sameRecording(it, song)) return it else isrcTaken = true }
-        song.youtubeId?.let { trackDao.findByYoutubeId(it) }?.let { if (sameRecording(it, song)) return it else youtubeTaken = true }
-        song.spotifyId?.let { trackDao.findBySpotifyUri("spotify:track:$it") }?.let { if (sameRecording(it, song)) return it else spotifyTaken = true }
-        byWords(song)?.let { return it }
+        song.isrc?.let { trackDao.findByIsrc(it) }?.let { if (c.fits(it, song, byId = true)) return it else isrcTaken = true }
+        song.youtubeId?.let { trackDao.findByYoutubeId(it) }?.let { if (c.fits(it, song, byId = true)) return it else youtubeTaken = true }
+        song.spotifyId?.let { trackDao.findBySpotifyUri("spotify:track:$it") }?.let { if (c.fits(it, song, byId = true)) return it else spotifyTaken = true }
+        byWords(song, c)?.let { return it }
         // None of the ids left names a row (each was looked up above), so this inserts a new row and backfills nothing.
         val own = song.copy(
             isrc = song.isrc.takeUnless { isrcTaken },
             refs = if (youtubeTaken) emptyMap() else song.refs,
             spotifyId = song.spotifyId.takeUnless { spotifyTaken },
         )
-        return trackDao.getById(musicRepository.ensureExactTrackPersisted(own.toSharedTrack()))?.takeIf { sameRecording(it, song) }
+        return trackDao.getById(musicRepository.ensureExactTrackPersisted(own.toSharedTrack()))?.takeIf { c.fits(it, song, byId = false) }
     }
+
+    /** [byWords] for the mirror: the first row with the same words that doesn't already stand for another song. */
+    private suspend fun byWords(song: WireSong, c: Claims): TrackEntity? =
+        trackDao.findAllByCanonicalIdentity(canonical(song.title), canonical(song.artist)).firstOrNull { c.fits(it, song, byId = false) }
 
     /** The library's row with the same words, checked with sync-v1 identity (an ISRC on both sides must agree). */
     private suspend fun byWords(song: WireSong): TrackEntity? {
@@ -128,6 +160,18 @@ class HandoffSongMatcher @Inject constructor(
             .replace(Regex("\\s+"), " ")
             .trim()
     }
+}
+
+/**
+ * The mirror's identities of library rows (final check F-B1): a row stands for one song, and a loosely matched song (review S4)
+ * may take a row only while that row has no mirror history under its own words.
+ */
+interface MirrorIdentities {
+    /** The song [row] stands for under other words than its own (an alias, review R-S3), or null. */
+    fun aliasOf(row: TrackEntity): WireSong?
+
+    /** [trackId] was liked, played or listed here: the mirror may already know it by its own words. */
+    suspend fun hasHistory(trackId: Long): Boolean
 }
 
 /** The mirror couldn't match a batch of songs (a database error): nothing of that list is written. */

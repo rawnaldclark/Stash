@@ -676,6 +676,10 @@ interface TrackDao {
     )
     suspend fun findByCanonicalIdentity(title: String, artist: String): TrackEntity?
 
+    /** Every row with these canonical words, oldest first (the mirror skips one that already stands for another song). */
+    @Query("SELECT * FROM tracks WHERE canonical_title = :title AND canonical_artist = :artist ORDER BY id ASC")
+    suspend fun findAllByCanonicalIdentity(title: String, artist: String): List<TrackEntity>
+
     /**
      * Consolidated lookup used by the sync diff pass: matches by Spotify
      * URI first, then YouTube ID, then canonical identity — in the same
