@@ -14,6 +14,26 @@ object MirrorView {
 
     fun joinMark(kind: Kind, since: Long, device: String) = "${kind.wire}|$since|$device"
 
+    /**
+     * Whose `joined` mark a device waits for before its first merge of likes (sync-v1 §7.4): null (none), a device id, or
+     * [ANY_BROWSER] (the first browser's). [self] is "phone" or "web"; [phone] the link's phone (null: none).
+     */
+    fun likesJoinWait(self: String, me: String, dir: Dir, by: String?, phone: String?, browsers: Collection<String>): String? = when {
+        dir == Dir.OFF -> null
+        self == "web" -> when (dir) {
+            Dir.TO_PHONE -> null
+            Dir.TO_WEB -> phone
+            else -> if (phone == null || by == me) null else phone
+        }
+        else -> when (dir) {
+            Dir.TO_WEB -> null
+            Dir.TO_PHONE -> if (by != null && by in browsers) by else ANY_BROWSER
+            else -> if (by == null || by == me || by !in browsers) null else by
+        }
+    }
+
+    const val ANY_BROWSER = "anyBrowser"
+
     /** A `pl` op's version hash (sync-v1 §6). */
     fun hashOf(op: MirrorOp.Pl): String = SyncHashes.playlistHash(op.name, op.items, op.follow)
 
@@ -26,6 +46,7 @@ object MirrorView {
         val likes = view.likes.toMutableList()
         var plays = view.plays
         var clearedBefore = view.clearedBefore
+        var clearedSeq = view.clearedSeq
         val playlists = view.playlists.toMutableMap()
         var joined = view.joined
         var likeIdx: SongIndex<Int>? = null
@@ -53,7 +74,10 @@ object MirrorView {
                     val all = plays + newPlays
                     newPlays.clear()
                     plays = if (op.all) {
-                        if (op.before > clearedBefore) clearedBefore = op.before
+                        if (op.before > clearedBefore) {
+                            clearedBefore = op.before
+                            clearedSeq = seq
+                        }
                         all.filter { it.playedAt >= clearedBefore }
                     } else {
                         all.filter { it.device != device || it.playedAt >= op.before }
@@ -73,7 +97,7 @@ object MirrorView {
         }
         if (newPlays.isNotEmpty()) plays = plays + newPlays
         val sorted = if (plays === view.plays) plays else plays.sortedByDescending { it.playedAt }
-        return SpaceView(likes, sorted, clearedBefore, playlists, joined)
+        return SpaceView(likes, sorted, clearedBefore, playlists, joined, clearedSeq)
     }
 
     /** The view a snapshot gives: every record as written at its `uptoSeq`. */
@@ -83,13 +107,16 @@ object MirrorView {
         clearedBefore = st.playsClearedBefore,
         playlists = st.playlists.associate { it.id to ViewPl(it.name, it.items, FollowRec.of(it.follow), it.ro, it.at, it.hash, st.uptoSeq) },
         joined = st.joined.map { it.key },
+        clearedSeq = if (st.playsClearedBefore != 0L) st.uptoSeq else 0,
     )
 
     /** Leaves out what the space held of each kind from before it was last turned on (`since`). */
     fun sinceFilter(view: SpaceView, c: MirrorConfig): SpaceView = SpaceView(
         likes = view.likes.filter { it.seq > c.likes.since },
         plays = view.plays.filter { it.seq > c.plays.since },
-        clearedBefore = view.clearedBefore,
+        // A clear of everyone's plays from before plays were last turned on belongs to that earlier time (review S8).
+        clearedBefore = if (view.clearedSeq > c.plays.since) view.clearedBefore else 0,
+        clearedSeq = if (view.clearedSeq > c.plays.since) view.clearedSeq else 0,
         playlists = view.playlists.filterValues { it.seq > c.playlists.since },
         joined = view.joined.filter { m ->
             val parts = m.split('|')

@@ -33,6 +33,8 @@ data class WireSong(
     val addedAt: Long? = null,
     /** Its only source is a file on the phone: the web leaves it out of a handoff (spec §2.5). */
     val phoneOnly: Boolean = false,
+    /** A cover's width and height when the writer gave them (the library file's rule: 1–20,000), by its URL, kept as read. */
+    val artworkSizes: Map<String, Pair<Int?, Int?>> = emptyMap(),
 ) : SongIdentity {
     val youtubeId: String? get() = refs[WebLibraryFile.YOUTUBE_SOURCE]
 
@@ -109,6 +111,7 @@ object HandoffWire {
     private const val MAX_ART = 8
     private const val MAX_URL = 2048
     private const val MAX_DURATION_MS = 24L * 3600 * 1000
+    private const val MAX_DIM = 20_000.0
     private val ISRC = Regex("^[A-Za-z0-9]{12}$")
     private val SPOTIFY_ID = Regex("^[A-Za-z0-9]{22}$")
     private val REF_KEY = Regex("^[A-Za-z0-9._-]{1,64}$")
@@ -126,7 +129,19 @@ object HandoffWire {
         s.isrc?.let { put("isrc", it) }
         s.spotifyId?.let { put("spotifyId", it) }
         if (s.refs.isNotEmpty()) putJsonObject("refs") { s.refs.forEach { (k, v) -> put(k, v) } }
-        if (s.artwork.isNotEmpty()) putJsonArray("artwork") { s.artwork.forEach { u -> addJsonObject { put("url", u) } } }
+        if (s.artwork.isNotEmpty()) {
+            putJsonArray("artwork") {
+                s.artwork.forEach { u ->
+                    addJsonObject {
+                        put("url", u)
+                        s.artworkSizes[u]?.let { (w, h) ->
+                            w?.let { put("width", it) }
+                            h?.let { put("height", it) }
+                        }
+                    }
+                }
+            }
+        }
         s.addedAt?.let { put("addedAt", it) }
         if (s.phoneOnly) put("phoneOnly", true)
     }
@@ -232,8 +247,15 @@ object HandoffWire {
             val id = (v as? JsonPrimitive)?.takeIf { it.isString }?.content?.let { cleanText(it, MAX_REF) }
             if (REF_KEY.matches(k) && !id.isNullOrEmpty() && refs.size < MAX_REFS) refs[k] = id
         }
-        val art = (o["artwork"] as? JsonArray).orEmpty().take(MAX_ART)
-            .mapNotNull { (it as? JsonObject)?.str("url")?.takeIf(::isAllowedUrl) }
+        val artObjs = (o["artwork"] as? JsonArray).orEmpty().take(MAX_ART)
+            .mapNotNull { a -> (a as? JsonObject)?.let { obj -> obj.str("url")?.takeIf(::isAllowedUrl)?.let { it to obj } } }
+        val art = artObjs.map { it.first }
+        val sizes = artObjs.mapNotNull { (u, obj) ->
+            fun dim(k: String) = obj.num(k)?.takeIf { it > 0 && it <= MAX_DIM }?.let { Math.round(it).toInt() }
+            val w = dim("width")
+            val h = dim("height")
+            if (w == null && h == null) null else u to (w to h)
+        }.toMap()
         return WireSong(
             title = title,
             artist = artist,
@@ -245,6 +267,7 @@ object HandoffWire {
             artwork = art,
             addedAt = o.num("addedAt")?.takeIf { it > 0 && it < 1e14 }?.let { Math.round(it) },
             phoneOnly = o.bool("phoneOnly") == true,
+            artworkSizes = sizes,
         )
     }
 

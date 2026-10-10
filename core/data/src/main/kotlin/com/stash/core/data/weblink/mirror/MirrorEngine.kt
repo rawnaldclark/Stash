@@ -829,19 +829,13 @@ class MirrorEngine internal constructor(
             joinedKind(c, Kind.LIKES)
             return
         }
-        // Who waits for whose `joined` mark (sync-v1 §7.4): the phone compares only once the browsers' likes are in.
+        // Who waits for whose `joined` mark (sync-v1 §7.4, pinned by mirror-vectors.json "wait").
         val browsers = c.roster.filterValues { it == TYPE_WEB }.keys
         val markOf = { d: String -> MirrorView.joinMark(Kind.LIKES, kc.since, d) in view.joined }
-        r.waiting = when (kc.dir) {
-            Dir.BOTH -> {
-                val by = kc.by
-                by != null && by != c.me && by in browsers && !markOf(by)
-            }
-            Dir.TO_PHONE -> {
-                val by = kc.by
-                if (by != null && by in browsers) !markOf(by) else browsers.none(markOf)
-            }
-            else -> false
+        r.waiting = when (val w = MirrorView.likesJoinWait("phone", c.me, kc.dir, kc.by, c.me, browsers)) {
+            null -> false
+            MirrorView.ANY_BROWSER -> browsers.none(markOf)
+            else -> !markOf(w)
         }
         if (r.waiting) {
             r.question = null

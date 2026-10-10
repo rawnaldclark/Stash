@@ -1,0 +1,1829 @@
+{
+	"kind": "stash-sync-mirror-vectors",
+	"v": 1,
+	"note": "Mirror documents and rules of sync-v1 §5.2–5.4 and §7.4 (phase 6). config/ops/state \"read\": a reader reads `doc` and writes it back; the result must equal `expect` (key order aside). \"wait\": whose `joined` mark a device waits for before its first merge of likes (null: none; \"anyBrowser\": the first browser's). \"view\": `applyBatch` of each batch in order (the view after it), then `sinceFilter` of the final view. Read with now = 1 (a song's addedAt is not on the wire). Frozen: see \"Test vectors\".",
+	"config": {
+		"read": [
+			{
+				"name": "every field, since and by",
+				"doc": {
+					"kind": "stash-mirror-config",
+					"v": 1,
+					"at": [
+						1760100000000,
+						2,
+						"d_PhoneAAAAAAAAAAA"
+					],
+					"likes": {
+						"dir": "both",
+						"since": 812,
+						"by": "d_PhoneAAAAAAAAAAA"
+					},
+					"plays": {
+						"dir": "toWeb",
+						"since": 40
+					},
+					"playlists": {
+						"dir": "toPhone",
+						"since": 9,
+						"by": "d_BrowserAAAAAAAAA",
+						"ids": [
+							"m_4fQ8xT2mLp9ZrW1c",
+							"m_4fQ8xT2mLp9ZrW1c",
+							"m_bad"
+						],
+						"newOnes": true
+					}
+				},
+				"expect": {
+					"kind": "stash-mirror-config",
+					"v": 1,
+					"at": [
+						1760100000000,
+						2,
+						"d_PhoneAAAAAAAAAAA"
+					],
+					"likes": {
+						"dir": "both",
+						"since": 812,
+						"by": "d_PhoneAAAAAAAAAAA"
+					},
+					"plays": {
+						"dir": "toWeb",
+						"since": 40
+					},
+					"playlists": {
+						"dir": "toPhone",
+						"since": 9,
+						"by": "d_BrowserAAAAAAAAA",
+						"ids": [
+							"m_4fQ8xT2mLp9ZrW1c"
+						],
+						"newOnes": true
+					}
+				}
+			},
+			{
+				"name": "a v1 config from before since/by: both read as 0 and unknown",
+				"doc": {
+					"kind": "stash-mirror-config",
+					"v": 1,
+					"at": [
+						1760100000000,
+						0,
+						"d_BrowserAAAAAAAAA"
+					],
+					"likes": {
+						"dir": "both"
+					},
+					"plays": {
+						"dir": "off"
+					},
+					"playlists": {
+						"dir": "off",
+						"ids": [],
+						"newOnes": false
+					}
+				},
+				"expect": {
+					"kind": "stash-mirror-config",
+					"v": 1,
+					"at": [
+						1760100000000,
+						0,
+						"d_BrowserAAAAAAAAA"
+					],
+					"likes": {
+						"dir": "both",
+						"since": 0
+					},
+					"plays": {
+						"dir": "off",
+						"since": 0
+					},
+					"playlists": {
+						"dir": "off",
+						"since": 0,
+						"ids": [],
+						"newOnes": false
+					}
+				}
+			},
+			{
+				"name": "unknown dir, since written as a string, a by that is not an id, unknown fields: ignored or off",
+				"doc": {
+					"kind": "stash-mirror-config",
+					"v": 1,
+					"at": [
+						1760100000000,
+						0,
+						"d_BrowserAAAAAAAAA"
+					],
+					"likes": {
+						"dir": "sideways",
+						"since": "3",
+						"by": "x"
+					},
+					"extra": true
+				},
+				"expect": {
+					"kind": "stash-mirror-config",
+					"v": 1,
+					"at": [
+						1760100000000,
+						0,
+						"d_BrowserAAAAAAAAA"
+					],
+					"likes": {
+						"dir": "off",
+						"since": 0
+					},
+					"plays": {
+						"dir": "off",
+						"since": 0
+					},
+					"playlists": {
+						"dir": "off",
+						"since": 0,
+						"ids": [],
+						"newOnes": false
+					}
+				}
+			}
+		],
+		"errors": [
+			{
+				"name": "a newer v",
+				"doc": {
+					"kind": "stash-mirror-config",
+					"v": 2,
+					"at": [
+						1760100000000,
+						0,
+						"d_BrowserAAAAAAAAA"
+					]
+				},
+				"error": "newer"
+			},
+			{
+				"name": "a stamp written as strings",
+				"doc": {
+					"kind": "stash-mirror-config",
+					"v": 1,
+					"at": [
+						"1760100000000",
+						0,
+						"d_BrowserAAAAAAAAA"
+					]
+				},
+				"error": "bad"
+			}
+		]
+	},
+	"ops": {
+		"read": [
+			{
+				"name": "every op; what a reader skips (an unknown kind or op, a song without a title, a bad value)",
+				"doc": {
+					"kind": "stash-mirror-ops",
+					"v": 1,
+					"device": "d_PhoneAAAAAAAAAAA",
+					"ops": [
+						{
+							"t": "joined",
+							"kind": "likes",
+							"since": 812
+						},
+						{
+							"t": "joined",
+							"kind": "nope",
+							"since": 1
+						},
+						{
+							"t": "like",
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": true,
+							"at": [
+								1760100000000,
+								0,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"t": "like",
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"t": "like",
+							"s": {
+								"artist": "No title"
+							},
+							"on": true,
+							"at": [
+								1760100000000,
+								1,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"t": "play",
+							"s": {
+								"title": "Nights",
+								"artist": "Frank Ocean"
+							},
+							"playedAt": 1760099940000
+						},
+						{
+							"t": "clearPlays",
+							"before": 1760099999000,
+							"at": [
+								1760100000000,
+								2,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"t": "clearPlays",
+							"before": 1760099999500,
+							"at": [
+								1760100000000,
+								3,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"all": true
+						},
+						{
+							"t": "pl",
+							"id": "m_4fQ8xT2mLp9ZrW1c",
+							"at": [
+								1760100000000,
+								4,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"parent": null,
+							"name": "  Discover   Weekly ",
+							"items": [
+								{
+									"title": "Pink + White",
+									"artist": "Frank Ocean",
+									"isrc": "USUM71607009",
+									"refs": {
+										"youtube": "uzS3WG6__G4"
+									}
+								},
+								{
+									"title": "Voice memo",
+									"artist": "Me",
+									"phoneOnly": true
+								}
+							],
+							"ro": true,
+							"extra": 1
+						},
+						{
+							"t": "pl",
+							"id": "m_4fQ8xT2mLp9ZrW1d",
+							"at": [
+								1760100000000,
+								5,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"parent": "h_AAAAAAAAAAAAAAAAAAAAAA",
+							"name": "Mix",
+							"items": [
+								{
+									"title": "Ivy",
+									"artist": "Frank Ocean",
+									"durationMs": 249000,
+									"refs": {
+										"youtube": "AE005nZeF-A"
+									},
+									"artwork": [
+										{
+											"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+											"width": 480,
+											"height": 360
+										}
+									]
+								}
+							],
+							"follow": {
+								"id": "Fw12ab34",
+								"version": 3
+							}
+						},
+						{
+							"t": "pl",
+							"id": "m_4fQ8xT2mLp9ZrW1e",
+							"at": [
+								1760100000000,
+								6,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"parent": "h_AAAAAAAAAAAAAAAAAAAAAA",
+							"name": "",
+							"items": null
+						},
+						{
+							"t": "teleport",
+							"to": "mars"
+						}
+					]
+				},
+				"expect": {
+					"kind": "stash-mirror-ops",
+					"v": 1,
+					"device": "d_PhoneAAAAAAAAAAA",
+					"ops": [
+						{
+							"t": "joined",
+							"kind": "likes",
+							"since": 812
+						},
+						{
+							"t": "like",
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": true,
+							"at": [
+								1760100000000,
+								0,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"t": "like",
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"t": "play",
+							"s": {
+								"title": "Nights",
+								"artist": "Frank Ocean"
+							},
+							"playedAt": 1760099940000
+						},
+						{
+							"t": "clearPlays",
+							"before": 1760099999000,
+							"at": [
+								1760100000000,
+								2,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"t": "clearPlays",
+							"before": 1760099999500,
+							"at": [
+								1760100000000,
+								3,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"all": true
+						},
+						{
+							"t": "pl",
+							"id": "m_4fQ8xT2mLp9ZrW1c",
+							"at": [
+								1760100000000,
+								4,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"parent": null,
+							"name": "Discover Weekly",
+							"items": [
+								{
+									"title": "Pink + White",
+									"artist": "Frank Ocean",
+									"isrc": "USUM71607009",
+									"refs": {
+										"youtube": "uzS3WG6__G4"
+									}
+								},
+								{
+									"title": "Voice memo",
+									"artist": "Me",
+									"phoneOnly": true
+								}
+							],
+							"ro": true
+						},
+						{
+							"t": "pl",
+							"id": "m_4fQ8xT2mLp9ZrW1d",
+							"at": [
+								1760100000000,
+								5,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"parent": "h_AAAAAAAAAAAAAAAAAAAAAA",
+							"name": "Mix",
+							"items": [
+								{
+									"title": "Ivy",
+									"artist": "Frank Ocean",
+									"durationMs": 249000,
+									"refs": {
+										"youtube": "AE005nZeF-A"
+									},
+									"artwork": [
+										{
+											"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+											"width": 480,
+											"height": 360
+										}
+									]
+								}
+							],
+							"follow": {
+								"id": "Fw12ab34",
+								"version": 3
+							}
+						},
+						{
+							"t": "pl",
+							"id": "m_4fQ8xT2mLp9ZrW1e",
+							"at": [
+								1760100000000,
+								6,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"parent": "h_AAAAAAAAAAAAAAAAAAAAAA",
+							"name": "",
+							"items": null
+						}
+					]
+				}
+			}
+		]
+	},
+	"state": {
+		"read": [
+			{
+				"name": "a snapshot with joined marks and a deleted playlist",
+				"doc": {
+					"kind": "stash-mirror-state",
+					"v": 1,
+					"uptoSeq": 900,
+					"likes": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": true,
+							"at": [
+								1760100000000,
+								0,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_BrowserAAAAAAAAA"
+							]
+						}
+					],
+					"plays": [
+						{
+							"s": {
+								"title": "Nights",
+								"artist": "Frank Ocean"
+							},
+							"playedAt": 1760099940000,
+							"device": "d_PhoneAAAAAAAAAAA"
+						}
+					],
+					"playsClearedBefore": 1760099900000,
+					"playlists": [
+						{
+							"id": "m_4fQ8xT2mLp9ZrW1c",
+							"name": "Discover Weekly",
+							"items": [
+								{
+									"title": "Pink + White",
+									"artist": "Frank Ocean",
+									"isrc": "USUM71607009",
+									"refs": {
+										"youtube": "uzS3WG6__G4"
+									}
+								}
+							],
+							"ro": true,
+							"at": [
+								1760100000000,
+								4,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_AAAAAAAAAAAAAAAAAAAAAA"
+						},
+						{
+							"id": "m_4fQ8xT2mLp9ZrW1e",
+							"name": "",
+							"items": null,
+							"at": [
+								1760100000000,
+								6,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_BBBBBBBBBBBBBBBBBBBBBB"
+						}
+					],
+					"joined": [
+						{
+							"kind": "likes",
+							"since": 812,
+							"device": "d_PhoneAAAAAAAAAAA"
+						},
+						{
+							"kind": "plays",
+							"since": "x",
+							"device": "d_PhoneAAAAAAAAAAA"
+						}
+					]
+				},
+				"expect": {
+					"kind": "stash-mirror-state",
+					"v": 1,
+					"uptoSeq": 900,
+					"likes": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": true,
+							"at": [
+								1760100000000,
+								0,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_BrowserAAAAAAAAA"
+							]
+						}
+					],
+					"plays": [
+						{
+							"s": {
+								"title": "Nights",
+								"artist": "Frank Ocean"
+							},
+							"playedAt": 1760099940000,
+							"device": "d_PhoneAAAAAAAAAAA"
+						}
+					],
+					"playsClearedBefore": 1760099900000,
+					"playlists": [
+						{
+							"id": "m_4fQ8xT2mLp9ZrW1c",
+							"name": "Discover Weekly",
+							"items": [
+								{
+									"title": "Pink + White",
+									"artist": "Frank Ocean",
+									"isrc": "USUM71607009",
+									"refs": {
+										"youtube": "uzS3WG6__G4"
+									}
+								}
+							],
+							"at": [
+								1760100000000,
+								4,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_AAAAAAAAAAAAAAAAAAAAAA",
+							"ro": true
+						},
+						{
+							"id": "m_4fQ8xT2mLp9ZrW1e",
+							"name": "",
+							"items": null,
+							"at": [
+								1760100000000,
+								6,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_BBBBBBBBBBBBBBBBBBBBBB"
+						}
+					],
+					"joined": [
+						{
+							"kind": "likes",
+							"since": 812,
+							"device": "d_PhoneAAAAAAAAAAA"
+						}
+					]
+				}
+			}
+		]
+	},
+	"wait": [
+		{
+			"name": "web, both, it turned likes on: at once",
+			"self": "web",
+			"me": "d_BrowserAAAAAAAAA",
+			"dir": "both",
+			"by": "d_BrowserAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA"
+			],
+			"expect": null
+		},
+		{
+			"name": "web, both, the phone turned them on: the phone",
+			"self": "web",
+			"me": "d_BrowserAAAAAAAAA",
+			"dir": "both",
+			"by": "d_PhoneAAAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA"
+			],
+			"expect": "d_PhoneAAAAAAAAAAA"
+		},
+		{
+			"name": "web, both, another browser turned them on: the phone",
+			"self": "web",
+			"me": "d_BrowserAAAAAAAAA",
+			"dir": "both",
+			"by": "d_FirefoxAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA",
+				"d_FirefoxAAAAAAAAA"
+			],
+			"expect": "d_PhoneAAAAAAAAAAA"
+		},
+		{
+			"name": "web, both, by unknown: the phone",
+			"self": "web",
+			"me": "d_BrowserAAAAAAAAA",
+			"dir": "both",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA"
+			],
+			"expect": "d_PhoneAAAAAAAAAAA"
+		},
+		{
+			"name": "web, both, no phone in the link: at once",
+			"self": "web",
+			"me": "d_BrowserAAAAAAAAA",
+			"dir": "both",
+			"by": "d_FirefoxAAAAAAAAA",
+			"phone": null,
+			"browsers": [
+				"d_BrowserAAAAAAAAA",
+				"d_FirefoxAAAAAAAAA"
+			],
+			"expect": null
+		},
+		{
+			"name": "web, phone → web, it turned them on: the phone anyway",
+			"self": "web",
+			"me": "d_BrowserAAAAAAAAA",
+			"dir": "toWeb",
+			"by": "d_BrowserAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA"
+			],
+			"expect": "d_PhoneAAAAAAAAAAA"
+		},
+		{
+			"name": "web, web → phone: at once (it only sends)",
+			"self": "web",
+			"me": "d_BrowserAAAAAAAAA",
+			"dir": "toPhone",
+			"by": "d_PhoneAAAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA"
+			],
+			"expect": null
+		},
+		{
+			"name": "phone, both, it turned them on: at once",
+			"self": "phone",
+			"me": "d_PhoneAAAAAAAAAAA",
+			"dir": "both",
+			"by": "d_PhoneAAAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA"
+			],
+			"expect": null
+		},
+		{
+			"name": "phone, both, a browser turned them on: that browser",
+			"self": "phone",
+			"me": "d_PhoneAAAAAAAAAAA",
+			"dir": "both",
+			"by": "d_BrowserAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA",
+				"d_FirefoxAAAAAAAAA"
+			],
+			"expect": "d_BrowserAAAAAAAAA"
+		},
+		{
+			"name": "phone, both, by unknown: at once",
+			"self": "phone",
+			"me": "d_PhoneAAAAAAAAAAA",
+			"dir": "both",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA"
+			],
+			"expect": null
+		},
+		{
+			"name": "phone, both, by a browser no longer linked: at once",
+			"self": "phone",
+			"me": "d_PhoneAAAAAAAAAAA",
+			"dir": "both",
+			"by": "d_FirefoxAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA"
+			],
+			"expect": null
+		},
+		{
+			"name": "phone, phone → web: at once (it only sends)",
+			"self": "phone",
+			"me": "d_PhoneAAAAAAAAAAA",
+			"dir": "toWeb",
+			"by": "d_BrowserAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA"
+			],
+			"expect": null
+		},
+		{
+			"name": "phone, web → phone, a browser turned them on: that browser",
+			"self": "phone",
+			"me": "d_PhoneAAAAAAAAAAA",
+			"dir": "toPhone",
+			"by": "d_FirefoxAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA",
+				"d_FirefoxAAAAAAAAA"
+			],
+			"expect": "d_FirefoxAAAAAAAAA"
+		},
+		{
+			"name": "phone, web → phone, the phone turned them on: the first browser",
+			"self": "phone",
+			"me": "d_PhoneAAAAAAAAAAA",
+			"dir": "toPhone",
+			"by": "d_PhoneAAAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA",
+				"d_FirefoxAAAAAAAAA"
+			],
+			"expect": "anyBrowser"
+		},
+		{
+			"name": "off: nobody",
+			"self": "web",
+			"me": "d_BrowserAAAAAAAAA",
+			"dir": "off",
+			"by": "d_PhoneAAAAAAAAAAA",
+			"phone": "d_PhoneAAAAAAAAAAA",
+			"browsers": [
+				"d_BrowserAAAAAAAAA"
+			],
+			"expect": null
+		}
+	],
+	"view": {
+		"apply": [
+			{
+				"batch": {
+					"device": "d_PhoneAAAAAAAAAAA",
+					"seq": 1,
+					"fromPhone": true,
+					"ops": [
+						{
+							"t": "joined",
+							"kind": "likes",
+							"since": 0
+						},
+						{
+							"t": "like",
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": true,
+							"at": [
+								1760100000000,
+								0,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"t": "play",
+							"s": {
+								"title": "Nights",
+								"artist": "Frank Ocean"
+							},
+							"playedAt": 1760099991000
+						},
+						{
+							"t": "play",
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"playedAt": 1760099992000
+						}
+					]
+				},
+				"expect": {
+					"likes": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": true,
+							"at": [
+								1760100000000,
+								0,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"seq": 1
+						}
+					],
+					"plays": [
+						{
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"playedAt": 1760099992000,
+							"device": "d_PhoneAAAAAAAAAAA",
+							"seq": 1
+						},
+						{
+							"s": {
+								"title": "Nights",
+								"artist": "Frank Ocean"
+							},
+							"playedAt": 1760099991000,
+							"device": "d_PhoneAAAAAAAAAAA",
+							"seq": 1
+						}
+					],
+					"clearedBefore": 0,
+					"clearedSeq": 0,
+					"playlists": {},
+					"joined": [
+						"likes|0|d_PhoneAAAAAAAAAAA"
+					]
+				}
+			},
+			{
+				"batch": {
+					"device": "d_BrowserAAAAAAAAA",
+					"seq": 2,
+					"fromPhone": false,
+					"ops": [
+						{
+							"t": "like",
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_BrowserAAAAAAAAA"
+							]
+						},
+						{
+							"t": "play",
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"playedAt": 1760099993000
+						},
+						{
+							"t": "pl",
+							"id": "m_4fQ8xT2mLp9ZrW1c",
+							"at": [
+								1760100000000,
+								2,
+								"d_BrowserAAAAAAAAA"
+							],
+							"parent": null,
+							"name": "Forged read-only",
+							"items": [
+								{
+									"title": "Ivy",
+									"artist": "Frank Ocean",
+									"durationMs": 249000,
+									"refs": {
+										"youtube": "AE005nZeF-A"
+									},
+									"artwork": [
+										{
+											"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+											"width": 480,
+											"height": 360
+										}
+									]
+								}
+							],
+							"ro": true
+						}
+					]
+				},
+				"expect": {
+					"likes": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_BrowserAAAAAAAAA"
+							],
+							"seq": 2
+						}
+					],
+					"plays": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"playedAt": 1760099993000,
+							"device": "d_BrowserAAAAAAAAA",
+							"seq": 2
+						},
+						{
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"playedAt": 1760099992000,
+							"device": "d_PhoneAAAAAAAAAAA",
+							"seq": 1
+						},
+						{
+							"s": {
+								"title": "Nights",
+								"artist": "Frank Ocean"
+							},
+							"playedAt": 1760099991000,
+							"device": "d_PhoneAAAAAAAAAAA",
+							"seq": 1
+						}
+					],
+					"clearedBefore": 0,
+					"clearedSeq": 0,
+					"playlists": {},
+					"joined": [
+						"likes|0|d_PhoneAAAAAAAAAAA"
+					]
+				}
+			},
+			{
+				"batch": {
+					"device": "d_PhoneAAAAAAAAAAA",
+					"seq": 3,
+					"fromPhone": true,
+					"ops": [
+						{
+							"t": "like",
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": true,
+							"at": [
+								1760099999995,
+								0,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"t": "clearPlays",
+							"before": 1760099991500,
+							"at": [
+								1760100000000,
+								3,
+								"d_PhoneAAAAAAAAAAA"
+							]
+						},
+						{
+							"t": "pl",
+							"id": "m_4fQ8xT2mLp9ZrW1c",
+							"at": [
+								1760100000000,
+								4,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"parent": null,
+							"name": "Discover Weekly",
+							"items": [
+								{
+									"title": "Ivy",
+									"artist": "Frank Ocean",
+									"durationMs": 249000,
+									"refs": {
+										"youtube": "AE005nZeF-A"
+									},
+									"artwork": [
+										{
+											"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+											"width": 480,
+											"height": 360
+										}
+									]
+								},
+								{
+									"title": "Voice memo",
+									"artist": "Me",
+									"phoneOnly": true
+								}
+							],
+							"ro": true
+						}
+					]
+				},
+				"expect": {
+					"likes": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_BrowserAAAAAAAAA"
+							],
+							"seq": 2
+						}
+					],
+					"plays": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"playedAt": 1760099993000,
+							"device": "d_BrowserAAAAAAAAA",
+							"seq": 2
+						},
+						{
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"playedAt": 1760099992000,
+							"device": "d_PhoneAAAAAAAAAAA",
+							"seq": 1
+						}
+					],
+					"clearedBefore": 0,
+					"clearedSeq": 0,
+					"playlists": {
+						"m_4fQ8xT2mLp9ZrW1c": {
+							"name": "Discover Weekly",
+							"items": [
+								{
+									"title": "Ivy",
+									"artist": "Frank Ocean",
+									"durationMs": 249000,
+									"refs": {
+										"youtube": "AE005nZeF-A"
+									},
+									"artwork": [
+										{
+											"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+											"width": 480,
+											"height": 360
+										}
+									]
+								},
+								{
+									"title": "Voice memo",
+									"artist": "Me",
+									"phoneOnly": true
+								}
+							],
+							"ro": true,
+							"at": [
+								1760100000000,
+								4,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_0iUqZz-z-VICOoGKYnFvWQ",
+							"seq": 3
+						}
+					},
+					"joined": [
+						"likes|0|d_PhoneAAAAAAAAAAA"
+					]
+				}
+			},
+			{
+				"batch": {
+					"device": "d_BrowserAAAAAAAAA",
+					"seq": 4,
+					"fromPhone": false,
+					"ops": [
+						{
+							"t": "pl",
+							"id": "m_4fQ8xT2mLp9ZrW1c",
+							"at": [
+								1760100000000,
+								5,
+								"d_BrowserAAAAAAAAA"
+							],
+							"parent": null,
+							"name": "Not yours",
+							"items": []
+						},
+						{
+							"t": "clearPlays",
+							"before": 1760099992500,
+							"at": [
+								1760100000000,
+								6,
+								"d_BrowserAAAAAAAAA"
+							],
+							"all": true
+						},
+						{
+							"t": "joined",
+							"kind": "playlists",
+							"since": 2
+						}
+					]
+				},
+				"expect": {
+					"likes": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_BrowserAAAAAAAAA"
+							],
+							"seq": 2
+						}
+					],
+					"plays": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"playedAt": 1760099993000,
+							"device": "d_BrowserAAAAAAAAA",
+							"seq": 2
+						}
+					],
+					"clearedBefore": 1760099992500,
+					"clearedSeq": 4,
+					"playlists": {
+						"m_4fQ8xT2mLp9ZrW1c": {
+							"name": "Discover Weekly",
+							"items": [
+								{
+									"title": "Ivy",
+									"artist": "Frank Ocean",
+									"durationMs": 249000,
+									"refs": {
+										"youtube": "AE005nZeF-A"
+									},
+									"artwork": [
+										{
+											"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+											"width": 480,
+											"height": 360
+										}
+									]
+								},
+								{
+									"title": "Voice memo",
+									"artist": "Me",
+									"phoneOnly": true
+								}
+							],
+							"ro": true,
+							"at": [
+								1760100000000,
+								4,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_0iUqZz-z-VICOoGKYnFvWQ",
+							"seq": 3
+						}
+					},
+					"joined": [
+						"likes|0|d_PhoneAAAAAAAAAAA",
+						"playlists|2|d_BrowserAAAAAAAAA"
+					]
+				}
+			},
+			{
+				"batch": {
+					"device": "d_PhoneAAAAAAAAAAA",
+					"seq": 5,
+					"fromPhone": true,
+					"ops": [
+						{
+							"t": "pl",
+							"id": "m_4fQ8xT2mLp9ZrW1e",
+							"at": [
+								1760100000000,
+								7,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"parent": null,
+							"name": "Gone",
+							"items": null
+						},
+						{
+							"t": "play",
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"playedAt": 1760099992200
+						},
+						{
+							"t": "play",
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"playedAt": 1760099999000
+						}
+					]
+				},
+				"expect": {
+					"likes": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_BrowserAAAAAAAAA"
+							],
+							"seq": 2
+						}
+					],
+					"plays": [
+						{
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"playedAt": 1760099999000,
+							"device": "d_PhoneAAAAAAAAAAA",
+							"seq": 5
+						},
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"playedAt": 1760099993000,
+							"device": "d_BrowserAAAAAAAAA",
+							"seq": 2
+						}
+					],
+					"clearedBefore": 1760099992500,
+					"clearedSeq": 4,
+					"playlists": {
+						"m_4fQ8xT2mLp9ZrW1c": {
+							"name": "Discover Weekly",
+							"items": [
+								{
+									"title": "Ivy",
+									"artist": "Frank Ocean",
+									"durationMs": 249000,
+									"refs": {
+										"youtube": "AE005nZeF-A"
+									},
+									"artwork": [
+										{
+											"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+											"width": 480,
+											"height": 360
+										}
+									]
+								},
+								{
+									"title": "Voice memo",
+									"artist": "Me",
+									"phoneOnly": true
+								}
+							],
+							"ro": true,
+							"at": [
+								1760100000000,
+								4,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_0iUqZz-z-VICOoGKYnFvWQ",
+							"seq": 3
+						},
+						"m_4fQ8xT2mLp9ZrW1e": {
+							"name": "Gone",
+							"items": null,
+							"at": [
+								1760100000000,
+								7,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_LS5RyBejrqkvkiDGKVRtqA",
+							"seq": 5
+						}
+					},
+					"joined": [
+						"likes|0|d_PhoneAAAAAAAAAAA",
+						"playlists|2|d_BrowserAAAAAAAAA"
+					]
+				}
+			}
+		],
+		"since": [
+			{
+				"since": {
+					"likes": 0,
+					"plays": 0,
+					"playlists": 0
+				},
+				"expect": {
+					"likes": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_BrowserAAAAAAAAA"
+							],
+							"seq": 2
+						}
+					],
+					"plays": [
+						{
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"playedAt": 1760099999000,
+							"device": "d_PhoneAAAAAAAAAAA",
+							"seq": 5
+						},
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"playedAt": 1760099993000,
+							"device": "d_BrowserAAAAAAAAA",
+							"seq": 2
+						}
+					],
+					"clearedBefore": 1760099992500,
+					"clearedSeq": 4,
+					"playlists": {
+						"m_4fQ8xT2mLp9ZrW1c": {
+							"name": "Discover Weekly",
+							"items": [
+								{
+									"title": "Ivy",
+									"artist": "Frank Ocean",
+									"durationMs": 249000,
+									"refs": {
+										"youtube": "AE005nZeF-A"
+									},
+									"artwork": [
+										{
+											"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+											"width": 480,
+											"height": 360
+										}
+									]
+								},
+								{
+									"title": "Voice memo",
+									"artist": "Me",
+									"phoneOnly": true
+								}
+							],
+							"ro": true,
+							"at": [
+								1760100000000,
+								4,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_0iUqZz-z-VICOoGKYnFvWQ",
+							"seq": 3
+						},
+						"m_4fQ8xT2mLp9ZrW1e": {
+							"name": "Gone",
+							"items": null,
+							"at": [
+								1760100000000,
+								7,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_LS5RyBejrqkvkiDGKVRtqA",
+							"seq": 5
+						}
+					},
+					"joined": [
+						"likes|0|d_PhoneAAAAAAAAAAA",
+						"playlists|2|d_BrowserAAAAAAAAA"
+					]
+				}
+			},
+			{
+				"since": {
+					"likes": 1,
+					"plays": 3,
+					"playlists": 4
+				},
+				"expect": {
+					"likes": [
+						{
+							"s": {
+								"title": "Pink + White",
+								"artist": "Frank Ocean",
+								"isrc": "USUM71607009",
+								"refs": {
+									"youtube": "uzS3WG6__G4"
+								}
+							},
+							"on": false,
+							"at": [
+								1760100000000,
+								1,
+								"d_BrowserAAAAAAAAA"
+							],
+							"seq": 2
+						}
+					],
+					"plays": [
+						{
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"playedAt": 1760099999000,
+							"device": "d_PhoneAAAAAAAAAAA",
+							"seq": 5
+						}
+					],
+					"clearedBefore": 1760099992500,
+					"clearedSeq": 4,
+					"playlists": {
+						"m_4fQ8xT2mLp9ZrW1e": {
+							"name": "Gone",
+							"items": null,
+							"at": [
+								1760100000000,
+								7,
+								"d_PhoneAAAAAAAAAAA"
+							],
+							"hash": "h_LS5RyBejrqkvkiDGKVRtqA",
+							"seq": 5
+						}
+					},
+					"joined": []
+				}
+			},
+			{
+				"since": {
+					"likes": 3,
+					"plays": 4,
+					"playlists": 5
+				},
+				"expect": {
+					"likes": [],
+					"plays": [
+						{
+							"s": {
+								"title": "Ivy",
+								"artist": "Frank Ocean",
+								"durationMs": 249000,
+								"refs": {
+									"youtube": "AE005nZeF-A"
+								},
+								"artwork": [
+									{
+										"url": "https://i.ytimg.com/vi/AE005nZeF-A/hqdefault.jpg",
+										"width": 480,
+										"height": 360
+									}
+								]
+							},
+							"playedAt": 1760099999000,
+							"device": "d_PhoneAAAAAAAAAAA",
+							"seq": 5
+						}
+					],
+					"clearedBefore": 0,
+					"clearedSeq": 0,
+					"playlists": {},
+					"joined": []
+				}
+			}
+		]
+	}
+}

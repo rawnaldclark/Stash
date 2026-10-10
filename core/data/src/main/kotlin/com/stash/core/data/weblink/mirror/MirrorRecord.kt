@@ -97,6 +97,8 @@ data class SpaceView(
     val clearedBefore: Long = 0,
     val playlists: Map<String, ViewPl> = emptyMap(),
     val joined: List<String> = emptyList(),
+    /** The log position of the clear that set [clearedBefore] (a snapshot's counts as its `uptoSeq`), for `since` (review S8). */
+    val clearedSeq: Long = 0,
 )
 
 // ---------------------------------------------------------------------------------------------- what this phone keeps
