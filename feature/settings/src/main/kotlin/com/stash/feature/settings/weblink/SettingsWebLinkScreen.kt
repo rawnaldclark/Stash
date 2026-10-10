@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.AlertDialog
@@ -40,6 +42,9 @@ import com.stash.core.data.weblink.PairingSession
 import com.stash.core.data.weblink.PairingState
 import com.stash.core.data.weblink.WebLinkCopy
 import com.stash.core.data.weblink.WebLinkStatus
+import com.stash.core.data.weblink.inbox.IncomingSend
+import com.stash.feature.settings.WebLibraryExportSheet
+import com.stash.feature.settings.WebLibraryExportViewModel
 import com.stash.core.ui.components.GlassCard
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsToggleRow
@@ -52,13 +57,21 @@ import com.stash.feature.settings.components.SettingsSectionLabel
  * devices, rename or remove one, unlink everything. Linking changes nothing in either library; nothing is mirrored yet.
  */
 @Composable
-fun SettingsWebLinkScreen(onBack: () -> Unit, viewModel: WebLinkViewModel = hiltViewModel()) {
+fun SettingsWebLinkScreen(
+    onBack: () -> Unit,
+    viewModel: WebLinkViewModel = hiltViewModel(),
+    exportVm: WebLibraryExportViewModel = hiltViewModel(),
+    inboxVm: InboxViewModel = hiltViewModel(),
+) {
     val status by viewModel.status.collectAsStateWithLifecycle()
     val pairing by viewModel.pairing.collectAsStateWithLifecycle()
     val scanning by viewModel.scanning.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val handoffOn by viewModel.handoffEnabled.collectAsStateWithLifecycle()
+    val sends by inboxVm.sends.collectAsStateWithLifecycle()
+    val inboxStep by inboxVm.step.collectAsStateWithLifecycle()
+    var openSend by remember { mutableStateOf<IncomingSend?>(null) }
 
     var picked by remember { mutableStateOf<LinkedDevice?>(null) }
     var renaming by remember { mutableStateOf<LinkedDevice?>(null) }
@@ -68,6 +81,7 @@ fun SettingsWebLinkScreen(onBack: () -> Unit, viewModel: WebLinkViewModel = hilt
     // Back on the screen (from the browser, another app): read the list again, as the web does when its tab returns.
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
         viewModel.refresh()
+        inboxVm.refresh()
         onPauseOrDispose { }
     }
 
@@ -87,6 +101,9 @@ fun SettingsWebLinkScreen(onBack: () -> Unit, viewModel: WebLinkViewModel = hilt
                     onUnlinkAll = { unlinkAll = true },
                     handoffOn = handoffOn,
                     onHandoff = viewModel::setHandoffEnabled,
+                    sends = sends,
+                    onSendLibrary = exportVm::openPicker,
+                    onOpenSend = { openSend = it },
                 )
             }
         }
@@ -95,6 +112,19 @@ fun SettingsWebLinkScreen(onBack: () -> Unit, viewModel: WebLinkViewModel = hilt
             QrScannerScreen(onCode = viewModel::openLink, onClose = viewModel::stopScan)
         }
     }
+
+    // Send my library to a browser: the export picker (Save as file is there too), and a received send's choices.
+    WebLibraryExportSheet(exportVm)
+    openSend?.let { send ->
+        SendDialog(
+            send = send,
+            onAdd = { openSend = null; inboxVm.addAll(send) },
+            onChoose = { openSend = null; inboxVm.choose(send) },
+            onLater = { openSend = null },
+            onDiscard = { openSend = null; inboxVm.discard(send) },
+        )
+    }
+    InboxStepDialogs(inboxStep, inboxVm)
 
     picked?.let { d ->
         DeviceActionsDialog(
@@ -161,6 +191,9 @@ private fun LinkedList(
     onUnlinkAll: () -> Unit,
     handoffOn: Boolean,
     onHandoff: (Boolean) -> Unit,
+    sends: List<IncomingSend>,
+    onSendLibrary: () -> Unit,
+    onOpenSend: (IncomingSend) -> Unit,
 ) {
     SettingsSectionLabel("Linked devices")
     status.problem?.let {
@@ -198,6 +231,32 @@ private fun LinkedList(
             )
         },
     )
+    SettingsSectionLabel("Your library")
+    SettingsGroupCard(
+        rows = listOf {
+            SettingsNavRow(
+                title = "Send my library to a browser",
+                subtitle = "Choose what goes: likes, plays, each playlist.",
+                leadingIcon = Icons.AutoMirrored.Outlined.Send,
+                onClick = { if (!busy && status.browsers.isNotEmpty()) onSendLibrary() },
+            )
+        },
+    )
+    if (sends.isNotEmpty()) {
+        SettingsSectionLabel("Waiting for you")
+        SettingsGroupCard(
+            rows = sends.map { s ->
+                @Composable {
+                    SettingsNavRow(
+                        title = "${s.name} sent you ${s.summary}",
+                        subtitle = if (s.content != null) "Add it, choose what to add, or discard it." else "Discard it.",
+                        leadingIcon = Icons.Outlined.Inbox,
+                        onClick = { onOpenSend(s) },
+                    )
+                }
+            },
+        )
+    }
     SettingsSectionLabel("Unlink")
     GlassCard {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
