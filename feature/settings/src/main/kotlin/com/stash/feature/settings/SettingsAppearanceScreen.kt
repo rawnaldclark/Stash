@@ -128,6 +128,30 @@ fun SettingsAppearanceScreen(
             onCheckedChange = viewModel::onAmbientAnimationEnabledChanged,
         )
 
+        Text(
+            text = "Ambient style",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (uiState.ambientAnimationEnabled) 1f else 0.38f),
+            // Lines up with the switch rows' titles above.
+            modifier = Modifier.padding(start = com.stash.feature.settings.components.SettingsRowPadH, end = com.stash.feature.settings.components.SettingsRowPadH, top = 4.dp, bottom = 8.dp),
+        )
+        SettingsSegmented(
+            options = listOf("Soft glow", "Classic"), // AmbientStyle order
+            selectedIndex = uiState.ambientStyle.ordinal,
+            onSelect = { viewModel.onAmbientStyleChanged(com.stash.core.data.prefs.AmbientStyle.entries[it]) },
+            enabled = uiState.ambientAnimationEnabled,
+        )
+        Text(
+            text = if (uiState.ambientAnimationEnabled) {
+                "Soft glow drifts gently, like the web player. Classic is the original look."
+            } else {
+                "Turn on Ambient motion to choose a style."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
+        )
+
         Spacer(Modifier.height(20.dp))
         SettingsSectionLabel("Open Stash on")
         SettingsSegmented(

@@ -35,6 +35,17 @@ class NowPlayingPreferenceTest {
         assertTrue(preference.ambientAnimationEnabled.first())
     }
 
+    @Test fun ambientStyle_defaultsToSoftGlow() = runTest {
+        org.junit.Assert.assertEquals(AmbientStyle.SOFT_GLOW, preference.ambientStyle.first())
+    }
+
+    @Test fun ambientStyle_persistsClassicAndBack() = runTest {
+        preference.setAmbientStyle(AmbientStyle.CLASSIC)
+        org.junit.Assert.assertEquals(AmbientStyle.CLASSIC, preference.ambientStyle.first())
+        preference.setAmbientStyle(AmbientStyle.SOFT_GLOW)
+        org.junit.Assert.assertEquals(AmbientStyle.SOFT_GLOW, preference.ambientStyle.first())
+    }
+
     @Test fun ambientAnimation_persistsFalseAndTrue() = runTest {
         preference.setAmbientAnimationEnabled(false)
         assertFalse(preference.ambientAnimationEnabled.first())

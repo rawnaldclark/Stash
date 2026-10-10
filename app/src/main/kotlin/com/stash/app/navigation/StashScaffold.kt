@@ -3,6 +3,12 @@ package com.stash.app.navigation
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -27,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -55,6 +62,7 @@ fun StashScaffold(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val onNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName
 
     // Whether a detail screen is currently in multi-select mode. Detail screens
     // signal this via `onSelectionModeChanged`; while it is true we hide the
@@ -175,7 +183,6 @@ fun StashScaffold(
             if (!selectionActive) {
                 val qobuzStatusViewModel: QobuzStatusViewModel = androidx.hilt.navigation.compose.hiltViewModel()
                 val qobuzStatus by qobuzStatusViewModel.bannerStatus.collectAsStateWithLifecycle()
-                val onNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName
 
                 Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
                     AnimatedVisibility(
@@ -214,20 +221,42 @@ fun StashScaffold(
                         )
                     }
 
-                    StashBottomBar(
-                        currentRoute = currentRoute,
-                        onNavigate = ::navigateToTab,
-                    )
+                    // Now Playing is a full-screen player: the tab bar slides away while it
+                    // is open and comes back as it closes (down chevron, Back, a tab switch).
+                    AnimatedVisibility(
+                        visible = !onNowPlaying,
+                        enter = slideInVertically(tween(NAV_BAR_SLIDE_MS)) { it } + fadeIn(tween(NAV_BAR_SLIDE_MS)),
+                        exit = slideOutVertically(tween(NAV_BAR_SLIDE_MS)) { it } + fadeOut(tween(NAV_BAR_SLIDE_MS)),
+                    ) {
+                        StashBottomBar(
+                            currentRoute = currentRoute,
+                            onNavigate = ::navigateToTab,
+                        )
+                    }
                 }
             }
         },
     ) { innerPadding ->
+        // On Now Playing the content takes the whole height down to the screen's
+        // edge: its ambient runs under the (gesture or 3-button) system bar and the
+        // screen pads its own controls above it. The status bar inset stays.
+        val layoutDirection = LocalLayoutDirection.current
+        val contentPadding = if (onNowPlaying) {
+            PaddingValues(
+                start = innerPadding.calculateStartPadding(layoutDirection),
+                top = innerPadding.calculateTopPadding(),
+                end = innerPadding.calculateEndPadding(layoutDirection),
+                bottom = 0.dp,
+            )
+        } else {
+            innerPadding
+        }
         StashNavHost(
             navController = navController,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding),
+                .padding(contentPadding)
+                .consumeWindowInsets(contentPadding),
             onSelectionModeChanged = { selectionActive = it },
             onNavigateToTab = ::navigateToTab,
             startDestination = when (startTab) {
@@ -238,6 +267,9 @@ fun StashScaffold(
         )
     }
 }
+
+/** The tab bar's slide on and off Now Playing. */
+private const val NAV_BAR_SLIDE_MS = 350 // = StashNavHost SLIDE_DURATION_MS, so bar and player move as one
 
 @Composable
 private fun StashBottomBar(
