@@ -8,6 +8,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Link Stash on the web: scanning the pairing code. Asked only when the scanner opens. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <!--
         largeHeap: MITIGATION for the v0.9.73 OOM reports (#238/#239) — users
         exhaust the default 256MB Java heap ("<1% free after GC"). Doubles the
@@ -112,6 +115,26 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+        <!--
+            Link Stash on the web (spec 2026-10-10 link-sync §2.2, sync-v1 §3.4): the pairing code is a link,
+            https://stashfm.app/link#1.<pairId>.<pairSecret>.<eB.pub>, so scanning it with the phone's own camera app opens
+            Stash at the confirm sheet (the secrets are in the fragment, which never reaches a server). Its own filter, apart
+            from the share links', because the <data> tags of one filter combine and /link must not apply to the old
+            workers.dev host. An alias so the build flag can switch it off: release builds keep it disabled until the
+            feature ships (WEB_LINK_ENABLED, manifest placeholder webLinkEnabled).
+        -->
+        <activity-alias
+            android:name=".WebLinkAlias"
+            android:enabled="${webLinkEnabled}"
+            android:exported="true"
+            android:targetActivity=".MainActivity">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="stashfm.app" android:path="/link" />
+            </intent-filter>
+        </activity-alias>
         <receiver
             android:name="com.stash.core.data.sync.BootReceiver"
             android:exported="true"

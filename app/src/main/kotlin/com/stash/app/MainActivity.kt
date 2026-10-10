@@ -25,6 +25,7 @@ import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.data.share.ShareApiClient
 import com.stash.core.data.share.ShareResult
+import com.stash.core.data.weblink.SyncKeys
 import com.stash.core.model.ThemeMode
 import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
@@ -52,6 +53,12 @@ class MainActivity : ComponentActivity() {
 
         /** [pendingDeepLink] prefix for a Listen Together invite; the room code follows. */
         const val DEEP_LINK_LISTEN_PREFIX = "listen:"
+
+        /** [pendingDeepLink] prefix for a Link Stash on the web pairing link (`https://stashfm.app/link#1.…`); the link follows. */
+        const val DEEP_LINK_WEB_LINK_PREFIX = "weblink:"
+
+        /** A pairing link is about 160 characters; anything far longer isn't one. */
+        private const val MAX_WEB_LINK = 512
     }
 
     @Inject
@@ -163,6 +170,14 @@ class MainActivity : ComponentActivity() {
         // Shared mix / track links (https App Links on stashfm.app or the old workers.dev host, and legacy
         // stash://track). Spec §6.
         if (intent.action == Intent.ACTION_VIEW) {
+            // A pairing code opened by the camera app (or adb): its secrets are in the fragment. Only while the feature is
+            // on (its intent filter is on an alias that release builds keep disabled); the confirm sheet checks the link.
+            val data = intent.data?.toString()
+            if (BuildConfig.WEB_LINK_ENABLED && data != null && data.startsWith(SyncKeys.LINK_BASE + "#")) {
+                pendingDeepLink.value = DEEP_LINK_WEB_LINK_PREFIX + data.take(MAX_WEB_LINK)
+                intent.data = null
+                return
+            }
             val handled = when (val parsed = ShareLinks.parse(intent.data?.toString())) {
                 is ShareLinks.Parsed.Mix -> {
                     pendingDeepLink.value = DEEP_LINK_SHARED_MIX_PREFIX + parsed.shareId
