@@ -81,3 +81,23 @@ export function parseDeviceAuth(header) {
     const m = /^Stash-Device ([A-Za-z0-9_-]{8,64}):([A-Za-z0-9_-]{43})$/.exec(header ?? "");
     return m ? { deviceId: m[1], token: m[2] } : null;
 }
+
+/** The header the player Worker adds to every forwarded request (its value is the PLAYER_KEY secret). */
+export const PLAYER_HEADER = "X-Stash-Player-Key";
+
+/**
+ * Calls one method of a Durable Object through its fetch handler: JSON in, `{ status, body, headers? }` out.
+ * (Native RPC needs classes extending `DurableObject` from "cloudflare:workers", which plain Node can't load for the tests.)
+ */
+export async function rpc(stub, method, arg = {}) {
+    const res = await stub.fetch(`https://do.internal/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(arg) });
+    if (!res.ok) throw new Error(`object answered ${res.status} to ${method}`);
+    return res.json();
+}
+
+/** The object side of rpc(): runs `target[method](arg)` for an allowed method. */
+export async function serveRpc(request, target, methods) {
+    const method = new URL(request.url).pathname.slice(1);
+    if (request.method !== "POST" || !methods.includes(method)) return new Response(null, { status: 404 });
+    return Response.json(await target[method](await request.json()));
+}

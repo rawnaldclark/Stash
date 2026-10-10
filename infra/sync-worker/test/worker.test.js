@@ -143,7 +143,7 @@ test("the space API is rate limited per IP (the browser's by the IP the player f
 test("a throw anywhere becomes a retryable 503", async () => {
     const w = world();
     const device = await makeDevice("p");
-    w.env.SPACES = { idFromName: (n) => n, get: () => ({ call: async () => { throw new Error("storage reset"); } }) };
+    w.env.SPACES = { idFromName: (n) => n, get: () => ({ fetch: async () => { throw new Error("storage reset"); } }) };
     const errors = [];
     const log = console.error;
     console.error = (e) => errors.push(e);

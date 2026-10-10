@@ -1,9 +1,10 @@
 /**
  * SyncSpace: one SQLite Durable Object per sync space (`idFromName(spaceId)`), a thin shell around src/space.js
  * (as ListenRoom is around room.js). It holds no timers, promises or fetches between requests, so an idle space
- * hibernates and costs nothing (spec §6.6); retention runs on the alarm. The Worker calls it over RPC.
+ * hibernates and costs nothing (spec §6.6); retention runs on the alarm. The Worker calls it through rpc() (src/http.js).
  */
 import { RETENTION_EVERY_MS, Space } from "./space.js";
+import { rpc, serveRpc } from "./http.js";
 
 export class SyncSpace {
     constructor(ctx, env, opts = {}) {
@@ -14,8 +15,13 @@ export class SyncSpace {
             sql: ctx.storage.sql,
             transaction: (fn) => ctx.storage.transactionSync(fn),
             now: this.now,
-            claimPair: (pairId, caller, mode) => env.PAIRS.get(env.PAIRS.idFromName(pairId)).claim({ caller, mode }),
+            claimPair: (pairId, caller, mode) => rpc(env.PAIRS.get(env.PAIRS.idFromName(pairId)), "claim", { caller, mode }),
         });
+    }
+
+    /** The Worker's calls (src/http.js rpc). */
+    fetch(request) {
+        return serveRpc(request, this, ["create", "call"]);
     }
 
     /** A new space from a claimed pairing; arms the retention alarm. */

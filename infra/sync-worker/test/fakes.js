@@ -62,7 +62,7 @@ export function fakeCtx() {
     return ctx;
 }
 
-/** A namespace: idFromName is the identity, get() makes one object per name and clones what crosses, as RPC does. */
+/** A namespace: idFromName is the identity, get() makes one object per name; a stub only has fetch, as in production. */
 export function namespace(make) {
     const objects = new Map();
     return {
@@ -76,13 +76,7 @@ export function namespace(make) {
                 objects.set(id, make(ctx));
             }
             const o = objects.get(id);
-            return new Proxy(o, {
-                get(target, prop) {
-                    const f = target[prop];
-                    if (typeof f !== "function") return f;
-                    return async (...args) => structuredClone(await f.apply(target, args.map((a) => structuredClone(a))));
-                },
-            });
+            return { fetch: (input, init) => o.fetch(input instanceof Request ? input : new Request(input, init)) };
         },
     };
 }

@@ -8,13 +8,13 @@
  * anything else, so pairing slots can only be opened from a signed-in player session (no open relay).
  * Every id is in the path, never in a query (the stashfm.app zone's cache ignores query strings); every answer is no-store.
  */
-import { answer, fail, limitKey, parseDeviceAuth, randomId, sameSecret, sha256Hex } from "./http.js";
+import { answer, fail, limitKey, parseDeviceAuth, PLAYER_HEADER, randomId, rpc, sameSecret, sha256Hex } from "./http.js";
 import { isDeviceId, isPairId, isSendId, isSpaceId, LIMITS, pathInt } from "./validate.js";
 
 export { SyncSpace } from "./sync-space.js";
 export { PairSlot } from "./pair-slot.js";
 
-export const PLAYER_HEADER = "X-Stash-Player-Key";
+/** Only functions and classes may be exported from the main module (workerd refuses other values), so constants live in http.js. */
 
 export default {
     /** Any throw (an object reset, a storage error) becomes a retryable 503, not a bare 500. */
@@ -159,7 +159,7 @@ export async function handle(request, env, _ctx) {
         const r = await readJson(request);
         if ("response" in r) return r.response;
         const pairId = randomId();
-        return answer(await env.PAIRS.get(env.PAIRS.idFromName(pairId)).open({ pairId, device: r.value?.device }));
+        return answer(await rpc(env.PAIRS.get(env.PAIRS.idFromName(pairId)), "open", { pairId, device: r.value?.device }));
     }
     let m = /^\/v1\/pair\/([^/]+)(?:\/(label|answer|reply))?$/.exec(path);
     if (m) {
@@ -173,17 +173,17 @@ export async function handle(request, env, _ctx) {
         if (fromBrowser && !player) return playerOnly();
         const over = await limited(fromBrowser ? env.API_RL : env.PAIR_RL, ip);
         if (over) return over;
-        if (sub === "label") return answer(await slot.label());
+        if (sub === "label") return answer(await rpc(slot, "label"));
         if (sub === "answer") {
             const r = await readJson(request);
-            return "response" in r ? r.response : answer(await slot.answer({ body: r.value }));
+            return "response" in r ? r.response : answer(await rpc(slot, "answer", { body: r.value }));
         }
         const caller = await deviceCaller(request);
         if (!caller) return noAuth();
-        if (sub === "") return answer(await slot.poll({ caller }));
-        if (method === "GET") return answer(await slot.readReply({ caller }));
+        if (sub === "") return answer(await rpc(slot, "poll", { caller }));
+        if (method === "GET") return answer(await rpc(slot, "readReply", { caller }));
         const r = await readJson(request);
-        return "response" in r ? r.response : answer(await slot.reply({ caller, body: r.value }));
+        return "response" in r ? r.response : answer(await rpc(slot, "reply", { caller, body: r.value }));
     }
 
     // ------------------------------------------------------------ spaces
@@ -198,9 +198,9 @@ export async function handle(request, env, _ctx) {
         const { pairId, spaceId } = r.value ?? {};
         if (!isPairId(pairId) || !isSpaceId(spaceId)) return fail(400, "bad_request", "Need pairId and spaceId");
         // The phone that answered the slot creates the space; the claim burns the slot and hands over both devices.
-        const claim = await env.PAIRS.get(env.PAIRS.idFromName(pairId)).claim({ caller, mode: "create" });
+        const claim = await rpc(env.PAIRS.get(env.PAIRS.idFromName(pairId)), "claim", { caller, mode: "create" });
         if (claim.status !== 200) return answer(claim);
-        return answer(await env.SPACES.get(env.SPACES.idFromName(spaceId)).create({ spaceId, phone: claim.body.phone, browser: claim.body.browser }));
+        return answer(await rpc(env.SPACES.get(env.SPACES.idFromName(spaceId)), "create", { spaceId, phone: claim.body.phone, browser: claim.body.browser }));
     }
     m = /^\/v1\/spaces\/([^/]+)((?:\/[^/]+)*)$/.exec(path);
     if (m) {
@@ -222,7 +222,7 @@ export async function handle(request, env, _ctx) {
             body = r.value;
         }
         const ifMatch = route.op === "configPut" ? request.headers.get("if-match") : undefined;
-        return answer(await env.SPACES.get(env.SPACES.idFromName(spaceId)).call({ op: route.op, caller, params: route.params, body, ifMatch }));
+        return answer(await rpc(env.SPACES.get(env.SPACES.idFromName(spaceId)), "call", { op: route.op, caller, params: route.params, body, ifMatch }));
     }
     return notFound();
 }
