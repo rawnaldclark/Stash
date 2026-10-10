@@ -598,3 +598,15 @@ test("fetching a newer key out of order keeps the older ones while old-key data 
     await call(browser, "key", { epoch: 3 });
     assert.equal(code(await call(browser, "key", { epoch: 2 })), "no_key");
 });
+
+test("a stalled send's later part, after the hour, answers complete: false and starts the send over (sync-v1 §5.5)", async () => {
+    const { clock, ctx, call, phone, browser } = await setup();
+    const rows = (sendId) => ctx.sql.exec("SELECT part FROM inbox WHERE sendId = ? ORDER BY part", sendId).toArray().map((r) => r.part);
+    const put = (part) => call(phone, "inboxPut", { to: browser.id, sendId: "send_stall", part, count: 2 }, env1(16));
+    assert.deepEqual((await put(0)).body, { complete: false });
+    clock.t += SEND_STALL_MS + 1; // the sender stalls past the hour
+    assert.deepEqual((await put(1)).body, { complete: false }, "the last part alone doesn't complete it");
+    assert.deepEqual(rows("send_stall"), [1], "the stale part 0 went; the send starts over with part 1");
+    assert.deepEqual((await call(browser, "inboxList")).body.sends, [], "not listed: incomplete");
+    assert.deepEqual((await put(0)).body, { complete: true }, "putting every part again completes it");
+});
