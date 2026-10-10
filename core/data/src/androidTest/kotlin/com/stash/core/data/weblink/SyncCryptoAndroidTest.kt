@@ -32,7 +32,7 @@ class SyncCryptoAndroidTest {
         val eP = SyncCrypto.privateKey(b(EP_D))
         assertEquals(SHARED, Base64Url.encode(SyncCrypto.ecdh(eP, eBPub)))
         assertEquals(SHARED, Base64Url.encode(SyncCrypto.ecdh(eB, ePPub)))
-        val kpair = SyncKeys.pairKey(eP, eBPub, b(PAIR_SECRET), PAIR_ID, eBPub, ePPub)
+        val kpair = SyncKeys.pairKey(eP, eBPub, b(PAIR_SECRET), PAIR_ID, eBPub, ePPub, BROWSER_ID, b(BROWSER_PUB))
         assertEquals(KPAIR, Base64Url.encode(kpair))
         assertEquals(SAS, SyncKeys.pairCode(kpair))
     }
@@ -72,8 +72,10 @@ class SyncCryptoAndroidTest {
         const val EP_D = "b0hF5jzuVOGf8K87tYXS6WLJmm6Xwkp4IdAqjvAVg_8"
         const val EP_PUB = "BGfywORAAxSrynIzhFv_nphYCyV-hyl8t165-y3f9pnnLo4uR34g-9FGoXychFLR-X7uWHFUvsgsf-RmjrBl8ok"
         const val SHARED = "Fg1ChQEavS5uTK-yhFTvvKmCEQ4GgLWlZBJxDKF5E88"
-        const val KPAIR = "-30DszwM0qN39yw0QdQb5BIFQQKqmwRMbEQELYcZsGo"
-        const val SAS = "755005"
+        const val KPAIR = "IvzcNnH0bWYfAs458bIsanAeaKisPcJhSrrf0p7jFlQ"
+        const val SAS = "232660"
+        const val BROWSER_ID = "d_B3mV6cYh1sJd0Ga5"
+        const val BROWSER_PUB = "BD8oLUkNslgGNdOBtXtewnhY6nwdZiNsq0rdY1iMoDzMQ23k_WlGxgadiudWqJz9OLTwDyut5AUTjrCITrDcJwU"
         const val PAIR_ID = "xWbdvdFfe2P04fdKEQpCLg"
         const val PAIR_SECRET = "oKGio6SlpqeoqaqrrK2urw"
         const val SPACE_ID = "s_AJNrGM1Yn3oI2sgnUjMtLQ"

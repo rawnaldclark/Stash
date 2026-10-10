@@ -85,6 +85,16 @@ object SyncKeys {
 
     fun readLabel(text: String, deviceId: String): Label = readLabel(parseObject(text, "bad label"), deviceId)
 
+    /**
+     * Keys are pinned (trust on first use per device id): once a device's key is known (from a code-checked pairing, or the first
+     * sealed label seen for that id), a label with another key for that id is refused, and the device is shown as "Key changed:
+     * remove it and link it again". Returns the key to keep.
+     */
+    fun pinKey(known: ByteArray?, label: Label): ByteArray {
+        if (known != null && !SyncCrypto.sameBytes(known, label.pub)) bad("key changed")
+        return known ?: label.pub
+    }
+
     // -------------------------------------------------------------------------------------------- pairing (spec §5.1)
 
     class QrLink(val pairId: String, val pairSecret: ByteArray, val eBPub: ByteArray)
@@ -110,12 +120,25 @@ object SyncKeys {
     /** The key both devices' pairing labels are sealed with: HKDF(pairSecret, empty salt, "stash-sync pair label"), place `label:<deviceId>`. */
     fun pairLabelKey(pairSecret: ByteArray): ByteArray = SyncCrypto.hkdf(pairSecret, ByteArray(0), utf8(INFO_PAIR_LABEL))
 
-    /** HKDF info of Kpair: `stash-sync pair v1|<pairId>|<eB.pub>|<eP.pub>` (keys base64url). */
-    fun pairInfo(pairId: String, eBPub: ByteArray, ePPub: ByteArray) = "$INFO_PAIR|$pairId|${Base64Url.encode(eBPub)}|${Base64Url.encode(ePPub)}"
+    /**
+     * HKDF info of Kpair: `stash-sync pair v1|<pairId>|<eB.pub>|<eP.pub>|<browser deviceId>|<browser pub>` (keys base64url). The
+     * browser's device id and long-term key come from its pairing label: a label swapped in the slot gives the phone another Kpair,
+     * so another code than the browser shows.
+     */
+    fun pairInfo(pairId: String, eBPub: ByteArray, ePPub: ByteArray, browserId: String, browserPub: ByteArray) =
+        "$INFO_PAIR|$pairId|${Base64Url.encode(eBPub)}|${Base64Url.encode(ePPub)}|$browserId|${Base64Url.encode(browserPub)}"
 
     /** Kpair = HKDF(ECDH(mine, theirs), salt = pairSecret, info = [pairInfo]). Both sides call it with their own private key. */
-    fun pairKey(mine: PrivateKey, theirPub: ByteArray, pairSecret: ByteArray, pairId: String, eBPub: ByteArray, ePPub: ByteArray): ByteArray =
-        SyncCrypto.hkdf(SyncCrypto.ecdh(mine, theirPub), pairSecret, utf8(pairInfo(pairId, eBPub, ePPub)))
+    fun pairKey(
+        mine: PrivateKey,
+        theirPub: ByteArray,
+        pairSecret: ByteArray,
+        pairId: String,
+        eBPub: ByteArray,
+        ePPub: ByteArray,
+        browserId: String,
+        browserPub: ByteArray,
+    ): ByteArray = SyncCrypto.hkdf(SyncCrypto.ecdh(mine, theirPub), pairSecret, utf8(pairInfo(pairId, eBPub, ePPub, browserId, browserPub)))
 
     /**
      * The six digits both screens show before anything is shared: HKDF(Kpair, empty salt, "stash-sync pair sas", 4 bytes) as a

@@ -56,6 +56,12 @@ class SyncCryptoTest {
         assertThat(SyncCrypto.gunzip(one).toString(Charsets.UTF_8)).isEqualTo("""{"a":1}""")
         assertThrows(SyncCryptoException::class.java) { SyncCrypto.gunzip(one + SyncCrypto.gzip("{}".toByteArray())) }
         assertThrows(SyncCryptoException::class.java) { SyncCrypto.gunzip(one + byteArrayOf(0, 1, 2)) }
+        // An empty first member: the whole output's CRC and length match the last trailer, but the first member holds nothing.
+        assertThrows(SyncCryptoException::class.java) { SyncCrypto.gunzip(SyncCrypto.gzip(ByteArray(0)) + one) }
+        // Optional header fields (FNAME) are skipped correctly.
+        val named = byteArrayOf(0x1f, 0x8b.toByte(), 8, 8, 0, 0, 0, 0, 0, 0xff.toByte()) + "x.json".toByteArray() + byteArrayOf(0) + one.copyOfRange(10, one.size)
+        assertThat(SyncCrypto.gunzip(named).toString(Charsets.UTF_8)).isEqualTo("""{"a":1}""")
+        assertThrows(SyncCryptoException::class.java) { SyncCrypto.gunzip(one.copyOf(one.size - 3)) }
         assertThrows(SyncCryptoException::class.java) { SyncCrypto.gunzip(SyncCrypto.gzip(ByteArray(200_000)), max = 100_000) }
         assertThrows(SyncCryptoException::class.java) { SyncCrypto.gunzip("not gzip".toByteArray()) }
     }
@@ -155,13 +161,23 @@ class SyncCryptoTest {
         val eP = SyncCrypto.privateKey(b(p["phoneEphemeral"]["d"]))
         assertThat(b64(SyncCrypto.ecdh(eP, eBPub))).isEqualTo(p["shared"].s)
         assertThat(b64(SyncCrypto.ecdh(eB, ePPub))).isEqualTo(p["shared"].s)
-        assertThat(SyncKeys.pairInfo(p["pairId"].s, eBPub, ePPub)).isEqualTo(p["info"].s)
-        val kPhone = SyncKeys.pairKey(eP, eBPub, b(p["pairSecret"]), p["pairId"].s, eBPub, ePPub)
-        val kBrowser = SyncKeys.pairKey(eB, ePPub, b(p["pairSecret"]), p["pairId"].s, eBPub, ePPub)
+        val browserId = "d_B3mV6cYh1sJd0Ga5"
+        val browserPub = b(p["browserDevicePub"])
+        assertThat(SyncKeys.pairInfo(p["pairId"].s, eBPub, ePPub, browserId, browserPub)).isEqualTo(p["info"].s)
+        val kPhone = SyncKeys.pairKey(eP, eBPub, b(p["pairSecret"]), p["pairId"].s, eBPub, ePPub, browserId, browserPub)
+        val kBrowser = SyncKeys.pairKey(eB, ePPub, b(p["pairSecret"]), p["pairId"].s, eBPub, ePPub, browserId, browserPub)
         assertThat(b64(kPhone)).isEqualTo(p["kpair"].s)
         assertThat(b64(kBrowser)).isEqualTo(p["kpair"].s)
         assertThat(SyncKeys.pairCode(kPhone)).isEqualTo(p["sas"].s)
         assertThat(SyncKeys.pairCode(ByteArray(32))).isNotEqualTo(p["sas"].s)
+        // A browser label swapped in the slot (another key) gives the phone another Kpair, so another code.
+        val swapped = SyncKeys.pairKey(eP, eBPub, b(p["pairSecret"]), p["pairId"].s, eBPub, ePPub, browserId, b(p["phoneDevicePub"]))
+        assertThat(SyncKeys.pairCode(swapped)).isNotEqualTo(p["sas"].s)
+        // Keys are pinned per device id.
+        val label = SyncKeys.readLabel(p["label"]["json"].s, browserId)
+        assertThat(b64(SyncKeys.pinKey(null, label))).isEqualTo(p["browserDevicePub"].s)
+        assertThat(b64(SyncKeys.pinKey(label.pub, label))).isEqualTo(p["browserDevicePub"].s)
+        assertThrows(SyncCryptoException::class.java) { SyncKeys.pinKey(b(p["phoneDevicePub"]), label) }
 
         val answer = p["answer"]
         assertThat(b64(SyncCrypto.aesSeal(kPhone, b(answer["nonce"]), answer["aad"].s, b(answer["gz"])))).isEqualTo(answer["env"]["c"].s)

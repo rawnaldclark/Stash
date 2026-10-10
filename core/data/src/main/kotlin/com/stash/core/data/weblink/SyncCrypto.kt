@@ -1,7 +1,6 @@
 package com.stash.core.data.weblink
 
 import kotlinx.serialization.Serializable
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.math.BigInteger
 import java.nio.ByteBuffer
@@ -22,7 +21,8 @@ import java.security.spec.ECParameterSpec
 import java.security.spec.ECPrivateKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.util.zip.CRC32
-import java.util.zip.GZIPInputStream
+import java.util.zip.DataFormatException
+import java.util.zip.Inflater
 import java.util.zip.GZIPOutputStream
 import javax.crypto.Cipher
 import javax.crypto.KeyAgreement
@@ -135,32 +135,49 @@ object SyncCrypto {
 
     fun gzip(b: ByteArray): ByteArray = ByteArrayOutputStream().also { out -> GZIPOutputStream(out).use { it.write(b) } }.toByteArray()
 
+    /** Length of a gzip member's header (RFC 1952: FEXTRA, FNAME, FCOMMENT, FHCRC), or -1 when it isn't one. */
+    private fun gzipHeaderLength(b: ByteArray): Int {
+        fun u(i: Int) = b[i].toInt() and 0xff
+        if (b.size < 18 || u(0) != 0x1f || u(1) != 0x8b || u(2) != 8 || u(3) and 0xe0 != 0) return -1
+        val flg = u(3)
+        var i = 10
+        if (flg and 4 != 0) i += 2 + (u(i) or (u(i + 1) shl 8))
+        if (flg and 8 != 0) while (i < b.size && b[i++] != 0.toByte()) Unit
+        if (flg and 16 != 0) while (i < b.size && b[i++] != 0.toByte()) Unit
+        if (flg and 2 != 0) i += 2
+        return if (i < b.size) i else -1
+    }
+
     /**
-     * Inflates gzip, refusing more than [max] bytes. The input must end with the CRC-32 and length of the whole output, so trailing
-     * bytes and a second member are refused (the web checks the same).
+     * Inflates exactly one gzip member, refusing more than [max] bytes: the member's deflate stream must end exactly 8 bytes before
+     * the input does, and those 8 bytes must be the output's CRC-32 and length. So trailing bytes and second members (an empty first
+     * one too) are refused. The web checks the same.
      */
     fun gunzip(b: ByteArray, max: Int = MAX_PLAINTEXT): ByteArray {
-        val out = try {
-            GZIPInputStream(ByteArrayInputStream(b)).use { input ->
-                val out = ByteArrayOutputStream()
-                val buf = ByteArray(64 * 1024)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    if (out.size() + n > max) throw SyncCryptoException("too big")
-                    out.write(buf, 0, n)
-                }
-                out.toByteArray()
+        val h = gzipHeaderLength(b)
+        if (h < 0) throw SyncCryptoException("not gzip")
+        val inflater = Inflater(true)
+        val out = ByteArrayOutputStream()
+        try {
+            inflater.setInput(b, h, b.size - h)
+            val buf = ByteArray(64 * 1024)
+            while (!inflater.finished()) {
+                val n = inflater.inflate(buf)
+                if (n == 0 && (inflater.needsInput() || inflater.needsDictionary())) throw SyncCryptoException("not gzip")
+                if (out.size() + n > max) throw SyncCryptoException("too big")
+                out.write(buf, 0, n)
             }
-        } catch (e: SyncCryptoException) {
-            throw e
-        } catch (e: Exception) {
+            if (inflater.remaining != 8) throw SyncCryptoException("not gzip")
+        } catch (e: DataFormatException) {
             throw SyncCryptoException("not gzip", e)
+        } finally {
+            inflater.end()
         }
+        val bytes = out.toByteArray()
         val t = ByteBuffer.wrap(b, b.size - 8, 8).order(ByteOrder.LITTLE_ENDIAN)
-        val crc = CRC32().apply { update(out) }.value
-        if (t.int.toLong() and 0xffffffffL != crc || t.int.toLong() and 0xffffffffL != out.size.toLong()) throw SyncCryptoException("not gzip")
-        return out
+        val crc = CRC32().apply { update(bytes) }.value
+        if (t.int.toLong() and 0xffffffffL != crc || t.int.toLong() and 0xffffffffL != bytes.size.toLong()) throw SyncCryptoException("not gzip")
+        return bytes
     }
 
     internal fun utf8(b: ByteArray): String = try {
