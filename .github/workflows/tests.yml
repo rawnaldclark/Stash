@@ -75,6 +75,12 @@ jobs:
         working-directory: infra/share-worker
         run: node --no-warnings --test test/*.test.js
 
+      # The sync Worker (linking with Stash on the web): pairing, spaces, limits, retention. node:sqlite stands in for
+      # the Durable Objects' SQLite; local imports only.
+      - name: Run the sync Worker's tests
+        working-directory: infra/sync-worker
+        run: node --no-warnings --test test/*.test.js
+
       # The tip jar (supporters list, Ko-fi webhook, stashfm.app early access). Local imports only too.
       - name: Run the tip jar's tests
         working-directory: infra/tipjar-worker
