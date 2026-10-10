@@ -1,0 +1,19 @@
+{
+  "name": "stash-sync",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Links Stash for Android with Stash on the web: pairing, end-to-end encrypted mirror log, handoff slots and sends.",
+  "engines": {
+    "node": ">=24.2"
+  },
+  "scripts": {
+    "dev": "wrangler dev --port 8795",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "node --no-warnings --test test/*.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.135.0"
+  }
+}

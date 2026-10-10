@@ -1,0 +1,48 @@
+name = "stash-sync"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# One address: sync.stashfm.app (spec 2026-10-10 §6.1). *.workers.dev is blocked on some networks abroad, so it stays off.
+# `custom_domain = true` makes `wrangler deploy` create the DNS record and certificate for sync.stashfm.app in the
+# stashfm.app zone (main Cloudflare account) by itself.
+workers_dev = false
+routes = [
+  { pattern = "sync.stashfm.app", custom_domain = true },
+]
+
+# Secret (never in this file): PLAYER_KEY, the value the player Worker sends as X-Stash-Player-Key (README "Deploy").
+
+# One SQLite Durable Object per sync space, and one short-lived one per pairing code.
+[[durable_objects.bindings]]
+name = "SPACES"
+class_name = "SyncSpace"
+
+[[durable_objects.bindings]]
+name = "PAIRS"
+class_name = "PairSlot"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SyncSpace", "PairSlot"]
+
+# Rate limits per client (spec §6.4). A ratelimits binding carries ONE fixed limit and a period of 10 or 60 s.
+# namespace_id must be unique in the account: 1001 (lossless relay), 2001–2009 (share), 2020–2021 (mailer) are taken.
+
+# The phone's pairing calls (read the label, answer, read the reply), per IP.
+[[ratelimits]]
+name = "PAIR_RL"
+namespace_id = "2030"
+simple = { limit = 10, period = 60 }
+
+# Opening a pairing code, per player session (X-Stash-Session). The spec's "6 per session per 10 min" can't be a
+# binding (60 s is the longest period), so it is 3 a minute: a code renews every 3 minutes while shown.
+[[ratelimits]]
+name = "PAIR_OPEN_RL"
+namespace_id = "2031"
+simple = { limit = 3, period = 60 }
+
+# Every space call and the browser's pairing calls, per IP (the player forwards the browser's IP).
+[[ratelimits]]
+name = "API_RL"
+namespace_id = "2032"
+simple = { limit = 240, period = 60 }
