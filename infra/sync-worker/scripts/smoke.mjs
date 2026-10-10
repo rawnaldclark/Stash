@@ -49,7 +49,7 @@ function expect(label, r, status) {
 const phone = await device("p");
 const browser = await device("w");
 
-const open = expect("open a code (player)", await call("POST", "/v1/pair", { player: true, body: { device: browser.record }, headers: { "X-Stash-Session": "smoke_session" } }), 201);
+const open = expect("open a code (player)", await call("POST", "/v1/pair", { player: true, body: { device: browser.record }, headers: { "X-Stash-Session": `smoke_${b64(randomBytes(9))}` } }), 201);
 const pairId = open.body?.pairId;
 expect("open a code without the player key", await call("POST", "/v1/pair", { body: { device: browser.record } }), 403);
 expect("phone reads the label", await call("GET", `/v1/pair/${pairId}/label`), 200);
@@ -76,10 +76,14 @@ expect("send: one part", await call("PUT", s(`/inbox/${browser.id}/smoke_send/0/
 expect("send: listed", await call("GET", s("/inbox"), { dev: browser, player: true }), 200);
 expect("rotate to epoch 2", await call("POST", s("/rotate"), { dev: phone, body: { epoch: 2, envelopes: { [phone.id]: box(2, 64, phone.pub), [browser.id]: box(2, 64, browser.pub) }, config: box(2) } }), 200);
 expect("key for epoch 2", await call("GET", s("/key/2"), { dev: browser, player: true }), 200);
+expect("no batches until a snapshot under the new key", await call("POST", s("/log"), { dev: phone, body: { env: box(2) } }), 409);
+expect("snapshot under the new key", await call("PUT", s("/snapshot/1/0/1"), { dev: phone, body: { env: box(2) } }), 200);
+expect("log: append again", await call("POST", s("/log"), { dev: phone, body: { env: box(2) } }), 201);
+expect("a browser token around the player", await call("GET", s(), { dev: browser }), 403);
 expect("remove the browser", await call("DELETE", s(`/devices/${browser.id}`), { dev: phone }), 204);
 expect("the browser is cut off", await call("GET", s(), { dev: browser, player: true }), 401);
 expect("unlink everything", await call("DELETE", s(), { dev: phone }), 204);
-expect("the space is gone", await call("GET", s(), { dev: phone }), 404);
+expect("the space is gone (answered like a removed device)", await call("GET", s(), { dev: phone }), 401);
 
 console.log(failures ? `\n${failures} check(s) failed` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
