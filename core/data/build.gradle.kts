@@ -70,4 +70,8 @@ dependencies {
     // silently when wrong, so they need an HTTP-level test, not a mocked client.
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+
+    // SyncCryptoAndroidTest: sync-v1's P-256 ECDH and AES-GCM on the device's own providers (Conscrypt, Android Keystore).
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
