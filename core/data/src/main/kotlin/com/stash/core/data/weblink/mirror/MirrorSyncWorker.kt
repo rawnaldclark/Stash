@@ -24,7 +24,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 
 /**
- * One mirror run in the background (spec §9, §12): after a library change (10 s later, replacing a pending one), when the app
+ * One mirror run in the background (spec §9, §12): after a library change (10 s later, a pending one kept), when the app
  * comes to the foreground (at most once a minute), and every 6 hours while mirroring is on. Every request needs a network; the
  * periodic one also a battery that isn't low. An offline run is retried with a backoff; the diff waits meanwhile, so nothing
  * is lost. Nothing runs while nothing mirrors.
@@ -54,6 +54,7 @@ class MirrorSyncWorker @AssistedInject constructor(
         const val WORK_CHANGE = "stash_mirror_change"
         const val WORK_NOW = "stash_mirror_now"
         const val WORK_PLAYS = "stash_mirror_plays"
+        const val WORK_FOLLOW = "stash_mirror_follow"
         const val PLAYS_DELAY_MIN = 15L
         const val WORK_PERIODIC = "stash_mirror_periodic"
         const val MAX_RETRIES = 5
@@ -94,6 +95,13 @@ interface MirrorScheduler {
      */
     fun changed()
 
+    /**
+     * A run just ended and the library changed during it (review S6): a run after it, as [changed] or [playsChanged] would wait.
+     * Its own work, appended after a follow-up still running: the run that ended may still be RUNNING under its own name, where
+     * KEEP would drop the request (final check F-S1).
+     */
+    fun followUp(playsOnly: Boolean)
+
     /** Only new plays: a run within 15 minutes (a pending one stays), so playback doesn't wake the radio per song (N3). */
     fun playsChanged()
 
@@ -113,6 +121,11 @@ class WorkManagerMirrorScheduler @Inject constructor(@ApplicationContext private
         wm.enqueueUniqueWork(MirrorSyncWorker.WORK_CHANGE, ExistingWorkPolicy.KEEP, MirrorSyncWorker.changeRequest())
     }
 
+    override fun followUp(playsOnly: Boolean) {
+        val r = if (playsOnly) MirrorSyncWorker.playsRequest() else MirrorSyncWorker.changeRequest()
+        wm.enqueueUniqueWork(MirrorSyncWorker.WORK_FOLLOW, ExistingWorkPolicy.APPEND_OR_REPLACE, r)
+    }
+
     override fun playsChanged() {
         wm.enqueueUniqueWork(MirrorSyncWorker.WORK_PLAYS, ExistingWorkPolicy.KEEP, MirrorSyncWorker.playsRequest())
     }
@@ -130,6 +143,7 @@ class WorkManagerMirrorScheduler @Inject constructor(@ApplicationContext private
             wm.cancelUniqueWork(MirrorSyncWorker.WORK_PERIODIC)
             wm.cancelUniqueWork(MirrorSyncWorker.WORK_CHANGE)
             wm.cancelUniqueWork(MirrorSyncWorker.WORK_PLAYS)
+            wm.cancelUniqueWork(MirrorSyncWorker.WORK_FOLLOW)
         }
     }
 }

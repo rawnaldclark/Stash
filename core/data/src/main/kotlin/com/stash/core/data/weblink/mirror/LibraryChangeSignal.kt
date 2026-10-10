@@ -57,7 +57,7 @@ class MirrorTriggers internal constructor(
                     // and a failure that lasts (a full space, waiting for the browser, a newer format) must not loop (R-B1).
                     // Either way, what is now is the new starting point: only a change after it asks again.
                     val d = guard { digest(s) }
-                    if (s.lastRunOk && d != null && s.pushDigest != null && d != s.pushDigest) ask(s.pushDigest, d)
+                    if (s.lastRunOk && d != null && s.pushDigest != null && d != s.pushDigest) scheduler.followUp(playsOnly(s.pushDigest, d))
                     lastDigest = d
                 }
                 wasBusy = s.busy
@@ -82,8 +82,10 @@ class MirrorTriggers internal constructor(
      * plays mirror), a run within 15 minutes, so a listening session costs a few runs, not one per song (review N3).
      */
     private fun ask(before: String?, now: String) {
-        if (before != null && before.substringBefore(PLAYS_SEP) == now.substringBefore(PLAYS_SEP)) scheduler.playsChanged() else scheduler.changed()
+        if (playsOnly(before, now)) scheduler.playsChanged() else scheduler.changed()
     }
+
+    private fun playsOnly(before: String?, now: String) = before != null && before.substringBefore(PLAYS_SEP) == now.substringBefore(PLAYS_SEP)
 
     /**
      * The app came to the foreground: a run, at most once a minute, while linked (also with every kind off: that run is how this

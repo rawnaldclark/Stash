@@ -82,7 +82,9 @@ class MirrorSchedulingTest {
         var plays = 0
         var now = 0
         val periodic = mutableListOf<Boolean>()
+        val follow = mutableListOf<Boolean>()
         override fun changed() { changed++ }
+        override fun followUp(playsOnly: Boolean) { follow += playsOnly }
         override fun now() { now++ }
         override fun playsChanged() { plays++ }
         override fun periodic(on: Boolean) { periodic += on }
@@ -144,13 +146,22 @@ class MirrorSchedulingTest {
         scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
         status.value = on.copy(pushDigest = "l:1#p:1", lastRunOk = true)
         scope.runCurrent()
-        assertThat(rec.changed).isEqualTo(1)
+        // Its own work, never the change work that may still be RUNNING (final check F-S1).
+        assertThat(rec.follow).containsExactly(false)
+        assertThat(rec.changed).isEqualTo(0)
         // Only a new play: the longer wait.
         digest = "l:2#p:2"
         inv.emit(Unit)
         scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
-        assertThat(rec.changed).isEqualTo(1)
+        assertThat(rec.changed).isEqualTo(0)
         assertThat(rec.plays).isEqualTo(1)
+        // A play during a run: the follow-up waits as plays do.
+        status.value = on.copy(busy = true, pushDigest = "l:2#p:2", lastRunOk = true)
+        scope.runCurrent()
+        digest = "l:2#p:3"
+        status.value = on.copy(pushDigest = "l:2#p:2", lastRunOk = true)
+        scope.runCurrent()
+        assertThat(rec.follow).containsExactly(false, true).inOrder()
         scope.cancel()
     }
 
@@ -172,6 +183,7 @@ class MirrorSchedulingTest {
             scope.advanceTimeBy(60_000)
         }
         assertThat(rec.changed).isEqualTo(0) // retries belong to WorkManager's backoff, not to the trigger
+        assertThat(rec.follow).isEmpty()
         // A new local change after the last attempt asks for one run.
         digest = "l:3#p:1"
         inv.emit(Unit)
@@ -186,6 +198,25 @@ class MirrorSchedulingTest {
         val first = infos(MirrorSyncWorker.WORK_CHANGE).single { !it.state.isFinished }.id
         s.changed()
         assertThat(infos(MirrorSyncWorker.WORK_CHANGE).single { !it.state.isFinished }.id).isEqualTo(first)
+    }
+
+    @Test fun `F-S1 - a follow-up still runs while the change run that just ended is RUNNING, and after a follow-up run too`() {
+        val s = WorkManagerMirrorScheduler(context)
+        val dao = WorkManagerImpl.getInstance(context).workDatabase.workSpecDao()
+        s.changed()
+        dao.setState(WorkInfo.State.RUNNING, infos(MirrorSyncWorker.WORK_CHANGE).single().id.toString())
+        s.changed() // KEEP: dropped while that run is RUNNING, which is why the follow-up can't use it
+        assertThat(infos(MirrorSyncWorker.WORK_CHANGE).filter { it.state == WorkInfo.State.ENQUEUED }).isEmpty()
+        s.followUp(playsOnly = false)
+        val f = infos(MirrorSyncWorker.WORK_FOLLOW).single { !it.state.isFinished }
+        assertThat(spec(f).initialDelay).isEqualTo(10_000L)
+        // A change made during a follow-up run: another follow-up after it, not dropped.
+        dao.setState(WorkInfo.State.RUNNING, f.id.toString())
+        s.followUp(playsOnly = true)
+        assertThat(infos(MirrorSyncWorker.WORK_FOLLOW).filter { !it.state.isFinished }).hasSize(2)
+        s.periodic(true)
+        s.periodic(false)
+        assertThat(infos(MirrorSyncWorker.WORK_FOLLOW).filter { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }).isEmpty()
     }
 
     @Test fun `no background run while nothing mirrors, and the foreground asks at most once a minute while linked`() = runTest {
