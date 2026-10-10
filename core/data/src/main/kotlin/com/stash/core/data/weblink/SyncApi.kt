@@ -52,6 +52,9 @@ object SyncErrorCode {
     const val DEVICES_CHANGED = "devices_changed"
     const val ROTATION_DUE = "rotation_due"
     const val COMPACT = "compact"
+    const val STALE = "stale"
+    const val SNAPSHOT = "snapshot"
+    const val CHANGED = "changed"
     const val SPACE_FULL = "space_full"
     const val RATE_LIMITED = "rate_limited"
     const val DAILY_LIMIT = "daily_limit"
@@ -108,7 +111,29 @@ data class SpaceInfo(
     val head: Long = 0,
     val devices: List<SpaceDevice>,
     val serverTime: Long = 0,
+    /** The mirror's current snapshot, or null when the space has none (sync-v1 §5.4). */
+    val snapshot: SnapshotMeta? = null,
 )
+
+/** Where the mirror's snapshot stands: after log entry [uptoSeq], in [parts] parts, sealed under [epoch]. */
+@Serializable
+data class SnapshotMeta(val uptoSeq: Long = 0, val parts: Int = 0, val epoch: Int = 0)
+
+/** One mirror batch in the log (`GET …/log/after/{seq}`): the server stamps [device] from the writer's token. */
+@Serializable
+data class LogEntry(val seq: Long, val device: String, val serverAt: Long, val env: SyncEnvelope)
+
+@Serializable
+data class LogPage(val entries: List<LogEntry> = emptyList(), val head: Long = 0, val more: Boolean = false)
+
+@Serializable
+data class LogPosted(val seq: Long, val serverAt: Long = 0)
+
+@Serializable
+data class SnapshotPut(val complete: Boolean = false)
+
+@Serializable
+data class SnapshotPartInfo(val uptoSeq: Long, val part: Int, val count: Int, val epoch: Int, val env: SyncEnvelope)
 
 @Serializable
 data class SpaceDevice(
@@ -192,6 +217,23 @@ interface SyncApi {
 
     /** The mirror config slot, or `Ok(null)` when the space has none. */
     suspend fun config(auth: DeviceAuth, spaceId: String): SyncResult<ConfigSlot?>
+
+    /**
+     * Writes the mirror config with `If-Match: <serverAt read>` ([ifMatch] 0: there was none). `412 changed`: someone wrote
+     * meanwhile (read again, apply, redo the change on top).
+     */
+    suspend fun putConfig(auth: DeviceAuth, spaceId: String, env: SyncEnvelope, ifMatch: Long): SyncResult<SlotWritten>
+
+    /** Up to 200 mirror batches after [seq] (sync-v1 §7); `409 snapshot` when [seq] is older than the snapshot. */
+    suspend fun logAfter(auth: DeviceAuth, spaceId: String, seq: Long): SyncResult<LogPage>
+
+    /** Appends one mirror batch; `409 compact` past 2,000 batches or while a snapshot under a new key is due. */
+    suspend fun postLog(auth: DeviceAuth, spaceId: String, env: SyncEnvelope): SyncResult<LogPosted>
+
+    /** One part of a snapshot after log entry [uptoSeq] (sync-v1 §3.3, §5.4). */
+    suspend fun putSnapshot(auth: DeviceAuth, spaceId: String, uptoSeq: Long, part: Int, count: Int, env: SyncEnvelope): SyncResult<SnapshotPut>
+
+    suspend fun snapshotPart(auth: DeviceAuth, spaceId: String, part: Int): SyncResult<SnapshotPartInfo>
 
     /** Writes this device's own handoff slot ([slot] is `now` or `queue`; spec §4.2, §8.1). */
     suspend fun putSlot(auth: DeviceAuth, spaceId: String, slot: String, env: SyncEnvelope): SyncResult<SlotWritten>
