@@ -70,7 +70,7 @@ Unknown fields are dropped; every stored value is rebuilt from the fields above.
 | Space total | 32 MiB (log, snapshot, slots, sends; a snapshot being uploaded doesn't count) → `413 space_full` |
 | Log | 2,000 batches → `409 compact` (clients compact at 500 or 4 MiB) |
 | Per device per UTC day | 3,000 writes (counted on the device's row), 20,000 reads (counted in memory: a flood brake, not an exact quota, since it starts over when the object is evicted). Per device, so one device can't spend the others' budget. **Never refused**: `GET` the space, `GET key`, removing a device, unlinking everything and rotating (they count, and have `SAFE_RL` / `OPEN_RL` instead), so a flooding device can always be seen and removed |
-| Sends waiting per device | 8 |
+| Sends waiting per device | 8 (an unfinished send counts until an hour passes with no new part) |
 | `PAIR_RL` (2030) | the phone's label/answer/reply calls: 10/min per IP |
 | `SAFE_RL` (2031) | removing a device, unlinking everything, rotating: 10/min per presented token |
 | `OPEN_RL` (2033) | opening the space and reading a key envelope: 60/min per presented token |
@@ -85,7 +85,7 @@ Accepted limits: `PAIR_RL` and `API_RL` key phones by IP, so phones behind one c
 
 ## Retention (spec §6.5)
 
-`src/space.js`: `DEVICE_IDLE_DAYS = 90`, `SLOT_KEEP_DAYS = 7`, `SEND_KEEP_DAYS = 7`. A daily alarm per space removes devices unseen for 90 days (setting `rotationDue`), deletes the space when no device is left, drops `now`/`queue` slots and sends older than 7 days, and unfinished snapshot uploads older than a day. Reads already hide expired slots and sends, and a device past 90 days is refused (and removed) the moment it calls, even before the alarm. Pairing slots delete themselves 2 minutes after their 3-minute life. `lastSeenAt` is written at most hourly.
+`src/space.js`: `DEVICE_IDLE_DAYS = 90`, `SLOT_KEEP_DAYS = 7`, `SEND_KEEP_DAYS = 7`, `SEND_STALL_MS` = 1 hour. A daily alarm per space removes devices unseen for 90 days (setting `rotationDue`), deletes the space when no device is left, drops `now`/`queue` slots and sends older than 7 days, and unfinished snapshot uploads older than a day. An unfinished send with no new part for an hour (the sender stopped part-way and never took it back) is dropped on the next inbox write or listing, and by the alarm, so it holds the receiver at `inbox_full` for an hour, not a week; a part arriving later starts the send over. Reads already hide expired slots and sends, and a device past 90 days is refused (and removed) the moment it calls, even before the alarm. Pairing slots delete themselves 2 minutes after their 3-minute life. `lastSeenAt` is written at most hourly.
 
 While `rotationDue` is set (a device was removed), writes sealed under the current key (`log`, `snapshot`, `slots/*`, `inbox`, `devices/me/label`) get `409 rotation_due`; reads, removals, unlink and `rotate` still work.
 

@@ -15,6 +15,13 @@ export const DEVICE_IDLE_DAYS = 90;
 /** `now` and `queue` slots, and sends, are dropped this long after they were written. */
 export const SLOT_KEEP_DAYS = 7;
 export const SEND_KEEP_DAYS = 7;
+/**
+ * An unfinished send with no new part for this long was abandoned (the sender crashed or lost the network and never sent
+ * again or took it back): it stops counting against the receiver's inbox and goes. A sender puts its parts one after
+ * another, each at most 1 MiB, so an hour between two parts is a part crawling at under ~2.3 kbit/s; nothing still
+ * uploading waits that long. Short enough that the receiver isn't held at `inbox_full` for long.
+ */
+export const SEND_STALL_MS = 3_600_000;
 /** An unfinished snapshot upload is dropped after this. */
 export const STAGING_KEEP_MS = 24 * 3_600_000;
 /** `lastSeenAt` is written at most this often per device. */
@@ -487,6 +494,20 @@ export class Space {
 
     // ---------------------------------------------------------------- one-off sends
 
+    /**
+     * Drops the sends that no longer count: an unfinished one with no new part for SEND_STALL_MS, and any past its 7 days
+     * (readers already hide those). Run before the receiver's inbox is counted and when it lists, so an abandoned upload holds
+     * it at `inbox_full` for an hour, not a week; the alarm sweeps the rest. A sender that comes back under the same `sendId`
+     * starts a new send (sync-v1 §5.5). True when something went; the caller recounts.
+     */
+    dropStaleSends(now) {
+        const stale = `SELECT sendId FROM inbox GROUP BY sendId
+            HAVING (COUNT(*) < MAX(count) AND MAX(serverAt) < ?) OR MIN(serverAt) < ?`;
+        if (!this.one(`${stale} LIMIT 1`, now - SEND_STALL_MS, now - SEND_MS)) return false;
+        this.sql.exec(`DELETE FROM inbox WHERE sendId IN (${stale})`, now - SEND_STALL_MS, now - SEND_MS);
+        return true;
+    }
+
     inboxPut(m, me, { to, sendId, part, count }, body, now) {
         const env = cleanEnv(body?.env, LIMITS.blobChars);
         if (!env) return bad("Not an envelope");
@@ -494,6 +515,10 @@ export class Space {
         if (to === me.id) return bad("Not to yourself");
         if (!this.one("SELECT id FROM devices WHERE id = ?", to)) return notFound("No such device");
         if (env.e !== m.epoch) return epochErr();
+        if (this.dropStaleSends(now)) {
+            this.recount();
+            m = this.meta();
+        }
         const first = this.one("SELECT toDevice, fromDevice, count FROM inbox WHERE sendId = ? LIMIT 1", sendId);
         if (first && (first.toDevice !== to || first.fromDevice !== me.id || first.count !== count)) return err(409, "exists", "Another send has this id");
         if (!first) {
@@ -511,6 +536,7 @@ export class Space {
 
     /** Complete sends addressed to the caller, newest first. */
     inboxList(me, now) {
+        if (this.dropStaleSends(now)) this.recount();
         const sends = this.rows(
             `SELECT sendId, fromDevice, count, MIN(serverAt) AS serverAt, SUM(length(body)) AS bytes, COUNT(*) AS n FROM inbox
              WHERE toDevice = ? GROUP BY sendId HAVING n = count AND MIN(serverAt) >= ? ORDER BY serverAt DESC`, me.id, now - SEND_MS)
@@ -538,8 +564,8 @@ export class Space {
     // ---------------------------------------------------------------- retention (spec §6.5)
 
     /**
-     * The alarm's work: devices idle for 90 days go (the space with them, when none is left), old slots, sends and
-     * abandoned snapshot uploads go. True when the whole space should be deleted.
+     * The alarm's work: devices idle for 90 days go (the space with them, when none is left), old slots, old or abandoned
+     * sends and abandoned snapshot uploads go. True when the whole space should be deleted.
      */
     retain() {
         const now = this.now();
@@ -548,7 +574,7 @@ export class Space {
             for (const d of this.rows("SELECT id FROM devices WHERE lastSeenAt < ?", now - IDLE_MS)) this.removeDevice(d.id);
             if (this.one("SELECT COUNT(*) AS n FROM devices").n === 0) return true;
             this.sql.exec("DELETE FROM slots WHERE name <> 'config' AND serverAt < ?", now - SLOT_MS);
-            this.sql.exec("DELETE FROM inbox WHERE sendId IN (SELECT sendId FROM inbox GROUP BY sendId HAVING MIN(serverAt) < ?)", now - SEND_MS);
+            this.dropStaleSends(now);
             this.sql.exec("DELETE FROM snapshot WHERE staged = 1 AND serverAt < ?", now - STAGING_KEEP_MS);
             this.recount();
             return false;

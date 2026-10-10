@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SyncSpace } from "../src/sync-space.js";
-import { DEVICE_IDLE_DAYS, KEY_ENVELOPES_KEPT, RETENTION_EVERY_MS, SEEN_WRITE_MS, SLOT_KEEP_DAYS, STAGING_KEEP_MS } from "../src/space.js";
+import { DEVICE_IDLE_DAYS, KEY_ENVELOPES_KEPT, RETENTION_EVERY_MS, SEEN_WRITE_MS, SEND_STALL_MS, SLOT_KEEP_DAYS, STAGING_KEEP_MS } from "../src/space.js";
 import { LIMITS } from "../src/validate.js";
 import { box, fakeCtx, keyBox, makeDevice, record } from "./fakes.js";
 
@@ -261,6 +261,51 @@ test("one-off sends: parts, only complete sends listed, only the receiver reads,
     assert.equal(code(full), "inbox_full");
     clock.t += 7 * DAY + 1;
     assert.deepEqual((await call(browser, "inboxList")).body.sends, []);
+});
+
+test("a send left half-way stops filling the receiver's inbox after an hour without a part; one still uploading, a complete one and a re-send are unaffected", async () => {
+    const { clock, ctx, so, call, phone, browser } = await setup();
+    const rows = (sendId) => ctx.sql.exec("SELECT COUNT(*) AS n FROM inbox WHERE sendId = ?", sendId).toArray()[0].n;
+    const bytesUsed = () => ctx.sql.exec("SELECT bytesUsed FROM meta").toArray()[0].bytesUsed;
+    const put = (sendId, part, count) => call(phone, "inboxPut", { to: browser.id, sendId, part, count }, env1(16));
+    await withLimit("sendsPerDevice", 3, async () => {
+        assert.deepEqual((await put("send_half", 0, 2)).body, { complete: false }); // the sender stops here
+        assert.deepEqual((await put("send_done", 0, 1)).body, { complete: true });
+        assert.deepEqual((await put("send_slow", 0, 3)).body, { complete: false });
+        clock.t += SEND_STALL_MS / 2;
+        assert.deepEqual((await put("send_slow", 1, 3)).body, { complete: false }, "still uploading");
+        clock.t = T0 + SEND_STALL_MS;
+        assert.equal(code(await put("send_new1", 0, 1)), "inbox_full", "an hour exactly: the half send still counts");
+
+        clock.t += 1;
+        assert.deepEqual((await put("send_new1", 0, 1)).body, { complete: true }, "the half send no longer counts");
+        assert.equal(rows("send_half"), 0, "and is gone");
+        assert.equal(rows("send_slow"), 2, "a send still uploading stays");
+        assert.equal(rows("send_done"), 1, "a complete send stays");
+        assert.equal(code(await put("send_new2", 0, 1)), "inbox_full", "the rest still count");
+        assert.deepEqual((await put("send_slow", 2, 3)).body, { complete: true });
+
+        // The sender tries again under the same id (sync-v1 §5.5): it starts over as a new send.
+        assert.equal((await call(browser, "inboxDelete", { sendId: "send_new1" })).status, 204);
+        assert.deepEqual((await put("send_half", 0, 2)).body, { complete: false });
+        assert.deepEqual((await put("send_half", 1, 2)).body, { complete: true });
+        const listed = (await call(browser, "inboxList")).body.sends.map((s) => s.sendId).sort();
+        assert.deepEqual(listed, ["send_done", "send_half", "send_slow"]);
+    });
+
+    // Listing cleans up too, and so does the alarm; the space's byte count follows.
+    await put("send_lst1", 0, 2);
+    clock.t += SEND_STALL_MS + 1;
+    await call(browser, "inboxList");
+    assert.equal(rows("send_lst1"), 0, "listing drops it");
+    await put("send_alm1", 0, 2);
+    clock.t += SEND_STALL_MS + 1;
+    await call(phone, "get");
+    await so.alarm();
+    assert.equal(rows("send_alm1"), 0, "the alarm drops it");
+    assert.equal(rows("send_half"), 2, "complete sends live their 7 days");
+    const stored = ctx.sql.exec("SELECT IFNULL(SUM(length(body)), 0) AS n FROM inbox").toArray()[0].n;
+    assert.equal(bytesUsed(), stored);
 });
 
 test("removing a device cuts it off at once, clears its slots and sends, and asks the others to rotate", async () => {
