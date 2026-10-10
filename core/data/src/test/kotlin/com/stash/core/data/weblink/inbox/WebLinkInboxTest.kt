@@ -244,9 +244,21 @@ class WebLinkInboxTest {
         assertThat(inbox.send(chrome.deviceId, document(likes = 3))).isEqualTo(SendOutcome.Failed(WebLinkCopy.OFFLINE))
         assertThat(server.sends).hasSize(1)
         val first = server.sends.keys.single()
+        val firstBytes = server.sends.getValue(first).parts.getValue(0).c
         // The same document again, stamped later (every tap writes a new exportedAt): same id, replacing it.
         assertThat(inbox.send(chrome.deviceId, document(likes = 3).replace("2026-10-10T00:00:00.000Z", "2026-10-10T00:05:00.000Z"))).isEqualTo(SendOutcome.Sent)
         assertThat(server.sends.keys).containsExactly(first)
+        assertThat(server.sends.getValue(first).parts.getValue(0).c).isEqualTo(firstBytes) // the same sealed bytes (R-N9)
+    }
+
+    @Test fun `a last part answered complete false is a failed send - taken back, then the same id and bytes go again`() = runTest {
+        val chrome = link()
+        val inbox = inbox(partBytes = 1_000)
+        server.incompleteOnce = true
+        assertThat(inbox.send(chrome.deviceId, document())).isEqualTo(SendOutcome.Sent)
+        val send = server.sends.values.single()
+        assertThat(send.parts.size).isEqualTo(send.count)
+        assertThat(server.calls.count { it == "deleteInbox" }).isEqualTo(1)
     }
 
     @Test fun `S12 - a different document after a lost answer gets an id of its own`() = runTest {

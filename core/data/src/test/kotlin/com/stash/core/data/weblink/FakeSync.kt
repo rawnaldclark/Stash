@@ -334,6 +334,9 @@ class FakeSyncServer : SyncApi {
 
     val sends = LinkedHashMap<String, Send>()
 
+    /** The next send's last part is answered `complete: false` (an unfinished send the server dropped meanwhile). */
+    var incompleteOnce = false
+
     /** The next part PUT lands but its answer is lost (and the take-back after it can't reach the server either). */
     var landThenLose = false
     private var loseDelete = false
@@ -354,6 +357,13 @@ class FakeSyncServer : SyncApi {
         val send = s ?: Send(to, me.id, count, clock).also { sends[sendId] = it }
         if (send.to != to || send.from != me.id || send.count != count) return err(409, SyncErrorCode.EXISTS)
         send.parts[part] = env
+        if (incompleteOnce && part == count - 1) {
+            // The server dropped the unfinished send meanwhile: the last part lands alone and the send isn't complete.
+            incompleteOnce = false
+            send.parts.clear()
+            send.parts[part] = env
+            return SyncResult.Ok(InboxPut(false))
+        }
         if (landThenLose) {
             landThenLose = false
             loseDelete = true
