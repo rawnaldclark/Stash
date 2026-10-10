@@ -159,6 +159,17 @@ class WebLibraryImporterTest {
         assertEquals(before, counts())
     }
 
+    @Test fun `a playlist that came from the web goes back under the web's id, so the web merges it instead of copying it`() = runTest {
+        fill()
+        val file = webFile("""{"id":"webmix1","name":"Web picks","items":[{"title":"Halo","artist":"Beyoncé"}]}""")
+        importer.import(WebLibraryReader.read(file, T), ImportSelection.ALL, "d_web0000000000001")
+        val exported = exporter.collect(T, null)
+        assertEquals(listOf("app-${db.playlistDao().findBySourceId("custom_1")!!.id}", "webmix1", "app-${db.playlistDao().findBySourceId("share:Fw12ab34")!!.id}").sorted(), exported.playlists.map { it.id }.sorted())
+        // And back on this phone, the same file is still a no-op.
+        val r = importer.import(WebLibraryReader.read(exporter.text(exported), T), ImportSelection.ALL, WebLibraryImporter.ORIGIN_FILE)
+        assertEquals(0, r.playlistsAdded + r.playlistsUpdated + r.songsAdded)
+    }
+
     @Test fun `a playlist already here gains only what it lacks, at the end`() = runTest {
         val ids = fill()
         val file = webFile(

@@ -281,6 +281,9 @@ class WebLibraryImporter internal constructor(
         private val APP_ID = Regex("^app-(\\d{1,18})$")
 
         /** The playlist an imported one becomes: CUSTOM, shown by Library like every `custom_%` playlist. */
-        fun sourceIdOf(p: ImportedPlaylist) = "custom_web_${p.id}"
+        fun sourceIdOf(p: ImportedPlaylist) = WEB_SOURCE_PREFIX + p.id
+
+        /** The `source_id` prefix of a playlist made from a web library file or send. */
+        const val WEB_SOURCE_PREFIX = "custom_web_"
     }
 }

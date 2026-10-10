@@ -125,7 +125,7 @@ class WebLibraryExporter @Inject constructor(
             val created = p.dateAdded.toEpochMilli().takeIf { it > 0 } ?: nowMs
             val updated = rows.mapNotNull { it.addedAt }.maxOrNull()?.coerceAtLeast(created) ?: created
             WebLibraryFile.Playlist(
-                id = "app-${p.id}",
+                id = fileIdOf(p.id, p.sourceId),
                 name = playlistName(p.name),
                 items = rows.mapNotNull { WebLibraryFile.song(it.track.toTrack(), it.track.dateAdded) },
                 createdAt = created,
@@ -216,6 +216,17 @@ class WebLibraryExporter @Inject constructor(
         const val TAG = "WebLibraryExport"
 
         fun playlistName(name: String) = name.trim().ifEmpty { "Playlist" }
+
+        private val FILE_ID = Regex("^[A-Za-z0-9_-]{1,64}$")
+
+        /**
+         * A playlist's id in the file: `app-<its id>`, except one that came from Stash on the web (an import or a send made it
+         * `custom_web_<id>`), which goes back under the web's own id, so the web merges it into the playlist it came from
+         * instead of adding a copy (library-file v1: ids are stable, and a reader merges by id).
+         */
+        fun fileIdOf(playlistId: Long, sourceId: String): String =
+            sourceId.removePrefix(WebLibraryImporter.WEB_SOURCE_PREFIX).takeIf { sourceId.startsWith(WebLibraryImporter.WEB_SOURCE_PREFIX) && FILE_ID.matches(it) }
+                ?: "app-$playlistId"
         const val WRITE_BUFFER = 64 * 1024
     }
 }
