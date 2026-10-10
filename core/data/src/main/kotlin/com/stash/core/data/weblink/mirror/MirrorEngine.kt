@@ -239,6 +239,10 @@ class MirrorEngine internal constructor(
     /** Writes the shared choice without the playlists let go here (S2): before anything is applied, so none comes back. */
     private suspend fun settleLetGo(c: Ctx) {
         val r = c.r
+        // Gone here with no recorded choice (an unfollow, a mix deleted from Home, a dialog shown before anything loaded): Only
+        // here, decided before the pull applies anything, so a remote edit read in this run can't bring it back (R-S2).
+        val gone = r.map.filter { (mid, m) -> mid in c.cfg.ids && mid !in r.everywhere && lib.playlist(m.localId) == null }.keys
+        if (gone.isNotEmpty()) letGo(r, gone)
         val pending = r.letGo.filter { it in c.cfg.ids }
         if (pending.isEmpty()) {
             r.letGo = emptySet()
@@ -768,8 +772,11 @@ class MirrorEngine internal constructor(
             val mapped = r.map[op.id]
             if (v?.items == null) {
                 if (mapped != null) {
-                    lib.deletePlaylist(mapped.localId)
+                    // Unmapped and saved before the library forgets it, so a crash between the two can't read as "gone here".
                     r.map = r.map - op.id
+                    r.ghosts = r.ghosts - op.id
+                    records.save(r)
+                    lib.deletePlaylist(mapped.localId)
                 }
                 r.ghosts = r.ghosts - op.id
             } else {

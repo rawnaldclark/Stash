@@ -265,6 +265,20 @@ class MirrorEngineTest {
         assertThat(web.config()!!.ids).doesNotContain(mid)
     }
 
+    @Test fun `R-S2 - a playlist removed without the dialog isn't brought back by a remote edit pulled before the push`() = runTest {
+        link()
+        val p = lib.addPlaylist("Run", listOf(song("R1")))
+        engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYLISTS to Dir.BOTH), add = listOf(p)))
+        val mid = web.config()!!.ids.single()
+        val sent = web.ops(me).filterIsInstance<MirrorOp.Pl>().single()
+        lib.playlists.remove(p) // an unfollow, a Home delete: no choice asked
+        web.post(MirrorOp.Pl(mid, web.at(), SyncHashes.playlistHash(sent.name, sent.items, sent.follow), "Run", listOf(song("R1"), song("R2"))))
+        run()
+        assertThat(lib.playlists.values.none { it.name == "Run" }).isTrue()
+        assertThat(web.config()!!.ids).doesNotContain(mid)
+        assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>().none { it.items == null }).isTrue()
+    }
+
     @Test fun `B5 - Everywhere, chosen in the dialog, deletes it on every device`() = runTest {
         link()
         val p = lib.addPlaylist("Run", listOf(song("R1")))
