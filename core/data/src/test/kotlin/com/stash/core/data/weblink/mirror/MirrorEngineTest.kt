@@ -269,10 +269,16 @@ class MirrorEngineTest {
         link()
         val p = lib.addPlaylist("Run", listOf(song("R1")))
         engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYLISTS to Dir.BOTH), add = listOf(p)))
+        val mid = web.config()!!.ids.single()
         engine.beforeDelete(p, everywhere = true)
         lib.playlists.remove(p)
         run()
         assertThat(lastPl()!!.items).isNull()
+        // Later runs keep its id chosen, so a device reading the delete afterwards still applies it (found on the Pixel 5).
+        run()
+        run()
+        assertThat(web.config()!!.ids).contains(mid)
+        assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>().count { it.items == null }).isEqualTo(1)
     }
 
     @Test fun `S2 - Only here made offline stays deleted, the settings change is retried, and an edit elsewhere doesn't bring it back`() = runTest {

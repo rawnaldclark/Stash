@@ -1001,7 +1001,13 @@ class MirrorEngine internal constructor(
                 }
                 for (o in batch.filterIsInstance<MirrorOp.Pl>()) {
                     plBases[o.id]?.let { r.basePlaylists = r.basePlaylists + (o.id to it) }
-                    if (o.items == null) r.everywhere = r.everywhere - o.id
+                    if (o.items == null) {
+                        // Deleted everywhere and sent: nothing here maps to it any more, and its id stays chosen, so every
+                        // device that reads the delete applies it (letting it go now would make them skip the delete).
+                        r.everywhere = r.everywhere - o.id
+                        r.map = r.map - o.id
+                        r.ghosts = r.ghosts - o.id
+                    }
                 }
                 val sentMarks = batch.filterIsInstance<MirrorOp.Joined>().map { PendingMark(it.kind, it.since) }
                 if (sentMarks.isNotEmpty()) r.marks = r.marks.filter { it !in sentMarks }
