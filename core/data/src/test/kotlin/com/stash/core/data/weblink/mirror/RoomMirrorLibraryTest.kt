@@ -38,10 +38,11 @@ class RoomMirrorLibraryTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private lateinit var db: StashDatabase
     private lateinit var lib: RoomMirrorLibrary
+    private lateinit var music: MusicRepository
 
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(context, StashDatabase::class.java).allowMainThreadQueries().build()
-        val music = mockk<MusicRepository>()
+        music = mockk<MusicRepository>()
         // As MusicRepositoryImpl.ensureExactTrackPersisted does: an existing row by YouTube id, Spotify id or ISRC (its ISRC
         // backfilled when missing), else a new stream-only row.
         coEvery { music.ensureExactTrackPersisted(any()) } coAnswers {
@@ -107,11 +108,27 @@ class RoomMirrorLibraryTest {
         assertThat(lib.likes()).hasSize(2)
     }
 
-    @Test fun `S4 - the same video under a slightly different title is the same song, not a duplicate row`() = runTest {
+    @Test fun `S4, R-S3 - a loosely matched row is one song here, and keeps the web's identity both ways`() = runTest {
         val a = db.trackDao().insert(TrackEntity(title = "Song A", artist = "The Band", youtubeId = "AAAAAAAAAAA", isStreamable = true, canonicalTitle = "song a", canonicalArtist = "the band"))
-        lib.setLikes(on = listOf(com.stash.core.data.weblink.handoff.WireSong("Song A - Remastered 2011", "The Band feat. Someone", refs = mapOf("youtube" to "AAAAAAAAAAA"))), off = emptyList(), at = 99)
+        val web = com.stash.core.data.weblink.handoff.WireSong("Song A - Remastered 2011", "The Band feat. Someone", refs = mapOf("youtube" to "AAAAAAAAAAA"))
+        val h = com.stash.core.model.weblink.Hlc(1, 0, "d_00000000")
+        lib.setLikes(on = listOf(web), off = emptyList(), at = 99)
         assertThat(db.query("SELECT COUNT(*) FROM tracks", null).use { it.moveToFirst(); it.getInt(0) }).isEqualTo(1)
         assertThat(db.trackDao().getById(a)!!.stashLikedAt).isNotNull()
+        // Read back as the web's song: the next diff sends no second like.
+        assertThat(lib.likes().map { it.s.title }).containsExactly("Song A - Remastered 2011")
+        val base = listOf(com.stash.core.data.weblink.merge.LikeRec(web, true, h))
+        assertThat(com.stash.core.data.weblink.merge.LikesMerge.diff(base, lib.likes(), h)).isEmpty()
+        // An unlike from the web finds the row.
+        lib.setLikes(on = emptyList(), off = listOf(web), at = 100)
+        assertThat(db.trackDao().getById(a)!!.stashLikedAt).isNull()
+        // An unlike here goes back as the web's song.
+        lib.setLikes(on = listOf(web), off = emptyList(), at = 101)
+        StashLikedPlaylistRepository(db.playlistDao(), db.trackDao(), music).remove(a)
+        assertThat(com.stash.core.data.weblink.merge.LikesMerge.diff(base, lib.likes(), h).map { it.s.title to it.on }).containsExactly("Song A - Remastered 2011" to false)
+        // A mirrored playlist entry reads back as the web's song too: nothing to push over the web's details.
+        val put = lib.putPlaylist(null, "m_BBBBBBBBBBBBBBBB", "P", listOf(web))
+        assertThat(lib.playlist(put.id)!!.items.map { it.title to it.artist }).containsExactly("Song A - Remastered 2011" to "The Band feat. Someone")
     }
 
     @Test fun `plays from another device go to History with their origin, once, and never touch play counts or mix inputs`() = runTest {

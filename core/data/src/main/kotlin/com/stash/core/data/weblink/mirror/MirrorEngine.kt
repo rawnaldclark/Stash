@@ -256,6 +256,7 @@ class MirrorEngine internal constructor(
     suspend fun forget() = withContext(Dispatchers.IO) {
         mutex.withLock {
             guard(Unit) { records.clear() }
+            guard(Unit) { lib.forget() }
             _status.value = MirrorStatus(linked = false)
         }
     }

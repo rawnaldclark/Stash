@@ -65,4 +65,7 @@ interface MirrorLibrary {
     suspend fun putPlaylist(localId: Long?, mirrorId: String, name: String, items: List<WireSong>): PutPlaylist
 
     suspend fun deletePlaylist(localId: Long)
+
+    /** Unlinked: forget what only the mirror needed (the identities loosely matched rows stand for). */
+    suspend fun forget() {}
 }
