@@ -1,6 +1,6 @@
 # Link, mirror and continue: Stash for Android ⇄ Stash on the web — design
 
-**Status:** draft for the owner's approval (2026-10-10). Nothing is built until it is approved; then it is planned and implemented for the next release, all three parts shipping together.
+**Status:** draft for the owner's approval (2026-10-10), updated the same day with the owner's answers to every open question (§15): Workers Paid; the player's sign-in stays the pairing guard at full release; Spotify/YouTube-synced playlists phone → web only; web plays never feed Stash Mixes; the entry lives in Library & Storage; plus a web-only playback heartbeat. Nothing is built until it is approved; then it is planned and implemented for the next release, all three parts shipping together.
 **Scope:** (1) linking the Android app with Stash on the web (play.stashfm.app) by QR code, with no Stash account; (2) choosing exactly what a library export or a one-off "send" carries; (3) opt-in, granular mirroring of likes, playlists and plays; (4) playback handoff in both directions.
 **Repos:** app = this repo (`MP3APK`, GitHub `rawnaldclark/Stash`); web player = `C:\Users\theno\Projects\stash-web\player` (paths below starting `player/` are there); the new Worker lives in this repo at `infra/sync-worker/`, next to `infra/share-worker/`.
 **Builds on:** `player/docs/library-file-v1.md` (the frozen `stash-web-library` v1 file), app PR #558 (`WebLibraryExporter`), `docs/superpowers/specs/2026-09-23-shared-mixes-design.md` (the portable song descriptor), `docs/superpowers/specs/2026-09-24-listen-together-design.md` (Durable Objects, `SessionCatalog`).
@@ -29,12 +29,12 @@
 | Shape | One **sync space** = 1 phone + up to 4 browsers. | Home PC, work PC, laptop. A cap bounds storage and abuse. A second phone is out of scope (it would need a phone-shown QR and two Spotify-synced libraries). |
 | Who is in charge | No owner: every device in a space is equal. Any device can remove any other; the remover rotates the key. | Covers a lost phone (remove it from the browser) and a lost laptop (remove it from the phone). |
 | Server | New Worker `stash-sync`, one SQLite Durable Object per space, on `sync.stashfm.app` (custom domain, main Cloudflare account, `workers_dev = false`). | `*.workers.dev` is blocked on some networks abroad; stashfm.app already works for the share service. Separate from the share Worker: different data, different blast radius, own limits. |
-| Browser path | The browser never calls `sync.stashfm.app`. It calls the player's own `/api/sync/*`, which the player Worker forwards over a service binding with a secret header. | Same pattern as `/api/share`. Only early-access sessions can open a pairing slot, so the sync service is no open relay. No CORS. The CSP needs no change (`connect-src 'self' https:` already). |
+| Browser path | The browser never calls `sync.stashfm.app`. It calls the player's own `/api/sync/*`, which the player Worker forwards over a service binding with a secret header. | Same pattern as `/api/share`. Only signed-in player sessions can open a pairing slot, so the sync service is no open relay. The player keeps its sign-in (the email code) at full release, so this guard stays (owner's decision, 2026-10-10). No CORS. The CSP needs no change (`connect-src 'self' https:` already). |
 | Change detection | **Diff, not hooks.** Each side compares its library with the last-synced base, triggered by its own change signal (Room invalidation / Svelte store), debounced 5 s. | One code path catches every writer (heart, Spotify sync, import, playlist editor) instead of touching a dozen call sites. |
 | Merge | Likes: per-song last-writer-wins with tombstones, hybrid logical clock. Plays: grow-only set. Playlists: a three-way merge against the last-synced version. Settings of the mirror: one LWW document. | Likes and plays are sets: LWW is exact. Playlists are ordered lists edited rarely: a three-way merge keeps both sides' adds and removes without a sequence CRDT. |
 | Identity | The web's `identity.ts` rules everywhere (`descriptorKey`, `sameSong`, `fold`), ported to Kotlin with shared test vectors. | The same song must match on both sides, and the web player's rules are already the file format's rules. |
 | Song on the wire | The library-file v1 **Song** object (title, artist, album, durationMs, isrc, spotifyId, refs, artwork), plus one sync-only flag `phoneOnly`. | Both sides already write and read it (`WebLibraryFile.song`, `backup.ts`). |
-| Handoff triggers | Publish on track change, play/pause, seek, queue edit (debounced 10 s), app/tab going to background, sleep-timer pause, end of queue. No periodic timer: while playing, the reader extrapolates the position from the server time stamp. | Accurate to the second with ~20 tiny requests an hour of listening; nothing while idle. |
+| Handoff triggers | Both sides publish on track change, play/pause, seek, queue edit (debounced 10 s), app/tab going to background, sleep-timer pause, end of queue. **Web only:** a heartbeat republishes the small `now` state about once a minute while playing. The phone has no periodic timer. The reader extrapolates the position from the server time stamp. | A laptop lid closed mid-song without pausing fires no event a browser can rely on; the heartbeat bounds the loss to about a minute. The phone's playback service publishes reliably on its own events, so it stays timer-free for battery. Nothing is sent while idle. |
 | QR scanner | CameraX + ZXing core (`com.google.zxing:core`, Apache-2.0, pure Java). Camera permission asked only when the scanner opens. Plus an App Link: scanning with the phone's own camera app opens Stash directly. | Works without Google Play services (ML Kit's unbundled scanner and Google Code Scanner need GMS; ML Kit's bundled model is closed source and ~2.5 MB per ABI). A QR on a bright monitor is the easy case for ZXing. |
 | QR on the web | `qrcode-generator` (MIT, no dependencies) bundled into the player at build time, drawn as inline SVG. | No third-party script at runtime; the CSP stays `script-src 'self'`. |
 
@@ -46,7 +46,7 @@ Copy is final-draft: short, plain. Each side uses its own settings components (a
 
 ### 2.1 Where it lives
 
-- **App:** a new Settings hub row between *Accounts & Sync* and *Library & Storage*: **Stash on the web** — "Link a browser, mirror, pick up where you left off". The existing *Export for Stash on the web* stays in *Library & Storage › Backup* and gains the picker (§2.3).
+- **App:** Settings › Library & Storage gets a row **Link Stash on the web** — "Pick up where you left off, mirror, send your library". It opens the screen described below (owner's decision: not a top-level hub row). The existing *Export for Stash on the web* stays in *Library & Storage › Backup*, near it, and gains the picker (§2.3).
 - **Web:** a new Settings section **Your phone**, above *Your library*.
 
 ### 2.2 Pairing
@@ -57,12 +57,12 @@ Copy is final-draft: short, plain. Each side uses its own settings components (a
 > [Show code]
 
 **Web, code shown:** a QR (≈220 px, white quiet zone, in a card), under it:
-> In Stash on your phone: Settings › Stash on the web › Link a browser.
+> In Stash on your phone: Settings › Library & Storage › Link Stash on the web.
 > *Waiting for your phone…*
 
 The code renews itself every 3 minutes while shown ("New code" button after 3 renewals, so an idle tab stops asking). When the phone answers: "Linked to **Pixel 6**".
 
-**App** (Settings › Stash on the web, not linked):
+**App** (Settings › Library & Storage › Link Stash on the web, not linked):
 > **Link a browser** — "Open play.stashfm.app › Settings › Your phone"
 > [Scan code]
 
@@ -83,7 +83,7 @@ The browser's name is made on the web from the user agent ("Chrome on Windows", 
 
 ### 2.3 Choosing what goes (export file and one-off send)
 
-**App, Library & Storage › Export for Stash on the web**, and **Stash on the web › Send my library to a browser**, open the same sheet:
+**App, Library & Storage › Export for Stash on the web**, and **Link Stash on the web › Send my library to a browser**, open the same sheet:
 
 > **What to include**
 > ☑ Likes · 1,204
@@ -108,7 +108,7 @@ The app gains an importer for the v1 file too ("Import from Stash on the web" un
 
 ### 2.4 Mirroring setup
 
-**App, Stash on the web › Mirror** (the web has the same block under Your phone):
+**App, Link Stash on the web › Mirror** (the web has the same block under Your phone):
 > **Mirror between your devices**
 > Off keeps a separate library on each.
 > Likes — Off ▾
@@ -118,7 +118,7 @@ The app gains an importer for the v1 file too ("Import from Stash on the web" un
 Each picker: **Off / Both ways / Phone → web / Web → phone**. The settings belong to the space: changing them on any device changes them for all.
 
 - **Choose playlists** lists the playlists of the device you're on, each with a switch, plus "Mirror new playlists too" (off by default). A playlist switched on appears on every device of the space; switching it off stops mirroring and leaves every copy where it is.
-- Playlists that sync from Spotify or YouTube Music can be mirrored **phone → web only** (they show "From your phone" and are read-only on the web), whatever the direction says: an edit on the web would be undone by the next Spotify sync.
+- Playlists that sync from Spotify or YouTube Music can be mirrored **phone → web only** (they show "From your phone" and are read-only on the web), whatever the direction says: an edit on the web would be undone by the next Spotify sync. (Owner's decision, 2026-10-10.)
 - One-way means: the sending side's changes are applied on the receiving side; the receiving side's own changes stay local.
 
 **First merge.** Turning a kind on when both sides already have some of it asks once, on the device where it was turned on, with counts from both sides:
@@ -335,7 +335,7 @@ The player Worker forwards exactly these paths under `/api/sync/…` (an allow-l
 | Log | client compacts at 500 batches or 4 MiB; server refuses new batches past 2,000 (`409 compact`) |
 | Writes per space per day | 3,000; reads 20,000 (counters in `meta`) |
 | Per IP (`[[ratelimits]]`) | pairing label/answer 10/min; space API 240/min |
-| Pair slots | created only through the player (early-access session); 6 per session per 10 min at the player; 3-minute life; one answer |
+| Pair slots | created only through the player (a signed-in session); 6 per session per 10 min at the player; 3-minute life; one answer |
 
 No open relay: nothing can be stored without a device token; a device token only comes from a pairing that started in a gated browser session; every space is capped and expires. The DO keeps no IP addresses.
 
@@ -346,9 +346,14 @@ No open relay: nothing can be stored without a device token; a device token only
 - `now`/`queue` slots: dropped 7 days after their `serverAt`. Inbox: 7 days, or when the receiver deletes it.
 - Cloudflare keeps 30 days of point-in-time recovery for DO storage, which only the owner could use, and which holds ciphertext only.
 
-### 6.6 Plan and cost
+### 6.6 Plan and cost (Workers Paid)
 
-Workers Free supports SQLite Durable Objects (100k requests/day, 100k rows written/day, 5 GB total). One active space costs about 300 requests and 400 row writes a day (handoff ~20 publishes an hour of listening, a few mirror batches, opens and foregrounds). Free therefore carries about 200 active spaces a day: enough for early access, not for a public launch. The Listen Together spec says the main account is already on Workers Paid; if so, this costs nothing extra in practice. (Open question 1.)
+The main Cloudflare account is on Workers Paid ($5/month); everything is sized to its Durable Object allowances: 1 million requests/month included (then $0.15 per million), 400,000 GB-s duration, 50 million SQLite rows written and 25 billion read, 5 GB-month storage (then $0.20/GB-month), 10 GB per object.
+
+- **Per active space per day** (a phone and one browser, ~4 hours of web listening): ~20 event publishes an hour plus the web heartbeat (~60 an hour while playing), a few mirror batches, opens and foregrounds: about 600 requests and 700 row writes.
+- **1,000 active spaces:** ~18 M requests/month (~$2.60 over the allowance), ~21 M rows written (included), a few GB stored (included).
+- **Duration stays near zero:** an idle object that can hibernate isn't billed, so `SyncSpace` never holds timers, open promises or pending fetches between requests (retention runs on the DO alarm). The only long-held request is the pairing long-poll (≤ 25 s, only while a code is on screen), in the short-lived `PairSlot` object.
+- The per-space caps in §6.4 are abuse limits, not cost limits: a space at its daily write cap (3,000) costs well under a cent.
 
 ### 6.7 Shaped for live control later
 
@@ -370,7 +375,13 @@ A sync run on a device: pull (`log/after/{seen}`, or the snapshot if `seen` is o
 ### 7.2 Plays (grow-only set)
 
 - Identity: `textKey|playedAt` (the importer's rule). New local plays since base are pushed; remote plays are inserted if not present.
-- App inserts a remote play into `listening_events` with `scrobbled = 1`, `yt_scrobbled = 1` and a new nullable column `origin_device` (main DB migration 53 → 54), so it is never sent to Last.fm, ListenBrainz or YouTube history, and the phone never pushes it back. It does count for Stash Mixes and History (that is what mirroring plays means).
+- App inserts a remote play into `listening_events` with `scrobbled = 1`, `yt_scrobbled = 1` and a new nullable column `origin_device` (main DB migration 53 → 54), so it is never sent to Last.fm, ListenBrainz or YouTube history, and the phone never pushes it back.
+- **Remote plays never feed Stash Mixes** (owner's decision, 2026-10-10). They show in History and in a later export, nothing else. How:
+  - They are written with `ListeningEventDao.insert`, never `recordCompletedListen`, so `tracks.play_count` / `last_played` stay untouched.
+  - Every `ListeningEventDao` query that feeds mixes, recommendations or play statistics gets `AND origin_device IS NULL`: `topTracksSince`, `getPlayCountsSince`, `getPlayCountsSinceWithLatest` (`MixGenerator`'s affinity vector), `getCompletionStatsSinceRaw`, `getTrackIdsPlayedSince`, `getTopArtistsSince`, `getPlayedTrackIdsAmongRaw`, `getTopTracksByLocalPlays`, `distinctDaysCompletedFor`, the play-count/last-played subqueries, `backfillMissingTrackStats`, and `MixGenerator`'s recently-played exclusion. The same filter goes on any other reader that ranks taste (`LastFmPersonas`, `LastFmColdStartImporter`'s checks).
+  - Queries that only show or export history (`WebLibraryExportDao.recentPlays`, the History screen) include them.
+  - A DAO test inserts one local and one remote play of the same track and asserts every mix-feeding query sees only the local one; its comment is the checklist for any query added later.
+- On the web, plays from the phone are ordinary History entries; for symmetry `HistRec` gains `origin?: deviceId` and Daily Discover (`player/src/lib/discover/`) ignores entries that have it.
 - `clearPlays` (web *Clear history*, app's clear) mirrors as "delete plays before t" when plays mirror both ways.
 - The web keeps the newest 5,000 (`HISTORY_CAP`); the phone keeps all. Only plays from the last 5,000 on the sending side are pushed on first merge.
 
@@ -416,8 +427,9 @@ The device turning it on fetches the snapshot, computes counts, asks (§2.4), th
 | Track change, play/pause, seek, sleep-timer pause, end of queue | `HandoffPublisher` collecting `PlayerRepository.playerState`, debounced 2 s | engine bus events (`player/src/lib/engine/bus.ts`) |
 | Queue edit | queue slot, debounced 10 s (hash unchanged → nothing sent) | same |
 | Going to background | `ProcessLifecycleOwner` ON_STOP → publish now | `visibilitychange` hidden and `pagehide` (where the engine already flushes) via `fetch(…, { keepalive: true })` |
+| Heartbeat | none (by design: battery; the service's own events are reliable) | while `playing`, republish `now` every 60 s: one interval timer, started on play, cleared on pause/stop/unlink, skipped when an event publish went out in the last 30 s. Browsers throttle hidden-tab timers to about once a minute, which still fits. |
 
-- Only when linked and the handoff switch is on; nothing while idle. A publish that fails offline is dropped, except the newest state, which is retried once on reconnect if still newest.
+- Only when linked and the handoff switch is on; nothing while idle. A laptop lid closed mid-song: the web's last heartbeat is at most ~60 s old, so the phone offers a position at most about a minute behind (extrapolation stops at the song's end, §8.2). A publish that fails offline is dropped, except the newest state, which is retried once on reconnect if still newest.
 - The phone publishes from the playback service's scope (alive while playing). No wake lock of its own, no WorkManager for handoff. Data: `now` ≤ 2 KB; `queue` ≤ ~60 KB compressed for 2,000 songs, only on change.
 - Listen Together or Cast sessions: publish as usual (what plays is still what the user is hearing). A Listen Together guest doesn't publish (the queue isn't theirs).
 
@@ -448,7 +460,7 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
   - `weblibrary/WebLibraryImporter.kt` (new) — v1 reader with `backup.ts`'s limits and cleaning; additive merge into Room following §7's matching (likes as Stash likes without fan-out; playlists as `custom_web_<id>` CUSTOM playlists, merged by that id; plays as `listening_events` with `origin_device`).
   - Main DB migration 53 → 54: `listening_events.origin_device TEXT NULL`.
 - **`core:media`** — `handoff/HandoffPublisher.kt`, `handoff/HandoffRestorer.kt` (uses `SessionCatalog`), `handoff/HandoffOffers.kt` (state for the card); `StashPlaybackService` starts the publisher; `PlayerRepository.restoreHandoff(plan)`.
-- **`feature:settings`** — `SettingsWebLinkScreen.kt` + `WebLinkViewModel.kt` (status, devices, rename/remove, mirror pickers, playlist chooser, handoff switch, send, unlink everything); `components/QrScanner.kt` (CameraX `PreviewView` + `ImageAnalysis` → ZXing `QRCodeReader`, permission asked on open); `ExportPickerSheet.kt` shared by export and send; `SettingsHubScreen.kt` new row; `SettingsLibraryStorageScreen.kt` uses the picker and adds "Import from Stash on the web".
+- **`feature:settings`** — `SettingsWebLinkScreen.kt` + `WebLinkViewModel.kt` (status, devices, rename/remove, mirror pickers, playlist chooser, handoff switch, send, unlink everything); `components/QrScanner.kt` (CameraX `PreviewView` + `ImageAnalysis` → ZXing `QRCodeReader`, permission asked on open); `ExportPickerSheet.kt` shared by export and send; `SettingsLibraryStorageScreen.kt` gets the **Link Stash on the web** row (no new hub row; the Library & Storage subtitle in `SettingsHubSummaries.kt` mentions Stash on the web so Settings search finds it), uses the picker, and adds "Import from Stash on the web".
 - **`app`** — manifest: `CAMERA` permission with `<uses-feature android:name="android.hardware.camera.any" android:required="false"/>`; intent filter `https://stashfm.app/link` (autoVerify; the existing `assetlinks.json` already covers the host); navigation to the link confirm sheet; the handoff card and the inbox dialog in `StashScaffold`.
 - **Dependencies:** `androidx.camera:camera-camera2/-lifecycle/-view`, `com.google.zxing:core`. No GMS. `androidx.lifecycle:lifecycle-process` if not present.
 - **Diagnostics:** a `SyncDiagnosticsContributor` (linked yes/no, device count, last sync time and result, outbox size, mirror config; never ids, keys or labels).
@@ -460,7 +472,8 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 - `src/lib/sync/pairing.ts` — slot, QR payload, long-poll, reply, device label from `navigator.userAgentData` / UA.
 - `src/lib/sync/qr.ts` — wraps `qrcode-generator` (bundled) → SVG string.
 - `src/lib/sync/mirror.ts` + `merge.ts` — diff/merge (§7), pure and unit-tested; vectors shared with the app.
-- `src/lib/sync/handoff.ts` — publisher (engine bus, visibility, `keepalive`), offers store, restore.
+- `src/lib/sync/handoff.ts` — publisher (engine bus, visibility, `keepalive`, the 60 s heartbeat while playing), offers store, restore.
+- `src/lib/discover/` — ignore history entries with `origin` (§7.2).
 - `src/lib/sync/wire.ts` — the formats of §4, readers that rebuild every value (as `backup.ts`).
 - `src/lib/identity.ts` — unchanged; `src/lib/fixtures/identity-vectors.json` added and tested in `identity.test.ts`.
 - `src/lib/library/kv.ts` — `sync` store, `openDB(name, 2, …)` upgrade.
@@ -478,11 +491,11 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 
 **README › What Stash talks to**, a new item after the share Worker:
 
-> - **The sync Worker** (`sync.stashfm.app`) — a Worker the project runs, used only after you link Stash on the web (Settings › Stash on the web). It stores, end-to-end encrypted with a key that only your linked devices have, what you chose to share between them: what's playing and your queue (when "Pick up where you left off" is on), the likes, plays and playlists you chose to mirror, and anything you send to the other device. The Worker can't read any of it; it sees sizes, times, and a random id per device. Each device checks it when Stash opens and sends to it when what's playing changes or when your mirrored library changes, and every 6 hours in the background while mirroring is on. Logins, files, downloads and settings never go. Your IP address is used for rate limiting and isn't stored. A device that hasn't been seen for 90 days is removed, and a link with no devices left is deleted; what's playing is deleted after 7 days, and a send after 7 days or when it's received. Unlinking cuts a device off at once. Cloudflare's 30-day recovery history holds only the encrypted data.
+> - **The sync Worker** (`sync.stashfm.app`) — a Worker the project runs, used only after you link Stash on the web (Settings › Library & Storage › Link Stash on the web). It stores, end-to-end encrypted with a key that only your linked devices have, what you chose to share between them: what's playing and your queue (when "Pick up where you left off" is on), the likes, plays and playlists you chose to mirror, and anything you send to the other device. The Worker can't read any of it; it sees sizes, times, and a random id per device. Each device checks it when Stash opens and sends to it when what's playing changes or when your mirrored library changes, and every 6 hours in the background while mirroring is on. Logins, files, downloads and settings never go. Your IP address is used for rate limiting and isn't stored. A device that hasn't been seen for 90 days is removed, and a link with no devices left is deleted; what's playing is deleted after 7 days, and a send after 7 days or when it's received. Unlinking cuts a device off at once. Cloudflare's 30-day recovery history holds only the encrypted data.
 
 **`web/src/content/privacy.md`**: the same paragraph under *Sharing, Listen Together and Community* (renamed *Sharing, linking and Listen Together*), the 90-day / 7-day figures added to the header's list of code-derived figures (`DEVICE_IDLE_DAYS`, `SLOT_KEEP_DAYS` in `infra/sync-worker/src/space.js`), and `updated:` bumped. *The short version* gains: "Linking Stash on the web needs no account. What you choose to share between your devices is end-to-end encrypted."
 
-**Web player's privacy note** (its About/Settings text): the browser side of the same paragraph, plus "The pairing code on screen is single-use and expires in 3 minutes."
+**Web player's privacy note** (its About/Settings text): the browser side of the same paragraph, plus "While something plays, this browser updates what's playing about once a minute." and "The pairing code on screen is single-use and expires in 3 minutes."
 
 ## 12. Failure cases
 
@@ -500,7 +513,7 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 | Lost phone | Browser › Your phone › Remove Pixel 6 → cut off, key rotated. |
 | Space full / log too long | Client compacts (snapshot) and retries; a send that is too big: "Too big to send. Save it as a file instead." |
 | A newer format arrives | "Update Stash to keep syncing" (app) / reload prompt (web); nothing is applied, nothing is lost (the log keeps it). |
-| Early-access session ends on the web | `/api/sync` answers the gate's redirect like every route; the browser stays linked and resumes after sign-in. |
+| Player sign-in session ends on the web | `/api/sync` answers the gate's redirect like every route; the browser stays linked and resumes after sign-in. |
 | Worker down | Every surface degrades silently: no card, mirror waits, pairing says "Can't reach Stash right now. Try again in a minute." |
 | Mirror apply partially fails (app crash mid-merge) | Apply runs in one Room transaction per batch; `seen` advances only after commit, so a batch is re-applied, and every apply is idempotent. |
 
@@ -513,20 +526,21 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 - Wire readers: oversize, unknown fields, higher `v`, bad Song fields (as `backup.test.ts`).
 - Exporter: golden v1 unchanged for "everything"; selection drops exactly the unticked parts; importer round trip (app export → app import is a no-op).
 - Worker (`node --test` on `src/space.js`): pair single answer, expiry, device cap, auth (wrong token, removed device), rotation epochs, compaction, limits (413, 409 compact), retention alarms, `serverAt` stamping.
-- App: `HandoffPublisher` triggers (fake clock), `HandoffRestorer` shuffle-order reproduction, `MirrorSyncWorker` cancellation rethrow; Room migration 53 → 54 test.
-- Web: engine `loadQueue` (position, shuffle original, `phoneOnly` skip), Web Locks single runner.
+- App: `HandoffPublisher` triggers (fake clock; asserts no periodic publish), `HandoffRestorer` shuffle-order reproduction, `MirrorSyncWorker` cancellation rethrow; Room migration 53 → 54 test; the remote-plays DAO test (§7.2).
+- Web: engine `loadQueue` (position, shuffle original, `phoneOnly` skip), Web Locks single runner, heartbeat (fake timers: every 60 s while playing, none when paused, skipped right after an event publish), Daily Discover ignores `origin` plays.
 
 **Integration:** the Worker under `wrangler dev` with a scripted phone (Kotlin JVM test client) and browser (Playwright, `player/e2e`): pair, mirror a like both ways, handoff both ways.
 
 **Two-device manual script** (release build on the Pixel 6, Chrome on the PC; Pixel 5 rig + Firefox for the multi-browser steps; `adb -s` always):
-1. Web: Settings › Your phone › Show code. Phone: Settings › Stash on the web › Scan. Confirm sheet names "Chrome on Windows" → Link. Both show each other within 3 s. Neither library changed (count likes/playlists before and after).
+1. Web: Settings › Your phone › Show code. Phone: Settings › Library & Storage › Link Stash on the web › Scan. Confirm sheet names "Chrome on Windows" → Link. Both show each other within 3 s. Neither library changed (count likes/playlists before and after).
 2. Photograph the QR, scan it again with the Pixel 5 after step 1 → "already used".
 3. Play a 30-song playlist on the PC, shuffle on, skip to song 6, seek to 2:31, pause. Open Stash on the phone → card "Continue from Chrome on Windows · <song> · 2:31". Tap ▶: same song, 2:31 ±1 s, Up next identical, shuffle on; turning shuffle off restores the playlist order.
 4. Phone keeps playing; lock it; after 2 songs, open the web tab → card shows the current phone song, position about right. Tap → plays. Phone still playing (expected, no remote control).
 5. Queue with a local file on the phone (a sideloaded MP3 without ids) → web handoff leaves it out with the note.
 6. Mirroring: likes Both ways with 10 likes on phone, 3 on web (1 shared) → first-merge shows 10/3 → Combine → 12 on both. Unlike one on web → gone on phone after foreground. Like one on phone while web is offline (DevTools offline), re-online → arrives.
 7. Playlists: mirror "Night drive" only. Add a song on the web, remove a different song on the phone while the web is offline → both edits survive on both.
-8. Plays phone → web: play 3 songs past the counting mark on the phone → appear in web History; confirm they are not re-scrobbled (Last.fm on a test account) and do not come back.
+8. Plays phone → web: play 3 songs past the counting mark on the phone → appear in web History; confirm they are not re-scrobbled (Last.fm on a test account) and do not come back. Web → phone: play 3 songs on the web → they show in the phone's History, `play_count` unchanged, and a Stash Mix refresh (`StashMixRefreshWorker`) doesn't count them (log the affinity inputs).
+8b. Web heartbeat: play on the web, close the laptop lid mid-song without pausing, wait 3 minutes, open Stash on the phone → the card offers a position within about a minute of where the lid closed.
 9. Export picker: untick plays and 2 playlists → file has empty `history`, 12 playlists; import on the web with the picker. Send to Chrome: inbox prompt → Add → counts match.
 10. Second browser (Firefox): link from the phone; mirror settings arrive; first-merge question for each kind that's on.
 11. Remove Firefox from the phone → Firefox shows "Unlinked" on its next call; Chrome keeps syncing (after key rotation, verify epoch bumped in diagnostics).
@@ -545,10 +559,13 @@ Each phase ends merged and green; the release ships after phase 6.
 5. **Export picker, import picker, app importer, one-off send + inbox.**
 6. **Mirroring** (config, first merge, likes, plays, playlists, compaction, WorkManager), privacy/README text, diagnostics, the manual script end to end.
 
-## 15. Open questions for the owner
+## 15. Owner decisions (2026-10-10)
 
-1. **Plan:** is the main Cloudflare account on Workers Paid (the Listen Together spec says so)? Free carries about 200 active links a day; fine for early access, not for launch.
-2. **Early access:** pairing needs an early-access web session (that is the abuse guard). When the web player opens to everyone, keep a gate only on opening a pairing code (a simple per-IP limit plus Turnstile), or something else?
-3. **Spotify/YouTube-synced playlists:** mirror them phone → web only, read-only on the web (proposed), or not at all?
-4. **Plays from the web on the phone:** proposed they count for Stash Mixes and History but are never scrobbled. OK?
-5. **Hub placement:** a new top-level "Stash on the web" row in Settings (proposed), or inside Accounts & Sync?
+No questions remain open.
+
+1. **Plan:** the main Cloudflare account is on Workers Paid; the Worker is sized to Paid allowances (§6.6).
+2. **Pairing guard:** the web player keeps its sign-in (the email code) at full release, so a signed-in player session stays the guard on opening a pairing code (§1, §6.4).
+3. **Spotify/YouTube-synced playlists:** mirror phone → web only, read-only on the web (§2.4, §7.3).
+4. **Web plays on the phone:** mirror into History when the user mirrors plays, but never feed Stash Mixes or play statistics (§7.2).
+5. **Placement:** a "Link Stash on the web" row in Settings › Library & Storage, not a top-level hub row (§2.1).
+6. **Web heartbeat:** the web player republishes what's playing about once a minute while playing; the phone has no periodic timer (§1, §8.1).
