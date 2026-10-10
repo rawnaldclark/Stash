@@ -19,6 +19,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.weblink.SongKey
 import com.stash.core.model.weblink.SongRef
+import com.stash.core.data.weblink.merge.matchOccurrences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Instant
 import javax.inject.Inject
@@ -113,6 +114,12 @@ class WebLibraryImporter internal constructor(
         } catch (e: Exception) {
             Log.w(TAG, "can't read the file: ${e.javaClass.simpleName}")
             Result.failure(WebLibraryReadException(WebLibraryReader.NOT_A_BACKUP))
+        } catch (e: OutOfMemoryError) {
+            // A huge or hostile file the listener picked: one failed import, never a crash (review B1).
+            Log.w(TAG, "the file is too big to read here")
+            Result.failure(WebLibraryReadException(WebLibraryReader.TOO_BIG))
+        } catch (e: StackOverflowError) {
+            Result.failure(WebLibraryReadException(WebLibraryReader.TOO_BIG))
         }
     }
 
@@ -168,9 +175,19 @@ class WebLibraryImporter internal constructor(
         val playlists = database.playlistDao()
         // This phone's own export coming back: the same playlist when it still exists here under the same name. Another
         // phone's `app-42` is a different playlist that happens to share the number, so the name must agree too.
+        // A playlist renamed here since the export is still that playlist (review S2): the name agrees, or at least half of the
+        // incoming songs are already in it (by identity), so another phone's `app-42` with other songs isn't merged in.
         APP_ID.matchEntire(p.id)?.groupValues?.get(1)?.toLongOrNull()?.let { n ->
             val own = playlists.getById(n)
-            if (own != null && own.type == PlaylistType.CUSTOM && own.isActive && SongKey.fold(own.name) == SongKey.fold(p.name)) return own.id
+            if (own != null && own.type == PlaylistType.CUSTOM && own.isActive) {
+                if (SongKey.fold(own.name) == SongKey.fold(p.name)) return own.id
+                if (p.items.isNotEmpty()) {
+                    val here = database.webLibraryExportDao().playlistItems(own.id, WebLibraryFile.MAX_PLAYLIST_ITEMS)
+                        .map { SongRef(it.track.title, it.track.artist, it.track.isrc) }
+                    val shared = matchOccurrences(here, p.items).count { it >= 0 }
+                    if (shared * 2 >= p.items.size) return own.id
+                }
+            }
         }
         return playlists.findBySourceId(sourceIdOf(p))?.takeIf { it.isActive }?.id
     }
@@ -189,7 +206,10 @@ class WebLibraryImporter internal constructor(
         if (plan.likes.isEmpty()) return r
         val rows = rows(plan.likes.map { it.song })
         val pairs = plan.likes.indices.mapNotNull { i -> rows[i]?.let { it.id to plan.likes[i].likedAt } }
-        val added = liked.addAllFrom(pairs)
+        // In transactions of [LIKES_BATCH]: one commit (and one library invalidation) per batch, not two writes per like (review S1).
+        var added = 0
+        for (chunk in pairs.chunked(LIKES_BATCH)) added += database.withTransaction { liked.addAllFrom(chunk, recount = false) }
+        liked.recount()
         return r.copy(likesAdded = added, likesSkipped = r.likesSkipped + plan.likes.size - added)
     }
 
@@ -274,6 +294,7 @@ class WebLibraryImporter internal constructor(
 
     companion object {
         private const val TAG = "WebLibraryImport"
+        private const val LIKES_BATCH = 500
 
         /** The `origin_device` of plays imported from a file. */
         const val ORIGIN_FILE = "file"

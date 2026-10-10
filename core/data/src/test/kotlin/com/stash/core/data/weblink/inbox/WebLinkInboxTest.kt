@@ -115,10 +115,10 @@ class WebLinkInboxTest {
     }
 
     /** The browser sends [doc] to this phone, as the web does. */
-    private fun browserSends(chrome: FakeBrowser, doc: String, sendId: String = WebLinkInbox.newSendId()): String {
+    private fun browserSends(chrome: FakeBrowser, doc: String, sendId: String = WebLinkInbox.newSendId(), partBytes: Int = 1_000): String {
         val space = chrome.answer!!.space!!
         val phone = store.id!!.deviceId
-        val envs = SyncCrypto.sealParts(SyncCrypto.dataKey(space.k, space.id), space.id, space.epoch, { i, n -> SyncCrypto.Place.inbox(phone, sendId, i, n) }, doc, 1_000)
+        val envs = SyncCrypto.sealParts(SyncCrypto.dataKey(space.k, space.id), space.id, space.epoch, { i, n -> SyncCrypto.Place.inbox(phone, sendId, i, n) }, doc, partBytes)
         val send = FakeSyncServer.Send(phone, chrome.deviceId, envs.size, server.clock)
         envs.forEachIndexed { i, e -> send.parts[i] = e }
         server.sends[sendId] = send
@@ -135,14 +135,18 @@ class WebLinkInboxTest {
         inbox.check()
         val send = inbox.sends.value.single()
         assertThat(send.name).isEqualTo("Chrome on Windows")
-        assertThat(send.summary).isEqualTo("3 playlists and 1 like")
+        assertThat(send.readable).isTrue()
         assertThat(inbox.notice.value?.sendId).isEqualTo(sendId)
+        // Listing it downloads nothing: its parts are fetched only once Add or Choose asks for it (review B1).
+        assertThat(server.calls.none { it.startsWith("inboxPart") }).isTrue()
+        val opened = inbox.open(sendId) as OpenedSend.Ok
+        assertThat(opened.summary).isEqualTo("3 playlists and 1 like")
 
         val content = slot<WebLibraryContent>()
         val origin = slot<String>()
         coEvery { importer.import(capture(content), any(), capture(origin)) } returns WebLibraryImportResult(likesAdded = 1, playlistsAdded = 3)
         val pick = ImportSelection(likes = true, plays = false, playlistIds = setOf("p1"))
-        assertThat(inbox.add(sendId, pick)).isEqualTo(WebLibraryImportResult(likesAdded = 1, playlistsAdded = 3))
+        assertThat(inbox.add(sendId, pick)).isEqualTo(AddOutcome.Added(WebLibraryImportResult(likesAdded = 1, playlistsAdded = 3)))
         assertThat(origin.captured).isEqualTo(chrome.deviceId)
         assertThat(content.captured.playlists.map { it.name }).containsExactly("Gym", "Run", "Chill").inOrder()
         assertThat(server.sends).isEmpty()
@@ -170,12 +174,78 @@ class WebLinkInboxTest {
     @Test fun `a send from a newer Stash can only be discarded`() = runTest {
         val chrome = link()
         val inbox = inbox()
-        browserSends(chrome, """{"kind":"stash-web-library","v":2,"likes":[]}""")
+        val id = browserSends(chrome, """{"kind":"stash-web-library","v":2,"likes":[]}""")
         inbox.check()
+        assertThat(inbox.open(id)).isEqualTo(OpenedSend.Failed(WebLinkCopy.UPDATE_APP))
         val send = inbox.sends.value.single()
-        assertThat(send.content).isNull()
-        assertThat(send.summary).isEqualTo(WebLinkCopy.UPDATE_APP)
+        assertThat(send.problem).isEqualTo(WebLinkCopy.UPDATE_APP)
         assertThat(inbox.notice.value).isNull()
+        // Remembered: a later look (a new launch) shows it as unreadable without downloading it again.
+        server.calls.clear()
+        inbox().check()
+        assertThat(server.calls.none { it.startsWith("inboxPart") }).isTrue()
+    }
+
+    @Test fun `a gzip bomb of 64 MiB of empty arrays is refused before it is parsed, and never tried again`() = runTest {
+        val chrome = link()
+        val inbox = inbox()
+        // One small part that inflates to 64 MiB of `[],`: a JSON tree of 22 million arrays if anything parsed it.
+        val bomb = buildString(64 * 1024 * 1024 + 64) {
+            append("""{"kind":"stash-web-library","v":1,"history":[""")
+            while (length < 64 * 1024 * 1024) append("[],")
+            append("[]]}")
+        }
+        val id = browserSends(chrome, bomb, partBytes = SyncCrypto.PART_BYTES)
+        inbox.check()
+        assertThat(inbox.open(id)).isEqualTo(OpenedSend.Failed(WebLinkInbox.TOO_BIG_TO_OPEN))
+        assertThat(inbox.add(id)).isEqualTo(AddOutcome.Failed(WebLinkInbox.TOO_BIG_TO_OPEN))
+        assertThat(inbox.notice.value).isNull()
+    }
+
+    @Test fun `a shape too big to parse is refused even under the inflate cap`() = runTest {
+        val chrome = link()
+        val inbox = inbox()
+        val dense = buildString { append("""{"kind":"stash-web-library","v":1,"history":["""); repeat(1_100_000) { append("[],") }; append("[]]}") }
+        val id = browserSends(chrome, dense)
+        inbox.check()
+        assertThat(inbox.open(id)).isEqualTo(OpenedSend.Failed(WebLinkInbox.TOO_BIG_TO_OPEN))
+    }
+
+    @Test fun `an open that never finished (the app died while reading) is unreadable on the next launch, not tried again`() = runTest {
+        val chrome = link()
+        val id = browserSends(chrome, document(likes = 2))
+        prefs.edit().putString("trying", id).commit()
+        val inbox = inbox()
+        inbox.check()
+        assertThat(inbox.sends.value.single().problem).isEqualTo(WebLinkInbox.CANT_READ)
+        assertThat(inbox.notice.value).isNull()
+        assertThat(inbox.open(id)).isEqualTo(OpenedSend.Failed(WebLinkInbox.CANT_READ))
+        assertThat(server.calls.none { it.startsWith("inboxPart") }).isTrue()
+    }
+
+    @Test fun `unlinking clears what was listed at once`() = runTest {
+        val chrome = link()
+        val inbox = inbox()
+        browserSends(chrome, document(likes = 2))
+        inbox.check()
+        assertThat(inbox.sends.value).hasSize(1)
+        repo.unlinkEverything()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.withTimeout(5_000) { while (inbox.sends.value.isNotEmpty() || inbox.notice.value != null) kotlinx.coroutines.delay(10) }
+        }
+        assertThat(inbox.sends.value).isEmpty()
+    }
+
+    @Test fun `a send whose answer was lost is replaced by the retry, not doubled`() = runTest {
+        val chrome = link()
+        val inbox = inbox(partBytes = 100_000)
+        // The only part lands, but its answer never comes back; taking it back fails too (still offline).
+        server.landThenLose = true
+        assertThat(inbox.send(chrome.deviceId, document(likes = 3))).isEqualTo(SendOutcome.Failed(WebLinkCopy.OFFLINE))
+        assertThat(server.sends).hasSize(1)
+        val first = server.sends.keys.single()
+        assertThat(inbox.send(chrome.deviceId, document(likes = 3))).isEqualTo(SendOutcome.Sent)
+        assertThat(server.sends.keys).containsExactly(first)
     }
 
     @Test fun `a store that throws is nothing to show, never a crash`() = runTest {
