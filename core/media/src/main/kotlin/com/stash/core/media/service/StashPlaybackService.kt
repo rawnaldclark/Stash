@@ -119,10 +119,18 @@ class StashPlaybackService : MediaLibraryService() {
     /** Google Cast (spec 2026-10-06). */
     @Inject lateinit var castDevices: com.stash.core.media.cast.CastDevices
     @Inject lateinit var playbackDiagnosticsLog: com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
+    @Inject lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
     companion object {
         /** Custom command action for toggling shuffle mode. */
         const val COMMAND_TOGGLE_SHUFFLE = "com.stash.TOGGLE_SHUFFLE"
+
+        /**
+         * Handoff (link-sync spec §8.3): sets the master player's shuffle order to [EXTRA_SHUFFLE_ORDER] (timeline indexes in
+         * play order), so a queue continued from a browser plays in that browser's order and shuffle-off restores its own.
+         */
+        const val COMMAND_SET_SHUFFLE_ORDER = "com.stash.SET_SHUFFLE_ORDER"
+        const val EXTRA_SHUFFLE_ORDER = "com.stash.extra.SHUFFLE_ORDER"
 
         /** Custom command action for cycling repeat mode. */
         const val COMMAND_CYCLE_REPEAT = "com.stash.CYCLE_REPEAT"
@@ -598,6 +606,10 @@ class StashPlaybackService : MediaLibraryService() {
         // and moved to the new master whenever the crossfade engine swaps.
         player.addListener(playerListener)
         listenedPlayer = player
+
+        // Link Stash on the web: publish what plays for the linked browsers, on events only, for as long as this service
+        // lives (spec §8.1). A no-op unless the feature is built in, linked and switched on.
+        handoffPublisher.start(serviceScope)
 
         // Cache crossfade prefs for the poll's prepare/fire decisions.
         serviceScope.launch { crossfadePreference.enabled.collect { onCrossfadePreference(it) } }
@@ -1511,6 +1523,7 @@ class StashPlaybackService : MediaLibraryService() {
         // for a session that no longer exists.
         playbackSessionBus.onServiceStopping()
         likeObserverJob?.cancel()
+        if (::handoffPublisher.isInitialized) handoffPublisher.stop()
         prefetchPollJob?.cancel()
         crossfadePollJob?.cancel()
         sleepTimerNotificationJob?.cancel()
@@ -2180,6 +2193,7 @@ class StashPlaybackService : MediaLibraryService() {
                 SessionCommand(COMMAND_TOGGLE_LIKE, /* extras = */ android.os.Bundle.EMPTY),
                 SessionCommand(COMMAND_STOP_SLEEP_TIMER, /* extras = */ android.os.Bundle.EMPTY),
                 SessionCommand(COMMAND_LEAVE_SESSION, /* extras = */ android.os.Bundle.EMPTY),
+                SessionCommand(COMMAND_SET_SHUFFLE_ORDER, /* extras = */ android.os.Bundle.EMPTY),
             )
             // FULL library command set — not DEFAULT_SESSION_COMMANDS plus a
             // hand-picked subset. The old hand-picked list omitted
@@ -2224,6 +2238,18 @@ class StashPlaybackService : MediaLibraryService() {
                 COMMAND_LEAVE_SESSION -> listenTogetherController.send(
                     com.stash.core.media.listen.ListenTogetherController.Command.Leave,
                 )
+                COMMAND_SET_SHUFFLE_ORDER -> {
+                    // Only on the master ExoPlayer (not a Listen Together or cast player), and only a permutation of its timeline.
+                    val order = args.getIntArray(EXTRA_SHUFFLE_ORDER)
+                    val master = crossfadeEngine?.masterPlayer
+                    if (order != null && master != null && session.player === master &&
+                        order.size == master.mediaItemCount && order.sorted() == order.indices.toList()
+                    ) {
+                        master.setShuffleOrder(androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(order, android.os.SystemClock.elapsedRealtime()))
+                    } else {
+                        android.util.Log.w("StashPlayback", "shuffle order refused (${order?.size} for ${master?.mediaItemCount})")
+                    }
+                }
                 COMMAND_TOGGLE_SHUFFLE -> {
                     val player = session.player
                     player.shuffleModeEnabled = !player.shuffleModeEnabled

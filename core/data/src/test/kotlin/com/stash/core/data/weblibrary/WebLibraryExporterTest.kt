@@ -345,6 +345,55 @@ class WebLibraryExporterTest {
         assertEquals("stash-library-2025-10-07.json", WebLibraryFile.fileName(T, ZoneOffset.UTC))
     }
 
+    @Test fun `everything ticked writes exactly what the export always wrote`() = runTest {
+        fill()
+        val all = bytesOf(exporter.collect(T + 5_000, "g"))
+        val explicit = ExportSelection(likes = true, plays = true, playlistIds = db.webLibraryExportDao().playlists().map { it.id }.toSet())
+        assertArrayEquals(all, bytesOf(exporter.collect(T + 5_000, "g", ExportSelection.ALL)))
+        assertArrayEquals(all, bytesOf(exporter.collect(T + 5_000, "g", explicit)))
+    }
+
+    @Test fun `the picker drops exactly the unticked parts, as empty arrays`() = runTest {
+        fill()
+        val drive = db.webLibraryExportDao().playlists().first { it.name.trim() == "Night drive" }.id
+        val file = exporter.collect(T + 5_000, "g", ExportSelection(likes = false, plays = true, playlistIds = setOf(drive)))
+        assertTrue(file.likes.isEmpty())
+        assertEquals(listOf("Night drive"), file.playlists.map { it.name })
+        assertEquals(3, file.history.size)
+
+        val none = exporter.collect(T + 5_000, null, ExportSelection(likes = true, plays = false, playlistIds = emptySet()))
+        assertEquals(3, none.likes.size)
+        assertTrue(none.playlists.isEmpty())
+        assertTrue(none.history.isEmpty())
+        // Still v1: the arrays are there, only empty, so every v1 reader takes it.
+        val text = bytesOf(none).toString(Charsets.UTF_8)
+        assertTrue(text.contains("\"playlists\":[]") && text.contains("\"history\":[]"))
+    }
+
+    @Test fun `a playlist made after the choice was saved goes too when every playlist was ticked`() = runTest {
+        fill()
+        val newer = db.playlistDao().insert(playlist("Made later", PlaylistType.CUSTOM, "custom_later", added = 9))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = newer, trackId = db.trackDao().findByYoutubeId("AE005nZeF-A")!!.id, position = 0))
+        assertTrue(exporter.collect(T, null, ExportSelection.ALL).playlists.any { it.name == "Made later" })
+    }
+
+    @Test fun `the catalog counts what the file would hold`() = runTest {
+        fill()
+        val catalog = exporter.catalog()
+        val file = exporter.collect(T + 5_000, null)
+        assertEquals(file.likes.size, catalog.likes)
+        assertEquals(file.history.size, catalog.plays)
+        assertEquals(file.playlists.map { it.name }, catalog.playlists.map { it.name })
+        assertEquals(file.playlists.map { it.items.size }, catalog.playlists.map { it.songs })
+        assertEquals(listOf(false, true), catalog.playlists.map { it.sharedMix })
+    }
+
+    @Test fun `the text of a send is the file's bytes`() = runTest {
+        fill()
+        val file = exporter.collect(T + 5_000, "g")
+        assertArrayEquals(bytesOf(file), exporter.text(file).toByteArray(Charsets.UTF_8))
+    }
+
     /** A stream that fails on the first write, as a full disk or a vanished SD card does. */
     private fun failingStream(error: () -> Throwable) = object : OutputStream() {
         override fun write(b: Int) = throw error()

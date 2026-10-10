@@ -191,6 +191,19 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var kennyyHealthProbe: KennyyHealthProbe
 
+    @Inject
+    lateinit var handoffOffers: com.stash.core.media.handoff.HandoffOffers
+
+    @Inject
+    lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
+
+    @Inject
+    lateinit var webLinkInbox: com.stash.core.data.weblink.inbox.WebLinkInbox
+
+    /** Link Stash on the web's mirror: runs after a library change in a kind that mirrors, on foreground, and every 6 h. */
+    @Inject
+    lateinit var mirrorSignal: com.stash.core.data.weblink.mirror.LibraryChangeSignal
+
     /**
      * The signed runtime relay list — the APK ships no relay hostname. Started
      * from [onCreate]: loads the cached config, then fetches and signature-checks
@@ -275,6 +288,7 @@ class StashApplication : Application(), Configuration.Provider {
         // up. Registered here (before the applicationScope.launch blocks)
         // so it's observing as early as possible; the first STARTED event
         // doesn't fire until after onCreate completes anyway.
+        mirrorSignal.start()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
@@ -291,6 +305,12 @@ class StashApplication : Application(), Configuration.Provider {
                     // start (Pixel 6, 2026-09-06). Reconnect while the user is still
                     // looking, so the first tap after coming back starts at once.
                     playerRepository.warmUp()
+                    // Link Stash on the web: is another device's song waiting to be continued here? (at most every 30 s)
+                    handoffOffers.onForeground()
+                    // ...and did a linked browser send something here? (at most every 30 s; nothing in the background)
+                    webLinkInbox.onForeground()
+                    // ...and is anything mirrored waiting to come in or go out? (at most once a minute, only while mirroring)
+                    mirrorSignal.onForeground()
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
@@ -299,6 +319,8 @@ class StashApplication : Application(), Configuration.Provider {
                     // The BotGuard WebView is ~50 MB; drop it while backgrounded, it
                     // rebuilds on the next play (or the next onStart pre-warm).
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
+                    // Link Stash on the web: what plays goes out now, so a browser opened next sees it (spec §8.1).
+                    handoffPublisher.onBackground()
                 }
             },
         )
@@ -332,6 +354,12 @@ class StashApplication : Application(), Configuration.Provider {
             // Only when something waits, and under the background constraints.
             runCatching { musicRepository.resumeWaitingDownloads() }
                 .onFailure { Log.w("StashStartup", "resuming waiting downloads failed", it) }
+        }
+        // A playlist delete cut short by the process dying: its playlist is hidden and half
+        // emptied, so finish it (last look L-N1).
+        applicationScope.launch {
+            runCatching { musicRepository.finishInterruptedPlaylistDeletes() }
+                .onFailure { Log.w("StashStartup", "finishing interrupted playlist deletes failed", it) }
         }
         applicationScope.launch {
             runCatching { musicRepository.ensureDownloadsMixSeeded() }

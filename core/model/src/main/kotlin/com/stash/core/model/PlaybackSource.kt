@@ -13,6 +13,12 @@ sealed class PlaybackSource {
     data class Album(val name: String, val artist: String) : PlaybackSource()
     data class Radio(val label: String) : PlaybackSource()
     data object Search : PlaybackSource()
+
+    /**
+     * A queue continued from a linked browser ("Pick up where you left off", link-sync spec §8.3): the other
+     * device's "Playing from" label, as text only. Display only; the queue is this device's own from then on.
+     */
+    data class Handoff(val label: String) : PlaybackSource()
     data object Unknown : PlaybackSource()
 
     /** Pipe-delimited encoding for DataStore. Names containing "|" will
@@ -25,6 +31,7 @@ sealed class PlaybackSource {
         is Album -> "ALBUM|$name|$artist"
         is Radio -> "RADIO|$label"
         is Search -> "SEARCH"
+        is Handoff -> "HANDOFF|$label"
         is Unknown -> "UNKNOWN"
     }
 
@@ -41,6 +48,7 @@ sealed class PlaybackSource {
             is Album -> name
             is Radio -> "$label Radio"
             is Search -> "Search"
+            is Handoff -> label
             is Unknown -> ""
         }
 
@@ -59,6 +67,7 @@ sealed class PlaybackSource {
                 "ALBUM" -> Album(parts.getOrElse(1) { "" }, parts.getOrElse(2) { "" })
                 "RADIO" -> Radio(parts.getOrElse(1) { "" })
                 "SEARCH" -> Search
+                "HANDOFF" -> Handoff(parts.drop(1).joinToString("|"))
                 else -> Unknown
             }
         }

@@ -326,7 +326,15 @@ private fun StashNavGraph(
                 onBack = { navController.popBackStack() },
                 onNavigateToLibraryHealth = { navController.navigate(LibraryHealthRoute) },
                 viewModel = viewModel,
+                onNavigateToWebLink = if (com.stash.app.BuildConfig.WEB_LINK_ENABLED) {
+                    { navController.navigate(WebLinkRoute()) }
+                } else {
+                    null
+                },
             )
+        }
+        composable<WebLinkRoute> {
+            com.stash.feature.settings.weblink.SettingsWebLinkScreen(onBack = { navController.popBackStack() })
         }
         composable<SettingsAppearanceRoute> { backStackEntry ->
             val settingsEntry = remember(backStackEntry) { navController.getBackStackEntry(SettingsRoute) }

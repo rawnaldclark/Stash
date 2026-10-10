@@ -99,6 +99,9 @@ test("public pages, files, redirects and 404s pass straight through", async () =
     const privacy = await handle(get("/privacy"), e);
     assert.equal(privacy.status, 200);
     assert.match(await privacy.text(), /PRIVACY/);
+    const link = await handle(get("/link"), e);
+    assert.equal(link.status, 200);
+    assert.match(await link.text(), /LINK/);
     assert.equal((await handle(get("/sitemap-index.xml"), e)).status, 200);
     const redirect = await handle(get("/index.html"), e);
     assert.equal(redirect.status, 307);

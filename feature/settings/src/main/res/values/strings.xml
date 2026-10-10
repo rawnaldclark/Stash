@@ -23,4 +23,9 @@
     <string name="web_library_export_failed_title">Couldn’t export</string>
     <string name="web_library_export_failed_body">The file couldn’t be written. Try again, or pick another place to save it.</string>
     <string name="web_library_export_ok">OK</string>
+    <string name="web_library_import_button">Import from Stash on the web</string>
+    <!-- %1$s: the browser's name ("Chrome on Windows"). -->
+    <string name="web_library_sent_title">Sent</string>
+    <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
+    <string name="web_library_sent_body">Sent %2$s, %3$s and %4$s to %1$s. It asks there before adding anything.</string>
 </resources>

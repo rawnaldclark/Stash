@@ -26,6 +26,11 @@ dependencies {
     // For LoudnessFirstRunStore — shares the app-wide DataStore<Preferences>
     // with LoudnessStore / LoudnessProgressStore in :core:data and :core:media.
     implementation(libs.datastore.preferences)
+    // Link Stash on the web: the QR scanner. CameraX + ZXing core, no Google Play services (spec 2026-10-10 link-sync §1).
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.view)
+    implementation(libs.zxing.core)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")

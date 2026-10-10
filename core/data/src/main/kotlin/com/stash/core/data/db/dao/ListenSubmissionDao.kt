@@ -38,6 +38,7 @@ interface ListenSubmissionDao {
         LEFT JOIN listen_submissions s
             ON s.event_id = e.id AND s.target = :target
         WHERE e.started_at >= :sinceMs
+          AND e.origin_device IS NULL
           AND (s.state IS NULL OR (s.state = 'FAILED' AND s.attempts < :maxAttempts))
         ORDER BY e.started_at ASC
         LIMIT :limit
@@ -60,6 +61,7 @@ interface ListenSubmissionDao {
         LEFT JOIN listen_submissions s
             ON s.event_id = e.id AND s.target = :target
         WHERE e.started_at >= :sinceMs
+          AND e.origin_device IS NULL
           AND (s.state IS NULL OR (s.state = 'FAILED' AND s.attempts < :maxAttempts))
         """,
     )

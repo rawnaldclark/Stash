@@ -1,0 +1,3 @@
+# The sync-v1 vector files are pinned by SHA-256 here and in stash-player (docs/sync-v1.md "Test vectors"): keep their bytes as written.
+core/model/src/test/resources/sync/*.json -text
+core/data/src/test/resources/sync/*.json -text

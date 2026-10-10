@@ -1,0 +1,3652 @@
+{
+	"kind": "stash-sync-merge-vectors",
+	"v": 1,
+	"note": "Mirror merge rules of sync-v1 (docs/sync-v1.md \"Merge rules\"). Songs are named by the keys of \"songs\"; HLCs are [wallMs, counter, deviceId]. Frozen: see \"Test vectors\".",
+	"songs": {
+		"pink": {
+			"title": "Pink + White",
+			"artist": "Frank Ocean",
+			"isrc": "USUM71607009"
+		},
+		"pinkW": {
+			"title": "Pink + White",
+			"artist": "Frank Ocean"
+		},
+		"pinkB": {
+			"title": "Pink + White",
+			"artist": "Frank Ocean",
+			"isrc": "USUM71600001"
+		},
+		"ivy": {
+			"title": "Ivy",
+			"artist": "Frank Ocean"
+		},
+		"nights": {
+			"title": "Nights",
+			"artist": "Frank Ocean"
+		},
+		"solo": {
+			"title": "Solo",
+			"artist": "Frank Ocean"
+		},
+		"halo": {
+			"title": "Halo",
+			"artist": "Beyoncé"
+		},
+		"godspeed": {
+			"title": "Godspeed",
+			"artist": "Frank Ocean"
+		},
+		"nikes": {
+			"title": "Nikes",
+			"artist": "Frank Ocean"
+		},
+		"cafe": {
+			"title": "Café ☕",
+			"artist": "Ünïcödé"
+		}
+	},
+	"likes": {
+		"apply": [
+			{
+				"name": "a remote like is added",
+				"state": [],
+				"ops": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				]
+			},
+			{
+				"name": "a newer op wins",
+				"state": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					}
+				],
+				"ops": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							20,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							20,
+							0,
+							"d_web"
+						]
+					}
+				]
+			},
+			{
+				"name": "an older op loses",
+				"state": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							20,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"ops": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							20,
+							0,
+							"d_web"
+						]
+					}
+				]
+			},
+			{
+				"name": "same wall: the counter decides",
+				"state": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							2,
+							"d_phone"
+						]
+					}
+				],
+				"ops": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							10,
+							1,
+							"d_web"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							2,
+							"d_phone"
+						]
+					}
+				]
+			},
+			{
+				"name": "same wall and counter: the larger device id wins",
+				"state": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					}
+				],
+				"ops": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				]
+			},
+			{
+				"name": "same wall and counter, smaller device id: loses",
+				"state": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"ops": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				]
+			},
+			{
+				"name": "device ids compare by code unit (upper case before lower)",
+				"state": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_a"
+						]
+					}
+				],
+				"ops": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							10,
+							0,
+							"d_B"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_a"
+						]
+					}
+				]
+			},
+			{
+				"name": "an echo of the same op changes nothing",
+				"state": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"ops": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				]
+			},
+			{
+				"name": "matched by sameSong: the record keeps its own song",
+				"state": [
+					{
+						"s": "pinkW",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"ops": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							20,
+							0,
+							"d_phone"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pinkW",
+						"on": false,
+						"at": [
+							20,
+							0,
+							"d_phone"
+						]
+					}
+				]
+			},
+			{
+				"name": "two ISRCs are two songs",
+				"state": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"ops": [
+					{
+						"s": "pinkB",
+						"on": true,
+						"at": [
+							20,
+							0,
+							"d_phone"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					},
+					{
+						"s": "pinkB",
+						"on": true,
+						"at": [
+							20,
+							0,
+							"d_phone"
+						]
+					}
+				]
+			},
+			{
+				"name": "a tombstone for an unknown song is kept, so an older like can't bring it back",
+				"state": [],
+				"ops": [
+					{
+						"s": "ivy",
+						"on": false,
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					},
+					{
+						"s": "ivy",
+						"on": true,
+						"at": [
+							5,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "ivy",
+						"on": false,
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					}
+				]
+			},
+			{
+				"name": "ops apply in order, each against the result so far",
+				"state": [],
+				"ops": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					},
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							12,
+							0,
+							"d_web"
+						]
+					},
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							11,
+							0,
+							"d_phone"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							12,
+							0,
+							"d_web"
+						]
+					}
+				]
+			},
+			{
+				"name": "records keep their order; new ones follow in op order",
+				"state": [
+					{
+						"s": "ivy",
+						"on": true,
+						"at": [
+							1,
+							0,
+							"d_web"
+						]
+					},
+					{
+						"s": "nights",
+						"on": true,
+						"at": [
+							2,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"ops": [
+					{
+						"s": "halo",
+						"on": true,
+						"at": [
+							5,
+							0,
+							"d_phone"
+						]
+					},
+					{
+						"s": "ivy",
+						"on": false,
+						"at": [
+							50,
+							0,
+							"d_phone"
+						]
+					}
+				],
+				"expect": [
+					{
+						"s": "ivy",
+						"on": false,
+						"at": [
+							50,
+							0,
+							"d_phone"
+						]
+					},
+					{
+						"s": "nights",
+						"on": true,
+						"at": [
+							2,
+							0,
+							"d_web"
+						]
+					},
+					{
+						"s": "halo",
+						"on": true,
+						"at": [
+							5,
+							0,
+							"d_phone"
+						]
+					}
+				]
+			}
+		],
+		"diff": [
+			{
+				"name": "a new like",
+				"base": [],
+				"liked": [
+					{
+						"s": "pink"
+					}
+				],
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						]
+					}
+				]
+			},
+			{
+				"name": "unchanged",
+				"base": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"liked": [
+					{
+						"s": "pink"
+					}
+				],
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": []
+			},
+			{
+				"name": "unliked",
+				"base": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"liked": [],
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						]
+					}
+				]
+			},
+			{
+				"name": "liked again after a tombstone",
+				"base": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"liked": [
+					{
+						"s": "pink"
+					}
+				],
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": [
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						]
+					}
+				]
+			},
+			{
+				"name": "matched across the ISRC and words keys",
+				"base": [
+					{
+						"s": "pinkW",
+						"on": true,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"liked": [
+					{
+						"s": "pink"
+					}
+				],
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": []
+			},
+			{
+				"name": "a Spotify/YTM like after a mirrored unlike is not sent back",
+				"base": [
+					{
+						"s": "pink",
+						"on": false,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"liked": [
+					{
+						"s": "pink",
+						"external": true
+					}
+				],
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": []
+			},
+			{
+				"name": "a new Spotify/YTM like is sent",
+				"base": [],
+				"liked": [
+					{
+						"s": "halo",
+						"external": true
+					}
+				],
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": [
+					{
+						"s": "halo",
+						"on": true,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						]
+					}
+				]
+			},
+			{
+				"name": "a tombstone and no like: nothing",
+				"base": [
+					{
+						"s": "ivy",
+						"on": false,
+						"at": [
+							10,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"liked": [],
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": []
+			},
+			{
+				"name": "likes in liked order, then unlikes in base order",
+				"base": [
+					{
+						"s": "ivy",
+						"on": true,
+						"at": [
+							1,
+							0,
+							"d_web"
+						]
+					},
+					{
+						"s": "nights",
+						"on": true,
+						"at": [
+							1,
+							0,
+							"d_web"
+						]
+					},
+					{
+						"s": "solo",
+						"on": true,
+						"at": [
+							1,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"liked": [
+					{
+						"s": "halo"
+					},
+					{
+						"s": "nights"
+					},
+					{
+						"s": "pink"
+					}
+				],
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": [
+					{
+						"s": "halo",
+						"on": true,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						]
+					},
+					{
+						"s": "pink",
+						"on": true,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						]
+					},
+					{
+						"s": "ivy",
+						"on": false,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						]
+					},
+					{
+						"s": "solo",
+						"on": false,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						]
+					}
+				]
+			}
+		]
+	},
+	"plays": {
+		"ids": [
+			{
+				"s": "pink",
+				"playedAt": 200,
+				"id": "pink white|frank ocean|200"
+			},
+			{
+				"s": "pinkW",
+				"playedAt": 200,
+				"id": "pink white|frank ocean|200"
+			},
+			{
+				"s": "halo",
+				"playedAt": 1760083200000,
+				"id": "halo|beyonce|1760083200000"
+			}
+		],
+		"apply": [
+			{
+				"name": "a remote play is added with its origin, newest first",
+				"state": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 100
+						}
+					],
+					"clearedBefore": 0
+				},
+				"ops": [
+					{
+						"t": "play",
+						"s": "pink",
+						"playedAt": 200
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "pink",
+							"playedAt": 200,
+							"origin": "d_web"
+						},
+						{
+							"s": "ivy",
+							"playedAt": 100
+						}
+					],
+					"clearedBefore": 0
+				}
+			},
+			{
+				"name": "one play under the ISRC key and the words key: once",
+				"state": {
+					"plays": [
+						{
+							"s": "pinkW",
+							"playedAt": 100
+						}
+					],
+					"clearedBefore": 0
+				},
+				"ops": [
+					{
+						"t": "play",
+						"s": "pink",
+						"playedAt": 100
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "pinkW",
+							"playedAt": 100
+						}
+					],
+					"clearedBefore": 0
+				}
+			},
+			{
+				"name": "the same song at another start: a second play",
+				"state": {
+					"plays": [
+						{
+							"s": "pinkW",
+							"playedAt": 100
+						}
+					],
+					"clearedBefore": 0
+				},
+				"ops": [
+					{
+						"t": "play",
+						"s": "pink",
+						"playedAt": 101
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "pink",
+							"playedAt": 101,
+							"origin": "d_web"
+						},
+						{
+							"s": "pinkW",
+							"playedAt": 100
+						}
+					],
+					"clearedBefore": 0
+				}
+			},
+			{
+				"name": "older than the clear mark: dropped (the mark itself is kept)",
+				"state": {
+					"plays": [],
+					"clearedBefore": 500
+				},
+				"ops": [
+					{
+						"t": "play",
+						"s": "ivy",
+						"playedAt": 400
+					},
+					{
+						"t": "play",
+						"s": "ivy",
+						"playedAt": 500
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 500,
+							"origin": "d_web"
+						}
+					],
+					"clearedBefore": 500
+				}
+			},
+			{
+				"name": "clearPlays with all (\"on all your devices\") removes every older play and raises the mark",
+				"state": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 300
+						},
+						{
+							"s": "pink",
+							"playedAt": 600
+						}
+					],
+					"clearedBefore": 0
+				},
+				"ops": [
+					{
+						"t": "clearPlays",
+						"before": 500,
+						"at": [
+							50,
+							0,
+							"d_web"
+						],
+						"all": true
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "pink",
+							"playedAt": 600
+						}
+					],
+					"clearedBefore": 500
+				}
+			},
+			{
+				"name": "a lower clear mark changes nothing",
+				"state": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 300
+						}
+					],
+					"clearedBefore": 200
+				},
+				"ops": [
+					{
+						"t": "clearPlays",
+						"before": 100,
+						"at": [
+							50,
+							0,
+							"d_web"
+						],
+						"all": true
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 300
+						}
+					],
+					"clearedBefore": 200
+				}
+			},
+			{
+				"name": "in order: a clear after a play removes it",
+				"state": {
+					"plays": [],
+					"clearedBefore": 0
+				},
+				"ops": [
+					{
+						"t": "play",
+						"s": "ivy",
+						"playedAt": 300
+					},
+					{
+						"t": "clearPlays",
+						"before": 400,
+						"at": [
+							50,
+							0,
+							"d_web"
+						],
+						"all": true
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [],
+					"clearedBefore": 400
+				}
+			},
+			{
+				"name": "a tie on playedAt keeps existing plays first",
+				"state": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 100
+						}
+					],
+					"clearedBefore": 0
+				},
+				"ops": [
+					{
+						"t": "play",
+						"s": "nights",
+						"playedAt": 100
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 100
+						},
+						{
+							"s": "nights",
+							"playedAt": 100,
+							"origin": "d_web"
+						}
+					],
+					"clearedBefore": 0
+				}
+			},
+			{
+				"name": "a clear without all drops only the sender's plays: this device's own and other devices' stay",
+				"state": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 300,
+							"origin": "d_web"
+						},
+						{
+							"s": "pink",
+							"playedAt": 300
+						},
+						{
+							"s": "nights",
+							"playedAt": 300,
+							"origin": "d_web2"
+						},
+						{
+							"s": "solo",
+							"playedAt": 700,
+							"origin": "d_web"
+						}
+					],
+					"clearedBefore": 0
+				},
+				"ops": [
+					{
+						"t": "clearPlays",
+						"before": 500,
+						"at": [
+							50,
+							0,
+							"d_web"
+						]
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "solo",
+							"playedAt": 700,
+							"origin": "d_web"
+						},
+						{
+							"s": "pink",
+							"playedAt": 300
+						},
+						{
+							"s": "nights",
+							"playedAt": 300,
+							"origin": "d_web2"
+						}
+					],
+					"clearedBefore": 0
+				}
+			},
+			{
+				"name": "a clear without all leaves the clear mark alone",
+				"state": {
+					"plays": [],
+					"clearedBefore": 0
+				},
+				"ops": [
+					{
+						"t": "clearPlays",
+						"before": 500,
+						"at": [
+							50,
+							0,
+							"d_web"
+						]
+					},
+					{
+						"t": "play",
+						"s": "ivy",
+						"playedAt": 400
+					}
+				],
+				"origin": "d_web",
+				"expect": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 400,
+							"origin": "d_web"
+						}
+					],
+					"clearedBefore": 0
+				}
+			}
+		],
+		"diff": [
+			{
+				"name": "own plays not in the base",
+				"base": {
+					"ids": [
+						"ivy|frank ocean|100"
+					],
+					"clearedBefore": 0
+				},
+				"local": {
+					"plays": [
+						{
+							"s": "pink",
+							"playedAt": 200
+						},
+						{
+							"s": "ivy",
+							"playedAt": 100
+						}
+					],
+					"clearedBefore": 0
+				},
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": [
+					{
+						"t": "play",
+						"s": "pink",
+						"playedAt": 200
+					}
+				],
+				"clearAll": false
+			},
+			{
+				"name": "plays from another device never go back",
+				"base": {
+					"ids": [],
+					"clearedBefore": 0
+				},
+				"local": {
+					"plays": [
+						{
+							"s": "pink",
+							"playedAt": 200,
+							"origin": "d_web"
+						}
+					],
+					"clearedBefore": 0
+				},
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": [],
+				"clearAll": false
+			},
+			{
+				"name": "an own clear goes first, for this device's plays only by default",
+				"base": {
+					"ids": [],
+					"clearedBefore": 0
+				},
+				"local": {
+					"plays": [
+						{
+							"s": "pink",
+							"playedAt": 600
+						}
+					],
+					"clearedBefore": 500
+				},
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": [
+					{
+						"t": "clearPlays",
+						"before": 500,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						]
+					},
+					{
+						"t": "play",
+						"s": "pink",
+						"playedAt": 600
+					}
+				],
+				"clearAll": false
+			},
+			{
+				"name": "plays under the clear mark are not sent",
+				"base": {
+					"ids": [],
+					"clearedBefore": 500
+				},
+				"local": {
+					"plays": [
+						{
+							"s": "ivy",
+							"playedAt": 300
+						}
+					],
+					"clearedBefore": 500
+				},
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": [],
+				"clearAll": false
+			},
+			{
+				"name": "base ids match by words",
+				"base": {
+					"ids": [
+						"pink white|frank ocean|200"
+					],
+					"clearedBefore": 0
+				},
+				"local": {
+					"plays": [
+						{
+							"s": "pink",
+							"playedAt": 200
+						}
+					],
+					"clearedBefore": 0
+				},
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"expect": [],
+				"clearAll": false
+			},
+			{
+				"name": "\"Clear on all your devices\" sends all",
+				"base": {
+					"ids": [],
+					"clearedBefore": 0
+				},
+				"local": {
+					"plays": [],
+					"clearedBefore": 500
+				},
+				"at": [
+					100,
+					0,
+					"d_phone"
+				],
+				"clearAll": true,
+				"expect": [
+					{
+						"t": "clearPlays",
+						"before": 500,
+						"at": [
+							100,
+							0,
+							"d_phone"
+						],
+						"all": true
+					}
+				]
+			}
+		]
+	},
+	"playlists": {
+		"merge": [
+			{
+				"name": "a new playlist from the space",
+				"phone": false,
+				"base": null,
+				"local": null,
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						10,
+						0,
+						"d_phone"
+					],
+					"parent": null,
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink"
+						],
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "fast-forward: the remote edit started from this version",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						8,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						10,
+						0,
+						"d_phone"
+					],
+					"parent": "h_local",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"nights"
+						],
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "local unchanged since the base: take the remote",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"pink",
+						"ivy",
+						"nights"
+					],
+					"at": [
+						10,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"pink",
+							"ivy",
+							"nights"
+						],
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "unchanged is judged by sameSong (ISRC and words keys)",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pinkW"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						10,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy"
+						],
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "the remote is the base again (an echo): keep local",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink"
+						],
+						"at": [
+							20,
+							0,
+							"d_web"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "add / add: the newer side orders, the other side's song follows its neighbour",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"nights",
+							"solo"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "add / remove (the manual script's step 7)",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights",
+						"solo"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"nights"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"nights",
+							"solo"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "remove / remove",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights",
+						"solo"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"nights",
+						"solo"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"nights"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "reorder (newer) / add",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"nights",
+						"ivy",
+						"pink"
+					],
+					"at": [
+						30,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights",
+						"solo"
+					],
+					"at": [
+						20,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"nights",
+							"solo",
+							"ivy",
+							"pink"
+						],
+						"at": [
+							30,
+							0,
+							"d_web"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "reorder (older) / add: the newer edit's order wins",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"nights",
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights",
+						"solo"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"nights",
+							"solo"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "an addition with no surviving neighbour before it goes to the start",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"solo",
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"pink",
+						"ivy"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"solo",
+							"pink",
+							"ivy"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "an addition after a song the other side removed follows the next surviving neighbour back",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo",
+						"nights"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"nights"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"solo",
+							"nights"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "the same song added on both sides is kept once",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pinkW",
+						"nights"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pinkW",
+							"nights"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "several additions keep their order",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"solo",
+						"halo",
+						"godspeed"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"nikes",
+						"ivy"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"nikes",
+							"ivy",
+							"solo",
+							"halo",
+							"godspeed"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "repeats pair by occurrence: removing the second copy",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"ivy",
+						"nights"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"nights"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "repeats pair by occurrence: first with first, so removing the first copy reads as removing the last",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"pink",
+						"ivy"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"ivy",
+						"nights"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"nights"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "name: the side that renamed it wins, even when older",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Late drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Late drive",
+						"items": [
+							"ivy",
+							"pink",
+							"solo"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "name: both renamed, the newer wins",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Late drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night ride",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night ride",
+						"items": [
+							"ivy"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "a delete beats an older concurrent edit",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": null,
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": null,
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "an edit newer than the delete survives (and is pushed back)",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						30,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": null,
+					"at": [
+						20,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"solo"
+						],
+						"at": [
+							30,
+							0,
+							"d_web"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "a delete, local unchanged",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": null,
+					"at": [
+						20,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": null,
+						"at": [
+							20,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "deleted here, edited there later: it comes back with the edit",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": null,
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "deleted here after the edit there: stays deleted",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": null,
+					"at": [
+						30,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Night drive",
+						"items": null,
+						"at": [
+							30,
+							0,
+							"d_web"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "deleted here, the remote is the base again: stays deleted",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": null,
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Night drive",
+						"items": null,
+						"at": [
+							20,
+							0,
+							"d_web"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "deleted on both sides",
+				"phone": false,
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": null,
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": null,
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": null,
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "a followed mix: the higher version wins, songs are not merged",
+				"phone": false,
+				"base": {
+					"name": "Robin’s mix",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"follow": {
+						"id": "Fw12ab34",
+						"version": 3
+					}
+				},
+				"local": {
+					"name": "Robin’s mix",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"follow": {
+						"id": "Fw12ab34",
+						"version": 4
+					},
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Robin’s mix",
+					"items": [
+						"ivy",
+						"solo"
+					],
+					"at": [
+						10,
+						0,
+						"d_phone"
+					],
+					"follow": {
+						"id": "Fw12ab34",
+						"version": 5
+					},
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Robin’s mix",
+						"items": [
+							"ivy",
+							"solo"
+						],
+						"at": [
+							10,
+							0,
+							"d_phone"
+						],
+						"follow": {
+							"id": "Fw12ab34",
+							"version": 5
+						}
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "a followed mix, same version: the newer edit wins",
+				"phone": false,
+				"base": {
+					"name": "Robin’s mix",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"follow": {
+						"id": "Fw12ab34",
+						"version": 3
+					}
+				},
+				"local": {
+					"name": "Robin’s mix",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						30,
+						0,
+						"d_web"
+					],
+					"follow": {
+						"id": "Fw12ab34",
+						"version": 4
+					},
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Robin’s mix",
+					"items": [
+						"ivy",
+						"solo"
+					],
+					"at": [
+						20,
+						0,
+						"d_phone"
+					],
+					"follow": {
+						"id": "Fw12ab34",
+						"version": 4
+					},
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Robin’s mix",
+						"items": [
+							"ivy",
+							"pink"
+						],
+						"at": [
+							30,
+							0,
+							"d_web"
+						],
+						"follow": {
+							"id": "Fw12ab34",
+							"version": 4
+						}
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "a followed mix unfollowed and edited here, newer: kept as a plain playlist",
+				"phone": false,
+				"base": {
+					"name": "Robin’s mix",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"follow": {
+						"id": "Fw12ab34",
+						"version": 3
+					}
+				},
+				"local": {
+					"name": "Robin’s mix",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						30,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Robin’s mix",
+					"items": [
+						"ivy",
+						"solo"
+					],
+					"at": [
+						20,
+						0,
+						"d_phone"
+					],
+					"follow": {
+						"id": "Fw12ab34",
+						"version": 4
+					},
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Robin’s mix",
+						"items": [
+							"ivy",
+							"pink"
+						],
+						"at": [
+							30,
+							0,
+							"d_web"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "read-only on the web: the phone's op is taken, whatever the clocks",
+				"phone": false,
+				"base": {
+					"name": "Liked on Spotify",
+					"items": [
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"ro": true
+				},
+				"local": {
+					"name": "Liked on Spotify",
+					"items": [
+						"pink",
+						"ivy"
+					],
+					"at": [
+						30,
+						0,
+						"d_web"
+					],
+					"ro": true,
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Liked on Spotify",
+					"items": [
+						"pink",
+						"halo"
+					],
+					"at": [
+						20,
+						0,
+						"d_phone"
+					],
+					"ro": true,
+					"parent": "h_elsewhere",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Liked on Spotify",
+						"items": [
+							"pink",
+							"halo"
+						],
+						"at": [
+							20,
+							0,
+							"d_phone"
+						],
+						"ro": true
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "read-only on the web: another browser's op is ignored",
+				"phone": false,
+				"base": {
+					"name": "Liked on Spotify",
+					"items": [
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"ro": true
+				},
+				"local": {
+					"name": "Liked on Spotify",
+					"items": [
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"ro": true,
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Liked on Spotify",
+					"items": [
+						"halo"
+					],
+					"at": [
+						30,
+						0,
+						"d_web2"
+					],
+					"ro": true,
+					"parent": "h_local",
+					"fromPhone": false
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Liked on Spotify",
+						"items": [
+							"pink"
+						],
+						"at": [
+							5,
+							0,
+							"d_web"
+						],
+						"ro": true
+					},
+					"base": "base"
+				}
+			},
+			{
+				"name": "read-only on the phone: ops from a browser are ignored",
+				"phone": true,
+				"base": {
+					"name": "Liked on Spotify",
+					"items": [
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_phone"
+					],
+					"ro": true
+				},
+				"local": {
+					"name": "Liked on Spotify",
+					"items": [
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_phone"
+					],
+					"ro": true,
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Liked on Spotify",
+					"items": [
+						"halo"
+					],
+					"at": [
+						30,
+						0,
+						"d_web"
+					],
+					"ro": true,
+					"parent": "h_local",
+					"fromPhone": false
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Liked on Spotify",
+						"items": [
+							"pink"
+						],
+						"at": [
+							5,
+							0,
+							"d_phone"
+						],
+						"ro": true
+					},
+					"base": "base"
+				}
+			},
+			{
+				"name": "a new read-only playlist from the phone appears on the web",
+				"phone": false,
+				"base": null,
+				"local": null,
+				"remote": {
+					"name": "Liked on Spotify",
+					"items": [
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_phone"
+					],
+					"ro": true,
+					"parent": null,
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Liked on Spotify",
+						"items": [
+							"pink"
+						],
+						"at": [
+							5,
+							0,
+							"d_phone"
+						],
+						"ro": true
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "no common base: both sides' songs are kept",
+				"phone": false,
+				"base": null,
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"pink",
+						"solo"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": null,
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"solo"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			}
+		],
+		"hash": [
+			{
+				"name": "Night drive",
+				"items": [
+					"ivy",
+					"pink"
+				],
+				"input": "stash-pl/1\n11:Night drive\n0:\n1:2\n15:ivy|frank ocean\n22:pink white|frank ocean\n",
+				"hash": "h_lV_y7qS5J6RDLcSs9o2XPQ"
+			},
+			{
+				"name": "Night drive",
+				"items": [
+					"ivy",
+					"pinkW"
+				],
+				"input": "stash-pl/1\n11:Night drive\n0:\n1:2\n15:ivy|frank ocean\n22:pink white|frank ocean\n",
+				"hash": "h_lV_y7qS5J6RDLcSs9o2XPQ"
+			},
+			{
+				"name": "Night drive",
+				"items": [
+					"pink",
+					"ivy"
+				],
+				"input": "stash-pl/1\n11:Night drive\n0:\n1:2\n22:pink white|frank ocean\n15:ivy|frank ocean\n",
+				"hash": "h_XVJDuFkA9-szlU0h2e0cXQ"
+			},
+			{
+				"name": "Night drive",
+				"items": [],
+				"input": "stash-pl/1\n11:Night drive\n0:\n1:0\n",
+				"hash": "h_tCmTtUEoi40irG59E5h0xA"
+			},
+			{
+				"name": "Robin’s mix",
+				"items": [
+					"ivy"
+				],
+				"follow": {
+					"id": "Fw12ab34",
+					"version": 3
+				},
+				"input": "stash-pl/1\n13:Robin’s mix\n10:Fw12ab34@3\n1:1\n15:ivy|frank ocean\n",
+				"hash": "h_t9HKifvlVM6srEqUmfhoiQ"
+			},
+			{
+				"name": "Café ☕",
+				"items": [
+					"cafe"
+				],
+				"input": "stash-pl/1\n9:Café ☕\n0:\n1:1\n12:cafe|unicode\n",
+				"hash": "h_bIAd1uQuLye4AjDQYTSPNA"
+			},
+			{
+				"name": "Night drive",
+				"items": null,
+				"input": "stash-pl/1\ndeleted\n",
+				"hash": "h_LS5RyBejrqkvkiDGKVRtqA"
+			}
+		],
+		"queueId": [
+			{
+				"items": [
+					"ivy",
+					"pink"
+				],
+				"offset": 0,
+				"input": "stash-queue/1\n1:0\n1:2\n15:ivy|frank ocean\n17:isrc:USUM71607009\n0:\n",
+				"id": "q_zdb2t9zBf8miC2-mS0k_oQ"
+			},
+			{
+				"items": [
+					"ivy",
+					"pinkW"
+				],
+				"offset": 0,
+				"input": "stash-queue/1\n1:0\n1:2\n15:ivy|frank ocean\n22:pink white|frank ocean\n0:\n",
+				"id": "q_iAgoyRgZrN-HMkFlUUxyOg"
+			},
+			{
+				"items": [
+					"ivy",
+					"pink",
+					"nights"
+				],
+				"offset": 100,
+				"original": [
+					2,
+					0,
+					1
+				],
+				"input": "stash-queue/1\n3:100\n1:3\n15:ivy|frank ocean\n17:isrc:USUM71607009\n18:nights|frank ocean\n5:2,0,1\n",
+				"id": "q_IBErtHKiGiuivADoqM6t9w"
+			}
+		],
+		"localAt": [
+			{
+				"name": "edited after the base: the stamp taken at the edit",
+				"baseAt": [
+					10,
+					0,
+					"d_phone"
+				],
+				"editedAt": [
+					20,
+					0,
+					"d_web"
+				],
+				"last": [
+					25,
+					0,
+					"d_web"
+				],
+				"wall": 30,
+				"device": "d_web",
+				"expect": [
+					20,
+					0,
+					"d_web"
+				]
+			},
+			{
+				"name": "no stamp kept for the edit: a fresh tick at merge time",
+				"baseAt": [
+					10,
+					0,
+					"d_phone"
+				],
+				"editedAt": null,
+				"last": [
+					25,
+					0,
+					"d_web"
+				],
+				"wall": 30,
+				"device": "d_web",
+				"expect": [
+					30,
+					0,
+					"d_web"
+				]
+			},
+			{
+				"name": "a stamp no newer than the base: a fresh tick (never the base's own at)",
+				"baseAt": [
+					40,
+					0,
+					"d_phone"
+				],
+				"editedAt": [
+					20,
+					0,
+					"d_web"
+				],
+				"last": [
+					40,
+					1,
+					"d_web"
+				],
+				"wall": 30,
+				"device": "d_web",
+				"expect": [
+					40,
+					2,
+					"d_web"
+				]
+			},
+			{
+				"name": "no base yet: the edit's stamp",
+				"baseAt": null,
+				"editedAt": [
+					20,
+					0,
+					"d_web"
+				],
+				"last": null,
+				"wall": 30,
+				"device": "d_web",
+				"expect": [
+					20,
+					0,
+					"d_web"
+				]
+			}
+		]
+	},
+	"firstMerge": {
+		"counts": [
+			{
+				"a": [
+					"pink",
+					"ivy",
+					"nights"
+				],
+				"b": [
+					"pinkW",
+					"halo"
+				],
+				"expect": {
+					"a": 3,
+					"b": 2,
+					"both": 1,
+					"combined": 4,
+					"onlyA": 2,
+					"onlyB": 1
+				}
+			},
+			{
+				"a": [
+					"pink"
+				],
+				"b": [
+					"pinkB"
+				],
+				"expect": {
+					"a": 1,
+					"b": 1,
+					"both": 0,
+					"combined": 2,
+					"onlyA": 1,
+					"onlyB": 1
+				}
+			},
+			{
+				"a": [
+					"ivy",
+					"ivy"
+				],
+				"b": [
+					"ivy"
+				],
+				"expect": {
+					"a": 2,
+					"b": 1,
+					"both": 1,
+					"combined": 2,
+					"onlyA": 1,
+					"onlyB": 0
+				}
+			},
+			{
+				"a": [],
+				"b": [
+					"ivy"
+				],
+				"expect": {
+					"a": 0,
+					"b": 1,
+					"both": 0,
+					"combined": 1,
+					"onlyA": 0,
+					"onlyB": 1
+				}
+			}
+		],
+		"names": [
+			{
+				"name": "Night drive",
+				"taken": [
+					"Night drive"
+				],
+				"expect": "Night drive (web)"
+			},
+			{
+				"name": "Night drive",
+				"taken": [
+					"night  DRIVE!"
+				],
+				"expect": "Night drive (web)"
+			},
+			{
+				"name": "Night drive",
+				"taken": [
+					"Night drive",
+					"Night drive (web)"
+				],
+				"expect": "Night drive (web 2)"
+			},
+			{
+				"name": "Gym",
+				"taken": [
+					"Night drive"
+				],
+				"expect": "Gym"
+			},
+			{
+				"name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+				"taken": [
+					"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+				],
+				"expect": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (web)"
+			},
+			{
+				"name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀zz",
+				"taken": [
+					"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀zz"
+				],
+				"expect": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (web)",
+				"note": "the cut would split the emoji's surrogate pair: it takes one unit less"
+			}
+		]
+	}
+}

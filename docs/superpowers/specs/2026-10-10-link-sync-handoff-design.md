@@ -60,7 +60,12 @@ Copy is final-draft: short, plain. Each side uses its own settings components (a
 > In Stash on your phone: Settings › Library & Storage › Link Stash on the web.
 > *Waiting for your phone…*
 
-The code renews itself every 3 minutes while shown ("New code" button after 3 renewals, so an idle tab stops asking). When the phone answers: "Linked to **Pixel 6**".
+The code renews itself every 3 minutes while shown ("New code" button after 3 renewals, so an idle tab stops asking). When the phone answers, the browser asks too, with the same six digits the phone shows:
+> **Link Pixel 6?**
+> Check that your phone shows **123 456**.
+> [Link] [Cancel]
+
+Then: "Linked to **Pixel 6**". Nothing is shared, joined or left before this tap (the code stops someone who photographed the QR).
 
 **App** (Settings › Library & Storage › Link Stash on the web, not linked):
 > **Link a browser** — "Open play.stashfm.app › Settings › Your phone"
@@ -70,8 +75,10 @@ Scan opens a full-screen camera view with a square cutout. Under it: "Point at t
 
 After a scan, a confirm sheet (prevents linking a stranger's browser by scanning their code):
 > **Link Chrome on Windows?**
-> It will see what you're playing here, and you can choose to mirror your library with it.
+> Your computer will ask you to check **123 456**. It will see what you're playing here, and you can choose to mirror your library with it.
 > [Link] [Cancel]
+
+After Link the phone keeps the code on screen ("Waiting for your computer… · **123 456**", also over "already used") until the link completes: the browser can only work the code out once the phone has answered, so the comparison happens on the browser.
 
 Then: "Linked. Nothing is mirrored yet." with [Set up mirroring] / [Done].
 
@@ -128,7 +135,7 @@ Each picker: **Off / Both ways / Phone → web / Web → phone**. The settings b
 > ○ **Use this browser's** — the phone's 1,204 become this browser's 212
 > [Turn on]
 
-The two "use" options remove things, so they say how many in red ("Removes 46 likes here") and need a second tap. One-way kinds offer only "Add the phone's to this browser's" (preselected) and "Replace this browser's with the phone's". A browser joining a space whose mirroring is already on gets the same question for each kind that is on. Likes from Spotify / YouTube Music Liked Songs are never removed from the phone by a "use this browser's": Stash cannot un-like on those services from a mirror (§7.1).
+The two "use" options remove things, so they say how many in red ("Removes 166 likes here": the 212 here less the 46 the phone also has) and need a second tap. One-way kinds offer only "Add the phone's to this browser's" (preselected) and "Replace this browser's with the phone's". A browser joining a space whose mirroring is already on gets the same question for each kind that is on. Likes from Spotify / YouTube Music Liked Songs are never removed from the phone by a "use this browser's": Stash cannot un-like on those services from a mirror (§7.1).
 
 **Deleting a mirrored playlist:**
 > **Delete "Night drive"?**
@@ -168,7 +175,7 @@ Both sides key a song exactly as `player/src/lib/identity.ts` does:
 - `descriptorKey`: `isrc:<ISRC upper>` when there is an ISRC, else `fold(title)|fold(artist)`.
 - `sameSong(a, b)`: same key; or same `textKey` and at most one side has an ISRC. Two different ISRCs are two recordings.
 
-**App port:** `core:model/.../sync/SongKey.kt` (`fold`, `descriptorKey`, `textKey`, `sameSong`, `SongIndex`). Kotlin's `Normalizer.Form.NFKD`, `\p{M}`, `\p{L}\p{N}` and `(?U)` regexes match JavaScript's `u` flag for these cases. **Shared vectors:** `player/src/lib/fixtures/identity-vectors.json` (input title/artist/isrc → key, plus sameSong pairs), copied byte-for-byte into `core/model/src/test/resources/sync/identity-vectors.json`; both test suites run them, as the library-file golden file is shared today.
+**App port:** `core:model/.../weblink/SongKey.kt` (`fold`, `descriptorKey`, `textKey`, `sameSong`, `SongIndex`). Kotlin's `Normalizer.Form.NFKD`, `\p{M}` and `\p{L}\p{N}` match JavaScript's `u` flag; Java's `\s` is ASCII-only (and `(?U)\s` differs from JavaScript's on U+FEFF and U+0085), so the port spells JavaScript's whitespace class out. **Shared vectors:** `player/src/lib/sync/fixtures/identity-vectors.json` (fold cases, keys, sameSong pairs, index lookups), copied byte-for-byte into `core/model/src/test/resources/sync/identity-vectors.json`; both test suites run them and pin the file's SHA-256, as the library-file golden file is shared today (`player/docs/sync-v1.md` §9).
 
 **Matching on the phone.** For an incoming song the app looks up its own row: YouTube id, then Spotify id, then ISRC (as `ensureExactTrackPersisted` does), then `sameSong` against an in-memory `SongIndex` of `(id, title, artist, isrc)` for all tracks, built once per merge run (~2 MB for 20k tracks). No match: `ensureExactTrackPersisted` inserts a stream-only row (as Listen Together does). No new column on `tracks`.
 
@@ -237,7 +244,7 @@ The server stamps each slot write with its own time (`serverAt`); readers use `s
   ] }
 ```
 
-**Snapshot** (compaction, chunked): `{ "kind": "stash-mirror-state", "v": 1, "uptoSeq": 812, "likes": [{ s, on, at }…], "plays": [{ s, playedAt }…], "playsClearedBefore": t, "playlists": [{ id, name, items, follow?, ro?, at, hash }…] }`. Tombstones older than 90 days are dropped from snapshots (§6.5 makes that safe).
+**Snapshot** (compaction, chunked): `{ "kind": "stash-mirror-state", "v": 1, "uptoSeq": 812, "likes": [{ s, on, at }…], "plays": [{ s, playedAt, device }…], "playsClearedBefore": t, "playlists": [{ id, name, items, follow?, ro?, at, hash }…] }` (`device`: who played it, so a device reading a snapshot can mark plays from others with their origin). Tombstones older than 90 days are dropped from snapshots (§6.5 makes that safe).
 
 **Send** (`inbox`, one-off): the plaintext *is* a `stash-web-library` v1 document (the picker's selection), so the receiver runs its normal importer.
 
@@ -245,7 +252,7 @@ The server stamps each slot write with its own time (`serverAt`); readers use `s
 
 ### 4.4 Local state per device (never synced, never in backups)
 
-- **App:** a separate Room database `stash_sync.db` (not the library DB, so `DatabaseBackupManager` never carries it and a restored backup can never resurrect a link): `sync_space` (space id, epoch, my device id, device token, key material encrypted with the existing Tink/Keystore pattern from `core:auth` `TinkEncryptionManager`), `sync_base` (kind, key, hash, at), `sync_playlist_map`, `sync_outbox` (unacknowledged batches), `sync_seen` (last log seq, dismissed handoff states). `android:allowBackup="false"` already covers Auto Backup.
+- **App:** a separate Room database `stash_sync.db` (not the library DB, so `DatabaseBackupManager` never carries it and a restored backup can never resurrect a link): `sync_space` (space id, epoch, my device id, device token, key material encrypted with the existing Tink/Keystore pattern from `core:auth` `TinkEncryptionManager`), `sync_base` (kind, key, hash, at), `sync_playlist_map`, `sync_outbox` (unacknowledged batches), `sync_seen` (last log seq, dismissed handoff states). `android:allowBackup="false"` stops cloud backup but not a device-to-device transfer at targetSdk 31+, so `data_extraction_rules.xml` excludes `stash_sync.db*`, the Tink keyset prefs and the handoff prefs from both (Phase 3 review S8).
 - **Web:** a new IndexedDB store `sync` (`player/src/lib/library/kv.ts` STORES + DB version 2): credentials, the device's non-extractable P-256 private key as a `CryptoKey`, base, outbox, seen.
 
 ---
@@ -256,25 +263,36 @@ The server stamps each slot write with its own time (`serverAt`); readers use `s
 |---|---|
 | Space key `K` | 32 random bytes, with an `epoch` number (starts at 1). |
 | Data key | `HKDF-SHA256(K, salt = spaceId, info = "stash-sync v1 data")` → AES-256-GCM. |
-| Envelope | `{ "e": epoch, "n": <12-byte random nonce>, "c": <ciphertext+tag> }`, base64url. AAD = `stash-sync/1|<spaceId>|<epoch>|<place>` where place is `log`, `snapshot`, `config`, `now:<deviceId>`, `queue:<deviceId>`, `inbox:<deviceId>`, `label:<deviceId>`. The server can't move a blob to another place unnoticed. |
-| Device key | Each device makes a long-term P-256 key pair on first link. Web: non-extractable `CryptoKey` in IndexedDB. App: Android Keystore on API 31+ (ECDH in Keystore), otherwise a software key wrapped with the Tink keyset (minSdk 26). Public key registered on the server; used only for key rotation. |
+| Envelope | `{ "e": epoch, "n": <12-byte random nonce>, "c": <ciphertext+tag> }`, base64url. AAD = `stash-sync/1|<spaceId>|<epoch>|<place>` where place is `log`, `snapshot:<uptoSeq>:<part>/<count>`, `config`, `now:<deviceId>`, `queue:<deviceId>`, `inbox:<toDeviceId>:<sendId>:<part>/<count>`, `label:<deviceId>`, `key:<deviceId>` (pairing messages: spaceId `pair`, epoch 0, places `label`, `answer:<pairId>`, `reply:<pairId>`). The server can't move a blob to another place, part or send unnoticed. A snapshot or send is gzipped once and cut into ≤ 768,000-byte slices, each sealed at its own part place (`player/docs/sync-v1.md` §3.3). |
+| Device key | Each device makes a long-term P-256 key pair on first link. Web: non-extractable `CryptoKey` in IndexedDB. App: Android Keystore on API 31+ (ECDH in Keystore), otherwise a software key wrapped with the Tink keyset (minSdk 26). Public key registered on the server, and also inside the device's own encrypted label (`stash-label.pub`): other devices trust only the label's copy. Used only for key rotation. |
 | Device auth | Each device makes a random 32-byte token; the server stores `SHA-256(token)`. Requests send `Authorization: Stash-Device <deviceId>:<token>`; compared in constant time. Removing a device deletes its row: it is cut off at once. |
 | Pairing | §5.1. |
 | Rotation | §5.2. |
 
 ### 5.1 Pairing protocol
 
-1. **Browser** makes an ephemeral P-256 key pair `eB` and a 16-byte `pairSecret`; calls `POST /api/sync/pair` (gated) with its device id, token hash, device public key, and its label encrypted under `HKDF(pairSecret, info="stash-sync pair label")`. Gets `pairId` (128-bit random) and `expiresAt` (3 min).
+1. **Browser** makes an ephemeral P-256 key pair `eB` and a 16-byte `pairSecret`; calls `POST /api/sync/pair` (gated) with its device id, token hash, device public key, and its label encrypted under `HKDF(pairSecret, salt = empty, info="stash-sync pair label")` (the label's AAD can't name the pair id: the server mints it in this call). Gets `pairId` (128-bit random) and `expiresAt` (3 min).
 2. **QR:** `https://stashfm.app/link#1.<pairId>.<pairSecret>.<eB.pub, 65 bytes uncompressed>` in base64url (~170 characters, QR version 9–10 at level M).
-3. **Phone** reads the browser label from the slot (decrypts with the QR's secret), shows the confirm sheet. On *Link*: ephemeral `eP`; `Kpair = HKDF(ECDH(eP, eB.pub), salt = pairSecret, info = "stash-sync pair v1" | pairId | eB.pub | eP.pub)`; posts `eP.pub` and `AES-GCM(Kpair, { label, deviceId, devicePub, space?: { id, K, epoch } })` to the slot, with its own device auth if it already has a space.
-4. **Browser** (long-polling the slot) derives `Kpair`, decrypts. If the phone sent a space, the browser now holds `K`. If the phone has none and the browser is in a phone-less space, the browser answers with its space the same way (`POST …/pair/{id}/reply`). If neither has one, the phone creates it (step 5) and the browser learns `K` from the phone's message (the phone mints `K` before step 3).
-5. **Server** completes membership in one call made by the device that holds the space (the "sponsor"): `POST /v1/spaces { pairId, spaceId }` (new; the phone mints `spaceId` = `s_` + 16 random bytes, since it is sealed into the answer; the server takes both device records from the slot and burns the `pairId` only once the space exists) or `POST /v1/spaces/{id}/devices { pairId, epoch, envelope? }` (join; sponsor-authenticated, also burns the `pairId`; `epoch` is the key epoch the newcomer was handed, and if the space has rotated since, the sponsor adds the newcomer's key envelope for the current epoch, else a retryable `409 epoch` before the code is used). A slot answers once; a second answer gets `409 used` and the phone shows "This code was already used. Show a new one on your computer."
+3. **Phone** reads the browser label from the slot (decrypts with the QR's secret), shows the confirm sheet. On *Link*: ephemeral `eP`; `Kpair = HKDF(ECDH(eP, eB.pub), salt = pairSecret, info = "stash-sync pair v1|<pairId>|<eB.pub>|<eP.pub>|<browser deviceId>|<browser pub>")`, the browser's id and long-term key taken from its pairing label, so a label swapped in the slot changes the code; posts `eP.pub`, its own device record in clear (`id`, `tokenHash`, `pub`, `labelCt`: the server needs the token hash when the browser is the sponsor) and `AES-GCM(Kpair, { label, deviceId, devicePub, space?: { id, k, epoch } })` to the slot. The **phone mints the space id** with `K` when it creates a space: the id is the data key's HKDF salt and part of every AAD, and it goes into this answer before the server could return one.
+4. **Browser** (long-polling the slot) derives `Kpair`, decrypts. The phone always sends a space (its own, or one it minted with `K` before step 3), so the browser now holds `K`; a browser in a phone-less space joins the phone's and leaves its old one (it never hands its key to a phone; Phase 3 review). When the phone minted it, the phone creates it (step 5).
+5. **Server** completes membership in one call made by the device that holds the space (the "sponsor"): `POST /v1/spaces { pairId, spaceId }` (new; the phone mints `spaceId` = `s_` + 16 random bytes, since it is sealed into the answer; the server takes both device records from the answered slot and burns the `pairId` only once the space exists) or `POST /v1/spaces/{id}/devices { pairId, epoch, envelope? }` (join; sponsor-authenticated, adds the other device of that code, also burns it; `epoch` is the key epoch the newcomer was handed, and if the space has rotated since, the sponsor adds the newcomer's key envelope for the current epoch, else a retryable `409 epoch` before the code is used). The sponsor is always the phone. Each device then writes its label under the data key (`label:<deviceId>`): the pairing labels are under the pair secret. A slot answers once; a second answer gets `409 used` and the phone shows "This code was already used. Show a new one on your computer." The exact flows: `player/docs/sync-v1.md` §3.4.
 
-**What this resists.** A photographed QR after use: dead slot, no key in it. A photo used *before* the phone (a race within 3 minutes): the attacker's device would be the one linked to the browser, and the real phone gets "already used" while the browser shows the attacker's device name: visible, and the attacker gets the browser's empty side, not the phone's library. The server: sees public keys and ciphertext only; swapping `eB.pub` is impossible because the QR carries it. Scanning a stranger's code: the confirm sheet names the browser and says what it will see.
+**Nothing is kept before the reply.** After its user confirms the code, the browser always posts a `stash-pair-reply` under `Kpair` (with `space` only when it grants its own space). The phone opens it under its own `Kpair`, which binds the browser label it was served, before it joins, creates the space, re-seals a label or pins a key; a label swapped by someone who photographed the QR (with the server's help) makes the reply fail to open, so nothing is joined or pinned. The browser likewise keeps nothing from the answer until its user confirms.
+
+**The pairing code.** Both sides derive six digits from `Kpair` (`HKDF(Kpair, info = "stash-sync pair sas")`) and show them; each side's user confirms before anything is shared. The browser confirms before it uses a granted space, adds a phone to its own space, posts its reply or leaves an old space.
+
+**What this resists.** A photographed QR after use: dead slot, no key in it. A photo used *before* the phone (a race within 3 minutes): the attacker's answer reaches the browser first, but its code differs from anything the user's phone shows (their phone gets "already used"), so the user cancels on the browser; before the code, a browser in a phone-less space would have handed its space key to that attacker, and a browser joining the attacker's space would have left its own. The server: sees public keys and ciphertext only; swapping `eB.pub` is impossible because the QR carries it. Scanning a stranger's code: the confirm sheet names the browser and says what it will see.
 
 ### 5.2 Key rotation
 
 On any device removal, the remover (or, if a device removed itself, the next remaining device to connect, told by `rotationDue: true`) mints `K'` with `epoch + 1`, encrypts it to every remaining device's public key (ECIES: ephemeral P-256 ECDH + HKDF + AES-GCM), uploads the envelopes and a fresh snapshot under `K'` in one `POST /rotate`. The server then deletes the old log, snapshot, slots and envelopes. Writes under an old epoch get `409 epoch` (the client fetches its envelope and retries). If the device list changed since the rotator read it, the server answers `409 devices_changed` with the current devices and epoch, and the rotator seals for that list and retries. A snapshot bigger than one request (1 MiB) can't travel in `/rotate`: the space is then `compactDue`, refuses new log batches (`409 compact`) and keeps the old-key log only until any device uploads a whole-log snapshot under `K'` in parts, which deletes it. While `rotationDue` is set, writes sealed under the current key (log, snapshot, slots, inbox, own label) get `409 rotation_due`: the device rotates first. Key envelopes are kept per device for every epoch it hasn't fetched (at most 32), so a device several rotations behind walks them in order. A removed device already can't read (its token is gone); rotation also protects against a removed device that kept `K` plus a later server-side leak.
+
+- **Proof.** Each key envelope's document carries `members` and an HMAC under a key derived from the **previous** `K` over the space, new epoch, device, new key and members. A device accepts only the next epoch, only as a member, only with a valid proof. The server never holds a `K`, so it can't mint a rotation and hand devices a key it knows.
+- **Keys from labels only.** Rotators seal only to public keys found in a `stash-label` they decrypted (pairing label, or `label:<id>` under the data key); a key the server lists that differs, or a device without a sealed label, gets no envelope. So the server can't substitute its own key for a browser's.
+- **No writes under a key due to change.** While `rotationDue` is set the server answers writes with `409 rotation_due`; the device rotates first.
+- **Pinned keys.** A device's key is pinned the first time it is learned (the code-checked pairing, else the first sealed label); a label with another key for that id is refused ("Key changed: remove it and link it again").
+- **No device blocks a rotation.** Sponsors put the newcomer's data-key label in the join call itself, and a rotator removes any listed device it can't seal to (no openable label, or a changed key) before rotating.
+- **Threat model.** Protected: a curious or compromised sync server (sees ciphertext, sizes, times; can't read, mint keys or join). A removed device is cut off at once and can't read anything written under `K'`. Not protected: a removed device that kept the old `K` *and* colludes with the server can forge the next rotation and serve it to a device before the real one. If that device accepts it first, the attacker holds that device's key for `e` and can prove every later epoch for it; the symptom is that the device can no longer read the others ("link again"), and re-linking ends it. Closing that window needs per-device signing keys (a later version). The server can also withhold or replay log batches (merges are idempotent, so a device can lag, not diverge) and show a stale handoff card. **Whoever deploys the player serves its JavaScript**, so they could read the browser's keys whatever the protocol does: end-to-end here means against the sync service and its storage, not against the operator of stashfm.app.
 
 ---
 
@@ -298,7 +316,7 @@ On any device removal, the remover (or, if a device removed itself, the next rem
 | `GET /v1/pair/{pairId}/label` | phone | `{ labelCt }` for the confirm sheet. 10/min per IP. |
 | `POST /v1/pair/{pairId}/answer` | phone | `{ phonePub, ct, device: { id, tokenHash, pub, labelCt } }`; one answer per slot. |
 | `POST /v1/pair/{pairId}/reply` and `GET …/reply` | browser / phone | The browser's encrypted reply when it holds the space (§5.1 step 4). |
-| `POST /v1/spaces` | phone | Creates a space from a completed pair: `{ pairId, spaceId }` (phone-minted id; devices from the slot) → `{ spaceId, epoch }`. |
+| `POST /v1/spaces` | phone | Creates a space from an answered pair: `{ pairId, spaceId }` (the phone minted the id; both device records come from the slot) → `{ spaceId, epoch: 1 }`. |
 | `POST /v1/spaces/{sid}/devices` | member (sponsor) | Adds a device from a completed pair: `{ pairId, epoch, envelope? }` (§5.1 step 5). Enforces 1 phone + 4 browsers. |
 | `GET /v1/spaces/{sid}` | member | `{ devices: [{ id, type, pub, labelCt, addedAt, lastSeenAt }], epoch, rotationDue, compactDue, head, snapshot: { uptoSeq, parts, epoch }, serverTime }`. Updates caller's `lastSeenAt` (at most hourly write). |
 | `PUT /v1/spaces/{sid}/devices/me/label` | member | New encrypted label. |
@@ -369,7 +387,7 @@ A sync run on a device: pull (`log/after/{seen}`, or the snapshot if `seen` is o
 ### 7.1 Likes (LWW element set)
 
 - State per song: `{ on, at }`. Apply a remote op when its `at` is newer than the local record (matched by `sameSong`).
-- Local diff: a liked song not in base (or base `on:false`) → `like on:true at:=likedAt-or-now`; a base `on:true` song no longer liked → `on:false at:=now`.
+- Local diff: a liked song not in base (or base `on:false`) → `like on:true`; a base `on:true` song no longer liked → `on:false`; every op of a run is stamped `at := tick(now)` (not `likedAt`: that is the device's uncorrected clock, and a stamp older than ops this device already applied would make its own fresh edit lose).
 - App apply: `on:true` → `StashLikedPlaylistRepository.add` path (sets `stash_liked_at` and the STASH_LIKED cross-ref) **without** `LikeDestinationDispatcher`: a mirrored like never likes on Spotify or YouTube Music. `on:false` → `clearStashLiked`. A song liked on the phone through a Spotify/YTM Liked Songs playlist stays liked on the phone after an unlike from the web (Stash can't un-like there from a mirror); the phone's base records `on:false` so it doesn't send it back as a like. It is listed as "Liked on Spotify" in the first-merge counts.
 - Web apply: `library.like` / `library.unlike` (already `sameSong`-aware; `fillFrom` adds what a like lacked).
 
@@ -383,7 +401,7 @@ A sync run on a device: pull (`log/after/{seen}`, or the snapshot if `seen` is o
   - Queries that only show or export history (`WebLibraryExportDao.recentPlays`, the History screen) include them.
   - A DAO test inserts one local and one remote play of the same track and asserts every mix-feeding query sees only the local one; its comment is the checklist for any query added later.
 - On the web, plays from the phone are ordinary History entries; for symmetry `HistRec` gains `origin?: deviceId` and Daily Discover (`player/src/lib/discover/`) ignores entries that have it.
-- `clearPlays` (web *Clear history*, app's clear) mirrors as "delete plays before t" when plays mirror both ways.
+- `clearPlays` (web *Clear history*, app's clear) mirrors as "delete the plays **I** sent before t" when plays mirror both ways: clearing the web's history never touches the phone's own plays. Clearing everyone's is an explicit choice, with the count of what goes: **Clear history?** ○ Only here *(preselected)* ○ Also on Pixel 6 · "Removes 14,212 plays there" (sends `all: true`).
 - The web keeps the newest 5,000 (`HISTORY_CAP`); the phone keeps all. Only plays from the last 5,000 on the sending side are pushed on first merge.
 
 ### 7.3 Playlists (three-way merge)
@@ -395,19 +413,23 @@ Each side keeps, per mirrored playlist, the base version it last agreed on (`bas
 - Both changed → three-way merge of `base`, `local`, `remote`, by song (`sameSong`):
   - a song removed on either side is removed;
   - a song added on either side is kept;
-  - order: the side with the newer `at` gives the order; the other side's added songs go right after their nearest preceding neighbour that survives, else at the end;
-  - name: LWW on `at`.
+  - order: the side with the newer `at` gives the order; the other side's added songs go right after their nearest preceding neighbour that survives, else at the start (a song with no surviving predecessor was before everything that survives); the same song added on both sides is kept once;
+  - name: the side that changed it from the base; when both did, the newer `at`.
   - Duplicates of one song in a playlist are matched by occurrence (first with first).
 - `items: null` (delete everywhere) beats concurrent edits only if its `at` is newer; otherwise the playlist survives with the edit.
 - Followed shared mixes mirror as the follow (id, version): each side follows the mix itself; their songs are never merged.
 - The owner side of a shared mix (`share`, edit key) stays on its device; the mirrored copy elsewhere is a plain playlist.
 - `phoneOnly` songs stay in mirrored playlists so both sides keep the same list; the web shows them dimmed ("On your phone") and the engine skips them.
-- `ro` playlists (Spotify/YTM-synced) are only ever written by the phone; the web refuses edits to them ("This playlist syncs from Spotify on your phone").
+- `ro` playlists (Spotify/YTM-synced) are only ever written by the phone; the web refuses edits to them ("This playlist syncs from Spotify on your phone"). The phone ignores any op for them; a browser takes only the phone's.
+- Before merging, two shortcuts: the remote version equals the base (an echo) → keep this device's; this device doesn't have the playlist → take the remote one. After any outcome the new base is the remote version, so the next diff pushes what this device holds beyond it. The full rule table and its vectors: `player/docs/sync-v1.md` §7.3, `merge-vectors.json`.
 
 ### 7.4 Clocks
 
-- Every response carries `serverTime`; each device keeps `offset = serverTime − localTime` (smoothed, from the last 5 responses) and uses `wall = local + offset` for HLC.
+- Every response carries `serverTime`; each device keeps `offset = serverTime − localTime`, where each sample is `serverTime − floor((sent + received) / 2)` and the offset is the lower median of the newest 5 samples, and uses `wall = local + offset` for HLC.
 - HLC update: `wall' = max(wall, last.wall, received.wall)`; counter bumps on ties; deviceId breaks the final tie. A device with a wrong clock therefore can't win every conflict.
+- An op stamped more than 10 minutes after its log row's `serverAt` is skipped (not clamped: every reader sees the same `serverAt`), so one bad clock or a µs stamp can't win every conflict or drag every clock forward.
+- The mirror config is never rolled back: a device ignores a config older (by `at`) than the newest it applied.
+- An unpushed local playlist edit carries the `tick` taken when it was made (or, if none was kept, one at merge time), never the base's `at`, so a remote delete can't silently beat a later offline edit.
 - Handoff ages and ordering use the server's `serverAt` only.
 
 ### 7.5 Turning mirroring on, first merge
@@ -448,13 +470,14 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 
 ## 9. App changes by module
 
-- **`core:model`** — `sync/SongKey.kt` (identity port), `sync/SyncWire.kt` (serializable `StashNow`, `StashQueue`, `MirrorConfig`, `MirrorOps`, `MirrorState`; `Song` reuses `WebLibraryFile.Song`, which moves here or is aliased), `sync/Hlc.kt`.
+- **`core:model`** — `weblink/SongKey.kt` (identity port), `weblink/SyncWire.kt` (serializable `StashNow`, `StashQueue`, `MirrorConfig`, `MirrorOps`, `MirrorState`; `Song` reuses `WebLibraryFile.Song`, which moves here or is aliased), `weblink/Hlc.kt`, `weblink/HandoffTiming.kt`. (Package `weblink`, not `sync`: `core:data`'s `sync` package is the Spotify/YouTube library sync.)
 - **`core:data`**
-  - `sync/SyncCrypto.kt` — P-256 ECDH, HKDF-SHA256, AES-256-GCM, ECIES envelopes via the JCA (`KeyAgreement`, `Cipher`); Keystore key on API 31+.
+  - The files below live in `weblink/` (not `sync/`, which is the Spotify/YouTube library sync).
+  - `weblink/SyncCrypto.kt` — P-256 ECDH, HKDF-SHA256, AES-256-GCM, ECIES envelopes, documents in parts, via the JCA (`KeyAgreement`, `Cipher`, `Mac`); Keystore key on API 31+. No Tink here: its hybrid and keyset formats don't interoperate with WebCrypto and it exposes no raw ECDH/HKDF.
   - `sync/SyncApiClient.kt` — OkHttp to `https://sync.stashfm.app/v1`, typed errors (`revoked`, `gone`, `epoch`, `space_full`, `rate_limited`).
   - `sync/SyncDatabase.kt` — the separate `stash_sync.db` (§4.4).
   - `sync/SyncSpaceRepository.kt` — link/unlink, devices, rotation, labels, config.
-  - `sync/MirrorEngine.kt` — diff, merge (§7), apply; pure merge functions in `sync/merge/` with JVM tests.
+  - `sync/MirrorEngine.kt` — diff, merge (§7), apply; pure merge functions in `weblink/merge/` with JVM tests (`merge-vectors.json`, shared with the web).
   - `sync/LibraryChangeSignal.kt` — Room `InvalidationTracker` on `tracks`, `playlists`, `playlist_tracks`, `listening_events`, debounced 5 s → enqueue sync.
   - `sync/MirrorSyncWorker.kt` — WorkManager: one-time on change (network constraint, 10 s debounce, `REPLACE`), periodic every 6 h (network, battery not low), plus on app foreground (at most once a minute). Rethrows `CancellationException` before `catch (Exception)`.
   - `weblibrary/WebLibraryExporter.kt` — `collect(nowMs, generator, selection: ExportSelection)`; `ExportSelection(likes, plays, playlistIds: Set<Long>?)`; `null` = all. The golden test stays byte-identical for "everything".
@@ -476,7 +499,7 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 - `src/lib/sync/handoff.ts` — publisher (engine bus, visibility, `keepalive`, the 60 s heartbeat while playing), offers store, restore.
 - `src/lib/discover/` — ignore history entries with `origin` (§7.2).
 - `src/lib/sync/wire.ts` — the formats of §4, readers that rebuild every value (as `backup.ts`).
-- `src/lib/identity.ts` — unchanged; `src/lib/fixtures/identity-vectors.json` added and tested in `identity.test.ts`.
+- `src/lib/identity.ts` — keys unchanged (it only gains exports: `SongLike`, `keyOf`, `isrcOf`); the shared vectors live in `src/lib/sync/fixtures/` (identity, clock, merge, crypto) and run in `src/lib/sync/vectors.test.ts` and `crypto.test.ts`; `scripts/sync-fixtures.mjs` writes the crypto fixture independently of `src/lib/sync/`.
 - `src/lib/library/kv.ts` — `sync` store, `openDB(name, 2, …)` upgrade.
 - `src/lib/library/library.ts` — `Playlist.mirrorId?`, `LibraryItem.phoneOnly?`; `setPlaylist(id, { name, items })` for merges; `importData(d, selection?)`; a change signal for the mirror (a store version counter).
 - `src/lib/api.ts` — `SyncAPI` on `AppAPI` (status, devices, link, unlink, rename, mirror config, send, inbox, offers, `continueFrom`); `PlayerAPI.loadQueue`; `LibraryAPI.importData` selection; fake implementation in `src/lib/fake/`.
@@ -521,7 +544,7 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 ## 13. Test plan
 
 **Unit (both repos)**
-- Identity vectors: the same JSON passes `identity.test.ts` and `SongKeyTest` (accents, `feat.` brackets, `(Live)` kept, ISRC vs words, two ISRCs).
+- Identity vectors: the same JSON passes `vectors.test.ts` and `SyncVectorsTest` (accents, `feat.` brackets, `(Live)` kept, ISRC vs words, two ISRCs, scripts, the whitespace edge cases).
 - Merge: LWW likes (ties, tombstones, skewed clocks), plays dedup across ISRC/words keys, playlist three-way merge table tests (add/add, add/remove, reorder/add, delete/edit, duplicates), first-merge Combine/Use-X counts. Same vector file `merge-vectors.json` in both repos.
 - Crypto: golden envelopes (fixed key and nonce) decrypt identically on both sides; pairing transcript test with fixed ephemeral keys; ECIES rotation round trip; AAD mismatch rejected.
 - Wire readers: oversize, unknown fields, higher `v`, bad Song fields (as `backup.test.ts`).
@@ -548,6 +571,8 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 12. Airplane mode on the phone, change a like, kill the app, reopen online → change syncs (WorkManager).
 13. Unlink everything → both sides unlinked, libraries intact; `GET` the space id → 401 `revoked`.
 14. Battery: an hour of playback with handoff on vs off, Battery Historian / `dumpsys batterystats`: no wake locks or alarms attributable to sync beyond the network calls.
+15. Crypto on real providers: `./gradlew :core:data:connectedDebugAndroidTest --tests '*SyncCryptoAndroidTest*'` (or `-Pandroid.testInstrumentationRunnerArguments.class=com.stash.core.data.weblink.SyncCryptoAndroidTest`) on an API 26 emulator and on the Pixel 6 (API 31+: the Keystore ECDH case runs). The JVM unit tests use SunEC; this proves Conscrypt and the Keystore agree with the fixtures.
+16. Pairing code: photograph the browser's QR, answer it from the Pixel 5 first. The Pixel 6 then gets "already used" but keeps showing its code; the browser asks "Link Pixel 5?" with the Pixel 5's code, which differs from the code on the Pixel 6. Cancel on the browser leaves both libraries and spaces as they were.
 
 ## 14. Implementation order
 
@@ -570,3 +595,27 @@ No questions remain open.
 4. **Web plays on the phone:** mirror into History when the user mirrors plays, but never feed Stash Mixes or play statistics (§7.2).
 5. **Placement:** a "Link Stash on the web" row in Settings › Library & Storage, not a top-level hub row (§2.1).
 6. **Web heartbeat:** the web player republishes what's playing about once a minute while playing; the phone has no periodic timer (§1, §8.1).
+
+## 16. Changes made while building the contracts (phase 1, 2026-10-10)
+
+`player/docs/sync-v1.md` is the wire contract; it and this spec now agree. What changed from the approved text, and why:
+
+1. **Package `weblink`, not `sync`,** on the app (`core:model` and `core:data`): `core:data`'s `sync` package is the Spotify/YouTube library sync. (`sync/MirrorEngine.kt` and the other later files above move with it when they are built.)
+2. **Vector files** live in `player/src/lib/sync/fixtures/` (identity, clock, merge, crypto), with byte-identical copies in `core/model/src/test/resources/sync/` (identity, clock) and `core/data/src/test/resources/sync/` (merge, crypto). Both suites pin each file's SHA-256; `.gitattributes` stops line-ending conversion.
+3. **The phone mints the space id** (§5.1, §6.2: `POST /v1/spaces { pairId, spaceId }`): it is the HKDF salt and part of every AAD, and it travels in the pairing answer before the server could return one. The answer carries the phone's device record in clear for the server.
+4. **Pairing details** (§5.1): the label key's HKDF salt is empty, and its AAD can't name the pair id (minted in the same call); pairing envelopes use spaceId `pair`, epoch 0, places `label`, `answer:<pairId>`, `reply:<pairId>`; a browser sponsor joins the phone before replying; every device re-writes its label under the data key after joining.
+5. **AAD places** (§5) name the part of a snapshot or send (`snapshot:<uptoSeq>:<part>/<count>`, `inbox:<to>:<sendId>:<part>/<count>`) and add `key:<deviceId>`; a multi-part document is one gzip stream cut into ≤ 768,000-byte slices (fits a 1 MiB request in base64url).
+6. **Likes diff** (§7.1) stamps `at = tick(now)`, not `likedAt`.
+7. **Playlist merge** (§7.3): an addition with no surviving predecessor goes to the **start** (was "the end"); the same song added on both sides is kept once; the name merges three-way (was plain LWW); explicit echo and missing-playlist shortcuts and the base update; read-only ops are taken only from the phone.
+8. **Snapshot plays** carry `device` (§4.3) so a device reading a snapshot can set `origin`.
+9. **Clock offset** (§7.4) is defined exactly: per-sample midpoint, lower median of the newest 5.
+10. **Copy** (§2.4): "Removes 46 likes here" was the shared count; it is 166 (212 − 46).
+11. **Crypto review** (2026-10-10, before freezing v1), each now in `player/docs/sync-v1.md`:
+    - Rotations are **proven** under the previous key (`stash-key` gains `members` and `proof`), accepted one epoch at a time; device keys are trusted only from **sealed labels** (`stash-label` gains `deviceId` and `pub`; pairing labels sit at `label:<deviceId>`; the answer's label carries the phone's key, `devicePub` is gone). Threat model in §5.2.
+    - A six-digit **pairing code** from `Kpair`, confirmed on both screens; the browser confirms before it shares, joins or leaves anything (§2.2, §5.1).
+    - `409 rotation_due` blocks writes under a key due to change; the config can't be rolled back; stamps over 10 minutes past `serverAt` are skipped; an unpushed playlist edit's stamp is defined (§5.2, §7.4).
+    - *Clear history* clears only the sender's plays unless the user picks "Also on Pixel 6" (§7.2).
+    - Readers: gzip must end with the whole output's CRC and length; values are checked by JSON type; writers are pinned by the fixtures; an instrumented test covers Conscrypt and the Keystore (§13 step 15).
+12. **Crypto re-review** (2026-10-10): `Kpair` binds the browser's device id and key, so the code covers its label; device keys are pinned per id; the phone keeps its code on screen and the browser does the comparing (copy in §2.2); joins carry the newcomers' data-key labels (`POST /v1/spaces … labels`, `POST …/devices … labelCt`) and a rotator removes devices it can't seal to; gzip must be exactly one member; the threat model now states the forged-rotation window exactly and that whoever serves the player serves its code.
+13. **Crypto re-review, R7** (2026-10-10): the browser's reply is posted in every pairing (its `space` is optional) and the phone completes membership, re-seals and pins only after that reply opens under its own `Kpair`. Without it, a QR photographer with the server's help could swap the browser's label before anyone compared the code, and the phone would join and pin the attacker's key (rotations would then leak `K'`). Worker: no route change; optionally refuse the phone's create/join claim until the reply is posted.
+14. **Phase 3 review** (2026-10-10), app and web: the answer always carries `space` and the "browser grants its phone-less space" ending is gone (the phone can't tell it apart, and a phone never takes a browser's key; a browser in a phone-less space joins the phone's); one answer and one reply per code (a double tap does nothing); once the reply opens, the phone's create or join runs to completion even if the screen goes, and a fresh space is kept locally before the create so a lost answer or a crash is settled by the next refresh; a config nobody can open is replaced by the default (every kind off) so it can't block a rotation; a passing Keystore failure no longer unlinks (only a key that is definitely gone does, and the phone then removes itself on the server while its token still reads); the camera permission ships in debug builds only until the feature does; `data_extraction_rules.xml` keeps the link out of device-to-device transfers; a pairing link opened from outside the scanner shows a warning on the confirm sheet, and label names lose control, bidi and zero-width characters on both sides; a join is refused when the space rotated twice or more since the answer. `player/docs/sync-v1.md` §3.4, §3.5 and §5.6 carry the contract side.

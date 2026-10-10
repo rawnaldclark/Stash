@@ -1,0 +1,302 @@
+package com.stash.core.data.weblink.mirror
+
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import androidx.work.Configuration
+import androidx.work.ListenableWorker
+import androidx.work.NetworkType
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.WorkerFactory
+import androidx.work.WorkerParameters
+import androidx.work.impl.WorkManagerImpl
+import androidx.work.testing.SynchronousExecutor
+import androidx.work.testing.TestListenableWorkerBuilder
+import androidx.work.testing.WorkManagerTestInitHelper
+import com.google.common.truth.Truth.assertThat
+import com.stash.core.model.weblink.Hlc
+import io.mockk.coEvery
+import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertThrows
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/** When the mirror runs (spec §9): WorkManager requests and their constraints, the change signal, and the worker's outcomes. */
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, sdk = [33])
+class MirrorSchedulingTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
+
+    @Before fun setUp() {
+        WorkManagerTestInitHelper.initializeTestWorkManager(context, Configuration.Builder().setExecutor(SynchronousExecutor()).build())
+    }
+
+    @After fun tearDown() = WorkManagerTestInitHelper.closeWorkDatabase()
+
+    private fun infos(name: String) = WorkManager.getInstance(context).getWorkInfosForUniqueWork(name).get()
+
+    private fun spec(info: WorkInfo) = WorkManagerImpl.getInstance(context).workDatabase.workSpecDao().getWorkSpec(info.id.toString())!!
+
+    @Test fun `a change is one run 10 s later on a network, a burst replaces it, and nothing periodic runs while mirroring is off`() {
+        val s = WorkManagerMirrorScheduler(context)
+        s.changed()
+        s.changed()
+        val pending = infos(MirrorSyncWorker.WORK_CHANGE).filter { !it.state.isFinished }
+        assertThat(pending).hasSize(1)
+        val spec = spec(pending.single())
+        assertThat(spec.initialDelay).isEqualTo(10_000L)
+        assertThat(spec.constraints.requiredNetworkType).isEqualTo(NetworkType.CONNECTED)
+        assertThat(infos(MirrorSyncWorker.WORK_PERIODIC)).isEmpty()
+    }
+
+    @Test fun `while mirroring is on, a 6-hour run on a network with a battery that isn't low, cancelled when it goes off`() {
+        val s = WorkManagerMirrorScheduler(context)
+        s.periodic(true)
+        val p = infos(MirrorSyncWorker.WORK_PERIODIC).single()
+        val spec = spec(p)
+        assertThat(spec.intervalDuration).isEqualTo(6 * 3_600_000L)
+        assertThat(spec.constraints.requiresBatteryNotLow()).isTrue()
+        assertThat(spec.constraints.requiredNetworkType).isEqualTo(NetworkType.CONNECTED)
+        s.periodic(false)
+        assertThat(infos(MirrorSyncWorker.WORK_PERIODIC).single().state).isEqualTo(WorkInfo.State.CANCELLED)
+    }
+
+    // ------------------------------------------------------------------------------------------------ the change signal
+
+    private class Recorder : MirrorScheduler {
+        var changed = 0
+        var plays = 0
+        var now = 0
+        val periodic = mutableListOf<Boolean>()
+        val follow = mutableListOf<Boolean>()
+        override fun changed() { changed++ }
+        override fun followUp(playsOnly: Boolean) { follow += playsOnly }
+        override fun now() { now++ }
+        override fun playsChanged() { plays++ }
+        override fun periodic(on: Boolean) { periodic += on }
+    }
+
+    private val on = MirrorStatus(linked = true, config = MirrorConfig(Hlc(1, 0, "d_00000000"), likes = KindConfig(Dir.BOTH)))
+
+    @Test fun `an invalidation burst is one run, and only when the mirrored kinds' digest moved`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        val status = MutableStateFlow(on)
+        val inv = MutableSharedFlow<Unit>(extraBufferCapacity = 16)
+        var digest = "a"
+        val rec = Recorder()
+        val t = MirrorTriggers(status, {}, { digest }, inv, rec, scope, { testScheduler.currentTime })
+        t.start()
+        scope.runCurrent()
+        assertThat(rec.periodic.last()).isTrue()
+
+        repeat(5) { inv.emit(Unit) }
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        assertThat(rec.changed).isEqualTo(1)
+
+        // A play count moving `tracks` but no digest: no run.
+        inv.emit(Unit)
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        assertThat(rec.changed).isEqualTo(1)
+
+        digest = "b"
+        inv.emit(Unit)
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        assertThat(rec.changed).isEqualTo(2)
+
+        // A run's own writes don't ask for another: the digest after a run is the new start.
+        status.value = on.copy(busy = true)
+        scope.runCurrent()
+        digest = "c"
+        status.value = on
+        scope.runCurrent()
+        inv.emit(Unit)
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        assertThat(rec.changed).isEqualTo(2)
+        scope.cancel()
+    }
+
+    @Test fun `S6 - a change made during a run gets a run of its own, and N3 - plays alone wait longer`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        val status = MutableStateFlow(on)
+        val inv = MutableSharedFlow<Unit>(extraBufferCapacity = 16)
+        var digest = "l:1#p:1"
+        val rec = Recorder()
+        val t = MirrorTriggers(status, {}, { digest }, inv, rec, scope, { testScheduler.currentTime })
+        t.start()
+        scope.runCurrent()
+        // A run: its push read "l:1#p:1"; a heart tapped meanwhile moved likes; the invalidation came while busy and was dropped.
+        status.value = on.copy(busy = true)
+        scope.runCurrent()
+        digest = "l:2#p:1"
+        inv.emit(Unit)
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        status.value = on.copy(pushDigest = "l:1#p:1", lastRunOk = true)
+        scope.runCurrent()
+        // Its own work, never the change work that may still be RUNNING (final check F-S1).
+        assertThat(rec.follow).containsExactly(false)
+        assertThat(rec.changed).isEqualTo(0)
+        // Only a new play: the longer wait.
+        digest = "l:2#p:2"
+        inv.emit(Unit)
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        assertThat(rec.changed).isEqualTo(0)
+        assertThat(rec.plays).isEqualTo(1)
+        // A play during a run: the follow-up waits as plays do.
+        status.value = on.copy(busy = true, pushDigest = "l:2#p:2", lastRunOk = true)
+        scope.runCurrent()
+        digest = "l:2#p:3"
+        status.value = on.copy(pushDigest = "l:2#p:2", lastRunOk = true)
+        scope.runCurrent()
+        assertThat(rec.follow).containsExactly(false, true).inOrder()
+        scope.cancel()
+    }
+
+    @Test fun `R-B1 - runs that keep failing with a change left to send never re-arm themselves, only a new change asks`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        val status = MutableStateFlow(on.copy(pushDigest = "l:1#p:1", lastRunOk = true))
+        val inv = MutableSharedFlow<Unit>(extraBufferCapacity = 16)
+        var digest = "l:2#p:1" // a like waiting to go since the last push that went
+        val rec = Recorder()
+        val t = MirrorTriggers(status, {}, { digest }, inv, rec, scope, { testScheduler.currentTime })
+        t.start()
+        scope.runCurrent()
+        repeat(20) {
+            // A run that fails (offline, 5xx, a full space, waiting for the browser...): busy, then idle with lastRunOk false.
+            status.value = on.copy(busy = true, pushDigest = "l:1#p:1")
+            scope.runCurrent()
+            status.value = on.copy(busy = false, pushDigest = null, lastRunOk = false)
+            scope.runCurrent()
+            scope.advanceTimeBy(60_000)
+        }
+        assertThat(rec.changed).isEqualTo(0) // retries belong to WorkManager's backoff, not to the trigger
+        assertThat(rec.follow).isEmpty()
+        // A new local change after the last attempt asks for one run.
+        digest = "l:3#p:1"
+        inv.emit(Unit)
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        assertThat(rec.changed).isEqualTo(1)
+        scope.cancel()
+    }
+
+    @Test fun `a change keeps a pending run (and its backoff) rather than replacing it`() {
+        val s = WorkManagerMirrorScheduler(context)
+        s.changed()
+        val first = infos(MirrorSyncWorker.WORK_CHANGE).single { !it.state.isFinished }.id
+        s.changed()
+        assertThat(infos(MirrorSyncWorker.WORK_CHANGE).single { !it.state.isFinished }.id).isEqualTo(first)
+    }
+
+    @Test fun `F-S1 - a follow-up still runs while the change run that just ended is RUNNING, and after a follow-up run too`() {
+        val s = WorkManagerMirrorScheduler(context)
+        val dao = WorkManagerImpl.getInstance(context).workDatabase.workSpecDao()
+        s.changed()
+        dao.setState(WorkInfo.State.RUNNING, infos(MirrorSyncWorker.WORK_CHANGE).single().id.toString())
+        s.changed() // KEEP: dropped while that run is RUNNING, which is why the follow-up can't use it
+        assertThat(infos(MirrorSyncWorker.WORK_CHANGE).filter { it.state == WorkInfo.State.ENQUEUED }).isEmpty()
+        s.followUp(playsOnly = false)
+        val f = infos(MirrorSyncWorker.WORK_FOLLOW).single { !it.state.isFinished }
+        assertThat(spec(f).initialDelay).isEqualTo(10_000L)
+        // A change made during a follow-up run: another follow-up after it, not dropped.
+        dao.setState(WorkInfo.State.RUNNING, f.id.toString())
+        s.followUp(playsOnly = false)
+        assertThat(infos(MirrorSyncWorker.WORK_FOLLOW).filter { !it.state.isFinished }).hasSize(2)
+        s.periodic(true)
+        s.periodic(false)
+        assertThat(infos(MirrorSyncWorker.WORK_FOLLOW).filter { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }).isEmpty()
+    }
+
+    @Test fun `L-N2 - a change follow-up never waits behind a plays follow-up's 15 minutes`() {
+        val s = WorkManagerMirrorScheduler(context)
+        s.followUp(playsOnly = true)
+        s.followUp(playsOnly = false)
+        val change = infos(MirrorSyncWorker.WORK_FOLLOW).filter { !it.state.isFinished }
+        assertThat(change).hasSize(1)
+        assertThat(change.single().state).isEqualTo(WorkInfo.State.ENQUEUED) // not BLOCKED behind another request
+        assertThat(spec(change.single()).initialDelay).isEqualTo(10_000L)
+        val plays = infos(MirrorSyncWorker.WORK_FOLLOW_PLAYS).single { !it.state.isFinished }
+        assertThat(spec(plays).initialDelay).isEqualTo(MirrorSyncWorker.PLAYS_DELAY_MIN * 60_000L)
+        s.periodic(true)
+        s.periodic(false)
+        assertThat(infos(MirrorSyncWorker.WORK_FOLLOW_PLAYS).single().state).isEqualTo(WorkInfo.State.CANCELLED)
+    }
+
+    @Test fun `no background run while nothing mirrors, and the foreground asks at most once a minute while linked`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        val status = MutableStateFlow(MirrorStatus(linked = true, config = MirrorConfig.off(Hlc(1, 0, "d_00000000"))))
+        val inv = MutableSharedFlow<Unit>(extraBufferCapacity = 16)
+        var digest = "a"
+        val rec = Recorder()
+        val t = MirrorTriggers(status, {}, { digest.also { digest += "x" } }, inv, rec, scope, { testScheduler.currentTime })
+        t.start()
+        inv.emit(Unit)
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        t.onForeground()
+        scope.runCurrent()
+        assertThat(rec.changed).isEqualTo(0)
+        assertThat(rec.periodic.last()).isFalse()
+        // Linked with every kind off: the foreground still reads the settings (a browser may have turned a kind on).
+        assertThat(rec.now).isEqualTo(1)
+
+        status.value = on
+        t.onForeground() // within the minute: nothing
+        scope.advanceTimeBy(MirrorTriggers.FOREGROUND_GAP_MS)
+        t.onForeground()
+        t.onForeground()
+        scope.runCurrent()
+        assertThat(rec.now).isEqualTo(2)
+
+        status.value = MirrorStatus(linked = false)
+        scope.advanceTimeBy(MirrorTriggers.FOREGROUND_GAP_MS)
+        t.onForeground()
+        scope.runCurrent()
+        assertThat(rec.now).isEqualTo(2)
+        scope.cancel()
+    }
+
+    private fun TestScope.cancel() = coroutineContext[kotlinx.coroutines.Job]?.cancel()
+
+    // ------------------------------------------------------------------------------------------------ the worker
+
+    private fun worker(engine: MirrorEngine, attempt: Int = 0) = TestListenableWorkerBuilder<MirrorSyncWorker>(context)
+        .setRunAttemptCount(attempt)
+        .setWorkerFactory(object : WorkerFactory() {
+            override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters): ListenableWorker =
+                MirrorSyncWorker(appContext, workerParameters, engine)
+        })
+        .build()
+
+    @Test fun `offline retries with a backoff a few times, and done, unlinked and a failure succeed`() = runTest {
+        val engine = mockk<MirrorEngine>()
+        coEvery { engine.sync() } returns MirrorRun.Retry("offline")
+        assertThat(worker(engine).doWork()).isEqualTo(ListenableWorker.Result.retry())
+        assertThat(worker(engine, attempt = MirrorSyncWorker.MAX_RETRIES).doWork()).isEqualTo(ListenableWorker.Result.success())
+        coEvery { engine.sync() } returns MirrorRun.Done
+        assertThat(worker(engine).doWork()).isEqualTo(ListenableWorker.Result.success())
+        coEvery { engine.sync() } returns MirrorRun.NotLinked
+        assertThat(worker(engine).doWork()).isEqualTo(ListenableWorker.Result.success())
+        coEvery { engine.sync() } returns MirrorRun.Failed("newer")
+        assertThat(worker(engine).doWork()).isEqualTo(ListenableWorker.Result.success())
+        coEvery { engine.sync() } throws IllegalStateException("boom")
+        assertThat(worker(engine).doWork()).isEqualTo(ListenableWorker.Result.retry())
+    }
+
+    @Test fun `a cancelled run is rethrown, never swallowed as a failure`() {
+        val engine = mockk<MirrorEngine>()
+        coEvery { engine.sync() } throws CancellationException("stopped")
+        assertThrows(CancellationException::class.java) { kotlinx.coroutines.runBlocking { worker(engine).doWork() } }
+    }
+}

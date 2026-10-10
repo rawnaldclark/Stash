@@ -161,6 +161,9 @@ fun StashScaffold(
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_LISTEN_PREFIX)) {
                     val code = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_LISTEN_PREFIX)
                     navController.navigate(ListenJoinRoute(code))
+                } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_WEB_LINK_PREFIX)) {
+                    val link = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_WEB_LINK_PREFIX)
+                    navController.navigate(WebLinkRoute(link))
                 }
                 onDeepLinkConsumed() // unknown targets are cleared too, so we don't loop
             }
@@ -201,6 +204,11 @@ fun StashScaffold(
                         enter = fadeIn(),
                         exit = fadeOut(),
                     ) {
+                      Column {
+                        // "Continue from Chrome on Windows" (link-sync spec §2.5): above the mini player, never on Now Playing.
+                        com.stash.feature.nowplaying.handoff.HandoffCard()
+                        // "Chrome on Windows sent you 3 playlists and 40 likes." (link-sync spec §2.3): a dialog, shown once per send.
+                        com.stash.feature.settings.weblink.InboxPrompt()
                         MiniPlayer(
                             onExpand = {
                                 // Return to an existing Now Playing entry instead
@@ -219,6 +227,7 @@ fun StashScaffold(
                                 }
                             },
                         )
+                      }
                     }
 
                     // Now Playing is a full-screen player: the tab bar slides away while it

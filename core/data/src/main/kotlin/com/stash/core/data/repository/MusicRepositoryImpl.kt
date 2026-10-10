@@ -1162,7 +1162,54 @@ class MusicRepositoryImpl @Inject constructor(
         )
     }
 
+    /**
+     * Runs to the end even when its caller is cancelled (a screen closed mid-delete), as the other long
+     * batches here do: the playlist is hidden first, so a cut-short cascade would leave it hidden and
+     * half-emptied, beyond a retry. A process death is finished by [finishInterruptedPlaylistDeletes] at
+     * the next launch; a cascade that fails shows the playlist again (last look L-N1).
+     */
     override suspend fun deletePlaylistWithCascade(
+        playlistId: Long,
+        alsoBlacklist: Boolean,
+    ): MusicRepository.CascadeRemovalSummary = withContext(NonCancellable + Dispatchers.IO) {
+        recordDeleteStarted(playlistId, alsoBlacklist)
+        try {
+            cascadeDelete(playlistId, alsoBlacklist).also { deleteJournal.edit().remove(playlistId.toString()).commit() }
+        } catch (e: Exception) {
+            runCatching { playlistDao.setActiveById(playlistId, true) }
+            deleteJournal.edit().remove(playlistId.toString()).commit()
+            throw e
+        }
+    }
+
+    /** Playlist deletes started and not finished: id → alsoBlacklist. */
+    private val deleteJournal by lazy { context.getSharedPreferences(DELETE_JOURNAL, Context.MODE_PRIVATE) }
+
+    /** Notes a delete about to start, so a process death mid-cascade is finished at the next launch. */
+    internal fun recordDeleteStarted(playlistId: Long, alsoBlacklist: Boolean) {
+        deleteJournal.edit().putBoolean(playlistId.toString(), alsoBlacklist).commit()
+    }
+
+    /**
+     * At launch: finishes every playlist delete the process died in the middle of (its playlist hidden,
+     * part of its songs unlinked). Other hidden playlists (a mix switched off) aren't touched. Returns how
+     * many were finished.
+     */
+    suspend fun finishInterruptedPlaylistDeletes(): Int = withContext(Dispatchers.IO) {
+        var done = 0
+        for ((key, value) in deleteJournal.all) {
+            val id = key.toLongOrNull()
+            if (id == null || playlistDao.getById(id) == null) {
+                deleteJournal.edit().remove(key).commit()
+                continue
+            }
+            deletePlaylistWithCascade(id, alsoBlacklist = value as? Boolean ?: false)
+            done++
+        }
+        done
+    }
+
+    private suspend fun cascadeDelete(
         playlistId: Long,
         alsoBlacklist: Boolean,
     ): MusicRepository.CascadeRemovalSummary {
@@ -1182,6 +1229,10 @@ class MusicRepositoryImpl @Inject constructor(
                 downloadQueueDao.cancelWaitingForPlaylist(playlistId)
             }
         }
+
+        // Hidden before the first song is unlinked: a mirror run landing during a long cascade
+        // then sees the playlist gone, never a shorter list to send (final check F-N3).
+        playlistDao.setActiveById(playlistId, false)
 
         var deleted = 0
         var keptProtected = 0
@@ -1354,6 +1405,9 @@ class MusicRepositoryImpl @Inject constructor(
 
     companion object {
         private const val DOWNLOADS_MIX_SOURCE_ID = "stash_downloads_mix"
+
+        /** Prefs of playlist deletes started and not finished (last look L-N1). */
+        private const val DELETE_JOURNAL = "playlist_deletes"
 
         /** Serializes [startDiscoveryDrain]'s read-then-enqueue, across every instance. */
         private val DRAIN_START_LOCK = Mutex()

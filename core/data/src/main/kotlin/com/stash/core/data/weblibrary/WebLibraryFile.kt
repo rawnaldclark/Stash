@@ -108,6 +108,9 @@ data class WebLibraryFile(
         @OptIn(ExperimentalSerializationApi::class)
         fun write(file: WebLibraryFile, out: OutputStream) = json.encodeToStream(serializer(), file, out)
 
+        /** The same text [write] streams, as one string (a one-off send seals it whole). */
+        fun text(file: WebLibraryFile): String = json.encodeToString(serializer(), file)
+
         fun isoMillis(epochMs: Long): String = ISO_MILLIS.format(Instant.ofEpochMilli(epochMs))
 
         /** `stash-library-YYYY-MM-DD.json`, the name the web player gives its own backups, in this phone's date. */

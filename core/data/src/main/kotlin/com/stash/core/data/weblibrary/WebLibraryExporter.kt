@@ -20,6 +20,33 @@ import javax.inject.Singleton
 data class WebLibraryExportResult(val likes: Int, val playlists: Int, val plays: Int)
 
 /**
+ * What an export or a one-off send carries (link-sync spec §2.3): likes yes/no, plays yes/no, and which of your playlists.
+ * [playlistIds] null means every playlist (also ones made after the choice was saved). An unticked part is written as an
+ * empty array, which `stash-web-library` v1 allows (`docs/library-file-v1.md` "Writers"), so the file stays v1.
+ */
+data class ExportSelection(
+    val likes: Boolean = true,
+    val plays: Boolean = true,
+    val playlistIds: Set<Long>? = null,
+) {
+    fun includes(playlistId: Long): Boolean = playlistIds == null || playlistId in playlistIds
+
+    /** Nothing ticked: there is nothing to save or send. */
+    val isEmpty: Boolean get() = !likes && !plays && playlistIds?.isEmpty() == true
+
+    companion object {
+        /** Everything: today's export, and the picker's first-time default. */
+        val ALL = ExportSelection()
+    }
+}
+
+/** One of your playlists as the picker lists it: name, songs that would go, and whether it is a followed shared mix. */
+data class ExportPlaylistChoice(val id: Long, val name: String, val songs: Int, val sharedMix: Boolean)
+
+/** What the library holds that an export could carry, for the picker's counts (spec §2.3 "Likes · 1,204"). */
+data class ExportCatalog(val likes: Int, val plays: Int, val playlists: List<ExportPlaylistChoice>)
+
+/**
  * "Export for Stash on the web" (Settings › Library & Storage): writes your likes, your own playlists and your
  * recent plays as the web player's library file ([WebLibraryFile], `stash-web-library` v1), to a file the user
  * picked (SAF create-document). Read-only on the database.
@@ -44,15 +71,48 @@ class WebLibraryExporter @Inject constructor(
      * can't skip or repeat rows. That holds the database's write lock for the reads (about a second on a big
      * library); a play recorded in that moment waits, it isn't lost.
      */
-    suspend fun collect(nowMs: Long, generator: String?): WebLibraryFile = withContext(Dispatchers.IO) {
-        database.withTransaction { read(nowMs, generator) }
+    suspend fun collect(nowMs: Long, generator: String?, selection: ExportSelection = ExportSelection.ALL): WebLibraryFile =
+        withContext(Dispatchers.IO) {
+            database.withTransaction { read(nowMs, generator, selection) }
+        }
+
+    /**
+     * What the picker shows: how many likes and plays would go, and every playlist an export would write with its song count
+     * (the same rules as [collect]: blocked songs and songs without a title or artist never count).
+     */
+    suspend fun catalog(): ExportCatalog = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val dao = database.webLibraryExportDao()
+            val follows = dao.followedMixes().mapTo(HashSet()) { it.playlistId }
+            ExportCatalog(
+                likes = dao.likeCount(),
+                plays = dao.playCount(WebLibraryFile.MAX_PLAYS),
+                playlists = dao.playlists().map { p ->
+                    ExportPlaylistChoice(
+                        id = p.id,
+                        name = playlistName(p.name),
+                        songs = minOf(dao.playlistItemCount(p.id), WebLibraryFile.MAX_PLAYLIST_ITEMS),
+                        sharedMix = p.id in follows,
+                    )
+                },
+            )
+        }
     }
 
-    private suspend fun read(nowMs: Long, generator: String?): WebLibraryFile {
+    /** The file as text (a one-off send seals it whole): the same bytes [export] writes to a file. */
+    fun text(file: WebLibraryFile): String = WebLibraryFile.text(file)
+
+    /** "Stash for Android 0.9.112", the writer named inside the file. */
+    fun generator(): String {
+        val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
+        return listOfNotNull("Stash for Android", version).joinToString(" ")
+    }
+
+    private suspend fun read(nowMs: Long, generator: String?, selection: ExportSelection): WebLibraryFile {
         val dao = database.webLibraryExportDao()
 
         val seenLikes = HashSet<Long>()
-        val likes = dao.likes().mapNotNull { row ->
+        val likes = if (!selection.likes) emptyList() else dao.likes().mapNotNull { row ->
             if (!seenLikes.add(row.track.id)) return@mapNotNull null
             val added = row.track.dateAdded
             val song = WebLibraryFile.song(row.track.toTrack(), added) ?: return@mapNotNull null
@@ -60,13 +120,13 @@ class WebLibraryExporter @Inject constructor(
         }
 
         val follows = dao.followedMixes().associateBy { it.playlistId }
-        val playlists = dao.playlists().map { p ->
+        val playlists = dao.playlists().filter { selection.includes(it.id) }.map { p ->
             val rows = dao.playlistItems(p.id, WebLibraryFile.MAX_PLAYLIST_ITEMS)
             val created = p.dateAdded.toEpochMilli().takeIf { it > 0 } ?: nowMs
             val updated = rows.mapNotNull { it.addedAt }.maxOrNull()?.coerceAtLeast(created) ?: created
             WebLibraryFile.Playlist(
-                id = "app-${p.id}",
-                name = p.name.trim().ifEmpty { "Playlist" },
+                id = fileIdOf(p.id, p.sourceId),
+                name = playlistName(p.name),
                 items = rows.mapNotNull { WebLibraryFile.song(it.track.toTrack(), it.track.dateAdded) },
                 createdAt = created,
                 updatedAt = updated,
@@ -74,7 +134,7 @@ class WebLibraryExporter @Inject constructor(
             )
         }
 
-        val history = dao.recentPlays(WebLibraryFile.MAX_PLAYS).mapNotNull { row ->
+        val history = if (!selection.plays) emptyList() else dao.recentPlays(WebLibraryFile.MAX_PLAYS).mapNotNull { row ->
             if (row.playedAt <= 0) return@mapNotNull null
             val song = WebLibraryFile.song(row.track.toTrack(), row.track.dateAdded) ?: return@mapNotNull null
             WebLibraryFile.Play(song, row.playedAt)
@@ -94,12 +154,9 @@ class WebLibraryExporter @Inject constructor(
      * that document, so if the export fails or is cancelled (the user leaves the screen), the document is deleted
      * again: an empty `stash-library-….json` would only tell the web "That file isn't a Stash backup."
      */
-    suspend fun export(targetUri: Uri): Result<WebLibraryExportResult> = withContext(Dispatchers.IO) {
+    suspend fun export(targetUri: Uri, selection: ExportSelection = ExportSelection.ALL): Result<WebLibraryExportResult> = withContext(Dispatchers.IO) {
         try {
-            val version = runCatching {
-                context.packageManager.getPackageInfo(context.packageName, 0).versionName
-            }.getOrNull()
-            val file = collect(System.currentTimeMillis(), listOfNotNull("Stash for Android", version).joinToString(" "))
+            val file = collect(System.currentTimeMillis(), generator(), selection)
             ensureActive()
             // Streamed straight into the document: the text is never held whole in memory.
             val stream = context.contentResolver.openOutputStream(targetUri)
@@ -157,6 +214,19 @@ class WebLibraryExporter @Inject constructor(
 
     private companion object {
         const val TAG = "WebLibraryExport"
+
+        fun playlistName(name: String) = name.trim().ifEmpty { "Playlist" }
+
+        private val FILE_ID = Regex("^[A-Za-z0-9_-]{1,64}$")
+
+        /**
+         * A playlist's id in the file: `app-<its id>`, except one that came from Stash on the web (an import or a send made it
+         * `custom_web_<id>`), which goes back under the web's own id, so the web merges it into the playlist it came from
+         * instead of adding a copy (library-file v1: ids are stable, and a reader merges by id).
+         */
+        fun fileIdOf(playlistId: Long, sourceId: String): String =
+            sourceId.removePrefix(WebLibraryImporter.WEB_SOURCE_PREFIX).takeIf { sourceId.startsWith(WebLibraryImporter.WEB_SOURCE_PREFIX) && FILE_ID.matches(it) }
+                ?: "app-$playlistId"
         const val WRITE_BUFFER = 64 * 1024
     }
 }

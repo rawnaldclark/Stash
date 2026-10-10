@@ -1,0 +1,134 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "b44fdc8d50d772f8c44efdf4cec58584",
+    "entities": [
+      {
+        "tableName": "sync_space",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `deviceId` TEXT NOT NULL, `tokenSealed` BLOB NOT NULL, `devicePub` BLOB NOT NULL, `deviceKeyWrapped` BLOB, `deviceName` TEXT NOT NULL, `spaceId` TEXT, `epoch` INTEGER NOT NULL, `keySealed` BLOB, `prevEpoch` INTEGER NOT NULL, `prevKeySealed` BLOB, `linkedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokenSealed",
+            "columnName": "tokenSealed",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "devicePub",
+            "columnName": "devicePub",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceKeyWrapped",
+            "columnName": "deviceKeyWrapped",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "deviceName",
+            "columnName": "deviceName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spaceId",
+            "columnName": "spaceId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "epoch",
+            "columnName": "epoch",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keySealed",
+            "columnName": "keySealed",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "prevEpoch",
+            "columnName": "prevEpoch",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "prevKeySealed",
+            "columnName": "prevKeySealed",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "linkedAt",
+            "columnName": "linkedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "sync_roster",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`deviceId` TEXT NOT NULL, `type` TEXT NOT NULL, `labelName` TEXT NOT NULL, `pub` BLOB NOT NULL, `nickname` TEXT, PRIMARY KEY(`deviceId`))",
+        "fields": [
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "labelName",
+            "columnName": "labelName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pub",
+            "columnName": "pub",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nickname",
+            "columnName": "nickname",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "deviceId"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b44fdc8d50d772f8c44efdf4cec58584')"
+    ]
+  }
+}

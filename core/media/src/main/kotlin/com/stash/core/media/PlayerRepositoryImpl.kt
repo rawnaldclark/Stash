@@ -708,6 +708,63 @@ class PlayerRepositoryImpl @Inject constructor(
         if (play) scope.launch { prefetchNextTrack() }
     }
 
+    override suspend fun restoreHandoff(plan: com.stash.core.media.handoff.HandoffQueuePlan): Boolean {
+        if (inListenTogether || plan.first.isEmpty()) return false
+        val controller = ensureController() ?: return false
+        // The first songs play in order; the real shuffle order comes with the rest, once the whole timeline is in.
+        controller.shuffleModeEnabled = false
+        controller.repeatMode = plan.repeat.toPlayerRepeatMode()
+        setQueueInternal(plan.first, startIndex = 0, startPositionMs = plan.positionMs, source = plan.source, play = true)
+        if (currentSource !== plan.source) return false
+        val mine = currentQueueTracks
+        scope.launch {
+            val rest = try {
+                plan.rest()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "handoff: matching the rest failed", e)
+                null
+            } ?: return@launch
+            val c = controllerDeferred ?: return@launch
+            // The user played something else, or edited the queue, while the rest was matched: leave theirs alone.
+            if (currentSource !== plan.source || currentQueueTracks !== mine || listenTogetherOwnsQueue) {
+                Log.i(TAG, "handoff: the queue changed meanwhile, the rest is dropped")
+                return@launch
+            }
+            // Timeline position of each rest entry (before + first + after), or -1 when the player can't take it.
+            val all = rest.before + mine + rest.after
+            val built = withContext(Dispatchers.IO) {
+                all.mapIndexed { i, t ->
+                    if (i >= rest.before.size && i < rest.before.size + mine.size) null else t.toInitialQueueMediaItem(validateLocalFile = false)
+                }
+            }
+            val beforeItems = (rest.before.indices).mapNotNull { built[it] }
+            val afterItems = (rest.before.size + mine.size until all.size).mapNotNull { built[it] }
+            val slot = IntArray(all.size) { -1 }
+            var next = 0
+            for (i in all.indices) {
+                val inFirst = i >= rest.before.size && i < rest.before.size + mine.size
+                if (inFirst || built[i] != null) slot[i] = next++
+            }
+            if (beforeItems.isNotEmpty()) c.addMediaItems(0, beforeItems)
+            if (afterItems.isNotEmpty()) c.addMediaItems(afterItems)
+            currentQueueTracks = all.filterIndexed { i, _ -> slot[i] >= 0 }
+            val order = rest.playOrder?.map { slot.getOrElse(it) { -1 } }?.filter { it >= 0 }
+            if (order != null && order.size == next) {
+                c.shuffleModeEnabled = true
+                c.sendCustomCommand(
+                    SessionCommand(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER, Bundle.EMPTY),
+                    Bundle().apply { putIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER, order.toIntArray()) },
+                )
+            }
+            Log.i(TAG, "handoff: queue filled, ${beforeItems.size} before, ${afterItems.size} after, shuffled=${order != null}")
+            plan.onFilled(all.size - next)
+            prefetchNextTrack()
+        }
+        return true
+    }
+
     /**
      * #462: on a cold start with nothing loaded, show the persisted last session
      * paused at its saved position. State only — no setMediaItems, no prepare, no
@@ -2705,6 +2762,7 @@ class PlayerRepositoryImpl @Inject constructor(
                 controller.playbackState == Player.STATE_BUFFERING,
             ),
             source = currentSource,
+            shuffleTimelineSlots = display.timelineIndices,
         )
         _playerState.value = newState
         lastKnownQueueSize = newState.queue.size
