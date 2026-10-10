@@ -104,7 +104,12 @@ class LibraryViewModel @Inject constructor(
     private val libraryDeepLinkController: com.stash.core.data.navigation.LibraryDeepLinkController,
     private val artistImageDao: ArtistImageDao,
     private val sharedMixRepository: com.stash.core.data.share.SharedMixRepository,
+    /** Link Stash on the web's mirror (null in tests that don't need it). */
+    private val mirror: com.stash.core.data.weblink.mirror.MirrorEngine? = null,
 ) : ViewModel() {
+
+    /** The playlist mirrors with Stash on the web: deleting it asks Everywhere / Only here (spec §2.4). */
+    fun isMirrored(playlistId: Long): Boolean = mirror?.isMirrored(playlistId) == true
 
     /** Active follows are read-only: the long-press sheet offers Unfollow in place of edits. */
     val followedPlaylistIds: StateFlow<Set<Long>> = sharedMixRepository.observeActiveFollowedIds()
@@ -176,6 +181,8 @@ class LibraryViewModel @Inject constructor(
     @Volatile private var sourceFilterUserSet = false
 
     init {
+        // What mirrors with Stash on the web, for the delete question (no network).
+        mirror?.let { m -> viewModelScope.launch { m.load() } }
         // Seed the persisted sort/filter before anything downstream reads
         // _controls. uiState's initialValue still starts at ControlState()'s
         // hardcoded defaults for one frame — same tolerated flash pattern as
@@ -783,8 +790,10 @@ class LibraryViewModel @Inject constructor(
      * User-uploaded cover image is a separate filesystem artifact the
      * cascade doesn't know about — delete it here before delegating.
      */
-    fun deletePlaylist(playlist: Playlist, alsoBlacklist: Boolean = false) {
+    fun deletePlaylist(playlist: Playlist, alsoBlacklist: Boolean = false, everywhere: Boolean = false) {
         viewModelScope.launch {
+            // "Only here": it stops mirroring first, so its copies elsewhere stay; "Everywhere": the next mirror run deletes them.
+            if (!everywhere) mirror?.stopMirroring(playlist.id)
             playlistImageHelper.deletePlaylistCoverFile(playlist.id)
             musicRepository.deletePlaylistWithCascade(
                 playlistId = playlist.id,
@@ -796,6 +805,7 @@ class LibraryViewModel @Inject constructor(
     /** Remove playlist from library without deleting its downloaded tracks. */
     fun removePlaylist(playlist: Playlist) {
         viewModelScope.launch {
+            mirror?.stopMirroring(playlist.id) // removing it here never removes it from your other devices
             musicRepository.removePlaylist(playlist)
         }
     }

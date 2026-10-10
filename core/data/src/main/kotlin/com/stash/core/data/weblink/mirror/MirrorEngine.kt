@@ -169,6 +169,30 @@ class MirrorEngine internal constructor(
         c.r.question?.let { q -> c.r.answer = LikesAnswer(q.since, choice) }
     }
 
+    /** [localId] is a playlist this phone mirrors now (from the last state read: [load] or a run). */
+    fun isMirrored(localId: Long): Boolean {
+        val s = _status.value
+        val cfg = s.config ?: return false
+        return cfg.playlists.dir != Dir.OFF && s.mirrored.any { (mid, id) -> id == localId && mid in cfg.ids }
+    }
+
+    /**
+     * "Only here" (spec §2.4): [localId] stops mirroring before it is deleted here, so its copies elsewhere stay. Offline, the
+     * settings can't change yet; the playlist is let go here at least, so a later run never sends it as deleted everywhere.
+     */
+    suspend fun stopMirroring(localId: Long) {
+        if (!isMirrored(localId)) return
+        if (configure(MirrorChange(remove = listOf(localId))) == MirrorRun.Done) return
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val r = guard(null) { records.load() } ?: return@withLock
+                r.map = r.map.filterValues { it.localId != localId }
+                guard(Unit) { records.save(r) }
+                _status.update { it.copy(mirrored = r.map.mapValues { e -> e.value.localId }) }
+            }
+        }
+    }
+
     /** Reads the saved state for the settings screen (no network). */
     suspend fun load() {
         val sp = guard(null) { store.space() }
