@@ -142,7 +142,7 @@ class MirrorSchedulingTest {
         digest = "l:2#p:1"
         inv.emit(Unit)
         scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
-        status.value = on.copy(pushDigest = "l:1#p:1")
+        status.value = on.copy(pushDigest = "l:1#p:1", lastRunOk = true)
         scope.runCurrent()
         assertThat(rec.changed).isEqualTo(1)
         // Only a new play: the longer wait.
@@ -152,6 +152,40 @@ class MirrorSchedulingTest {
         assertThat(rec.changed).isEqualTo(1)
         assertThat(rec.plays).isEqualTo(1)
         scope.cancel()
+    }
+
+    @Test fun `R-B1 - runs that keep failing with a change left to send never re-arm themselves, only a new change asks`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        val status = MutableStateFlow(on.copy(pushDigest = "l:1#p:1", lastRunOk = true))
+        val inv = MutableSharedFlow<Unit>(extraBufferCapacity = 16)
+        var digest = "l:2#p:1" // a like waiting to go since the last push that went
+        val rec = Recorder()
+        val t = MirrorTriggers(status, {}, { digest }, inv, rec, scope, { testScheduler.currentTime })
+        t.start()
+        scope.runCurrent()
+        repeat(20) {
+            // A run that fails (offline, 5xx, a full space, waiting for the browser...): busy, then idle with lastRunOk false.
+            status.value = on.copy(busy = true, pushDigest = "l:1#p:1")
+            scope.runCurrent()
+            status.value = on.copy(busy = false, pushDigest = null, lastRunOk = false)
+            scope.runCurrent()
+            scope.advanceTimeBy(60_000)
+        }
+        assertThat(rec.changed).isEqualTo(0) // retries belong to WorkManager's backoff, not to the trigger
+        // A new local change after the last attempt asks for one run.
+        digest = "l:3#p:1"
+        inv.emit(Unit)
+        scope.advanceTimeBy(MirrorTriggers.DEBOUNCE_MS + 1)
+        assertThat(rec.changed).isEqualTo(1)
+        scope.cancel()
+    }
+
+    @Test fun `a change keeps a pending run (and its backoff) rather than replacing it`() {
+        val s = WorkManagerMirrorScheduler(context)
+        s.changed()
+        val first = infos(MirrorSyncWorker.WORK_CHANGE).single { !it.state.isFinished }.id
+        s.changed()
+        assertThat(infos(MirrorSyncWorker.WORK_CHANGE).single { !it.state.isFinished }.id).isEqualTo(first)
     }
 
     @Test fun `no background run while nothing mirrors, and the foreground asks at most once a minute while linked`() = runTest {

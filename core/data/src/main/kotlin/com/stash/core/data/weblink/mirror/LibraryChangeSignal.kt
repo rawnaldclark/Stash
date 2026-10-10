@@ -51,11 +51,13 @@ class MirrorTriggers internal constructor(
             status.collect { s ->
                 scheduler.periodic(s.linked && s.config?.anyOn == true)
                 if (wasBusy && !s.busy && s.config?.anyOn == true) {
-                    // A run just ended. Its own writes came before its push read the library, so they are in the digest the push
-                    // took; anything that differs from that was changed during the run (a heart tapped meanwhile) and goes in a
-                    // run of its own (review S6). What is now is the new starting point.
+                    // A run just ended. If it finished, its own writes came before its push read the library, so they are in the
+                    // digest the push took; anything that differs was changed during the run (a heart tapped meanwhile) and goes in
+                    // a run of its own (review S6). A run that didn't finish asks for nothing: its retry is WorkManager's backoff,
+                    // and a failure that lasts (a full space, waiting for the browser, a newer format) must not loop (R-B1).
+                    // Either way, what is now is the new starting point: only a change after it asks again.
                     val d = guard { digest(s) }
-                    if (d != null && s.pushDigest != null && d != s.pushDigest) ask(s.pushDigest, d)
+                    if (s.lastRunOk && d != null && s.pushDigest != null && d != s.pushDigest) ask(s.pushDigest, d)
                     lastDigest = d
                 }
                 wasBusy = s.busy

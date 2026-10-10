@@ -78,8 +78,10 @@ data class MirrorStatus(
     val mirrored: Map<String, Long> = emptyMap(),
     /** Unlikes held back because one run would remove too many (N7): the listener sends or keeps them. */
     val heldRemovals: Int = 0,
-    /** The change signal's digest of the library when the last push read it (S6). */
+    /** The change signal's digest of the library when the last push read it (S6); null when the last run didn't finish. */
     val pushDigest: String? = null,
+    /** The last run reached the service and did everything there was to do (R-B1: only then is "changed meanwhile" asked). */
+    val lastRunOk: Boolean = false,
 ) {
     companion object {
         const val OTHERS = "your browsers"
@@ -294,6 +296,9 @@ class MirrorEngine internal constructor(
                     problem = (result as? MirrorRun.Failed)?.message ?: (result as? MirrorRun.Retry)?.message,
                     syncedAt = if (result == MirrorRun.Done) clock() else it.syncedAt,
                     linked = result != MirrorRun.NotLinked,
+                    lastRunOk = result == MirrorRun.Done,
+                    // A run that didn't finish leaves nothing to compare with: its retry is WorkManager's backoff (R-B1).
+                    pushDigest = if (result == MirrorRun.Done) it.pushDigest else null,
                 )
             }
             return result

@@ -88,7 +88,10 @@ class MirrorSyncWorker @AssistedInject constructor(
 
 /** Where mirror runs are asked for (WorkManager in the app; tests record the calls). */
 interface MirrorScheduler {
-    /** The library changed in a kind that mirrors: a run 10 s from now (a pending one is replaced, so a burst is one run). */
+    /**
+     * The library changed in a kind that mirrors: a run 10 s from now. A pending run is kept, never replaced, so a burst is one
+     * run and a run waiting out its backoff keeps it (R-B1: replacing reset the backoff and the retry limit).
+     */
     fun changed()
 
     /** Only new plays: a run within 15 minutes (a pending one stays), so playback doesn't wake the radio per song (N3). */
@@ -107,7 +110,7 @@ class WorkManagerMirrorScheduler @Inject constructor(@ApplicationContext private
     private var periodicOn: Boolean? = null
 
     override fun changed() {
-        wm.enqueueUniqueWork(MirrorSyncWorker.WORK_CHANGE, ExistingWorkPolicy.REPLACE, MirrorSyncWorker.changeRequest())
+        wm.enqueueUniqueWork(MirrorSyncWorker.WORK_CHANGE, ExistingWorkPolicy.KEEP, MirrorSyncWorker.changeRequest())
     }
 
     override fun playsChanged() {
