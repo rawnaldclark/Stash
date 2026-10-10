@@ -3,6 +3,8 @@ package com.stash.core.media.handoff
 import android.os.SystemClock
 import android.util.Log
 import com.stash.core.data.weblink.WebLinkConfig
+import com.stash.core.data.weblink.WebLinkRepository
+import com.stash.core.data.weblink.WebLinkStatus
 import com.stash.core.data.weblink.handoff.HandoffChannel
 import com.stash.core.data.weblink.handoff.HandoffPrefs
 import com.stash.core.data.weblink.handoff.NowRead
@@ -18,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -38,8 +41,12 @@ data class HandoffOffer(
     /** This phone's monotonic clock when [positionMs] was worked out. */
     val readAtElapsed: Long,
 ) {
-    /** What a dismissal remembers (sync-v1 §4). */
-    val key: String get() = "$device@$serverAt"
+    /**
+     * What a dismissal remembers: the device and *what* it offered (its queue and place), not when it said so. A browser
+     * republishes every minute while it plays, so a key with the server's stamp would bring a dismissed card back on the next
+     * foreground (Phase 4 review S2). A new song or queue there is a new offer.
+     */
+    val key: String get() = dismissKey(device, now)
 
     /** Where the song is at [elapsed] (this phone's monotonic clock), never past its end. */
     fun positionAt(elapsed: Long): Long {
@@ -49,6 +56,9 @@ data class HandoffOffer(
         return minOf(p, d)
     }
 }
+
+/** A dismissal's key for [device]'s state [now]: `"<device>#<queueId>#<index>"` (local only, never on the wire). */
+fun dismissKey(device: String, now: StashNow): String = "$device#${now.queueId}#${now.index}"
 
 /** The offer rules (spec §2.5, §8.2; sync-v1 §4), pure. */
 object HandoffOfferPicker {
@@ -62,7 +72,9 @@ object HandoffOfferPicker {
     }
 
     fun pick(read: NowRead, ownLastAt: Long, playingHere: Boolean, dismissed: Collection<String>, readAtElapsed: Long): HandoffOffer? {
-        val candidates = read.states.map { HandoffTiming.Candidate(it.device, it.serverAt, it.now.song != null) }
+        // A dismissed state stays dismissed through that device's later republishes of it (same queue, same place).
+        val candidates = read.states.filter { dismissKey(it.device, it.now) !in dismissed }
+            .map { HandoffTiming.Candidate(it.device, it.serverAt, it.now.song != null) }
         val device = HandoffTiming.pickOffer(candidates, read.me, read.serverTime, ownLastAt, playingHere, dismissed) ?: return null
         val st = read.states.first { it.device == device }
         val song = st.now.song ?: return null
@@ -85,6 +97,7 @@ class HandoffOffers @Inject constructor(
     private val config: WebLinkConfig,
     private val player: PlayerRepository,
     private val restorer: HandoffRestorer,
+    linkRepository: WebLinkRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Mutex()
@@ -96,6 +109,15 @@ class HandoffOffers @Inject constructor(
     /** "2 songs that aren't playable here were left out." once, after a restore. */
     private val _note = MutableStateFlow<String?>(null)
     val note: StateFlow<String?> = _note.asStateFlow()
+
+    init {
+        // Unlinked, removed, or "Pick up where you left off" switched off: the card goes at once, not at the next foreground
+        // (a card left over after Unlink everything used to play its one song alone; Phase 4 review S3).
+        scope.launch {
+            combine(prefs.enabled, linkRepository.status) { on, status -> on && status !is WebLinkStatus.NotLinked }
+                .collect { usable -> if (!usable) _offer.value = null }
+        }
+    }
 
     /** The app came to the foreground (ProcessLifecycleOwner ON_START). */
     fun onForeground() {
@@ -143,10 +165,23 @@ class HandoffOffers @Inject constructor(
     suspend fun accept(): RestoreResult {
         val o = _offer.value ?: return RestoreResult.Failed
         _offer.value = null
+        // A card left on screen after an unlink or the switch going off can't be taken (S3).
+        if (!prefs.enabled.value || !channel.linked()) return RestoreResult.Failed
         // Dismissed too, so a later foreground doesn't offer the state just taken (this phone's own publish soon outdates it).
         prefs.dismiss(o.key)
-        val result = restorer.restore(o, o.positionAt(SystemClock.elapsedRealtime())) { _note.value = it }
-        if (result == RestoreResult.NothingPlayable) _note.value = "None of those songs can be played here."
+        val result = try {
+            restorer.restore(o, o.positionAt(SystemClock.elapsedRealtime())) { _note.value = it }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "handoff restore failed: ${e.javaClass.simpleName}")
+            RestoreResult.Failed
+        }
+        when (result) {
+            RestoreResult.NothingPlayable -> _note.value = "None of those songs can be played here."
+            RestoreResult.Failed -> _note.value = "Couldn't continue here."
+            RestoreResult.Started -> Unit
+        }
         return result
     }
 

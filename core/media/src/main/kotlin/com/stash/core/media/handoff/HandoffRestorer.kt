@@ -153,10 +153,11 @@ class HandoffRestorer @Inject constructor(
                 HandoffRepeat.ONE -> RepeatMode.ONE
             },
             rest = {
-                for (slot in layout.songs.indices) {
-                    if (slot in firstSlots) continue
-                    if (match(slot) == null) unmatched++
-                }
+                // The rest in batches (one transaction each), not one write per song.
+                val todo = layout.songs.indices.filter { it !in firstSlots && it !in matched && it !in missing }
+                val rows = matcher.matchAll(todo.map { layout.songs[it] })
+                todo.forEachIndexed { i, slot -> rows[i]?.toDomain()?.let { matched[slot] = it } ?: missing.add(slot) }
+                unmatched = layout.songs.indices.count { it !in firstSlots && it !in matched }
                 finishLayout(layout, firstSlots, matched)
             },
             onFilled = { dropped ->

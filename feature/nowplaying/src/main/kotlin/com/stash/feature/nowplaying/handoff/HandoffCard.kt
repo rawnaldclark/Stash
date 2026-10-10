@@ -37,7 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalAccessibilityManager
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -46,7 +49,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import com.stash.core.media.handoff.HandoffOffer
@@ -71,13 +77,19 @@ fun HandoffCard(modifier: Modifier = Modifier, viewModel: HandoffViewModel = hil
         }
         AnimatedVisibility(visible = note != null, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
             val text = remember { HoldLast<String>() }.update(note) ?: return@AnimatedVisibility
+            // A screen reader user gets the note read out (live region) and the time the system recommends to act on it, which
+            // with TalkBack on is long enough to find the close button.
+            val a11y = LocalAccessibilityManager.current
             LaunchedEffect(text) {
-                delay(NOTE_MS)
+                delay(a11y?.calculateRecommendedTimeoutMillis(NOTE_MS, containsIcons = true, containsText = true, containsControls = true) ?: NOTE_MS)
                 viewModel.noteShown()
             }
             CardSurface {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                    Modifier
+                        .fillMaxWidth()
+                        .semantics { liveRegion = LiveRegionMode.Polite }
+                        .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -116,10 +128,15 @@ private fun OfferCard(offer: HandoffOffer, onContinue: () -> Unit, onDismiss: ()
     // While the other device still plays, the position moves on screen (UI only: no timer outside the card).
     var elapsed by remember(offer) { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     if (offer.stillPlaying) {
-        LaunchedEffect(offer) {
-            while (true) {
-                delay(1_000)
-                elapsed = SystemClock.elapsedRealtime()
+        // Only while the app is on screen: in the background the card stays composed, and a plain loop would wake the main
+        // thread every second (the phone has no timers for handoff, spec §8.1).
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        LaunchedEffect(offer, lifecycle) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    elapsed = SystemClock.elapsedRealtime()
+                    delay(1_000)
+                }
             }
         }
     }
@@ -188,7 +205,7 @@ private fun OfferCard(offer: HandoffOffer, onContinue: () -> Unit, onDismiss: ()
                 Icon(Icons.Default.PlayArrow, contentDescription = "Continue here", tint = MaterialTheme.colorScheme.onPrimary)
             }
             IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = extended.textTertiary, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.Close, contentDescription = "Dismiss Continue from ${offer.deviceName}", tint = extended.textTertiary, modifier = Modifier.size(20.dp))
             }
         }
     }
