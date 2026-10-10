@@ -57,12 +57,57 @@ object WebLibraryReader {
     const val TOO_BIG = "That file is too big to be a Stash backup."
     const val NEWER = "That backup comes from a newer Stash. Update Stash and try again."
 
+    /**
+     * How much JSON structure a document may have before it is parsed into a tree (review B1): a parsed value costs tens of bytes
+     * of heap, so 16 MiB of `[],` would need gigabytes. A real library has about 5 containers and 10 values per song.
+     */
+    data class Shape(val maxDepth: Int, val maxContainers: Int, val maxValues: Int)
+
+    /** A file the listener picked (up to 64 MiB): about 200,000 songs. */
+    val FILE_SHAPE = Shape(maxDepth = 32, maxContainers = 1_000_000, maxValues = 2_500_000)
+
+    /** A send (inflated at most 16 MiB, sync-v1 §5.5: at most 1,000,000 arrays and objects): about 60,000 songs. */
+    val SEND_SHAPE = Shape(maxDepth = 32, maxContainers = 1_000_000, maxValues = 3_000_000)
+
+    /**
+     * Counts [text]'s containers (`{`, `[`), values (roughly: commas and containers) and nesting outside strings, refusing it
+     * as [TOO_BIG] past [shape]. One pass over the characters, no allocation.
+     */
+    fun checkShape(text: String, shape: Shape) {
+        var depth = 0
+        var containers = 0
+        var values = 0
+        var inString = false
+        var escaped = false
+        for (ch in text) {
+            if (inString) {
+                when {
+                    escaped -> escaped = false
+                    ch == '\\' -> escaped = true
+                    ch == '"' -> inString = false
+                }
+                continue
+            }
+            when (ch) {
+                '"' -> inString = true
+                '{', '[' -> {
+                    depth++
+                    containers++
+                    values++
+                    if (depth > shape.maxDepth || containers > shape.maxContainers) throw WebLibraryReadException(TOO_BIG)
+                }
+                '}', ']' -> depth--
+                ',' -> if (++values > shape.maxValues) throw WebLibraryReadException(TOO_BIG)
+            }
+        }
+    }
+
     private val PLAYLIST_ID = Regex("^[A-Za-z0-9_-]{1,64}$")
     private val SHARE_ID = Regex("^[A-Za-z0-9]{8}$")
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Reads [input] (closed by the caller), refusing more than [MAX_BYTES]. */
-    fun read(input: InputStream, now: Long): WebLibraryContent {
+    fun read(input: InputStream, now: Long, shape: Shape = FILE_SHAPE): WebLibraryContent {
         val out = ByteArrayOutputStream()
         val buf = ByteArray(64 * 1024)
         while (true) {
@@ -71,11 +116,12 @@ object WebLibraryReader {
             if (out.size() + n > MAX_BYTES) throw WebLibraryReadException(TOO_BIG)
             out.write(buf, 0, n)
         }
-        return read(out.toString(Charsets.UTF_8.name()), now)
+        return read(out.toString(Charsets.UTF_8.name()), now, shape)
     }
 
-    fun read(text: String, now: Long): WebLibraryContent {
+    fun read(text: String, now: Long, shape: Shape = FILE_SHAPE): WebLibraryContent {
         if (text.length > MAX_BYTES) throw WebLibraryReadException(TOO_BIG)
+        checkShape(text, shape)
         val root = try {
             json.parseToJsonElement(text) as? JsonObject
         } catch (e: IllegalArgumentException) {

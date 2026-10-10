@@ -20,7 +20,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.weblibrary.ImportSelection
 import com.stash.core.data.weblink.WebLinkConfig
+import com.stash.core.data.weblibrary.WebLibraryContent
+import com.stash.core.data.weblink.inbox.AddOutcome
 import com.stash.core.data.weblink.inbox.IncomingSend
+import com.stash.core.data.weblink.inbox.OpenedSend
 import com.stash.core.data.weblink.inbox.WebLinkInbox
 import com.stash.feature.settings.WebLibraryImportViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -35,7 +38,10 @@ import kotlinx.coroutines.launch
 
 /** A received send being chosen from (the picker), or the line saying what an Add did. */
 sealed interface InboxStep {
-    data class Choosing(val send: IncomingSend, val pick: LibraryPick) : InboxStep
+    data class Choosing(val send: IncomingSend, val content: WebLibraryContent, val pick: LibraryPick) : InboxStep
+
+    /** Downloading and reading it (only ever after Add or Choose). */
+    data class Opening(val send: IncomingSend) : InboxStep
     data class Adding(val send: IncomingSend) : InboxStep
     data class Added(val text: String) : InboxStep
 }
@@ -67,9 +73,16 @@ class InboxViewModel @Inject constructor(
 
     fun addAll(send: IncomingSend) = add(send, ImportSelection.ALL)
 
+    /** Choose what to add: the send is downloaded and read now (never before the listener asks). */
     fun choose(send: IncomingSend) {
-        val c = send.content ?: return
-        _step.value = InboxStep.Choosing(send, WebLibraryImportViewModel.pickOf(c))
+        if (_step.value is InboxStep.Opening || _step.value is InboxStep.Adding) return
+        _step.value = InboxStep.Opening(send)
+        viewModelScope.launch {
+            _step.value = when (val o = inbox.open(send.sendId)) {
+                is OpenedSend.Ok -> InboxStep.Choosing(send, o.content, WebLibraryImportViewModel.pickOf(o.content))
+                is OpenedSend.Failed -> InboxStep.Added(o.message)
+            }
+        }
     }
 
     fun updatePick(pick: LibraryPick) {
@@ -87,7 +100,10 @@ class InboxViewModel @Inject constructor(
         _step.value = InboxStep.Adding(send)
         viewModelScope.launch {
             val text = try {
-                inbox.add(send.sendId, selection)?.let(WebLibraryImportViewModel::resultText) ?: "That send isn't here any more."
+                when (val r = inbox.add(send.sendId, selection)) {
+                    is AddOutcome.Added -> WebLibraryImportViewModel.resultText(r.result)
+                    is AddOutcome.Failed -> r.message
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -104,7 +120,7 @@ class InboxViewModel @Inject constructor(
     }
 
     fun stepDone() {
-        if (_step.value !is InboxStep.Adding) _step.value = null
+        if (_step.value !is InboxStep.Adding && _step.value !is InboxStep.Opening) _step.value = null
     }
 }
 
@@ -146,14 +162,14 @@ fun SendDialog(send: IncomingSend, onAdd: () -> Unit, onChoose: () -> Unit, onLa
         },
         text = {
             Text(
-                if (send.content != null) "Adding never removes anything from your library." else send.summary,
+                send.problem ?: "Adding never removes anything from your library.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
         confirmButton = {
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                if (send.content != null) {
+                if (send.readable) {
                     TextButton(onClick = onAdd) { Text("Add to my library") }
                     TextButton(onClick = onChoose) { Text("Choose what to add") }
                     TextButton(onClick = onLater) { Text("Not now") }
@@ -172,11 +188,17 @@ fun InboxStepDialogs(step: InboxStep?, viewModel: InboxViewModel) {
     when (val st = step) {
         is InboxStep.Choosing -> LibraryPickerSheet(
             title = "What to add",
-            intro = st.send.content?.let { WebLibraryImportViewModel.introOf(it, "${st.send.name} sent") },
+            intro = WebLibraryImportViewModel.introOf(st.content, "${st.send.name} sent"),
             pick = st.pick,
             onPick = viewModel::updatePick,
             actions = listOf(PickerAction("Add to my library", viewModel::addChosen, primary = true)),
             onDismiss = viewModel::stepDone,
+        )
+        is InboxStep.Opening -> AlertDialog(
+            onDismissRequest = {},
+            containerColor = MaterialTheme.colorScheme.surface,
+            text = { Text("Opening what ${st.send.name} sent…", style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {},
         )
         is InboxStep.Adding -> AlertDialog(
             onDismissRequest = {},

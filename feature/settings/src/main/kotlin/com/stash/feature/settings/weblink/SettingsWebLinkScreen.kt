@@ -249,7 +249,7 @@ private fun LinkedList(
                 @Composable {
                     SettingsNavRow(
                         title = "${s.name} sent you ${s.summary}",
-                        subtitle = if (s.content != null) "Add it, choose what to add, or discard it." else "Discard it.",
+                        subtitle = s.problem?.let { "$it Discard it." } ?: "Add it, choose what to add, or discard it.",
                         leadingIcon = Icons.Outlined.Inbox,
                         onClick = { onOpenSend(s) },
                     )

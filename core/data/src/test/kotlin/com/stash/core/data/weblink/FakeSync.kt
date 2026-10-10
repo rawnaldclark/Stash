@@ -330,6 +330,10 @@ class FakeSyncServer : SyncApi {
 
     val sends = LinkedHashMap<String, Send>()
 
+    /** The next part PUT lands but its answer is lost (and the take-back after it can't reach the server either). */
+    var landThenLose = false
+    private var loseDelete = false
+
     /** Sends waiting per device before `409 inbox_full` (the Worker's is 8). */
     var sendsPerDevice = 8
 
@@ -346,6 +350,11 @@ class FakeSyncServer : SyncApi {
         val send = s ?: Send(to, me.id, count, clock).also { sends[sendId] = it }
         if (send.to != to || send.from != me.id || send.count != count) return err(409, SyncErrorCode.EXISTS)
         send.parts[part] = env
+        if (landThenLose) {
+            landThenLose = false
+            loseDelete = true
+            return SyncResult.Unreachable("answer lost")
+        }
         return SyncResult.Ok(InboxPut(send.parts.size == count))
     }
 
@@ -367,6 +376,10 @@ class FakeSyncServer : SyncApi {
 
     override suspend fun deleteInbox(auth: DeviceAuth, spaceId: String, sendId: String): SyncResult<Unit> {
         calls += "deleteInbox"
+        if (loseDelete) {
+            loseDelete = false
+            return SyncResult.Unreachable("offline")
+        }
         member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
         val s = sends[sendId]?.takeIf { it.to == auth.deviceId || it.from == auth.deviceId } ?: return err(404, SyncErrorCode.NOT_FOUND)
         sends.remove(sendId)

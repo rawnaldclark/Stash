@@ -189,6 +189,18 @@ class WebLibraryImporterTest {
         assertNotNull(db.playlistDao().findBySourceId("custom_web_app-${ids.getValue("drive")}"))
     }
 
+    @Test fun `this phone's playlist renamed since the export is still that playlist, not a duplicate`() = runTest {
+        val ids = fill()
+        val drive = ids.getValue("drive")
+        db.playlistDao().updateName(drive, "Night drive 2026")
+        val file = webFile(
+            """{"id":"app-$drive","name":"Night drive","items":[{"title":"Ivy","artist":"Frank Ocean"},{"title":"Pink + White","artist":"Frank Ocean"},{"title":"Halo","artist":"Beyoncé"}]}""",
+        )
+        importer.import(WebLibraryReader.read(file, T), ImportSelection.ALL, WebLibraryImporter.ORIGIN_FILE)
+        assertEquals(3, db.webLibraryExportDao().playlistItems(drive, 100).size)
+        assertEquals(null, db.playlistDao().findBySourceId("custom_web_app-$drive"))
+    }
+
     @Test fun `a shared mix is followed here, and kept as a copy when the share service is out of reach`() = runTest {
         fill()
         val mix = """{"id":"w9","name":"Sam's mix","items":[{"title":"Halo","artist":"Beyoncé"}],"follow":{"id":"Zz99Yy88","version":2}}"""

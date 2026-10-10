@@ -66,17 +66,18 @@ class StashLikedPlaylistRepository @Inject constructor(
      *
      * @return how many were newly liked.
      */
-    suspend fun addAllFrom(likes: List<Pair<Long, Long>>): Int {
+    suspend fun addAllFrom(likes: List<Pair<Long, Long>>, recount: Boolean = true): Int {
         if (likes.isEmpty()) return 0
         val firstArt = likes.firstNotNullOfOrNull { (id, _) ->
             trackDao.getById(id)?.let { t -> sequenceOf(t.albumArtPath, t.albumArtUrl).firstOrNull { !it.isNullOrBlank() } }
         }
         val playlistId = ensureSeeded(firstArt)
+        // One read of what Liked Songs holds, not one per song (review S1).
+        val active = playlistDao.getCrossRefsForPlaylist(playlistId).filter { it.removedAt == null }.mapTo(HashSet()) { it.trackId }
         var position = playlistDao.getNextPosition(playlistId)
         var added = 0
         for ((trackId, likedAt) in likes.distinctBy { it.first }) {
-            val existing = playlistDao.getCrossRef(playlistId, trackId)
-            if (existing != null && existing.removedAt == null) continue
+            if (trackId in active) continue
             if (trackDao.getById(trackId) == null) continue
             trackDao.likeIfNotAlreadyLiked(trackId, likedAt)
             playlistDao.insertCrossRef(
@@ -88,11 +89,18 @@ class StashLikedPlaylistRepository @Inject constructor(
                     locallyAdded = true,
                 ),
             )
+            active += trackId
             added++
         }
+        if (recount) recount()
+        return added
+    }
+
+    /** Recounts Liked Songs' cached song count (once after a batch of [addAllFrom] calls made with `recount = false`). */
+    suspend fun recount() {
+        val playlistId = playlistDao.findBySourceId(STASH_LIKED_SOURCE_ID)?.id ?: return
         val count = trackDao.getByPlaylist(playlistId, includeStreamable = true).first().size
         playlistDao.updateTrackCount(playlistId, count)
-        return added
     }
 
     /**
