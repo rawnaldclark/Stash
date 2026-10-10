@@ -178,6 +178,28 @@ class MirrorEngineTest {
         assertThat(likeOps(me).last().let { it.s.title to it.on }).isEqualTo("B" to false)
     }
 
+    @Test fun `a like the phone can't hold isn't sent back as an unlike`() = runTest {
+        link()
+        lib.unholdable += "Ghost"
+        likesMirroring()
+        web.post(MirrorOp.Like(song("Ghost"), true, web.at()))
+        run()
+        lib.like(song("Real"))
+        run()
+        assertThat(likeOps(me).filter { !it.on }.map { it.s.title }).isEmpty()
+    }
+
+    @Test fun `a playlist song the phone can't hold isn't sent back as removed`() = runTest {
+        link()
+        lib.unholdable += "Ghost"
+        web.configure(playlists = Dir.BOTH, ids = listOf("m_WebPlaylist00002"))
+        val since = web.head
+        web.post(MirrorOp.Pl("m_WebPlaylist00002", web.at(), null, "Mix", listOf(song("One"), song("Ghost"))), MirrorOp.Joined(Kind.PLAYLISTS, since))
+        run()
+        run()
+        assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>()).isEmpty()
+    }
+
     @Test fun `a stamp more than 10 minutes past its row is skipped`() = runTest {
         link()
         likesMirroring()

@@ -47,7 +47,7 @@ class RoomMirrorLibrary @Inject constructor(
 
     override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long) = io {
         if (on.isNotEmpty()) {
-            val ids = matcher.matchAll(on, phoneOnlyByWords = true).mapNotNull { it?.id }
+            val ids = matcher.matchAll(on, mirror = true).mapNotNull { it?.id }
             for (chunk in ids.chunked(BATCH)) database.withTransaction { liked.addAllFrom(chunk.map { it to at }, recount = false) }
             liked.recount()
         }
@@ -72,7 +72,7 @@ class RoomMirrorLibrary @Inject constructor(
             .mapTo(HashSet()) { PlaysMerge.playId(SongRef(it.title, it.artist, it.isrc), it.startedAt) }
         val fresh = plays.filter { here.add(PlaysMerge.playId(it.s, it.playedAt)) }
         if (fresh.isEmpty()) return@io
-        val rows = matcher.matchAll(fresh.map { it.s }, phoneOnlyByWords = true)
+        val rows = matcher.matchAll(fresh.map { it.s }, mirror = true)
         val events = database.listeningEventDao()
         database.withTransaction {
             fresh.forEachIndexed { i, p ->
@@ -109,7 +109,7 @@ class RoomMirrorLibrary @Inject constructor(
 
     override suspend fun putPlaylist(localId: Long?, mirrorId: String, name: String, items: List<WireSong>): Long = io {
         val playlists = database.playlistDao()
-        val ids = matcher.matchAll(items, phoneOnlyByWords = true).mapNotNull { it?.id }.distinct()
+        val ids = matcher.matchAll(items, mirror = true).mapNotNull { it?.id }.distinct()
         if (ids.size < items.size) Log.i(TAG, "${items.size - ids.size} song(s) of a mirrored playlist have no row here")
         database.withTransaction {
             val existing = localId?.let { playlists.getById(it) }?.takeIf { it.isActive }

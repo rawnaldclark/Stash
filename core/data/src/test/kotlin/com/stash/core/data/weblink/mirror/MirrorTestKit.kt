@@ -25,6 +25,9 @@ class FakeMirrorLibrary : MirrorLibrary {
     val playlists = linkedMapOf<Long, Pl>()
     private var nextId = 100L
 
+    /** Titles this library can't hold (no row could be made for them here). */
+    val unholdable = mutableSetOf<String>()
+
     fun like(s: WireSong, external: Boolean = false) {
         liked.add(0, LikedSong(s, external))
     }
@@ -45,7 +48,7 @@ class FakeMirrorLibrary : MirrorLibrary {
 
     override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long) {
         val idx = SongIndex.of(liked.map { it.s to true })
-        for (s in on) if (!idx.has(s)) {
+        for (s in on) if (!idx.has(s) && s.title !in unholdable) {
             liked.add(0, LikedSong(s))
             idx.add(s, true)
         }
@@ -78,10 +81,10 @@ class FakeMirrorLibrary : MirrorLibrary {
         val p = localId?.let { playlists[it] }
         if (p != null) {
             p.name = name
-            p.items = items
+            p.items = items.filter { it.title !in unholdable }
             return localId
         }
-        return addPlaylist(name, items)
+        return addPlaylist(name, items.filter { it.title !in unholdable })
     }
 
     override suspend fun deletePlaylist(localId: Long) {

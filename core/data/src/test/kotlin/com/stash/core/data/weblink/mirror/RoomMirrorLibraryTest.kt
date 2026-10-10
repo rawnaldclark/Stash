@@ -73,6 +73,12 @@ class RoomMirrorLibraryTest {
         assertThat(lib.likes().single { it.s.title == "New one" }.external).isFalse()
     }
 
+    @Test fun `two songs that share a YouTube id stay two songs (the mirror never likes one in place of the other)`() = runTest {
+        db.trackDao().insert(TrackEntity(title = "Nights", artist = "Frank Ocean", youtubeId = "dQw4w9WgXcQ", stashLikedAt = 5L, isStreamable = true, canonicalTitle = "nights", canonicalArtist = "frank ocean"))
+        lib.setLikes(on = listOf(com.stash.core.data.weblink.handoff.WireSong("Pink + White", "Frank Ocean", refs = mapOf("youtube" to "dQw4w9WgXcQ"))), off = emptyList(), at = 99)
+        assertThat(lib.likes().map { it.s.title }).containsExactly("Nights", "Pink + White")
+    }
+
     @Test fun `plays from another device go to History with their origin, once, and never touch play counts or mix inputs`() = runTest {
         val mine = track("Mine")
         db.listeningEventDao().recordCompletedListen(ListeningEventEntity(trackId = mine, startedAt = 1_000, completedAt = 1_200))

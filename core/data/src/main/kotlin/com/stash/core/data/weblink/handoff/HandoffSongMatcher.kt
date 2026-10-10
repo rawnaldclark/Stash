@@ -31,11 +31,11 @@ class HandoffSongMatcher @Inject constructor(
      * once per batch, not once per song (every library screen re-queries on each invalidation), and the write lock is never
      * held for long. Same result as [match] one by one.
      */
-    suspend fun matchAll(songs: List<WireSong?>, phoneOnlyByWords: Boolean = false): List<TrackEntity?> = withContext(Dispatchers.IO) {
+    suspend fun matchAll(songs: List<WireSong?>, mirror: Boolean = false): List<TrackEntity?> = withContext(Dispatchers.IO) {
         val out = ArrayList<TrackEntity?>(songs.size)
         for (chunk in songs.chunked(BATCH)) {
             val rows = try {
-                database.withTransaction { chunk.map { s -> s?.let { matchOne(it, phoneOnlyByWords) } } }
+                database.withTransaction { chunk.map { s -> s?.let { matchOne(it, mirror) } } }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -59,16 +59,30 @@ class HandoffSongMatcher @Inject constructor(
     }
 
     /**
-     * [phoneOnlyByWords]: a `phoneOnly` song is this phone's own file (a mirrored playlist names it), found by its words, never
-     * made; without it, a `phoneOnly` song has no row here (a handoff leaves it out).
+     * [mirror]: the stricter matching a mirrored like, play or playlist needs (link-sync spec §3, sync-v1 §2.2). A `phoneOnly` song
+     * is this phone's own file, found by its words, never made. A row found by a YouTube or Spotify id is taken only when it is
+     * the same song by sync-v1 identity: two songs that share a video (a remaster and its original, a placeholder id) must stay
+     * two songs, or one would stand in for the other and the mirror would send the missing one back as removed. A song whose
+     * ids belong to another song gets a row of its own, without those ids (it resolves by its words when played).
+     * Without [mirror], a `phoneOnly` song has no row here (a handoff leaves it out).
      */
-    private suspend fun matchOne(song: WireSong, phoneOnlyByWords: Boolean = false): TrackEntity? {
-        if (song.phoneOnly) return if (phoneOnlyByWords) byWords(song) else null
-        return song.isrc?.let { trackDao.findByIsrc(it) }
-            ?: song.youtubeId?.let { trackDao.findByYoutubeId(it) }
-            ?: song.spotifyId?.let { trackDao.findBySpotifyUri("spotify:track:$it") }
-            ?: byWords(song)
-            ?: trackDao.getById(musicRepository.ensureExactTrackPersisted(song.toSharedTrack()))
+    private suspend fun matchOne(song: WireSong, mirror: Boolean = false): TrackEntity? {
+        if (song.phoneOnly) return if (mirror) byWords(song) else null
+        if (!mirror) {
+            return song.isrc?.let { trackDao.findByIsrc(it) }
+                ?: song.youtubeId?.let { trackDao.findByYoutubeId(it) }
+                ?: song.spotifyId?.let { trackDao.findBySpotifyUri("spotify:track:$it") }
+                ?: byWords(song)
+                ?: trackDao.getById(musicRepository.ensureExactTrackPersisted(song.toSharedTrack()))
+        }
+        fun agrees(t: TrackEntity?) = t?.takeIf { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
+        song.isrc?.let { trackDao.findByIsrc(it) }?.let { return it } // one ISRC is one recording
+        agrees(song.youtubeId?.let { trackDao.findByYoutubeId(it) })?.let { return it }
+        agrees(song.spotifyId?.let { trackDao.findBySpotifyUri("spotify:track:$it") })?.let { return it }
+        byWords(song)?.let { return it }
+        agrees(trackDao.getById(musicRepository.ensureExactTrackPersisted(song.toSharedTrack())))?.let { return it }
+        // Its ids already name another song here: a row of its own, by its words (and ISRC) only.
+        return agrees(trackDao.getById(musicRepository.ensureExactTrackPersisted(song.copy(refs = emptyMap(), spotifyId = null).toSharedTrack())))
     }
 
     /** The library's row with the same words, checked with sync-v1 identity (an ISRC on both sides must agree). */

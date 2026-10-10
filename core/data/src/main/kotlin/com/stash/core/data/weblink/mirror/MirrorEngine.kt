@@ -33,6 +33,8 @@ import com.stash.core.model.weblink.SongIndex
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -195,7 +197,10 @@ class MirrorEngine internal constructor(
 
     // -------------------------------------------------------------------------------------------- the run
 
-    private suspend fun attempt(op: (suspend (Ctx) -> Unit)?): MirrorRun = mutex.withLock {
+    private suspend fun attempt(op: (suspend (Ctx) -> Unit)?): MirrorRun = withContext(Dispatchers.IO) { mutex.withLock { attemptLocked(op) } }
+
+    /** Sealing, gzip, JSON and the library work run on IO, never on the caller's (often the main) thread. */
+    private suspend fun attemptLocked(op: (suspend (Ctx) -> Unit)?): MirrorRun {
         _status.update { it.copy(busy = true) }
         try {
             val result = run(op)
@@ -206,7 +211,7 @@ class MirrorEngine internal constructor(
                     linked = result != MirrorRun.NotLinked,
                 )
             }
-            result
+            return result
         } finally {
             _status.update { it.copy(busy = false) }
         }
@@ -581,6 +586,21 @@ class MirrorEngine internal constructor(
         val on = touched.filterKeys { recs[it].on }.values.toList()
         val off = touched.filterKeys { !recs[it].on }.values.toList()
         if (on.isNotEmpty() || off.isNotEmpty()) lib.setLikes(on, off, wall(c))
+        settleUnheld(c, on)
+    }
+
+    /**
+     * Likes this phone couldn't take (no row could hold the song here) must not look like unlikes made here: their base records
+     * say `on: false`, so the next diff doesn't send them back as removed.
+     */
+    private suspend fun settleUnheld(c: Ctx, on: List<WireSong>) {
+        if (on.isEmpty()) return
+        val held = SongIndex.of(lib.likes().map { it.s to true })
+        val missing = on.filter { !held.has(it) }
+        if (missing.isEmpty()) return
+        val miss = SongIndex.of(missing.map { it to true })
+        c.r.baseLikes = c.r.baseLikes.map { if (it.on && miss.has(it.s)) it.copy(on = false) else it }
+        Log.w(TAG, "${missing.size} mirrored like(s) couldn't be held here")
     }
 
     private fun BasePl.version() = PlVersion(name, items, at, follow?.follow(), ro)
@@ -602,6 +622,7 @@ class MirrorEngine internal constructor(
         val base = r.basePlaylists[op.id]?.version()
         val remote = PlVersion(op.name, op.items, op.at, op.follow, op.ro)
         val res = PlaylistMerge.merge(phone = true, base = base, local = local, localHash = localHash, remote = remote, parent = op.parent, fromPhone = false)
+        var held: LocalVersion? = null
         if (res.action == PlaylistMerge.Action.TAKE || res.action == PlaylistMerge.Action.MERGE) {
             val v = res.local
             val mapped = r.map[op.id]
@@ -613,10 +634,20 @@ class MirrorEngine internal constructor(
             } else {
                 val id = lib.putPlaylist(mapped?.localId, op.id, v.name, v.items)
                 r.map = r.map + (op.id to MappedPl(id, FollowRec.of(v.follow)))
+                held = lib.playlist(id)
             }
         }
         if (res.base === base) return // an ignored read-only op keeps the old base
-        val nb = res.base
+        // Songs this phone couldn't hold (no row for them here) mustn't go back as removed: the base is what it holds.
+        val nb = res.base?.let { b ->
+            val h = held
+            if (h != null && b.items != null && res.local?.items != null && !PlaylistMerge.sameVersion(PlVersion(h.name, h.items, b.at, b.follow), PlVersion(res.local!!.name, res.local!!.items, b.at, b.follow))) {
+                Log.w(TAG, "a mirrored playlist lost ${res.local!!.items!!.size - h.items.size} song(s) here")
+                b.copy(name = h.name, items = h.items)
+            } else {
+                b
+            }
+        }
         r.basePlaylists = if (nb == null) {
             r.basePlaylists - op.id
         } else {
@@ -720,12 +751,14 @@ class MirrorEngine internal constructor(
         val hereIdx = SongIndex.of(here.map { it.s to it })
         val thereIdx = SongIndex.of(there.map { it to true })
         val at = wall(c)
+        val taken = there.filter { !hereIdx.has(it) }
         when (choice) {
-            FirstMergeChoice.COMBINE -> lib.setLikes(there.filter { !hereIdx.has(it) }, emptyList(), at)
-            FirstMergeChoice.THEIRS -> lib.setLikes(there.filter { !hereIdx.has(it) }, here.filter { !thereIdx.has(it.s) }.map { it.s }, at)
+            FirstMergeChoice.COMBINE -> lib.setLikes(taken, emptyList(), at)
+            FirstMergeChoice.THEIRS -> lib.setLikes(taken, here.filter { !thereIdx.has(it.s) }.map { it.s }, at)
             FirstMergeChoice.MINE -> Unit // the library stays; the diff sends this phone's likes and an unlike for each extra there
         }
         r.baseLikes = view.likes.map { BaseLike(it.s, it.on, it.at) }
+        if (choice != FirstMergeChoice.MINE) settleUnheld(c, taken)
         if (choice == FirstMergeChoice.THEIRS) {
             // Liked here only through Spotify / YouTube Music: a mirror can't un-like there, so they stay liked here, and the base
             // says `on: false` so they aren't sent back as likes (sync-v1 §7.1).
