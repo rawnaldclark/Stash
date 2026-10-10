@@ -424,6 +424,38 @@ class MirrorEngineTest {
         assertThat(likeOps(me).none { !it.on }).isTrue()
     }
 
+    @Test fun `L-N5 - Use this phone's, a push cut short after its first batch, then the retry sends the rest unheld once`() = runTest {
+        link()
+        lib.like(song("Mine"))
+        web.configure(likes = Dir.BOTH)
+        val since = web.head
+        val rnd = java.util.Random(11)
+        val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        fun word() = (1..24).map { chars[rnd.nextInt(62)] }.joinToString("")
+        val n = 20_000
+        web.post(*(0 until n).map { MirrorOp.Like(song(word(), word()), true, web.at()) }.toTypedArray(), MirrorOp.Joined(Kind.LIKES, since))
+        run()
+        val q = engine.status.value.question!!
+        server.failPostsAfter = 1
+        engine.answer(FirstMergeChoice.MINE, q)
+        val first = likeOps(me).count { !it.on }
+        assertThat(first).isGreaterThan(0) // the first batch landed...
+        assertThat(first).isLessThan(n) // ...and the rest didn't
+        server.failPostsAfter = null
+        assertThat(run()).isEqualTo(MirrorRun.Done)
+        // The retry sends the rest under the consent given, nothing twice, nothing held.
+        assertThat(engine.status.value.heldRemovals).isEqualTo(0)
+        val offs = likeOps(me).filter { !it.on }.map { it.s.title }
+        assertThat(offs).hasSize(n)
+        assertThat(offs.toSet()).hasSize(n)
+        // The consent is spent: a later mass removal is held.
+        repeat(MirrorEngine.MASS_REMOVALS) { lib.like(song("Again $it")) }
+        run()
+        repeat(MirrorEngine.MASS_REMOVALS) { lib.unlike(song("Again $it")) }
+        run()
+        assertThat(engine.status.value.heldRemovals).isEqualTo(MirrorEngine.MASS_REMOVALS)
+    }
+
     @Test fun `R-N1 R-N2 - the answer binds to the counts shown, and a re-ask says the likes changed`() = runTest {
         link()
         browserTurnsLikesOn()

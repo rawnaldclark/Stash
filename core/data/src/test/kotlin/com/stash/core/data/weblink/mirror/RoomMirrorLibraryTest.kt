@@ -196,6 +196,29 @@ class RoomMirrorLibraryTest {
         assertThat(lib.ownPlays(0).map { it.s.title }).containsExactly("Something Else")
     }
 
+    @Test fun `L-N5 - a deleted row's alias is pruned`() = runTest {
+        val store = MemoryAliasStore()
+        val lib = RoomMirrorLibrary(db, HandoffSongMatcher(db.trackDao(), music, db), StashLikedPlaylistRepository(db.playlistDao(), db.trackDao(), music), store)
+        val a = rowA()
+        lib.addPlays(listOf(PlayRec(variant, 5_000, "d_web000000000001")))
+        assertThat(store.keys()).containsExactly(a)
+        db.query("DELETE FROM listening_events", null).use { it.moveToFirst() }
+        db.trackDao().delete(db.trackDao().getById(a)!!)
+        lib.setLikes(on = listOf(com.stash.core.data.weblink.handoff.WireSong("Other", "Someone")), off = emptyList(), at = 3)
+        assertThat(store.keys()).isEmpty()
+    }
+
+    @Test fun `L-N5 - a variant listed before the original takes a row with no history, the original gets its own`() = runTest {
+        val a = rowA()
+        val put = lib.putPlaylist(null, "m_EEEEEEEEEEEEEEEE", "Mix", listOf(variant, own))
+        assertThat(put.held).containsExactly(true, true).inOrder()
+        assertThat(lib.playlist(put.id)!!.items.map { it.title }).containsExactly("Song A - Remastered 2011", "Song A").inOrder()
+        val rows = db.playlistDao().getOrderedTrackIdsForPlaylist(put.id)
+        assertThat(rows.first()).isEqualTo(a) // the variant took the row and its video
+        assertThat(db.trackDao().getById(rows.last())!!.youtubeId).isNull() // the original: a row of its own, no id taken
+        assertThat(trackCount()).isEqualTo(2)
+    }
+
     @Test fun `plays from another device go to History with their origin, once, and never touch play counts or mix inputs`() = runTest {
         val mine = track("Mine")
         db.listeningEventDao().recordCompletedListen(ListeningEventEntity(trackId = mine, startedAt = 1_000, completedAt = 1_200))
