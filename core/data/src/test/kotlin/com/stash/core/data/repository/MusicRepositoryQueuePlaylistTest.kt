@@ -565,6 +565,21 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(WorkInfo.State.RUNNING, drains().single { it.id == id }.state)
     }
 
+    /**
+     * Final check F-N3: a mirror run landing during a long cascade must see the playlist as gone, not as a shrinking list it
+     * would push (the mirror reads only active playlists), so the playlist is switched off before its first song is unlinked.
+     */
+    @Test fun `a cascade delete hides the playlist before it unlinks any song`() = runTest {
+        val p = playlist("Big")
+        repeat(3) { member(p, it, track("S$it")) }
+        val w = db.openHelper.writableDatabase
+        w.execSQL("CREATE TEMP TABLE seen (active INTEGER)")
+        w.execSQL("CREATE TEMP TRIGGER watch BEFORE DELETE ON playlist_tracks BEGIN INSERT INTO seen SELECT is_active FROM playlists WHERE id = OLD.playlist_id; END")
+        repo().deletePlaylistWithCascade(p, alsoBlacklist = false)
+        val seen = w.query("SELECT active FROM seen").use { c -> buildList { while (c.moveToNext()) add(c.getInt(0)) } }
+        assertEquals(listOf(0, 0, 0), seen)
+    }
+
     private suspend fun playlist(
         name: String,
         keepOffline: Boolean = false,

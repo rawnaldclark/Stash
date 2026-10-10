@@ -1183,6 +1183,10 @@ class MusicRepositoryImpl @Inject constructor(
             }
         }
 
+        // Hidden before the first song is unlinked: a mirror run landing during a long cascade
+        // then sees the playlist gone, never a shorter list to send (final check F-N3).
+        playlistDao.setActiveById(playlistId, false)
+
         var deleted = 0
         var keptProtected = 0
         var keptElsewhere = 0
