@@ -337,6 +337,20 @@
 				"c": "qOreWfZ5SKlrHE-h0j7p-5GddAzzTYTi8fsErEd-gSvHpP7yTBxkXLFi49WFPITjxcbbt5I_AVEkrGpPlVRATjhj9TIgfF6h9pj-3DHf6RmUlV661AJXw7awSr4tVatZgO4ULLshhPqfAL457pm1ZpMlngxr4ZZKDd0VuX7cAWeAp0VFCF_aPh2uC7yV4oNYGUQYV9_H38b-lQMHhP0pF4xo"
 			}
 		},
+		"confirm": {
+			"spaceId": "pair",
+			"epoch": 0,
+			"place": "reply:xWbdvdFfe2P04fdKEQpCLg",
+			"aad": "stash-sync/1|pair|0|reply:xWbdvdFfe2P04fdKEQpCLg",
+			"nonce": "8fLz9PX29_j5-vv8",
+			"json": "{\"kind\":\"stash-pair-reply\",\"v\":1}",
+			"gz": "H4sIAAAAAAAC_6tWys7MS1GyUiouSSzO0C1IzCzSLUotyKlU0lEqU7IyrAUA6y52TiEAAAA",
+			"env": {
+				"e": 0,
+				"n": "8fLz9PX29_j5-vv8",
+				"c": "7yr45YwJ6ANrni85HUAVAxFIn5BMeH4ldXHtCF_vazxZ12JVvGDE6XEfxZDWsdYqyv3sOS2wP8Gav4F9kqiDDbYEwdE9"
+			}
+		},
 		"phoneDevicePub": "BBdjIeEPSTApSoaNRyN46xXk8hg1FoQuw0Urd273Hyy0Tn1CEjdbpAe9WvsHE1CvqoQmH5_fHofskojQtW7EA6c",
 		"browserDevicePub": "BD8oLUkNslgGNdOBtXtewnhY6nwdZiNsq0rdY1iMoDzMQ23k_WlGxgadiudWqJz9OLTwDyut5AUTjrCITrDcJwU"
 	},

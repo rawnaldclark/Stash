@@ -186,8 +186,27 @@ class SyncCryptoTest {
         assertThat(b64(read.label.pub)).isEqualTo(p["phoneDevicePub"].s)
         assertThat(read.space!!.id).isEqualTo(v["space"]["spaceId"].s)
         assertThat(b64(read.space!!.k)).isEqualTo(v["space"]["k"].s)
-        assertThat(SyncKeys.readPairReply(SyncCrypto.open(kPhone, "pair", "reply:${p["pairId"].s}", env(p["reply"]["env"]))).epoch).isEqualTo(1)
+        assertThat(SyncKeys.readPairReply(SyncCrypto.open(kPhone, "pair", "reply:${p["pairId"].s}", env(p["reply"]["env"])))!!.epoch).isEqualTo(1)
+        val confirm = p["confirm"]
+        assertThat(b64(SyncCrypto.aesSeal(kBrowser, b(confirm["nonce"]), confirm["aad"].s, b(confirm["gz"])))).isEqualTo(confirm["env"]["c"].s)
+        assertThat(SyncKeys.readPairReply(SyncCrypto.open(kPhone, "pair", "reply:${p["pairId"].s}", env(confirm["env"])))).isNull()
         assertThrows(SyncCryptoException::class.java) { SyncCrypto.open(kBrowser, "pair", "answer:AAAAAAAAAAAAAAAAAAAAAA", env(answer["env"])) }
+    }
+
+    @Test fun `pairing - R7 - a browser label swapped by a QR photographer and the server never gets the phone to join or pin it`() {
+        val p = v["pairing"]
+        val eBPub = b(p["browserEphemeral"]["pub"])
+        val ePPub = b(p["phoneEphemeral"]["pub"])
+        val browserId = "d_B3mV6cYh1sJd0Ga5"
+        // The attacker knows pairSecret and eB.pub (the photo) and serves the phone a browser label with the real id and its own key.
+        val attacker = SyncCrypto.rawPublicKey(SyncCrypto.newKeyPair().public as ECPublicKey)
+        val labelKey = SyncKeys.pairLabelKey(b(p["pairSecret"]))
+        val served = SyncCrypto.seal(labelKey, "pair", 0, "label:$browserId", SyncKeys.labelJson(SyncKeys.Label("Chrome on Windows", "web", browserId, attacker)))
+        val seen = SyncKeys.readLabel(SyncCrypto.open(labelKey, "pair", "label:$browserId", served), browserId)
+        val eP = SyncCrypto.privateKey(b(p["phoneEphemeral"]["d"]))
+        val kPhone = SyncKeys.pairKey(eP, eBPub, b(p["pairSecret"]), p["pairId"].s, eBPub, ePPub, seen.deviceId, seen.pub)
+        // The real browser's confirmation doesn't open under the phone's Kpair: no join, no re-seal, no pin.
+        assertThrows(SyncCryptoException::class.java) { SyncCrypto.open(kPhone, "pair", "reply:${p["pairId"].s}", env(p["confirm"]["env"])) }
     }
 
     @Test fun `pairing - a granted space is checked - id form, key length, epoch`() {

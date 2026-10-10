@@ -178,12 +178,17 @@ object SyncKeys {
         return PairAnswer(label, space)
     }
 
-    /** A `stash-pair-reply` read back. */
-    fun readPairReply(text: String): SpaceGrant {
+    /**
+     * A `stash-pair-reply` read back: the browser's confirmation, posted in every pairing once its user checked the code, with a
+     * space only when the browser grants its own (null otherwise). That it opens at all under the phone's Kpair is the proof the
+     * phone waits for before it joins, creates, re-seals or pins anything: a browser label swapped in the slot gives the phone
+     * another Kpair.
+     */
+    fun readPairReply(text: String): SpaceGrant? {
         val d = parseObject(text, "bad reply")
         if (d.str("kind") != "stash-pair-reply") bad("bad reply")
         if (d.int("v") != 1L) bad("newer reply")
-        return readSpaceGrant(d["space"])
+        return d["space"].takeUnless { it == null || it is JsonNull }?.let(::readSpaceGrant)
     }
 
     // -------------------------------------------------------------------------------------------- key rotation (spec §5.2)
