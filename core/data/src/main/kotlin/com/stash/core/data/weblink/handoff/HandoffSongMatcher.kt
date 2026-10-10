@@ -65,7 +65,8 @@ fun WireSong.toSharedTrack() = SharedTrack(
     isrc = isrc,
     spotifyId = spotifyId,
     youtubeId = youtubeId?.takeIf { YOUTUBE_ID.matches(it) },
-    artUrl = artwork.firstOrNull { ShareConfig.isAllowedCover(it) },
+    // The web lists covers smallest first; the largest allowed one (the phone shows it full screen).
+    artUrl = artwork.lastOrNull { ShareConfig.isAllowedCover(it) },
 )
 
 private val YOUTUBE_ID = Regex("^[A-Za-z0-9_-]{11}$")

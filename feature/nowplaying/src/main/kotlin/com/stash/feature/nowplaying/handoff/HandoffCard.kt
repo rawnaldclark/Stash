@@ -135,7 +135,8 @@ private fun OfferCard(offer: HandoffOffer, onContinue: () -> Unit, onDismiss: ()
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            val art = offer.song.artwork.firstOrNull()
+            // The web lists covers smallest first: a middle one is sharp at 44 dp without the biggest download.
+            val art = offer.song.artwork.getOrNull(offer.song.artwork.size / 2)
             if (art != null) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current).data(art).build(),
@@ -157,19 +158,27 @@ private fun OfferCard(offer: HandoffOffer, onContinue: () -> Unit, onDismiss: ()
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(offer.song.title) }
-                        append(" · ")
-                        append(offer.song.artist)
-                        append(" · ")
-                        append(clock(position))
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // The position never ellipsizes: a long title or artist gives way first.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(offer.song.title) }
+                            append(" · ")
+                            append(offer.song.artist)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Text(
+                        " · " + clock(position),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                    )
+                }
             }
             FilledIconButton(
                 onClick = onContinue,
