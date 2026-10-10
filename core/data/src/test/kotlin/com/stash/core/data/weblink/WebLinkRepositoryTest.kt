@@ -78,6 +78,46 @@ class WebLinkRepositoryTest {
         assertThat(SyncCrypto.open(SyncCrypto.dataKey(after.k, sp.spaceId), sp.spaceId, SyncCrypto.Place.CONFIG, env)).isEqualTo(config)
     }
 
+    @Test fun `a config nobody can open doesn't block the rotation - the default goes in its place`() = runTest {
+        link("Chrome on Windows")
+        val gone = link("Firefox on Mac")
+        val sp = store.space()!!
+        // Valid AES-GCM under K, but not JSON: a buggy or hostile writer.
+        server.spaces.getValue(sp.spaceId).config =
+            ConfigSlot("d_x", 1, SyncCrypto.seal(SyncCrypto.dataKey(sp.k, sp.spaceId), sp.spaceId, 1, SyncCrypto.Place.CONFIG, "not json"))
+
+        assertThat(repo.remove(gone.deviceId)).isEqualTo(WebLinkResult.Ok)
+        val after = store.space()!!
+        assertThat(after.epoch).isEqualTo(2)
+        val text = SyncCrypto.open(SyncCrypto.dataKey(after.k, sp.spaceId), sp.spaceId, SyncCrypto.Place.CONFIG, server.lastRotate!!.config!!)
+        assertThat(text).contains("\"kind\":\"stash-mirror-config\"")
+        assertThat(text).contains("\"likes\":{\"dir\":\"off\"}")
+        assertThat(text).contains(store.identity()!!.deviceId)
+    }
+
+    @Test fun `a passing Keystore failure keeps the link and reports it, never crashes`() = runTest {
+        link("Chrome on Windows")
+        val wipes = store.wiped
+        store.failReads = true
+        val r = repo.refresh()
+        assertThat(r).isEqualTo(WebLinkResult.Failed(WebLinkCopy.STORE_BUSY))
+        store.failReads = false
+        assertThat(store.space()).isNotNull()
+        assertThat(store.wiped).isEqualTo(wipes)
+    }
+
+    @Test fun `a device key that is definitely gone unlinks, and the phone removes itself on the server`() = runTest {
+        link("Chrome on Windows")
+        val sp = store.space()!!
+        val me = store.identity()!!.deviceId
+        val wipes = store.wiped
+        store.keyGone = true
+        assertThat(repo.refresh()).isEqualTo(WebLinkResult.Ok)
+        assertThat(repo.status.value).isEqualTo(WebLinkStatus.NotLinked)
+        assertThat(store.wiped).isEqualTo(wipes + 1)
+        assertThat(server.spaces.getValue(sp.spaceId).devices.keys).doesNotContain(me)
+    }
+
     @Test fun `a changed device set during the rotation is re-read and retried`() = runTest {
         link("Chrome on Windows")
         val gone = link("Firefox on Mac")

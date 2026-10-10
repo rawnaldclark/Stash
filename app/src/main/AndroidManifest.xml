@@ -8,9 +8,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Link Stash on the web: scanning the pairing code. Asked only when the scanner opens. -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!--
+        Link Stash on the web's camera permission (scanning the pairing code) lives in src/debug/AndroidManifest.xml while the
+        feature is behind its build flag, so a release build asks for no camera. Move it here when the feature ships.
+    -->
     <!--
         largeHeap: MITIGATION for the v0.9.73 OOM reports (#238/#239) — users
         exhaust the default 256MB Java heap ("<1% free after GC"). Doubles the
@@ -21,6 +22,7 @@
         android:name=".StashApplication"
         android:allowBackup="false"
         android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
