@@ -191,6 +191,12 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var kennyyHealthProbe: KennyyHealthProbe
 
+    @Inject
+    lateinit var handoffOffers: com.stash.core.media.handoff.HandoffOffers
+
+    @Inject
+    lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
+
     /**
      * The signed runtime relay list — the APK ships no relay hostname. Started
      * from [onCreate]: loads the cached config, then fetches and signature-checks
@@ -291,6 +297,8 @@ class StashApplication : Application(), Configuration.Provider {
                     // start (Pixel 6, 2026-09-06). Reconnect while the user is still
                     // looking, so the first tap after coming back starts at once.
                     playerRepository.warmUp()
+                    // Link Stash on the web: is another device's song waiting to be continued here? (at most every 30 s)
+                    handoffOffers.onForeground()
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
@@ -299,6 +307,8 @@ class StashApplication : Application(), Configuration.Provider {
                     // The BotGuard WebView is ~50 MB; drop it while backgrounded, it
                     // rebuilds on the next play (or the next onStart pre-warm).
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
+                    // Link Stash on the web: what plays goes out now, so a browser opened next sees it (spec §8.1).
+                    handoffPublisher.onBackground()
                 }
             },
         )

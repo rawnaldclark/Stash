@@ -31,6 +31,11 @@ data class PlayerState(
     /** What this queue is playing FROM (a playlist, artist, library shuffle,
      *  radio station, etc.) — shown in Now Playing and persisted for resume. */
     val source: PlaybackSource = PlaybackSource.Unknown,
+    /**
+     * With shuffle on: row i of [queue] (the play order) is timeline slot `shuffleTimelineSlots[i]`, so the
+     * unshuffled order is the rows sorted by slot. Null when shuffle is off. Handoff publishes it as `original`.
+     */
+    val shuffleTimelineSlots: List<Int>? = null,
 )
 
 enum class RepeatMode {

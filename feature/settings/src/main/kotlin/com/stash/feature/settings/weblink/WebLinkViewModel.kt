@@ -8,6 +8,7 @@ import com.stash.core.data.weblink.PairingState
 import com.stash.core.data.weblink.WebLinkRepository
 import com.stash.core.data.weblink.WebLinkResult
 import com.stash.core.data.weblink.WebLinkStatus
+import com.stash.core.data.weblink.handoff.HandoffPrefs
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -26,11 +27,17 @@ class WebLinkViewModel @Inject constructor(
     private val repo: WebLinkRepository,
     pairingFactory: PairingSessionFactory,
     private val savedState: SavedStateHandle,
+    private val handoffPrefs: HandoffPrefs,
 ) : ViewModel() {
     private val session = pairingFactory.create()
 
     val status: StateFlow<WebLinkStatus> = repo.status
     val pairing: StateFlow<PairingState> = session.state
+
+    /** "Pick up where you left off" (spec §2.5): on by default once linked. */
+    val handoffEnabled: StateFlow<Boolean> = handoffPrefs.enabled
+
+    fun setHandoffEnabled(on: Boolean) = handoffPrefs.setEnabled(on)
 
     /** "Unlinked from Chrome on Windows." (once), or the result of an action that failed. */
     private val _message = MutableStateFlow<String?>(null)

@@ -3,6 +3,8 @@ package com.stash.core.data.weblink
 import android.content.Context
 import android.os.Build
 import androidx.room.Room
+import com.stash.core.data.weblink.handoff.HandoffChannel
+import com.stash.core.data.weblink.handoff.HandoffSync
 import com.stash.core.data.weblink.store.AndroidWebLinkStore
 import com.stash.core.data.weblink.store.SyncDatabase
 import com.stash.core.data.weblink.store.WebLinkStore
@@ -22,6 +24,8 @@ abstract class WebLinkModule {
     @Binds abstract fun bindSyncApi(impl: SyncApiClient): SyncApi
 
     @Binds abstract fun bindWebLinkStore(impl: AndroidWebLinkStore): WebLinkStore
+
+    @Binds abstract fun bindHandoffChannel(impl: HandoffSync): HandoffChannel
 
     companion object {
         @Provides

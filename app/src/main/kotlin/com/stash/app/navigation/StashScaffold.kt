@@ -204,6 +204,9 @@ fun StashScaffold(
                         enter = fadeIn(),
                         exit = fadeOut(),
                     ) {
+                      Column {
+                        // "Continue from Chrome on Windows" (link-sync spec §2.5): above the mini player, never on Now Playing.
+                        com.stash.feature.nowplaying.handoff.HandoffCard()
                         MiniPlayer(
                             onExpand = {
                                 // Return to an existing Now Playing entry instead
@@ -222,6 +225,7 @@ fun StashScaffold(
                                 }
                             },
                         )
+                      }
                     }
 
                     // Now Playing is a full-screen player: the tab bar slides away while it

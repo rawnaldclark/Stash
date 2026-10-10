@@ -159,6 +159,14 @@ interface PlayerRepository {
     suspend fun loadRestoredQueue(): Boolean = false
 
     /**
+     * "Pick up where you left off" (link-sync spec §8.3): replaces the queue with one continued from a linked browser.
+     * [plan]'s first songs play at once from its position; the rest is matched in the background and put around them
+     * without interrupting, with the other device's shuffle order and repeat. False when the player can't take it now
+     * (no controller, a Listen Together session).
+     */
+    suspend fun restoreHandoff(plan: com.stash.core.media.handoff.HandoffQueuePlan): Boolean = false
+
+    /**
      * v0.9.14: Replace the queue with a freshly-shuffled snapshot of the
      * user's entire downloaded library, begin playback, and arm the
      * auto-grow watcher so the queue refills from the unused remainder
