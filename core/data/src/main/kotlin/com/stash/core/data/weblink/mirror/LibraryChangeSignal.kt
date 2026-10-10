@@ -23,7 +23,8 @@ import kotlinx.coroutines.launch
  * playlist editor) instead of a dozen call sites. Room's invalidations of `tracks`, `playlists`, `playlist_tracks` and
  * `listening_events`, debounced 5 s, then a cheap digest of only the kinds that mirror: a run is asked for only when it moved
  * (a play count going up during playback moves `tracks` but no digest, so it costs nothing). Plus the app coming to the
- * foreground (at most once a minute) and the 6-hour periodic run while mirroring is on. Nothing at all while nothing mirrors.
+ * foreground while linked (at most once a minute) and the 6-hour periodic run while mirroring is on. No background work while
+ * nothing mirrors.
  */
 @OptIn(FlowPreview::class)
 class MirrorTriggers internal constructor(
@@ -67,14 +68,17 @@ class MirrorTriggers internal constructor(
         }
     }
 
-    /** The app came to the foreground: a run, at most once a minute, only while something mirrors. */
+    /**
+     * The app came to the foreground: a run, at most once a minute, while linked (also with every kind off: that run is how this
+     * phone learns that a browser turned mirroring on, and with nothing on it only reads the settings and the log).
+     */
     fun onForeground() {
         val t = clock()
         if (t - lastForeground < FOREGROUND_GAP_MS) return
         lastForeground = t
         scope.launch {
-            if (status.value.config == null) guard { load() }
-            if (mirroring) scheduler.now()
+            if (!status.value.linked) guard { load() }
+            if (status.value.linked) scheduler.now()
         }
     }
 

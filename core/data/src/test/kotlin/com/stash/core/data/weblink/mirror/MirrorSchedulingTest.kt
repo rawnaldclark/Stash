@@ -125,7 +125,7 @@ class MirrorSchedulingTest {
         scope.cancel()
     }
 
-    @Test fun `nothing runs while nothing mirrors, and the foreground asks at most once a minute`() = runTest {
+    @Test fun `no background run while nothing mirrors, and the foreground asks at most once a minute while linked`() = runTest {
         val scope = TestScope(StandardTestDispatcher(testScheduler))
         val status = MutableStateFlow(MirrorStatus(linked = true, config = MirrorConfig.off(Hlc(1, 0, "d_00000000"))))
         val inv = MutableSharedFlow<Unit>(extraBufferCapacity = 16)
@@ -138,15 +138,23 @@ class MirrorSchedulingTest {
         t.onForeground()
         scope.runCurrent()
         assertThat(rec.changed).isEqualTo(0)
-        assertThat(rec.now).isEqualTo(0)
         assertThat(rec.periodic.last()).isFalse()
+        // Linked with every kind off: the foreground still reads the settings (a browser may have turned a kind on).
+        assertThat(rec.now).isEqualTo(1)
 
         status.value = on
+        t.onForeground() // within the minute: nothing
         scope.advanceTimeBy(MirrorTriggers.FOREGROUND_GAP_MS)
         t.onForeground()
         t.onForeground()
         scope.runCurrent()
-        assertThat(rec.now).isEqualTo(1)
+        assertThat(rec.now).isEqualTo(2)
+
+        status.value = MirrorStatus(linked = false)
+        scope.advanceTimeBy(MirrorTriggers.FOREGROUND_GAP_MS)
+        t.onForeground()
+        scope.runCurrent()
+        assertThat(rec.now).isEqualTo(2)
         scope.cancel()
     }
 

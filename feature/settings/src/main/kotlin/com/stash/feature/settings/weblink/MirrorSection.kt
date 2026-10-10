@@ -78,7 +78,7 @@ class MirrorViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             engine.load()
-            if (engine.status.value.config?.anyOn == true) engine.sync()
+            if (engine.status.value.linked) engine.sync() // also learns a kind a browser just turned on
         }
     }
 
