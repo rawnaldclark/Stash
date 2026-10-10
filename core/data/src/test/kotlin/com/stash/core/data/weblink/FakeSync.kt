@@ -249,6 +249,56 @@ class FakeSyncServer : SyncApi {
         member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
         return handoffSlots["queue:$deviceId"]?.let { SyncResult.Ok(it) } ?: err(404, SyncErrorCode.NOT_FOUND)
     }
+
+    /** One-off sends: sendId → (to, from, count, parts by index, serverAt). */
+    class Send(val to: String, val from: String, val count: Int, val serverAt: Long) {
+        val parts = HashMap<Int, SyncEnvelope>()
+    }
+
+    val sends = LinkedHashMap<String, Send>()
+
+    /** Sends waiting per device before `409 inbox_full` (the Worker's is 8). */
+    var sendsPerDevice = 8
+
+    override suspend fun putInbox(auth: DeviceAuth, spaceId: String, to: String, sendId: String, part: Int, count: Int, env: SyncEnvelope): SyncResult<InboxPut> {
+        calls += "putInbox:$part/$count"
+        forced("putInbox")?.let { return it }
+        val (space, me) = member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        if (space.rotationDue) return err(409, SyncErrorCode.ROTATION_DUE)
+        if (env.e != space.epoch) return err(409, SyncErrorCode.EPOCH)
+        if (count !in 1..16 || part !in 0 until count || to == me.id) return err(400, SyncErrorCode.BAD_REQUEST)
+        if (to !in space.devices) return err(404, SyncErrorCode.NOT_FOUND)
+        val s = sends[sendId]
+        if (s == null && sends.values.count { it.to == to } >= sendsPerDevice) return err(409, "inbox_full")
+        val send = s ?: Send(to, me.id, count, clock).also { sends[sendId] = it }
+        if (send.to != to || send.from != me.id || send.count != count) return err(409, SyncErrorCode.EXISTS)
+        send.parts[part] = env
+        return SyncResult.Ok(InboxPut(send.parts.size == count))
+    }
+
+    override suspend fun inbox(auth: DeviceAuth, spaceId: String): SyncResult<InboxList> {
+        calls += "inbox"
+        member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        val mine = sends.filter { (_, s) -> s.to == auth.deviceId && s.parts.size == s.count }
+            .map { (id, s) -> InboxListing(id, s.from, s.count, 0, s.serverAt) }.sortedByDescending { it.serverAt }
+        return SyncResult.Ok(InboxList(mine))
+    }
+
+    override suspend fun inboxPart(auth: DeviceAuth, spaceId: String, sendId: String, part: Int): SyncResult<InboxPart> {
+        calls += "inboxPart:$part"
+        member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        val s = sends[sendId]?.takeIf { it.to == auth.deviceId && it.parts.size == it.count } ?: return err(404, SyncErrorCode.NOT_FOUND)
+        val env = s.parts[part] ?: return err(404, SyncErrorCode.NOT_FOUND)
+        return SyncResult.Ok(InboxPart(sendId, part, s.count, s.from, s.serverAt, env))
+    }
+
+    override suspend fun deleteInbox(auth: DeviceAuth, spaceId: String, sendId: String): SyncResult<Unit> {
+        calls += "deleteInbox"
+        member(auth, spaceId) ?: return err(401, SyncErrorCode.REVOKED)
+        val s = sends[sendId]?.takeIf { it.to == auth.deviceId || it.from == auth.deviceId } ?: return err(404, SyncErrorCode.NOT_FOUND)
+        sends.remove(sendId)
+        return SyncResult.Ok(Unit)
+    }
 }
 
 

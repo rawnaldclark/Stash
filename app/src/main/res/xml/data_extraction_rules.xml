@@ -2,7 +2,7 @@
 <!--
     Android 12+ backup and device-to-device transfer. allowBackup="false" stops cloud backup, but not a device-to-device transfer
     when targeting API 31+. Link Stash on the web's state (stash_sync.db, its sealed keys, the Tink keyset prefs that seal them,
-    the handoff prefs) must never move to another phone: its keys are bound to this phone's Keystore, so a copied link could
+    the handoff and inbox prefs) must never move to another phone: its keys are bound to this phone's Keystore, so a copied link could
     neither be used nor cleanly removed (link-sync spec §4.4).
 -->
 <data-extraction-rules>
@@ -13,6 +13,7 @@
         <exclude domain="database" path="stash_sync.db-journal" />
         <exclude domain="sharedpref" path="stash_auth_keyset_prefs.xml" />
         <exclude domain="sharedpref" path="weblink_handoff.xml" />
+        <exclude domain="sharedpref" path="weblink_inbox.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="database" path="stash_sync.db" />
@@ -21,5 +22,6 @@
         <exclude domain="database" path="stash_sync.db-journal" />
         <exclude domain="sharedpref" path="stash_auth_keyset_prefs.xml" />
         <exclude domain="sharedpref" path="weblink_handoff.xml" />
+        <exclude domain="sharedpref" path="weblink_inbox.xml" />
     </device-transfer>
 </data-extraction-rules>

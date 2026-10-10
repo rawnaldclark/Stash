@@ -95,6 +95,19 @@ class SyncApiClient @Inject constructor(okHttpClient: OkHttpClient, private val 
     override suspend fun queueSlot(auth: DeviceAuth, spaceId: String, deviceId: String) =
         call("GET", "/v1/spaces/$spaceId/slots/queue/$deviceId", StoredSlot.serializer(), auth).notNull()
 
+    override suspend fun putInbox(auth: DeviceAuth, spaceId: String, to: String, sendId: String, part: Int, count: Int, env: SyncEnvelope) =
+        call("PUT", "/v1/spaces/$spaceId/inbox/$to/$sendId/$part/$count", InboxPut.serializer(), auth, SyncJson.encodeToString(SlotBody.serializer(), SlotBody(env)))
+            .notNull()
+
+    override suspend fun inbox(auth: DeviceAuth, spaceId: String) =
+        call("GET", "/v1/spaces/$spaceId/inbox", InboxList.serializer(), auth).notNull()
+
+    override suspend fun inboxPart(auth: DeviceAuth, spaceId: String, sendId: String, part: Int) =
+        call("GET", "/v1/spaces/$spaceId/inbox/$sendId/$part", InboxPart.serializer(), auth).notNull()
+
+    override suspend fun deleteInbox(auth: DeviceAuth, spaceId: String, sendId: String) =
+        unit("DELETE", "/v1/spaces/$spaceId/inbox/$sendId", auth)
+
     // -------------------------------------------------------------------------------------------- plumbing
 
     private suspend fun unit(method: String, path: String, auth: DeviceAuth? = null, body: String? = null): SyncResult<Unit> =
