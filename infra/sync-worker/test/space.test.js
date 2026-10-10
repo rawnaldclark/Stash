@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SyncSpace } from "../src/sync-space.js";
-import { DEVICE_IDLE_DAYS, RETENTION_EVERY_MS, SEEN_WRITE_MS, SLOT_KEEP_DAYS, STAGING_KEEP_MS } from "../src/space.js";
+import { DEVICE_IDLE_DAYS, KEY_ENVELOPES_KEPT, RETENTION_EVERY_MS, SEEN_WRITE_MS, SLOT_KEEP_DAYS, STAGING_KEEP_MS } from "../src/space.js";
 import { LIMITS } from "../src/validate.js";
 import { box, fakeCtx, keyBox, makeDevice, record } from "./fakes.js";
 
@@ -490,4 +490,50 @@ test("join checks the epoch the newcomer was given: stale without its envelope i
     assert.equal(raced.status, 201);
     assert.equal(raced.body.epoch, 4);
     assert.equal((await call(phone, "get")).body.rotationDue, true);
+});
+
+test("after a removal, writes sealed under the old key wait for the rotation (409 rotation_due); reads, removals and rotate don't", async () => {
+    const { call, phone, browser, addBrowser } = await setup();
+    const laptop = await addBrowser();
+    await call(phone, "configPut", {}, env1(32));
+    assert.equal((await call(phone, "removeDevice", { target: laptop.id })).status, 204);
+    const writes = [
+        ["logAppend", {}, env1(32)],
+        ["snapshotPut", { upto: 0, part: 0, count: 1 }, env1(32)],
+        ["nowPut", {}, env1(32)],
+        ["queuePut", {}, env1(32)],
+        ["configPut", {}, env1(32)],
+        ["inboxPut", { to: browser.id, sendId: "send_rd01", part: 0, count: 1 }, env1(32)],
+        ["label", {}, { labelCt: box(1) }],
+    ];
+    for (const [op, params, body] of writes) {
+        const r = await call(phone, op, params, body);
+        assert.equal(r.status, 409, op);
+        assert.equal(code(r), "rotation_due", op);
+    }
+    for (const op of ["get", "nowGet", "configGet", "inboxList"]) assert.equal((await call(browser, op)).status, 200, op);
+    const r = await call(browser, "rotate", {}, { epoch: 2, envelopes: { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) }, config: box(2) });
+    assert.equal(r.status, 200);
+    assert.equal((await call(phone, "nowPut", {}, { env: box(2, 32) })).status, 200, "writes resume under the new key");
+    assert.equal((await call(phone, "label", {}, { labelCt: box(2) })).status, 204);
+});
+
+test("key envelopes stay for every epoch a device hasn't fetched, until it fetches a newer one or is removed", async () => {
+    const { call, phone, browser, ctx } = await setup();
+    const rotate = (e) => call(phone, "rotate", {}, { epoch: e, envelopes: { [phone.id]: keyBox(e, phone), [browser.id]: keyBox(e, browser) } });
+    for (const e of [2, 3, 4]) assert.equal((await rotate(e)).status, 200);
+    // The browser was away for three rotations: it walks them in order.
+    for (const e of [2, 3, 4]) assert.equal((await call(browser, "key", { epoch: e })).body.epoch, e);
+    assert.equal(code(await call(browser, "key", { epoch: 2 })), "no_key", "fetching a newer one dropped the older");
+    assert.equal((await call(phone, "key", { epoch: 2 })).status, 200, "each device on its own");
+    await call(phone, "key", { epoch: 4 });
+    assert.equal(code(await call(phone, "key", { epoch: 3 })), "no_key");
+    assert.equal((await call(browser, "key", { epoch: 4 })).status, 200, "the one fetched last stays (a retry after a crash)");
+    // At most KEY_ENVELOPES_KEPT epochs are kept for a device that never comes back; removal drops them all.
+    for (let e = 5; e < 5 + KEY_ENVELOPES_KEPT + 2; e++) await rotate(e);
+    const epochs = ctx.sql.exec("SELECT epoch FROM envelopes WHERE deviceId = ? ORDER BY epoch", browser.id).toArray().map((r) => r.epoch);
+    assert.equal(epochs.length, KEY_ENVELOPES_KEPT);
+    assert.equal(epochs.at(-1), 4 + KEY_ENVELOPES_KEPT + 2);
+    await call(phone, "removeDevice", { target: browser.id });
+    assert.equal(ctx.sql.exec("SELECT COUNT(*) AS n FROM envelopes WHERE deviceId = ?", browser.id).toArray()[0].n, 0);
 });

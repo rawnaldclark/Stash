@@ -51,11 +51,19 @@ export async function tokenHashOf(token) {
     return base64url(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
 }
 
-/** Constant-time equality of two strings of the same length (lengths are public: hashes are fixed-size). */
+/**
+ * Constant-time equality of two strings of the same length (lengths are public: hashes are fixed-size). Uses the Workers
+ * runtime's `crypto.subtle.timingSafeEqual`; Node (the tests) has none, so there the same comparison is a constant-time loop.
+ */
 export function sameText(a, b) {
     if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+    const x = enc.encode(a);
+    const y = enc.encode(b);
+    if (x.byteLength !== y.byteLength) return false;
+    const subtle = globalThis.crypto?.subtle;
+    if (typeof subtle?.timingSafeEqual === "function") return subtle.timingSafeEqual(x, y);
     let diff = 0;
-    for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
     return diff === 0;
 }
 
@@ -80,7 +88,7 @@ export function fromBase64url(text) {
     }
 }
 
-/** 128 random bits, base64url (22 characters): pair ids. */
+/** 128 random bits from crypto.getRandomValues, base64url (22 characters, no modulo anywhere): pair ids. */
 export const randomId = () => base64url(crypto.getRandomValues(new Uint8Array(16)));
 
 /** `Authorization: Stash-Device <deviceId>:<token>` → { deviceId, token } or null. */

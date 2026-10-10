@@ -50,6 +50,10 @@ const WRITES = new Set(["label", "removeDevice", "deleteSpace", "rotate", "logAp
  * They have their own per-device rate limit at the Worker (SAFE_RL).
  */
 const EXEMPT = new Set(["get", "key", "removeDevice", "deleteSpace", "rotate"]);
+/** Writes sealed under the current key: refused with `409 rotation_due` while a removal waits for its rotation (sync-v1 §3.5). */
+const SEALED = new Set(["logAppend", "snapshotPut", "nowPut", "queuePut", "configPut", "inboxPut", "label"]);
+/** Key envelopes kept per device: a device more rotations behind than this links again (sync-v1 §3.5). */
+export const KEY_ENVELOPES_KEPT = 32;
 
 /** A space that doesn't exist and a device that isn't in it get the same answer, so nobody learns which ids exist. */
 const revoked = () => err(401, "revoked", "This device is no longer linked");
@@ -128,6 +132,7 @@ export class Space {
         return this.tx(() => {
             const m = this.meta();
             if (!m) return gone();
+            if (SEALED.has(op) && m.rotationDue) return err(409, "rotation_due", "A device was removed: rotate the key first");
             switch (op) {
                 case "get": return this.info(m, me, now);
                 case "label": return this.setLabel(me, body);
@@ -289,14 +294,20 @@ export class Space {
 
     // ---------------------------------------------------------------- keys
 
+    /**
+     * The caller's key envelope for one epoch. Envelopes are kept for every epoch the device hasn't fetched (a device several
+     * rotations behind walks them in order); fetching one drops that device's older ones.
+     */
     key(me, epoch) {
         const row = this.one("SELECT epoch, ct FROM envelopes WHERE deviceId = ? AND epoch = ?", me.id, epoch);
-        return row ? ok({ epoch: row.epoch, ct: parse(row.ct) }) : err(404, "no_key", "No key for this device");
+        if (!row) return err(404, "no_key", "No key for this device");
+        this.sql.exec("DELETE FROM envelopes WHERE deviceId = ? AND epoch < ?", me.id, epoch);
+        return ok({ epoch: row.epoch, ct: parse(row.ct) });
     }
 
     /**
      * Key rotation (§5.2): `{ epoch: current + 1, envelopes: { deviceId: box } for every device, labels?, config?, snapshot? }`.
-     * The old envelopes, the `now`/`queue` slots and the sends go at once; the config comes re-encrypted in the same call.
+     * The `now`/`queue` slots and the sends go at once (older key envelopes stay until fetched, see key()); the config comes re-encrypted in the same call.
      * A device set that changed since the rotator read it (a join, a removal, the idle sweep) is a retryable
      * `409 devices_changed` carrying the current devices and epoch.
      * The log and snapshot under the old key are replaced by a snapshot under the new key: inline here when it fits in one
@@ -341,8 +352,9 @@ export class Space {
 
         const oldData = m.head > m.snapUpto || !!this.one("SELECT part FROM snapshot WHERE staged = 0 LIMIT 1");
         this.sql.exec("UPDATE meta SET epoch = ?, rotationDue = 0, compactDue = ? WHERE id = 1", epoch, snapshot || !oldData ? 0 : 1);
-        this.sql.exec("DELETE FROM envelopes");
-        for (const [id, b] of envelopes) this.sql.exec("INSERT INTO envelopes VALUES (?, ?, ?)", id, epoch, JSON.stringify(b));
+        // Older envelopes stay until their device fetches a newer one (or the last KEY_ENVELOPES_KEPT epochs, at most).
+        for (const [id, b] of envelopes) this.sql.exec("INSERT OR REPLACE INTO envelopes VALUES (?, ?, ?)", id, epoch, JSON.stringify(b));
+        this.sql.exec("DELETE FROM envelopes WHERE epoch <= ?", epoch - KEY_ENVELOPES_KEPT);
         for (const [id, b] of labels) this.sql.exec("UPDATE devices SET labelCt = ? WHERE id = ?", JSON.stringify(b), id);
         this.sql.exec("DELETE FROM slots WHERE name <> 'config'");
         if (config) {

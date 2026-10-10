@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import worker, { spaceRoute } from "../src/index.js";
-import { parseDeviceAuth, tokenHashOf } from "../src/http.js";
+import { fromBase64url, parseDeviceAuth, randomId, sameText, tokenHashOf } from "../src/http.js";
 import { cleanBox, cleanEnv } from "../src/validate.js";
 import { box, keyBox, makeDevice, req, world } from "./fakes.js";
 import { linkNew, newSpaceId } from "./link.js";
@@ -219,4 +219,34 @@ test("the edge: the safety actions' own limit, browsers only through the player,
     w.env.PLAYER_KEY = `${w.env.PLAYER_KEY}\r\n`;
     assert.equal((await w.fetch(req("GET", `/v1/spaces/${b.spaceId}`, { device: b.browser, player: true }))).status, 200);
     assert.ok(newSpaceId());
+});
+
+test("token hashes are compared with crypto.subtle.timingSafeEqual when the runtime has it; pair ids are 16 random bytes", async () => {
+    const calls = [];
+    const subtle = globalThis.crypto.subtle;
+    const had = Object.getOwnPropertyDescriptor(subtle, "timingSafeEqual");
+    Object.defineProperty(subtle, "timingSafeEqual", {
+        configurable: true,
+        value: (a, b) => {
+            calls.push([a.byteLength, b.byteLength]);
+            return a.every((x, i) => x === b[i]);
+        },
+    });
+    try {
+        assert.equal(sameText("abc", "abc"), true);
+        assert.equal(sameText("abc", "abd"), false);
+        assert.equal(sameText("abc", "abcd"), false, "different lengths never reach the compare");
+        assert.deepEqual(calls, [[3, 3], [3, 3]]);
+        const w = world();
+        const { phone, spaceId } = await linkNew(w);
+        calls.length = 0;
+        assert.equal((await w.fetch(req("GET", `/v1/spaces/${spaceId}`, { device: phone }))).status, 200);
+        assert.deepEqual(calls, [[43, 43]], "the device token hash");
+    } finally {
+        if (had) Object.defineProperty(subtle, "timingSafeEqual", had);
+        else delete subtle.timingSafeEqual;
+    }
+    const ids = new Set(Array.from({ length: 200 }, () => randomId()));
+    assert.equal(ids.size, 200);
+    for (const id of ids) assert.equal(fromBase64url(id).length, 16);
 });
