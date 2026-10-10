@@ -55,12 +55,12 @@ class WebLinkViewModel @Inject constructor(
                 }
             }
         }
-        refresh()
+        // The list is read when the screen resumes (SettingsWebLinkScreen), so not here too.
         // A link handed in by the route is opened once, not again after a configuration change.
         val link = savedState.get<String>(ARG_LINK)
         if (link != null && savedState.get<Boolean>(KEY_LINK_OPENED) != true) {
             savedState[KEY_LINK_OPENED] = true
-            openLink(link)
+            openLink(link, fromLink = true)
         }
     }
 
@@ -78,17 +78,22 @@ class WebLinkViewModel @Inject constructor(
         _scanning.value = false
     }
 
-    /** A scanned or opened link: read the code and show the confirm sheet. */
-    fun openLink(text: String) {
+    /**
+     * A scanned or opened link: read the code and show the confirm sheet. [fromLink]: it came from outside the app's scanner
+     * (an App Link), so the sheet adds its warning.
+     */
+    fun openLink(text: String, fromLink: Boolean = false) {
         _scanning.value = false
         pairingJob?.cancel()
-        pairingJob = viewModelScope.launch { session.open(text) }
+        pairingJob = viewModelScope.launch { session.open(text, fromLink) }
     }
 
-    /** "Link" on the confirm sheet: answer, wait for the computer, then join or create. */
+    /**
+     * "Link" on the confirm sheet: answer, wait for the computer, then join or create. One answer per code: a second tap while
+     * it runs does nothing (it used to cancel the first mid-answer).
+     */
     fun confirm() {
-        if (pairing.value !is PairingState.Confirm) return
-        pairingJob?.cancel()
+        if (pairing.value !is PairingState.Confirm || pairingJob?.isActive == true) return
         pairingJob = viewModelScope.launch { session.confirm() }
     }
 
@@ -120,6 +125,10 @@ class WebLinkViewModel @Inject constructor(
                     is WebLinkResult.Unlinked -> Unit // the notice arrives through repo.notice
                     WebLinkResult.Ok -> Unit
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _message.value = com.stash.core.data.weblink.WebLinkCopy.STORE_BUSY
             } finally {
                 _busy.value = false
             }

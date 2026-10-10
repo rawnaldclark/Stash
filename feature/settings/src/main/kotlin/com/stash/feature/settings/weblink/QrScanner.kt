@@ -81,6 +81,11 @@ fun QrScannerScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
         asked = true
     }
     LaunchedEffect(Unit) { if (!granted) permission.launch(Manifest.permission.CAMERA) }
+    // Back from the app's settings with the camera allowed.
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        onPauseOrDispose { }
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (granted) {
@@ -106,7 +111,17 @@ fun QrScannerScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(4.dp))
-                Button(onClick = { permission.launch(Manifest.permission.CAMERA) }) { Text("Allow camera") }
+                Button(onClick = {
+                    // Denied for good ("Don't ask again"): the request answers at once, so open the app's settings instead.
+                    val activity = context as? android.app.Activity
+                    if (activity != null && !androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)) {
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null)),
+                        )
+                    } else {
+                        permission.launch(Manifest.permission.CAMERA)
+                    }
+                }) { Text("Allow camera") }
             }
         }
         IconButton(onClick = onClose, modifier = Modifier.statusBarsPadding().padding(8.dp)) {

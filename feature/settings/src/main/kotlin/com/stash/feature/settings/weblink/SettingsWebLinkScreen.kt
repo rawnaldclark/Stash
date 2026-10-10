@@ -63,6 +63,12 @@ fun SettingsWebLinkScreen(onBack: () -> Unit, viewModel: WebLinkViewModel = hilt
     var removing by remember { mutableStateOf<LinkedDevice?>(null) }
     var unlinkAll by remember { mutableStateOf(false) }
 
+    // Back on the screen (from the browser, another app): read the list again, as the web does when its tab returns.
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        viewModel.refresh()
+        onPauseOrDispose { }
+    }
+
     Box(Modifier.fillMaxSize()) {
         SettingsScaffold(title = "Link Stash on the web", onBack = onBack) {
             if (pairing != PairingState.Idle) {
@@ -225,6 +231,14 @@ private fun PairingPanel(state: PairingState, onLink: () -> Unit, onClose: () ->
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                    if (state.fromLink) {
+                        // An App Link can come from anyone (a chat, a web page), and the name above is the browser's own choice.
+                        Text(
+                            "Only continue if you just opened Link your phone on your own computer, and it's in front of you now.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedButton(onClick = onClose) { Text("Cancel") }
                         Button(onClick = onLink) { Text("Link") }
