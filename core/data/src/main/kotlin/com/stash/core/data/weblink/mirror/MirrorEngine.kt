@@ -1068,7 +1068,8 @@ class MirrorEngine internal constructor(
         } else {
             r.marks = emptyList()
         }
-        // A confirmed "Use this phone's" covers this push only, whether it held unlikes or not (final check F-N4).
+        // A confirmed "Use this phone's" covers this push only, whether it held unlikes or not (final check F-N4). A push that
+        // fails for good keeps it until one completes, so it could carry one later mass removal (last look L-N4, accepted).
         r.allowRemovals = false
         // The plays base keeps only own plays still here, then its floor moves up (the oldest fall off it).
         ownHere?.let { here -> r.basePlays = movedFloor(c, r.basePlays.copy(ids = r.basePlays.ids.filterTo(HashSet()) { it in here })) }

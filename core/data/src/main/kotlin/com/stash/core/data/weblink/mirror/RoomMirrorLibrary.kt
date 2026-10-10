@@ -285,12 +285,15 @@ internal class PrefsAliasStore(private val prefs: android.content.SharedPreferen
     private fun write() {
         val m = all()
         val json = kotlinx.serialization.json.JsonObject(m.entries.associate { (k, v) -> k.toString() to com.stash.core.data.weblink.handoff.HandoffWire.songJson(v) })
-        prefs.edit().putString(KEY, json.toString()).apply()
+        // Written through before the run saves its record: a process death in between must not leave a record that reads an
+        // aliased row under its own words (last look L-N3). Every caller runs on IO.
+        prefs.edit().putString(KEY, json.toString()).commit()
     }
 
     override fun clear() = synchronized(lock) {
         cache = HashMap()
-        prefs.edit().remove(KEY).apply()
+        prefs.edit().remove(KEY).commit()
+        Unit
     }
 
     private companion object {
