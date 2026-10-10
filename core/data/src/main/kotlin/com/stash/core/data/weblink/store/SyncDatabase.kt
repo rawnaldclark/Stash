@@ -87,8 +87,9 @@ interface SyncDao {
 
 /**
  * `stash_sync.db`: a database of its own, apart from the library's `stash.db`, so `DatabaseBackupManager` (which carries
- * `stash.db` and `datastore/`) never puts a link into a backup and a restored backup can never bring one back. Android Auto
- * Backup is off for the whole app (`allowBackup="false"`).
+ * `stash.db` and `datastore/`) never puts a link into a backup and a restored backup can never bring one back. Android's
+ * cloud backup is off for the whole app (`allowBackup="false"`); a device-to-device transfer ignores that flag at targetSdk
+ * 31+, so `res/xml/data_extraction_rules.xml` excludes this database and the keyset that seals it from both.
  */
 @Database(entities = [SyncSpaceEntity::class, SyncRosterEntity::class], version = 1, exportSchema = true)
 abstract class SyncDatabase : RoomDatabase() {

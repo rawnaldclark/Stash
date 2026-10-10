@@ -14,6 +14,7 @@ object WebLinkCopy {
     const val NOT_VERIFIED = "Not verified"
     const val CANT_READ = "Can't read your other devices: link again."
     const val UPDATE_APP = "Update Stash to keep syncing."
+    const val STORE_BUSY = "Can't read this phone's link right now. Try again in a moment."
 
     fun unlinkedFrom(name: String) = "Unlinked from $name."
 }

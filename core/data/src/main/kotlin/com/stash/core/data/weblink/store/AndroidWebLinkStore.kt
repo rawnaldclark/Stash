@@ -7,10 +7,13 @@ import android.util.Log
 import com.stash.core.auth.crypto.TinkEncryptionManager
 import com.stash.core.data.weblink.SyncCrypto
 import com.stash.core.data.weblink.WebLinkIds
+import java.security.GeneralSecurityException
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.KeyStore
+import java.security.KeyStoreException
 import java.security.PrivateKey
+import java.security.UnrecoverableKeyException
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.PKCS8EncodedKeySpec
@@ -35,13 +38,33 @@ class AndroidWebLinkStore @Inject constructor(
 
     override suspend fun identity(): LinkIdentity? = lock.withLock {
         val row = dao.space() ?: return null
-        val priv = try {
-            row.deviceKeyWrapped?.let { softwareKey(tink.decrypt(it)) } ?: keystoreKey()
-        } catch (e: Exception) {
-            Log.w(TAG, "device key unreadable (${e.javaClass.simpleName})")
-            null
-        } ?: return null
-        LinkIdentity(row.deviceId, tink.decrypt(row.tokenSealed), row.devicePub, priv, row.deviceName)
+        val priv = readKey { row.deviceKeyWrapped?.let { softwareKey(tink.decrypt(it)) } ?: keystoreKey() } ?: return null
+        val token = readKey { tink.decrypt(row.tokenSealed) } ?: return null
+        LinkIdentity(row.deviceId, token, row.devicePub, priv, row.deviceName)
+    }
+
+    override suspend fun deviceToken(): Pair<String, ByteArray>? = lock.withLock {
+        val row = dao.space() ?: return null
+        runCatching { row.deviceId to tink.decrypt(row.tokenSealed) }.getOrNull()
+    }
+
+    /**
+     * Tells a key that is definitely gone (null: no Keystore entry, an unrecoverable entry, a seal that no longer opens, such as
+     * after a device-to-device transfer) from a passing Keystore or provider failure ([LinkStoreUnavailable]): only the first
+     * unlinks this phone.
+     */
+    private inline fun <T> readKey(read: () -> T?): T? = try {
+        read()
+    } catch (e: UnrecoverableKeyException) {
+        Log.w(TAG, "device key gone (${e.javaClass.simpleName})")
+        null
+    } catch (e: GeneralSecurityException) {
+        if (e is KeyStoreException) throw LinkStoreUnavailable(e)
+        Log.w(TAG, "sealed link state no longer opens (${e.javaClass.simpleName})")
+        null
+    } catch (e: Exception) {
+        Log.w(TAG, "link state unreadable for now (${e.javaClass.simpleName})")
+        throw LinkStoreUnavailable(e)
     }
 
     override suspend fun createIdentity(name: String): LinkIdentity = lock.withLock {
@@ -69,8 +92,8 @@ class AndroidWebLinkStore @Inject constructor(
     override suspend fun space(): LinkedSpace? = lock.withLock {
         val row = dao.space() ?: return null
         val id = row.spaceId ?: return null
-        val k = row.keySealed?.let(tink::decrypt) ?: return null
-        LinkedSpace(id, row.epoch, k, row.prevEpoch, row.prevKeySealed?.let(tink::decrypt))
+        val k = row.keySealed?.let { readKey { tink.decrypt(it) } } ?: return null
+        LinkedSpace(id, row.epoch, k, row.prevEpoch, row.prevKeySealed?.let { readKey { tink.decrypt(it) } })
     }
 
     override suspend fun saveSpace(space: LinkedSpace): Unit = lock.withLock {

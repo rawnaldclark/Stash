@@ -2,6 +2,12 @@ package com.stash.core.data.weblink.store
 
 import java.security.PrivateKey
 
+/**
+ * The link state couldn't be read just now (a Keystore or provider error, not a missing key). Callers keep the link and show
+ * the problem; only a key that is definitely gone ([WebLinkStore.identity] returns null) unlinks.
+ */
+class LinkStoreUnavailable(cause: Throwable) : Exception("link state unreadable: ${cause.javaClass.simpleName}", cause)
+
 /** This device as the sync service knows it: id, token and long-term P-256 key (sync-v1 §1). */
 class LinkIdentity(
     val deviceId: String,
@@ -49,7 +55,11 @@ data class RosterEntry(
  * [AndroidWebLinkStore] keeps it in `stash_sync.db`; tests use an in-memory one.
  */
 interface WebLinkStore {
+    /** Null when there is none, or its device key is definitely gone. Throws [LinkStoreUnavailable] on a passing failure. */
     suspend fun identity(): LinkIdentity?
+
+    /** This device's id and token without its key, for a last `DELETE …/devices/me` when the key is gone (null if unreadable). */
+    suspend fun deviceToken(): Pair<String, ByteArray>? = null
 
     /** Makes this device's id, token and long-term key (the first link); replaces any earlier identity. */
     suspend fun createIdentity(name: String): LinkIdentity

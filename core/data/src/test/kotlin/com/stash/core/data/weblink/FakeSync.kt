@@ -314,7 +314,18 @@ class InMemoryWebLinkStore : WebLinkStore {
     var rosterList: List<RosterEntry> = emptyList()
     var wiped = 0
 
-    override suspend fun identity() = id
+    /** Every read throws, as a Keystore hiccup does (LinkStoreUnavailable). */
+    var failReads = false
+
+    /** The device key is definitely gone: identity() is null while the token still reads. */
+    var keyGone = false
+
+    override suspend fun identity(): LinkIdentity? {
+        if (failReads) throw com.stash.core.data.weblink.store.LinkStoreUnavailable(java.security.KeyStoreException("busy"))
+        return if (keyGone) null else id
+    }
+
+    override suspend fun deviceToken(): Pair<String, ByteArray>? = id?.let { it.deviceId to it.token }
 
     override suspend fun createIdentity(name: String): LinkIdentity {
         val pair = SyncCrypto.newKeyPair()
@@ -326,7 +337,10 @@ class InMemoryWebLinkStore : WebLinkStore {
         id = id?.let { LinkIdentity(it.deviceId, it.token, it.devicePub, it.devicePriv, name) }
     }
 
-    override suspend fun space() = sp
+    override suspend fun space(): LinkedSpace? {
+        if (failReads) throw com.stash.core.data.weblink.store.LinkStoreUnavailable(java.security.KeyStoreException("busy"))
+        return sp
+    }
 
     override suspend fun saveSpace(space: LinkedSpace) {
         sp = space
@@ -340,6 +354,7 @@ class InMemoryWebLinkStore : WebLinkStore {
 
     override suspend fun wipe() {
         wiped++
+        keyGone = false
         id = null
         sp = null
         rosterList = emptyList()

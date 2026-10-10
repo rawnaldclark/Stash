@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
  * The phone's side of a link with Stash on the web, once paired (spec §2.6, §5.2, §12; sync-v1 §3.5, §3.6): the device list
@@ -37,13 +39,32 @@ class WebLinkRepository @Inject constructor(
     }
 
     /** Reads the space: device list, labels, keys after a rotation elsewhere, and the rotation a removal left due. */
-    suspend fun refresh(): WebLinkResult = lock.withLock { refreshLocked() }
+    suspend fun refresh(): WebLinkResult = guarded { lock.withLock { refreshLocked() } }
+
+    /**
+     * Every public action ends in a [WebLinkResult], never an exception: a passing Keystore failure ([LinkStoreUnavailable]) or a
+     * provider error keeps the link and reports the problem.
+     */
+    private suspend fun guarded(block: suspend () -> WebLinkResult): WebLinkResult = try {
+        block()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "link action failed: ${e.javaClass.simpleName}")
+        try {
+            problem(WebLinkCopy.STORE_BUSY)
+        } catch (e2: Exception) {
+            WebLinkResult.Failed(WebLinkCopy.STORE_BUSY)
+        }
+    }
 
     /**
      * Renames a device. This phone: its label is re-sealed and written (`PUT …/devices/me/label`), so every device sees the new
      * name. Another device: a nickname kept on this phone, since only a device can rewrite its own label.
      */
-    suspend fun rename(deviceId: String, name: String): WebLinkResult = lock.withLock {
+    suspend fun rename(deviceId: String, name: String): WebLinkResult = guarded { renameLocked(deviceId, name) }
+
+    private suspend fun renameLocked(deviceId: String, name: String): WebLinkResult = lock.withLock {
         val clean = cleanName(name) ?: return@withLock WebLinkResult.Failed("Type a name.")
         val id = store.identity() ?: return@withLock notLinked()
         if (deviceId != id.deviceId) {
@@ -76,7 +97,9 @@ class WebLinkRepository @Inject constructor(
      * Removes a device: cut off at once on the server, then this phone rotates the key so the removed device can't read
      * what comes next (spec §2.6, §5.2). Removing this phone itself is [unlinkEverything]'s job, not this.
      */
-    suspend fun remove(deviceId: String): WebLinkResult = lock.withLock {
+    suspend fun remove(deviceId: String): WebLinkResult = guarded { removeLocked(deviceId) }
+
+    private suspend fun removeLocked(deviceId: String): WebLinkResult = lock.withLock {
         val id = store.identity() ?: return@withLock notLinked()
         val sp = store.space() ?: return@withLock notLinked()
         if (deviceId == id.deviceId) return@withLock WebLinkResult.Failed(WebLinkCopy.UNFINISHED)
@@ -94,7 +117,9 @@ class WebLinkRepository @Inject constructor(
     }
 
     /** Unlink everything (spec §2.6): deletes the space on the server; every device is unlinked; no library changes. */
-    suspend fun unlinkEverything(): WebLinkResult = lock.withLock {
+    suspend fun unlinkEverything(): WebLinkResult = guarded { unlinkEverythingLocked() }
+
+    private suspend fun unlinkEverythingLocked(): WebLinkResult = lock.withLock {
         val id = store.identity()
         val sp = store.space()
         if (id == null || sp == null) {
@@ -122,7 +147,13 @@ class WebLinkRepository @Inject constructor(
         val id = store.identity()
         val sp = store.space()
         if (id == null || sp == null) {
-            if (sp != null) store.wipe() // a space whose device key can't be read is a dead link
+            if (id == null) {
+                // The device key is definitely gone (a passing failure throws instead): the link is dead. Tell the server
+                // while the token still reads, so the browsers don't keep a ghost, then clear it.
+                val token = if (sp != null) store.deviceToken() else null
+                if (token != null && sp != null) api.removeDevice(DeviceAuth(token.first, token.second), sp.spaceId, "me")
+                store.wipe()
+            }
             _status.value = WebLinkStatus.NotLinked
             return WebLinkResult.Ok
         }
@@ -292,13 +323,17 @@ class WebLinkRepository @Inject constructor(
             }
             val config = when (val r = api.config(auth(id), sp.spaceId)) {
                 is SyncResult.Ok -> r.value?.let { slot ->
-                    // The config is re-sealed as it is: this phone doesn't read mirror settings yet (phase 6).
-                    val k = sp.keyFor(slot.env.e) ?: return WebLinkResult.Failed(WebLinkCopy.CANT_READ)
-                    val text = try {
-                        SyncCrypto.open(SyncCrypto.dataKey(k, sp.spaceId), sp.spaceId, SyncCrypto.Place.CONFIG, slot.env)
-                    } catch (e: SyncCryptoException) {
-                        return WebLinkResult.Failed(WebLinkCopy.CANT_READ)
-                    }
+                    // Re-sealed as it is (this phone doesn't read mirror settings yet, phase 6). One nobody can open (no key for
+                    // its epoch, bad gzip or JSON) mustn't block the rotation: the default (everything off) goes in its place
+                    // (sync-v1 §3.5 "No config can block a rotation either").
+                    val text = sp.keyFor(slot.env.e)?.let { k ->
+                        try {
+                            SyncCrypto.open(SyncCrypto.dataKey(k, sp.spaceId), sp.spaceId, SyncCrypto.Place.CONFIG, slot.env)
+                                .takeIf { t -> runCatching { SyncJson.parseToJsonElement(t) is kotlinx.serialization.json.JsonObject }.getOrDefault(false) }
+                        } catch (e: SyncCryptoException) {
+                            null
+                        }
+                    } ?: defaultConfig(info.serverTime, id.deviceId).also { Log.w(TAG, "config unreadable: the default goes in its place") }
                     SyncCrypto.seal(newData, sp.spaceId, next, SyncCrypto.Place.CONFIG, text)
                 }
                 is SyncResult.Error -> return if (r.revoked) unlinked() else WebLinkResult.Failed(r.userMessage())
@@ -369,6 +404,20 @@ class WebLinkRepository @Inject constructor(
         const val MAX_ROTATE_TRIES = 4
 
         fun auth(id: LinkIdentity) = DeviceAuth(id.deviceId, id.token)
+
+        /** `stash-mirror-config` with every kind off, stamped `[wall, 0, <rotator>]` (sync-v1 §3.5, §5.2). */
+        fun defaultConfig(wall: Long, deviceId: String): String = kotlinx.serialization.json.buildJsonObject {
+            put("kind", "stash-mirror-config")
+            put("v", 1)
+            put("at", kotlinx.serialization.json.buildJsonArray { add(JsonPrimitive(wall)); add(JsonPrimitive(0)); add(JsonPrimitive(deviceId)) })
+            put("likes", kotlinx.serialization.json.buildJsonObject { put("dir", "off") })
+            put("plays", kotlinx.serialization.json.buildJsonObject { put("dir", "off") })
+            put("playlists", kotlinx.serialization.json.buildJsonObject {
+                put("dir", "off")
+                put("ids", kotlinx.serialization.json.JsonArray(emptyList()))
+                put("newOnes", false)
+            })
+        }.toString()
 
         /** A label name: trimmed, 1–60 code points (sync-v1 §5.6). */
         fun cleanName(name: String): String? {
