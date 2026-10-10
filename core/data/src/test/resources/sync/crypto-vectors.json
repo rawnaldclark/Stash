@@ -147,12 +147,12 @@
 			"place": "snapshot:812:0/1",
 			"aad": "stash-sync/1|s_AJNrGM1Yn3oI2sgnUjMtLQ|1|snapshot:812:0/1",
 			"nonce": "UVJTVFVWV1hZWltc",
-			"json": "{\"kind\":\"stash-mirror-state\",\"v\":1,\"uptoSeq\":812,\"likes\":[{\"s\":{\"title\":\"Pink + White\",\"artist\":\"Frank Ocean\",\"album\":\"Blonde\",\"durationMs\":184000,\"isrc\":\"USUM71607009\",\"refs\":{\"youtube\":\"uxpDa-c-4Mc\"}},\"on\":true,\"at\":[1760083200000,1,\"d_P7x2Lk9QwZr4Tn8M\"]}],\"plays\":[{\"s\":{\"title\":\"Ivy\",\"artist\":\"Frank Ocean\",\"durationMs\":249000,\"refs\":{\"youtube\":\"AE005nZeF-A\"}},\"playedAt\":1760083100000}],\"playsClearedBefore\":1759000000000,\"playlists\":[{\"id\":\"m_4fQ8xT2mLp9ZrW1c\",\"name\":\"Night drive\",\"items\":[{\"title\":\"Ivy\",\"artist\":\"Frank Ocean\",\"durationMs\":249000,\"refs\":{\"youtube\":\"AE005nZeF-A\"}},{\"title\":\"Pink + White\",\"artist\":\"Frank Ocean\",\"album\":\"Blonde\",\"durationMs\":184000,\"isrc\":\"USUM71607009\",\"refs\":{\"youtube\":\"uxpDa-c-4Mc\"}}],\"at\":[1760083200000,1,\"d_P7x2Lk9QwZr4Tn8M\"],\"hash\":\"h_CCCCCCCCCCCCCCCCCCCCCC\"}]}",
-			"gz": "H4sIAAAAAAAC_82SX0vDMBTFv8o4r6aQ1uravM3pQHD-YRvCpIyszWxom84knRuj313SqQjOBx8Ez2M4l_M7N3ePQqoMDMZyk3uV1LrWnrHcChBswHyCZm3riXgBi_yAoJSFMGBPexiwPay0pQDDvVRF76T3mMtukmsrjQXDSHNV9O5SwZV7LpdNBYaLslaZ82WN5lbWamzA_CiklBJIo1MwzCazcd8_p31KYxBoseoCd3Vjm6WLbLbrS-6lXjhO0bYEtQKzuhEE3II9-f1zSqPTgDoRnyBb3Pe3wU0RP7zOdThV0RhJmxCsS7470uh6s_u5yFfuIIw77u-EgytKz9RcjLxBR-iSRDawYO9wfgf3CTEsBdciuxCrWgtnOovphw6WUhp7YJXu16pFuHqIttOgulnHc_3opyBQvHLht_I5t71My41btLSiOgz-Xb9_dA3Jb46AIOcmB0O-GB4V2qR9A4Mk8PYqAwAA",
+			"json": "{\"kind\":\"stash-mirror-state\",\"v\":1,\"uptoSeq\":812,\"likes\":[{\"s\":{\"title\":\"Pink + White\",\"artist\":\"Frank Ocean\",\"album\":\"Blonde\",\"durationMs\":184000,\"isrc\":\"USUM71607009\",\"refs\":{\"youtube\":\"uxpDa-c-4Mc\"}},\"on\":true,\"at\":[1760083200000,1,\"d_P7x2Lk9QwZr4Tn8M\"]}],\"plays\":[{\"s\":{\"title\":\"Ivy\",\"artist\":\"Frank Ocean\",\"durationMs\":249000,\"refs\":{\"youtube\":\"AE005nZeF-A\"}},\"playedAt\":1760083100000,\"device\":\"d_P7x2Lk9QwZr4Tn8M\"}],\"playsClearedBefore\":1759000000000,\"playlists\":[{\"id\":\"m_4fQ8xT2mLp9ZrW1c\",\"name\":\"Night drive\",\"items\":[{\"title\":\"Ivy\",\"artist\":\"Frank Ocean\",\"durationMs\":249000,\"refs\":{\"youtube\":\"AE005nZeF-A\"}},{\"title\":\"Pink + White\",\"artist\":\"Frank Ocean\",\"album\":\"Blonde\",\"durationMs\":184000,\"isrc\":\"USUM71607009\",\"refs\":{\"youtube\":\"uxpDa-c-4Mc\"}}],\"at\":[1760083200000,1,\"d_P7x2Lk9QwZr4Tn8M\"],\"hash\":\"h_CCCCCCCCCCCCCCCCCCCCCC\"}]}",
+			"gz": "H4sIAAAAAAAC_82SX0vDMBTFv8o4r6aQ1uravM0_A8HqxibCZIyszWxom84knRuj313SqQjOBx8Ez2O4J-d3uHePQqoMDMZyk3uV1LrWnrHcChBswHyCZm3riXgBi_yAoJSFMGBPexiwPay0pQDDSKqid9J7zGXn5NpKY8Ew1FwVvftUcOWey2VTgeGirFXm5rJGcytrlRgwPwoppQTS6BQMD5OHpO-f0z6lMQi0WHWBu7qxzdJFNtv1FfdSL0xStC1BrcCsbgQBt2BPfv-c0ug0oE7EJ8gWo_42uC3i8etMh1MVJZi3c4J1yXdHGt1sdj8X-codhHHH_Z1wcE3pmZqJoTfoCF2SyAYW7B3OP8AhExuZOscRxk_Ey1JwLbILsaq1cF-cxfRDh5FSGntoIt1Oq0W4GkfbaVDdruOZfvRTECheuaA7-ZzbXqblxq1BWlEdjH_X_h_dyvw3J0KQc5ODIV9cHhXaefsGL8Uok0gDAAA",
 			"env": {
 				"e": 1,
 				"n": "UVJTVFVWV1hZWltc",
-				"c": "R-9hF6csvLahf13BfnzSAYUbuu6920dGt3Fvvz1hlhB7TuAn4-Ri6FkLO_yDtO0q0t8JNVFdQRad7i23qZx8-p34oPbaL1Nau2a5umMtDF5fu99IBg6xY9k6ldFEzTGQZy11iNrKmEf-fnKirHuFEbGhflv_XN5H75-IB329yDUc2MTtk5iA9WeYcURMzCapoz7FTawI2fuWQdSti5mvxRtx-S8xOhNjbAAlcS3e7DL4z2k32RbQnuIqDcCt8zI8HYpJIF16sXeY3aEQRLcgC2In4qON073aohcRW8eEOlXm7KL9DgSQFNf2k53WHHK2hQBMXuYt-9Ef0-ZfMvbqkWHSUdR7YBdoWLl0-RQ9idOK4leEFESByCy-syS4GohjS9aIbxsknbQ9cERqsJkZ2bWa-JYP8E9Jz_bEU5ObZ5FWmgwp2fWcg1I2B-PSuEhYMjIdA5CgEXA2VRSar2kUMNyty6pfemHGMaS6E9bUu6t7NPx8iFPq3iLzSg"
+				"c": "R-9hF6csvLahf13BfnzSAYUbuu6920dGt3Fvvz231aFv6d0nI-Ri6FkLO_yDtO0q0t8JNVFdQRad7i03GYgwdZ34oPbaL1Nau2a5umMtDF5fu99IBg6xY9k6ldFEzTGQZy11iNrKmEf-fnKirHuF5E9G5i1zCHDOmS7p6blOVBpckdHrIuhlEJWG9SNl0iXWtukO2NG1Jo9mgvYguo81jlxNOpoF7yPDGEPKIzUCBa17A6blj2EexI80U9lagkYgeBEMOJ9lZWKdtkNiw7XPkynAwtdYa1WX3R6QIqd39AJkHsm9-oRu_EUvEVSq1EegQMTib3veXyzjwJSrwZBJxy8HfF_SL6Jo1InSdeaDyBRc-H0xK1SytXPRIn2vDbGBfXKrTV7DONWQIH99Epj5Tbt06YpwmfV6AYZJQQLjrpc8PZk7q9j8znpPY0nJI1pmHG7J4GH3z4jNmKsTkDWRmetT6XYnlII2S1-8L5vCpQTUH418ICXESfRb-bjPLpoOo20r"
 			},
 			"key": "dataKey"
 		},
@@ -205,6 +205,49 @@
 			"key": "dataKey2"
 		}
 	],
+	"parts": {
+		"spaceId": "s_AJNrGM1Yn3oI2sgnUjMtLQ",
+		"epoch": 1,
+		"key": "dataKey",
+		"partBytes": 128,
+		"json": "{\"kind\":\"stash-mirror-state\",\"v\":1,\"uptoSeq\":812,\"likes\":[{\"s\":{\"title\":\"Pink + White\",\"artist\":\"Frank Ocean\",\"album\":\"Blonde\",\"durationMs\":184000,\"isrc\":\"USUM71607009\",\"refs\":{\"youtube\":\"uxpDa-c-4Mc\"}},\"on\":true,\"at\":[1760083200000,1,\"d_P7x2Lk9QwZr4Tn8M\"]}],\"plays\":[{\"s\":{\"title\":\"Ivy\",\"artist\":\"Frank Ocean\",\"durationMs\":249000,\"refs\":{\"youtube\":\"AE005nZeF-A\"}},\"playedAt\":1760083100000,\"device\":\"d_P7x2Lk9QwZr4Tn8M\"}],\"playsClearedBefore\":1759000000000,\"playlists\":[{\"id\":\"m_4fQ8xT2mLp9ZrW1c\",\"name\":\"Night drive\",\"items\":[{\"title\":\"Ivy\",\"artist\":\"Frank Ocean\",\"durationMs\":249000,\"refs\":{\"youtube\":\"AE005nZeF-A\"}},{\"title\":\"Pink + White\",\"artist\":\"Frank Ocean\",\"album\":\"Blonde\",\"durationMs\":184000,\"isrc\":\"USUM71607009\",\"refs\":{\"youtube\":\"uxpDa-c-4Mc\"}}],\"at\":[1760083200000,1,\"d_P7x2Lk9QwZr4Tn8M\"],\"hash\":\"h_CCCCCCCCCCCCCCCCCCCCCC\"}]}",
+		"gz": "H4sIAAAAAAAC_82SX0vDMBTFv8o4r6aQ1uravM0_A8HqxibCZIyszWxom84knRuj313SqQjOBx8Ez2O4J-d3uHePQqoMDMZyk3uV1LrWnrHcChBswHyCZm3riXgBi_yAoJSFMGBPexiwPay0pQDDSKqid9J7zGXn5NpKY8Ew1FwVvftUcOWey2VTgeGirFXm5rJGcytrlRgwPwoppQTS6BQMD5OHpO-f0z6lMQi0WHWBu7qxzdJFNtv1FfdSL0xStC1BrcCsbgQBt2BPfv-c0ug0oE7EJ8gWo_42uC3i8etMh1MVJZi3c4J1yXdHGt1sdj8X-codhHHH_Z1wcE3pmZqJoTfoCF2SyAYW7B3OP8AhExuZOscRxk_Ey1JwLbILsaq1cF-cxfRDh5FSGntoIt1Oq0W4GkfbaVDdruOZfvRTECheuaA7-ZzbXqblxq1BWlEdjH_X_h_dyvw3J0KQc5ODIV9cHhXaefsGL8Uok0gDAAA",
+		"parts": [
+			{
+				"place": "snapshot:812:0/3",
+				"aad": "stash-sync/1|s_AJNrGM1Yn3oI2sgnUjMtLQ|1|snapshot:812:0/3",
+				"nonce": "QUJDREVGR0hJSktM",
+				"slice": "H4sIAAAAAAAC_82SX0vDMBTFv8o4r6aQ1uravM0_A8HqxibCZIyszWxom84knRuj313SqQjOBx8Ez2O4J-d3uHePQqoMDMZyk3uV1LrWnrHcChBswHyCZm3riXgBi_yAoJSFMGBPexiwPay0pQDDSKqid9J7zGXn5NpKY8Ew1Fw",
+				"env": {
+					"e": 1,
+					"n": "QUJDREVGR0hJSktM",
+					"c": "cS9uXS4FPhR3-WU-FwqBineUMeIRkvntGW9R50VtoB-GoNRUDaJDZNkiQOu6fZbqGMiJVWrVaq1FTs2GimRVJvO7oYAbt44pW2PkehLC3q-yefSgMQCv27CElhVAgtqH2U18dIbwIKP1lqyv52fKC1Bxio_gWTFDQjxEAqZY8JQAmz5bLflsAK8Ws3a0iZfv"
+				}
+			},
+			{
+				"place": "snapshot:812:1/3",
+				"aad": "stash-sync/1|s_AJNrGM1Yn3oI2sgnUjMtLQ|1|snapshot:812:1/3",
+				"nonce": "UVJTVFVWV1hZWltc",
+				"slice": "Fb37VHDlnstlU4HhoqxV5uayRnMra5UYMD8KKaUE0ugUDA-Th6Tvn9M-pTEItFh1gbu6sc3SRTbb9RX3Ui9MUrQtQa3ArG4EAbdgT37_nNLoNKBOxCfIFqP-Nrgt4vHrTIdTFSWYt3OCdcl3RxrdbHY_F_nKHYRxx_2dcHBN6Zk",
+				"env": {
+					"e": 1,
+					"n": "UVJTVFVWV1hZWltc",
+					"c": "TdmSQ9fJIn3G0xGyg5tE13dsQ1euH3TOUaS_KlWMBIiRI_R2wMwhuuZdBQOvna78jDlhLZRBAz9C1Ft4bEALn15ao_EWj_ssKapMIacEDj1rhW9qAlX7ExcvKhFopDz7iz6jrZ8dVCzMNhdhTmGbwJPbhgbC2ZFYugk--ggzad-nGU-YB3TDHCiYRYbPxwPd"
+				}
+			},
+			{
+				"place": "snapshot:812:2/3",
+				"aad": "stash-sync/1|s_AJNrGM1Yn3oI2sgnUjMtLQ|1|snapshot:812:2/3",
+				"nonce": "YWJjZGVmZ2hpamts",
+				"slice": "momhN-gIXZLIBhbsHc4_wCETG5k6xxHGT8TLUnAtsguxqrVwX5zF9EOHkVIae2gi3U6rRbgaR9tpUN2u45l-9FMQKF65oDv5nNtepuXGrUFaUR2Mf9f-H93K_DcnQpBzk4MhX1weFdp5-wYvxSiTSAMAAA",
+				"env": {
+					"e": 1,
+					"n": "YWJjZGVmZ2hpamts",
+					"c": "mSz7-wz8HXGSWs80fvVNjIrVvj2cQE_nZxFia2ihHScecIooBVXzTDVZ23Qze9CDiVUQYfrKdxLH3oLqNbhKmadbtF93yl2oOms2gBEoKal6zo6WEpwmIw5CKQko7zAywHU87FiaGNyBnpm3r9qVlnLACsUMeTPEWwrunI479PO0jDk"
+				}
+			}
+		]
+	},
 	"pairing": {
 		"pairId": "xWbdvdFfe2P04fdKEQpCLg",
 		"pairSecret": "oKGio6SlpqeoqaqrrK2urw",
@@ -241,12 +284,12 @@
 			"place": "answer:xWbdvdFfe2P04fdKEQpCLg",
 			"aad": "stash-sync/1|pair|0|answer:xWbdvdFfe2P04fdKEQpCLg",
 			"nonce": "sbKztLW2t7i5uru8",
-			"json": "{\"kind\":\"stash-pair-answer\",\"v\":1,\"label\":{\"kind\":\"stash-label\",\"v\":1,\"name\":\"Pixel 6\",\"type\":\"phone\"},\"deviceId\":\"d_P7x2Lk9QwZr4Tn8M\",\"devicePub\":\"BBdjIeEPSTApSoaNRyN46xXk8hg1FoQuw0Urd273Hyy0Tn1CEjdbpAe9WvsHE1CvqoQmH5_fHofskojQtW7EA6c\",\"space\":{\"id\":\"s_AJNrGM1Yn3oI2sgnUjMtLQ\",\"k\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"epoch\":1}}",
-			"gz": "H4sIAAAAAAAC_1WPyW7CMBRFf6V6ayMRoAzeOSGQVITGAQR0g0xsyAC2G4cMQvx7RSsW3Z577uLcIU8lBwymZCbpaJYWHSZNLQpAUAG2EFzYUVwA3_-bf_TlSHYVgCFMG3F5GwKCstVPoBMlBTwQcFGlsfCff34IR01vkU9o_VUM1nIcwGsPb0fAYNs884UbrtZErxRbRu1yMGx2-Tg5WzNFb3V3U_DeqO-1bXctLcfN-FETMdlWxnMtp_pW9Oq9H06eOplcZbTcjlwyjAGB0SwWz5T0N-RAPpbFPLD2sq_8njnLTRaUCwoIcsBAiOuQms7sc-w7VC2mpPs5bUjkJsFmFu13cztn86bmXjIGBEKrOAFsPR4_9a7TEFMBAAA",
+			"json": "{\"kind\":\"stash-pair-answer\",\"v\":1,\"label\":{\"kind\":\"stash-label\",\"v\":1,\"name\":\"Pixel 6\",\"type\":\"phone\"},\"deviceId\":\"d_P7x2Lk9QwZr4Tn8M\",\"devicePub\":\"BBdjIeEPSTApSoaNRyN46xXk8hg1FoQuw0Urd273Hyy0Tn1CEjdbpAe9WvsHE1CvqoQmH5_fHofskojQtW7EA6c\",\"tokenHash\":\"7AceCgE2yDfAUc7mp3E-266mk2cS0aPKN-hP7jIm5h0\",\"space\":{\"id\":\"s_AJNrGM1Yn3oI2sgnUjMtLQ\",\"k\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"epoch\":1}}",
+			"gz": "H4sIAAAAAAAC_1WQzW6CQBhFX6X51pAAKii7AVFohYJK1G7MCCMDyAwF5CfGd29o46Lbc-9Nbs4D8pTFoEPd4JqKJU4rEbO6IxUI0IIuC3DDF3ID_fG_-UdfHYYLAjr4aU9ubyoI0AzlCErKGYGnADFp04g44z4--1qvbPJF0H1V0z2bu_DK_fsFdDCMOHOI5e_2qNxx7G0Hb6r2x3xOE3nFg3snhVWsaBN7GKQ9k00riy8lIotDW9uWbLbfPCjs2flq82ud8yxoDpqF1Gh8xXPCbFxT0EFDETETSxmWVxRGWlFOLFFR1SJXop2E_Q9PpL6WOcWMSiBAXeKIjBLSXwVn9O5Va1c-sQl3lDphYeY2mwAEyEEHhCwTdcHKSCLHDPhmiaTPZY-2FnXD1fZ0XBs5XvddbNM5CEBKHlHQ5efzB9NSudONAQAA",
 			"env": {
 				"e": 0,
 				"n": "sbKztLW2t7i5uru8",
-				"c": "yg7Dbnx5RrIFaywpwI1MjYHTb71c7MbuY3C9Ye4sg5rpqx5b9KciwVkv80WoqvN710KCCJ4IDbm62AUKavBtDbynlLC1xYaQHaUpj87PpU3XmEOUJMRzAuxX2c8aO7N62GqyR7FEZYr3IP_8PyLOxHW_oO4vNjWt2OAFQxTHsrEm0r9d5FRsAGKE68uZ7KiNocyvesZYIM-wYGUK_VyNuhC399A_5X5Musfhg2Sr6H0RKw5As2NTuZ7kP_e5rJ7RiEIJ5gfpsYSScQBEGnAaFUcHpF6ZbjfNOXTnB-x51MjFoNdp90ZMcnhA3xIO0rS5ed6m_gzv61NPQqWMrGLByyWVQ0MNnOa30tdswvsPE5Kc6t2Qp4Xa551lGejVR9aWL3qNvEYDfkyGf6iTt7gD"
+				"c": "yg7Dbnx5RrIFayw2xI0M_Y3TT73fUXX_6VTYWZ7UUpxlfnTjf8hNwVWcDOVin2BocctPpu8-jZVlC97qzb8WiQDE2WiIyRNnE7phD01XvmHM3m2XBspXhF_tjD8EuajOqlSlM5nOB1NdiKYTI595tBVzwpaIqnWbZPfFvqnqn5l_1_Dan8-pkt5B_yApJ14e6vUdfQ5yik_FP6OKwxj68lo3G95vM9s-ejsv9re7Vvf3WHB2oDFGJDZf9LswZFyATvX9L_UoJxwm8cbzQhnnARjTB5Y-iZLOFtMxcEUZMXN_ZL_slgGJrFAfD0_Kp1BmR67ctCVY9V6pu7w9TTj3suGUoUAvhIrukHj9CPNodjYBSdz4Utrilh-lfHoeD_TFbaPMERCkOvlMq8ri_yKIFQ9fgC9DIzg3NyFyfLmxT4nOFsAp8WOB8zyVSfkMSAGOj4ujC-jErz00vQ"
 			}
 		},
 		"reply": {

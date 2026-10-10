@@ -167,12 +167,51 @@ object SyncCrypto {
         if (env.e < 0) throw SyncCryptoException("bad envelope")
         val nonce = b64(env.n)
         val sealed = b64(env.c)
-        val plain = gunzip(aesOpen(key, nonce, aad(spaceId, env.e, place), sealed))
-        return try {
-            Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(plain)).toString()
-        } catch (e: java.nio.charset.CharacterCodingException) {
-            throw SyncCryptoException("bad plaintext", e)
+        return utf8(gunzip(aesOpen(key, nonce, aad(spaceId, env.e, place), sealed)))
+    }
+
+    /** Most gzip bytes one part carries: sealed and in base64url it still fits a 1 MiB request with room for the JSON around it. */
+    const val PART_BYTES = 768_000
+
+    /** Most parts of one snapshot or send. */
+    const val MAX_PARTS = 16
+
+    /**
+     * A document too big for one envelope (a snapshot, a send): gzip(UTF-8 [jsonText]) cut into slices of at most [partBytes], each
+     * sealed at `placeOf(part, count)`, so the server can't reorder, drop or mix parts. [nonces] are for fixtures only.
+     */
+    fun sealParts(
+        key: ByteArray,
+        spaceId: String,
+        epoch: Int,
+        placeOf: (part: Int, count: Int) -> String,
+        jsonText: String,
+        partBytes: Int = PART_BYTES,
+        nonces: List<ByteArray>? = null,
+    ): List<SyncEnvelope> {
+        val gz = gzip(jsonText.toByteArray(Charsets.UTF_8))
+        val count = maxOf(1, (gz.size + partBytes - 1) / partBytes)
+        if (count > MAX_PARTS) throw SyncCryptoException("too big")
+        return List(count) { i ->
+            val nonce = nonces?.getOrNull(i) ?: randomBytes(NONCE_BYTES)
+            val slice = gz.copyOfRange(minOf(i * partBytes, gz.size), minOf((i + 1) * partBytes, gz.size))
+            SyncEnvelope(epoch, Base64Url.encode(nonce), Base64Url.encode(aesSeal(key, nonce, aad(spaceId, epoch, placeOf(i, count)), slice)))
         }
+    }
+
+    /** The JSON text of the parts of [sealParts], given in order (one epoch). */
+    fun openParts(key: ByteArray, spaceId: String, placeOf: (part: Int, count: Int) -> String, envs: List<SyncEnvelope>): String {
+        val count = envs.size
+        if (count !in 1..MAX_PARTS || envs.any { it.e != envs[0].e || it.e < 0 }) throw SyncCryptoException("bad envelope")
+        val gz = ByteArrayOutputStream()
+        envs.forEachIndexed { i, env -> gz.write(aesOpen(key, b64(env.n), aad(spaceId, env.e, placeOf(i, count)), b64(env.c))) }
+        return utf8(gunzip(gz.toByteArray()))
+    }
+
+    private fun utf8(b: ByteArray): String = try {
+        Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(b)).toString()
+    } catch (e: java.nio.charset.CharacterCodingException) {
+        throw SyncCryptoException("bad plaintext", e)
     }
 
     private fun b64(s: String): ByteArray = try {

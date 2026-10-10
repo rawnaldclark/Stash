@@ -75,6 +75,30 @@ class SyncCryptoTest {
         assertThrows(SyncCryptoException::class.java) { SyncCrypto.gunzip("not gzip".toByteArray()) }
     }
 
+    @Test fun `a document in parts - exact slices, parts open in order only, round trip`() {
+        val p = v["parts"]
+        val key = b(v["space"][p["key"].s])
+        val gz = b(p["gz"])
+        val size = p["partBytes"].i
+        val placeOf = { part: Int, count: Int -> "snapshot:812:$part/$count" }
+        val parts = p["parts"].list
+        parts.forEachIndexed { i, part ->
+            assertThat(part["place"].s).isEqualTo(placeOf(i, parts.size))
+            assertThat(b64(gz.copyOfRange(i * size, minOf((i + 1) * size, gz.size)))).isEqualTo(part["slice"].s)
+            assertThat(b64(SyncCrypto.aesSeal(key, b(part["nonce"]), part["aad"].s, b(part["slice"])))).isEqualTo(part["env"]["c"].s)
+        }
+        val envs = parts.map { env(it["env"]) }
+        assertThat(json(SyncCrypto.openParts(key, p["spaceId"].s, placeOf, envs))).isEqualTo(json(p["json"].s))
+        assertThrows(SyncCryptoException::class.java) { SyncCrypto.openParts(key, p["spaceId"].s, placeOf, listOf(envs[1], envs[0]) + envs.drop(2)) }
+        assertThrows(SyncCryptoException::class.java) { SyncCrypto.openParts(key, p["spaceId"].s, placeOf, envs.dropLast(1)) }
+
+        val sealed = SyncCrypto.sealParts(key, p["spaceId"].s, 1, placeOf, p["json"].s, partBytes = 100)
+        assertThat(sealed.size).isGreaterThan(1)
+        assertThat(json(SyncCrypto.openParts(key, p["spaceId"].s, placeOf, sealed))).isEqualTo(json(p["json"].s))
+        assertThat(SyncCrypto.sealParts(key, p["spaceId"].s, 1, placeOf, p["json"].s)).hasSize(1)
+        assertThrows(SyncCryptoException::class.java) { SyncCrypto.sealParts(key, p["spaceId"].s, 1, placeOf, p["json"].s, partBytes = 10) }
+    }
+
     @Test fun `pairing - the QR link, the label, Kpair from both sides, answer and reply`() {
         val p = v["pairing"]
         val eBPub = b(p["browserEphemeral"]["pub"])

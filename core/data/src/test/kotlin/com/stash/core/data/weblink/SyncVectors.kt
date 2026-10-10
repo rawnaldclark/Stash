@@ -20,7 +20,7 @@ import java.security.MessageDigest
  */
 internal object SyncVectors {
     const val MERGE_SHA256 = "ccb606dfaa043185c176c55fb704035ec61d4c8ac1eab8075af7d4ebef484979"
-    const val CRYPTO_SHA256 = "55f4aa6e345cde26ff601a56ca51425001ff551af77e284a7da54dc0dfd5b233"
+    const val CRYPTO_SHA256 = "7e653d879030a2a91e45f9d6c1de31a0d0aa98286a2376f4219133601a85202d"
 
     fun bytes(name: String): ByteArray =
         requireNotNull(javaClass.getResourceAsStream("/sync/$name")) { "missing test resource sync/$name" }.use { it.readBytes() }
