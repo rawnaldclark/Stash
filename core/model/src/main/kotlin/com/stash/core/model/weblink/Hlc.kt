@@ -1,4 +1,4 @@
-package com.stash.core.model.sync
+package com.stash.core.model.weblink
 
 /**
  * A hybrid logical clock stamp of sync-v1 (stash-player `docs/sync-v1.md` "Clocks"): `[wallMs, counter, deviceId]` on the wire,

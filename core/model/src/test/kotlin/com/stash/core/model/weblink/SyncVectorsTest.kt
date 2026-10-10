@@ -1,4 +1,4 @@
-package com.stash.core.model.sync
+package com.stash.core.model.weblink
 
 import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage

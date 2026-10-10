@@ -1,4 +1,4 @@
-package com.stash.core.model.sync
+package com.stash.core.model.weblink
 
 import kotlin.math.floor
 
