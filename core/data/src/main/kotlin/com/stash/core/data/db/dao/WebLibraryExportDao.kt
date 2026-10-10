@@ -157,6 +157,66 @@ interface WebLibraryExportDao {
     )
     suspend fun recentPlays(limit: Int): List<PlayRow>
 
+    /**
+     * How many likes [likes] returns (the picker's count). Songs without a title or artist are left out, as the file
+     * leaves them out.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM tracks t
+        WHERE (
+            t.stash_liked_at IS NOT NULL
+            OR EXISTS (
+                SELECT 1 FROM playlist_tracks pt
+                JOIN playlists p ON p.id = pt.playlist_id
+                WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.type IN ('LIKED_SONGS', 'STASH_LIKED')
+            )
+        )
+        AND TRIM(t.title) != '' AND TRIM(t.artist) != ''
+        AND $NOT_BLOCKED
+        """,
+    )
+    suspend fun likeCount(): Int
+
+    /** How many plays [recentPlays] returns with [limit] (the picker's count). */
+    @Query(
+        """
+        SELECT COUNT(*) FROM (
+            SELECT le.id FROM listening_events le
+            JOIN tracks t ON t.id = le.track_id
+            WHERE $NOT_BLOCKED AND TRIM(t.title) != '' AND TRIM(t.artist) != '' AND le.started_at > 0
+            LIMIT :limit
+        )
+        """,
+    )
+    suspend fun playCount(limit: Int): Int
+
+    /** How many songs of a playlist would go (removed, blocked and untitled ones left out). */
+    @Query(
+        """
+        SELECT COUNT(*) FROM playlist_tracks pt
+        JOIN tracks t ON t.id = pt.track_id
+        WHERE pt.playlist_id = :playlistId
+          AND pt.removed_at IS NULL
+          AND TRIM(t.title) != '' AND TRIM(t.artist) != ''
+          AND $NOT_BLOCKED
+        """,
+    )
+    suspend fun playlistItemCount(playlistId: Long): Int
+
+    /** A play's words and start, for the importer's "the same play is never added twice" (library-file v1 "Merging"). */
+    data class PlayKeyRow(val title: String, val artist: String, val isrc: String?, @ColumnInfo(name = "started_at") val startedAt: Long)
+
+    /** Every play that started between [fromMs] and [toMs] (inclusive), with its song's words. */
+    @Query(
+        """
+        SELECT t.title, t.artist, t.isrc, le.started_at FROM listening_events le
+        JOIN tracks t ON t.id = le.track_id
+        WHERE le.started_at BETWEEN :fromMs AND :toMs
+        """,
+    )
+    suspend fun playKeysBetween(fromMs: Long, toMs: Long): List<PlayKeyRow>
+
     companion object {
         /** [SongColumns] of a track (`t`). */
         const val SONG_COLUMNS =
