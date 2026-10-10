@@ -42,9 +42,20 @@ class RoomMirrorLibraryTest {
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(context, StashDatabase::class.java).allowMainThreadQueries().build()
         val music = mockk<MusicRepository>()
+        // As MusicRepositoryImpl.ensureExactTrackPersisted does: an existing row by YouTube id, Spotify id or ISRC (its ISRC
+        // backfilled when missing), else a new stream-only row.
         coEvery { music.ensureExactTrackPersisted(any()) } coAnswers {
             val s = firstArg<SharedTrack>()
-            db.trackDao().insert(TrackEntity(title = s.title, artist = s.artist, isrc = s.isrc, isStreamable = true, canonicalTitle = canon(s.title), canonicalArtist = canon(s.artist)))
+            val t = db.trackDao()
+            val existing = s.youtubeId?.let { t.findByYoutubeId(it) }
+                ?: s.spotifyId?.let { t.findBySpotifyUri("spotify:track:$it") }
+                ?: s.isrc?.let { t.findByIsrc(it) }
+            if (existing != null) {
+                s.isrc?.let { t.backfillIsrcIfMissing(existing.id, it) }
+                existing.id
+            } else {
+                t.insert(TrackEntity(title = s.title, artist = s.artist, isrc = s.isrc, youtubeId = s.youtubeId, spotifyUri = s.spotifyId?.let { "spotify:track:$it" }, isStreamable = true, canonicalTitle = canon(s.title), canonicalArtist = canon(s.artist)))
+            }
         }
         coEvery { music.addTrackToPlaylist(any(), any()) } coAnswers {
             db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = secondArg(), trackId = firstArg(), position = db.playlistDao().getNextPosition(secondArg())))
@@ -77,6 +88,30 @@ class RoomMirrorLibraryTest {
         db.trackDao().insert(TrackEntity(title = "Nights", artist = "Frank Ocean", youtubeId = "dQw4w9WgXcQ", stashLikedAt = 5L, isStreamable = true, canonicalTitle = "nights", canonicalArtist = "frank ocean"))
         lib.setLikes(on = listOf(com.stash.core.data.weblink.handoff.WireSong("Pink + White", "Frank Ocean", refs = mapOf("youtube" to "dQw4w9WgXcQ"))), off = emptyList(), at = 99)
         assertThat(lib.likes().map { it.s.title }).containsExactly("Nights", "Pink + White")
+    }
+
+    @Test fun `B1 - a song whose YouTube id names another song with no ISRC gets its own row, and the other song keeps no ISRC`() = runTest {
+        val nights = db.trackDao().insert(TrackEntity(title = "Nights", artist = "Frank Ocean", youtubeId = "dQw4w9WgXcQ", stashLikedAt = 5L, isStreamable = true, canonicalTitle = "nights", canonicalArtist = "frank ocean"))
+        val pink = com.stash.core.data.weblink.handoff.WireSong("Pink + White", "Frank Ocean", isrc = "USUM71607009", refs = mapOf("youtube" to "dQw4w9WgXcQ"))
+        lib.setLikes(on = listOf(pink), off = emptyList(), at = 99)
+        assertThat(db.trackDao().getById(nights)!!.isrc).isNull()
+        assertThat(lib.likes().map { it.s.title }).containsExactly("Nights", "Pink + White")
+        // The next diff against a base holding both sends nothing.
+        val base = listOf(
+            com.stash.core.data.weblink.merge.LikeRec(com.stash.core.data.weblink.handoff.WireSong("Nights", "Frank Ocean"), true, com.stash.core.model.weblink.Hlc(1, 0, "d_00000000")),
+            com.stash.core.data.weblink.merge.LikeRec(pink, true, com.stash.core.model.weblink.Hlc(1, 0, "d_00000000")),
+        )
+        assertThat(com.stash.core.data.weblink.merge.LikesMerge.diff(base, lib.likes(), com.stash.core.model.weblink.Hlc(2, 0, "d_00000000"))).isEmpty()
+        // A later song with that ISRC lands on Pink + White, never on Nights.
+        lib.setLikes(on = listOf(com.stash.core.data.weblink.handoff.WireSong("Pink + White", "Frank Ocean", isrc = "USUM71607009")), off = emptyList(), at = 100)
+        assertThat(lib.likes()).hasSize(2)
+    }
+
+    @Test fun `S4 - the same video under a slightly different title is the same song, not a duplicate row`() = runTest {
+        val a = db.trackDao().insert(TrackEntity(title = "Song A", artist = "The Band", youtubeId = "AAAAAAAAAAA", isStreamable = true, canonicalTitle = "song a", canonicalArtist = "the band"))
+        lib.setLikes(on = listOf(com.stash.core.data.weblink.handoff.WireSong("Song A - Remastered 2011", "The Band feat. Someone", refs = mapOf("youtube" to "AAAAAAAAAAA"))), off = emptyList(), at = 99)
+        assertThat(db.query("SELECT COUNT(*) FROM tracks", null).use { it.moveToFirst(); it.getInt(0) }).isEqualTo(1)
+        assertThat(db.trackDao().getById(a)!!.stashLikedAt).isNotNull()
     }
 
     @Test fun `plays from another device go to History with their origin, once, and never touch play counts or mix inputs`() = runTest {
