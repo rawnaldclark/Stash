@@ -117,7 +117,12 @@ export function world({ t = 1_760_000_000_000, limits = {} } = {}) {
     env.OPEN_RL = limiter(limits.open ?? 1000);
     env.API_RL = limiter(limits.api ?? 100_000);
     const fire = () => { for (const tm of timers.splice(0)) tm.fire(); };
-    return { clock, env, timers, fire, fetch: (req) => worker.fetch(req, env, {}) };
+    /** Resolves once a long-poll is waiting (a fixed delay is flaky when the test files run in parallel). */
+    const polling = async () => {
+        for (let i = 0; i < 2000 && timers.length === 0; i++) await new Promise((r) => setTimeout(r, 1));
+        if (timers.length === 0) throw new Error("no long-poll started");
+    };
+    return { clock, env, timers, fire, polling, fetch: (req) => worker.fetch(req, env, {}) };
 }
 
 const random = (n) => new Uint8Array(randomBytes(n));

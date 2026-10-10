@@ -100,14 +100,17 @@ export class Space {
 
     // ---------------------------------------------------------------- creation
 
-    /** A new space from a claimed pairing: the phone and the browser, epoch 1. */
-    create({ spaceId, phone, browser }) {
+    /**
+     * A new space from a claimed pairing: the phone and the browser, epoch 1. `labels` (sync-v1 §3.4): both devices' labels
+     * re-sealed under the data key (`label:<deviceId>`), replacing the pairing-time ones; the Worker checked their shape and ids.
+     */
+    create({ spaceId, phone, browser, labels }) {
         const now = this.now();
         return this.tx(() => {
             if (this.meta()) return err(409, "exists", "This link id is taken");
             for (const q of SCHEMA) this.sql.exec(q);
             this.sql.exec("INSERT INTO meta VALUES (1, ?, ?, 1, 0, 0, 0, 0, 0)", spaceId, now);
-            for (const d of [phone, browser]) this.insertDevice(d, now);
+            for (const d of [phone, browser]) this.insertDevice(labels?.[d.id] ? { ...d, labelCt: labels[d.id] } : d, now);
             return { status: 201, body: { spaceId, epoch: 1 } };
         });
     }
@@ -241,7 +244,8 @@ export class Space {
     }
 
     /**
-     * Adds the other device of a completed pairing (§5.1 step 5): `{ pairId, epoch, envelope? }`. `epoch` is the key epoch
+     * Adds the other device of a completed pairing (§5.1 step 5): `{ pairId, epoch, envelope?, labelCt }`. `labelCt` is the
+     * newcomer's label re-sealed by the sponsor under the current data key (sync-v1 §3.4); it replaces the pairing-time label. `epoch` is the key epoch
      * the sponsor handed the newcomer in the pairing message. If the space has rotated since, the sponsor must also send the
      * newcomer's key envelope for the current epoch (sealed to its device key: the browser's is in the slot's label, the
      * phone's in its answer); without one the answer is a retryable `409 epoch` with the current epoch, before the code is
@@ -253,6 +257,8 @@ export class Space {
         const pairId = body?.pairId;
         const given = body?.epoch;
         if (!isPairId(pairId) || !Number.isSafeInteger(given) || given < 1) return bad("Need pairId and epoch");
+        const labelCt = cleanBox(body.labelCt, LIMITS.labelChars, { minEpoch: 1 });
+        if (!labelCt) return bad("Need the newcomer's labelCt under the data key");
         let envelope = null;
         if (body.envelope !== undefined) {
             envelope = cleanBox(body.envelope, LIMITS.keyChars, { pub: true });
@@ -264,6 +270,7 @@ export class Space {
             if (given !== m.epoch && envelope?.e !== m.epoch) {
                 return { status: 409, body: { error: { code: "epoch", message: "The key changed: send the new device its key" }, epoch: m.epoch } };
             }
+            if (labelCt.e !== m.epoch) return { status: 409, body: { error: { code: "epoch", message: "Seal the label with the current key" }, epoch: m.epoch } };
             return this.capFor(me.type === "phone" ? "web" : "phone");
         });
         if (pre) return pre;
@@ -278,7 +285,7 @@ export class Space {
             if (this.one("SELECT id FROM devices WHERE id = ?", add.id)) return err(409, "member", "That device is already linked");
             const full = this.capFor(add.type);
             if (full) return full;
-            this.insertDevice(add, this.now());
+            this.insertDevice({ ...add, labelCt }, this.now());
             if (envelope && envelope.e === m.epoch) this.sql.exec("INSERT OR REPLACE INTO envelopes VALUES (?, ?, ?)", add.id, m.epoch, JSON.stringify(envelope));
             else if (given !== m.epoch) this.sql.exec("UPDATE meta SET rotationDue = 1 WHERE id = 1"); // rotated during the claim
             return { status: 201, body: { device: add.id, type: add.type, epoch: m.epoch } };

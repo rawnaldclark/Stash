@@ -9,7 +9,7 @@
  * Every id is in the path, never in a query (the stashfm.app zone's cache ignores query strings); every answer is no-store.
  */
 import { answer, fail, limitKey, parseDeviceAuth, PLAYER_HEADER, randomId, rpc, sameSecret, tokenHashOf } from "./http.js";
-import { cleanDevice, isDeviceId, isNewSpaceId, isPairId, isSendId, isSpaceId, LIMITS, pathInt } from "./validate.js";
+import { cleanBox, cleanDevice, isDeviceId, isNewSpaceId, isPairId, isSendId, isSpaceId, LIMITS, pathInt } from "./validate.js";
 
 export { SyncSpace } from "./sync-space.js";
 export { PairSlot } from "./pair-slot.js";
@@ -218,8 +218,16 @@ export async function handle(request, env, _ctx) {
         if (!caller) return noAuth();
         const r = await readJson(request);
         if ("response" in r) return r.response;
-        const { pairId, spaceId } = r.value ?? {};
+        const { pairId, spaceId, labels: rawLabels } = r.value ?? {};
         if (!isPairId(pairId) || !isNewSpaceId(spaceId)) return fail(400, "bad_request", "Need pairId and spaceId (s_ + 16 random bytes)");
+        // Both devices' labels, re-sealed by the phone under the new space's data key (epoch 1), replace the pairing-time ones.
+        const labels = {};
+        if (!rawLabels || typeof rawLabels !== "object" || Array.isArray(rawLabels) || Object.keys(rawLabels).length !== 2) return fail(400, "bad_request", "Need both devices' labels");
+        for (const [id, b] of Object.entries(rawLabels)) {
+            const box = isDeviceId(id) && cleanBox(b, LIMITS.labelChars, { minEpoch: 1 });
+            if (!box || box.e !== 1) return fail(400, "bad_request", "Not a label under the new key");
+            labels[id] = box;
+        }
         // The phone that answered the slot creates the space under the id it minted (sync-v1: it seals that id into its answer);
         // the claim hands over both devices and holds the code while the space is made. The code is burned only if that
         // succeeds: a refusal (quota, a taken id) or an error releases it, so the same code can be tried again.
@@ -227,6 +235,10 @@ export async function handle(request, env, _ctx) {
         const claim = await rpc(slot, "claim", { caller, mode: "create" });
         if (claim.status !== 200) return answer(claim);
         const { phone, browser, session } = claim.body;
+        if (!Object.hasOwn(labels, phone.id) || !Object.hasOwn(labels, browser.id)) {
+            await rpc(slot, "release");
+            return fail(400, "bad_request", "The labels must be the two devices of this code");
+        }
         let made;
         try {
             // At most 10 new spaces a day from one player session's codes, and 20 from one phone IP.
@@ -235,7 +247,7 @@ export async function handle(request, env, _ctx) {
                 await rpc(slot, "release");
                 return quota;
             }
-            made = await rpc(env.SPACES.get(env.SPACES.idFromName(spaceId)), "create", { spaceId, phone, browser });
+            made = await rpc(env.SPACES.get(env.SPACES.idFromName(spaceId)), "create", { spaceId, phone, browser, labels });
         } catch (e) {
             await rpc(slot, "release").catch(() => {});
             throw e;

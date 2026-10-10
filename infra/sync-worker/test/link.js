@@ -32,7 +32,7 @@ export async function linkNew(w, { headers } = {}) {
     await readLabel(w, pairId);
     const spaceId = newSpaceId();
     assert.equal((await w.fetch(req("POST", `/v1/pair/${pairId}/answer`, { body: answerBody(phone) }))).status, 201);
-    const created = await w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, spaceId } }));
+    const created = await w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, spaceId, labels: { [phone.id]: box(1), [browser.id]: box(1) } } }));
     assert.equal(created.status, 201);
     assert.deepEqual(await created.json(), { spaceId, epoch: 1 });
     return { phone, browser, spaceId, pairId };
@@ -43,6 +43,9 @@ export async function joinBrowser(w, spaceId, sponsor, { epoch = 1, envelope } =
     const b = await makeDevice("w");
     const { pairId } = await openCode(w, b);
     await w.fetch(req("POST", `/v1/pair/${pairId}/answer`, { body: answerBody(sponsor) }));
-    const res = await w.fetch(req("POST", `/v1/spaces/${spaceId}/devices`, { device: sponsor, body: { pairId, epoch, ...(envelope ? { envelope } : {}) } }));
+    const res = await w.fetch(req("POST", `/v1/spaces/${spaceId}/devices`, { device: sponsor, body: { pairId, epoch, labelCt: box(1), ...(envelope ? { envelope } : {}) } }));
     return { device: b, pairId, res };
 }
+
+/** Both devices' labels re-sealed under the new space's data key (epoch 1), as `POST /v1/spaces` carries them. */
+export const labelsFor = (phone, browser) => ({ [phone.id]: box(1), [browser.id]: box(1) });

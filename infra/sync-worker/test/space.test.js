@@ -467,15 +467,15 @@ test("join checks the epoch the newcomer was given: stale without its envelope i
     const pairId = "P".repeat(22);
     assert.equal((await call(phone, "rotate", {}, { epoch: 2, envelopes: { [phone.id]: keyBox(2, phone), [browser.id]: keyBox(2, browser) } })).status, 200);
 
-    assert.equal((await call(phone, "join", {}, { pairId })).status, 400, "epoch is required");
-    const stale = await call(phone, "join", {}, { pairId, epoch: 1 });
+    assert.equal((await call(phone, "join", {}, { pairId, labelCt: box(2) })).status, 400, "epoch is required");
+    const stale = await call(phone, "join", {}, { pairId, epoch: 1, labelCt: box(2) });
     assert.equal(stale.status, 409);
     assert.equal(code(stale), "epoch");
     assert.equal(stale.body.epoch, 2);
     assert.equal(claims.length, 0, "the code wasn't used");
     // The retry carries the newcomer's envelope for the current epoch; the newcomer can open the key at once.
     const env = keyBox(2, laptop);
-    const ok2 = await call(phone, "join", {}, { pairId, epoch: 1, envelope: env });
+    const ok2 = await call(phone, "join", {}, { pairId, epoch: 1, envelope: env, labelCt: box(2) });
     assert.deepEqual(ok2.body, { device: laptop.id, type: "web", epoch: 2 });
     assert.deepEqual((await call(laptop, "key", { epoch: 2 })).body, { epoch: 2, ct: env });
     assert.equal((await call(laptop, "get")).body.rotationDue, false);
@@ -486,7 +486,7 @@ test("join checks the epoch the newcomer was given: stale without its envelope i
     beforeClaim = async () => {
         await call(phone, "rotate", {}, { epoch: 4, envelopes: { [phone.id]: keyBox(4, phone), [browser.id]: keyBox(4, browser) } });
     };
-    const raced = await call(phone, "join", {}, { pairId, epoch: 3 });
+    const raced = await call(phone, "join", {}, { pairId, epoch: 3, labelCt: box(3) });
     assert.equal(raced.status, 201);
     assert.equal(raced.body.epoch, 4);
     assert.equal((await call(phone, "get")).body.rotationDue, true);
