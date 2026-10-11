@@ -6,8 +6,8 @@ import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
-import com.stash.core.ui.util.ArtSizeFloorInterceptor
-import com.stash.core.ui.util.ArtSizeMapper
+import com.stash.core.ui.util.ArtSizeInterceptor
+import com.stash.core.ui.util.DataSaverArtCap
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
 
@@ -20,10 +20,10 @@ import okio.Path.Companion.toOkioPath
  *  - 250 MB on-disk cache for artwork persistence between launches.
  *  - Shares the app's [OkHttpClient] so DNS/TLS reuse is maximal.
  *  - Crossfade off globally — the hero composables do their own crossfade.
- *  - [ArtSizeMapper]: a cover drawn bigger than its stored URL (Now Playing,
- *    above all) asks its host for a big enough variant; rows are untouched.
- *    [ArtSizeFloorInterceptor] keeps the stored URL when that variant turns
- *    out smaller (a Last.fm original under its CDN's 770 rendering).
+ *  - [ArtSizeInterceptor]: a cover drawn bigger than its stored URL (Now
+ *    Playing, above all) asks its host for a big enough variant, and draws the
+ *    stored URL when that fails or turns out smaller; rows are untouched. No
+ *    variant above 1200px while Data Saver restricts a metered network.
  */
 object CoilConfiguration {
     fun build(context: PlatformContext, okHttp: OkHttpClient): ImageLoader =
@@ -40,8 +40,7 @@ object CoilConfiguration {
                     .build()
             }
             .components {
-                add(ArtSizeMapper())
-                add(ArtSizeFloorInterceptor())
+                add(ArtSizeInterceptor(maxVariantPx = DataSaverArtCap(context)))
                 add(OkHttpNetworkFetcherFactory(callFactory = { okHttp }))
             }
             .crossfade(false) // hero does its own crossfade

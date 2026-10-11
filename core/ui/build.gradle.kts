@@ -21,6 +21,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation(libs.truth)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    // ArtSizeInterceptorTest builds real Coil ImageRequests, which need a (mocked) Context.
+    testImplementation(libs.mockk)
     testImplementation(libs.compose.runtime)
     testImplementation("androidx.compose.runtime:runtime-saveable")
 }
