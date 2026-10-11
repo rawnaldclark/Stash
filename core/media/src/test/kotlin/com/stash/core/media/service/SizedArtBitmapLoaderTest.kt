@@ -159,4 +159,28 @@ class SizedArtBitmapLoaderTest {
         assertThat(autoTileArtUri(null)).isNull()
         assertThat(autoTileArtUri(qobuz600).toString()).isEqualTo(qobuz600)
     }
+
+    @Test
+    fun `a decode above half the cap may be a sampled bigger original and is kept`() {
+        // 700px under a 1024 power-of-two cap: a 700px original, or a 1400px one sampled by 2.
+        val fake = FakeLoader { Futures.immediateFuture(bitmap(if (it == lastFmOrig) 700 else 770)) }
+        val result = get(loader(fake).loadBitmap(Uri.parse(lastFm770)))
+        assertThat(result.width).isEqualTo(700)
+        assertThat(fake.loaded).containsExactly(lastFmOrig)
+    }
+
+    // ── M1: items that PLAY keep the stored artwork; only listed tiles are sized ─────────────
+
+    @Test
+    fun `a played auto item keeps the stored artwork uri, a listed tile gets the sized one`() {
+        val track = com.stash.core.data.db.entity.TrackEntity(
+            id = 7,
+            title = "Idioteque",
+            artist = "Radiohead",
+            albumArtUrl = yt60,
+        )
+        assertThat(track.toAutoMediaItem().mediaMetadata.artworkUri.toString()).isEqualTo(yt60)
+        assertThat(track.toAutoMediaItem(tileArt = true).mediaMetadata.artworkUri.toString())
+            .isEqualTo("https://yt3.googleusercontent.com/abc=w512-h512-l90-rj")
+    }
 }

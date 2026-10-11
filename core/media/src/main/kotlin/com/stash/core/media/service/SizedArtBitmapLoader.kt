@@ -7,6 +7,7 @@ import androidx.media3.common.util.BitmapLoader
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.ListeningExecutorService
 import com.google.common.util.concurrent.MoreExecutors
 import com.stash.core.common.ArtUrlSizer
 import java.util.concurrent.Executors
@@ -64,7 +65,7 @@ internal class SizedArtBitmapLoader(
         val checked = Futures.transformAsync(
             attempt,
             { bitmap ->
-                if (floorPx != null && maxOf(bitmap.width, bitmap.height) < floorPx - ROUNDING_SLACK_PX) {
+                if (floorPx != null && isSmallerThanStored(maxOf(bitmap.width, bitmap.height), floorPx)) {
                     delegate.loadBitmap(uri)
                 } else {
                     Futures.immediateFuture(bitmap)
@@ -79,6 +80,16 @@ internal class SizedArtBitmapLoader(
             MoreExecutors.directExecutor(),
         )
     }
+
+    /**
+     * True when a decoded bitmap of [decodedPx] proves the source was smaller than the stored
+     * URL's [floorPx]. The delegate caps its decode at [targetPx] by power-of-two sampling only,
+     * so a result above half the cap is ambiguous: 600px may be a 600px original or a 1200px one
+     * sampled by 2. Only a result at or under half the cap is certainly the original's own size;
+     * anything above it is kept rather than paying a refetch for every mid-size original.
+     */
+    private fun isSmallerThanStored(decodedPx: Int, floorPx: Int): Boolean =
+        decodedPx < floorPx - ROUNDING_SLACK_PX && decodedPx <= targetPx / 2
 
     /**
      * Routed through [loadBitmap] (and [decodeBitmap] for embedded bytes), as BitmapLoader's
@@ -98,6 +109,23 @@ internal class SizedArtBitmapLoader(
 
         /** Decoders can round a sampled size down by a pixel or two. */
         private const val ROUNDING_SLACK_PX = 2
+
+        /**
+         * The threads the delegate DataSourceBitmapLoader fetches and decodes on. Two, not media3's
+         * shared single-thread default: when the sized-up attempt stalls on a dead link, the
+         * stored-URL fallback (and the next track's art) must not queue behind it until the
+         * socket times out. The timeout cancels the stalled future, but a blocking read only
+         * notices at its next timeout, so the second thread is what lets the fallback run now.
+         */
+        val loadExecutor: ListeningExecutorService by lazy {
+            MoreExecutors.listeningDecorator(
+                Executors.newFixedThreadPool(LOAD_THREADS) { r ->
+                    Thread(r, "stash-art-load").apply { isDaemon = true }
+                },
+            )
+        }
+
+        private const val LOAD_THREADS = 2
 
         /** One daemon thread that only fires the [BUDGET_MS] timeouts. */
         private val timeoutScheduler: ScheduledExecutorService by lazy {

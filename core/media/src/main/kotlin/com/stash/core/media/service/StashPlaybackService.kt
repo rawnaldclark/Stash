@@ -595,9 +595,10 @@ class StashPlaybackService : MediaLibraryService() {
                         // metadata crosses Binder.
                         SizedArtBitmapLoader(
                             delegate = androidx.media3.datasource.DataSourceBitmapLoader.Builder(this)
-                                .setExecutorService(
-                                    androidx.media3.datasource.DataSourceBitmapLoader.DEFAULT_EXECUTOR_SERVICE.get(),
-                                )
+                                // Not the shared single-thread default: a stalled download
+                                // there would hold the stored-URL fallback (and the next
+                                // track's art) behind it for the 30s socket timeouts.
+                                .setExecutorService(SizedArtBitmapLoader.loadExecutor)
                                 .setDataSourceFactory(
                                     androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient),
                                 )
@@ -2127,6 +2128,7 @@ class StashPlaybackService : MediaLibraryService() {
                         listOf(shuffleItem(SHUFFLE_PLAY_PREFIX + LIKED_ID)) + likedTracksForAuto().map { track ->
                             track.toAutoMediaItem(
                                 mediaId = AutoBrowseQueue.childMediaId(parentId, track.id),
+                                tileArt = true,
                             )
                         }
                     }
@@ -2134,6 +2136,7 @@ class StashPlaybackService : MediaLibraryService() {
                         trackDao.getRecentlyAdded(20).first().map { track ->
                             track.toAutoMediaItem(
                                 mediaId = AutoBrowseQueue.childMediaId(parentId, track.id),
+                                tileArt = true,
                             )
                         }
                     }
@@ -2154,6 +2157,7 @@ class StashPlaybackService : MediaLibraryService() {
                                     .map { track ->
                                         track.toAutoMediaItem(
                                             mediaId = AutoBrowseQueue.childMediaId(parentId, track.id),
+                                            tileArt = true,
                                         )
                                     }
                                 listOf(shuffleItem) + tracks
@@ -2191,7 +2195,7 @@ class StashPlaybackService : MediaLibraryService() {
                     .joinToString(" ") { "$it*" }
 
                 val tracks = trackDao.searchDownloaded(sanitized).first()
-                val items = tracks.map { it.toAutoMediaItem() }
+                val items = tracks.map { it.toAutoMediaItem(tileArt = true) }
                 LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
             }
         }
