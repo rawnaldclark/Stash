@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -31,12 +32,15 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.ui.theme.StashBackground
+import com.stash.core.ui.util.ArtSizeInterceptor
 import com.stash.core.ui.theme.StashElevation
 import com.stash.core.ui.theme.StashPurpleDark
 
@@ -100,8 +104,19 @@ fun DiscoverHeroCard(
         // Ambient backdrop: the cover, blurred + darkened (blur is a no-op below
         // API 31 — the scrim still carries it). Brand gradient when there's no art.
         if (artUrl != null) {
+            // Blurred at 24dp, so a small decode of the stored URL is all it needs: no bigger
+            // variant (a Qobuz `_max` would be up to 2 MB for detail the blur throws away), and
+            // the same URL as the crisp cover beside it, so both share one download.
+            val context = LocalContext.current
+            val backdrop = remember(context, artUrl) {
+                ImageRequest.Builder(context)
+                    .data(ArtUrlUpgrader.upgrade(artUrl))
+                    .size(BACKDROP_DECODE_PX)
+                    .apply { extras[ArtSizeInterceptor.SkipSizing] = true }
+                    .build()
+            }
             AsyncImage(
-                model = ArtUrlUpgrader.upgrade(artUrl),
+                model = backdrop,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().blur(24.dp),
@@ -199,3 +214,6 @@ fun DiscoverHeroCard(
         }
     }
 }
+
+/** Decode size of the blurred backdrop: a 24dp blur leaves nothing a bigger bitmap would add. */
+private const val BACKDROP_DECODE_PX = 256
