@@ -22,8 +22,18 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryHealthViewModelRestoreTest {
 
-    @Before fun setUp() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
-    @After fun tearDown() { Dispatchers.resetMain() }
+    // The ViewModel's IO work runs on the same test dispatcher as Main, so it all finishes
+    // inside the test. On the real Dispatchers.IO, the refresh after the restore resumed onto
+    // Main after tearDown's resetMain, an uncaught exception that failed the next test class.
+    @Before fun setUp() {
+        val main = UnconfinedTestDispatcher()
+        Dispatchers.setMain(main)
+        LibraryHealthViewModel.io = main
+    }
+    @After fun tearDown() {
+        LibraryHealthViewModel.io = Dispatchers.IO
+        Dispatchers.resetMain()
+    }
 
     @Test fun `re-download missing starts the download run right away`() {
         val trackDao = mockk<TrackDao>(relaxed = true) {
@@ -43,7 +53,6 @@ class LibraryHealthViewModelRestoreTest {
 
         vm.restoreMissingDownloads()
 
-        // The queueing runs on Dispatchers.IO; wait for it.
-        coVerify(timeout = 5_000) { music.resumeWaitingDownloads(tap = true) }
+        coVerify { music.resumeWaitingDownloads(tap = true) }
     }
 }

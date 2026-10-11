@@ -13,6 +13,7 @@ import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,12 +55,12 @@ class LibraryHealthViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            val buckets = withContext(Dispatchers.IO) {
+            val buckets = withContext(io) {
                 runCatching { trackDao.getLibraryHealthBuckets() }
                     .onFailure { Log.w(TAG, "getLibraryHealthBuckets failed", it) }
                     .getOrDefault(emptyList())
             }
-            val restorable = withContext(Dispatchers.IO) {
+            val restorable = withContext(io) {
                 runCatching { trackDao.countRestorableDownloads() }
                     .onFailure { Log.w(TAG, "countRestorableDownloads failed", it) }
                     .getOrDefault(0)
@@ -83,7 +84,7 @@ class LibraryHealthViewModel @Inject constructor(
      */
     fun restoreMissingDownloads() {
         viewModelScope.launch {
-            val queued = withContext(Dispatchers.IO) {
+            val queued = withContext(io) {
                 runCatching {
                     val ids = trackDao.restorableDownloadIds()
                     if (ids.isEmpty()) return@runCatching 0
@@ -125,7 +126,7 @@ class LibraryHealthViewModel @Inject constructor(
     fun runBackfill() {
         if (_state.value.backfill is BackfillStatus.Running) return
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
+            withContext(io) {
                 // Two passes back-to-back. Pass 1 (format/bitrate) reads from
                 // MMR; pass 2 (file size) reads from disk via File.length().
                 // Both deduplicated at the DAO level — re-running is idempotent.
@@ -243,7 +244,7 @@ class LibraryHealthViewModel @Inject constructor(
                 )
             }
             try {
-                val reconciliation = withContext(Dispatchers.IO) {
+                val reconciliation = withContext(io) {
                     reconciliationUseCase.reconcile(
                         onProgress = { step, _ ->
                             _state.update {
@@ -275,7 +276,7 @@ class LibraryHealthViewModel @Inject constructor(
                         ),
                     )
                 }
-                val adoption = withContext(Dispatchers.IO) { adoptExistingFilesUseCase.adopt() }
+                val adoption = withContext(io) { adoptExistingFilesUseCase.adopt() }
                 Log.i(TAG, "adoption: scanned=${adoption.scanned} adopted=${adoption.adopted}")
 
                 _state.update {
@@ -313,6 +314,13 @@ class LibraryHealthViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "LibraryHealthVM"
+
+        /**
+         * Where the database and file work runs. A test points it at its Main test dispatcher, so
+         * the work finishes inside the test instead of resuming onto Main after the test has reset
+         * it (which surfaced as an uncaught exception in whichever test class ran next).
+         */
+        internal var io: CoroutineDispatcher = Dispatchers.IO
     }
 }
 
