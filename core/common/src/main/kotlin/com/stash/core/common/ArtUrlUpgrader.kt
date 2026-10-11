@@ -105,8 +105,22 @@ object ArtUrlUpgrader {
     // `hqdefault.jpg?sqp=…` URL arrives at ~320px wide.
     private const val YTIMG_TARGET = "maxresdefault"
     private val YTIMG_PATH_REGEX = Regex(
-        """(/vi[a-z_]*/[^/]+/)(?:default|mqdefault|hqdefault|sddefault|maxresdefault)(\.(?:jpg|webp))""",
+        // `hq720` (1280x720, what search results carry, usually behind a `?sqp=` downscale)
+        // normalises the same way: maxres is the same frame, and it has the fallback walk.
+        """(/vi[a-z_]*/[^/]+/)(?:default|mqdefault|hqdefault|hq720|sddefault|maxresdefault)(\.(?:jpg|webp))""",
     )
+
+    // Large variants [ArtUrlSizer] asks for that are not guaranteed to exist, and the rung each
+    // steps down to (one that always exists). See [artFallback].
+    private const val QOBUZ_HOST = "static.qobuz.com"
+    private const val QOBUZ_LARGEST = "_max.jpg"
+    private const val QOBUZ_LARGEST_FALLBACK = "_600.jpg"
+    private const val SPOTIFY_ORIGINAL = "/image/ab67616d000082c1"
+    private const val SPOTIFY_ORIGINAL_FALLBACK = "/image/ab67616d0000b273"
+    private const val LASTFM_ORIGINAL_SIZE = "ar0"
+    private const val ITUNES_HOST = "mzstatic.com"
+    private const val ITUNES_SAFE_PX = 600
+    private val ITUNES_FILE_REGEX = Regex("""/(\d+)x(\d+)([a-z]{2}(?:-\d+)?\.(?:jpg|png|webp))$""")
 
     /**
      * The best thumbnail of YouTube video [videoId], the cover of last resort. For an auto-generated
@@ -151,9 +165,27 @@ object ArtUrlUpgrader {
      * it replaced. Applied by the OkHttp interceptor, which covers every
      * consumer of the shared client: Coil for the in-app surfaces and
      * media3's bitmap loader for the notification and lock screen.
+     *
+     * The large variants [ArtUrlSizer] asks for on a big surface step down to
+     * the size that was stored before: Qobuz `_max` -> `_600`, Spotify's
+     * original (`82c1`) -> 640 (`b273`), Last.fm's original (`ar0`) ->
+     * `770x0.jpg` (and on down the walk above), iTunes above 600 -> 600.
      */
     fun artFallback(url: String?): String? {
         if (url == null) return null
+        if (QOBUZ_HOST in url && url.endsWith(QOBUZ_LARGEST)) {
+            return url.removeSuffix(QOBUZ_LARGEST) + QOBUZ_LARGEST_FALLBACK
+        }
+        if (SPOTIFY_ORIGINAL in url) {
+            return url.replace(SPOTIFY_ORIGINAL, SPOTIFY_ORIGINAL_FALLBACK)
+        }
+        if (ITUNES_HOST in url) {
+            val m = ITUNES_FILE_REGEX.find(url) ?: return null
+            val w = m.groupValues[1].toIntOrNull() ?: return null
+            val h = m.groupValues[2].toIntOrNull() ?: return null
+            if (maxOf(w, h) <= ITUNES_SAFE_PX) return null
+            return url.replaceRange(m.range, "/${ITUNES_SAFE_PX}x$ITUNES_SAFE_PX${m.groupValues[3]}")
+        }
         if ("i.ytimg.com" in url) {
             val next = when {
                 "/$YTIMG_TARGET." in url -> url.replace("/$YTIMG_TARGET.", "/sddefault.")
@@ -166,6 +198,8 @@ object ArtUrlUpgrader {
         val match = LASTFM_PATH_REGEX.find(url) ?: return null
         val (prefix, hash) = match.groupValues[1] to match.groupValues[2]
         val next = when {
+            "/$LASTFM_ORIGINAL_SIZE/$hash." in url ->
+                "$prefix$LASTFM_TARGET_SIZE/$hash.$LASTFM_TARGET_EXT"
             "/$LASTFM_TARGET_SIZE/$hash.$LASTFM_TARGET_EXT" in url ->
                 "$prefix$LASTFM_TARGET_SIZE/$hash.$LASTFM_SOURCE_EXT"
             "/$LASTFM_TARGET_SIZE/$hash.$LASTFM_SOURCE_EXT" in url ->

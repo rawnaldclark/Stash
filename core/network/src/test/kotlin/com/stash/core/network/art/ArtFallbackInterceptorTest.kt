@@ -112,4 +112,31 @@ class ArtFallbackInterceptorTest {
             chain.tried,
         )
     }
+
+    // The large variants ArtUrlSizer asks for on Now Playing: each walks back to a size that
+    // always exists, so a big cover can never render worse than the stored one did.
+
+    @Test
+    fun `a lastfm original walks all three steps down to the size the api advertises`() {
+        val ar0 = "https://lastfm-img.freetls.fastly.net/i/u/ar0/abc.jpg"
+        val chain = FakeChain(Request.Builder().url(ar0).build()) { if (it == stored) 200 else 404 }
+        ArtFallbackInterceptor().intercept(chain).close()
+        assertEquals(listOf(ar0, jpg, png, stored), chain.tried)
+    }
+
+    @Test
+    fun `a missing qobuz max falls back to the 600 that was stored`() {
+        val max = "https://static.qobuz.com/images/covers/ab/cd/xyz_max.jpg"
+        val chain = FakeChain(Request.Builder().url(max).build()) { if (it.endsWith("_max.jpg")) 404 else 200 }
+        ArtFallbackInterceptor().intercept(chain).close()
+        assertEquals(listOf(max, "https://static.qobuz.com/images/covers/ab/cd/xyz_600.jpg"), chain.tried)
+    }
+
+    @Test
+    fun `a missing spotify original falls back to 640`() {
+        val orig = "https://i.scdn.co/image/ab67616d000082c1aaaa"
+        val chain = FakeChain(Request.Builder().url(orig).build()) { if ("82c1" in it) 404 else 200 }
+        ArtFallbackInterceptor().intercept(chain).close()
+        assertEquals(listOf(orig, "https://i.scdn.co/image/ab67616d0000b273aaaa"), chain.tried)
+    }
 }
