@@ -323,15 +323,21 @@ fun NowPlayingScreen(
     // this screen leaves the row alone. --
     val postToCommunity = com.stash.core.ui.components.LocalPostToCommunity.current
     val isDownloaded = track?.isDownloaded == true
-    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded) {
+    // Cast shows (pinned or as a ⋮ row) exactly where its button did: a phone with Play
+    // Services, outside a Listen Together room (the two exclude each other, cast spec §3).
+    val castSupported = castConnection != com.stash.core.media.cast.CastConnection.Unavailable
+    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported) {
         ActionContext(
             inRoom = room != null,
             casting = casting,
             communityAvailable = postToCommunity != null,
             isDownloaded = isDownloaded,
+            castSupported = castSupported,
         )
     }
-    val visualState = remember(radioLabel != null, radioTuning, reading, togetherState, playbackSpeed, isDownloaded) {
+    val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName
+    val castingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connected)?.deviceName
+    val visualState = remember(radioLabel != null, radioTuning, reading, togetherState, playbackSpeed, isDownloaded, castConnectingTo, castingTo) {
         ActionVisualState(
             radioActive = radioLabel != null,
             radioTuning = radioTuning,
@@ -339,19 +345,21 @@ fun NowPlayingScreen(
             together = togetherState,
             speed = playbackSpeed,
             isDownloaded = isDownloaded,
+            castConnectingTo = castConnectingTo,
+            castingTo = castingTo,
         )
     }
-    // Cast and Listen Together exclude each other (cast spec §3).
-    val castVisible = room == null && castConnection != com.stash.core.media.cast.CastConnection.Unavailable
     // The row's width: the window less Now Playing's 24dp margins. Pins that don't fit at 44dp
     // go to the ⋮ menu for now (narrow phones, large display sizes); see fitTopRow.
     val rowWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 48f
-    val rowFit = remember(pins, actionCtx, castVisible, rowWidthDp) {
-        fitTopRow(topRowActions(pins, actionCtx), rowWidthDp, castVisible)
+    val rowFit = remember(pins, actionCtx, rowWidthDp) {
+        fitTopRow(topRowActions(pins, actionCtx), rowWidthDp)
     }
     val onAction: (NowPlayingAction) -> Unit = remember(radioTuning, radioLabel, togetherState, track, postToCommunity) {
         { action ->
             when (action) {
+                // The speaker sheet the Cast button opens: pick a speaker, or control / disconnect.
+                NowPlayingAction.CAST -> showCastSheet = true
                 // Start a station seeded from this song, or stop the running one; taps while tuning wait.
                 NowPlayingAction.RADIO -> when {
                     radioTuning -> Unit
@@ -718,7 +726,6 @@ fun NowPlayingScreen(
                     onDismiss = if (reading) viewModel::onDismissLyrics else onDismiss,
                     onMoreClick = { showOptionsSheet = true },
                     onAction = onPinnedAction,
-                    castVisible = castVisible,
                     castButton = {
                         com.stash.feature.nowplaying.cast.CastButton(
                             connection = castConnection,

@@ -18,14 +18,18 @@ internal data class ActionContext(
     val communityAvailable: Boolean = false,
     /** The current track is downloaded: a pinned Download then only shows that, see [isInertPinnedTap]. */
     val isDownloaded: Boolean = false,
+    /** This phone can Cast (Play Services present: the connection is anything but Unavailable). */
+    val castSupported: Boolean = false,
 )
 
 /**
  * Whether [action] can show right now, pinned or not. These are the rules the row and the
  * menu had before pins: no Radio, Queue or Speed in a room; no Speed while casting; Post to
- * Community only while Community is on.
+ * Community only while Community is on; Cast exactly where its automatic button showed (a
+ * phone that can Cast, outside a Listen Together room: the two exclude each other).
  */
 internal fun isActionAvailable(action: NowPlayingAction, ctx: ActionContext): Boolean = when (action) {
+    NowPlayingAction.CAST -> ctx.castSupported && !ctx.inRoom
     NowPlayingAction.RADIO, NowPlayingAction.QUEUE -> !ctx.inRoom
     NowPlayingAction.PLAYBACK_SPEED -> !ctx.inRoom && !ctx.casting
     NowPlayingAction.POST_TO_COMMUNITY -> ctx.communityAvailable
@@ -79,7 +83,7 @@ internal fun isInertPinnedTap(action: NowPlayingAction, ctx: ActionContext): Boo
 internal const val SLOT_PREFERRED_DP = 48f
 internal const val SLOT_MIN_DP = 44f
 
-/** Cast keeps Material's full 48dp interactive size. */
+/** A pinned Cast keeps Material's full 48dp interactive size (its IconButton enforces it). */
 internal const val CAST_SLOT_DP = 48f
 
 /**
@@ -95,21 +99,27 @@ internal data class TopRowFit(
 /**
  * Fits the pinned row into [widthDp] (the row's own width, inside the screen's side padding).
  *
- * Dismiss, ⋮, a pinned Queue and (when [castVisible]) Cast at its own 48dp are never dropped.
- * The other pins take a slot each, as many as fit at [SLOT_MIN_DP], in canonical order; the
- * rest overflow from the lowest priority (the end of the canonical order) first. Slots then
- * share the width up to [SLOT_PREFERRED_DP]. Nothing is ever unreachable: an overflowed pin is
- * a row in the ⋮ menu until the screen has room again (a wider window, a smaller display size).
+ * Dismiss, ⋮ and a pinned Queue are never dropped. The other pins (Cast among them, at its own
+ * [CAST_SLOT_DP]) take a slot each, as many as fit with every other slot at [SLOT_MIN_DP], in
+ * canonical order; the rest overflow from the lowest priority (the end of the canonical order)
+ * first. Slots then share the width up to [SLOT_PREFERRED_DP]. Nothing is ever unreachable: an
+ * overflowed pin is a row in the ⋮ menu until the screen has room again (a wider window, a
+ * smaller display size).
  */
-internal fun fitTopRow(row: TopRowActions, widthDp: Float, castVisible: Boolean): TopRowFit {
-    val castWidth = if (castVisible) CAST_SLOT_DP else 0f
+internal fun fitTopRow(row: TopRowActions, widthDp: Float): TopRowFit {
     val fixedSlots = 2 + row.trailing.size // Dismiss, ⋮, and Queue when pinned
-    val room = widthDp - castWidth
+    fun castWidth(shown: List<NowPlayingAction>) = if (NowPlayingAction.CAST in shown) CAST_SLOT_DP else 0f
+    fun shrinkingSlots(shown: List<NowPlayingAction>) = fixedSlots + shown.count { it != NowPlayingAction.CAST }
     var fits = row.leading.size
-    while (fits > 0 && (fixedSlots + fits) * SLOT_MIN_DP > room) fits--
-    val slot = (room / (fixedSlots + fits)).coerceIn(SLOT_MIN_DP, SLOT_PREFERRED_DP)
+    while (fits > 0) {
+        val shown = row.leading.take(fits)
+        if (castWidth(shown) + shrinkingSlots(shown) * SLOT_MIN_DP <= widthDp) break
+        fits--
+    }
+    val shown = row.leading.take(fits)
+    val slot = ((widthDp - castWidth(shown)) / shrinkingSlots(shown)).coerceIn(SLOT_MIN_DP, SLOT_PREFERRED_DP)
     return TopRowFit(
-        row = TopRowActions(leading = row.leading.take(fits), trailing = row.trailing),
+        row = TopRowActions(leading = shown, trailing = row.trailing),
         overflow = row.leading.drop(fits),
         slotDp = slot,
     )
@@ -118,18 +128,23 @@ internal fun fitTopRow(row: TopRowActions, widthDp: Float, castVisible: Boolean)
 /**
  * The pin editor's rows. Everything the user could ever use is listed, including actions a
  * room or a cast hides for now (the screen notes why), so a pin never becomes unreachable. Post
- * to Community is listed only while Community is on, unless it is still pinned from before, so
- * a pin that takes a slot can always be removed.
+ * to Community is listed only while Community is on, and Cast only on a phone that can Cast,
+ * unless still pinned from before, so a pin that takes a slot can always be removed.
  */
 internal fun editableActions(pins: Set<NowPlayingAction>, ctx: ActionContext): List<NowPlayingAction> =
     NowPlayingAction.entries.filter {
-        it in pins || it != NowPlayingAction.POST_TO_COMMUNITY || ctx.communityAvailable
+        it in pins || when (it) {
+            NowPlayingAction.POST_TO_COMMUNITY -> ctx.communityAvailable
+            NowPlayingAction.CAST -> ctx.castSupported
+            else -> true
+        }
     }
 
 /** Why a pinned action is missing from the row right now, or null when it shows. */
 internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): String? = when {
     isActionAvailable(action, ctx) -> null
     ctx.inRoom && action != NowPlayingAction.POST_TO_COMMUNITY -> "Hidden while listening together"
+    action == NowPlayingAction.CAST -> "Cast isn't available on this phone"
     ctx.casting && action == NowPlayingAction.PLAYBACK_SPEED -> "Hidden while casting"
     else -> "Not available right now"
 }

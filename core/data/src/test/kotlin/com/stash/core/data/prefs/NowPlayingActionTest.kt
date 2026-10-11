@@ -38,4 +38,21 @@ class NowPlayingActionTest {
         assertEquals(null, NowPlayingAction.togglePin(full, NowPlayingAction.FLAG_WRONG_MATCH))
         assertEquals(full - NowPlayingAction.RADIO, NowPlayingAction.togglePin(full, NowPlayingAction.RADIO))
     }
+
+    // ── Cast ─────────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `Cast is not pinned by default - the default row is Radio, menu, Queue`() {
+        assertEquals(false, NowPlayingAction.CAST in NowPlayingAction.parsePins(null))
+    }
+
+    @Test fun `pins saved before Cast was an action read unchanged`() {
+        assertEquals(setOf(NowPlayingAction.RADIO, NowPlayingAction.SHARE), NowPlayingAction.parsePins(setOf("RADIO", "SHARE")))
+    }
+
+    @Test fun `Cast pins like any action and counts toward the cap`() {
+        val four = setOf(NowPlayingAction.RADIO, NowPlayingAction.QUEUE, NowPlayingAction.LYRICS, NowPlayingAction.SHARE)
+        val five = NowPlayingAction.togglePin(four, NowPlayingAction.CAST)
+        assertEquals(four + NowPlayingAction.CAST, five)
+        assertEquals(null, NowPlayingAction.togglePin(five!!, NowPlayingAction.DOWNLOAD))
+    }
 }

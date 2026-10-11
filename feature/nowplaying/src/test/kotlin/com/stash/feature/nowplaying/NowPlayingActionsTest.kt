@@ -1,6 +1,7 @@
 package com.stash.feature.nowplaying
 
 import com.stash.core.data.prefs.NowPlayingAction
+import com.stash.core.data.prefs.NowPlayingAction.CAST
 import com.stash.core.data.prefs.NowPlayingAction.DOWNLOAD
 import com.stash.core.data.prefs.NowPlayingAction.FLAG_WRONG_MATCH
 import com.stash.core.data.prefs.NowPlayingAction.LISTEN_TOGETHER
@@ -21,6 +22,9 @@ import org.junit.Test
 class NowPlayingActionsTest {
 
     private val solo = ActionContext()
+
+    /** A phone with Play Services: Cast can show. */
+    private val canCast = ActionContext(castSupported = true)
 
     // ── the default ──────────────────────────────────────────────────────────────────────────
 
@@ -130,15 +134,18 @@ class NowPlayingActionsTest {
 
     // ── fitting the row ──────────────────────────────────────────────────────────────────────
 
-    /** The full row from the device proof: Radio, Lyrics, Share, Download and Queue pinned. */
+    /** A full row without Cast: Radio, Lyrics, Share, Download and Queue pinned. */
     private val fullRow = topRowActions(setOf(RADIO, LYRICS, SHARE, DOWNLOAD, QUEUE), solo)
+
+    /** A full row with Cast pinned (on a phone that can Cast): Cast, Radio, Lyrics, Share, Queue. */
+    private val castRow = topRowActions(setOf(CAST, RADIO, LYRICS, SHARE, QUEUE), canCast)
 
     /** The row's width on a phone [screenDp] wide: Now Playing keeps 24dp each side. */
     private fun rowWidth(screenDp: Float) = screenDp - 48f
 
     @Test fun `the default row fits at 48dp on every phone`() {
         for (screen in listOf(320f, 360f, 393f)) {
-            val fit = fitTopRow(topRowActions(NowPlayingAction.DefaultPins, solo), rowWidth(screen), castVisible = true)
+            val fit = fitTopRow(topRowActions(NowPlayingAction.DefaultPins, canCast), rowWidth(screen))
             assertEquals(listOf(RADIO), fit.row.leading)
             assertEquals(listOf(QUEUE), fit.row.trailing)
             assertEquals(emptyList<NowPlayingAction>(), fit.overflow)
@@ -146,67 +153,103 @@ class NowPlayingActionsTest {
         }
     }
 
-    @Test fun `a full row on a 393dp Pixel 5 drops the lowest-priority pin into the menu`() {
-        val fit = fitTopRow(fullRow, rowWidth(393f), castVisible = true)
+    @Test fun `a full row fits whole on a 393dp Pixel 5 and a 360dp phone`() {
+        for (screen in listOf(393f, 360f)) {
+            val fit = fitTopRow(fullRow, rowWidth(screen))
+            assertEquals(listOf(RADIO, LYRICS, SHARE, DOWNLOAD), fit.row.leading)
+            assertEquals(emptyList<NowPlayingAction>(), fit.overflow)
+            assertFits(fit, rowWidth(screen))
+        }
+    }
+
+    @Test fun `a full row on a 320dp phone drops the lowest-priority pin into the menu`() {
+        val fit = fitTopRow(fullRow, rowWidth(320f))
         assertEquals(listOf(RADIO, LYRICS, SHARE), fit.row.leading)
         assertEquals(listOf(QUEUE), fit.row.trailing)
         assertEquals(listOf(DOWNLOAD), fit.overflow)
-        assertFits(fit, rowWidth(393f), castVisible = true)
-    }
-
-    @Test fun `a full row on a 360dp phone`() {
-        val fit = fitTopRow(fullRow, rowWidth(360f), castVisible = true)
-        assertEquals(listOf(RADIO, LYRICS, SHARE), fit.row.leading)
-        assertEquals(listOf(DOWNLOAD), fit.overflow)
-        assertFits(fit, rowWidth(360f), castVisible = true)
-    }
-
-    @Test fun `a full row on a 320dp phone keeps Queue and two pins`() {
-        val fit = fitTopRow(fullRow, rowWidth(320f), castVisible = true)
-        assertEquals(listOf(RADIO, LYRICS), fit.row.leading)
-        assertEquals(listOf(QUEUE), fit.row.trailing)
-        assertEquals(listOf(SHARE, DOWNLOAD), fit.overflow)
-        assertFits(fit, rowWidth(320f), castVisible = true)
+        assertFits(fit, rowWidth(320f))
     }
 
     @Test fun `Display size Largest on a Pixel 5 (about 314dp wide) still keeps Queue`() {
-        // 1080px at 550dpi (Largest) = 314dp.
-        val fit = fitTopRow(fullRow, rowWidth(314f), castVisible = true)
+        // 1080px at 550dpi = 314dp; Settings' Largest (540dpi) is 320dp, covered above.
+        val fit = fitTopRow(fullRow, rowWidth(314f))
         assertEquals(listOf(QUEUE), fit.row.trailing)
-        assertEquals(listOf(RADIO), fit.row.leading)
-        assertEquals(listOf(LYRICS, SHARE, DOWNLOAD), fit.overflow)
-        assertFits(fit, rowWidth(314f), castVisible = true)
+        assertEquals(listOf(RADIO, LYRICS, SHARE), fit.row.leading)
+        assertEquals(listOf(DOWNLOAD), fit.overflow)
+        assertFits(fit, rowWidth(314f))
     }
 
-    @Test fun `without Cast a pin more fits`() {
-        val fit = fitTopRow(fullRow, rowWidth(393f), castVisible = false)
-        assertEquals(listOf(RADIO, LYRICS, SHARE, DOWNLOAD), fit.row.leading)
-        assertEquals(emptyList<NowPlayingAction>(), fit.overflow)
-        assertFits(fit, rowWidth(393f), castVisible = false)
+    @Test fun `a pinned Cast takes its 48dp and fits with three pins on 393dp and 360dp`() {
+        for (screen in listOf(393f, 360f)) {
+            val fit = fitTopRow(castRow, rowWidth(screen))
+            assertEquals(listOf(CAST, RADIO, LYRICS, SHARE), fit.row.leading)
+            assertEquals(emptyList<NowPlayingAction>(), fit.overflow)
+            assertFits(fit, rowWidth(screen))
+        }
+    }
+
+    @Test fun `a pinned Cast leads the priority order, so narrow screens drop the end first`() {
+        val at320 = fitTopRow(castRow, rowWidth(320f))
+        assertEquals(listOf(CAST, RADIO, LYRICS), at320.row.leading)
+        assertEquals(listOf(SHARE), at320.overflow)
+        assertFits(at320, rowWidth(320f))
+        val at314 = fitTopRow(castRow, rowWidth(314f))
+        assertEquals(listOf(CAST, RADIO), at314.row.leading)
+        assertEquals(listOf(LYRICS, SHARE), at314.overflow)
+        assertEquals(listOf(QUEUE), at314.row.trailing)
+        assertFits(at314, rowWidth(314f))
     }
 
     @Test fun `a wide window shows every pin at 48dp`() {
-        val fit = fitTopRow(fullRow, rowWidth(600f), castVisible = true)
+        val fit = fitTopRow(castRow, rowWidth(600f))
         assertEquals(4, fit.row.leading.size)
         assertEquals(SLOT_PREFERRED_DP, fit.slotDp, 0f)
     }
 
     @Test fun `overflowed pins come back as ordinary menu rows in canonical order`() {
-        val pins = setOf(RADIO, LYRICS, SHARE, DOWNLOAD, QUEUE)
-        val fit = fitTopRow(topRowActions(pins, solo), rowWidth(320f), castVisible = true)
-        val menu = menuActions(pins, solo, fit.overflow)
+        val pins = setOf(CAST, RADIO, LYRICS, SHARE, QUEUE)
+        val fit = fitTopRow(topRowActions(pins, canCast), rowWidth(314f))
+        val menu = menuActions(pins, canCast, fit.overflow)
+        assertTrue(LYRICS in menu)
         assertTrue(SHARE in menu)
-        assertTrue(DOWNLOAD in menu)
-        assertFalse(RADIO in menu)
+        assertFalse(CAST in menu)
         assertFalse(QUEUE in menu)
         assertEquals(menu, NowPlayingAction.entries.filter { it in menu })
     }
 
-    /** Every rendered slot is at least 44dp and the whole row fits the width. */
-    private fun assertFits(fit: TopRowFit, width: Float, castVisible: Boolean) {
+    // ── Cast ─────────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `by default Cast is a menu row, first, on a phone that can Cast`() {
+        val row = topRowActions(NowPlayingAction.DefaultPins, canCast)
+        assertFalse(CAST in row.leading)
+        assertEquals(CAST, menuActions(NowPlayingAction.DefaultPins, canCast).first())
+    }
+
+    @Test fun `Cast shows exactly where its button did - a phone that can Cast, outside a room`() {
+        assertFalse(CAST in menuActions(emptySet(), solo)) // no Play Services
+        assertFalse(CAST in menuActions(emptySet(), canCast.copy(inRoom = true)))
+        assertFalse(CAST in topRowActions(setOf(CAST), canCast.copy(inRoom = true)).leading)
+        assertTrue(CAST in topRowActions(setOf(CAST), canCast).leading)
+        // Casting itself keeps Cast (it's how you disconnect) and still hides Speed.
+        val casting = canCast.copy(casting = true)
+        assertTrue(CAST in menuActions(emptySet(), casting))
+        assertFalse(PLAYBACK_SPEED in menuActions(emptySet(), casting))
+    }
+
+    @Test fun `the editor lists Cast only on a phone that can Cast, unless still pinned`() {
+        assertFalse(CAST in editableActions(emptySet(), solo))
+        assertTrue(CAST in editableActions(emptySet(), canCast))
+        assertTrue(CAST in editableActions(setOf(CAST), solo))
+        assertEquals("Cast isn't available on this phone", hiddenReason(CAST, solo))
+        assertEquals("Hidden while listening together", hiddenReason(CAST, canCast.copy(inRoom = true)))
+    }
+
+    /** Every shrinking slot is at least 44dp, a pinned Cast gets 48dp, and the row fits the width. */
+    private fun assertFits(fit: TopRowFit, width: Float) {
         assertTrue("slot ${fit.slotDp} under the 44dp floor", fit.slotDp >= SLOT_MIN_DP)
-        val slots = 2 + fit.row.size // Dismiss + ⋮ + the shown pins (Queue included)
-        val used = slots * fit.slotDp + if (castVisible) CAST_SLOT_DP else 0f
+        val cast = CAST in fit.row.leading
+        val slots = 2 + fit.row.size - (if (cast) 1 else 0) // Dismiss + ⋮ + the shown pins
+        val used = slots * fit.slotDp + if (cast) CAST_SLOT_DP else 0f
         assertTrue("row needs $used dp of $width", used <= width + 0.001f)
     }
 }

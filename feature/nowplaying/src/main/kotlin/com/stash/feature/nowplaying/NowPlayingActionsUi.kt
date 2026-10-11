@@ -25,6 +25,8 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -86,6 +88,10 @@ internal data class ActionVisualState(
     val together: ListenTogetherState = ListenTogetherState.Idle,
     val speed: Float = 1f,
     val isDownloaded: Boolean = false,
+    /** The speaker being connected to, while connecting. */
+    val castConnectingTo: String? = null,
+    /** The speaker playing, while casting. */
+    val castingTo: String? = null,
 )
 
 /** An action's icon and label right now; [active] tints it with the album accent. */
@@ -97,6 +103,16 @@ internal data class ActionVisual(val icon: ImageVector, val label: String, val a
  * "Downloaded" (its tap is inert, see [isInertPinnedTap]).
  */
 internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState, pinned: Boolean = false): ActionVisual = when (action) {
+    // As a ⋮ row (pinned, the CastButton draws its own state). Both open the speaker sheet.
+    NowPlayingAction.CAST -> ActionVisual(
+        if (s.castingTo != null) Icons.Default.CastConnected else Icons.Default.Cast,
+        when {
+            s.castingTo != null -> "Casting to ${s.castingTo}"
+            s.castConnectingTo != null -> "Connecting to ${s.castConnectingTo}…"
+            else -> "Cast"
+        },
+        active = s.castingTo != null,
+    )
     NowPlayingAction.RADIO -> ActionVisual(
         Icons.Default.Radio,
         when {
@@ -140,6 +156,7 @@ internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState, pinned
 
 /** The pin editor's name for an action: what it is, not its current state ("Radio", not "Stop radio"). */
 internal fun editorLabel(action: NowPlayingAction): String = when (action) {
+    NowPlayingAction.CAST -> "Cast"
     NowPlayingAction.RADIO -> "Radio"
     NowPlayingAction.LYRICS -> "Lyrics"
     NowPlayingAction.QUEUE -> "Queue"
@@ -163,9 +180,10 @@ internal fun editorLabel(action: NowPlayingAction): String = when (action) {
  *
  * [fit] says what fits this screen ([fitTopRow]): slots are 48dp while the row
  * has room and share the width down to 44dp; pins with no room at all sit in
- * the ⋮ menu for now, so nothing is unreachable. Cast keeps its 48dp.
+ * the ⋮ menu for now, so nothing is unreachable. A pinned Cast keeps its 48dp.
  *
- * @param castVisible Whether [castButton] draws anything (it does not where Cast is unavailable).
+ * @param castButton The Cast button as it was before pins (its own icon, connecting spinner and
+ *   connected accent; opens the speaker sheet), drawn in a pinned Cast's slot.
  * @param isDownloading A download is in flight: its spinner replaces the
  *   Download pin, or ⋮ when Download isn't in the row, so it isn't a silent job.
  */
@@ -182,7 +200,6 @@ internal fun NowPlayingTopBar(
     onDismiss: () -> Unit,
     onMoreClick: () -> Unit,
     onAction: (NowPlayingAction) -> Unit,
-    castVisible: Boolean,
     castButton: @Composable () -> Unit,
 ) {
     val slot = fit.slotDp.dp
@@ -197,11 +214,12 @@ internal fun NowPlayingTopBar(
 
         if (!hasTrack) return@Row
 
-        // Cast: automatic, never pinned or unpinned, with Material's full 48dp target.
-        // Draws nothing where Cast isn't available.
-        if (castVisible) Box(Modifier.size(CAST_SLOT_DP.dp), contentAlignment = Alignment.Center) { castButton() }
-
         row.leading.forEach { action ->
+            // A pinned Cast: the Cast button itself, with Material's full 48dp target.
+            if (action == NowPlayingAction.CAST) {
+                Box(Modifier.size(CAST_SLOT_DP.dp), contentAlignment = Alignment.Center) { castButton() }
+                return@forEach
+            }
             ActionSlot(action, actionVisual(action, visualState, pinned = true), slot, ink, accent, isDownloading, visualState.radioTuning, radioLock, onAction)
         }
 

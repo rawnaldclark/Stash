@@ -10,6 +10,12 @@ package com.stash.core.data.prefs
  * add new values freely, but rename or remove with care.
  */
 enum class NowPlayingAction {
+    /**
+     * Play on a Cast speaker. First, so a pinned Cast sits where the automatic button used to,
+     * left of Radio. Not in [DefaultPins]: the default row is Radio · ⋮ · Queue, with Cast a
+     * ⋮ menu row until the user pins it.
+     */
+    CAST,
     RADIO,
     LYRICS,
     QUEUE,

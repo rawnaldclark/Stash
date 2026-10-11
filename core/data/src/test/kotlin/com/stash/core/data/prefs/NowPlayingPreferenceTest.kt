@@ -84,7 +84,7 @@ class NowPlayingPreferenceTest {
     }
 
     @Test fun togglePin_capHoldsUnderConcurrentPins() = runTest {
-        // Nine pins race for the three free places: exactly three win, the rest are refused.
+        // Every other action races for the three free places: exactly three win, the rest are refused.
         val results = kotlinx.coroutines.coroutineScope {
             NowPlayingAction.entries.filter { it !in NowPlayingAction.DefaultPins }.map { action ->
                 async(kotlinx.coroutines.Dispatchers.IO) { preference.togglePin(action) }
