@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.listen.ListenTogetherState
@@ -25,7 +26,10 @@ import com.stash.feature.nowplaying.ui.QueueBottomSheet
  *
  * Hosted by the app scaffold with the activity-scoped [NowPlayingViewModel] (the mini player's).
  * A Listen Together room has no personal queue (Now Playing hides its queue button there), so
- * the sheet closes itself if a room starts while it's open.
+ * the sheet closes itself if a room starts while it's open; it also closes (and never shows)
+ * when there's no song, e.g. restored after the process died or the queue was cleared elsewhere.
+ * The actions' confirmations ("Playing next", "Downloading…", a radio that couldn't start) come
+ * from the ViewModel's userMessages and show as toasts, exactly as on Now Playing.
  *
  * @param onDismiss Closes the sheet (the host stops composing it).
  */
@@ -38,7 +42,18 @@ fun PlayerQueueSheet(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val together by listen.state.collectAsStateWithLifecycle()
     val inRoom = together is ListenTogetherState.InRoom
-    LaunchedEffect(inRoom) { if (inRoom) onDismiss() }
+    val hasTrack = uiState.hasTrack
+    val showQueue = !inRoom && hasTrack
+    LaunchedEffect(showQueue) { if (!showQueue) onDismiss() }
+
+    // Nothing else collects the activity-scoped ViewModel's messages (Now Playing collects its own
+    // instance's), so the sheet shows them while it's open, as NowPlayingScreen does.
+    val toastContext = LocalContext.current
+    LaunchedEffect(viewModel) {
+        viewModel.userMessages.collect { msg ->
+            android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var saveTrack by remember { mutableStateOf<Track?>(null) }
@@ -49,7 +64,7 @@ fun PlayerQueueSheet(
     // A share opened here belongs to this sheet: don't leave it pending in the activity-scoped VM.
     DisposableEffect(viewModel) { onDispose { viewModel.onShareDismissed() } }
 
-    if (!inRoom) {
+    if (showQueue) {
         QueueBottomSheet(
             queue = uiState.queue,
             currentIndex = uiState.currentIndex,
