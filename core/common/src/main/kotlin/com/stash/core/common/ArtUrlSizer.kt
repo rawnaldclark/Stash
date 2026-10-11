@@ -47,6 +47,7 @@ object ArtUrlSizer {
     private val GOOGLE_HOST = Regex("""^(?:lh\d|yt\d)\.(?:googleusercontent|ggpht)\.com$""")
     private val GOOGLE_WH = Regex("""=w(\d+)-h(\d+)""")
     private val GOOGLE_S = Regex("""=s(\d+)""")
+    private const val GOOGLE_JPEG = "-l90-rj"
 
     // ── YouTube video thumbnails ───────────────────────────────────────────────────────────────
     // The app crops these square, so the useful size is the HEIGHT. A `?sqp=` query is Google's
@@ -143,9 +144,10 @@ object ArtUrlSizer {
             return url.replaceRange(m.range, "=s${tierFor(px, GOOGLE_TIERS)}")
         }
         // No size token: Google serves a small default (512 at most). Ask for a size explicitly,
-        // replacing any other options (as ArtUrlUpgrader.upgrade does).
+        // replacing any other options (as ArtUrlUpgrader.upgrade does), and for a JPEG: without
+        // `-rj` a PNG original is served as PNG, ~6x the bytes (3 MB vs 0.5 MB at 1200px).
         val t = tierFor(px, GOOGLE_TIERS)
-        return url.substringBefore('=') + "=w$t-h$t"
+        return url.substringBefore('=') + "=w$t-h$t$GOOGLE_JPEG"
     }
 
     private fun youtube(url: String, px: Int): String {

@@ -95,7 +95,11 @@ class AlbumArtCache @Inject constructor(
         private const val TAG = "AlbumArtCache"
         private val YT_MUSIC_SIZE_SUFFIX = Regex("=w\\d+-h\\d+(?:-[a-z0-9]+)*")
 
-        /** Size of the YouTube Music cover embedded in downloads: see [canonicaliseUrl]. */
-        private const val EMBED_SIZE_SUFFIX = "=w1200-h1200"
+        /**
+         * Size of the YouTube Music cover embedded in downloads: see [canonicaliseUrl]. `-l90-rj`
+         * asks for a JPEG: without it Google serves a PNG original as PNG, 3 MB at 1200px where
+         * the JPEG is 0.5 MB (the old 640 tier embedded 958 KB PNGs that way).
+         */
+        private const val EMBED_SIZE_SUFFIX = "=w1200-h1200-l90-rj"
     }
 }

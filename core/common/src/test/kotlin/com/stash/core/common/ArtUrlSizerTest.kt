@@ -50,9 +50,9 @@ class ArtUrlSizerTest {
     }
 
     @Test
-    fun `a google url without a size token gets one`() {
-        assertEquals("https://lh3.googleusercontent.com/abc=w1024-h1024", sized("https://lh3.googleusercontent.com/abc", 900))
-        assertEquals("https://lh3.googleusercontent.com/abc=w256-h256", sized("https://lh3.googleusercontent.com/abc=rj", 200))
+    fun `a google url without a size token gets one, as a jpeg`() {
+        assertEquals("https://lh3.googleusercontent.com/abc=w1024-h1024-l90-rj", sized("https://lh3.googleusercontent.com/abc", 900))
+        assertEquals("https://lh3.googleusercontent.com/abc=w256-h256-l90-rj", sized("https://lh3.googleusercontent.com/abc=rj", 200))
     }
 
     @Test
