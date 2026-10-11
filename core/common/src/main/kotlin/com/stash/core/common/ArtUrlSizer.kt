@@ -169,6 +169,20 @@ object ArtUrlSizer {
     }
 
     /**
+     * [forSize], limited to variants that EVERY cover on its host has, for a consumer that can't
+     * fall back when a bigger variant is missing: Android Auto's browse tiles, which the car fetches
+     * itself from the item's artwork URI. A pick that [ArtUrlUpgrader.artFallback] would have to
+     * walk down from on a 404 (YouTube maxres, Last.fm 770/originals, Qobuz `_max`, Spotify's
+     * original, iTunes above 600) is not guaranteed, so [url] is kept. Google sizes, Qobuz up to
+     * `_600`, Spotify up to 640, iTunes up to 600 and JioSaavn 500 always exist.
+     */
+    fun forSizeGuaranteed(url: String?, px: Int, maxVariantPx: Int = NO_CAP): String? {
+        val sized = forSize(url, px, maxVariantPx)
+        if (sized == url || sized == null) return sized
+        return if (ArtUrlUpgrader.artFallback(sized) == null) sized else url
+    }
+
+    /**
      * How many pixels [url] itself is known to deliver on its long side, for the one host where
      * the bigger variant [forSize] picks can come back SMALLER: Last.fm. Its `770x0` is the CDN's
      * own rendering, upscaled when the original is smaller (46% of a real library's covers), and

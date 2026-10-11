@@ -6,8 +6,8 @@ import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.stash.core.common.DataSaverArtCap
 import com.stash.core.ui.util.ArtSizeInterceptor
-import com.stash.core.ui.util.DataSaverArtCap
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
 

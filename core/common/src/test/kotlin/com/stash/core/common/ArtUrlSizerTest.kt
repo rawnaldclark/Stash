@@ -356,4 +356,34 @@ class ArtUrlSizerTest {
             ArtUrlSizer.forSize("https://i.ytimg.com/vi/abc/hqdefault.jpg?sqp=x", 948, cap),
         )
     }
+
+    // ── forSizeGuaranteed: Android Auto's tiles, which can't fall back ───────────────────────
+
+    @Test
+    fun `guaranteed sizing upgrades only to variants every cover has`() {
+        val auto = 512
+        assertEquals(
+            "https://yt3.googleusercontent.com/abc=w512-h512-l90-rj",
+            ArtUrlSizer.forSizeGuaranteed("https://yt3.googleusercontent.com/abc=w60-h60-l90-rj", auto),
+        )
+        assertEquals(
+            "https://static.qobuz.com/images/covers/a/b/x_600.jpg",
+            ArtUrlSizer.forSizeGuaranteed("https://static.qobuz.com/images/covers/a/b/x_230.jpg", auto),
+        )
+        assertEquals(
+            "https://i.scdn.co/image/ab67616d0000b273abc",
+            ArtUrlSizer.forSizeGuaranteed("https://i.scdn.co/image/ab67616d00001e02abc", auto),
+        )
+    }
+
+    @Test
+    fun `guaranteed sizing keeps the stored url where the bigger variant may be missing`() {
+        val ytSqp = "https://i.ytimg.com/vi/abc/hqdefault.jpg?sqp=x"
+        assertEquals(ytSqp, ArtUrlSizer.forSizeGuaranteed(ytSqp, 512)) // maxres: 18% missing
+        val lastFm = "https://lastfm.freetls.fastly.net/i/u/300x300/abc.png"
+        assertEquals(lastFm, ArtUrlSizer.forSizeGuaranteed(lastFm, 512)) // 770 jpg: a few % missing
+        val qobuz = "https://static.qobuz.com/images/covers/a/b/x_600.jpg"
+        assertEquals(qobuz, ArtUrlSizer.forSizeGuaranteed(qobuz, 1024)) // _max
+        assertNull(ArtUrlSizer.forSizeGuaranteed(null, 512))
+    }
 }

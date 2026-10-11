@@ -1,12 +1,12 @@
-package com.stash.core.ui.util
+package com.stash.core.common
 
 import android.content.Context
 import android.net.ConnectivityManager
 import android.os.SystemClock
-import com.stash.core.common.ArtUrlSizer
 
 /**
- * The largest cover variant [ArtSizeInterceptor] may pick right now: [ArtUrlSizer.DATA_SAVER_MAX_PX]
+ * The largest cover variant `ArtSizeInterceptor` (Coil) and `SizedArtBitmapLoader` (media3)
+ * may pick right now: [ArtUrlSizer.DATA_SAVER_MAX_PX]
  * while Android's Data Saver restricts this app on a metered network, else no cap.
  *
  * Covers are fetched once and disk-cached, and they are small next to the audio, so the bigger

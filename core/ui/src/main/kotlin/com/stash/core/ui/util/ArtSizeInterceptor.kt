@@ -47,7 +47,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * is left alone too, since both attempts would then share that one key.
  *
  * @param maxVariantPx the largest variant to pick, read per request: [ArtUrlSizer.DATA_SAVER_MAX_PX]
- *   while Android's Data Saver restricts a metered network (see [DataSaverArtCap]).
+ *   while Android's Data Saver restricts a metered network (see [com.stash.core.common.DataSaverArtCap]).
  * @param sizedAttemptBudgetMs how long the sized-up attempt may take before the stored URL is
  *   drawn instead.
  */
