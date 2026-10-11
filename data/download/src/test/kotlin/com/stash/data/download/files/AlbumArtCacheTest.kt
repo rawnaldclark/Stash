@@ -102,6 +102,16 @@ class AlbumArtCacheTest {
         verify(exactly = 1) { httpClient.newCall(any()) }
     }
 
+    // The embedded cover used to be fetched at 640, shrinking the 1024px covers the library
+    // stores (and the ~1400px originals behind them) in every downloaded file.
+    @Test fun `yt-music art is fetched at the 1200 embed size whatever size was stored`() = runTest {
+        val call = stubHttp200(ByteArray(128))
+        val requests = mutableListOf<Request>()
+        every { httpClient.newCall(capture(requests)) } returns call
+        subject.resolveArt(stubTrack(albumArtUrl = "https://lh3.googleusercontent.com/abc=w1024-h1024-l90-rj"))
+        assertEquals("https://lh3.googleusercontent.com/abc=w1200-h1200", requests.single().url.toString())
+    }
+
     @Test fun `network failure returns null and leaves no cache file`() = runTest {
         val call: Call = mockk()
         every { httpClient.newCall(any()) } returns call

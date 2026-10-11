@@ -69,14 +69,21 @@ class AlbumArtCache @Inject constructor(
     /**
      * Spotify (`i.scdn.co/image/<hash>`) URLs are already
      * size-agnostic. YT-Music URLs (`lh3.googleusercontent.com/...
-     * =w<size>-h<size>`) normalise to the 640px tier so requests for
-     * 64px and 640px share a cache entry. Real YT-Music URLs often
-     * carry multi-token suffixes like `-l50-rj` or `-p-l90-rj`; the
-     * regex strips all of them so every resolution variant collapses
-     * to a single canonical form.
+     * =w<size>-h<size>`) normalise to one [EMBED_SIZE_SUFFIX] tier so
+     * requests for 64px and 1024px share a cache entry. Real YT-Music
+     * URLs often carry multi-token suffixes like `-l50-rj` or
+     * `-p-l90-rj`; the regex strips all of them so every resolution
+     * variant collapses to a single canonical form.
+     *
+     * The tier is the cover that ends up EMBEDDED in the downloaded
+     * file. It used to be 640, which shrank the 1024px covers the
+     * library stores (and the ~1400px originals behind them) for every
+     * player that reads the file's own art. 1200 is the usual
+     * full-size cover; Google caps the request at the original, so a
+     * smaller original is served as-is, never upscaled.
      */
     private fun canonicaliseUrl(url: String): String =
-        url.replace(YT_MUSIC_SIZE_SUFFIX, "=w640-h640")
+        url.replace(YT_MUSIC_SIZE_SUFFIX, EMBED_SIZE_SUFFIX)
 
     private fun hashFilename(canonical: String): String {
         val digest = MessageDigest.getInstance("SHA-1").digest(canonical.toByteArray())
@@ -87,5 +94,8 @@ class AlbumArtCache @Inject constructor(
     private companion object {
         private const val TAG = "AlbumArtCache"
         private val YT_MUSIC_SIZE_SUFFIX = Regex("=w\\d+-h\\d+(?:-[a-z0-9]+)*")
+
+        /** Size of the YouTube Music cover embedded in downloads: see [canonicaliseUrl]. */
+        private const val EMBED_SIZE_SUFFIX = "=w1200-h1200"
     }
 }
