@@ -257,8 +257,8 @@ internal val CompactCoverSize = 64.dp
  * always covers it (Pixel 5: 1080 for a 948px cover; Pixel 6 Pro: 1440 for a ~1270px cover,
  * which a fixed 1024 decode stretched 1.24x). The short side, so rotating doesn't change the
  * request (and with it the palette). Capped, so a tablet or an unfolded foldable doesn't hold a
- * 2000px+ bitmap: 1440x1440 ARGB is 8 MB, one shared Bitmap. The app's ArtSizeMapper reads this
- * size to pick the cover URL variant, so it also decides whether Qobuz `_max`, Spotify's
+ * 2000px+ bitmap: 1440x1440 ARGB is 8 MB, one shared Bitmap. The app's ArtSizeInterceptor reads
+ * this size to pick the cover URL variant, so it also decides whether Qobuz `_max`, Spotify's
  * original etc. are fetched.
  */
 private const val NP_ART_MAX_DECODE_PX = 1440
@@ -267,6 +267,15 @@ private const val NP_ART_MAX_DECODE_PX = 1440
  * The cover request both covers use. Remembered: an inline ImageRequest.Builder is a new object
  * every recomposition, which makes Coil re-evaluate the request each time (and Now Playing
  * recomposes on every 250ms position tick).
+ *
+ * Placeholder: the bigger cover variant has its own cache key, so a track's first view fetches it
+ * from the network (a Qobuz `_max` can be 2 MB). Until it lands, draw the bitmap the mini player
+ * already has in memory for the same song: Coil keys that as `MemoryCache.Key(<stored URL>)` (a
+ * String model maps to a Uri keyed by its toString, and the mini player sets no transformations
+ * or key extras), which is exactly what a String key here builds. A miss (local-file art, or a
+ * cover the mini player sized up because it is under ~110px) just means no placeholder, as today.
+ * The swap is instant (crossfade is off) and the palette still samples only the final bitmap
+ * (onSuccess).
  */
 @Composable
 internal fun rememberNpArtRequest(artModel: Any?): ImageRequest {
@@ -278,6 +287,7 @@ internal fun rememberNpArtRequest(artModel: Any?): ImageRequest {
     return remember(context, artModel, decodePx) {
         ImageRequest.Builder(context)
             .data(artModel)
+            .placeholderMemoryCacheKey(artModel as? String)
             .size(decodePx)
             .precision(Precision.INEXACT)
             .allowHardware(false) // Required for Palette bitmap extraction.
