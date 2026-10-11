@@ -28,6 +28,9 @@ class NowPlayingPreferenceTest {
     }
 
     @After fun tearDown() {
+        // The preferencesDataStore delegate is one instance per process, so deleting the file does
+        // not reset what it holds in memory: put the pins back for whichever test runs next.
+        kotlinx.coroutines.runBlocking { preference.resetPinnedActions() }
         if (file.exists()) file.delete()
     }
 
@@ -44,6 +47,25 @@ class NowPlayingPreferenceTest {
         org.junit.Assert.assertEquals(AmbientStyle.CLASSIC, preference.ambientStyle.first())
         preference.setAmbientStyle(AmbientStyle.SOFT_GLOW)
         org.junit.Assert.assertEquals(AmbientStyle.SOFT_GLOW, preference.ambientStyle.first())
+    }
+
+    @Test fun pinnedActions_defaultToRadioAndQueue() = runTest {
+        org.junit.Assert.assertEquals(NowPlayingAction.DefaultPins, preference.pinnedActions.first())
+    }
+
+    @Test fun pinnedActions_persistIncludingEmpty() = runTest {
+        val pins = setOf(NowPlayingAction.RADIO, NowPlayingAction.LYRICS, NowPlayingAction.SHARE)
+        preference.setPinnedActions(pins)
+        org.junit.Assert.assertEquals(pins, preference.pinnedActions.first())
+        // Unpinning everything is a real choice, not "unset": it must not fall back to the default.
+        preference.setPinnedActions(emptySet())
+        org.junit.Assert.assertEquals(emptySet<NowPlayingAction>(), preference.pinnedActions.first())
+    }
+
+    @Test fun pinnedActions_resetRestoresTheDefault() = runTest {
+        preference.setPinnedActions(setOf(NowPlayingAction.SHARE))
+        preference.resetPinnedActions()
+        org.junit.Assert.assertEquals(NowPlayingAction.DefaultPins, preference.pinnedActions.first())
     }
 
     @Test fun ambientAnimation_persistsFalseAndTrue() = runTest {

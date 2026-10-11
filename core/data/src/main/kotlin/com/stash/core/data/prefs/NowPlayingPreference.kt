@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.map
@@ -45,5 +46,25 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
 
     suspend fun setAmbientStyle(style: AmbientStyle) {
         context.nowPlayingDataStore.edit { it[ambientStyleKey] = style.name }
+    }
+
+    private val pinnedActionsKey = stringSetPreferencesKey("pinned_actions")
+
+    /**
+     * The actions pinned to Now Playing's top row (edited from the ⋮ menu). Unset reads as
+     * [NowPlayingAction.DefaultPins]; an empty set is kept as empty (the user unpinned all).
+     * Unknown names are ignored, see [NowPlayingAction.parsePins].
+     */
+    val pinnedActions = context.nowPlayingDataStore.data.map { prefs ->
+        NowPlayingAction.parsePins(prefs[pinnedActionsKey])
+    }
+
+    suspend fun setPinnedActions(pins: Set<NowPlayingAction>) {
+        context.nowPlayingDataStore.edit { it[pinnedActionsKey] = pins.mapTo(HashSet()) { a -> a.name } }
+    }
+
+    /** Back to Radio · ⋮ · Queue (and to whatever a later release makes the default). */
+    suspend fun resetPinnedActions() {
+        context.nowPlayingDataStore.edit { it.remove(pinnedActionsKey) }
     }
 }
