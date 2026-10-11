@@ -41,6 +41,9 @@ import androidx.compose.ui.graphics.Color
  *                     the description above.
  * @param tint         Optional override for the text color. Default is
  *                     `onTertiaryContainer` from the theme.
+ * @param compact      When true, show the format name only (`FLAC`), dropping
+ *                     the Hi-Res qualifier. Track rows use this when the full
+ *                     pill would squeeze the title (see [decideTrackRowFit]).
  */
 @Composable
 fun FlacBadge(
@@ -50,9 +53,14 @@ fun FlacBadge(
     sampleRateHz: Int? = null,
     size: Dp = 14.dp,
     tint: Color? = null,
+    compact: Boolean = false,
 ) {
     if (!isLossless(fileFormat)) return
-    val text = flacBadgeText(fileFormat, bitsPerSample, sampleRateHz)
+    val text = if (compact) {
+        flacBadgeText(fileFormat, bitsPerSample = null, sampleRateHz = null)
+    } else {
+        flacBadgeText(fileFormat, bitsPerSample, sampleRateHz)
+    }
     Surface(
         modifier = modifier,
         color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -84,7 +92,7 @@ internal fun flacBadgeText(fileFormat: String?, bitsPerSample: Int?, sampleRateH
 
 private val LOSSLESS_CODECS = setOf("flac", "alac", "wav", "ape", "tta", "wv", "aiff")
 
-private fun isLossless(format: String?): Boolean {
+internal fun isLossless(format: String?): Boolean {
     if (format.isNullOrBlank()) return false
     return format.lowercase() in LOSSLESS_CODECS
 }

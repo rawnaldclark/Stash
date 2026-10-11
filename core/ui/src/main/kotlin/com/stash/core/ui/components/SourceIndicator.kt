@@ -36,7 +36,7 @@ fun SourceIndicator(
     val extendedColors = StashTheme.extendedColors
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(SourceIndicatorSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (source == MusicSource.SPOTIFY || source == MusicSource.BOTH) {
@@ -70,4 +70,19 @@ fun SourceIndicator(
             }
         }
     }
+}
+
+/** Gap between the dots and labels inside [SourceIndicator]. */
+internal val SourceIndicatorSpacing = 3.dp
+
+/**
+ * The text labels [SourceIndicator] draws for [source], in order. Kept beside
+ * the composable so a row that measures the labels (see [TrackListItem]) uses
+ * the same strings that are drawn.
+ */
+internal fun sourceIndicatorLabels(source: MusicSource): List<String> = when (source) {
+    MusicSource.SPOTIFY -> listOf("Spotify")
+    MusicSource.YOUTUBE -> listOf("YouTube")
+    MusicSource.BOTH -> listOf("Spotify", "YouTube")
+    MusicSource.LOCAL -> listOf("Local")
 }
