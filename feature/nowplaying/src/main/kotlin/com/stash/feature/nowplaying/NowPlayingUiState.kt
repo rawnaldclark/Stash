@@ -14,6 +14,11 @@ import com.stash.core.ui.components.PlaylistInfo
  */
 data class NowPlayingUiState(
     val currentTrack: Track? = null,
+    /**
+     * [currentTrack] is a library row (Room answered for it), so its lyrics are stored and its
+     * sync offset kept. False for a stream playing under a transient id until a listen persists it.
+     */
+    val currentTrackStored: Boolean = false,
     val isPlaying: Boolean = false,
     val currentPositionMs: Long = 0L,
     val durationMs: Long = 0L,
