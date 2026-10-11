@@ -24,4 +24,18 @@ class NowPlayingActionTest {
         assertEquals(NowPlayingAction.MAX_PINS, pins.size)
         assertEquals(NowPlayingAction.entries.take(NowPlayingAction.MAX_PINS).toSet(), pins)
     }
+
+    // ── the toggle rule ──────────────────────────────────────────────────────────────────────
+
+    @Test fun `toggling pins and unpins`() {
+        assertEquals(setOf(NowPlayingAction.RADIO, NowPlayingAction.QUEUE, NowPlayingAction.SHARE),
+            NowPlayingAction.togglePin(NowPlayingAction.DefaultPins, NowPlayingAction.SHARE))
+        assertEquals(setOf(NowPlayingAction.QUEUE), NowPlayingAction.togglePin(NowPlayingAction.DefaultPins, NowPlayingAction.RADIO))
+    }
+
+    @Test fun `a full row refuses another pin but still unpins`() {
+        val full = NowPlayingAction.entries.take(NowPlayingAction.MAX_PINS).toSet()
+        assertEquals(null, NowPlayingAction.togglePin(full, NowPlayingAction.FLAG_WRONG_MATCH))
+        assertEquals(full - NowPlayingAction.RADIO, NowPlayingAction.togglePin(full, NowPlayingAction.RADIO))
+    }
 }

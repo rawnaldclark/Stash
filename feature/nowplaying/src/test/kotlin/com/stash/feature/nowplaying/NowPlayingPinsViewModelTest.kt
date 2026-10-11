@@ -72,32 +72,13 @@ class NowPlayingPinsViewModelTest {
         }
     }
 
-    @Test fun `toggling a pin persists the new set`() = runTest(dispatcher) {
+    @Test fun `a toggle goes to the preference's atomic edit, one call per tap`() = runTest(dispatcher) {
         val vm = newViewModel()
-        vm.pinnedActions.test {
-            awaitItem()
-            assertTrue(vm.onTogglePin(NowPlayingAction.SHARE))
-            coVerify { preference.setPinnedActions(setOf(NowPlayingAction.RADIO, NowPlayingAction.QUEUE, NowPlayingAction.SHARE)) }
-            assertTrue(vm.onTogglePin(NowPlayingAction.RADIO))
-            coVerify { preference.setPinnedActions(setOf(NowPlayingAction.QUEUE)) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test fun `a full row refuses another pin and writes nothing`() = runTest(dispatcher) {
-        pinsFlow.value = NowPlayingAction.entries.take(NowPlayingAction.MAX_PINS).toSet()
-        val vm = newViewModel()
-        vm.pinnedActions.test {
-            awaitItem()
-            assertFalse(vm.onTogglePin(NowPlayingAction.FLAG_WRONG_MATCH))
-            coVerify(exactly = 0) { preference.setPinnedActions(any()) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test fun `a toggle before the pins load is ignored`() = runTest(dispatcher) {
-        val vm = newViewModel()
-        assertFalse(vm.onTogglePin(NowPlayingAction.SHARE))
+        vm.onTogglePin(NowPlayingAction.SHARE)
+        vm.onTogglePin(NowPlayingAction.DOWNLOAD)
+        // No read-then-write in the ViewModel: each tap is its own transaction in storage.
+        coVerify(exactly = 1) { preference.togglePin(NowPlayingAction.SHARE) }
+        coVerify(exactly = 1) { preference.togglePin(NowPlayingAction.DOWNLOAD) }
         coVerify(exactly = 0) { preference.setPinnedActions(any()) }
     }
 

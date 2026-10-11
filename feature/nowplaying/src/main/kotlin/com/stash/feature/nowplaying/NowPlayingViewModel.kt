@@ -143,18 +143,13 @@ class NowPlayingViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
-     * Pins or unpins [action]. Returns false (and changes nothing) when pinning would pass
-     * [NowPlayingAction.MAX_PINS]; the menu explains the cap instead.
+     * Pins or unpins [action]. The read, the rule and the write are one DataStore transaction
+     * ([NowPlayingPreference.togglePin]), so quick taps queue up instead of racing, and the
+     * [NowPlayingAction.MAX_PINS] cap holds in storage. The editor greys out and explains the
+     * cap before a tap gets here; a pin refused by a race simply doesn't appear.
      */
-    fun onTogglePin(action: NowPlayingAction): Boolean {
-        val current = pinnedActions.value ?: return false
-        return when (val result = togglePin(current, action)) {
-            PinToggle.Full -> false
-            is PinToggle.Changed -> {
-                viewModelScope.launch { nowPlayingPreference.setPinnedActions(result.pins) }
-                true
-            }
-        }
+    fun onTogglePin(action: NowPlayingAction) {
+        viewModelScope.launch { nowPlayingPreference.togglePin(action) }
     }
 
     /** Back to Radio · ⋮ · Queue. */

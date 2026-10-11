@@ -42,5 +42,15 @@ enum class NowPlayingAction {
             if (stored == null) return DefaultPins
             return entries.filter { it.name in stored }.take(MAX_PINS).toSet()
         }
+
+        /**
+         * The pin rule: pins or unpins [action] in [pins]. Unpinning always works; pinning
+         * stops at [MAX_PINS], where the result is null (nothing changes).
+         */
+        fun togglePin(pins: Set<NowPlayingAction>, action: NowPlayingAction): Set<NowPlayingAction>? = when {
+            action in pins -> pins - action
+            pins.size >= MAX_PINS -> null
+            else -> pins + action
+        }
     }
 }
