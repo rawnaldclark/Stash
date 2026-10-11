@@ -209,4 +209,19 @@ class NowPlayingLyricsLoadTest {
         settle()
         coVerify(exactly = 0) { lyricsRepository.resolveAndStore(any(), any()) }
     }
+
+    @Test fun `a library track is never looked up as a stream while Room is still answering`() = runTest(dispatcher) {
+        // Room answers a moment after the player moves on; until then the track's kind is unknown.
+        val row = MutableSharedFlow<Track?>()
+        rowsById[42L] = row
+        val track = Track(id = 42L, title = "Attention", artist = "Ataxia", youtubeId = "WH2oeGIx39M", lyricsFetchedAt = 1L)
+        playerState.value = PlayerState(currentTrack = track)
+        newViewModel(appForeground = object : AppForeground { override val foreground = flowOf(true) })
+        settle()
+        coVerify(exactly = 0) { lyricsRepository.resolveTransient(any(), any()) }
+        row.emit(track) // stored, already stamped: nothing to look up at all
+        settle()
+        coVerify(exactly = 0) { lyricsRepository.resolveTransient(any(), any()) }
+        coVerify(exactly = 0) { lyricsRepository.resolveAndStore(any(), any()) }
+    }
 }

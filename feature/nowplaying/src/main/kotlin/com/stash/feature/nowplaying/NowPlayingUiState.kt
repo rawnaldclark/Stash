@@ -16,9 +16,10 @@ data class NowPlayingUiState(
     val currentTrack: Track? = null,
     /**
      * [currentTrack] is a library row (Room answered for it), so its lyrics are stored and its
-     * sync offset kept. False for a stream playing under a transient id until a listen persists it.
+     * sync offset kept. False for a stream playing under a transient id until a listen persists
+     * it. Null for the moment after a track change before Room has answered: unknown, not "no".
      */
-    val currentTrackStored: Boolean = false,
+    val currentTrackStored: Boolean? = null,
     val isPlaying: Boolean = false,
     val currentPositionMs: Long = 0L,
     val durationMs: Long = 0L,

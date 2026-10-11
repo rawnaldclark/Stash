@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -470,7 +471,10 @@ class NowPlayingViewModel @Inject constructor(
     }
 
     private val lyricsTargets: Flow<LyricsTarget?> = uiState
-        .map { s -> s.currentTrack?.let { LyricsTarget(it, s.currentTrackStored) } }
+        // Wait for Room's answer: a library track looked like a stream for a few hundred ms
+        // after a track change, which set off a needless network lookup.
+        .filter { s -> s.currentTrack == null || s.currentTrackStored != null }
+        .map { s -> s.currentTrack?.let { LyricsTarget(it, s.currentTrackStored == true) } }
         .distinctUntilChanged { old, new -> old?.key == new?.key }
 
     /**
@@ -692,7 +696,7 @@ class NowPlayingViewModel @Inject constructor(
             .map { it.currentTrack?.let { t -> t.id to t.youtubeId } }
             .distinctUntilChanged()
             .flatMapLatest { key ->
-                if (key == null) flowOf<com.stash.core.model.Track?>(null)
+                if (key == null) flowOf<com.stash.core.model.Track?>(null).map { key to it }
                 else {
                     val (id, ytId) = key
                     // Falls back to a youtube_id lookup so the heart icon
@@ -704,7 +708,7 @@ class NowPlayingViewModel @Inject constructor(
                     musicRepository.observeTrackById(id).flatMapLatest { row ->
                         if (row != null || ytId.isNullOrBlank()) flowOf(row)
                         else musicRepository.observeTrackByYoutubeId(ytId)
-                    }
+                    }.map { key to it } // tagged with the player key it answers for
                 }
             }
 
@@ -713,7 +717,11 @@ class NowPlayingViewModel @Inject constructor(
             playerRepository.currentPosition,
             liveTrackFlow,
             optimisticLikeState,
-        ) { state, positionMs, liveTrack, optimistic ->
+        ) { state, positionMs, live, optimistic ->
+            val (liveKey, liveTrack) = live
+            // Room answers a moment after the player moves on: until it has answered for THIS
+            // track, whether the track is in the library is unknown (null), not "no".
+            val liveResolved = liveKey == state.currentTrack?.let { t -> t.id to t.youtubeId }
             _uiState.update { current ->
                 val baseTrack = liveTrack ?: state.currentTrack
                 // When the active track came from a stream resolver, the Room
@@ -753,7 +761,7 @@ class NowPlayingViewModel @Inject constructor(
                     // Prefer Room's live row; fall back to player's MediaItem
                     // snapshot for non-library content (streams, search previews).
                     currentTrack = finalTrack,
-                    currentTrackStored = liveTrack != null,
+                    currentTrackStored = if (liveResolved) liveTrack != null else null,
                     isPlaying = state.isPlaying,
                     currentPositionMs = positionMs,
                     durationMs = state.durationMs,
@@ -1110,7 +1118,7 @@ class NowPlayingViewModel @Inject constructor(
     fun onLyricsRetry() {
         val state = _uiState.value
         val track = state.currentTrack ?: return
-        if (state.currentTrackStored) fetchLibraryLyrics(track, force = true)
+        if (state.currentTrackStored == true) fetchLibraryLyrics(track, force = true)
         else fetchStreamingLyrics(track, fresh = true)
     }
 
@@ -1190,7 +1198,7 @@ class NowPlayingViewModel @Inject constructor(
     /** Adjust sync for the current track. No-op for streaming tracks (id == 0L) — see [lyricsSyncOffsetMs]. */
     fun setLyricsSyncOffsetMs(offsetMs: Long) {
         val track = _uiState.value.currentTrack ?: return
-        if (!_uiState.value.currentTrackStored) return
+        if (_uiState.value.currentTrackStored != true) return
         viewModelScope.launch { lyricsRepository.setSyncOffsetMs(track.id, offsetMs) }
     }
 
