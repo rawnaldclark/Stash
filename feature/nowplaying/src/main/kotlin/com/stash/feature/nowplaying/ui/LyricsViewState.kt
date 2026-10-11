@@ -25,7 +25,7 @@ import com.stash.data.lyrics.source.LyricsResult
  *                   from [None] because it's a positive answer, not a miss.
  *  - [None]         Either the fetch ran and every source definitively
  *                   answered "no lyrics" (`lyricsFetchedAt == 0L`), or the
- *                   row has no usable text. Sheet shows a Retry CTA wired
+ *                   row has no usable text. Lyrics mode shows a quiet "Try again" wired
  *                   to [LyricsPane]'s `onRetry`.
  *  - [Error]        The fetch FAILED (network/HTTP/parse — sources threw)
  *                   rather than missed. Not produced by these mappers: the

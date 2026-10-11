@@ -167,7 +167,8 @@ internal fun LyricsPlainRenderer(text: String, look: LyricsLook, modifier: Modif
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(start = look.sidePadding, end = look.sidePadding, top = 8.dp, bottom = LYRICS_FADE_BOTTOM),
+            // Start below the top fade, so the first line is fully opaque at rest.
+            .padding(start = look.sidePadding, end = look.sidePadding, top = LYRICS_FADE_TOP + 8.dp, bottom = LYRICS_FADE_BOTTOM),
     )
 }
 

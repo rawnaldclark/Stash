@@ -20,9 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SyncAlt
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -53,6 +53,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -64,6 +69,7 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
+import coil3.size.Precision
 import coil3.toBitmap
 import com.stash.core.ui.theme.SpaceGrotesk
 import java.util.Locale
@@ -251,6 +257,8 @@ internal val CompactCoverSize = 64.dp
  * pixels it gets: a 64dp decode of In Rainbows found a red "vibrant" where the full-size one
  * found yellow, so the accent flipped each time lyrics opened or closed. One size means one
  * cache entry, one Bitmap, one palette (the ViewModel also skips a Bitmap it has sampled).
+ * INEXACT precision caps the decode at this size without upscaling smaller art (a 544px
+ * thumbnail stays 544px); the request, and so the cache key, is still identical for both.
  */
 private const val NP_ART_DECODE_PX = 1024
 
@@ -266,6 +274,7 @@ internal fun rememberNpArtRequest(artModel: Any?): ImageRequest {
         ImageRequest.Builder(context)
             .data(artModel)
             .size(NP_ART_DECODE_PX)
+            .precision(Precision.INEXACT)
             .allowHardware(false) // Required for Palette bitmap extraction.
             .build()
     }
@@ -329,7 +338,8 @@ internal fun LyricsMenuButton(
     }
     Box {
         IconButton(onClick = { open = true }) {
-            Icon(Icons.Default.MoreHoriz, contentDescription = "Lyrics options", tint = ink, modifier = Modifier.size(24.dp))
+            // Tune, not a second "more": this is the lyrics' own settings, beside the row's ⋮.
+            Icon(Icons.Default.Tune, contentDescription = "Lyrics options", tint = ink, modifier = Modifier.size(24.dp))
         }
         DropdownMenu(
             expanded = open,
@@ -361,6 +371,11 @@ internal fun LyricsMenuButton(
                     com.stash.core.ui.components.StashSwitch(checked = liveEnabled, onCheckedChange = null)
                 },
                 onClick = { onLiveToggle(!liveEnabled) },
+                // The switch inside is display-only; the row carries its on/off for TalkBack.
+                modifier = Modifier.semantics {
+                    role = Role.Switch
+                    toggleableState = ToggleableState(liveEnabled)
+                },
             )
             if (items.saveToFile) {
                 DropdownMenuItem(
