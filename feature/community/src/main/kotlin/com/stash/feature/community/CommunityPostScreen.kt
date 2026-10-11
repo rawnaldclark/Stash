@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.share.SharedTrack
 import com.stash.feature.community.CommunityPostViewModel.UiState
+import com.stash.core.ui.components.bottomChromePadding
 
 /** One post (spec 2026-09-26 §3): Play, then Save a copy or Like, your vote, and the songs as posted. */
 @Composable
@@ -145,7 +146,7 @@ private fun PostBody(s: UiState.Loaded, viewModel: CommunityPostViewModel, onOpe
     // Refreshed each time the screen resumes, so "Posted … ago" never freezes.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LifecycleResumeEffect(Unit) { now = System.currentTimeMillis(); onPauseOrDispose {} }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 120.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottomChromePadding(120.dp))) {
         item {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 CoverArt(post.coverUrls(), Modifier.size(if (song) 220.dp else 180.dp), corner = 12.dp)

@@ -6,6 +6,9 @@ composeBom = "2026.03.00"
 hilt = "2.58"
 navigationCompose = "2.9.7"
 coil = "3.4.0"
+# Haze (backdrop blur for the glass mini player + tab bar). 1.6.10 is the newest that fits compileSdk 35 /
+# Kotlin 2.3 / Compose 1.10: 1.7.x pulls androidx.activity 1.11+ (minCompileSdk 36), 2.x needs Kotlin 2.4 + Compose 1.12.
+haze = "1.6.10"
 media3 = "1.9.2"
 playServicesCast = "22.1.0"
 mediarouter = "1.8.1"
@@ -69,6 +72,7 @@ hilt-work-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.
 # Coil
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
 
 # Room
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }

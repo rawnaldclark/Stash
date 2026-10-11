@@ -2,11 +2,17 @@ package com.stash.app.navigation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.stash.core.ui.components.LocalBottomChromeInset
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -96,6 +102,20 @@ fun StashNavHost(
         viewModel = host,
     ) {
         StashNavGraph(navController, modifier, onSelectionModeChanged, onNavigateToTab, posting, startDestination)
+    }
+}
+
+/**
+ * For a destination not laid out under the glass bottom chrome (a form, a web view, a screen
+ * with its own bottom-pinned controls, or one rarely visited): kept above the chrome as every
+ * screen was before edge to edge, so nothing of it is ever hidden. Its children read a zero
+ * [LocalBottomChromeInset], so a shared component that pads by it doesn't pad twice.
+ */
+@Composable
+private fun AboveChrome(content: @Composable () -> Unit) {
+    val inset = LocalBottomChromeInset.current
+    Box(Modifier.fillMaxSize().padding(bottom = inset)) {
+        CompositionLocalProvider(LocalBottomChromeInset provides 0.dp, content = content)
     }
 }
 
@@ -199,7 +219,9 @@ private fun StashNavGraph(
             )
         }
         composable<MixBuilderRoute> {
-            MixBuilderScreen(onBack = { navController.popBackStack() })
+            AboveChrome {
+                MixBuilderScreen(onBack = { navController.popBackStack() })
+            }
         }
         composable<LibraryRoute> {
             LibraryScreen(
@@ -269,10 +291,12 @@ private fun StashNavGraph(
             )
         }
         composable<ManagePlaylistsRoute> {
-            ManagePlaylistsScreen(
-                source = com.stash.feature.sync.SyncSource.valueOf(it.toRoute<ManagePlaylistsRoute>().source),
-                onBack = { navController.popBackStack() },
-            )
+            AboveChrome {
+                ManagePlaylistsScreen(
+                    source = com.stash.feature.sync.SyncSource.valueOf(it.toRoute<ManagePlaylistsRoute>().source),
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
         composable<SettingsRoute> {
             val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
@@ -334,7 +358,10 @@ private fun StashNavGraph(
             )
         }
         composable<WebLinkRoute> {
-            com.stash.feature.settings.weblink.SettingsWebLinkScreen(onBack = { navController.popBackStack() })
+            // Its QR scanner pins a button to the bottom edge: kept above the chrome.
+            AboveChrome {
+                com.stash.feature.settings.weblink.SettingsWebLinkScreen(onBack = { navController.popBackStack() })
+            }
         }
         composable<SettingsAppearanceRoute> { backStackEntry ->
             val settingsEntry = remember(backStackEntry) { navController.getBackStackEntry(SettingsRoute) }
@@ -357,44 +384,54 @@ private fun StashNavGraph(
         }
 
         composable<SquidWtfCaptchaRoute> { backStackEntry ->
-            // Reach the Settings ViewModel from the parent route so the
-            // captured cookie value writes to the same DataStore the
-            // interceptor reads from. We grab the *Settings* nav entry
-            // (not this one) so the ViewModel survives this route's
-            // dispose and the value lands in prefs immediately.
-            val settingsEntry = remember(backStackEntry) {
-                navController.getBackStackEntry(SettingsRoute)
+            AboveChrome {
+                // Reach the Settings ViewModel from the parent route so the
+                // captured cookie value writes to the same DataStore the
+                // interceptor reads from. We grab the *Settings* nav entry
+                // (not this one) so the ViewModel survives this route's
+                // dispose and the value lands in prefs immediately.
+                val settingsEntry = remember(backStackEntry) {
+                    navController.getBackStackEntry(SettingsRoute)
+                }
+                val viewModel: com.stash.feature.settings.SettingsViewModel =
+                    androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
+                com.stash.feature.settings.components.SquidWtfCaptchaScreen(
+                    onCookieCaptured = viewModel::onSquidWtfCaptchaCookieChanged,
+                    onClose = { navController.popBackStack() },
+                )
             }
-            val viewModel: com.stash.feature.settings.SettingsViewModel =
-                androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
-            com.stash.feature.settings.components.SquidWtfCaptchaScreen(
-                onCookieCaptured = viewModel::onSquidWtfCaptchaCookieChanged,
-                onClose = { navController.popBackStack() },
-            )
         }
 
         composable<EqualizerRoute> {
-            EqualizerScreen(
-                onNavigateBack = { navController.popBackStack() },
-            )
+            AboveChrome {
+                EqualizerScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable<LibraryHealthRoute> {
-            LibraryHealthScreen(
-                onNavigateBack = { navController.popBackStack() },
-            )
+            AboveChrome {
+                LibraryHealthScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable<DiagnosticsPreviewRoute> {
-            com.stash.feature.settings.diagnostics.DiagnosticsPreviewScreen(
-                onNavigateBack = { navController.popBackStack() },
-            )
+            AboveChrome {
+                com.stash.feature.settings.diagnostics.DiagnosticsPreviewScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable<BlockedSongsRoute> {
-            BlockedSongsScreen(
-                onBack = { navController.popBackStack() },
-            )
+            AboveChrome {
+                BlockedSongsScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable<PlaylistDetailRoute> {
@@ -405,18 +442,22 @@ private fun StashNavGraph(
         }
 
         composable<SharedMixRoute> {
-            com.stash.feature.library.share.SharedMixScreen(
-                onBack = { navController.popBackStack() },
-                onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
-                // Follow / Save a copy land on the new playlist; Back skips the mix screen.
-                onJoinedPlaylist = { id ->
-                    navController.navigate(PlaylistDetailRoute(id)) { popUpTo<SharedMixRoute> { inclusive = true } }
-                },
-            )
+            AboveChrome {
+                com.stash.feature.library.share.SharedMixScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
+                    // Follow / Save a copy land on the new playlist; Back skips the mix screen.
+                    onJoinedPlaylist = { id ->
+                        navController.navigate(PlaylistDetailRoute(id)) { popUpTo<SharedMixRoute> { inclusive = true } }
+                    },
+                )
+            }
         }
 
         composable<SharedTrackRoute> {
-            com.stash.feature.library.share.SharedTrackScreen(onBack = { navController.popBackStack() })
+            AboveChrome {
+                com.stash.feature.library.share.SharedTrackScreen(onBack = { navController.popBackStack() })
+            }
         }
 
         composable<CommunityRoute> {
@@ -445,17 +486,19 @@ private fun StashNavGraph(
         }
 
         composable<ListenJoinRoute> {
-            com.stash.feature.nowplaying.listen.JoinSessionScreen(
-                onBack = { navController.popBackStack() },
-                // After joining, Now Playing is the session; Back from it skips the Join screen. Reuse an
-                // existing Now Playing entry rather than stack a second one (as the mini player does).
-                onJoined = {
-                    navController.popBackStack<ListenJoinRoute>(inclusive = true)
-                    if (!navController.popBackStack(NowPlayingRoute, inclusive = false)) {
-                        navController.navigate(NowPlayingRoute) { launchSingleTop = true }
-                    }
-                },
-            )
+            AboveChrome {
+                com.stash.feature.nowplaying.listen.JoinSessionScreen(
+                    onBack = { navController.popBackStack() },
+                    // After joining, Now Playing is the session; Back from it skips the Join screen. Reuse an
+                    // existing Now Playing entry rather than stack a second one (as the mini player does).
+                    onJoined = {
+                        navController.popBackStack<ListenJoinRoute>(inclusive = true)
+                        if (!navController.popBackStack(NowPlayingRoute, inclusive = false)) {
+                            navController.navigate(NowPlayingRoute) { launchSingleTop = true }
+                        }
+                    },
+                )
+            }
         }
 
         composable<ArtistDetailRoute> {
@@ -480,16 +523,22 @@ private fun StashNavGraph(
         }
 
         composable<FailedMatchesRoute> {
-            FailedMatchesScreen(
-                onBack = { navController.popBackStack() },
-            )
+            AboveChrome {
+                FailedMatchesScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable<FailedDownloadsRoute> {
-            FailedDownloadsScreen(onBack = { navController.popBackStack() })
+            AboveChrome {
+                FailedDownloadsScreen(onBack = { navController.popBackStack() })
+            }
         }
         composable<DownloadManagementRoute> {
-            DownloadManagementScreen(onBack = { navController.popBackStack() })
+            AboveChrome {
+                DownloadManagementScreen(onBack = { navController.popBackStack() })
+            }
         }
 
         composable<SearchArtistRoute> {

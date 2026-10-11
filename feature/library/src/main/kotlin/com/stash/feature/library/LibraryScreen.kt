@@ -120,6 +120,7 @@ import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.SelectionState
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.common.extensions.pluralize
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * Library screen entry point. Injects the [LibraryViewModel] via Hilt
@@ -301,7 +302,7 @@ fun LibraryScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(bottom = 16.dp),
+                .padding(bottom = bottomChromePadding(16.dp)),
         ) { data -> androidx.compose.material3.Snackbar(snackbarData = data) }
     }
 
@@ -821,7 +822,7 @@ private fun LikedTab(
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 0.dp),
+            contentPadding = PaddingValues(bottom = bottomChromePadding(if (selection.isActive) 140.dp else 0.dp)),
         ) {
             // Only offer the sift when there's more than one origin to pick between.
             if (sift.size > 2) {
@@ -1144,7 +1145,7 @@ private fun PlaylistsGrid(
         LazyVerticalGrid(
             state = gridState,
             columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = bottomChromePadding(8.dp)),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -1551,7 +1552,7 @@ private fun TracksTab(
             // While selecting, the mini-player hides (Task 7) but the bottom
             // selection bar takes its place — pad enough that the last row clears
             // it in either state.
-            contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 0.dp),
+            contentPadding = PaddingValues(bottom = bottomChromePadding(if (selection.isActive) 140.dp else 0.dp)),
         ) {
             item { header() }
             items(tracks, key = { it.id }) { track ->
@@ -1744,7 +1745,7 @@ private fun ArtistsGrid(
         LazyVerticalGrid(
             state = gridState,
             columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = bottomChromePadding(8.dp)),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -1943,7 +1944,7 @@ private fun AlbumsGrid(
         LazyVerticalGrid(
             state = gridState,
             columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = bottomChromePadding(8.dp)),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {

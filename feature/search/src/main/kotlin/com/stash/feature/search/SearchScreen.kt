@@ -89,6 +89,7 @@ import com.stash.data.ytmusic.model.ArtistSummary
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.model.TrackSummary
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * Top-level search screen composable.
@@ -126,7 +127,7 @@ fun SearchScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { SnackbarHost(snackbarHostState, Modifier.padding(bottom = bottomChromePadding())) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { inner ->
         Column(
@@ -307,7 +308,10 @@ private fun RecentSearches(
         EmptySearchPrompt()
         return
     }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = bottomChromePadding()),
+    ) {
         item {
             Row(
                 modifier = Modifier
@@ -460,7 +464,7 @@ private fun SectionedResultsList(
 
     LazyColumn(
         state = listState,
-        contentPadding = PaddingValues(bottom = 96.dp),
+        contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         sections.forEach { section ->
