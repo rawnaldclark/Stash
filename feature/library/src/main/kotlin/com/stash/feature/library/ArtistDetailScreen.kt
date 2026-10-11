@@ -74,6 +74,7 @@ import com.stash.core.ui.selection.SelectionAction
 import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.rememberSelectionState
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * Artist Detail screen entry point.
@@ -133,7 +134,7 @@ fun ArtistDetailScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 120.dp),
+                contentPadding = PaddingValues(bottom = bottomChromePadding(if (selection.isActive) 140.dp else 120.dp)),
             ) {
                 // ── Header section ──────────────────────────────────────
                 item(key = "header") {

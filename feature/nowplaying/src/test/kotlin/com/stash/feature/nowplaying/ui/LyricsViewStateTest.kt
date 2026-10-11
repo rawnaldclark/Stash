@@ -7,11 +7,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * v0.9.36 Task 12 Step 2 — pure mapper for the lyrics sheet's view state.
+ * v0.9.36 Task 12 Step 2 — pure mapper for the lyrics view's state.
  *
  * Drives the [lyricsViewStateFor] derivation that the Now Playing
  * ViewModel uses to fold (current Track, observed LyricsEntity?) into
- * the sealed [LyricsViewState] the sheet renders.
+ * the sealed [LyricsViewState] the lyrics view renders.
  *
  * Sentinel semantics live on the Track row itself (`lyricsFetchedAt`):
  *   - NULL  → never tried → Loading (sheet will enqueue a priority fetch)

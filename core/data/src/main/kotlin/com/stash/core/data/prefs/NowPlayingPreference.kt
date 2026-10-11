@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.map
@@ -45,5 +46,44 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
 
     suspend fun setAmbientStyle(style: AmbientStyle) {
         context.nowPlayingDataStore.edit { it[ambientStyleKey] = style.name }
+    }
+
+    private val pinnedActionsKey = stringSetPreferencesKey("pinned_actions")
+
+    /**
+     * The actions pinned to Now Playing's top row (edited from the ⋮ menu). Unset reads as
+     * [NowPlayingAction.DefaultPins]; an empty set is kept as empty (the user unpinned all).
+     * Unknown names are ignored, see [NowPlayingAction.parsePins].
+     */
+    val pinnedActions = context.nowPlayingDataStore.data.map { prefs ->
+        NowPlayingAction.parsePins(prefs[pinnedActionsKey])
+    }
+
+    suspend fun setPinnedActions(pins: Set<NowPlayingAction>) {
+        context.nowPlayingDataStore.edit { it[pinnedActionsKey] = pins.mapTo(HashSet()) { a -> a.name } }
+    }
+
+    /**
+     * Pins or unpins [action] in one DataStore transaction: the read, the
+     * [NowPlayingAction.togglePin] rule (with its [NowPlayingAction.MAX_PINS] cap) and the
+     * write happen inside a single edit, which DataStore serialises. Two quick taps therefore
+     * both land, rather than the second overwriting the first from a stale read, and the cap
+     * holds in storage whatever the UI believed. Returns false when the row was full.
+     */
+    suspend fun togglePin(action: NowPlayingAction): Boolean {
+        var changed = false
+        context.nowPlayingDataStore.edit { prefs ->
+            val next = NowPlayingAction.togglePin(NowPlayingAction.parsePins(prefs[pinnedActionsKey]), action)
+            if (next != null) {
+                prefs[pinnedActionsKey] = next.mapTo(HashSet()) { a -> a.name }
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    /** Back to Radio · ⋮ · Queue (and to whatever a later release makes the default). */
+    suspend fun resetPinnedActions() {
+        context.nowPlayingDataStore.edit { it.remove(pinnedActionsKey) }
     }
 }

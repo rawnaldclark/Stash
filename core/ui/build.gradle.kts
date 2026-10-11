@@ -13,6 +13,7 @@ dependencies {
     implementation(libs.compose.animation)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.haze)
 
     // SelectionState unit tests run on the JVM. The Compose BOM is only on the
     // main classpath (added by stash.compose.library), so re-apply it here to
@@ -21,6 +22,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation(libs.truth)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    // ArtSizeInterceptorTest builds real Coil ImageRequests, which need a (mocked) Context.
+    testImplementation(libs.mockk)
     testImplementation(libs.compose.runtime)
     testImplementation("androidx.compose.runtime:runtime-saveable")
 }

@@ -46,7 +46,7 @@ class MirrorEngineTest {
             b.reply()
         }
         session.open(link)
-        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Chrome on Windows"))
+        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Chrome on Windows", b.deviceId))
         repo.refresh()
         web = WebSide(server, b)
         return b

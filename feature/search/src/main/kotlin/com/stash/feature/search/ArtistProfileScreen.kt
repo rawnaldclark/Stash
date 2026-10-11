@@ -27,6 +27,7 @@ import com.stash.core.ui.components.SectionHeader
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.model.AlbumSummary
 import kotlinx.coroutines.flow.merge
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * Artist Profile screen.
@@ -108,11 +109,11 @@ fun ArtistProfileScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(bottom = 96.dp),
+            contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(inner),

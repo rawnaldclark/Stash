@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -23,7 +22,14 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,27 +37,41 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.prefs.StartTab
-import com.stash.core.ui.theme.StashElevation
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.stash.app.RequestNotificationPermissionOnce
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import com.stash.feature.nowplaying.MiniPlayer
+import com.stash.feature.nowplaying.PlayerQueueSheet
+import com.stash.app.ambient.AlbumColorsViewModel
+import com.stash.core.ui.ambient.LocalAlbumChrome
+import com.stash.core.ui.ambient.ProvideAlbumChrome
+import com.stash.core.ui.ambient.TAB_COLOUR_MS
+import com.stash.core.ui.ambient.rememberReducedMotion
+import com.stash.core.ui.components.LocalBottomChromeInset
+import com.stash.core.ui.components.LocalChromeHazeState
+import com.stash.core.ui.components.chromeGlass
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 
 /**
  * Root scaffold for the Stash app.
  *
- * Hosts the [StashNavHost], bottom navigation bar, and the [MiniPlayer]
- * which sits between the content area and the navigation bar.
+ * Hosts the [StashNavHost], the bottom navigation bar, and the glass [MiniPlayer]
+ * floating just above it. Every screen draws edge to edge under that bottom chrome so
+ * the glass can blur it (Haze: the nav host is the `hazeSource`, the mini player and tab
+ * bar the effects); screens pad their scrolling content by [LocalBottomChromeInset].
+ * Also publishes the app-wide album colour ([LocalAlbumChrome]) and hosts the queue
+ * sheet the mini player opens.
  */
 @Composable
 fun StashScaffold(
@@ -70,6 +90,17 @@ fun StashScaffold(
     // selection action bar owns the bottom edge instead of stacking on / being
     // crowded by it (premium multi-select pattern, avoids mis-taps).
     var selectionActive by remember { mutableStateOf(false) }
+
+    // The queue sheet opened from the mini player's Up next button, over any screen.
+    var showQueue by rememberSaveable { mutableStateOf(false) }
+
+    // One album colour for the whole app (wordmark, selected tab, mini player), computed
+    // at the player level so it follows the song whether or not Now Playing is open.
+    val albumColorsViewModel: AlbumColorsViewModel = hiltViewModel()
+    val albumColors by albumColorsViewModel.colors.collectAsStateWithLifecycle()
+
+    // The backdrop the bottom chrome frosts: the nav host, drawn under the bars.
+    val hazeState = rememberHazeState()
 
     // Safeguard: a selection-capable screen normally clears its selection on
     // every exit path (✕ / Back / last-deselect), which fires
@@ -170,6 +201,8 @@ fun StashScaffold(
         }
     }
 
+    ProvideAlbumChrome(albumColors) {
+    CompositionLocalProvider(LocalChromeHazeState provides hazeState) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         // Use Scaffold's default safe-drawing insets so screens automatically
@@ -187,9 +220,15 @@ fun StashScaffold(
                 val qobuzStatusViewModel: QobuzStatusViewModel = androidx.hilt.navigation.compose.hiltViewModel()
                 val qobuzStatus by qobuzStatusViewModel.bannerStatus.collectAsStateWithLifecycle()
 
-                Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+                // No bottom navigation-bar padding here: the tab bar's glass runs down under
+                // the system bar and pads its own items (StashBottomBar), so content scrolling
+                // under it is frosted all the way to the screen's edge. The cards above it keep
+                // clear of a side system bar (3-button navigation in landscape).
+                val cardInsets = Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
+                Column {
                     AnimatedVisibility(
                         visible = !onNowPlaying,
+                        modifier = cardInsets,
                         enter = fadeIn(),
                         exit = fadeOut(),
                     ) {
@@ -201,6 +240,7 @@ fun StashScaffold(
                     // duplicate mini transport hides on this route only.
                     AnimatedVisibility(
                         visible = currentRoute != NowPlayingRoute::class.qualifiedName,
+                        modifier = cardInsets,
                         enter = fadeIn(),
                         exit = fadeOut(),
                     ) {
@@ -210,6 +250,7 @@ fun StashScaffold(
                         // "Chrome on Windows sent you 3 playlists and 40 likes." (link-sync spec §2.3): a dialog, shown once per send.
                         com.stash.feature.settings.weblink.InboxPrompt()
                         MiniPlayer(
+                            onOpenQueue = { showQueue = true },
                             onExpand = {
                                 // Return to an existing Now Playing entry instead
                                 // of pushing a duplicate. launchSingleTop only
@@ -246,26 +287,32 @@ fun StashScaffold(
             }
         },
     ) { innerPadding ->
-        // On Now Playing the content takes the whole height down to the screen's
-        // edge: its ambient runs under the (gesture or 3-button) system bar and the
-        // screen pads its own controls above it. The status bar inset stays.
+        // Every screen takes the whole height down to the screen's edge: the glass mini
+        // player and tab bar float over it and blur it. Screens pad their scrolling content
+        // by LocalBottomChromeInset (the bottom chrome's height, system bar included) so the
+        // last row scrolls clear; a screen that doesn't scroll is padded by its destination
+        // in StashNavHost. Now Playing's ambient runs under the (gesture or 3-button) system
+        // bar and the screen pads its own controls above it. The status bar inset stays.
+        // While a screen is selecting there's no glass to draw under: it keeps the system
+        // bar inset as padding, so its own selection bar sits above the system bar as before.
         val layoutDirection = LocalLayoutDirection.current
-        val contentPadding = if (onNowPlaying) {
-            PaddingValues(
-                start = innerPadding.calculateStartPadding(layoutDirection),
-                top = innerPadding.calculateTopPadding(),
-                end = innerPadding.calculateEndPadding(layoutDirection),
-                bottom = 0.dp,
-            )
-        } else {
-            innerPadding
-        }
+        val bottomChrome = innerPadding.calculateBottomPadding()
+        val contentPadding = PaddingValues(
+            start = innerPadding.calculateStartPadding(layoutDirection),
+            top = innerPadding.calculateTopPadding(),
+            end = innerPadding.calculateEndPadding(layoutDirection),
+            bottom = if (selectionActive) bottomChrome else 0.dp,
+        )
+        CompositionLocalProvider(LocalBottomChromeInset provides if (selectionActive) 0.dp else bottomChrome) {
         StashNavHost(
             navController = navController,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
-                .consumeWindowInsets(contentPadding),
+                // Off Now Playing the bottom chrome owns the system bar inset, so screens'
+                // own Scaffolds don't pad it again; Now Playing still reads it.
+                .consumeWindowInsets(if (onNowPlaying) contentPadding else innerPadding)
+                .hazeSource(hazeState),
             onSelectionModeChanged = { selectionActive = it },
             onNavigateToTab = ::navigateToTab,
             startDestination = when (startTab) {
@@ -274,6 +321,14 @@ fun StashScaffold(
                 StartTab.SEARCH -> SearchRoute
             },
         )
+        }
+    }
+
+    // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
+    if (showQueue) {
+        PlayerQueueSheet(onDismiss = { showQueue = false })
+    }
+    }
     }
 }
 
@@ -286,15 +341,16 @@ private fun StashBottomBar(
     onNavigate: (TopLevelDestination) -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
-    val hairline = extendedColors.glassBorderBright
+    // The web's 1px top line on the tab bar (rgba(255,255,255,.06) / the light glass border).
+    val hairline = extendedColors.glassBorder
+    val chrome = LocalAlbumChrome.current
+    val reducedMotion = rememberReducedMotion()
 
     NavigationBar(
-        // Premium Crisp §3.3: the nav is the one depth cue — a translucent
-        // frosted surface with a soft shadow and a top hairline. (Edge-to-edge
-        // "scroll behind the nav" + true blur are deferred to the Home rewrite;
-        // this is the purely-additive frosting that's safe on every tab.)
+        // The same frosted glass as the mini player (a denser tint: the tab labels sit on it),
+        // running down under the system bar; the top hairline marks its edge.
         modifier = Modifier
-            .shadow(StashElevation.Chrome)
+            .chromeGlass(ring = false, tintAlphaScale = NAV_GLASS_TINT_SCALE)
             .drawBehind {
                 drawLine(
                     color = hairline,
@@ -303,13 +359,23 @@ private fun StashBottomBar(
                     strokeWidth = 1.dp.toPx(),
                 )
             },
-        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 0.dp,
-        windowInsets = WindowInsets(0.dp),
+        windowInsets = WindowInsets.navigationBars,
     ) {
         TopLevelDestination.entries.forEach { dest ->
             val isSelected = currentRoute == dest.route::class.qualifiedName
+            // Selected: the song's text ink while a song plays, the theme's neutral selected
+            // colour otherwise (LocalAlbumChrome crossfades that over 800 ms); the change of
+            // tab itself takes the web's 180 ms. Unselected tabs stay neutral. Only the
+            // selection is animated here, so the album crossfade isn't chased by a second tween.
+            val selectedness by animateFloatAsState(
+                targetValue = if (isSelected) 1f else 0f,
+                animationSpec = tween(if (reducedMotion) 0 else TAB_COLOUR_MS),
+                label = "tabSelected",
+            )
+            val ink = lerp(extendedColors.textTertiary, chrome.selectedTab, selectedness)
 
             NavigationBarItem(
                 selected = isSelected,
@@ -318,19 +384,19 @@ private fun StashBottomBar(
                     Icon(
                         imageVector = if (isSelected) dest.selectedIcon else dest.unselectedIcon,
                         contentDescription = dest.label,
+                        tint = ink,
                     )
                 },
                 label = {
-                    Text(text = dest.label, style = MaterialTheme.typography.labelSmall)
+                    Text(text = dest.label, style = MaterialTheme.typography.labelSmall, color = ink)
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    unselectedIconColor = extendedColors.textTertiary,
-                    unselectedTextColor = extendedColors.textTertiary,
-                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    indicatorColor = chrome.selectedTab.copy(alpha = 0.12f),
                 ),
             )
         }
     }
 }
+
+/** The tab bar's glass is denser than the mini player's (70 % → 84 % on dark). */
+private const val NAV_GLASS_TINT_SCALE = 1.2f

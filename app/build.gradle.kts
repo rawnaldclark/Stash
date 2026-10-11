@@ -78,8 +78,8 @@ val lastFmProxyUrl: String =
 
 // ── Link Stash on the web (sync-v1) ────────────────────────────────────────
 //
-// Release builds talk to https://sync.stashfm.app and keep the feature hidden until it ships (spec §14 phase 3:
-// "nothing user-visible yet behind a build flag"). Debug builds show it, and can point at a local Worker with
+// Release builds talk to https://sync.stashfm.app with the feature on (it shipped; the flag stays as the off switch).
+// Debug builds show it too, and can point at a local Worker with
 // `sync.baseUrl=http://192.168.137.1:8795` in local.properties; only that host gets cleartext, through a
 // debug-only network security config generated below.
 val syncReleaseBaseUrl = "https://sync.stashfm.app"
@@ -182,8 +182,8 @@ android {
     buildTypes {
         release {
             buildConfigField("String", "SYNC_BASE_URL", "\"$syncReleaseBaseUrl\"")
-            buildConfigField("Boolean", "WEB_LINK_ENABLED", "false")
-            manifestPlaceholders["webLinkEnabled"] = "false"
+            buildConfigField("Boolean", "WEB_LINK_ENABLED", "true")
+            manifestPlaceholders["webLinkEnabled"] = "true"
             // R8 minification is DISABLED because youtubedl-android embeds
             // Chaquopy (Python runtime) + Apache Commons Compress + native
             // binaries that use extensive reflection. R8 obfuscation renames
@@ -282,6 +282,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.haze)
     implementation(libs.okhttp)
     // Google Cast: casting to Chromecast / Cast speakers (spec 2026-10-06).
     implementation(libs.play.services.cast.framework)

@@ -38,6 +38,7 @@ import com.stash.core.ui.components.DiscoveryErrorCard
 import com.stash.core.ui.components.SectionHeader
 import com.stash.data.ytmusic.model.AlbumSummary
 import kotlinx.coroutines.flow.merge
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * Album Discovery screen.
@@ -102,10 +103,10 @@ fun AlbumDiscoveryScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
         LazyColumn(
-            contentPadding = PaddingValues(bottom = 120.dp),
+            contentPadding = PaddingValues(bottom = bottomChromePadding(120.dp)),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(inner),

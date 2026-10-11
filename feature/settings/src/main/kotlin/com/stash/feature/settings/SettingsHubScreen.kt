@@ -30,6 +30,7 @@ import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsSearchField
 import com.stash.feature.settings.components.SupportBanner
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * The Settings hub — the host for `composable<SettingsRoute>`.
@@ -151,7 +152,9 @@ fun SettingsHubScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp)
+            // Edge to edge under the glass mini player + tab bar.
+            .padding(bottom = bottomChromePadding()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(

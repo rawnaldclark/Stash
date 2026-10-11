@@ -9,13 +9,13 @@ import com.stash.data.lyrics.parser.TtmlParser
 import com.stash.data.lyrics.source.LyricsResult
 
 /**
- * v0.9.36 Task 12 — Now Playing lyrics sheet view state.
+ * v0.9.36 Task 12 — Now Playing lyrics view state.
  *
- * Sealed hierarchy the [LyricsBottomSheet] renders one-of:
+ * Sealed hierarchy Now Playing's lyrics mode ([LyricsPane], via [lyricsBodyFor]) renders one-of:
  *  - [Loading]      Track has never been tried (`lyricsFetchedAt == null`).
- *                   The sheet enqueues a priority worker on open and waits.
+ *                   The screen's subscription triggers a priority fetch and waits.
  *  - [Synced]       LRC parsed into a non-empty [LrcLine] list. Used by
- *                   [LyricsSyncedRenderer] for the auto-scroll + tap-to-seek
+ *                   [LyricsLineRenderer] / [LyricsSyllableRenderer] for the auto-scroll + tap-to-seek
  *                   experience. Carries [plainFallback] so the renderer can
  *                   degrade gracefully without re-fetching if it ever needs
  *                   to render plain text.
@@ -25,8 +25,8 @@ import com.stash.data.lyrics.source.LyricsResult
  *                   from [None] because it's a positive answer, not a miss.
  *  - [None]         Either the fetch ran and every source definitively
  *                   answered "no lyrics" (`lyricsFetchedAt == 0L`), or the
- *                   row has no usable text. Sheet shows a Retry CTA wired
- *                   to [LyricsBottomSheet]'s `onRetry`.
+ *                   row has no usable text. Lyrics mode shows a quiet "Try again" wired
+ *                   to [LyricsPane]'s `onRetry`.
  *  - [Error]        The fetch FAILED (network/HTTP/parse — sources threw)
  *                   rather than missed. Not produced by these mappers: the
  *                   ViewModel emits it directly — for library tracks via the
@@ -52,7 +52,7 @@ sealed interface LyricsViewState {
 
 /**
  * Pure derivation from the canonical pair (current [Track], observed
- * [LyricsEntity]?). Drives [LyricsBottomSheet]'s render via
+ * [LyricsEntity]?). Drives [LyricsPane]'s render via
  * [com.stash.feature.nowplaying.NowPlayingViewModel.lyricsViewState].
  *
  * Order is significant — the sentinel check on `lyricsFetchedAt` runs

@@ -264,6 +264,7 @@ class NowPlayingViewModelFindInFlacTest {
         val releasePreference = CompletableDeferred<Unit>()
         val preference = mockk<NowPlayingPreference> {
             every { ambientStyle } returns kotlinx.coroutines.flow.flowOf(com.stash.core.data.prefs.AmbientStyle.SOFT_GLOW)
+            every { pinnedActions } returns kotlinx.coroutines.flow.flowOf(com.stash.core.data.prefs.NowPlayingAction.DefaultPins)
             every { ambientAnimationEnabled } returns flow {
                 releasePreference.await()
                 emit(false)

@@ -37,6 +37,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.feature.community.CommunityViewModel.Tab
+import com.stash.core.ui.components.bottomChromePadding
 
 /** See all (spec 2026-09-26 §3): All / Mine, up to 100 posts, `+ Post` in the top bar. */
 @Composable
@@ -78,7 +79,7 @@ fun CommunityScreen(
             )
         } else {
             val rankWidth = rankWidthFor(posts.size)
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 120.dp)) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomChromePadding(120.dp))) {
                 itemsIndexed(posts, key = { _, p -> p.id }) { i, p ->
                     PostRow(
                         rank = if (state.tab == Tab.MINE) null else i + 1,

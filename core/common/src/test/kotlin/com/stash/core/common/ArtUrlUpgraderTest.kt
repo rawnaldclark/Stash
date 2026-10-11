@@ -146,4 +146,49 @@ class ArtUrlUpgraderTest {
             ArtUrlUpgrader.artFallback("https://i.ytimg.com/vi_webp/abc123/maxresdefault.webp"),
         )
     }
+
+    @Test
+    fun `hq720 from search results keeps its full frame and loses the downscale query`() {
+        assertEquals(
+            "https://i.ytimg.com/vi/abc123/hq720.jpg",
+            ArtUrlUpgrader.upgrade("https://i.ytimg.com/vi/abc123/hq720.jpg?sqp=x&rs=y"),
+        )
+    }
+
+    // The large variants ArtUrlSizer asks for on Now Playing step down to what was stored.
+
+    @Test
+    fun `a missing lastfm original steps to the 770 jpeg, then on down the usual walk`() {
+        assertEquals(
+            "https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.jpg",
+            ArtUrlUpgrader.artFallback("https://lastfm-img.freetls.fastly.net/i/u/ar0/abc.jpg"),
+        )
+    }
+
+    @Test
+    fun `a missing qobuz max steps to 600, and 600 is the last rung`() {
+        assertEquals(
+            "https://static.qobuz.com/images/covers/25/40/0060254794025_600.jpg",
+            ArtUrlUpgrader.artFallback("https://static.qobuz.com/images/covers/25/40/0060254794025_max.jpg"),
+        )
+        assertNull(ArtUrlUpgrader.artFallback("https://static.qobuz.com/images/covers/25/40/0060254794025_600.jpg"))
+    }
+
+    @Test
+    fun `a missing spotify original steps to 640, and 640 is the last rung`() {
+        assertEquals(
+            "https://i.scdn.co/image/ab67616d0000b273abc",
+            ArtUrlUpgrader.artFallback("https://i.scdn.co/image/ab67616d000082c1abc"),
+        )
+        assertNull(ArtUrlUpgrader.artFallback("https://i.scdn.co/image/ab67616d0000b273abc"))
+    }
+
+    @Test
+    fun `a missing large itunes cover steps to 600, and 600 is the last rung`() {
+        assertEquals(
+            "https://is1-ssl.mzstatic.com/image/thumb/x/600x600bb.jpg",
+            ArtUrlUpgrader.artFallback("https://is1-ssl.mzstatic.com/image/thumb/x/1200x1200bb.jpg"),
+        )
+        assertNull(ArtUrlUpgrader.artFallback("https://is1-ssl.mzstatic.com/image/thumb/x/600x600bb.jpg"))
+    }
 }

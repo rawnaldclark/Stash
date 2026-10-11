@@ -26,9 +26,10 @@ class ArtFallbackInterceptor @Inject constructor() : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         var request = chain.request()
         var response = chain.proceed(request)
-        // At most two steps on either host: Last.fm 770 jpg -> 770 png ->
-        // its own 300x300 png; YouTube maxres -> sd -> hq.
-        repeat(2) {
+        // At most three steps: Last.fm's original (ar0) -> 770 jpg -> 770 png ->
+        // its own 300x300 png is the longest walk; YouTube maxres -> sd -> hq;
+        // Qobuz _max -> _600, Spotify original -> 640, iTunes 1200 -> 600.
+        repeat(MAX_STEPS) {
             if (response.code != 404) return response
             val next = ArtUrlUpgrader.artFallback(request.url.toString()) ?: return response
             response.close()
@@ -36,5 +37,10 @@ class ArtFallbackInterceptor @Inject constructor() : Interceptor {
             response = chain.proceed(request)
         }
         return response
+    }
+
+    private companion object {
+        /** The longest walk [ArtUrlUpgrader.artFallback] can take (Last.fm's). */
+        const val MAX_STEPS = 3
     }
 }
