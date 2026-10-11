@@ -334,13 +334,17 @@ private fun StashNavGraph(
             )
         }
         composable<SettingsAccountsRoute> { backStackEntry ->
-            val settingsEntry = remember(backStackEntry) { navController.getBackStackEntry(SettingsRoute) }
-            val viewModel: com.stash.feature.settings.SettingsViewModel =
-                androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
-            com.stash.feature.settings.SettingsAccountsScreen(
-                onBack = { navController.popBackStack() },
-                viewModel = viewModel,
-            )
+            // Its Spotify / YouTube Music / Discord sign-in WebViews replace the whole screen, and
+            // their pages pin buttons to the bottom (Google's Next): kept above the chrome.
+            AboveChrome {
+                val settingsEntry = remember(backStackEntry) { navController.getBackStackEntry(SettingsRoute) }
+                val viewModel: com.stash.feature.settings.SettingsViewModel =
+                    androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
+                com.stash.feature.settings.SettingsAccountsScreen(
+                    onBack = { navController.popBackStack() },
+                    viewModel = viewModel,
+                )
+            }
         }
         composable<SettingsLibraryStorageRoute> { backStackEntry ->
             val settingsEntry = remember(backStackEntry) { navController.getBackStackEntry(SettingsRoute) }
