@@ -39,8 +39,12 @@ sealed interface PairingState {
     /** Answered; "Waiting for your computer… · 123 456" until the browser's user confirms the same code. */
     data class Waiting(val browserName: String, val code: String) : PairingState
 
-    /** "Linked. Nothing is mirrored yet." */
-    data class Linked(val browserName: String) : PairingState
+    /**
+     * "Linked. Nothing is mirrored yet." [browserDeviceId] is the browser that just joined, so the screen can drop this
+     * result once that browser is unlinked (Unlink everything, Remove, or from the web) instead of showing a stale
+     * "Linked to Chrome on Windows". Null only for callers that don't know it.
+     */
+    data class Linked(val browserName: String, val browserDeviceId: String? = null) : PairingState
 
     /** Stopped, with nothing joined, created or pinned. [code] stays on screen when the phone had already shown it. */
     data class Failed(val message: String, val code: String? = null) : PairingState
@@ -233,7 +237,7 @@ class PairingSession(
         return when (outcome) {
             WebLinkResult.Ok -> {
                 withContext(NonCancellable) { repo.refresh() }
-                set(PairingState.Linked(name))
+                set(PairingState.Linked(name, p.browser.deviceId))
             }
             is WebLinkResult.Failed -> fail(outcome.message, p.code)
             is WebLinkResult.Unlinked -> fail(WebLinkCopy.UNFINISHED, p.code)
