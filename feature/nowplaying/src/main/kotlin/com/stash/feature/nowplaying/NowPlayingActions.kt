@@ -16,6 +16,8 @@ internal data class ActionContext(
     val casting: Boolean = false,
     /** Community is on (LocalPostToCommunity is provided). */
     val communityAvailable: Boolean = false,
+    /** The current track is downloaded: a pinned Download then only shows that, see [isInertPinnedTap]. */
+    val isDownloaded: Boolean = false,
 )
 
 /**
@@ -49,9 +51,69 @@ internal fun topRowActions(pins: Set<NowPlayingAction>, ctx: ActionContext): Top
     )
 }
 
-/** The ⋮ menu's rows: everything available and not pinned, in canonical order. */
-internal fun menuActions(pins: Set<NowPlayingAction>, ctx: ActionContext): List<NowPlayingAction> =
-    NowPlayingAction.entries.filter { it !in pins && isActionAvailable(it, ctx) }
+/**
+ * The ⋮ menu's rows, in canonical order: everything available and not in the top row. That is
+ * the unpinned actions, plus pins with no room in the row this frame ([overflow], see
+ * [fitTopRow]), plus "Remove download" for a downloaded track even while Download is pinned:
+ * the pinned slot never deletes (see [isInertPinnedTap]), so removal stays a labelled row here.
+ */
+internal fun menuActions(
+    pins: Set<NowPlayingAction>,
+    ctx: ActionContext,
+    overflow: List<NowPlayingAction> = emptyList(),
+): List<NowPlayingAction> = NowPlayingAction.entries.filter { action ->
+    isActionAvailable(action, ctx) &&
+        (action !in pins || action in overflow || (action == NowPlayingAction.DOWNLOAD && ctx.isDownloaded))
+}
+
+/**
+ * True when tapping the pinned [action] must do nothing destructive: a pinned Download on a track
+ * that is already downloaded. Its slot shows the downloaded state and a tap only says so; a
+ * check icon among small icons reads as a status, and one stray tap must never delete a file
+ * whose source may since have gone. Removing stays a labelled row in the ⋮ menu.
+ */
+internal fun isInertPinnedTap(action: NowPlayingAction, ctx: ActionContext): Boolean =
+    action == NowPlayingAction.DOWNLOAD && ctx.isDownloaded
+
+/** A slot's preferred width, and the least it may shrink to (still a comfortable touch target). */
+internal const val SLOT_PREFERRED_DP = 48f
+internal const val SLOT_MIN_DP = 44f
+
+/** Cast keeps Material's full 48dp interactive size. */
+internal const val CAST_SLOT_DP = 48f
+
+/**
+ * The top row as it fits [widthDp] this frame: [row] is what renders, at [slotDp] per slot;
+ * [overflow] holds pins with no room, which the ⋮ menu lists as normal rows for now.
+ */
+internal data class TopRowFit(
+    val row: TopRowActions,
+    val overflow: List<NowPlayingAction>,
+    val slotDp: Float,
+)
+
+/**
+ * Fits the pinned row into [widthDp] (the row's own width, inside the screen's side padding).
+ *
+ * Dismiss, ⋮, a pinned Queue and (when [castVisible]) Cast at its own 48dp are never dropped.
+ * The other pins take a slot each, as many as fit at [SLOT_MIN_DP], in canonical order; the
+ * rest overflow from the lowest priority (the end of the canonical order) first. Slots then
+ * share the width up to [SLOT_PREFERRED_DP]. Nothing is ever unreachable: an overflowed pin is
+ * a row in the ⋮ menu until the screen has room again (a wider window, a smaller display size).
+ */
+internal fun fitTopRow(row: TopRowActions, widthDp: Float, castVisible: Boolean): TopRowFit {
+    val castWidth = if (castVisible) CAST_SLOT_DP else 0f
+    val fixedSlots = 2 + row.trailing.size // Dismiss, ⋮, and Queue when pinned
+    val room = widthDp - castWidth
+    var fits = row.leading.size
+    while (fits > 0 && (fixedSlots + fits) * SLOT_MIN_DP > room) fits--
+    val slot = (room / (fixedSlots + fits)).coerceIn(SLOT_MIN_DP, SLOT_PREFERRED_DP)
+    return TopRowFit(
+        row = TopRowActions(leading = row.leading.take(fits), trailing = row.trailing),
+        overflow = row.leading.drop(fits),
+        slotDp = slot,
+    )
+}
 
 /**
  * The pin editor's rows. Everything the user could ever use is listed, including actions a
@@ -72,20 +134,12 @@ internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): String?
     else -> "Not available right now"
 }
 
-/** The result of tapping a pin in the editor. */
-internal sealed interface PinToggle {
-    data class Changed(val pins: Set<NowPlayingAction>) : PinToggle
+/** The editor's note for a pin that is in the ⋮ menu only because this screen is too narrow. */
+internal const val OVERFLOW_NOTE = "In the menu for now: no room on this screen"
 
-    /** The row already holds [NowPlayingAction.MAX_PINS]: nothing changes, the editor explains. */
-    data object Full : PinToggle
-}
-
-/** Pins or unpins [action]. Unpinning always works; pinning stops at [NowPlayingAction.MAX_PINS]. */
-internal fun togglePin(pins: Set<NowPlayingAction>, action: NowPlayingAction): PinToggle = when {
-    action in pins -> PinToggle.Changed(pins - action)
-    pins.size >= NowPlayingAction.MAX_PINS -> PinToggle.Full
-    else -> PinToggle.Changed(pins + action)
-}
-
-/** True when the row can take no more pins (the editor dims the empty pins and says why). */
+/**
+ * True when the row can take no more pins (the editor dims the empty pins and says why). The
+ * cap itself is enforced in storage, inside the toggle's DataStore edit
+ * ([com.stash.core.data.prefs.NowPlayingPreference.togglePin]).
+ */
 internal fun pinsFull(pins: Set<NowPlayingAction>): Boolean = pins.size >= NowPlayingAction.MAX_PINS

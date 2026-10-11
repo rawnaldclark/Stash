@@ -103,8 +103,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
-import coil3.request.ImageRequest
-import coil3.request.allowHardware
 import coil3.toBitmap
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.isFlac
@@ -315,48 +313,81 @@ fun NowPlayingScreen(
     androidx.activity.compose.BackHandler(enabled = reading) { viewModel.onDismissLyrics() }
 
     // The ambient palette's source is the art Coil loads. In lyrics mode the big art isn't
-    // composed, so the compact cover reports instead — but only a cover the big art hasn't
-    // already sampled (its smaller decode is a different Bitmap, which would re-run Palette).
+    // composed, so the compact cover reports instead, but only for a cover not yet sampled.
+    // Both covers share one decode (rememberNpArtRequest), so the colours match either way.
     var paletteArtModel by remember { mutableStateOf<Any?>(null) }
     val artModel: Any? = track?.albumArtPath ?: track?.albumArtUrl
 
-    // -- Actions: where each shows (pinned row or ⋮ menu) and what it does --
+    // -- Actions: where each shows (pinned row or ⋮ menu) and what it does. Everything the top
+    // row reads is remembered on what it depends on, so the 250ms position tick that recomposes
+    // this screen leaves the row alone. --
     val postToCommunity = com.stash.core.ui.components.LocalPostToCommunity.current
-    val actionCtx = ActionContext(inRoom = room != null, casting = casting, communityAvailable = postToCommunity != null)
-    val visualState = ActionVisualState(
-        radioActive = radioLabel != null,
-        radioTuning = radioTuning,
-        lyricsOpen = reading,
-        together = togetherState,
-        speed = playbackSpeed,
-        isDownloaded = track?.isDownloaded == true,
-    )
-    val visual: (NowPlayingAction) -> ActionVisual = { actionVisual(it, visualState) }
-    val onAction: (NowPlayingAction) -> Unit = { action ->
-        when (action) {
-            // Start a station seeded from this song, or stop the running one; taps while tuning wait.
-            NowPlayingAction.RADIO -> when {
-                radioTuning -> Unit
-                radioLabel != null -> viewModel.stopRadio()
-                else -> viewModel.startRadioFromCurrent()
+    val isDownloaded = track?.isDownloaded == true
+    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded) {
+        ActionContext(
+            inRoom = room != null,
+            casting = casting,
+            communityAvailable = postToCommunity != null,
+            isDownloaded = isDownloaded,
+        )
+    }
+    val visualState = remember(radioLabel != null, radioTuning, reading, togetherState, playbackSpeed, isDownloaded) {
+        ActionVisualState(
+            radioActive = radioLabel != null,
+            radioTuning = radioTuning,
+            lyricsOpen = reading,
+            together = togetherState,
+            speed = playbackSpeed,
+            isDownloaded = isDownloaded,
+        )
+    }
+    // Cast and Listen Together exclude each other (cast spec §3).
+    val castVisible = room == null && castConnection != com.stash.core.media.cast.CastConnection.Unavailable
+    // The row's width: the window less Now Playing's 24dp margins. Pins that don't fit at 44dp
+    // go to the ⋮ menu for now (narrow phones, large display sizes); see fitTopRow.
+    val rowWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 48f
+    val rowFit = remember(pins, actionCtx, castVisible, rowWidthDp) {
+        fitTopRow(topRowActions(pins, actionCtx), rowWidthDp, castVisible)
+    }
+    val onAction: (NowPlayingAction) -> Unit = remember(radioTuning, radioLabel, togetherState, track, postToCommunity) {
+        { action ->
+            when (action) {
+                // Start a station seeded from this song, or stop the running one; taps while tuning wait.
+                NowPlayingAction.RADIO -> when {
+                    radioTuning -> Unit
+                    radioLabel != null -> viewModel.stopRadio()
+                    else -> viewModel.startRadioFromCurrent()
+                }
+                NowPlayingAction.LYRICS -> viewModel.onToggleLyrics()
+                NowPlayingAction.QUEUE -> showQueue = true
+                // Start, or the Session sheet (invite, leave, end) once in a room.
+                NowPlayingAction.LISTEN_TOGETHER -> when (togetherState) {
+                    is ListenTogetherState.InRoom -> showSession = true
+                    is ListenTogetherState.Connecting -> Unit
+                    ListenTogetherState.Idle -> showStartTogether = true
+                }
+                NowPlayingAction.SAVE_TO_PLAYLIST -> showSaveSheet = true
+                NowPlayingAction.SHARE -> viewModel.onShareCurrent()
+                NowPlayingAction.POST_TO_COMMUNITY ->
+                    track?.let { t -> postToCommunity?.invoke(com.stash.core.model.community.PostTarget.Song(t)) }
+                // Resolves and opens the actual remote album page.
+                NowPlayingAction.VIEW_ALBUM -> viewModel.onViewAlbumTapped()
+                NowPlayingAction.PLAYBACK_SPEED -> showSpeedSheet = true
+                // The ⋮ menu's labelled "Download" / "Remove download" row.
+                NowPlayingAction.DOWNLOAD -> viewModel.toggleDownloadForCurrentTrack()
+                NowPlayingAction.FLAG_WRONG_MATCH -> showWrongMatchDialog = true
             }
-            NowPlayingAction.LYRICS -> viewModel.onToggleLyrics()
-            NowPlayingAction.QUEUE -> showQueue = true
-            // Start, or the Session sheet (invite, leave, end) once in a room.
-            NowPlayingAction.LISTEN_TOGETHER -> when (togetherState) {
-                is ListenTogetherState.InRoom -> showSession = true
-                is ListenTogetherState.Connecting -> Unit
-                ListenTogetherState.Idle -> showStartTogether = true
+        }
+    }
+    // A tap on the top row. A pinned Download on a downloaded track never deletes: it only says
+    // so, and "Remove download" stays a labelled row in the ⋮ menu (isInertPinnedTap).
+    val onPinnedAction: (NowPlayingAction) -> Unit = remember(onAction, actionCtx) {
+        { action ->
+            if (isInertPinnedTap(action, actionCtx)) {
+                android.widget.Toast.makeText(toastContext, "Downloaded", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                onAction(action)
             }
-            NowPlayingAction.SAVE_TO_PLAYLIST -> showSaveSheet = true
-            NowPlayingAction.SHARE -> viewModel.onShareCurrent()
-            NowPlayingAction.POST_TO_COMMUNITY ->
-                track?.let { t -> postToCommunity?.invoke(com.stash.core.model.community.PostTarget.Song(t)) }
-            // Resolves and opens the actual remote album page.
-            NowPlayingAction.VIEW_ALBUM -> viewModel.onViewAlbumTapped()
-            NowPlayingAction.PLAYBACK_SPEED -> showSpeedSheet = true
-            NowPlayingAction.DOWNLOAD -> viewModel.toggleDownloadForCurrentTrack()
-            NowPlayingAction.FLAG_WRONG_MATCH -> showWrongMatchDialog = true
         }
     }
 
@@ -615,9 +646,6 @@ fun NowPlayingScreen(
         // The raw navigation-bar inset (never consumed by the scaffold here), so the
         // controls sit above the gesture handle or the 3-button bar and do not move
         // while the screen slides away.
-        // The raw navigation-bar inset (never consumed by the scaffold here), so the
-        // controls sit above the gesture handle or the 3-button bar and do not move
-        // while the screen slides away.
         val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
         // -- Progress + transport: one piece, shared by both modes. In lyrics mode it glides
@@ -678,11 +706,10 @@ fun NowPlayingScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 NowPlayingTopBar(
-                    row = topRowActions(pins, actionCtx),
-                    visual = visual,
+                    fit = rowFit,
+                    visualState = visualState,
                     hasTrack = uiState.hasTrack,
                     isDownloading = isDownloadingCurrent,
-                    radioTuning = radioTuning,
                     radioLock = radioLock,
                     ink = npInk(),
                     accent = npAccent(uiState.vibrantColor),
@@ -690,9 +717,8 @@ fun NowPlayingScreen(
                     dismissDescription = if (reading) "Back to the cover" else "Dismiss",
                     onDismiss = if (reading) viewModel::onDismissLyrics else onDismiss,
                     onMoreClick = { showOptionsSheet = true },
-                    onAction = onAction,
-                    // Cast and Listen Together exclude each other (cast spec §3).
-                    castVisible = room == null && castConnection != com.stash.core.media.cast.CastConnection.Unavailable,
+                    onAction = onPinnedAction,
+                    castVisible = castVisible,
                     castButton = {
                         com.stash.feature.nowplaying.cast.CastButton(
                             connection = castConnection,
@@ -853,6 +879,17 @@ fun NowPlayingScreen(
                                 textModifier = Modifier.animateEnterExit(enter = riseIn(RISE_STAGGER_MS), exit = fadeOut(tween(MODE_FADE_OUT_MS))),
                                 actionsModifier = Modifier.animateEnterExit(enter = riseIn(RISE_STAGGER_MS * 2), exit = fadeOut(tween(MODE_FADE_OUT_MS))),
                             ) {
+                                // The sleep timer, as on the art view (and in the web's header);
+                                // accented while a timer is armed.
+                                val sleepTimerActive = sleepTimerState != SleepTimerController.State.Off
+                                IconButton(onClick = { showSleepTimerSheet = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Bedtime,
+                                        contentDescription = if (sleepTimerActive) "Sleep timer active" else "Set sleep timer",
+                                        tint = if (sleepTimerActive) npAccent(uiState.vibrantColor) else npInk().copy(alpha = 0.7f),
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
                                 com.stash.core.ui.components.LikeButton(
                                     isLiked = uiState.currentTrack?.stashLikedAt != null,
                                     onTap = viewModel::onLikeTap,
@@ -898,11 +935,14 @@ fun NowPlayingScreen(
 
     if (showOptionsSheet && track != null) {
         NowPlayingOptionsSheet(
-            menu = menuActions(pins, actionCtx),
+            // Pins with no room in the row this frame come back here as ordinary rows.
+            menu = menuActions(pins, actionCtx, rowFit.overflow),
             editable = editableActions(pins, actionCtx),
             pins = pins,
-            visual = visual,
-            hiddenReason = { hiddenReason(it, actionCtx) },
+            visualState = visualState,
+            hiddenReason = { action ->
+                hiddenReason(action, actionCtx) ?: OVERFLOW_NOTE.takeIf { action in rowFit.overflow }
+            },
             accent = npAccent(uiState.vibrantColor),
             onAction = { action -> onAction(action); showOptionsSheet = false },
             onTogglePin = viewModel::onTogglePin,
@@ -1209,7 +1249,6 @@ private fun AlbumArtSection(
     onBitmapLoaded: (android.graphics.Bitmap?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
     val artModel = albumArtPath ?: albumArtUrl
     // An image that cannot load (deleted upstream, a 404, a network failure) must
     // read as "no art" — a quiet tile in the surface tone, same shape as the art —

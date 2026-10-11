@@ -106,35 +106,107 @@ class NowPlayingActionsTest {
         assertTrue(POST_TO_COMMUNITY in editableActions(setOf(POST_TO_COMMUNITY), solo))
     }
 
-    // ── the cap ──────────────────────────────────────────────────────────────────────────────
+    // ── the cap (the rule itself lives in core: NowPlayingActionTest / NowPlayingPreferenceTest) ──
 
-    @Test fun `pinning adds and unpinning removes`() {
-        assertEquals(PinToggle.Changed(setOf(RADIO, QUEUE, SHARE)), togglePin(NowPlayingAction.DefaultPins, SHARE))
-        assertEquals(PinToggle.Changed(setOf(QUEUE)), togglePin(NowPlayingAction.DefaultPins, RADIO))
+    @Test fun `the editor sees the row as full at five pins`() {
+        assertFalse(pinsFull(setOf(RADIO, QUEUE, LYRICS, SHARE)))
+        assertTrue(pinsFull(setOf(RADIO, QUEUE, LYRICS, SHARE, DOWNLOAD)))
     }
 
-    @Test fun `three extra pins fill the row and a fourth is refused`() {
-        var pins: Set<NowPlayingAction> = NowPlayingAction.DefaultPins
-        for (a in listOf(LYRICS, SHARE, DOWNLOAD)) {
-            pins = (togglePin(pins, a) as PinToggle.Changed).pins
+    // ── a pinned Download never deletes ──────────────────────────────────────────────────────
+
+    @Test fun `a pinned Download on a downloaded track is inert`() {
+        assertTrue(isInertPinnedTap(DOWNLOAD, ActionContext(isDownloaded = true)))
+        assertFalse(isInertPinnedTap(DOWNLOAD, ActionContext(isDownloaded = false)))
+        assertFalse(isInertPinnedTap(SHARE, ActionContext(isDownloaded = true)))
+    }
+
+    @Test fun `Remove download stays a menu row while Download is pinned`() {
+        val pins = setOf(RADIO, QUEUE, DOWNLOAD)
+        assertTrue(DOWNLOAD in menuActions(pins, ActionContext(isDownloaded = true)))
+        // Not downloaded: the pin downloads, and the menu doesn't repeat it.
+        assertFalse(DOWNLOAD in menuActions(pins, ActionContext(isDownloaded = false)))
+    }
+
+    // ── fitting the row ──────────────────────────────────────────────────────────────────────
+
+    /** The full row from the device proof: Radio, Lyrics, Share, Download and Queue pinned. */
+    private val fullRow = topRowActions(setOf(RADIO, LYRICS, SHARE, DOWNLOAD, QUEUE), solo)
+
+    /** The row's width on a phone [screenDp] wide: Now Playing keeps 24dp each side. */
+    private fun rowWidth(screenDp: Float) = screenDp - 48f
+
+    @Test fun `the default row fits at 48dp on every phone`() {
+        for (screen in listOf(320f, 360f, 393f)) {
+            val fit = fitTopRow(topRowActions(NowPlayingAction.DefaultPins, solo), rowWidth(screen), castVisible = true)
+            assertEquals(listOf(RADIO), fit.row.leading)
+            assertEquals(listOf(QUEUE), fit.row.trailing)
+            assertEquals(emptyList<NowPlayingAction>(), fit.overflow)
+            assertEquals(SLOT_PREFERRED_DP, fit.slotDp, 0f)
         }
-        assertEquals(NowPlayingAction.MAX_PINS, pins.size)
-        assertTrue(pinsFull(pins))
-        assertEquals(PinToggle.Full, togglePin(pins, VIEW_ALBUM))
     }
 
-    @Test fun `unpinning still works when the row is full`() {
-        val full = setOf(RADIO, QUEUE, LYRICS, SHARE, DOWNLOAD)
-        val after = togglePin(full, SHARE)
-        assertEquals(PinToggle.Changed(setOf(RADIO, QUEUE, LYRICS, DOWNLOAD)), after)
-        assertFalse(pinsFull((after as PinToggle.Changed).pins))
+    @Test fun `a full row on a 393dp Pixel 5 drops the lowest-priority pin into the menu`() {
+        val fit = fitTopRow(fullRow, rowWidth(393f), castVisible = true)
+        assertEquals(listOf(RADIO, LYRICS, SHARE), fit.row.leading)
+        assertEquals(listOf(QUEUE), fit.row.trailing)
+        assertEquals(listOf(DOWNLOAD), fit.overflow)
+        assertFits(fit, rowWidth(393f), castVisible = true)
     }
 
-    @Test fun `with Radio and Queue unpinned five others fit`() {
-        var pins: Set<NowPlayingAction> = emptySet()
-        for (a in listOf(LYRICS, SHARE, DOWNLOAD, VIEW_ALBUM, SAVE_TO_PLAYLIST)) {
-            pins = (togglePin(pins, a) as PinToggle.Changed).pins
-        }
-        assertEquals(PinToggle.Full, togglePin(pins, RADIO))
+    @Test fun `a full row on a 360dp phone`() {
+        val fit = fitTopRow(fullRow, rowWidth(360f), castVisible = true)
+        assertEquals(listOf(RADIO, LYRICS, SHARE), fit.row.leading)
+        assertEquals(listOf(DOWNLOAD), fit.overflow)
+        assertFits(fit, rowWidth(360f), castVisible = true)
+    }
+
+    @Test fun `a full row on a 320dp phone keeps Queue and two pins`() {
+        val fit = fitTopRow(fullRow, rowWidth(320f), castVisible = true)
+        assertEquals(listOf(RADIO, LYRICS), fit.row.leading)
+        assertEquals(listOf(QUEUE), fit.row.trailing)
+        assertEquals(listOf(SHARE, DOWNLOAD), fit.overflow)
+        assertFits(fit, rowWidth(320f), castVisible = true)
+    }
+
+    @Test fun `Display size Largest on a Pixel 5 (about 314dp wide) still keeps Queue`() {
+        // 1080px at 550dpi (Largest) = 314dp.
+        val fit = fitTopRow(fullRow, rowWidth(314f), castVisible = true)
+        assertEquals(listOf(QUEUE), fit.row.trailing)
+        assertEquals(listOf(RADIO), fit.row.leading)
+        assertEquals(listOf(LYRICS, SHARE, DOWNLOAD), fit.overflow)
+        assertFits(fit, rowWidth(314f), castVisible = true)
+    }
+
+    @Test fun `without Cast a pin more fits`() {
+        val fit = fitTopRow(fullRow, rowWidth(393f), castVisible = false)
+        assertEquals(listOf(RADIO, LYRICS, SHARE, DOWNLOAD), fit.row.leading)
+        assertEquals(emptyList<NowPlayingAction>(), fit.overflow)
+        assertFits(fit, rowWidth(393f), castVisible = false)
+    }
+
+    @Test fun `a wide window shows every pin at 48dp`() {
+        val fit = fitTopRow(fullRow, rowWidth(600f), castVisible = true)
+        assertEquals(4, fit.row.leading.size)
+        assertEquals(SLOT_PREFERRED_DP, fit.slotDp, 0f)
+    }
+
+    @Test fun `overflowed pins come back as ordinary menu rows in canonical order`() {
+        val pins = setOf(RADIO, LYRICS, SHARE, DOWNLOAD, QUEUE)
+        val fit = fitTopRow(topRowActions(pins, solo), rowWidth(320f), castVisible = true)
+        val menu = menuActions(pins, solo, fit.overflow)
+        assertTrue(SHARE in menu)
+        assertTrue(DOWNLOAD in menu)
+        assertFalse(RADIO in menu)
+        assertFalse(QUEUE in menu)
+        assertEquals(menu, NowPlayingAction.entries.filter { it in menu })
+    }
+
+    /** Every rendered slot is at least 44dp and the whole row fits the width. */
+    private fun assertFits(fit: TopRowFit, width: Float, castVisible: Boolean) {
+        assertTrue("slot ${fit.slotDp} under the 44dp floor", fit.slotDp >= SLOT_MIN_DP)
+        val slots = 2 + fit.row.size // Dismiss + ⋮ + the shown pins (Queue included)
+        val used = slots * fit.slotDp + if (castVisible) CAST_SLOT_DP else 0f
+        assertTrue("row needs $used dp of $width", used <= width + 0.001f)
     }
 }

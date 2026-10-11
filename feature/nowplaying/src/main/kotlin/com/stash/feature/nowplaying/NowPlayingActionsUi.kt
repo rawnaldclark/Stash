@@ -9,7 +9,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,14 +42,12 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +59,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -91,7 +91,12 @@ internal data class ActionVisualState(
 /** An action's icon and label right now; [active] tints it with the album accent. */
 internal data class ActionVisual(val icon: ImageVector, val label: String, val active: Boolean = false)
 
-internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState): ActionVisual = when (action) {
+/**
+ * [pinned]: the visual for the top row rather than the ⋮ menu. They differ only for Download on
+ * a downloaded track: the menu row offers "Remove download", the pinned slot just says
+ * "Downloaded" (its tap is inert, see [isInertPinnedTap]).
+ */
+internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState, pinned: Boolean = false): ActionVisual = when (action) {
     NowPlayingAction.RADIO -> ActionVisual(
         Icons.Default.Radio,
         when {
@@ -124,7 +129,11 @@ internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState): Actio
     )
     NowPlayingAction.DOWNLOAD -> ActionVisual(
         if (s.isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-        if (s.isDownloaded) "Remove download" else "Download",
+        when {
+            !s.isDownloaded -> "Download"
+            pinned -> "Downloaded"
+            else -> "Remove download"
+        },
     )
     NowPlayingAction.FLAG_WRONG_MATCH -> ActionVisual(Icons.Default.Flag, "Flag as Wrong Match")
 }
@@ -148,29 +157,24 @@ internal fun editorLabel(action: NowPlayingAction): String = when (action) {
 // The top row
 // ---------------------------------------------------------------------------
 
-/** A slot's full size, and the least it shrinks to when a full row meets a narrow phone. */
-private val SlotMax = 48.dp
-private val SlotMin = 36.dp
-
 /**
  * Top row: Dismiss on the left; then Cast, the pinned actions, ⋮ (opens
  * [NowPlayingOptionsSheet]) and, when pinned, Queue at the far right.
  *
- * Every slot is 48dp while the row fits. A full row (five pins plus Cast) is
- * eight slots, wider than a 360dp phone allows, so the slots share the width
- * instead, down to [SlotMin]: the icons stay 24dp and simply sit closer.
+ * [fit] says what fits this screen ([fitTopRow]): slots are 48dp while the row
+ * has room and share the width down to 44dp; pins with no room at all sit in
+ * the ⋮ menu for now, so nothing is unreachable. Cast keeps its 48dp.
  *
  * @param castVisible Whether [castButton] draws anything (it does not where Cast is unavailable).
  * @param isDownloading A download is in flight: its spinner replaces the
- *   Download pin, or ⋮ when Download sits in the menu, so it isn't a silent job.
+ *   Download pin, or ⋮ when Download isn't in the row, so it isn't a silent job.
  */
 @Composable
 internal fun NowPlayingTopBar(
-    row: TopRowActions,
-    visual: (NowPlayingAction) -> ActionVisual,
+    fit: TopRowFit,
+    visualState: ActionVisualState,
     hasTrack: Boolean,
     isDownloading: Boolean,
-    radioTuning: Boolean,
     radioLock: Boolean,
     ink: Color,
     accent: Color,
@@ -181,37 +185,36 @@ internal fun NowPlayingTopBar(
     castVisible: Boolean,
     castButton: @Composable () -> Unit,
 ) {
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        val slots = 1 + (if (hasTrack) (if (castVisible) 1 else 0) + row.size + 1 else 0)
-        val slot = (maxWidth / slots).coerceIn(SlotMin, SlotMax)
-        // The row sizes its own slots; Material's 48dp floor would push them back apart.
-        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TopBarIcon(Icons.Default.KeyboardArrowDown, dismissDescription, ink, slot, iconSize = 28.dp, onClick = onDismiss)
+    val slot = fit.slotDp.dp
+    val row = fit.row
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TopBarIcon(Icons.Default.KeyboardArrowDown, dismissDescription, ink, slot, iconSize = 28.dp, onClick = onDismiss)
 
-                Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.weight(1f))
 
-                if (!hasTrack) return@Row
+        if (!hasTrack) return@Row
 
-                // Cast: automatic, never pinned or unpinned. Draws nothing where Cast isn't available.
-                if (castVisible) Box(Modifier.size(slot), contentAlignment = Alignment.Center) { castButton() }
+        // Cast: automatic, never pinned or unpinned, with Material's full 48dp target.
+        // Draws nothing where Cast isn't available.
+        if (castVisible) Box(Modifier.size(CAST_SLOT_DP.dp), contentAlignment = Alignment.Center) { castButton() }
 
-                row.leading.forEach { action ->
-                    ActionSlot(action, visual(action), slot, ink, accent, isDownloading, radioTuning, radioLock, onAction)
-                }
+        row.leading.forEach { action ->
+            ActionSlot(action, actionVisual(action, visualState, pinned = true), slot, ink, accent, isDownloading, visualState.radioTuning, radioLock, onAction)
+        }
 
-                // ⋮ — always present. While a download is in flight and Download is not pinned,
-                // a spinner stands in for it, as before pins.
-                if (isDownloading && NowPlayingAction.DOWNLOAD !in row.leading) {
-                    SlotSpinner(slot, ink)
-                } else {
-                    TopBarIcon(Icons.Default.MoreVert, "More actions", ink, slot, onClick = onMoreClick)
-                }
+        // ⋮ — always present. While a download is in flight and Download is not in the row,
+        // a spinner stands in for it, as before pins.
+        if (isDownloading && NowPlayingAction.DOWNLOAD !in row.leading) {
+            SlotSpinner(slot, ink)
+        } else {
+            TopBarIcon(Icons.Default.MoreVert, "More actions", ink, slot, onClick = onMoreClick)
+        }
 
-                row.trailing.forEach { action ->
-                    ActionSlot(action, visual(action), slot, ink, accent, isDownloading, radioTuning, radioLock, onAction)
-                }
-            }
+        row.trailing.forEach { action ->
+            ActionSlot(action, actionVisual(action, visualState, pinned = true), slot, ink, accent, isDownloading, visualState.radioTuning, radioLock, onAction)
         }
     }
 }
@@ -299,11 +302,11 @@ internal fun NowPlayingOptionsSheet(
     menu: List<NowPlayingAction>,
     editable: List<NowPlayingAction>,
     pins: Set<NowPlayingAction>,
-    visual: (NowPlayingAction) -> ActionVisual,
+    visualState: ActionVisualState,
     hiddenReason: (NowPlayingAction) -> String?,
     accent: Color,
     onAction: (NowPlayingAction) -> Unit,
-    onTogglePin: (NowPlayingAction) -> Boolean,
+    onTogglePin: (NowPlayingAction) -> Unit,
     onResetPins: () -> Unit,
     onDismiss: () -> Unit,
     sheetState: androidx.compose.material3.SheetState,
@@ -340,7 +343,7 @@ internal fun NowPlayingOptionsSheet(
                     SheetHeader(title = "Track Options", action = "Edit", onAction = { editing = true })
                     menu.forEachIndexed { i, action ->
                         if (i > 0) Spacer(modifier = Modifier.height(8.dp))
-                        val v = visual(action)
+                        val v = actionVisual(action, visualState)
                         SheetOptionRow(icon = v.icon, label = v.label, onClick = { onAction(action) })
                     }
                 }
@@ -371,11 +374,12 @@ private fun PinEditor(
     pins: Set<NowPlayingAction>,
     hiddenReason: (NowPlayingAction) -> String?,
     accent: Color,
-    onTogglePin: (NowPlayingAction) -> Boolean,
+    onTogglePin: (NowPlayingAction) -> Unit,
     onResetPins: () -> Unit,
     onDone: () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
+    val view = LocalView.current
     val full = pinsFull(pins)
     // The pinned group reads in row order (Queue last, as it sits at the far right).
     val pinned = editable.filter { it in pins }.sortedBy { if (it == NowPlayingAction.QUEUE) 1 else 0 }
@@ -390,14 +394,18 @@ private fun PinEditor(
         )
         Text(
             text = if (full) {
-                "The top bar is full. Unpin one to make room."
+                PINS_FULL_MESSAGE
             } else {
                 "Pin up to ${NowPlayingAction.MAX_PINS} actions to the top bar. The rest stay in this menu."
             },
             style = MaterialTheme.typography.bodySmall,
             color = captionColor,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            // Polite live region: TalkBack reads the change when the row fills up.
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
         )
         LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
             item(key = "h-pinned") { GroupLabel("In the top bar · ${pins.size} of ${NowPlayingAction.MAX_PINS}", Modifier.animateItem()) }
@@ -419,7 +427,15 @@ private fun PinEditor(
             item(key = "h-menu") { GroupLabel("In this menu", Modifier.animateItem().padding(top = 12.dp)) }
             items(unpinned, key = { it.name }) { action ->
                 PinRow(action, pinned = false, dimmed = full, hiddenReason(action), accent, Modifier.animateItem()) {
-                    if (!onTogglePin(action)) haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                    if (full) {
+                        // Refused at the cap: felt, and said aloud for TalkBack (storage
+                        // enforces the cap too, inside the toggle's DataStore edit).
+                        haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                        @Suppress("DEPRECATION")
+                        view.announceForAccessibility(PINS_FULL_MESSAGE)
+                    } else {
+                        onTogglePin(action)
+                    }
                 }
             }
             if (pins != NowPlayingAction.DefaultPins) {
@@ -477,7 +493,11 @@ private fun PinRow(
             .toggleable(value = pinned, role = Role.Switch, onValueChange = { onToggle() })
             .semantics {
                 contentDescription = label
-                stateDescription = if (pinned) "Pinned to the top bar" else "In the menu"
+                stateDescription = when {
+                    pinned -> "Pinned to the top bar"
+                    dimmed -> "In the menu. The top bar is full"
+                    else -> "In the menu"
+                }
             }
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -507,3 +527,6 @@ private fun PinRow(
         )
     }
 }
+
+/** Said when the row holds [NowPlayingAction.MAX_PINS] (caption, and TalkBack on a refused pin). */
+private const val PINS_FULL_MESSAGE = "The top bar is full. Unpin one to make room."
