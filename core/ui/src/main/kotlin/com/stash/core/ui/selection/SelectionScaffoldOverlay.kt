@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.padding
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * Overlays the contextual selection chrome (top "N selected" bar + bottom action bar)
@@ -33,7 +35,11 @@ fun BoxScope.SelectionScaffoldOverlay(
     }
     AnimatedVisibility(
         visible = selection.isActive,
-        modifier = Modifier.align(Alignment.BottomCenter),
+        // The scaffold hides the bottom chrome while a screen selects (the inset is then 0);
+        // should that signal ever be missed, the bar still lifts clear of the glass chrome.
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = bottomChromePadding()),
     ) {
         SelectionBottomBar(actions = actions)
     }

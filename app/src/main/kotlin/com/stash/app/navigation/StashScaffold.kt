@@ -22,7 +22,12 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -87,7 +92,7 @@ fun StashScaffold(
     var selectionActive by remember { mutableStateOf(false) }
 
     // The queue sheet opened from the mini player's Up next button, over any screen.
-    var showQueue by remember { mutableStateOf(false) }
+    var showQueue by rememberSaveable { mutableStateOf(false) }
 
     // One album colour for the whole app (wordmark, selected tab, mini player), computed
     // at the player level so it follows the song whether or not Now Playing is open.
@@ -215,12 +220,15 @@ fun StashScaffold(
                 val qobuzStatusViewModel: QobuzStatusViewModel = androidx.hilt.navigation.compose.hiltViewModel()
                 val qobuzStatus by qobuzStatusViewModel.bannerStatus.collectAsStateWithLifecycle()
 
-                // No navigation-bar padding here: the tab bar's glass runs down under the
-                // system bar and pads its own items (StashBottomBar), so content scrolling
-                // under it is frosted all the way to the screen's edge.
+                // No bottom navigation-bar padding here: the tab bar's glass runs down under
+                // the system bar and pads its own items (StashBottomBar), so content scrolling
+                // under it is frosted all the way to the screen's edge. The cards above it keep
+                // clear of a side system bar (3-button navigation in landscape).
+                val cardInsets = Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
                 Column {
                     AnimatedVisibility(
                         visible = !onNowPlaying,
+                        modifier = cardInsets,
                         enter = fadeIn(),
                         exit = fadeOut(),
                     ) {
@@ -232,6 +240,7 @@ fun StashScaffold(
                     // duplicate mini transport hides on this route only.
                     AnimatedVisibility(
                         visible = currentRoute != NowPlayingRoute::class.qualifiedName,
+                        modifier = cardInsets,
                         enter = fadeIn(),
                         exit = fadeOut(),
                     ) {
@@ -359,12 +368,14 @@ private fun StashBottomBar(
             val isSelected = currentRoute == dest.route::class.qualifiedName
             // Selected: the song's text ink while a song plays, the theme's neutral selected
             // colour otherwise (LocalAlbumChrome crossfades that over 800 ms); the change of
-            // tab itself takes the web's 180 ms. Unselected tabs stay neutral.
-            val ink by animateColorAsState(
-                targetValue = if (isSelected) chrome.selectedTab else extendedColors.textTertiary,
+            // tab itself takes the web's 180 ms. Unselected tabs stay neutral. Only the
+            // selection is animated here, so the album crossfade isn't chased by a second tween.
+            val selectedness by animateFloatAsState(
+                targetValue = if (isSelected) 1f else 0f,
                 animationSpec = tween(if (reducedMotion) 0 else TAB_COLOUR_MS),
-                label = "tabInk",
+                label = "tabSelected",
             )
+            val ink = lerp(extendedColors.textTertiary, chrome.selectedTab, selectedness)
 
             NavigationBarItem(
                 selected = isSelected,

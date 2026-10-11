@@ -43,6 +43,9 @@ fun PlayerQueueSheet(
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var saveTrack by remember { mutableStateOf<Track?>(null) }
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
+    // Shown only for a share asked for in this sheet: the VM's lookup is async, and a result
+    // landing after the sheet closed must not pop up the next time it opens.
+    var shareRequested by remember { mutableStateOf(false) }
     // A share opened here belongs to this sheet: don't leave it pending in the activity-scoped VM.
     DisposableEffect(viewModel) { onDispose { viewModel.onShareDismissed() } }
 
@@ -64,7 +67,10 @@ fun PlayerQueueSheet(
             onPlayNext = viewModel::queuePlayNext,
             onStartRadio = viewModel::startRadioForTrack,
             onSaveToPlaylist = { saveTrack = it },
-            onShare = viewModel::onShareTrack,
+            onShare = { track ->
+                shareRequested = true
+                viewModel.onShareTrack(track)
+            },
             onToggleDownload = viewModel::toggleDownload,
         )
     }
@@ -85,7 +91,15 @@ fun PlayerQueueSheet(
     }
 
     // Share from a queue row: VM-driven with the full DB track (see NowPlayingScreen).
-    shareTrack?.let { full ->
-        ShareTrackSheet(track = full, onDismiss = viewModel::onShareDismissed)
+    if (shareRequested) {
+        shareTrack?.let { full ->
+            ShareTrackSheet(
+                track = full,
+                onDismiss = {
+                    shareRequested = false
+                    viewModel.onShareDismissed()
+                },
+            )
+        }
     }
 }

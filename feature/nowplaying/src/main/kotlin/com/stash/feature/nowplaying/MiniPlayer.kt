@@ -129,8 +129,8 @@ fun MiniPlayer(
                 .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
                 .height(MiniHeight),
         ) {
-            // The 2dp progress line along the top edge (clipped to the card's corners by the glass).
-            // Drawn, not composed: the 4 Hz position tick only redraws this line.
+            // The 2dp progress line along the top edge (clipped to the card's corners by the glass),
+            // drawn in the draw phase so the album colour's crossfade only redraws it.
             Box(
                 Modifier
                     .fillMaxWidth()
