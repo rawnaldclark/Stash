@@ -317,6 +317,9 @@ class LyricsRepository @Inject constructor(
      * is queued automatically here.
      */
     suspend fun setSourcePreference(preference: LyricsSourcePreference) {
+        // Saved BEFORE the wipe: writes re-read the active sources, so one landing during the
+        // (on SAF, seconds-long) wipe already drops TTML instead of putting it back.
+        lyricsPreference.setSourcePreference(preference)
         if (preference == LyricsSourcePreference.LRC_ONLY) {
             val affected = lyricsDao.trackIdsWithTtml()
             affected.forEach { id -> sidecarWriter.deleteTtmlSidecar(id) }
@@ -324,10 +327,9 @@ class LyricsRepository @Inject constructor(
             affected.forEach { id -> trackDao.setLyricsFetchedAt(id, null) }
             Log.i(TAG, "Switched to LRC-only: wiped TTML for ${affected.size} track(s), queued for re-fetch")
         }
-        lyricsPreference.setSourcePreference(preference)
         // Answers from the old chain must not outlive it (an LRC-only user would get Apple TTML
-        // for streams). Forgotten AFTER the new preference is saved: a walk started during the
-        // wipe above still asked the old chain, so it must not be remembered either. Walks still
+        // for streams). Forgotten AFTER the new preference is saved and the wipe is done, so
+        // nothing remembered before or during the switch survives it. Walks still
         // running finish for their askers but aren't remembered; writes drop TTML (see write).
         synchronized(walkLock) {
             generation++
