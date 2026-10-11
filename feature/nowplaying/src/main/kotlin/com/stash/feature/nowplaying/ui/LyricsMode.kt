@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -244,15 +245,23 @@ private val HeaderArtistStyle = TextStyle(fontSize = 14.sp)
 internal val CompactCoverSize = 64.dp
 
 /**
- * Both Now Playing covers (the big art and the compact one) decode at this one size. The
+ * Both Now Playing covers (the big art and the compact one) decode at one size. The
  * ambient palette samples whichever cover loads, and AndroidX Palette's swatches depend on the
  * pixels it gets: a 64dp decode of In Rainbows found a red "vibrant" where the full-size one
  * found yellow, so the accent flipped each time lyrics opened or closed. One size means one
  * cache entry, one Bitmap, one palette (the ViewModel also skips a Bitmap it has sampled).
- * INEXACT precision caps the decode at this size without upscaling smaller art (a 544px
- * thumbnail stays 544px); the request, and so the cache key, is still identical for both.
+ * INEXACT precision caps the decode at that size without upscaling smaller art; the request,
+ * and so the cache key, is still identical for both.
+ *
+ * The size is the screen's short side: the big cover spans the width less its margins, so this
+ * always covers it (Pixel 5: 1080 for a 948px cover; Pixel 6 Pro: 1440 for a ~1270px cover,
+ * which a fixed 1024 decode stretched 1.24x). The short side, so rotating doesn't change the
+ * request (and with it the palette). Capped, so a tablet or an unfolded foldable doesn't hold a
+ * 2000px+ bitmap: 1440x1440 ARGB is 8 MB, one shared Bitmap. The app's ArtSizeMapper reads this
+ * size to pick the cover URL variant, so it also decides whether Qobuz `_max`, Spotify's
+ * original etc. are fetched.
  */
-private const val NP_ART_DECODE_PX = 1024
+private const val NP_ART_MAX_DECODE_PX = 1440
 
 /**
  * The cover request both covers use. Remembered: an inline ImageRequest.Builder is a new object
@@ -262,10 +271,14 @@ private const val NP_ART_DECODE_PX = 1024
 @Composable
 internal fun rememberNpArtRequest(artModel: Any?): ImageRequest {
     val context = LocalContext.current
-    return remember(context, artModel) {
+    val configuration = LocalConfiguration.current
+    val decodePx = with(LocalDensity.current) {
+        minOf(configuration.screenWidthDp, configuration.screenHeightDp).dp.roundToPx()
+    }.coerceIn(1, NP_ART_MAX_DECODE_PX)
+    return remember(context, artModel, decodePx) {
         ImageRequest.Builder(context)
             .data(artModel)
-            .size(NP_ART_DECODE_PX)
+            .size(decodePx)
             .precision(Precision.INEXACT)
             .allowHardware(false) // Required for Palette bitmap extraction.
             .build()
