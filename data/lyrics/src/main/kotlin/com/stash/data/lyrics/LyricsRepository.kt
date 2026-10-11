@@ -18,8 +18,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -31,8 +33,21 @@ enum class TtmlUpgradeResult { UPGRADED, NO_TTML, FAILED, RATE_LIMITED, SKIPPED 
 /** Outcome of [LyricsRepository.fetchLyricsNow] (manual "fetch lyrics" run). */
 enum class ManualFetchResult { FETCHED, NOT_FOUND, FAILED, SKIPPED }
 
-/** A finished lookup kept in memory: [result] null is a definitive miss (not a failure). */
-class CachedLyrics(val result: LyricsResult?)
+/**
+ * A finished lookup kept in memory: [result] null is a definitive miss (not a failure).
+ * [appleCleanMiss]: Apple was asked and cleanly had no TTML (stamped when the answer is stored).
+ * [degraded]: a later source answered after an earlier one failed (Apple timed out, LRCLIB hit),
+ * so it is kept only briefly: the next ask, minutes on, may get the word-synced version.
+ */
+class CachedLyrics(
+    val result: LyricsResult?,
+    val appleCleanMiss: Boolean = false,
+    val degraded: Boolean = false,
+    val atMs: Long = 0L,
+)
+
+/** One walk of the source chain. */
+private class WalkOutcome(val result: LyricsResult?, val appleCleanMiss: Boolean, val degraded: Boolean)
 
 /**
  * Sole entrypoint for the lyrics subsystem. Both UI (Now Playing sheet)
@@ -53,11 +68,17 @@ class CachedLyrics(val result: LyricsResult?)
  * Sidecar-write failure is logged but does NOT unwind the Room state.
  *
  * One lookup per song: every walk goes through [sharedWalk], keyed by the song (its YouTube id,
- * else title + artist). Concurrent asks for the same song join the walk in flight, and a finished
- * answer (hit or definitive miss, never a failure) is kept in memory for the process, bounded to
- * [RECENT_MAX] songs. So a song asked about by Now Playing, the prefetch, a second screen, and
- * again once a streamed track is persisted under its library id, costs one network walk. Retry and
- * the manual library-wide fetch pass `fresh` to ask the network again.
+ * else title + artist + album + duration). Concurrent asks for the same song with the same timeout
+ * profile join the walk in flight, and a finished answer (hit or definitive miss, never a failure)
+ * is kept in memory for the process, bounded to [RECENT_MAX] songs; a degraded hit only for
+ * [DEGRADED_TTL_MS]. So a song asked about by Now Playing, the prefetch, a second screen, and again
+ * once a streamed track is persisted under its library id, costs one network walk. Retry and the
+ * manual library-wide fetch pass `fresh` to ask the network again; a source-preference change
+ * forgets everything.
+ *
+ * One store per track: concurrent [resolveAndStore] calls for one track id share one store, so
+ * the row, the stamp and the sidecar are written once (on a SAF tree, racing writers otherwise
+ * leave "Song (1).lrc" duplicates in the user's music folder).
  */
 @Singleton
 class LyricsRepository @Inject constructor(
@@ -73,14 +94,24 @@ class LyricsRepository @Inject constructor(
     private val walkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val walkLock = Any()
 
-    /** Walks in flight, by song key. Guarded by [walkLock]. */
-    private val inFlight = HashMap<String, Deferred<Pair<LyricsResult?, Boolean>>>()
+    /** Walks in flight, by song key + timeout profile. Guarded by [walkLock]. */
+    private val inFlight = HashMap<String, Deferred<WalkOutcome>>()
 
     /** Finished walks, by song key, least-recently-used first. Guarded by [walkLock]. */
     private val recent = object : LinkedHashMap<String, CachedLyrics>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedLyrics>?): Boolean =
             size > RECENT_MAX
     }
+
+    /** Bumped when the source chain changes: walks started before it aren't remembered. Guarded by [walkLock]. */
+    private var generation = 0
+
+    /** Stores in flight, by track id. Guarded by [walkLock]. */
+    private val storing = HashMap<Long, Deferred<LyricsEntity?>>()
+
+    /** The current prefetch: its key and job. Guarded by [walkLock]. */
+    private var prefetchKey: String? = null
+    private var prefetchJob: Job? = null
 
     fun observe(trackId: Long): Flow<LyricsEntity?> = lyricsDao.observe(trackId)
 
@@ -95,9 +126,38 @@ class LyricsRepository @Inject constructor(
      * On a definitive all-source miss, stamps `tracks.lyrics_fetched_at = 0L` and returns null
      * without writing a row. If any source FAILED and no later source hit, rethrows that failure
      * without stamping.
+     *
+     * Single-flight per track id: a call while another store for the same track is running joins
+     * it. [skipIfStamped] (the prefetch, Now Playing's own trigger) returns the stored row when the
+     * track was stamped meanwhile, so a caller that checked the stamp a moment earlier doesn't
+     * write a second time.
      */
-    suspend fun resolveAndStore(query: LyricsQuery, fresh: Boolean = false): LyricsEntity? {
-        val (result, appleCleanMiss) = sharedWalk(query, fresh)
+    suspend fun resolveAndStore(
+        query: LyricsQuery,
+        fresh: Boolean = false,
+        skipIfStamped: Boolean = false,
+    ): LyricsEntity? {
+        val trackId = query.trackId
+        val store = synchronized(walkLock) {
+            storing[trackId] ?: walkScope.async(start = CoroutineStart.LAZY) {
+                storeOnce(query, fresh, skipIfStamped)
+            }.also { deferred ->
+                storing[trackId] = deferred
+                deferred.invokeOnCompletion {
+                    synchronized(walkLock) { if (storing[trackId] === deferred) storing.remove(trackId) }
+                }
+            }
+        }
+        return store.await()
+    }
+
+    private suspend fun storeOnce(query: LyricsQuery, fresh: Boolean, skipIfStamped: Boolean): LyricsEntity? {
+        if (skipIfStamped && trackDao.observeLyricsFetchedAt(query.trackId).first() != null) {
+            return lyricsDao.get(query.trackId)
+        }
+        val outcome = sharedWalk(query, fresh)
+        val result = outcome.result
+        val appleCleanMiss = outcome.appleCleanMiss
         if (result == null) {
             trackDao.setLyricsFetchedAt(query.trackId, 0L)
             return null
@@ -146,13 +206,45 @@ class LyricsRepository @Inject constructor(
 
     /** A lookup for a track with no library row (a stream). Shares the walk and its memory, see [sharedWalk]. */
     suspend fun resolveTransient(query: LyricsQuery, fresh: Boolean = false): LyricsResult? =
-        sharedWalk(query, fresh).first
+        sharedWalk(query, fresh).result
 
     /**
      * The finished answer for [query]'s song, if one is in memory: lets a screen show lyrics
      * already in hand at once, with no Loading frame. Null when the song hasn't been looked up.
      */
-    fun cached(query: LyricsQuery): CachedLyrics? = synchronized(walkLock) { recent[songKey(query)] }
+    fun cached(query: LyricsQuery): CachedLyrics? = synchronized(walkLock) { remembered(songKey(query)) }
+
+    /**
+     * Looks the playing song up early, once (the app-wide prefetch). Every Now Playing ViewModel
+     * asks (the mini player's and Now Playing's); a request for the song already asked for is
+     * ignored, so the work runs once whatever the number of askers. A different song cancels the
+     * previous request's wait (a walk already started still finishes, detached, and is
+     * remembered). [store]: the track has a library row, so the answer is stored under
+     * [LyricsQuery.trackId] (once, see [resolveAndStore]); else it is only remembered. Null
+     * [query] stops (the app went to the background, or the track needs nothing).
+     *
+     * Callers wait out a dwell first (a skip burst never reaches here).
+     */
+    fun prefetch(query: LyricsQuery?, store: Boolean) {
+        synchronized(walkLock) {
+            val key = query?.let { if (store) "id:${it.trackId}" else songKey(it) }
+            if (key == prefetchKey) return
+            prefetchKey = key
+            prefetchJob?.cancel()
+            prefetchJob = query?.let { q ->
+                walkScope.launch {
+                    try {
+                        if (store) resolveAndStore(q, skipIfStamped = true) else resolveTransient(q)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Best effort: Now Playing's own trigger asks again when it opens.
+                        Log.d(TAG, "Prefetch for \"${q.title}\" failed: ${e.message}")
+                    }
+                }
+            }
+        }
+    }
 
     suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
 
@@ -218,6 +310,13 @@ class LyricsRepository @Inject constructor(
      * is queued automatically here.
      */
     suspend fun setSourcePreference(preference: LyricsSourcePreference) {
+        // Answers from the old chain must not outlive it (an LRC-only user would get Apple TTML
+        // for streams, and a persisted stream would write it back into Room).
+        synchronized(walkLock) {
+            generation++
+            recent.clear()
+            inFlight.clear() // still running walks finish for their askers, but aren't remembered
+        }
         if (preference == LyricsSourcePreference.LRC_ONLY) {
             val affected = lyricsDao.trackIdsWithTtml()
             affected.forEach { id -> sidecarWriter.deleteTtmlSidecar(id) }
@@ -317,17 +416,26 @@ class LyricsRepository @Inject constructor(
      * next ask tries again.
      */
     @OptIn(ExperimentalCoroutinesApi::class) // Deferred.getCompleted, read only once complete
-    private suspend fun sharedWalk(query: LyricsQuery, fresh: Boolean): Pair<LyricsResult?, Boolean> {
+    private suspend fun sharedWalk(query: LyricsQuery, fresh: Boolean): WalkOutcome {
         val key = songKey(query)
+        // A background walk (long timeouts, a retry) and an interactive one don't share a flight:
+        // someone watching the screen shouldn't inherit a worker's 10-second profile.
+        val flightKey = key + if (query.interactive) "|i" else "|b"
         val walk = synchronized(walkLock) {
-            if (!fresh) recent[key]?.let { return it.result to false }
-            inFlight[key] ?: walkScope.async(start = CoroutineStart.LAZY) { walkSourcesNotingApple(query) }.also { deferred ->
-                // Registered before the walk starts, so even an instant answer is filed correctly.
-                inFlight[key] = deferred
-                deferred.invokeOnCompletion { failure ->
-                    synchronized(walkLock) {
-                        if (inFlight[key] === deferred) inFlight.remove(key)
-                        if (failure == null) recent[key] = CachedLyrics(deferred.getCompleted().first)
+            if (!fresh) remembered(key)?.let { return WalkOutcome(it.result, it.appleCleanMiss, it.degraded) }
+            inFlight[flightKey] ?: run {
+                val startedIn = generation
+                walkScope.async(start = CoroutineStart.LAZY) { walkSourcesNotingApple(query) }.also { deferred ->
+                    // Registered before the walk starts, so even an instant answer is filed correctly.
+                    inFlight[flightKey] = deferred
+                    deferred.invokeOnCompletion { failure ->
+                        synchronized(walkLock) {
+                            if (inFlight[flightKey] === deferred) inFlight.remove(flightKey)
+                            if (failure == null && startedIn == generation) {
+                                val o = deferred.getCompleted()
+                                recent[key] = CachedLyrics(o.result, o.appleCleanMiss, o.degraded, clock.now())
+                            }
+                        }
                     }
                 }
             }
@@ -335,14 +443,24 @@ class LyricsRepository @Inject constructor(
         return walk.await() // starts the walk if this caller created it
     }
 
+    /** The remembered answer for [key], unless it is a degraded one past [DEGRADED_TTL_MS]. Under [walkLock]. */
+    private fun remembered(key: String): CachedLyrics? {
+        val cached = recent[key] ?: return null
+        if (cached.degraded && clock.now() - cached.atMs > DEGRADED_TTL_MS) {
+            recent.remove(key)
+            return null
+        }
+        return cached
+    }
+
     /** Walks the active sources in order: the first hit, plus whether Apple was asked and cleanly returned nothing. */
-    private suspend fun walkSourcesNotingApple(query: LyricsQuery): Pair<LyricsResult?, Boolean> {
+    private suspend fun walkSourcesNotingApple(query: LyricsQuery): WalkOutcome {
         var firstFailure: Exception? = null
         var appleCleanMiss = false
         for (source in activeSources()) {
             try {
                 val result = source.resolve(query)
-                if (result != null) return result to appleCleanMiss
+                if (result != null) return WalkOutcome(result, appleCleanMiss, degraded = firstFailure != null)
                 if (source.id == AppleTtmlLyricsSource.SOURCE_ID) appleCleanMiss = true
             } catch (e: CancellationException) {
                 throw e
@@ -352,21 +470,34 @@ class LyricsRepository @Inject constructor(
             }
         }
         firstFailure?.let { throw it }
-        return null to appleCleanMiss
+        return WalkOutcome(null, appleCleanMiss, degraded = false)
     }
 
     private companion object {
         private const val TAG = "LyricsRepository"
 
-        /** Songs kept in memory: a long listening session's worth, a few KB each. */
-        private const val RECENT_MAX = 64
+        /**
+         * Songs kept in memory: this session's recent ones. Word-synced TTML runs to tens of KB
+         * of text per song, so the bound stays small (the Samsung OOM reports, #238/#239).
+         */
+        private const val RECENT_MAX = 24
+
+        /** How long a degraded answer (a hit after an earlier source failed) is kept. */
+        private const val DEGRADED_TTL_MS = 2 * 60_000L
 
         /**
          * One key per song: the YouTube id when there is one (it survives a stream being
-         * persisted under a library id), else title + artist, case-folded.
+         * persisted under a library id, whose duration may differ or be unknown), else title +
+         * artist + album + whole-second duration, case-folded, so two different songs sharing a
+         * title ("Intro" on two albums, a studio and a live take) never share an answer.
          */
         fun songKey(query: LyricsQuery): String =
             query.youtubeVideoId?.takeIf { it.isNotBlank() }?.let { "yt:$it" }
-                ?: "ta:${query.title.trim().lowercase()}\u0000${query.artist.trim().lowercase()}"
+                ?: listOf(
+                    query.title.trim().lowercase(),
+                    query.artist.trim().lowercase(),
+                    query.album?.trim()?.lowercase().orEmpty(),
+                    query.durationMs?.div(1000)?.toString().orEmpty(),
+                ).joinToString(separator = "\u0000", prefix = "ta:")
     }
 }

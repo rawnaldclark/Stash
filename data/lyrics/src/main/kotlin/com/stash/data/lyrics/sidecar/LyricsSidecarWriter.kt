@@ -42,16 +42,17 @@ class LyricsSidecarWriter @Inject constructor(
     private val storagePreference: StoragePreference,
 ) {
 
+    /** The track has no audio file to sit beside (it streams): [write] has nothing to do. */
+    class NoDownloadedFileException(trackId: Long) : IOException("Track $trackId has no downloaded file")
+
     /**
      * Writes the sidecar(s) for [trackId] using [lyrics]. See class KDoc for which extension(s)
      * end up on disk. Disk/SAF I/O runs on [Dispatchers.IO], so callers may be on Main.
      *
-     * Fails when both `syncedLrc`/`plainText` and `ttml` are null/blank, the track row is gone, it
-     * has no [TrackEntity.filePath], or (SAF) the tree URI is unset.
+     * Fails when both `syncedLrc`/`plainText` and `ttml` are null/blank, the track row is gone, or
+     * (SAF) the tree URI is unset; throws [NoDownloadedFileException] when the track has no
+     * [TrackEntity.filePath] (a stream: expected, and logged quietly by the repository).
      */
-    /** The track has no audio file to sit beside (it streams): [write] has nothing to do. */
-    class NoDownloadedFileException(trackId: Long) : IOException("Track $trackId has no downloaded file")
-
     suspend fun write(trackId: Long, lyrics: LyricsEntity): Unit = withContext(Dispatchers.IO) {
         val ttml = lyrics.ttml?.takeUnless(String::isBlank)
         val hasLrcBody = !(lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank())
