@@ -47,8 +47,11 @@ class LyricsRepositoryCacheTest {
     private val lrcHit = LyricsResult("lrclib", "plain", "[00:01.00]plain", false, null, "42")
     private val ttmlHit = LyricsResult(AppleTtmlLyricsSource.SOURCE_ID, "plain", "[00:01.00]plain", false, null, "a1", ttml = "<tt/>")
 
+    /** The preference, live: setSourcePreference updates it, as the DataStore does. */
+    private val sourcePref = MutableStateFlow(LyricsSourcePreference.APPLE_MUSIC)
     private fun preference(): LyricsPreference = mockk(relaxed = true) {
-        every { sourcePreference } returns flowOf(LyricsSourcePreference.APPLE_MUSIC)
+        every { sourcePreference } returns sourcePref
+        coEvery { setSourcePreference(any()) } answers { sourcePref.value = firstArg() }
     }
 
     /** A source that counts its calls, answers [result] (or throws while [failing]), and can be held open with [gate]. */
@@ -76,8 +79,10 @@ class LyricsRepositoryCacheTest {
             stamps.getOrPut(firstArg()) { MutableStateFlow(null) }.value = secondArg()
         }
     }
+    private val rows = HashMap<Long, LyricsEntity>()
     private val lyricsDao: LyricsDao = mockk(relaxed = true) {
-        coEvery { this@mockk.get(any()) } returns null
+        coEvery { this@mockk.get(any()) } answers { rows[firstArg()] }
+        coEvery { upsert(any()) } answers { val e = firstArg<LyricsEntity>(); rows[e.trackId] = e }
     }
     private val sidecar: LyricsSidecarWriter = mockk(relaxed = true)
 
@@ -178,7 +183,7 @@ class LyricsRepositoryCacheTest {
 
     @Test fun `a store asked after the track was stamped writes nothing`() = runTest {
         val repo = repo(FakeSource("lrclib", lrcHit))
-        coEvery { lyricsDao.get(77L) } returns LyricsEntity(77L, "plain", "[00:01.00]plain", false, null, "lrclib", "42", 1L)
+        rows[77L] = LyricsEntity(77L, "plain", "[00:01.00]plain", false, null, "lrclib", "42", 1L)
         stamps[77L] = MutableStateFlow(1L)
         assertNotNull(repo.resolveAndStore(query(77L), skipIfStamped = true))
         coVerify(exactly = 0) { lyricsDao.upsert(any()) }
@@ -266,5 +271,51 @@ class LyricsRepositoryCacheTest {
         background.await()
         watching.await()
         assertEquals(2, lrclib.calls.get())
+    }
+
+    // ── re-review ────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `a walk running across a switch to LRC-only writes no TTML and isn't remembered`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val apple = FakeSource(AppleTtmlLyricsSource.SOURCE_ID, ttmlHit, gate = gate)
+        val repo = repo(apple, FakeSource("lrclib", lrcHit))
+        val store = async { repo.resolveAndStore(query(5L)) } // asks Apple: still the chain
+        testScheduler.advanceUntilIdle()
+        repo.setSourcePreference(LyricsSourcePreference.LRC_ONLY)
+        gate.complete(Unit) // Apple answers with TTML after the wipe
+        val stored = store.await()
+        assertNull(stored!!.ttml)
+        assertNull(rows[5L]!!.ttml)
+        coVerify(exactly = 0) { sidecar.write(5L, match { it.ttml != null }) }
+        assertNull(repo.cached(query(5L)))
+    }
+
+    @Test fun `a manual fetch asks the network even when a stamped miss would answer a prefetch`() = runTest {
+        val lrclib = FakeSource("lrclib", lrcHit)
+        val repo = repo(lrclib)
+        stamps[9L] = MutableStateFlow(0L) // an earlier all-source miss
+        assertNull(repo.resolveAndStore(query(9L), skipIfStamped = true)) // the prefetch: nothing to do
+        assertEquals(0, lrclib.calls.get())
+        assertNotNull(repo.resolveAndStore(query(9L), fresh = true)) // "Fetch lyrics" / Retry
+        assertEquals(1, lrclib.calls.get())
+    }
+
+    @Test fun `a watched store doesn't wait on a worker's slow walk for the same track`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val slow = object : LyricsSource {
+            override val id = "lrclib"
+            override val displayName = "LRCLIB"
+            override suspend fun resolve(query: LyricsQuery): LyricsResult? {
+                if (!query.interactive) gate.await() // the worker's walk hangs on its long timeout
+                return lrcHit
+            }
+        }
+        val repo = repo(slow)
+        val worker = async { repo.resolveAndStore(query(11L, interactive = false)) }
+        testScheduler.advanceUntilIdle()
+        val watched = withContext(Dispatchers.Default) { repo.resolveAndStore(query(11L), skipIfStamped = true) }
+        assertNotNull(watched) // answered while the worker's walk is still stuck
+        gate.complete(Unit)
+        worker.await()
     }
 }

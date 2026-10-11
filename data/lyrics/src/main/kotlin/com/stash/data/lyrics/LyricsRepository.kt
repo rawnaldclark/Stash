@@ -19,9 +19,13 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -76,9 +80,12 @@ private class WalkOutcome(val result: LyricsResult?, val appleCleanMiss: Boolean
  * manual library-wide fetch pass `fresh` to ask the network again; a source-preference change
  * forgets everything.
  *
- * One store per track: concurrent [resolveAndStore] calls for one track id share one store, so
- * the row, the stamp and the sidecar are written once (on a SAF tree, racing writers otherwise
- * leave "Song (1).lrc" duplicates in the user's music folder).
+ * One writer per track: [resolveAndStore] writes (row, stamp, sidecar) under a per-track lock, so
+ * writes for one track never overlap (on a SAF tree, racing writers otherwise leave "Song (1).lrc"
+ * duplicates in the user's music folder), and callers passing `skipIfStamped` (the prefetch, Now
+ * Playing's trigger) write nothing once the track is stamped: one write per track. Each caller
+ * walks with its own profile and flags, so nobody inherits another caller's slow timeouts or a
+ * stamped miss.
  */
 @Singleton
 class LyricsRepository @Inject constructor(
@@ -106,8 +113,10 @@ class LyricsRepository @Inject constructor(
     /** Bumped when the source chain changes: walks started before it aren't remembered. Guarded by [walkLock]. */
     private var generation = 0
 
-    /** Stores in flight, by track id. Guarded by [walkLock]. */
-    private val storing = HashMap<Long, Deferred<LyricsEntity?>>()
+    /** Per-track write locks, striped: writes for one track never overlap (cheap for others to share a stripe). */
+    private val writeLocks = Array(WRITE_STRIPES) { Mutex() }
+
+    private fun writeLock(trackId: Long): Mutex = writeLocks[Math.floorMod(trackId, WRITE_STRIPES.toLong()).toInt()]
 
     /** The current prefetch: its key and job. Guarded by [walkLock]. */
     private var prefetchKey: String? = null
@@ -127,36 +136,34 @@ class LyricsRepository @Inject constructor(
      * without writing a row. If any source FAILED and no later source hit, rethrows that failure
      * without stamping.
      *
-     * Single-flight per track id: a call while another store for the same track is running joins
-     * it. [skipIfStamped] (the prefetch, Now Playing's own trigger) returns the stored row when the
-     * track was stamped meanwhile, so a caller that checked the stamp a moment earlier doesn't
-     * write a second time.
+     * The walk is the caller's own (its profile, its [fresh]; joined or remembered per
+     * [sharedWalk]). The write is serialised per track and can't be cancelled half-way (a
+     * cancelled prefetch never leaves a row without its stamp). [skipIfStamped] (the prefetch,
+     * Now Playing's own trigger) returns the stored row instead of writing when the track is
+     * stamped, checked again inside the write lock, so concurrent askers write once.
      */
     suspend fun resolveAndStore(
         query: LyricsQuery,
         fresh: Boolean = false,
         skipIfStamped: Boolean = false,
     ): LyricsEntity? {
-        val trackId = query.trackId
-        val store = synchronized(walkLock) {
-            storing[trackId] ?: walkScope.async(start = CoroutineStart.LAZY) {
-                storeOnce(query, fresh, skipIfStamped)
-            }.also { deferred ->
-                storing[trackId] = deferred
-                deferred.invokeOnCompletion {
-                    synchronized(walkLock) { if (storing[trackId] === deferred) storing.remove(trackId) }
-                }
+        if (skipIfStamped && isStamped(query.trackId)) return lyricsDao.get(query.trackId)
+        val outcome = sharedWalk(query, fresh)
+        return withContext(NonCancellable) {
+            writeLock(query.trackId).withLock {
+                if (skipIfStamped && isStamped(query.trackId)) lyricsDao.get(query.trackId)
+                else write(query, outcome)
             }
         }
-        return store.await()
     }
 
-    private suspend fun storeOnce(query: LyricsQuery, fresh: Boolean, skipIfStamped: Boolean): LyricsEntity? {
-        if (skipIfStamped && trackDao.observeLyricsFetchedAt(query.trackId).first() != null) {
-            return lyricsDao.get(query.trackId)
-        }
-        val outcome = sharedWalk(query, fresh)
-        val result = outcome.result
+    private suspend fun isStamped(trackId: Long): Boolean = trackDao.observeLyricsFetchedAt(trackId).first() != null
+
+    private suspend fun write(query: LyricsQuery, outcome: WalkOutcome): LyricsEntity? {
+        // TTML only while Apple is a source: a walk that started before a switch to LRC-only
+        // (still asking Apple) must not write TTML back after the wipe. Read at write time.
+        val appleActive = activeSources().any { it.id == AppleTtmlLyricsSource.SOURCE_ID }
+        val result = outcome.result?.let { if (!appleActive && it.ttml != null) it.copy(ttml = null) else it }
         val appleCleanMiss = outcome.appleCleanMiss
         if (result == null) {
             trackDao.setLyricsFetchedAt(query.trackId, 0L)
@@ -310,13 +317,6 @@ class LyricsRepository @Inject constructor(
      * is queued automatically here.
      */
     suspend fun setSourcePreference(preference: LyricsSourcePreference) {
-        // Answers from the old chain must not outlive it (an LRC-only user would get Apple TTML
-        // for streams, and a persisted stream would write it back into Room).
-        synchronized(walkLock) {
-            generation++
-            recent.clear()
-            inFlight.clear() // still running walks finish for their askers, but aren't remembered
-        }
         if (preference == LyricsSourcePreference.LRC_ONLY) {
             val affected = lyricsDao.trackIdsWithTtml()
             affected.forEach { id -> sidecarWriter.deleteTtmlSidecar(id) }
@@ -325,6 +325,15 @@ class LyricsRepository @Inject constructor(
             Log.i(TAG, "Switched to LRC-only: wiped TTML for ${affected.size} track(s), queued for re-fetch")
         }
         lyricsPreference.setSourcePreference(preference)
+        // Answers from the old chain must not outlive it (an LRC-only user would get Apple TTML
+        // for streams). Forgotten AFTER the new preference is saved: a walk started during the
+        // wipe above still asked the old chain, so it must not be remembered either. Walks still
+        // running finish for their askers but aren't remembered; writes drop TTML (see write).
+        synchronized(walkLock) {
+            generation++
+            recent.clear()
+            inFlight.clear()
+        }
     }
 
     /**
@@ -481,6 +490,9 @@ class LyricsRepository @Inject constructor(
          * of text per song, so the bound stays small (the Samsung OOM reports, #238/#239).
          */
         private const val RECENT_MAX = 24
+
+        /** Stripes of per-track write locks. */
+        private const val WRITE_STRIPES = 32
 
         /** How long a degraded answer (a hit after an earlier source failed) is kept. */
         private const val DEGRADED_TTL_MS = 2 * 60_000L
