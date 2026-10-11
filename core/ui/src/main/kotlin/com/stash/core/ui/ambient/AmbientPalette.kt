@@ -1,4 +1,4 @@
-package com.stash.feature.nowplaying.ui
+package com.stash.core.ui.ambient
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
@@ -12,10 +12,13 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * The three colours the Now Playing ambient paints with, derived from the cover exactly as the
- * web player does: a port of stash-web `player/src/lib/ui/palette.ts` (`paletteFromPixels`,
- * `forScheme`, `DEFAULT_PALETTE`). The accent the rest of the screen uses still comes from
- * Android's Palette; only the ambient follows the web's maths, so both players wash a cover alike.
+ * The album colour, derived from the cover exactly as the web player does: a port of stash-web
+ * `player/src/lib/ui/palette.ts` (`paletteFromPixels`, `forScheme`, `DEFAULT_PALETTE`).
+ *
+ * The three wash colours paint the Now Playing ambient; the text inks and [ink] dress the app's
+ * chrome (the wordmark, the selected tab, the mini player's play button) while a song plays, read
+ * through [LocalAlbumChrome]. On Now Playing the accent the rest of the screen uses still comes
+ * from Android's Palette; only the ambient follows the web's maths, so both players wash a cover alike.
  */
 @Immutable
 data class AmbientPalette(
@@ -24,6 +27,12 @@ data class AmbientPalette(
     val mut: Color,
     /** Identity for crossfades; also marks the default (left alone in light). */
     val key: String,
+    /** --np-text on dark grounds: the song's mood as a light, readable ink. */
+    val textDark: Color = DefaultTextDark,
+    /** --np-text on light grounds: the same mood as a dark ink ([forScheme] holds it at 5:1 on the wash). */
+    val textLight: Color = DefaultTextLight,
+    /** Ink on [vib] (palette.ts inkFor): white, or near-black when the accent is bright. */
+    val ink: Color = Color.White,
 ) {
     companion object {
         /** The Stash-purple default (palette.ts DEFAULT_PALETTE). */
@@ -35,6 +44,20 @@ data class AmbientPalette(
         )
     }
 }
+
+private val DefaultTextDark = Color(0xFFAE8DF9)
+private val DefaultTextLight = Color(0xFF4F3390)
+
+/** palette.ts inkFor (monochrome's rule): YIQ brightness of the accent above 128 takes the dark ink. */
+internal fun inkFor(vib: Color): Color {
+    val r = (vib.red * 255).roundToInt()
+    val g = (vib.green * 255).roundToInt()
+    val b = (vib.blue * 255).roundToInt()
+    return if ((r * 299 + g * 587 + b * 114) / 1000.0 > 128) InkOnBright else Color.White
+}
+
+/** The near-black ink on a bright accent (palette.ts `#1a0b2e`). */
+private val InkOnBright = Color(0xFF1A0B2E)
 
 private fun clamp(n: Double, lo: Double, hi: Double) = min(hi, max(lo, n))
 
@@ -104,25 +127,42 @@ fun ambientPaletteFromPixels(argb: IntArray, key: String = "img"): AmbientPalett
     if (best < 0 || cnt[best] < max(6.0, seen * 0.02)) return null
     val hue = (Math.toDegrees(atan2(sy[best], sx[best])) + 360) % 360
     val s = sat[best] / cnt[best]
+    val vib = hslToColor(hue, clamp(s, 0.55, 0.9), clamp(lum[best] / cnt[best], 0.45, 0.62))
     return AmbientPalette(
         dom = hslToColor(hue, clamp(s, 0.4, 0.8), 0.24),
-        vib = hslToColor(hue, clamp(s, 0.55, 0.9), clamp(lum[best] / cnt[best], 0.45, 0.62)),
+        vib = vib,
         mut = hslToColor(hue, 0.18, 0.27),
         key = key,
+        textDark = hslToColor(hue, clamp(s + 0.1, 0.55, 0.95), 0.74),
+        textLight = hslToColor(hue, 0.55, 0.3),
+        ink = inkFor(vib),
     )
 }
 
 /**
  * palette.ts `forScheme`: on the light ground dom and mut are lifted to mid lightness in the
- * vibrant's hue (a clean tint instead of a brown-grey haze); the default purple is left alone.
+ * vibrant's hue (a clean tint instead of a brown-grey haze), and [AmbientPalette.textLight] is
+ * darkened in 0.02 lightness steps until it holds 5:1 on that wash (yellows need it); the default
+ * purple is left alone.
  */
 fun AmbientPalette.forScheme(light: Boolean): AmbientPalette {
     if (!light || key == AmbientPalette.Default.key) return this
     val v = vib
     val hsl = rgbToHsl((v.red * 255).roundToInt(), (v.green * 255).roundToInt(), (v.blue * 255).roundToInt())
+    val dom = hslToColor(hsl[0], clamp(hsl[1], 0.5, 0.85), 0.5)
+    // The wash: dom at 22 % over white, rounded to 8 bits as the web's hex string is.
+    fun wash(c: Float) = ((c * 255).roundToInt() * 0.22 + 255 * 0.78).roundToInt() / 255f
+    val washed = Color(wash(dom.red), wash(dom.green), wash(dom.blue))
+    var l = 0.3
+    var text = hslToColor(hsl[0], 0.55, l)
+    while (l > 0.14 && contrastRatio(washed, text) < 5) {
+        l -= 0.02
+        text = hslToColor(hsl[0], 0.55, l)
+    }
     return copy(
-        dom = hslToColor(hsl[0], clamp(hsl[1], 0.5, 0.85), 0.5),
+        dom = dom,
         mut = hslToColor(hsl[0], 0.4, 0.58),
         key = "$key#light",
+        textLight = text,
     )
 }

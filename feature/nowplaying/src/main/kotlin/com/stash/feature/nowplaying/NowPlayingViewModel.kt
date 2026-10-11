@@ -1206,17 +1206,8 @@ class NowPlayingViewModel @Inject constructor(
      * The web player's palette (palette.ts loadPalette): the cover drawn into 32x32, then the
      * hue-bucket vote; a greyscale or unreadable cover keeps the Stash-purple default.
      */
-    private fun ambientPaletteOf(bitmap: Bitmap, key: String): com.stash.feature.nowplaying.ui.AmbientPalette =
-        try {
-            val small = Bitmap.createScaledBitmap(bitmap, 32, 32, true)
-            val px = IntArray(32 * 32)
-            small.getPixels(px, 0, 32, 0, 0, 32, 32)
-            if (small !== bitmap) small.recycle()
-            com.stash.feature.nowplaying.ui.ambientPaletteFromPixels(px, key)
-                ?: com.stash.feature.nowplaying.ui.AmbientPalette.Default
-        } catch (_: Exception) {
-            com.stash.feature.nowplaying.ui.AmbientPalette.Default
-        }
+    private fun ambientPaletteOf(bitmap: Bitmap, key: String): com.stash.core.ui.ambient.AmbientPalette =
+        com.stash.core.ui.ambient.ambientPaletteFromBitmap(bitmap, key)
 
     /** Last bitmap run through Palette — dedup key for [onAlbumArtLoaded]. */
     private var lastPaletteBitmap: Bitmap? = null
@@ -1243,7 +1234,7 @@ class NowPlayingViewModel @Inject constructor(
                     dominantColor = Color(0xFF6750A4),
                     vibrantColor = Color(0xFF8E24AA),
                     mutedColor = Color(0xFF37474F),
-                    ambientPalette = com.stash.feature.nowplaying.ui.AmbientPalette.Default,
+                    ambientPalette = com.stash.core.ui.ambient.AmbientPalette.Default,
                 )
             }
             return

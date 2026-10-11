@@ -35,7 +35,7 @@ data class NowPlayingUiState(
      * AmbientPalette); null until this screen's first cover has been read, so the
      * ambient keeps the colours it last showed instead of flashing the default.
      */
-    val ambientPalette: com.stash.feature.nowplaying.ui.AmbientPalette? = null,
+    val ambientPalette: com.stash.core.ui.ambient.AmbientPalette? = null,
     /** User-created playlists available for the "Save to Playlist" sheet. */
     val userPlaylists: List<PlaylistInfo> = emptyList(),
     /**
