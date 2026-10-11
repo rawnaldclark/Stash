@@ -148,9 +148,9 @@ class ArtUrlUpgraderTest {
     }
 
     @Test
-    fun `hq720 from search results normalises to maxres too`() {
+    fun `hq720 from search results keeps its full frame and loses the downscale query`() {
         assertEquals(
-            "https://i.ytimg.com/vi/abc123/maxresdefault.jpg",
+            "https://i.ytimg.com/vi/abc123/hq720.jpg",
             ArtUrlUpgrader.upgrade("https://i.ytimg.com/vi/abc123/hq720.jpg?sqp=x&rs=y"),
         )
     }

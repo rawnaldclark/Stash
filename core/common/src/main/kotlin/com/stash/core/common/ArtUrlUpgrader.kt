@@ -14,10 +14,11 @@ package com.stash.core.common
  * is cached.
  *
  * **YouTube video thumbnails (`i.ytimg.com`):**
- * Every variant is normalised to `hqdefault.jpg` (480x360), the only
- * one YouTube generates for EVERY video. `sddefault` / `maxresdefault`
- * exist for some uploads and 404 for others, and a 404 is drawn as
- * nothing — black album art at random (see [upgrade]).
+ * Every variant is normalised to `maxresdefault.jpg` (1280x720, no
+ * letterbox) and the `?sqp=` downscale query is stripped. `maxresdefault`
+ * is missing for some uploads; `ArtFallbackInterceptor` walks a 404 down
+ * to `sddefault` and then `hqdefault`, which every video has (see
+ * [artFallback]).
  *
  * **Spotify (`i.scdn.co`):**
  * The URL path contains a size prefix:
@@ -105,9 +106,10 @@ object ArtUrlUpgrader {
     // `hqdefault.jpg?sqp=…` URL arrives at ~320px wide.
     private const val YTIMG_TARGET = "maxresdefault"
     private val YTIMG_PATH_REGEX = Regex(
-        // `hq720` (1280x720, what search results carry, usually behind a `?sqp=` downscale)
-        // normalises the same way: maxres is the same frame, and it has the fallback walk.
-        """(/vi[a-z_]*/[^/]+/)(?:default|mqdefault|hqdefault|hq720|sddefault|maxresdefault)(\.(?:jpg|webp))""",
+        // `hq720` is left out on purpose: it is already the full 1280x720 frame (search results
+        // carry it behind a `?sqp=` downscale, which the query strip below removes), and it
+        // certainly exists, where maxres is only likely to.
+        """(/vi[a-z_]*/[^/]+/)(?:default|mqdefault|hqdefault|sddefault|maxresdefault)(\.(?:jpg|webp))""",
     )
 
     // Large variants [ArtUrlSizer] asks for that are not guaranteed to exist, and the rung each

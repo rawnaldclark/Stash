@@ -52,7 +52,7 @@ class ArtUrlSizerTest {
     @Test
     fun `a google url without a size token gets one, as a jpeg`() {
         assertEquals("https://lh3.googleusercontent.com/abc=w1024-h1024-l90-rj", sized("https://lh3.googleusercontent.com/abc", 900))
-        assertEquals("https://lh3.googleusercontent.com/abc=w256-h256-l90-rj", sized("https://lh3.googleusercontent.com/abc=rj", 200))
+        assertEquals("https://lh3.googleusercontent.com/abc=w1024-h1024-l90-rj", sized("https://lh3.googleusercontent.com/abc=rj", 900))
     }
 
     @Test
@@ -78,8 +78,14 @@ class ArtUrlSizerTest {
     }
 
     @Test
-    fun `hq720 behind a downscale query is sized up to maxres`() {
-        assertEquals("https://i.ytimg.com/vi/abc/maxresdefault.jpg", sized("https://i.ytimg.com/vi/abc/hq720.jpg?sqp=x", 700))
+    fun `hq720 behind a downscale query just loses the query on a big surface`() {
+        assertEquals("https://i.ytimg.com/vi/abc/hq720.jpg", sized("https://i.ytimg.com/vi/abc/hq720.jpg?sqp=x", 700))
+    }
+
+    @Test
+    fun `a clean hq720 is youtube's full frame and is never rewritten`() {
+        val url = "https://i.ytimg.com/vi/abc/hq720.jpg"
+        assertEquals(url, sized(url, 1440))
     }
 
     @Test
@@ -259,5 +265,95 @@ class ArtUrlSizerTest {
         assertNull(ArtUrlSizer.storedPx("https://lh3.googleusercontent.com/abc=w544-h544"))
         assertNull(ArtUrlSizer.storedPx(null))
         assertNull(ArtUrlSizer.storedPx("/data/local/cover.jpg"))
+    }
+
+    // ── The 90% rule: a stored URL about as big as the target is left alone ───────────────────
+
+    @Test
+    fun `a stored 1024 is kept for a 1078px request and sized up for 1440`() {
+        val url = "https://lh3.googleusercontent.com/abc=w1024-h1024-l90-rj"
+        assertEquals(url, sized(url, 1078)) // Pixel 5 screen width: 95%
+        assertEquals("https://lh3.googleusercontent.com/abc=w1600-h1600-l90-rj", sized(url, 1440)) // 71%
+    }
+
+    @Test
+    fun `a stored 512 is kept for a 520px grid cell`() {
+        val url = "https://lh3.googleusercontent.com/abc=w512-h512"
+        assertEquals(url, sized(url, 520))
+    }
+
+    @Test
+    fun `lastfm 770 and qobuz 600 are still sized up for a 948px cover`() {
+        assertEquals("https://lastfm.freetls.fastly.net/i/u/ar0/abc.jpg", sized("https://lastfm.freetls.fastly.net/i/u/770x0/abc.jpg", 948))
+        assertEquals("https://static.qobuz.com/images/covers/a/b/x_max.jpg", sized("https://static.qobuz.com/images/covers/a/b/x_600.jpg", 948))
+    }
+
+    // ── Upgrade only, also for Google URLs without a size token (served at 512) ───────────────
+
+    @Test
+    fun `a google url without a size token is never rewritten smaller`() {
+        listOf(
+            "https://lh3.googleusercontent.com/abc",
+            "https://lh3.googleusercontent.com/abc=rj",
+        ).forEach {
+            assertEquals(it, sized(it, 132))
+            assertEquals(it, sized(it, 500))
+        }
+    }
+
+    // ── Non-square Google boxes keep their shape ─────────────────────────────────────────────
+
+    @Test
+    fun `a non-square google crop is scaled, not squared`() {
+        assertEquals(
+            "https://lh3.googleusercontent.com/abc=w1600-h666-p-l90-rj",
+            sized("https://lh3.googleusercontent.com/abc=w540-h225-p-l90-rj", 1440),
+        )
+    }
+
+    // ── Data Saver ───────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `the cap applies only with data saver restricting the app on a metered network`() {
+        assertEquals(ArtUrlSizer.DATA_SAVER_MAX_PX, ArtUrlSizer.maxVariantPx(dataSaverRestricting = true, metered = true))
+        assertEquals(ArtUrlSizer.NO_CAP, ArtUrlSizer.maxVariantPx(dataSaverRestricting = true, metered = false))
+        assertEquals(ArtUrlSizer.NO_CAP, ArtUrlSizer.maxVariantPx(dataSaverRestricting = false, metered = true))
+        assertEquals(ArtUrlSizer.NO_CAP, ArtUrlSizer.maxVariantPx(dataSaverRestricting = false, metered = false))
+    }
+
+    @Test
+    fun `under data saver the unbounded originals are never picked`() {
+        val cap = ArtUrlSizer.DATA_SAVER_MAX_PX
+        val qobuz = "https://static.qobuz.com/images/covers/a/b/x_600.jpg"
+        assertEquals(qobuz, ArtUrlSizer.forSize(qobuz, 948, cap))
+        val spotify = "https://i.scdn.co/image/ab67616d0000b273abc"
+        assertEquals(spotify, ArtUrlSizer.forSize(spotify, 948, cap))
+        val lastFm = "https://lastfm.freetls.fastly.net/i/u/770x0/abc.jpg"
+        assertEquals(lastFm, ArtUrlSizer.forSize(lastFm, 948, cap))
+    }
+
+    @Test
+    fun `under data saver bounded hosts still size up, to at most 1200`() {
+        val cap = ArtUrlSizer.DATA_SAVER_MAX_PX
+        assertEquals(
+            "https://lh3.googleusercontent.com/abc=w1024-h1024-l90-rj",
+            ArtUrlSizer.forSize("https://lh3.googleusercontent.com/abc=w60-h60-l90-rj", 1440, cap),
+        )
+        assertEquals(
+            "https://static.qobuz.com/images/covers/a/b/x_600.jpg",
+            ArtUrlSizer.forSize("https://static.qobuz.com/images/covers/a/b/x_230.jpg", 948, cap),
+        )
+        assertEquals(
+            "https://lastfm.freetls.fastly.net/i/u/770x0/abc.jpg",
+            ArtUrlSizer.forSize("https://lastfm.freetls.fastly.net/i/u/300x300/abc.png", 948, cap),
+        )
+        assertEquals(
+            "https://is1-ssl.mzstatic.com/image/thumb/x/1200x1200bb.jpg",
+            ArtUrlSizer.forSize("https://is1-ssl.mzstatic.com/image/thumb/x/100x100bb.jpg", 1440, cap),
+        )
+        assertEquals(
+            "https://i.ytimg.com/vi/abc/maxresdefault.jpg",
+            ArtUrlSizer.forSize("https://i.ytimg.com/vi/abc/hqdefault.jpg?sqp=x", 948, cap),
+        )
     }
 }
