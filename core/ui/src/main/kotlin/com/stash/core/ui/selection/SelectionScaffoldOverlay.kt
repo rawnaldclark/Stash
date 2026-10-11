@@ -33,6 +33,8 @@ fun BoxScope.SelectionScaffoldOverlay(
     }
     AnimatedVisibility(
         visible = selection.isActive,
+        // No chrome inset here: the scaffold hides the bottom chrome while a screen selects, and
+        // the selection reaches it a frame later, so padding by the inset made the bar jump.
         modifier = Modifier.align(Alignment.BottomCenter),
     ) {
         SelectionBottomBar(actions = actions)

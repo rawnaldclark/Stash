@@ -55,7 +55,7 @@ class WebLinkInboxTest {
         }
         session.reset()
         session.open(link)
-        assertThat(session.confirm()).isEqualTo(PairingState.Linked(name))
+        assertThat(session.confirm()).isEqualTo(PairingState.Linked(name, b.deviceId))
         return b
     }
 

@@ -137,6 +137,11 @@ fun StashTheme(
             val window = (view.context as Activity).window
             window.statusBarColor = Color.Transparent.toArgb()
             window.navigationBarColor = Color.Transparent.toArgb()
+            // No system scrim behind 3-button navigation: the glass tab bar (and Now Playing's
+            // ambient) run down under the system bar and carry its contrast themselves.
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = false
+            }
             val insetsController = WindowCompat.getInsetsController(window, view)
             // Light status-bar icons on dark theme, dark icons on light theme.
             insetsController.isAppearanceLightStatusBars = !darkTheme

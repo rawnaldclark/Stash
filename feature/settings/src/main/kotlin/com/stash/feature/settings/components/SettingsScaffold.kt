@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * Shared frame for Settings sub-screens: a back-chevron top bar with a title,
@@ -56,7 +57,9 @@ fun SettingsScaffold(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp)
+                // Edge to edge under the glass mini player + tab bar.
+                .padding(bottom = bottomChromePadding()),
             verticalArrangement = Arrangement.spacedBy(SettingsGroupGap),
             content = content,
         )

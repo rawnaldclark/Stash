@@ -73,7 +73,7 @@ private val BarInkLight = Color(0xFF241C36)
  * Live synced-lyrics bar pinned at the bottom of Now Playing, where the
  * MiniPlayer sits on every other screen. Renders per [LiveBarMode]:
  * the currently-sung line in the album accent (Live), a dim "View lyrics ♪"
- * (Static), or nothing (Hidden). Tapping opens the full lyrics sheet.
+ * (Static), or nothing (Hidden). Tapping switches Now Playing to its lyrics view.
  *
  * The backdrop is a translucent scrim — the screen's full-bleed
  * [AmbientBackground] animates beneath, so the Now Playing atmosphere flows

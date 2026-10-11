@@ -15,6 +15,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 /**
@@ -61,6 +64,14 @@ class WebLinkViewModel @Inject constructor(
                     repo.noticeShown()
                 }
             }
+        }
+        // A "Linked to Chrome on Windows" result outlives its link when that browser goes (Unlink everything, Remove, or
+        // an unlink from the web seen on refresh): drop the card the moment the list says so, not on the next visit.
+        viewModelScope.launch {
+            combine(repo.status, session.state, ::pairingResultOutlived)
+                .distinctUntilChanged()
+                .filter { it }
+                .collect { session.reset() }
         }
         // The list is read when the screen resumes (SettingsWebLinkScreen), so not here too.
         // A link handed in by the route is opened once, not again after a configuration change.
@@ -147,6 +158,25 @@ class WebLinkViewModel @Inject constructor(
     }
 
     companion object {
+        /**
+         * True when a finished pairing's "Linked to …" result no longer describes the link: this phone isn't linked any more,
+         * or a fresh list (no [WebLinkStatus.Linked.problem]) no longer has that browser. Only [PairingState.Linked] can be
+         * outlived; a pairing in progress (Checking, Confirm, Waiting) or a failure is left alone, since a pairing that
+         * starts while unlinked legitimately sees [WebLinkStatus.NotLinked]. A list read with a problem is the last one
+         * known, possibly from before the pairing, so it can't prove the browser is gone. Pure, for the unit test.
+         */
+        internal fun pairingResultOutlived(status: WebLinkStatus, pairing: PairingState): Boolean {
+            if (pairing !is PairingState.Linked) return false
+            return when (status) {
+                WebLinkStatus.Loading -> false
+                WebLinkStatus.NotLinked -> true
+                is WebLinkStatus.Linked -> {
+                    val id = pairing.browserDeviceId
+                    id != null && status.problem == null && status.devices.none { it.id == id }
+                }
+            }
+        }
+
         /** The route's argument holding a pairing link (`WebLinkRoute.link`). */
         const val ARG_LINK = "link"
         private const val KEY_LINK_OPENED = "weblink.linkOpened"

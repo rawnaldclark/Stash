@@ -7,7 +7,6 @@ import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.basicMarquee
@@ -108,6 +107,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.foundation.layout.aspectRatio
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -134,13 +136,13 @@ import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
-import com.stash.core.ui.theme.LocalIsDarkTheme
 import com.stash.core.ui.components.streaming.StreamingModeChip
 import com.stash.core.ui.components.streaming.StreamingModeSheet
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.common.extensions.pluralize
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * How many mixes a Home rail shows before "See all".
@@ -226,7 +228,8 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding(),
-        contentPadding = PaddingValues(bottom = 120.dp),
+        // Edge to edge under the glass mini player + tab bar: they blur the feed as it scrolls by.
+        contentPadding = PaddingValues(bottom = bottomChromePadding(120.dp)),
     ) {
         // ── App title row: wordmark + social icons ────────────────────
         // v0.9.13: empty space to the right of the wordmark holds quick
@@ -239,14 +242,19 @@ fun HomeScreen(
                     .padding(horizontal = 20.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val isDark = LocalIsDarkTheme.current
-                Image(
-                    painter = painterResource(
-                        id = if (isDark) R.drawable.wordmark_stash_dark
-                        else R.drawable.wordmark_stash_light,
-                    ),
-                    contentDescription = "Stash",
-                    modifier = Modifier.height(48.dp),
+                // One ink (owner, 2026-10-11): white on dark / aubergine on light, and while a song
+                // plays the contrast-checked tint of its mood colour, crossfading over 800 ms. Read
+                // at draw time, so the crossfade redraws the wordmark without recomposing the feed.
+                val wordmark = painterResource(id = R.drawable.wordmark_stash)
+                val chrome = LocalAlbumChrome.current
+                Spacer(
+                    modifier = Modifier
+                        .height(48.dp)
+                        .aspectRatio(wordmark.intrinsicSize.width / wordmark.intrinsicSize.height)
+                        .semantics { contentDescription = "Stash" }
+                        .drawBehind {
+                            with(wordmark) { draw(size, colorFilter = ColorFilter.tint(chrome.wordmark)) }
+                        },
                 )
                 Spacer(modifier = Modifier.weight(1f))
 

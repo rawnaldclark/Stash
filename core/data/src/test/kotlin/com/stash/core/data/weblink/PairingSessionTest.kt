@@ -43,7 +43,7 @@ class PairingSessionTest {
         assertThat(store.space()).isNull()
 
         val done = session.confirm()
-        assertThat(done).isEqualTo(PairingState.Linked("Chrome on Windows"))
+        assertThat(done).isEqualTo(PairingState.Linked("Chrome on Windows", browser.deviceId))
         // The code the phone showed is the one the browser computed from the answer.
         assertThat(browser.code).isEqualTo(confirm.code)
         // Answer, then the long-poll (two pending), then the create: never a create before the reply.
@@ -129,7 +129,7 @@ class PairingSessionTest {
         browser.confirmsOnAnswer()
         server.failNext("create", SyncResult.Error(409, SyncErrorCode.NO_REPLY))
         session.open(link)
-        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Chrome on Windows"))
+        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Chrome on Windows", browser.deviceId))
         assertThat(server.calls.count { it == "create" }).isEqualTo(2)
     }
 
@@ -166,8 +166,8 @@ class PairingSessionTest {
         val link = browser.openCode()
         browser.confirmsOnAnswer()
         session.open(link)
-        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Chrome on Windows"))
-        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Chrome on Windows"))
+        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Chrome on Windows", browser.deviceId))
+        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Chrome on Windows", browser.deviceId))
         assertThat(server.calls.count { it == "answer" }).isEqualTo(1)
     }
 
@@ -197,7 +197,7 @@ class PairingSessionTest {
 
         session.reset()
         session.open(link)
-        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Firefox on Mac"))
+        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Firefox on Mac", second.deviceId))
         // The answer granted the phone's space; the phone joined the browser after the reply.
         assertThat(second.answer!!.space!!.id).isEqualTo(sp.spaceId)
         assertThat(server.calls.last { it == "join" || it == "create" }).isEqualTo("join")
@@ -234,7 +234,7 @@ class PairingSessionTest {
         space.envelopes[me.deviceId to 2] = SyncKeys.sealKeyFor(k2, sp.spaceId, 2, me.deviceId, me.devicePub, members, sp.k)
         space.epoch = 2
 
-        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Firefox on Mac"))
+        assertThat(session.confirm()).isEqualTo(PairingState.Linked("Firefox on Mac", second.deviceId))
         assertThat(store.space()!!.epoch).isEqualTo(2)
         // The newcomer's envelope for epoch 2 opens with its device key, proven under the K it was given (epoch 1).
         assertThat(Base64Url.encode(second.openKey(sp.spaceId, 2, sp.k).k)).isEqualTo(Base64Url.encode(k2))

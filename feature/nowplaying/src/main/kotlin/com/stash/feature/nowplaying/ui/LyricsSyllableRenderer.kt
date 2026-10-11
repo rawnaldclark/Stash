@@ -13,7 +13,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,10 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.CompositionLocalProvider
@@ -85,7 +81,6 @@ import com.stash.feature.nowplaying.ui.LyricsMotion.phaseOf
 import com.stash.feature.nowplaying.ui.LyricsMotion.progressOf
 import kotlin.math.abs
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -95,16 +90,19 @@ import kotlin.math.roundToInt
  *  - adlibs on their own smaller row under the lead, duets aligned to the opposite side
  *  - interlude dots for gaps >= 3s (and long intros)
  *  - lines dim by state (1.0 / 0.51 / 0.497) and blur with distance from the active line (API 31+)
+ *  - the web player's type: Space Grotesk 700 at [LyricsLook.fontSize], long lines scaled down
+ *    by [lyricLineFit], in Now Playing's ink ([LyricsLook])
  *
  * Nothing tracks "the current word": every syllable derives its own phase from the clock, so
  * overlapping words / lines / adlibs are all animated independently. All per-frame values live in
  * state read in the DRAW phase; composition only changes on phase flips.
  */
 @Composable
-fun LyricsSyllableRenderer(
+internal fun LyricsSyllableRenderer(
     lyrics: TtmlLyrics,
     currentPositionMs: Long,
     onLineTap: (Long) -> Unit,
+    look: LyricsLook,
     modifier: Modifier = Modifier,
     isPlaying: Boolean = true,
     playbackSpeed: Float = 1f,
@@ -113,49 +111,30 @@ fun LyricsSyllableRenderer(
     val clock = rememberSmoothPositionMs(currentPositionMs, isPlaying, playbackSpeed)
     val activeIndex = remember(items) { derivedStateOf { activeItemIndex(items, clock.value) } }
     val listState = rememberLazyListState()
-
-    // Grace window after a REAL finger drag (isScrollInProgress is also true during our own scroll).
-    var lastUserScrollAtMs by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(listState) {
-        listState.interactionSource.interactions.collect { interaction ->
-            if (interaction is DragInteraction.Start || interaction is DragInteraction.Stop) {
-                lastUserScrollAtMs = System.currentTimeMillis()
-            }
-        }
-    }
-    LaunchedEffect(items) {
-        snapshotFlow { activeIndex.value }.collect { index ->
-            if (items.isEmpty()) return@collect
-            if (System.currentTimeMillis() - lastUserScrollAtMs > SCROLL_GRACE_MS) {
-                runCatching {
-                    listState.animateScrollToItem(index.coerceIn(0, items.lastIndex), SCROLL_OFFSET_PX)
-                }
-            }
-        }
-    }
+    FollowLiveLine(listState, activeIndex, items.size)
 
     val measurer = rememberTextMeasurer(cacheSize = 256)
-    val onSurface = MaterialTheme.colorScheme.onSurface
-    val leadBase = MaterialTheme.typography.headlineSmall
-    val ctx = remember(measurer, clock, onSurface, leadBase) {
-        val lead = leadBase.copy(fontWeight = FontWeight.Bold, lineHeight = TextUnit.Unspecified)
+    val ctx = remember(measurer, clock, look) {
+        // Glyphs are measured one by one, so no line height: the line gap is padding instead.
+        val lead = look.lineStyle().copy(lineHeight = TextUnit.Unspecified)
         LyricsCtx(
             measurer = measurer,
             clock = clock,
             leadStyle = lead,
             bgStyle = lead.copy(fontSize = lead.fontSize * 0.72f, fontWeight = FontWeight.SemiBold),
-            bright = onSurface.copy(alpha = 0.85f),
-            dim = onSurface.copy(alpha = 0.35f),
-            bgBright = onSurface.copy(alpha = 0.70f),
-            bgDim = onSurface.copy(alpha = 0.28f),
-            ink = onSurface,
+            bright = look.bright,
+            dim = look.dim,
+            bgBright = look.bright.copy(alpha = look.bright.alpha * 0.82f),
+            bgDim = look.dim.copy(alpha = look.dim.alpha * 0.8f),
+            ink = look.ink,
+            look = look,
         )
     }
 
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 24.dp, bottom = 200.dp),
+        contentPadding = PaddingValues(top = look.anchor, bottom = look.bottomRoom),
     ) {
         itemsIndexed(items, key = { index, _ -> index }) { index, item ->
             when (item) {
@@ -234,6 +213,7 @@ private class LyricsCtx(
     val bgBright: Color,
     val bgDim: Color,
     val ink: Color,
+    val look: LyricsLook,
 )
 
 // ─── lines ──────────────────────────────────────────────────────────────────────────────────────
@@ -249,22 +229,25 @@ private fun LineItem(
     val clock = ctx.clock
     val state by remember(item) { derivedStateOf { phaseOf(clock.value, item.startMs, item.endMs) } }
     val alphaAnim = animateFloatAsState(
-        targetValue = when (state) { PHASE_ACTIVE -> 1f; PHASE_SUNG -> 0.497f; else -> 0.51f },
-        animationSpec = tween(300),
+        targetValue = when (state) { PHASE_ACTIVE -> 1f; PHASE_SUNG -> SUNG_ALPHA; else -> UPCOMING_ALPHA },
+        animationSpec = tween(LINE_STATE_MS),
         label = "line-alpha",
     )
-    val blurTarget by remember(item, index) {
+    val fontSp = ctx.look.fontSize.value
+    val blurTarget by remember(item, index, fontSp) {
         derivedStateOf {
-            val distance = abs(index - activeIndex.value)
-            // The line right next to the active one stays crisp (just dimmer via alpha);
-            // blur only kicks in from two lines away, and ramps up more gently than before.
-            if (state == PHASE_ACTIVE || distance <= 1) 0f
-            else min(BLUR_PER_LINE * (distance - 1), BLUR_MAX)
+            // The line next to the active one stays crisp (just dimmer via alpha); the web's two
+            // steps from there: near at two lines away, far from three.
+            if (state == PHASE_ACTIVE) 0f else lyricBlurDp(abs(index - activeIndex.value), fontSp)
         }
     }
-    val blur by animateFloatAsState(blurTarget, tween(300), label = "line-blur")
+    val blur by animateFloatAsState(blurTarget, tween(BLUR_FADE_MS), label = "line-blur")
 
     val line = item.line
+    // A long line shrinks (to 60% at most) so it usually holds on one row; past that it wraps.
+    val fit = remember(line) { lyricLineFit(line.lead.text) }
+    val leadStyle = remember(ctx, fit) { ctx.leadStyle.copy(fontSize = ctx.leadStyle.fontSize * fit) }
+    val bgStyle = remember(ctx, fit) { ctx.bgStyle.copy(fontSize = ctx.bgStyle.fontSize * fit) }
     val description = remember(line) { line.lead.text }
     // Direction comes from the line's own text, not the phone's locale.
     val lineDirection = remember(line) {
@@ -280,12 +263,12 @@ private fun LineItem(
                 .graphicsLayer { alpha = alphaAnim.value }
                 .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Rectangle) else Modifier)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap)
-                .padding(horizontal = 24.dp, vertical = 10.dp)
+                .padding(horizontal = ctx.look.sidePadding, vertical = ctx.look.lineGap)
                 .clearAndSetSemantics { contentDescription = description },
         ) {
-            GroupRow(line.lead, ctx, ctx.leadStyle, ctx.bright, ctx.dim, line.oppositeAligned)
+            GroupRow(line.lead, ctx, leadStyle, ctx.bright, ctx.dim, line.oppositeAligned)
             line.background.forEach { adlib ->
-                GroupRow(adlib, ctx, ctx.bgStyle, ctx.bgBright, ctx.bgDim, line.oppositeAligned, Modifier.padding(top = 4.dp))
+                GroupRow(adlib, ctx, bgStyle, ctx.bgBright, ctx.bgDim, line.oppositeAligned, Modifier.padding(top = 4.dp))
             }
         }
     }
@@ -479,7 +462,7 @@ private fun InterludeItem(item: LyricsItem.Interlude, ctx: LyricsCtx) {
                 alpha = e.coerceIn(0f, 1f)
                 transformOrigin = TransformOrigin(if (item.oppositeAligned) 1f else 0f, 0f)
             }
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = ctx.look.sidePadding),
         contentAlignment = if (item.oppositeAligned) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         Row(
@@ -548,7 +531,7 @@ private fun InterludeDot(startMs: Long, endMs: Long, ctx: LyricsCtx, box: Dp, fo
 /**
  * Single-line word-synced text for [LiveLyricsBar]: syllables fade from 40% to full accent as they're
  * sung. (A fade, not the sweep: the bar is one ellipsized line of small text, and a sweep needs the
- * per-glyph layout the sheet uses.)
+ * per-glyph layout the lyrics view uses.)
  */
 @Composable
 internal fun WordSyncedBarLine(
@@ -617,7 +600,3 @@ private suspend fun frameLoop(tick: (Float) -> Boolean) {
     }
 }
 
-private const val BLUR_PER_LINE = 0.7f
-private const val BLUR_MAX = 4.2f   
-private const val SCROLL_GRACE_MS = 5_000L
-private const val SCROLL_OFFSET_PX = -200

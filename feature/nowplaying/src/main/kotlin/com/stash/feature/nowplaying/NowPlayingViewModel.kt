@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.palette.graphics.Palette
 import com.stash.core.data.lossless.LosslessUpgrader
+import com.stash.core.data.prefs.NowPlayingAction
 import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
@@ -28,7 +29,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -38,6 +43,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -75,7 +81,7 @@ class NowPlayingViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
     private val losslessUpgrader: LosslessUpgrader,
-    // v0.9.36 Task 12 — lyrics sheet observes the lyrics row and may
+    // v0.9.36 Task 12 — lyrics view observes the lyrics row and may
     // enqueue a priority on-open fetch. WorkManager is sourced via
     // `WorkManager.getInstance(appContext)` to match the rest of the
     // codebase (it's not Hilt-injectable in this project).
@@ -87,6 +93,9 @@ class NowPlayingViewModel @Inject constructor(
     // Tap-to-artist: resolves the playing track's artist NAME to a YT
     // browseId so Now Playing can open the artist profile.
     private val ytMusicApiClient: com.stash.data.ytmusic.YTMusicApiClient,
+    // Gates the lyrics prefetch to the foreground. Hilt binds the process lifecycle
+    // (ProcessForeground); tests leave the default, which never prefetches.
+    private val appForeground: AppForeground = AppForeground.Never,
 ) : ViewModel() {
 
     // ── Share (fork issue ParaliyzedEvo/Stash#40) ──
@@ -114,7 +123,7 @@ class NowPlayingViewModel @Inject constructor(
     /**
      * Live synced-line bar opt-in (default OFF — the ticking line can pull
      * the listener out of the music). Off, synced tracks still get the
-     * "View lyrics ♪" bar; the toggle lives in the lyrics sheet.
+     * "View lyrics ♪" bar; the toggle lives in the lyrics view's menu.
      */
     val liveLyricsBarEnabled: StateFlow<Boolean> = lyricsPreference.liveBarEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
@@ -132,6 +141,29 @@ class NowPlayingViewModel @Inject constructor(
         .map<com.stash.core.data.prefs.AmbientStyle, com.stash.core.data.prefs.AmbientStyle?> { it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * The actions pinned to the top row (edited from the ⋮ menu). Null until DataStore answers,
+     * like the ambient prefs above, so the screen never draws a frame of the default row for a
+     * user who changed it.
+     */
+    val pinnedActions: StateFlow<Set<NowPlayingAction>?> = nowPlayingPreference.pinnedActions
+        .map<Set<NowPlayingAction>, Set<NowPlayingAction>?> { it }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Pins or unpins [action]. The read, the rule and the write are one DataStore transaction
+     * ([NowPlayingPreference.togglePin]), so quick taps queue up instead of racing, and the
+     * [NowPlayingAction.MAX_PINS] cap holds in storage. The editor greys out and explains the
+     * cap before a tap gets here; a pin refused by a race simply doesn't appear.
+     */
+    fun onTogglePin(action: NowPlayingAction) {
+        viewModelScope.launch { nowPlayingPreference.togglePin(action) }
+    }
+
+    /** Back to Radio · ⋮ · Queue. */
+    fun onResetPins() {
+        viewModelScope.launch { nowPlayingPreference.resetPinnedActions() }
+    }
 
     private val _userMessages = MutableSharedFlow<String>(
         // v0.9.18: bumped from 1 → 8. The Find-in-FLAC action emits TWO
@@ -374,16 +406,16 @@ class NowPlayingViewModel @Inject constructor(
     }
 
     // ------------------------------------------------------------------
-    // v0.9.36 Task 12 — Lyrics sheet state
+    // v0.9.36 Task 12 — lyrics view state
     // ------------------------------------------------------------------
 
     /**
-     * Whether the lyrics sheet is currently open. Toggled by
-     * [onShowLyrics] / [onDismissLyrics]; the Compose layer collects
-     * this and conditionally renders [com.stash.feature.nowplaying.ui.LyricsBottomSheet].
+     * Whether Now Playing shows its lyrics mode (the full-screen lyrics over the ambient) instead
+     * of the big art. Toggled by [onShowLyrics] / [onDismissLyrics] / [onToggleLyrics]. It
+     * survives a song change on purpose: the next song's lyrics simply load in place.
      */
-    private val _lyricsSheetOpen = MutableStateFlow(false)
-    val lyricsSheetOpen: StateFlow<Boolean> = _lyricsSheetOpen.asStateFlow()
+    private val _lyricsMode = MutableStateFlow(false)
+    val lyricsMode: StateFlow<Boolean> = _lyricsMode.asStateFlow()
 
     /**
      * Transient lyrics state for streaming-mode tracks (id == 0L), which
@@ -397,7 +429,7 @@ class NowPlayingViewModel @Inject constructor(
 
     /**
      * Track ids with an in-flight inline lyrics resolve ([fetchLibraryLyrics]),
-     * so reopening the sheet doesn't stack duplicate fetches for the same track.
+     * so reopening the lyrics view doesn't stack duplicate fetches for the same track.
      */
     private val lyricsFetchInFlight: MutableSet<Long> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
@@ -412,68 +444,107 @@ class NowPlayingViewModel @Inject constructor(
     private val _lyricsFetchFailedTrackId = MutableStateFlow<Long?>(null)
 
     /**
+     * The playing track as lyrics see it: its row in the library when it has one ([stored]),
+     * else a stream known only by its YouTube id. Keyed so a track change is one emission.
+     *
+     * "Stored" means Room answered with a row, not a positive id: a stream from radio or a queue
+     * plays under a transient `videoId.hashCode()` id (negative half the time) until a listen
+     * persists it about 30s in. Treating that id as a library id fetched nothing for a negative
+     * hash (Looking for lyrics for ~30s) and a doomed library fetch for a positive one.
+     */
+    private data class LyricsTarget(val track: Track, val stored: Boolean) {
+        val key: String get() = if (stored) "id:${track.id}" else "yt:${track.youtubeId ?: track.id}"
+    }
+
+    private val lyricsTargets: Flow<LyricsTarget?> = uiState
+        // Wait for Room's answer: a library track looked like a stream for a few hundred ms
+        // after a track change, which set off a needless network lookup.
+        .filter { s -> s.currentTrack == null || s.currentTrackStored != null }
+        .map { s -> s.currentTrack?.let { LyricsTarget(it, s.currentTrackStored == true) } }
+        .distinctUntilChanged { old, new -> old?.key == new?.key }
+
+    /**
+     * The last stream's lyrics, by YouTube id. When that stream is persisted (a new library id),
+     * the lyrics view keeps showing these while the library row is filled from the repository's
+     * memory, instead of flashing back to "Looking for lyrics".
+     */
+    private val streamLyricsCarry = MutableStateFlow<Pair<String, LyricsViewState>?>(null)
+
+    /**
      * Re-derives [LyricsViewState] from the currently-playing track and
      * the observed [com.stash.core.data.db.entity.LyricsEntity] row.
      *
      * Tracks the `currentTrack` field of [uiState] (the same field the
-     * rest of Now Playing reads) so the sheet always reflects the
+     * rest of Now Playing reads) so the lyrics view always reflects the
      * track that's currently displayed/playing — no separate "selected
      * for lyrics" state. When the track flips, [flatMapLatest] cancels
      * the old observer and subscribes to the new track's row.
      *
      * SharingStarted.WhileSubscribed(5_000) keeps the flow warm for
-     * 5 seconds after the sheet closes so a quick close+reopen doesn't
+     * 5 seconds after the lyrics view closes so a quick close+reopen doesn't
      * re-derive from scratch.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val lyricsViewState: StateFlow<LyricsViewState> = uiState
-        .map { it.currentTrack }
-        // Streaming-mode tracks all share id==0L; distinguish them by youtubeId so
-        // a track change between two streamed Yeat songs still flips the upstream.
-        .distinctUntilChanged { old, new -> trackKey(old) == trackKey(new) }
-        .onEach { track ->
-            // reset transient state on track change
-            _streamingLyricsState.value = null
+    val lyricsViewState: StateFlow<LyricsViewState> = lyricsTargets
+        .onEach { target ->
+            // Reset the failed-fetch overlay on track change. The stream state is not reset
+            // here: fetchStreamingLyrics sets it (Loading or the remembered answer) for a new
+            // stream, and nulling it while the previous branch is still subscribed made that
+            // branch emit a stray Loading (seen when a stream is persisted mid-song).
             _lyricsFetchFailedTrackId.value = null
-            // Live-lyrics-bar fetch trigger. Deliberately HERE and not in
-            // init{}: this onEach only runs while lyricsViewState has
-            // collectors (WhileSubscribed) — i.e. while NowPlayingScreen is
-            // showing the bar/sheet. The MiniPlayer's activity-scoped VM
-            // instance never collects lyricsViewState, so it can never fire
-            // fetches app-wide. Covers screen-open (initial emission) and
-            // every track change while open.
+            // The carry only bridges a stream to its own persisted row; any other track drops it
+            // (else a later Retry on that row would show the old lyrics instead of Loading).
+            val carry = streamLyricsCarry.value
+            if (carry != null && carry.first != target?.track?.youtubeId) streamLyricsCarry.value = null
+            // Fetch on screen-open (initial emission) and on every track change while Now
+            // Playing is open. Lyrics are usually here already: see [prefetchLyricsWhileForeground].
+            // Both paths share the repository's one walk per song, so this costs no second lookup.
             when {
-                track == null -> Unit
-                track.id > 0L && track.lyricsFetchedAt == null -> fetchLibraryLyrics(track)
-                track.id == 0L -> fetchStreamingLyrics(track)
+                target == null -> Unit
+                target.stored -> if (target.track.lyricsFetchedAt == null) fetchLibraryLyrics(target.track)
+                else -> fetchStreamingLyrics(target.track)
             }
         }
-        .flatMapLatest { track ->
+        .flatMapLatest { target ->
+            val track = target?.track
             when {
                 track == null -> flowOf(LyricsViewState.None)
                 // Combine the lyrics row with the LIVE lyrics_fetched_at stamp.
                 // Deriving the sentinel from the captured track snapshot left the
-                // sheet stuck on Loading after a fetch finished (the stamp updated
+                // view stuck on Loading after a fetch finished (the stamp updated
                 // in Room but the captured value never did); watching the stamp
-                // live flips the sheet the instant the fetch completes — no
+                // live flips the lyrics view the instant the fetch completes — no
                 // close+reopen needed.
-                track.id > 0L -> combine(
+                target.stored -> combine(
                     lyricsRepository.observe(track.id),
                     lyricsRepository.observeFetchedAt(track.id),
                     _lyricsFetchFailedTrackId,
-                ) { row, fetchedAt, failedId ->
+                    streamLyricsCarry,
+                ) { row, fetchedAt, failedId, carry ->
                     // A NULL stamp normally means "fetch in flight" (Loading),
                     // but when the inline fetch failed it stays NULL forever —
                     // surface that as a retryable Error instead.
-                    if (fetchedAt == null && failedId == track.id) {
+                    val state = if (fetchedAt == null && failedId == track.id) {
                         LyricsViewState.Error(retryable = true)
                     } else {
                         lyricsViewStateFor(track.copy(lyricsFetchedAt = fetchedAt), row)
                     }
+                    // A stream just persisted: keep its lyrics on screen while the row fills.
+                    val carried = if (state == LyricsViewState.Loading && carry != null && carry.first == track.youtubeId) {
+                        carry.second
+                    } else {
+                        state
+                    }
+                    // The stamp and the row are separate writes, seen by separate Room queries:
+                    // a stamp with no row yet reads as "no lyrics" for a moment. Only believe
+                    // that if it lasts (see the transform below).
+                    carried to (row == null && fetchedAt != null && fetchedAt > 0L)
+                }.transformLatest { (state, rowLagging) ->
+                    if (rowLagging) delay(ROW_LAG_GRACE_MS)
+                    emit(state)
                 }
-                // Streaming track (id == 0L). The transient flow is seeded by
-                // onShowLyrics -> fetchStreamingLyrics. Until then, null means
-                // we haven't tried — render Loading.
+                // A stream: the transient state, seeded by fetchStreamingLyrics (from the
+                // repository's memory at once when the song was already looked up).
                 else -> _streamingLyricsState.map { it ?: LyricsViewState.Loading }
             }
         }
@@ -483,6 +554,62 @@ class NowPlayingViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = LyricsViewState.Loading,
         )
+
+    /**
+     * Looks the playing track's lyrics up early, while the app is in the foreground, so opening
+     * Now Playing or its lyrics finds them in hand instead of starting the lookup then (Now
+     * Playing used to be the only trigger: a song started from a list and opened five seconds
+     * later showed "Looking for lyrics" for the whole lookup).
+     *
+     * - Waits [PREFETCH_DWELL_MS] on each song first: a skip cancels the wait, so flicking
+     *   through a queue looks nothing up (and can't run Apple's lookups into its 10-minute skip
+     *   window), and a stream's duration is known by the time the query is built.
+     * - Hands the request to [LyricsRepository.prefetch], the one owner: the mini player's
+     *   ViewModel and Now Playing's both get here, and the repository runs the song once.
+     * - Nothing in the background (screen off, app away).
+     *
+     * Now Playing's own trigger stays immediate (see [lyricsViewState]); it joins the same walk.
+     */
+    private fun prefetchLyricsWhileForeground() {
+        viewModelScope.launch {
+            combine(lyricsTargets, appForeground.foreground) { target, foreground -> target to foreground }
+                .distinctUntilChanged { old, new -> old.first?.key == new.first?.key && old.second == new.second }
+                .collectLatest { (target, foreground) ->
+                    when {
+                        // Gone to the background, or this track's lyrics are already stored: stop
+                        // any request. (Not for "no track yet": a new ViewModel's first, empty
+                        // emission must not revoke the other ViewModel's request.)
+                        !foreground -> { lyricsRepository.prefetch(null, store = false); return@collectLatest }
+                        target == null -> return@collectLatest
+                        target.stored && target.track.lyricsFetchedAt != null -> {
+                            lyricsRepository.prefetch(null, store = false)
+                            return@collectLatest
+                        }
+                    }
+                    delay(PREFETCH_DWELL_MS)
+                    // Build the query now, from the track as it is after the wait (a stream's
+                    // duration arrives from the player a moment after it starts).
+                    val now = _uiState.value.currentTrack
+                        ?.takeIf { LyricsTarget(it, target.stored).key == target.key } ?: target.track
+                    lyricsRepository.prefetch(
+                        lyricsQuery(now, trackId = if (target.stored) now.id else 0L),
+                        store = target.stored,
+                    )
+                }
+        }
+    }
+
+    /** The source-chain query for [track]; [trackId] is the row to store under (0 for a stream). */
+    private fun lyricsQuery(track: Track, trackId: Long) = LyricsQuery(
+        trackId = trackId,
+        title = track.title,
+        artist = track.artist,
+        album = track.album.ifBlank { null },
+        albumArtist = track.albumArtist.ifBlank { null },
+        durationMs = track.durationMs.takeIf { it > 0 },
+        youtubeVideoId = track.youtubeId,
+        interactive = true,
+    )
 
     /**
      * Stable key for a Track regardless of whether it's library-resident
@@ -501,28 +628,26 @@ class NowPlayingViewModel @Inject constructor(
      * cadence — same flow the [observePlayerStateLive] combine already
      * consumes, so the player only ticks once.
      *
-     * Exposed as a dedicated StateFlow so the lyrics sheet doesn't have
+     * Exposed as a dedicated StateFlow so the lyrics view doesn't have
      * to subscribe to the full [uiState] (which re-emits on every
      * heart toggle, every queue change, every album-art recolor). The
      * synced renderer only cares about the position, so this is the
      * narrower subscription that matches what it needs.
      */
     /**
-     * Raw per-track sync offset (signed ms; positive delays lyrics), for the sheet's Offset dialog
+     * Raw per-track sync offset (signed ms; positive delays lyrics), for the lyrics menu's Offset dialog
      * to show the current value. Null when there's nothing to store an offset on — a streaming
-     * track (id == 0L) or a track with no lyrics row yet — so the sheet hides its Offset button.
+     * track (id == 0L) or a track with no lyrics row yet — so the lyrics menu hides its Offset item.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val lyricsSyncOffsetMs: StateFlow<Long?> = uiState
-        .map { it.currentTrack }
-        .distinctUntilChanged { old, new -> trackKey(old) == trackKey(new) }
-        .flatMapLatest { track ->
-            if (track != null && track.id > 0L) lyricsRepository.observeSyncOffsetMs(track.id) else flowOf(null)
+    val lyricsSyncOffsetMs: StateFlow<Long?> = lyricsTargets
+        .flatMapLatest { target ->
+            if (target != null && target.stored) lyricsRepository.observeSyncOffsetMs(target.track.id) else flowOf(null)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
     /**
-     * Position fed to the lyrics sheet + live bar, with [lyricsSyncOffsetMs] baked in. Everything
+     * Position fed to the lyrics view + live bar, with [lyricsSyncOffsetMs] baked in. Everything
      * else (the progress bar, `onSeekTo`, etc.) keeps using the player's raw position untouched.
      */
     val currentPositionMs: StateFlow<Long> = combine(
@@ -537,6 +662,7 @@ class NowPlayingViewModel @Inject constructor(
 
     init {
         observePlayerStateLive()
+        prefetchLyricsWhileForeground()
         observeUserPlaylists()
         observeStreamingHaltedEvents()
         observePlayerUserMessages()
@@ -584,7 +710,7 @@ class NowPlayingViewModel @Inject constructor(
             .map { it.currentTrack?.let { t -> t.id to t.youtubeId } }
             .distinctUntilChanged()
             .flatMapLatest { key ->
-                if (key == null) flowOf<com.stash.core.model.Track?>(null)
+                if (key == null) flowOf<com.stash.core.model.Track?>(null).map { key to it }
                 else {
                     val (id, ytId) = key
                     // Falls back to a youtube_id lookup so the heart icon
@@ -594,9 +720,17 @@ class NowPlayingViewModel @Inject constructor(
                     // `tracks` until `ensureTrackPersisted` writes one
                     // under a real autogen PK (issue #105 follow-up).
                     musicRepository.observeTrackById(id).flatMapLatest { row ->
-                        if (row != null || ytId.isNullOrBlank()) flowOf(row)
+                        // A transient id is videoId.hashCode(): it can equal an unrelated row's id,
+                        // so for a transient id only, a row with another YouTube id isn't this track.
+                        // A real id keeps its row even when the YouTube ids differ: a match swap or
+                        // re-match changes the row's id while the queued item keeps the old one, and
+                        // a Listen Together listener plays its own row under the host's video id.
+                        val transientId = !ytId.isNullOrBlank() && id == ytId.hashCode().toLong()
+                        val sameRecording = row != null &&
+                            (!transientId || row.youtubeId.isNullOrBlank() || row.youtubeId == ytId)
+                        if (sameRecording || ytId.isNullOrBlank()) flowOf(row.takeIf { sameRecording })
                         else musicRepository.observeTrackByYoutubeId(ytId)
-                    }
+                    }.map { key to it } // tagged with the player key it answers for
                 }
             }
 
@@ -605,7 +739,11 @@ class NowPlayingViewModel @Inject constructor(
             playerRepository.currentPosition,
             liveTrackFlow,
             optimisticLikeState,
-        ) { state, positionMs, liveTrack, optimistic ->
+        ) { state, positionMs, live, optimistic ->
+            val (liveKey, liveTrack) = live
+            // Room answers a moment after the player moves on: until it has answered for THIS
+            // track, whether the track is in the library is unknown (null), not "no".
+            val liveResolved = liveKey == state.currentTrack?.let { t -> t.id to t.youtubeId }
             _uiState.update { current ->
                 val baseTrack = liveTrack ?: state.currentTrack
                 // When the active track came from a stream resolver, the Room
@@ -645,6 +783,7 @@ class NowPlayingViewModel @Inject constructor(
                     // Prefer Room's live row; fall back to player's MediaItem
                     // snapshot for non-library content (streams, search previews).
                     currentTrack = finalTrack,
+                    currentTrackStored = if (liveResolved) liveTrack != null else null,
                     isPlaying = state.isPlaying,
                     currentPositionMs = positionMs,
                     durationMs = state.durationMs,
@@ -968,24 +1107,29 @@ class NowPlayingViewModel @Inject constructor(
     }
 
     // ------------------------------------------------------------------
-    // v0.9.36 — Lyrics sheet actions
+    // v0.9.36 — lyrics view actions
     // ------------------------------------------------------------------
 
     /**
-     * Open the lyrics sheet for the currently-playing track. Open-only since
+     * Switch Now Playing to its lyrics view for the current track. Open-only since
      * the live-lyrics bar: fetching is the lyricsViewState chain's
-     * subscription-gated trigger's job (plus the sheet's Retry). The old
+     * subscription-gated trigger's job (plus the lyrics view's Retry). The old
      * unconditional streaming re-fetch here reset shared state to Loading —
      * with the bar consuming that same state, a bar tap would have hidden
      * the bar mid-tap.
      */
     fun onShowLyrics() {
-        _lyricsSheetOpen.value = true
+        _lyricsMode.value = true
     }
 
-    /** Close the lyrics sheet without affecting playback. */
+    /** Back to the big art, without affecting playback. */
     fun onDismissLyrics() {
-        _lyricsSheetOpen.value = false
+        _lyricsMode.value = false
+    }
+
+    /** The Lyrics action: in from the art, or back out when already reading. */
+    fun onToggleLyrics() {
+        _lyricsMode.value = !_lyricsMode.value
     }
 
     /**
@@ -994,9 +1138,13 @@ class NowPlayingViewModel @Inject constructor(
      * nothing is playing or when the track has no valid id (search-preview rows).
      */
     fun onLyricsRetry() {
-        val track = _uiState.value.currentTrack ?: return
-        if (track.id > 0L) fetchLibraryLyrics(track, force = true)
-        else fetchStreamingLyrics(track)
+        val state = _uiState.value
+        val track = state.currentTrack ?: return
+        when (state.currentTrackStored) {
+            true -> fetchLibraryLyrics(track, force = true)
+            false -> fetchStreamingLyrics(track, fresh = true)
+            null -> Unit // Room hasn't answered for this track yet (a few ms): the trigger will
+        }
     }
 
     fun exportLyricsForCurrentTrack() {
@@ -1015,7 +1163,7 @@ class NowPlayingViewModel @Inject constructor(
                         // 0L = every source definitively answered "no lyrics"; distinct from a fetch
                         // that simply hasn't succeeded yet (stamp stays null on a source failure).
                         track.lyricsFetchedAt == 0L -> "No lyrics found for this track"
-                        else -> "Couldn't fetch lyrics yet — try again from the lyrics sheet"
+                        else -> "Couldn't fetch lyrics yet — try again from the lyrics view"
                     }
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) { "Couldn't save lyrics" }
@@ -1040,37 +1188,42 @@ class NowPlayingViewModel @Inject constructor(
      * resolves against the same untagged state — without the key check, A's
      * slow resolve landing after B's would overwrite B's lyrics and stick.
      */
-    private fun fetchStreamingLyrics(track: Track) {
+    private fun fetchStreamingLyrics(track: Track, fresh: Boolean = false) {
         val key = trackKey(track)
+        val query = lyricsQuery(track, trackId = 0L)
+        // Already looked up (the prefetch, or an earlier visit): show it now, no Loading frame.
+        if (!fresh) {
+            lyricsRepository.cached(query)?.let { cached ->
+                showStreamLyrics(track, lyricsViewStateForResult(cached.result))
+                return
+            }
+        }
         _streamingLyricsState.value = LyricsViewState.Loading
         viewModelScope.launch {
-            val query = LyricsQuery(
-                trackId = 0L,                                    // unused in transient path
-                title = track.title,
-                artist = track.artist,
-                album = track.album.ifBlank { null },
-                albumArtist = track.albumArtist.ifBlank { null },
-                durationMs = track.durationMs.takeIf { it > 0 },
-                youtubeVideoId = track.youtubeId,
-                interactive = true,
-            )
             val result = try {
-                lyricsViewStateForResult(lyricsRepository.resolveTransient(query))
+                lyricsViewStateForResult(lyricsRepository.resolveTransient(query, fresh))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 LyricsViewState.Error(retryable = true)
             }
-            if (trackKey(_uiState.value.currentTrack) == key) {
-                _streamingLyricsState.value = result
-            }
+            if (trackKey(_uiState.value.currentTrack) == key) showStreamLyrics(track, result)
+        }
+    }
+
+    /** Shows a stream's lyrics, and keeps them for the moment it is persisted (see [streamLyricsCarry]). */
+    private fun showStreamLyrics(track: Track, state: LyricsViewState) {
+        _streamingLyricsState.value = state
+        val yt = track.youtubeId
+        if (yt != null && state !is LyricsViewState.Error && state != LyricsViewState.Loading) {
+            streamLyricsCarry.value = yt to state
         }
     }
 
     /** Adjust sync for the current track. No-op for streaming tracks (id == 0L) — see [lyricsSyncOffsetMs]. */
     fun setLyricsSyncOffsetMs(offsetMs: Long) {
         val track = _uiState.value.currentTrack ?: return
-        if (track.id <= 0L) return
+        if (_uiState.value.currentTrackStored != true) return
         viewModelScope.launch { lyricsRepository.setSyncOffsetMs(track.id, offsetMs) }
     }
 
@@ -1090,16 +1243,16 @@ class NowPlayingViewModel @Inject constructor(
     /**
      * Library-track on-open lyrics fetch. Resolves INLINE via the repository
      * (writes the Room row + stamps `lyrics_fetched_at`) instead of enqueuing a
-     * WorkManager job — the user is watching the sheet, so the fetch must not
+     * WorkManager job — the user is watching the lyrics view, so the fetch must not
      * queue behind background workers (sync/backfill/discovery), which deferred
      * the result by minutes. The [lyricsViewState] combine observes the row +
-     * stamp and flips the sheet the moment this finishes.
+     * stamp and flips the lyrics view the moment this finishes.
      *
      * Deduped per track so reopening doesn't stack duplicate resolves. [force]
      * (Retry) bypasses the in-flight guard and clears the confirmed-miss stamp
      * FIRST so the combine visibly returns to Loading while the retry runs.
      * A source failure sets [_lyricsFetchFailedTrackId] (stamp stays NULL) so
-     * the sheet renders a retryable Error instead of sticking on Loading.
+     * the lyrics view renders a retryable Error instead of sticking on Loading.
      */
     private fun fetchLibraryLyrics(track: Track, force: Boolean = false) {
         if (!force && !lyricsFetchInFlight.add(track.id)) return
@@ -1115,18 +1268,12 @@ class NowPlayingViewModel @Inject constructor(
                 }
                 _lyricsFetchFailedTrackId.value = null
                 if (force) lyricsRepository.clearFetchStamp(track.id)
-                val query = LyricsQuery(
-                    trackId = track.id,
-                    title = track.title,
-                    artist = track.artist,
-                    album = track.album.ifBlank { null },
-                    albumArtist = track.albumArtist.ifBlank { null },
-                    durationMs = track.durationMs.takeIf { it > 0 },
-                    youtubeVideoId = track.youtubeId,
-                    interactive = true,
-                )
                 try {
-                    lyricsRepository.resolveAndStore(query)
+                    lyricsRepository.resolveAndStore(
+                        lyricsQuery(track, trackId = track.id),
+                        fresh = force,
+                        skipIfStamped = !force,
+                    )
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -1206,17 +1353,8 @@ class NowPlayingViewModel @Inject constructor(
      * The web player's palette (palette.ts loadPalette): the cover drawn into 32x32, then the
      * hue-bucket vote; a greyscale or unreadable cover keeps the Stash-purple default.
      */
-    private fun ambientPaletteOf(bitmap: Bitmap, key: String): com.stash.feature.nowplaying.ui.AmbientPalette =
-        try {
-            val small = Bitmap.createScaledBitmap(bitmap, 32, 32, true)
-            val px = IntArray(32 * 32)
-            small.getPixels(px, 0, 32, 0, 0, 32, 32)
-            if (small !== bitmap) small.recycle()
-            com.stash.feature.nowplaying.ui.ambientPaletteFromPixels(px, key)
-                ?: com.stash.feature.nowplaying.ui.AmbientPalette.Default
-        } catch (_: Exception) {
-            com.stash.feature.nowplaying.ui.AmbientPalette.Default
-        }
+    private fun ambientPaletteOf(bitmap: Bitmap, key: String): com.stash.core.ui.ambient.AmbientPalette =
+        com.stash.core.ui.ambient.ambientPaletteFromBitmap(bitmap, key)
 
     /** Last bitmap run through Palette — dedup key for [onAlbumArtLoaded]. */
     private var lastPaletteBitmap: Bitmap? = null
@@ -1243,7 +1381,7 @@ class NowPlayingViewModel @Inject constructor(
                     dominantColor = Color(0xFF6750A4),
                     vibrantColor = Color(0xFF8E24AA),
                     mutedColor = Color(0xFF37474F),
-                    ambientPalette = com.stash.feature.nowplaying.ui.AmbientPalette.Default,
+                    ambientPalette = com.stash.core.ui.ambient.AmbientPalette.Default,
                 )
             }
             return
@@ -1340,3 +1478,16 @@ internal fun overlayDisplayTrack(
         )
     } else baseTrack
 }
+
+/**
+ * How long "no lyrics" must last before Now Playing believes it, when the fetch stamp is set
+ * but the lyrics row hasn't been read back yet (two writes, two Room queries: they can land a
+ * few ms apart). A real miss stamps 0 with no row and shows at once.
+ */
+private const val ROW_LAG_GRACE_MS = 400L
+
+/**
+ * How long a song plays before its lyrics are prefetched. Long enough that skipping through a
+ * queue looks nothing up, short enough that lyrics are in hand well before most people open them.
+ */
+private const val PREFETCH_DWELL_MS = 1_800L

@@ -41,6 +41,7 @@ import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
 import com.stash.core.common.extensions.pluralize
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * "See all" browse of the Qobuz editorial playlist catalog — a paginated
@@ -117,7 +118,7 @@ fun PlaylistBrowseScreen(
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = bottomChromePadding(16.dp)),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.fillMaxSize(),

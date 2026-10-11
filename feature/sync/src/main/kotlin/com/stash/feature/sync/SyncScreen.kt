@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -65,6 +66,7 @@ import com.stash.feature.sync.components.SyncActionProgress
 import com.stash.feature.sync.components.SyncStatusCard
 import com.stash.feature.sync.components.StatusPill
 import com.stash.feature.sync.components.formatRelativeTime
+import com.stash.core.ui.components.bottomChromePadding
 
 /**
  * Main Sync screen.
@@ -102,6 +104,8 @@ fun SyncScreen(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
+        // Edge to edge under the glass mini player + tab bar.
+        contentPadding = PaddingValues(bottom = bottomChromePadding()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // -- Auth expiry banner ----------------------------------------------

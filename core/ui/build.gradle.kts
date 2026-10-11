@@ -13,6 +13,7 @@ dependencies {
     implementation(libs.compose.animation)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.haze)
 
     // SelectionState unit tests run on the JVM. The Compose BOM is only on the
     // main classpath (added by stash.compose.library), so re-apply it here to
