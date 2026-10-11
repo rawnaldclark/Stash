@@ -572,12 +572,19 @@ class NowPlayingViewModel @Inject constructor(
      */
     private fun prefetchLyricsWhileForeground() {
         viewModelScope.launch {
-            combine(lyricsTargets, appForeground.foreground) { target, foreground -> target.takeIf { foreground } }
-                .distinctUntilChanged { old, new -> old?.key == new?.key }
-                .collectLatest { target ->
-                    if (target == null || (target.stored && target.track.lyricsFetchedAt != null)) {
-                        lyricsRepository.prefetch(null, store = false)
-                        return@collectLatest
+            combine(lyricsTargets, appForeground.foreground) { target, foreground -> target to foreground }
+                .distinctUntilChanged { old, new -> old.first?.key == new.first?.key && old.second == new.second }
+                .collectLatest { (target, foreground) ->
+                    when {
+                        // Gone to the background, or this track's lyrics are already stored: stop
+                        // any request. (Not for "no track yet": a new ViewModel's first, empty
+                        // emission must not revoke the other ViewModel's request.)
+                        !foreground -> { lyricsRepository.prefetch(null, store = false); return@collectLatest }
+                        target == null -> return@collectLatest
+                        target.stored && target.track.lyricsFetchedAt != null -> {
+                            lyricsRepository.prefetch(null, store = false)
+                            return@collectLatest
+                        }
                     }
                     delay(PREFETCH_DWELL_MS)
                     // Build the query now, from the track as it is after the wait (a stream's
@@ -713,10 +720,14 @@ class NowPlayingViewModel @Inject constructor(
                     // `tracks` until `ensureTrackPersisted` writes one
                     // under a real autogen PK (issue #105 follow-up).
                     musicRepository.observeTrackById(id).flatMapLatest { row ->
-                        // A transient id is a hash; it can equal an unrelated row's id. A row whose
-                        // YouTube id differs from the player's isn't this track.
+                        // A transient id is videoId.hashCode(): it can equal an unrelated row's id,
+                        // so for a transient id only, a row with another YouTube id isn't this track.
+                        // A real id keeps its row even when the YouTube ids differ: a match swap or
+                        // re-match changes the row's id while the queued item keeps the old one, and
+                        // a Listen Together listener plays its own row under the host's video id.
+                        val transientId = !ytId.isNullOrBlank() && id == ytId.hashCode().toLong()
                         val sameRecording = row != null &&
-                            (ytId.isNullOrBlank() || row.youtubeId.isNullOrBlank() || row.youtubeId == ytId)
+                            (!transientId || row.youtubeId.isNullOrBlank() || row.youtubeId == ytId)
                         if (sameRecording || ytId.isNullOrBlank()) flowOf(row.takeIf { sameRecording })
                         else musicRepository.observeTrackByYoutubeId(ytId)
                     }.map { key to it } // tagged with the player key it answers for

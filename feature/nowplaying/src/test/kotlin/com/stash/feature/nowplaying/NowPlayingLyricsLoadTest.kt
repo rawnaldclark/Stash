@@ -258,9 +258,10 @@ class NowPlayingLyricsLoadTest {
     }
 
     @Test fun `a transient id equal to another row's id is not that row`() = runTest(dispatcher) {
-        // videoId.hashCode() happened to equal row 4242, a different recording.
-        rowsById[4242L] = flowOf(Track(id = 4242L, title = "Other", artist = "Someone", youtubeId = "otherVid"))
-        val stream = Track(id = 4242L, title = "POP", artist = "Lil Uzi Vert", youtubeId = "J7JXgKfBqzM")
+        // videoId.hashCode() happened to equal an existing row's id, a different recording.
+        val hashId = "J7JXgKfBqzM".hashCode().toLong()
+        rowsById[hashId] = flowOf(Track(id = hashId, title = "Other", artist = "Someone", youtubeId = "otherVid"))
+        val stream = Track(id = hashId, title = "POP", artist = "Lil Uzi Vert", youtubeId = "J7JXgKfBqzM")
         playerState.value = PlayerState(currentTrack = stream)
         val vm = newViewModel()
         settle()
@@ -298,11 +299,42 @@ class NowPlayingLyricsLoadTest {
         newViewModel(appForeground = foreground, repository = repository) // the mini player's
         newViewModel(appForeground = foreground, repository = repository) // Now Playing's
         advanceTimeBy(pastDwell)
-        withContext(Dispatchers.Default) { repeat(40) { if (stamp.value != null) return@repeat; delay(50) } }
+        withContext(Dispatchers.Default) {
+            for (i in 0 until 40) { if (stamp.value != null) break; delay(50) }
+        }
         settle()
 
         assertEquals(1, calls.get())
         coVerify(exactly = 1) { lyricsDao.upsert(any()) }
         coVerify(exactly = 1) { sidecar.write(77L, any()) }
+    }
+
+    // ── re-review ────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `a real id whose row has another YouTube id is still that library row`() = runTest(dispatcher) {
+        // A match swap (or a Listen Together listener's copy) changed the row's YouTube id while
+        // the queued item kept the old one. 42 is a real id, not "oldVid".hashCode().
+        val row = Track(
+            id = 42L, title = "Nights", artist = "Frank Ocean", youtubeId = "newVid",
+            stashLikedAt = 5L, fileFormat = "flac", lyricsFetchedAt = 1L,
+        )
+        rowsById[42L] = flowOf(row)
+        playerState.value = PlayerState(currentTrack = Track(id = 42L, title = "Nights", artist = "Frank Ocean", youtubeId = "oldVid"))
+        val vm = newViewModel()
+        settle()
+        assertEquals(true, vm.uiState.value.currentTrackStored)
+        assertEquals(5L, vm.uiState.value.currentTrack?.stashLikedAt)     // the heart
+        assertEquals("flac", vm.uiState.value.currentTrack?.fileFormat)   // the format badge
+    }
+
+    @Test fun `a new ViewModel's first empty emission doesn't revoke the other's request`() = runTest(dispatcher) {
+        val stream = Track(id = 0L, title = "POP", artist = "Lil Uzi Vert", youtubeId = "J7JXgKfBqzM")
+        playerState.value = PlayerState(currentTrack = stream)
+        newViewModel(appForeground = foreground) // the mini player's
+        advanceTimeBy(500)
+        newViewModel(appForeground = foreground) // Now Playing opens mid-dwell
+        advanceTimeBy(pastDwell)
+        verify(exactly = 0) { lyricsRepository.prefetch(null, any()) }
+        verify(atLeast = 1) { lyricsRepository.prefetch(match { it.youtubeVideoId == "J7JXgKfBqzM" }, false) }
     }
 }
