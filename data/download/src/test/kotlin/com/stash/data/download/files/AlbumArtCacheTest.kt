@@ -33,8 +33,12 @@ class AlbumArtCacheTest {
      * whatever [longSideOf] says for those bytes (default: unknown size, as for undecodable art).
      */
     private var longSideOf: (ByteArray) -> Int = { 0 }
+
+    /** Bytes the fake scaler "runs out of memory" on, as a 4000px decode might. */
+    private var outOfMemoryOn: (ByteArray) -> Boolean = { false }
     private val scaler = object : EmbedArtScaler() {
-        override suspend fun fit(bytes: ByteArray, maxPx: Int) = EmbedArtScaler.Fitted(bytes, longSideOf(bytes))
+        override suspend fun fit(bytes: ByteArray, maxPx: Int): EmbedArtScaler.Fitted? =
+            if (outOfMemoryOn(bytes)) null else EmbedArtScaler.Fitted(bytes, longSideOf(bytes))
     }
 
     @Before fun setUp() {
@@ -157,6 +161,52 @@ class AlbumArtCacheTest {
         val file = subject.resolveArt(stubTrack(albumArtUrl = LASTFM_770))
         assertEquals(listOf(LASTFM_ORIG), requests)
         assertEquals(120L, file!!.length())
+    }
+
+    // R2: one failed attempt at the bigger variant must not make the stored cover the album's
+    // embed for good.
+    @Test fun `after a transient failure the next download tries the bigger variant again`() = runTest {
+        val big = ByteArray(300) { 6 }
+        val stored = ByteArray(60) { 7 }
+        var maxCode = 503
+        val requests = mutableListOf<String>()
+        every { httpClient.newCall(any()) } answers {
+            val request = firstArg<Request>()
+            val url = request.url.toString()
+            requests += url
+            val (code, body) = if (url == QOBUZ_MAX) maxCode to big else 200 to stored
+            val call = mockk<Call>()
+            every { call.execute() } returns Response.Builder()
+                .request(request).protocol(Protocol.HTTP_1_1).code(code).message("x")
+                .body(body.toResponseBody("image/jpeg".toMediaType())).build()
+            call
+        }
+        val first = subject.resolveArt(stubTrack(albumArtUrl = QOBUZ_600))
+        assertEquals(60L, first!!.length())
+
+        maxCode = 200
+        val second = subject.resolveArt(stubTrack(albumArtUrl = QOBUZ_600))
+        assertEquals(300L, second!!.length())
+        assertEquals(listOf(QOBUZ_MAX, QOBUZ_600, QOBUZ_MAX), requests)
+    }
+
+    @Test fun `while the bigger variant keeps failing the stored cover comes from the cache`() = runTest {
+        val requests = stubUrls(mapOf(QOBUZ_MAX to (503 to ByteArray(0)), QOBUZ_600 to (200 to ByteArray(60))))
+        subject.resolveArt(stubTrack(albumArtUrl = QOBUZ_600))
+        val again = subject.resolveArt(stubTrack(albumArtUrl = QOBUZ_600))
+        assertEquals(60L, again!!.length())
+        // The big variant is retried; the stored one is not fetched twice.
+        assertEquals(listOf(QOBUZ_MAX, QOBUZ_600, QOBUZ_MAX), requests)
+    }
+
+    // R3: running out of memory shrinking the bigger variant embeds the stored cover, not nothing.
+    @Test fun `out of memory fitting the bigger variant embeds the stored cover`() = runTest {
+        val big = ByteArray(300) { 8 }
+        outOfMemoryOn = { it.size == 300 }
+        val requests = stubUrls(mapOf(QOBUZ_MAX to (200 to big), QOBUZ_600 to (200 to ByteArray(60))))
+        val file = subject.resolveArt(stubTrack(albumArtUrl = QOBUZ_600))
+        assertEquals(listOf(QOBUZ_MAX, QOBUZ_600), requests)
+        assertEquals(60L, file!!.length())
     }
 
     @Test fun `when both the bigger variant and the stored url fail there is no art`() = runTest {

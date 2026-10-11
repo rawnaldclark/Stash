@@ -29,9 +29,11 @@ import javax.inject.Singleton
  * of `_600`, Last.fm's original instead of `770x0`, Spotify's original,
  * iTunes 1200. Originals bigger than that are shrunk to [EMBED_PX] by
  * [EmbedArtScaler]. The stored URL is the floor: when the bigger variant
- * fails for any reason, or comes back with fewer pixels than the stored
- * one (a Last.fm original under its CDN's 770 rendering), the stored URL
- * is embedded instead, as before.
+ * fails for any reason (including running out of memory to shrink it), or
+ * comes back with fewer pixels than the stored one (a Last.fm original
+ * under its CDN's 770 rendering), the stored URL is embedded instead, as
+ * before. A failure caches the stored cover under its own name, so the
+ * next download from that album tries the bigger variant again.
  *
  * Lifecycle: the cache dir lives under `cacheDir/`, so Android may
  * evict files under storage pressure. If a cached file disappears
@@ -54,35 +56,49 @@ class AlbumArtCache @Inject constructor(
         val url = track.albumArtUrl?.takeIf { it.isNotBlank() } ?: return@withContext null
         val stored = canonicaliseUrl(url)
         val embed = ArtUrlSizer.forSize(stored, EMBED_PX) ?: stored
-        val cacheFile = File(fileOrganizer.getAlbumArtDir(), hashFilename(embed))
+        val embedFile = cached(embed)
+        if (embedFile.exists() && embedFile.length() > 0) return@withContext embedFile
 
-        if (cacheFile.exists() && cacheFile.length() > 0) return@withContext cacheFile
-
-        val floorPx = ArtUrlSizer.storedPx(stored)
-        val sized = if (embed != stored) {
-            load(embed)?.takeIf { floorPx == null || it.longSidePx == 0 || it.longSidePx >= floorPx }
-        } else {
-            null
+        if (embed != stored) {
+            val sized = load(embed)
+            if (sized != null) {
+                val floorPx = ArtUrlSizer.storedPx(stored)
+                if (floorPx == null || sized.longSidePx == 0 || sized.longSidePx >= floorPx) {
+                    return@withContext write(embedFile, sized)
+                }
+                // Smaller than the stored cover (a Last.fm original under its CDN's 770): that
+                // won't change, so the stored cover IS this album's embed, cached as such.
+                val floor = load(stored) ?: return@withContext null
+                return@withContext write(embedFile, floor)
+            }
+            // The bigger variant failed (5xx, timeout, out of memory): maybe only this once. Keep
+            // the stored cover under its OWN name, so the next download tries the big one again.
         }
-        val fitted = sized ?: load(stored) ?: return@withContext null
+        val storedFile = cached(stored)
+        if (storedFile.exists() && storedFile.length() > 0) return@withContext storedFile
+        val fitted = load(stored) ?: return@withContext null
+        write(storedFile, fitted)
+    }
 
-        runCatching {
-            cacheFile.writeBytes(fitted.bytes)
-            cacheFile
-        }.getOrElse { e ->
-            Log.w(TAG, "art write failed for $embed: ${e.message}")
-            cacheFile.delete()
-            null
-        }
+    private fun cached(url: String) = File(fileOrganizer.getAlbumArtDir(), hashFilename(url))
+
+    private fun write(file: File, fitted: EmbedArtScaler.Fitted): File? = runCatching {
+        file.writeBytes(fitted.bytes)
+        file
+    }.getOrElse { e ->
+        Log.w(TAG, "art write failed for ${file.name}: ${e.message}")
+        file.delete()
+        null
     }
 
     /**
-     * The cover at [url], fitted within [EMBED_PX], or null when the fetch fails. Bytes the
-     * device can't decode are embedded as fetched (as before; size unknown, so 0).
+     * The cover at [url], fitted within [EMBED_PX], or null when the fetch fails or the device
+     * ran out of memory fitting it (the caller then falls back to the smaller stored cover).
+     * Bytes the device can't decode come back as fetched (as before; size unknown, so 0).
      */
     private suspend fun load(url: String): EmbedArtScaler.Fitted? {
         val bytes = fetch(url) ?: return null
-        return scaler.fit(bytes, EMBED_PX) ?: EmbedArtScaler.Fitted(bytes, longSidePx = 0)
+        return scaler.fit(bytes, EMBED_PX)
     }
 
     /** The image bytes at [url], or null when it is not a non-empty image or the fetch fails. */
