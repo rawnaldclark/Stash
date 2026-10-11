@@ -8,6 +8,7 @@ import coil3.request.SuccessResult
 import coil3.size.Dimension
 import coil3.size.Size
 import com.stash.core.common.ArtUrlSizer
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Asks each cover's host for a variant at least as big as the request, and falls back to the
@@ -28,33 +29,50 @@ import com.stash.core.common.ArtUrlSizer
  * with the stored URL, is drawn instead when:
  *
  * - the sized-up request FAILED, for any reason: offline (the stored URL is usually in the disk
- *   cache, from the mini player and the rows), a 5xx or a 403, a timeout on a 2 MB Qobuz `_max`
- *   over a weak link. Without this, Now Playing showed an empty tile where it used to show the
- *   cached cover;
+ *   cache, from the mini player and the rows), a 5xx or a 403. Without this, Now Playing showed
+ *   an empty tile where it used to show the cached cover;
+ * - it took longer than [sizedAttemptBudgetMs]: a stalled or captive connection would otherwise
+ *   hold it for the shared client's 30s timeouts (per read, so longer on a trickle) before the
+ *   cached cover showed. A cancelled fetch writes nothing to disk, so on a link too slow for the
+ *   big variant every view draws the stored URL, which is what it always drew before;
  * - it came back with FEWER pixels than the stored URL delivers ([ArtUrlSizer.storedPx]): a
  *   Last.fm original under 770px, which the CDN's own 770 rendering resamples better than a phone
  *   stretch does (measured on a Pixel 5).
  *
+ * A cancellation of the whole load (scrolled away, track skipped) is not a failure: it
+ * propagates, and nothing falls back.
+ *
  * Registered once, in the app's ImageLoader, so every `AsyncImage` gets it with no call-site
- * change. A request can opt out with [SkipSizing].
+ * change. A request can opt out with [SkipSizing]; one that sets its own memory or disk cache key
+ * is left alone too, since both attempts would then share that one key.
  *
  * @param maxVariantPx the largest variant to pick, read per request: [ArtUrlSizer.DATA_SAVER_MAX_PX]
  *   while Android's Data Saver restricts a metered network (see [DataSaverArtCap]).
+ * @param sizedAttemptBudgetMs how long the sized-up attempt may take before the stored URL is
+ *   drawn instead.
  */
 class ArtSizeInterceptor(
     private val maxVariantPx: () -> Int = { ArtUrlSizer.NO_CAP },
+    private val sizedAttemptBudgetMs: Long = SIZED_ATTEMPT_BUDGET_MS,
 ) : Interceptor {
 
     override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
         val request = chain.request
         val data = request.data as? String ?: return chain.proceed()
         if (request.extras[SkipSizing] == true) return chain.proceed()
+        // An explicit cache key would be shared by both attempts: the stored fallback could then
+        // be cached as (or served for) the big variant. Nobody sets one today; stay out if so.
+        if (request.memoryCacheKey != null || request.diskCacheKey != null) return chain.proceed()
         val px = targetPx(chain.size) ?: return chain.proceed()
         val sized = ArtUrlSizer.forSize(data, px, maxVariantPx())
         if (sized == null || sized == data) return chain.proceed()
 
-        val result = chain.withRequest(request.newBuilder().data(sized).build()).proceed()
-        if (!shouldDrawStored(data, result)) return result
+        // withTimeoutOrNull returns null only for its own timeout; a cancellation of this load
+        // throws straight through it, so a skipped track never falls back.
+        val result = withTimeoutOrNull(sizedAttemptBudgetMs) {
+            chain.withRequest(request.newBuilder().data(sized).build()).proceed()
+        }
+        if (result != null && !shouldDrawStored(data, result)) return result
         // `chain` still carries the original request: the stored URL, keyed as the rows key it.
         return chain.proceed()
     }
@@ -65,6 +83,12 @@ class ArtSizeInterceptor(
          * palette sample that gains nothing from a bigger cover.
          */
         val SkipSizing = Extras.Key(default = false)
+
+        /**
+         * How long the bigger variant may take. ~6s is a 2 MB Qobuz `_max` at under 3 Mbit/s,
+         * yet short enough that a stalled link falls back to the cached cover quickly.
+         */
+        const val SIZED_ATTEMPT_BUDGET_MS = 6_000L
 
         /** Decoders can round a sampled size down by a pixel or two. */
         private const val ROUNDING_SLACK_PX = 2

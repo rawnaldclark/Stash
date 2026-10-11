@@ -12,8 +12,14 @@ import coil3.size.Dimension
 import coil3.size.Size
 import com.stash.core.common.ArtUrlSizer
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -43,7 +49,7 @@ class ArtSizeInterceptorTest {
     private class FakeChain(
         override val request: ImageRequest,
         override val size: Size,
-        private val respond: (ImageRequest) -> ImageResult,
+        private val respond: suspend (ImageRequest) -> ImageResult,
         val tried: MutableList<Any> = mutableListOf(),
     ) : Interceptor.Chain {
         override fun withRequest(request: ImageRequest): Interceptor.Chain = FakeChain(request, size, respond, tried)
@@ -54,11 +60,13 @@ class ArtSizeInterceptorTest {
         }
     }
 
-    private fun request(url: String, skip: Boolean = false) = ImageRequest.Builder(context)
-        .data(url)
-        .size(1024)
-        .apply { if (skip) extras[ArtSizeInterceptor.SkipSizing] = true }
-        .build()
+    private fun request(url: String, skip: Boolean = false, memoryKey: String? = null) =
+        ImageRequest.Builder(context)
+            .data(url)
+            .size(1024)
+            .memoryCacheKey(memoryKey)
+            .apply { if (skip) extras[ArtSizeInterceptor.SkipSizing] = true }
+            .build()
 
     private fun ok(r: ImageRequest, px: Int) = SuccessResult(image = FakeImage(px, px), request = r)
     private fun fail(r: ImageRequest) = ErrorResult(image = null, request = r, throwable = IOException("offline"))
@@ -68,10 +76,10 @@ class ArtSizeInterceptorTest {
         target: Int = 1024,
         skip: Boolean = false,
         cap: Int = ArtUrlSizer.NO_CAP,
-        respond: (ImageRequest) -> ImageResult,
+        respond: suspend (ImageRequest) -> ImageResult,
     ): Pair<ImageResult, List<Any>> {
         val chain = FakeChain(request(url, skip), Size(target, target), respond)
-        val result = ArtSizeInterceptor { cap }.intercept(chain)
+        val result = ArtSizeInterceptor(maxVariantPx = { cap }).intercept(chain)
         return result to chain.tried
     }
 
@@ -171,5 +179,72 @@ class ArtSizeInterceptorTest {
         assertEquals(946, ArtSizeInterceptor.targetPx(Size(946, 300)))
         assertEquals(132, ArtSizeInterceptor.targetPx(Size(Dimension(132), Dimension.Undefined)))
         assertNull(ArtSizeInterceptor.targetPx(Size.ORIGINAL))
+    }
+
+    // ── R1: a stalled bigger variant gives up after the budget; a cancelled load never retries ─
+
+    @Test
+    fun `a sized-up attempt over the time budget draws the stored url`() = runTest {
+        // A stalled or captive link: the big variant would hang for the client's 30s timeouts.
+        val (result, tried) = run(qobuz600) { r ->
+            if (r.data == qobuzMax) {
+                delay(30_000)
+                ok(r, 1024)
+            } else {
+                ok(r, 600)
+            }
+        }
+        assertEquals(listOf<Any>(qobuzMax, qobuz600), tried)
+        assertEquals(qobuz600, result.request.data)
+        // Fell back at the budget, not after the stall (virtual time).
+        assertEquals(ArtSizeInterceptor.SIZED_ATTEMPT_BUDGET_MS, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `a sized-up attempt within the budget is kept`() = runTest {
+        val (result, tried) = run(qobuz600) { r -> delay(5_000); ok(r, 1024) }
+        assertEquals(listOf<Any>(qobuzMax), tried)
+        assertEquals(qobuzMax, result.request.data)
+    }
+
+    @Test
+    fun `a cancellation thrown by the sized-up attempt propagates and nothing falls back`() = runTest {
+        val chain = FakeChain(request(qobuz600), Size(1024, 1024), { r ->
+            if (r.data == qobuzMax) throw CancellationException("track skipped") else ok(r, 600)
+        })
+        var cancelled = false
+        try {
+            ArtSizeInterceptor().intercept(chain)
+        } catch (e: CancellationException) {
+            cancelled = true
+        }
+        assertTrue(cancelled)
+        assertEquals(listOf<Any>(qobuzMax), chain.tried)
+    }
+
+    @Test
+    fun `cancelling the load while the sized-up attempt waits does not fetch the stored url`() = runTest {
+        val chain = FakeChain(request(qobuz600), Size(1024, 1024), { r ->
+            if (r.data == qobuzMax) delay(30_000)
+            ok(r, 600)
+        })
+        var finished = false
+        val load = launch {
+            ArtSizeInterceptor().intercept(chain)
+            finished = true
+        }
+        advanceTimeBy(1_000)
+        runCurrent()
+        load.cancel()
+        load.join()
+        assertFalse(finished)
+        assertEquals(listOf<Any>(qobuzMax), chain.tried)
+    }
+
+    @Test
+    fun `a request with its own cache key is left alone`() = runTest {
+        val chain = FakeChain(request(qobuz600, memoryKey = "cover"), Size(1024, 1024), { r -> ok(r, 600) })
+        ArtSizeInterceptor().intercept(chain)
+        assertEquals(listOf<Any>(qobuz600), chain.tried)
     }
 }
