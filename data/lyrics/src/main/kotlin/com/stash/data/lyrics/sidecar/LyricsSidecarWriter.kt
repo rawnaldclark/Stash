@@ -49,13 +49,16 @@ class LyricsSidecarWriter @Inject constructor(
      * Fails when both `syncedLrc`/`plainText` and `ttml` are null/blank, the track row is gone, it
      * has no [TrackEntity.filePath], or (SAF) the tree URI is unset.
      */
+    /** The track has no audio file to sit beside (it streams): [write] has nothing to do. */
+    class NoDownloadedFileException(trackId: Long) : IOException("Track $trackId has no downloaded file")
+
     suspend fun write(trackId: Long, lyrics: LyricsEntity): Unit = withContext(Dispatchers.IO) {
         val ttml = lyrics.ttml?.takeUnless(String::isBlank)
         val hasLrcBody = !(lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank())
         if (ttml == null && !hasLrcBody) fail("No lyrics body for track $trackId")
 
         val track = trackDao.getById(trackId) ?: fail("Track $trackId no longer exists")
-        val path = track.filePath ?: fail("Track $trackId has no downloaded file")
+        val path = track.filePath ?: throw NoDownloadedFileException(trackId)
 
         if (ttml != null) {
             writeSidecarFile(track, path, ttml, "ttml", TTML_MIME)

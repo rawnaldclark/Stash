@@ -13,6 +13,13 @@ import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.data.lyrics.source.LyricsResult
 import com.stash.data.lyrics.source.LyricsSource
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -23,6 +30,9 @@ enum class TtmlUpgradeResult { UPGRADED, NO_TTML, FAILED, RATE_LIMITED, SKIPPED 
 
 /** Outcome of [LyricsRepository.fetchLyricsNow] (manual "fetch lyrics" run). */
 enum class ManualFetchResult { FETCHED, NOT_FOUND, FAILED, SKIPPED }
+
+/** A finished lookup kept in memory: [result] null is a definitive miss (not a failure). */
+class CachedLyrics(val result: LyricsResult?)
 
 /**
  * Sole entrypoint for the lyrics subsystem. Both UI (Now Playing sheet)
@@ -41,6 +51,13 @@ enum class ManualFetchResult { FETCHED, NOT_FOUND, FAILED, SKIPPED }
  *   later source -> THROWS and leaves the stamp untouched, so the track stays retryable.
  *
  * Sidecar-write failure is logged but does NOT unwind the Room state.
+ *
+ * One lookup per song: every walk goes through [sharedWalk], keyed by the song (its YouTube id,
+ * else title + artist). Concurrent asks for the same song join the walk in flight, and a finished
+ * answer (hit or definitive miss, never a failure) is kept in memory for the process, bounded to
+ * [RECENT_MAX] songs. So a song asked about by Now Playing, the prefetch, a second screen, and
+ * again once a streamed track is persisted under its library id, costs one network walk. Retry and
+ * the manual library-wide fetch pass `fresh` to ask the network again.
  */
 @Singleton
 class LyricsRepository @Inject constructor(
@@ -51,6 +68,19 @@ class LyricsRepository @Inject constructor(
     private val clock: Clock,
     private val lyricsPreference: LyricsPreference,
 ) {
+
+    /** The scope shared walks run in, so a caller leaving (a closed screen) doesn't cancel them. */
+    private val walkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val walkLock = Any()
+
+    /** Walks in flight, by song key. Guarded by [walkLock]. */
+    private val inFlight = HashMap<String, Deferred<Pair<LyricsResult?, Boolean>>>()
+
+    /** Finished walks, by song key, least-recently-used first. Guarded by [walkLock]. */
+    private val recent = object : LinkedHashMap<String, CachedLyrics>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedLyrics>?): Boolean =
+            size > RECENT_MAX
+    }
 
     fun observe(trackId: Long): Flow<LyricsEntity?> = lyricsDao.observe(trackId)
 
@@ -66,8 +96,8 @@ class LyricsRepository @Inject constructor(
      * without writing a row. If any source FAILED and no later source hit, rethrows that failure
      * without stamping.
      */
-    suspend fun resolveAndStore(query: LyricsQuery): LyricsEntity? {
-        val (result, appleCleanMiss) = walkSourcesNotingApple(query)
+    suspend fun resolveAndStore(query: LyricsQuery, fresh: Boolean = false): LyricsEntity? {
+        val (result, appleCleanMiss) = sharedWalk(query, fresh)
         if (result == null) {
             trackDao.setLyricsFetchedAt(query.trackId, 0L)
             return null
@@ -101,12 +131,28 @@ class LyricsRepository @Inject constructor(
         trackDao.setLyricsFetchedAt(query.trackId, now)
         if (!result.instrumental) {
             runCatching { sidecarWriter.write(query.trackId, entity) }
-                .onFailure { e -> Log.w(TAG, "Sidecar write failed for trackId=${query.trackId}", e) }
+                .onFailure { e ->
+                    // The courtesy .lrc beside the audio: a streamed library track has no file to
+                    // sit beside, which is expected, not a failure worth a stack trace.
+                    if (e is LyricsSidecarWriter.NoDownloadedFileException) {
+                        Log.d(TAG, "No sidecar for trackId=${query.trackId}: not downloaded")
+                    } else {
+                        Log.w(TAG, "Sidecar write failed for trackId=${query.trackId}", e)
+                    }
+                }
         }
         return entity
     }
 
-    suspend fun resolveTransient(query: LyricsQuery): LyricsResult? = walkSources(query)
+    /** A lookup for a track with no library row (a stream). Shares the walk and its memory, see [sharedWalk]. */
+    suspend fun resolveTransient(query: LyricsQuery, fresh: Boolean = false): LyricsResult? =
+        sharedWalk(query, fresh).first
+
+    /**
+     * The finished answer for [query]'s song, if one is in memory: lets a screen show lyrics
+     * already in hand at once, with no Loading frame. Null when the song hasn't been looked up.
+     */
+    fun cached(query: LyricsQuery): CachedLyrics? = synchronized(walkLock) { recent[songKey(query)] }
 
     suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
 
@@ -155,7 +201,7 @@ class LyricsRepository @Inject constructor(
             youtubeVideoId = track.youtubeId,
         )
         return try {
-            if (resolveAndStore(query) != null) ManualFetchResult.FETCHED else ManualFetchResult.NOT_FOUND
+            if (resolveAndStore(query, fresh = true) != null) ManualFetchResult.FETCHED else ManualFetchResult.NOT_FOUND
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -265,9 +311,31 @@ class LyricsRepository @Inject constructor(
             sources
         }
 
-    private suspend fun walkSources(query: LyricsQuery): LyricsResult? = walkSourcesNotingApple(query).first
+    /**
+     * The one network walk per song (see the class KDoc). [fresh] skips the memory but still
+     * joins a walk already in flight for the same song. A failed walk is not remembered, so the
+     * next ask tries again.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class) // Deferred.getCompleted, read only once complete
+    private suspend fun sharedWalk(query: LyricsQuery, fresh: Boolean): Pair<LyricsResult?, Boolean> {
+        val key = songKey(query)
+        val walk = synchronized(walkLock) {
+            if (!fresh) recent[key]?.let { return it.result to false }
+            inFlight[key] ?: walkScope.async(start = CoroutineStart.LAZY) { walkSourcesNotingApple(query) }.also { deferred ->
+                // Registered before the walk starts, so even an instant answer is filed correctly.
+                inFlight[key] = deferred
+                deferred.invokeOnCompletion { failure ->
+                    synchronized(walkLock) {
+                        if (inFlight[key] === deferred) inFlight.remove(key)
+                        if (failure == null) recent[key] = CachedLyrics(deferred.getCompleted().first)
+                    }
+                }
+            }
+        }
+        return walk.await() // starts the walk if this caller created it
+    }
 
-    /** [walkSources], plus whether the Apple source was asked and cleanly returned nothing. */
+    /** Walks the active sources in order: the first hit, plus whether Apple was asked and cleanly returned nothing. */
     private suspend fun walkSourcesNotingApple(query: LyricsQuery): Pair<LyricsResult?, Boolean> {
         var firstFailure: Exception? = null
         var appleCleanMiss = false
@@ -289,5 +357,16 @@ class LyricsRepository @Inject constructor(
 
     private companion object {
         private const val TAG = "LyricsRepository"
+
+        /** Songs kept in memory: a long listening session's worth, a few KB each. */
+        private const val RECENT_MAX = 64
+
+        /**
+         * One key per song: the YouTube id when there is one (it survives a stream being
+         * persisted under a library id), else title + artist, case-folded.
+         */
+        fun songKey(query: LyricsQuery): String =
+            query.youtubeVideoId?.takeIf { it.isNotBlank() }?.let { "yt:$it" }
+                ?: "ta:${query.title.trim().lowercase()}\u0000${query.artist.trim().lowercase()}"
     }
 }
