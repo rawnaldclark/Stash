@@ -865,6 +865,25 @@ fun NowPlayingScreen(
                         // filling the middle, progress + transport at the bottom. --
                         Column(modifier = Modifier.fillMaxSize()) {
                             val displayArtist = remember(track) { track?.artist?.primaryArtist().orEmpty() }
+                            // The header reads only these settled values (not uiState itself), and
+                            // its enter/exit modifiers are remembered, so the 250ms position tick
+                            // that recomposes this screen skips the header and its marquees.
+                            val headerInk = npInk()
+                            val headerAccent = npAccent(uiState.vibrantColor)
+                            val headerLiked = uiState.currentTrack?.stashLikedAt != null
+                            val sleepTimerActive = sleepTimerState != SleepTimerController.State.Off
+                            val lyricsMenuItems = lyricsMenuItemsFor(lyricsState, lyricsSyncOffsetMs, canSaveToFile = track?.isDownloaded == true)
+                            val savingLyrics = exportingLyricsTrackId != null
+                            val rise = with(LocalDensity.current) { RiseDistance.roundToPx() }
+                            val headerTextEnter = remember(this@AnimatedContent, rise) {
+                                Modifier.animateEnterExit(enter = riseIn(rise, RISE_STAGGER_MS), exit = fadeOut(tween(MODE_FADE_OUT_MS)))
+                            }
+                            val headerActionsEnter = remember(this@AnimatedContent, rise) {
+                                Modifier.animateEnterExit(enter = riseIn(rise, RISE_STAGGER_MS * 2), exit = fadeOut(tween(MODE_FADE_OUT_MS)))
+                            }
+                            val paneEnter = remember(this@AnimatedContent, rise) {
+                                Modifier.animateEnterExit(enter = riseIn(rise, RISE_STAGGER_MS * 3), exit = fadeOut(tween(MODE_FADE_OUT_MS)))
+                            }
                             LyricsModeHeader(
                                 cover = {
                                     CompactCover(
@@ -875,43 +894,42 @@ fun NowPlayingScreen(
                                                 viewModel.onAlbumArtLoaded(bitmap)
                                             }
                                         },
-                                        onClick = viewModel::onDismissLyrics,
+                                        onClick = { viewModel.onDismissLyrics() },
                                         modifier = artShared,
                                     )
                                 },
                                 title = track?.title.orEmpty(),
                                 artist = displayArtist,
-                                ink = npInk(),
+                                ink = headerInk,
                                 modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 8.dp),
-                                textModifier = Modifier.animateEnterExit(enter = riseIn(RISE_STAGGER_MS), exit = fadeOut(tween(MODE_FADE_OUT_MS))),
-                                actionsModifier = Modifier.animateEnterExit(enter = riseIn(RISE_STAGGER_MS * 2), exit = fadeOut(tween(MODE_FADE_OUT_MS))),
+                                textModifier = headerTextEnter,
+                                actionsModifier = headerActionsEnter,
                             ) {
                                 // The sleep timer, as on the art view (and in the web's header);
                                 // accented while a timer is armed.
-                                val sleepTimerActive = sleepTimerState != SleepTimerController.State.Off
                                 IconButton(onClick = { showSleepTimerSheet = true }) {
                                     Icon(
                                         imageVector = Icons.Default.Bedtime,
                                         contentDescription = if (sleepTimerActive) "Sleep timer active" else "Set sleep timer",
-                                        tint = if (sleepTimerActive) npAccent(uiState.vibrantColor) else npInk().copy(alpha = 0.7f),
+                                        tint = if (sleepTimerActive) headerAccent else headerInk.copy(alpha = 0.7f),
                                         modifier = Modifier.size(22.dp),
                                     )
                                 }
                                 com.stash.core.ui.components.LikeButton(
-                                    isLiked = uiState.currentTrack?.stashLikedAt != null,
-                                    onTap = viewModel::onLikeTap,
-                                    unlikedTint = npInk().copy(alpha = 0.7f),
+                                    isLiked = headerLiked,
+                                    onTap = { viewModel.onLikeTap() },
+                                    unlikedTint = headerInk.copy(alpha = 0.7f),
                                     size = 26.dp,
                                 )
                                 LyricsMenuButton(
-                                    items = lyricsMenuItemsFor(lyricsState, lyricsSyncOffsetMs, canSaveToFile = track?.isDownloaded == true),
+                                    items = lyricsMenuItems,
                                     liveEnabled = liveLyricsEnabled,
-                                    onLiveToggle = viewModel::setLiveLyricsBarEnabled,
+                                    onLiveToggle = { viewModel.setLiveLyricsBarEnabled(it) },
                                     offsetMs = lyricsSyncOffsetMs ?: 0L,
-                                    onOffsetChange = viewModel::setLyricsSyncOffsetMs,
-                                    savingToFile = exportingLyricsTrackId != null,
-                                    onSaveToFile = viewModel::exportLyricsForCurrentTrack,
-                                    ink = npInk(),
+                                    onOffsetChange = { viewModel.setLyricsSyncOffsetMs(it) },
+                                    savingToFile = savingLyrics,
+                                    onSaveToFile = { viewModel.exportLyricsForCurrentTrack() },
+                                    ink = headerInk,
                                 )
                             }
                             LyricsPane(
@@ -928,7 +946,7 @@ fun NowPlayingScreen(
                                     .fillMaxWidth()
                                     .weight(1f)
                                     .padding(top = 4.dp)
-                                    .animateEnterExit(enter = riseIn(RISE_STAGGER_MS * 3), exit = fadeOut(tween(MODE_FADE_OUT_MS))),
+                                    .then(paneEnter),
                             )
                             foot(Modifier.padding(horizontal = 24.dp).then(footShared))
                             Spacer(modifier = Modifier.height(LyricsFootBottom))
@@ -1100,13 +1118,10 @@ private val ModeBounds = BoundsTransform { _, _ ->
     spring(dampingRatio = 0.9f, stiffness = 380f, visibilityThreshold = Rect.VisibilityThreshold)
 }
 
-/** Fade in while rising [RiseDistance], after [delayMs]. */
-@Composable
-private fun riseIn(delayMs: Int): EnterTransition {
-    val rise = with(LocalDensity.current) { RiseDistance.roundToPx() }
-    return fadeIn(tween(RISE_MS, delayMillis = delayMs, easing = FastOutSlowInEasing)) +
-        slideInVertically(tween(RISE_MS, delayMillis = delayMs, easing = FastOutSlowInEasing)) { rise }
-}
+/** Fade in while rising [risePx] (the px of [RiseDistance]), after [delayMs]. */
+private fun riseIn(risePx: Int, delayMs: Int): EnterTransition =
+    fadeIn(tween(RISE_MS, delayMillis = delayMs, easing = FastOutSlowInEasing)) +
+        slideInVertically(tween(RISE_MS, delayMillis = delayMs, easing = FastOutSlowInEasing)) { risePx }
 
 /**
  * Title, artist · album, the sleep timer (leading edge) and the like heart (trailing edge),

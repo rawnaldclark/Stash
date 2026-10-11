@@ -228,25 +228,17 @@ internal fun LyricsModeHeader(
         cover()
         Spacer(Modifier.width(14.dp))
         Column(modifier = textModifier.weight(1f)) {
-            Text(
-                text = title,
-                style = TextStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 20.sp),
-                color = ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // A long title or artist scrolls rather than ending in "…"; text that fits stays still.
+            NpMarqueeText(text = title, style = HeaderTitleStyle, color = ink)
             Spacer(Modifier.height(2.dp))
-            Text(
-                text = artist,
-                fontSize = 14.sp,
-                color = ink.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            NpMarqueeText(text = artist, style = HeaderArtistStyle, color = ink.copy(alpha = 0.7f))
         }
         Row(modifier = actionsModifier, verticalAlignment = Alignment.CenterVertically, content = actions)
     }
 }
+
+private val HeaderTitleStyle = TextStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+private val HeaderArtistStyle = TextStyle(fontSize = 14.sp)
 
 /** The header's cover: the web's 64px, radius 8. A tap goes back to the big art. */
 internal val CompactCoverSize = 64.dp
