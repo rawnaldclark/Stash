@@ -76,7 +76,7 @@ class NowPlayingViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
     private val losslessUpgrader: LosslessUpgrader,
-    // v0.9.36 Task 12 — lyrics sheet observes the lyrics row and may
+    // v0.9.36 Task 12 — lyrics view observes the lyrics row and may
     // enqueue a priority on-open fetch. WorkManager is sourced via
     // `WorkManager.getInstance(appContext)` to match the rest of the
     // codebase (it's not Hilt-injectable in this project).
@@ -403,7 +403,7 @@ class NowPlayingViewModel @Inject constructor(
     }
 
     // ------------------------------------------------------------------
-    // v0.9.36 Task 12 — Lyrics sheet state
+    // v0.9.36 Task 12 — lyrics view state
     // ------------------------------------------------------------------
 
     /**
@@ -426,7 +426,7 @@ class NowPlayingViewModel @Inject constructor(
 
     /**
      * Track ids with an in-flight inline lyrics resolve ([fetchLibraryLyrics]),
-     * so reopening the sheet doesn't stack duplicate fetches for the same track.
+     * so reopening the lyrics view doesn't stack duplicate fetches for the same track.
      */
     private val lyricsFetchInFlight: MutableSet<Long> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
@@ -445,13 +445,13 @@ class NowPlayingViewModel @Inject constructor(
      * the observed [com.stash.core.data.db.entity.LyricsEntity] row.
      *
      * Tracks the `currentTrack` field of [uiState] (the same field the
-     * rest of Now Playing reads) so the sheet always reflects the
+     * rest of Now Playing reads) so the lyrics view always reflects the
      * track that's currently displayed/playing — no separate "selected
      * for lyrics" state. When the track flips, [flatMapLatest] cancels
      * the old observer and subscribes to the new track's row.
      *
      * SharingStarted.WhileSubscribed(5_000) keeps the flow warm for
-     * 5 seconds after the sheet closes so a quick close+reopen doesn't
+     * 5 seconds after the lyrics view closes so a quick close+reopen doesn't
      * re-derive from scratch.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -484,7 +484,7 @@ class NowPlayingViewModel @Inject constructor(
                 // Deriving the sentinel from the captured track snapshot left the
                 // sheet stuck on Loading after a fetch finished (the stamp updated
                 // in Room but the captured value never did); watching the stamp
-                // live flips the sheet the instant the fetch completes — no
+                // live flips the lyrics view the instant the fetch completes — no
                 // close+reopen needed.
                 track.id > 0L -> combine(
                     lyricsRepository.observe(track.id),
@@ -530,16 +530,16 @@ class NowPlayingViewModel @Inject constructor(
      * cadence — same flow the [observePlayerStateLive] combine already
      * consumes, so the player only ticks once.
      *
-     * Exposed as a dedicated StateFlow so the lyrics sheet doesn't have
+     * Exposed as a dedicated StateFlow so the lyrics view doesn't have
      * to subscribe to the full [uiState] (which re-emits on every
      * heart toggle, every queue change, every album-art recolor). The
      * synced renderer only cares about the position, so this is the
      * narrower subscription that matches what it needs.
      */
     /**
-     * Raw per-track sync offset (signed ms; positive delays lyrics), for the sheet's Offset dialog
+     * Raw per-track sync offset (signed ms; positive delays lyrics), for the lyrics menu's Offset dialog
      * to show the current value. Null when there's nothing to store an offset on — a streaming
-     * track (id == 0L) or a track with no lyrics row yet — so the sheet hides its Offset button.
+     * track (id == 0L) or a track with no lyrics row yet — so the lyrics menu hides its Offset item.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     val lyricsSyncOffsetMs: StateFlow<Long?> = uiState
@@ -551,7 +551,7 @@ class NowPlayingViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
     /**
-     * Position fed to the lyrics sheet + live bar, with [lyricsSyncOffsetMs] baked in. Everything
+     * Position fed to the lyrics view + live bar, with [lyricsSyncOffsetMs] baked in. Everything
      * else (the progress bar, `onSeekTo`, etc.) keeps using the player's raw position untouched.
      */
     val currentPositionMs: StateFlow<Long> = combine(
@@ -997,13 +997,13 @@ class NowPlayingViewModel @Inject constructor(
     }
 
     // ------------------------------------------------------------------
-    // v0.9.36 — Lyrics sheet actions
+    // v0.9.36 — lyrics view actions
     // ------------------------------------------------------------------
 
     /**
      * Switch Now Playing to its lyrics view for the current track. Open-only since
      * the live-lyrics bar: fetching is the lyricsViewState chain's
-     * subscription-gated trigger's job (plus the sheet's Retry). The old
+     * subscription-gated trigger's job (plus the lyrics view's Retry). The old
      * unconditional streaming re-fetch here reset shared state to Loading —
      * with the bar consuming that same state, a bar tap would have hidden
      * the bar mid-tap.
@@ -1124,16 +1124,16 @@ class NowPlayingViewModel @Inject constructor(
     /**
      * Library-track on-open lyrics fetch. Resolves INLINE via the repository
      * (writes the Room row + stamps `lyrics_fetched_at`) instead of enqueuing a
-     * WorkManager job — the user is watching the sheet, so the fetch must not
+     * WorkManager job — the user is watching the lyrics view, so the fetch must not
      * queue behind background workers (sync/backfill/discovery), which deferred
      * the result by minutes. The [lyricsViewState] combine observes the row +
-     * stamp and flips the sheet the moment this finishes.
+     * stamp and flips the lyrics view the moment this finishes.
      *
      * Deduped per track so reopening doesn't stack duplicate resolves. [force]
      * (Retry) bypasses the in-flight guard and clears the confirmed-miss stamp
      * FIRST so the combine visibly returns to Loading while the retry runs.
      * A source failure sets [_lyricsFetchFailedTrackId] (stamp stays NULL) so
-     * the sheet renders a retryable Error instead of sticking on Loading.
+     * the lyrics view renders a retryable Error instead of sticking on Loading.
      */
     private fun fetchLibraryLyrics(track: Track, force: Boolean = false) {
         if (!force && !lyricsFetchInFlight.add(track.id)) return

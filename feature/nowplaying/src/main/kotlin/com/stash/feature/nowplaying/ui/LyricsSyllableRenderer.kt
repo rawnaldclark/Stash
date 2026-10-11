@@ -531,7 +531,7 @@ private fun InterludeDot(startMs: Long, endMs: Long, ctx: LyricsCtx, box: Dp, fo
 /**
  * Single-line word-synced text for [LiveLyricsBar]: syllables fade from 40% to full accent as they're
  * sung. (A fade, not the sweep: the bar is one ellipsized line of small text, and a sweep needs the
- * per-glyph layout the sheet uses.)
+ * per-glyph layout the lyrics view uses.)
  */
 @Composable
 internal fun WordSyncedBarLine(
