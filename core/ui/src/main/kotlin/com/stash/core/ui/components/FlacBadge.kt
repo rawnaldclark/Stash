@@ -7,6 +7,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
@@ -44,6 +46,7 @@ import androidx.compose.ui.graphics.Color
  * @param compact      When true, show the format name only (`FLAC`), dropping
  *                     the Hi-Res qualifier. Track rows use this when the full
  *                     pill would squeeze the title (see [decideTrackRowFit]).
+ *                     TalkBack still hears the full text.
  */
 @Composable
 fun FlacBadge(
@@ -56,13 +59,11 @@ fun FlacBadge(
     compact: Boolean = false,
 ) {
     if (!isLossless(fileFormat)) return
-    val text = if (compact) {
-        flacBadgeText(fileFormat, bitsPerSample = null, sampleRateHz = null)
-    } else {
-        flacBadgeText(fileFormat, bitsPerSample, sampleRateHz)
-    }
+    val fullText = flacBadgeText(fileFormat, bitsPerSample, sampleRateHz)
+    val text = if (compact) flacBadgeText(fileFormat, bitsPerSample = null, sampleRateHz = null) else fullText
     Surface(
-        modifier = modifier,
+        // A compact pill still reads in full to TalkBack ("FLAC 24/44"), not as its shortened text.
+        modifier = if (compact) modifier.clearAndSetSemantics { contentDescription = fullText } else modifier,
         color = MaterialTheme.colorScheme.tertiaryContainer,
         shape = RoundedCornerShape(4.dp),
     ) {

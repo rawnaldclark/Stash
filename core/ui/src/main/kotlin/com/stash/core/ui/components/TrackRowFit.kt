@@ -8,7 +8,7 @@ package com.stash.core.ui.components
  * - [HIDDEN]  — no pill. Last resort, only when even a compact pill would
  *               squeeze the title below its minimum share.
  */
-enum class BadgeFit { FULL, COMPACT, HIDDEN }
+internal enum class BadgeFit { FULL, COMPACT, HIDDEN }
 
 /**
  * What a track row shows in its optional slots once the space has been shared out.
@@ -16,13 +16,13 @@ enum class BadgeFit { FULL, COMPACT, HIDDEN }
  * @property showSourceLabels true = "● Spotify ● YouTube"; false = the coloured dots only.
  * @property badge how the lossless pill is drawn.
  */
-data class TrackRowFit(
+internal data class TrackRowFit(
     val showSourceLabels: Boolean,
     val badge: BadgeFit,
 )
 
 /** Everything is shown as designed. The common case on any normal-width phone. */
-val TrackRowFitDefault = TrackRowFit(showSourceLabels = true, badge = BadgeFit.FULL)
+internal val TrackRowFitDefault = TrackRowFit(showSourceLabels = true, badge = BadgeFit.FULL)
 
 /**
  * Decides how much of a track row's optional decoration fits while still
@@ -59,7 +59,7 @@ val TrackRowFitDefault = TrackRowFit(showSourceLabels = true, badge = BadgeFit.F
  * @return the first [TrackRowFit] in the give-up order that leaves the title
  *         enough room, or the most compact one if none does.
  */
-fun decideTrackRowFit(
+internal fun decideTrackRowFit(
     titleColumnWidth: Int,
     sourceLabelsExtra: Int,
     badgeFullWidth: Int,

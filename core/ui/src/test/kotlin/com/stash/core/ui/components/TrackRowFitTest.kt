@@ -97,8 +97,9 @@ class TrackRowFitTest {
     }
 
     @Test
-    fun `no labels - the pill steps aside without touching the labels flag`() {
-        // Nothing to collapse: dots-only step is skipped, compact is next.
+    fun `no labels - the dots-only step is skipped and the pill steps aside next`() {
+        // Nothing to collapse, so the dots-only step is skipped and compact is next. (Every real source
+        // has a label, so this is the pure rule's edge, not a production row.)
         assertThat(fit(column = 130, labelsExtra = 0)).isEqualTo(
             TrackRowFit(showSourceLabels = false, badge = BadgeFit.COMPACT),
         )
