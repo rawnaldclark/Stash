@@ -7,6 +7,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +30,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
@@ -46,6 +46,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
@@ -143,7 +147,8 @@ fun MiniPlayer(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = 8.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+                    // end 4 + the next slot's 6dp of spare width = the web's 10dp to the icon.
+                    .padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -209,65 +214,88 @@ fun MiniPlayer(
 
                 room?.let { MiniSessionFaces(it) }
 
-                // Up next: the queue sheet over this screen. Hidden in a Listen Together room,
-                // where the queue is the room's (as on Now Playing).
-                if (room == null) {
-                    MiniIconButton(onClick = onOpenQueue) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = "Up next",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp),
-                        )
+                // The controls keep the web's visual sizes (36 / 40 / 36, 10dp apart) inside 48dp
+                // touch slots set edge to edge: half a slot's spare width on each side makes the
+                // same 10dp visual gap, so the targets meet but never overlap.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Up next: the queue sheet over this screen. Hidden in a Listen Together room,
+                    // where the queue is the room's (as on Now Playing).
+                    if (room == null) {
+                        MiniIconButton(onClick = onOpenQueue) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = "Up next",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
                     }
-                }
 
-                // Play / pause: a 40dp circle in the album's vibrant colour, its ink on top;
-                // a spinner while the track is still resolving/buffering (e.g. a slow
-                // YouTube-fallback resolve).
-                val playPress = remember { MutableInteractionSource() }
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .pressScale(playPress)
-                        .clip(CircleShape)
-                        .drawBehind { drawRect(chrome.vib) }
-                        .clickable(
-                            interactionSource = playPress,
-                            indication = ripple(color = chrome.onVib),
-                            enabled = !uiState.isBuffering,
-                            onClick = viewModel::onPlayPauseClick,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (uiState.isBuffering) {
-                        CircularProgressIndicator(
-                            color = chrome.onVib,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(20.dp),
-                        )
+                    // Play / pause: a 40dp circle in the album's vibrant colour, its ink on top;
+                    // a spinner while the track is still resolving/buffering (e.g. a slow
+                    // YouTube-fallback resolve). One button to TalkBack: its action, and its state.
+                    val playPress = remember { MutableInteractionSource() }
+                    val playAction = if (uiState.isPlaying) "Pause" else "Play"
+                    val playState = when {
+                        uiState.isBuffering -> "Loading"
+                        uiState.isPlaying -> "Playing"
+                        else -> "Paused"
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(MiniTouchTarget)
+                            .clickable(
+                                interactionSource = playPress,
+                                indication = null,
+                                enabled = !uiState.isBuffering,
+                                role = Role.Button,
+                                onClick = viewModel::onPlayPauseClick,
+                            )
+                            .semantics {
+                                contentDescription = playAction
+                                stateDescription = playState
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .pressScale(playPress)
+                                .clip(CircleShape)
+                                .drawBehind { drawRect(chrome.vib) }
+                                .indication(playPress, ripple(color = chrome.onVib)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (uiState.isBuffering) {
+                                CircularProgressIndicator(
+                                    color = chrome.onVib,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    tint = chrome.onVib,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    // Skip next. A Listen Together listener can't skip the room's song: the slot stays, empty,
+                    // so play/pause doesn't move when the host role changes hands.
+                    if (LocalListenTogetherRole.current == ListenTogetherRole.LISTENER) {
+                        Spacer(Modifier.size(MiniTouchTarget))
                     } else {
-                        Icon(
-                            imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (uiState.isPlaying) "Pause" else "Play",
-                            tint = chrome.onVib,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
-
-                // Skip next. A Listen Together listener can't skip the room's song: the slot stays, empty,
-                // so play/pause doesn't move when the host role changes hands.
-                if (LocalListenTogetherRole.current == ListenTogetherRole.LISTENER) {
-                    Spacer(Modifier.size(36.dp))
-                } else {
-                    MiniIconButton(onClick = viewModel::onSkipNext) {
-                        Icon(
-                            imageVector = Icons.Default.SkipNext,
-                            contentDescription = "Next",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp),
-                        )
+                        MiniIconButton(onClick = viewModel::onSkipNext) {
+                            Icon(
+                                imageVector = Icons.Default.SkipNext,
+                                contentDescription = "Next",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -275,8 +303,24 @@ fun MiniPlayer(
     }
 }
 
-/** shell.css `.mini-ib`: a 36dp round icon button. */
+/** The minimum touch target for every mini player control (Material's 48dp). */
+private val MiniTouchTarget = 48.dp
+
+/**
+ * shell.css `.mini-ib`: a 36dp round icon button (its ripple), in a 48dp touch slot. The icon's
+ * contentDescription names it; the slot is announced as a button.
+ */
 @Composable
 private fun MiniIconButton(onClick: () -> Unit, content: @Composable () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) { content() }
+    Box(
+        modifier = Modifier
+            .size(MiniTouchTarget)
+            .clickable(
+                interactionSource = null,
+                indication = ripple(bounded = false, radius = 18.dp),
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
