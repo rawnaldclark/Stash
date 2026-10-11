@@ -91,8 +91,17 @@ internal fun TrackEntity.autoPlaybackUri(): Uri {
  *
  * @param mediaId defaults to the track id; browse children pass the
  *   parent-carrying AUTOQ id so a tap can queue the whole playlist.
+ * @param tileArt true only for items LISTED in Auto's browse tree: their
+ *   artwork is a tile the car fetches itself, so it gets a sized-up URL
+ *   ([autoTileArtUri]). Items that PLAY (Auto taps, shuffle, play-all,
+ *   resume, Listen Together) keep the stored URL: it is copied into the
+ *   playing track's albumArtUrl and shared with listeners, and the session
+ *   artwork loader sizes it with a fallback anyway.
  */
-internal fun TrackEntity.toAutoMediaItem(mediaId: String = id.toString()): MediaItem =
+internal fun TrackEntity.toAutoMediaItem(
+    mediaId: String = id.toString(),
+    tileArt: Boolean = false,
+): MediaItem =
     MediaItem.Builder()
         .setMediaId(mediaId)
         .setUri(autoPlaybackUri())
@@ -101,7 +110,10 @@ internal fun TrackEntity.toAutoMediaItem(mediaId: String = id.toString()): Media
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
-                .setArtworkUri(autoTileArtUri(albumArtUrl) ?: albumArtPath?.toUri())
+                .setArtworkUri(
+                    (if (tileArt) autoTileArtUri(albumArtUrl) else albumArtUrl?.toUri())
+                        ?: albumArtPath?.toUri(),
+                )
                 .setIsPlayable(true)
                 .setIsBrowsable(false)
                 .setExtras(android.os.Bundle().apply {
