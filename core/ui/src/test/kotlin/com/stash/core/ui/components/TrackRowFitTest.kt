@@ -86,6 +86,17 @@ class TrackRowFitTest {
     }
 
     @Test
+    fun `when a full fair share fits, every title width gets the default (title measuring is skipped)`() {
+        // TrackListItem measures the title only when this shortcut fails; it must never change the answer.
+        for (column in listOf(0, 40, 68, 120, 161, 200, 400)) {
+            if (fit(column = column, title = min) != TrackRowFitDefault) continue
+            for (title in listOf(0, 10, 38, 79, 80, 81, 300)) {
+                assertThat(fit(column = column, title = title)).isEqualTo(TrackRowFitDefault)
+            }
+        }
+    }
+
+    @Test
     fun `no pill - only the labels can step aside`() {
         assertThat(fit(column = 60, badgeFull = 0, badgeSmall = 0)).isEqualTo(
             TrackRowFit(showSourceLabels = false, badge = BadgeFit.FULL),

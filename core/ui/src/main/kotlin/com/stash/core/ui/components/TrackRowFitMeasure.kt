@@ -148,15 +148,20 @@ internal fun rememberTrackListItemFit(
                 SmallGap.roundToPx() + dotsWidth + labelsExtra +
                 (if (hasMoreButton) MoreButtonSize.roundToPx() else 0)
 
-            decideTrackRowFit(
+            val titleMin = TitleMinShare.roundToPx()
+            fun decide(titleWidth: Int) = decideTrackRowFit(
                 titleColumnWidth = rowWidth.roundToPx() - fixed,
                 sourceLabelsExtra = labelsExtra,
                 badgeFullWidth = badgeFull,
                 badgeCompactWidth = badgeCompact,
                 badgeGap = BadgeGap.roundToPx(),
-                titleNaturalWidth = textWidth(track.title, titleStyle),
-                titleMinWidth = TitleMinShare.roundToPx(),
+                titleNaturalWidth = titleWidth,
+                titleMinWidth = titleMin,
             )
+            // Most rows have room for a full fair share, and then the title's own width can't change the
+            // answer (a shorter title only needs less), so it is measured only for the crowded rows.
+            decide(titleWidth = titleMin).takeIf { it == TrackRowFitDefault }
+                ?: decide(textWidth(track.title, titleStyle))
         }
     }
 }
