@@ -9,8 +9,8 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 /**
- * Link Stash on the web: the sync Worker's address and the build flag, from BuildConfig (release: sync.stashfm.app, off until
- * the feature ships; debug: local.properties `sync.baseUrl`, on). `core:data` only sees [WebLinkConfig].
+ * Link Stash on the web: the sync Worker's address and the build flag, from BuildConfig (release: sync.stashfm.app, on;
+ * debug: local.properties `sync.baseUrl`, on). `core:data` only sees [WebLinkConfig].
  */
 @Module
 @InstallIn(SingletonComponent::class)

@@ -122,8 +122,8 @@
             https://stashfm.app/link#1.<pairId>.<pairSecret>.<eB.pub>, so scanning it with the phone's own camera app opens
             Stash at the confirm sheet (the secrets are in the fragment, which never reaches a server). Its own filter, apart
             from the share links', because the <data> tags of one filter combine and /link must not apply to the old
-            workers.dev host. An alias so the build flag can switch it off: release builds keep it disabled until the
-            feature ships (WEB_LINK_ENABLED, manifest placeholder webLinkEnabled).
+            workers.dev host. An alias so the build flag can switch it off (WEB_LINK_ENABLED, manifest placeholder
+            webLinkEnabled); on in release and debug builds.
         -->
         <activity-alias
             android:name=".WebLinkAlias"
