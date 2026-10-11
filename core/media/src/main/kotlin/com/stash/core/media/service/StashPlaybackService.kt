@@ -587,9 +587,23 @@ class StashPlaybackService : MediaLibraryService() {
                         // upgraded variant 404s would show art in the app (Coil
                         // walks the rungs) but none on the lock screen. Also buys
                         // the resilient DNS and connection reuse.
-                        androidx.media3.datasource.DataSourceBitmapLoader(
-                            androidx.media3.datasource.DataSourceBitmapLoader.DEFAULT_EXECUTOR_SERVICE.get(),
-                            androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient),
+                        //
+                        // SizedArtBitmapLoader asks the cover's host for a ~1024px variant
+                        // (the library often stores =w60, _600, 770…) and falls back to the
+                        // stored URL on any failure or after 6s. The decode is capped at the
+                        // same size: a Qobuz original is up to 4000px, and the session's
+                        // metadata crosses Binder.
+                        SizedArtBitmapLoader(
+                            delegate = androidx.media3.datasource.DataSourceBitmapLoader.Builder(this)
+                                .setExecutorService(
+                                    androidx.media3.datasource.DataSourceBitmapLoader.DEFAULT_EXECUTOR_SERVICE.get(),
+                                )
+                                .setDataSourceFactory(
+                                    androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient),
+                                )
+                                .setMaximumOutputDimension(SizedArtBitmapLoader.TARGET_PX)
+                                .build(),
+                            maxVariantPx = com.stash.core.common.DataSaverArtCap(this),
                         ),
                     ),
                 ),
@@ -2088,7 +2102,7 @@ class StashPlaybackService : MediaLibraryService() {
                                 MediaMetadata.Builder()
                                     .setTitle("Liked Songs")
                                     .setSubtitle(pluralize(likedCount, "track"))
-                                    .setArtworkUri(visible.firstNotNullOfOrNull { p -> p.artUrl.takeIf { p.isLikedPlaylist() } }?.toUri())
+                                    .setArtworkUri(autoTileArtUri(visible.firstNotNullOfOrNull { p -> p.artUrl.takeIf { p.isLikedPlaylist() } }))
                                     .setIsBrowsable(true)
                                     .setIsPlayable(false)
                                     .build(),
@@ -2101,7 +2115,7 @@ class StashPlaybackService : MediaLibraryService() {
                                     MediaMetadata.Builder()
                                         .setTitle(playlist.name)
                                         .setSubtitle(pluralize(playlist.trackCount, "track"))
-                                        .setArtworkUri(playlist.artUrl?.toUri())
+                                        .setArtworkUri(autoTileArtUri(playlist.artUrl))
                                         .setIsBrowsable(true)
                                         .setIsPlayable(false)
                                         .build(),

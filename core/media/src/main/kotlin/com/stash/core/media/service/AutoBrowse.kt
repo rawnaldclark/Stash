@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import com.stash.core.common.ArtUrlSizer
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
@@ -100,7 +101,7 @@ internal fun TrackEntity.toAutoMediaItem(mediaId: String = id.toString()): Media
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
-                .setArtworkUri(albumArtUrl?.toUri() ?: albumArtPath?.toUri())
+                .setArtworkUri(autoTileArtUri(albumArtUrl) ?: albumArtPath?.toUri())
                 .setIsPlayable(true)
                 .setIsBrowsable(false)
                 .setExtras(android.os.Bundle().apply {
@@ -114,3 +115,20 @@ internal fun TrackEntity.toAutoMediaItem(mediaId: String = id.toString()): Media
                 .build(),
         )
         .build()
+
+/** Long side Android Auto's browse tiles are fetched at: 512 covers a car tile at any density. */
+internal const val AUTO_TILE_PX = 512
+
+/**
+ * The artwork URI for an Android Auto browse tile: [url] sized up for a [AUTO_TILE_PX] tile (a
+ * stored `=w60` YouTube Music cover becomes `=w512`), but only to a variant every cover on its
+ * host has ([ArtUrlSizer.forSizeGuaranteed]). The car fetches tile art itself from this URI, so
+ * unlike the session artwork ([SizedArtBitmapLoader]) there is no fallback when a bigger variant
+ * is missing; a host whose bigger variant might be missing keeps the stored URL. A multi-cover
+ * mosaic (`a|b|c`) is passed through as it always was.
+ */
+internal fun autoTileArtUri(url: String?): Uri? {
+    if (url.isNullOrBlank()) return null
+    if ('|' in url) return url.toUri()
+    return (ArtUrlSizer.forSizeGuaranteed(url, AUTO_TILE_PX) ?: url).toUri()
+}
