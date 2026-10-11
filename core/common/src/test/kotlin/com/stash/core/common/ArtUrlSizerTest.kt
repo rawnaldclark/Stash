@@ -247,4 +247,17 @@ class ArtUrlSizerTest {
             "not a url at all",
         ).forEach { assertEquals(it, sized(it, 1024)) }
     }
+
+    // ── storedPx: the floor a sized Last.fm cover must not fall below ─────────────────────────
+
+    @Test
+    fun `storedPx is the stored lastfm size, and null where a bigger variant cannot be smaller`() {
+        assertEquals(770, ArtUrlSizer.storedPx("https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.jpg"))
+        assertEquals(300, ArtUrlSizer.storedPx("https://lastfm.freetls.fastly.net/i/u/300x300/abc.png"))
+        assertNull(ArtUrlSizer.storedPx("https://lastfm.freetls.fastly.net/i/u/ar0/abc.jpg"))
+        assertNull(ArtUrlSizer.storedPx("https://static.qobuz.com/images/covers/a/b/x_600.jpg"))
+        assertNull(ArtUrlSizer.storedPx("https://lh3.googleusercontent.com/abc=w544-h544"))
+        assertNull(ArtUrlSizer.storedPx(null))
+        assertNull(ArtUrlSizer.storedPx("/data/local/cover.jpg"))
+    }
 }

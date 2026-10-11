@@ -6,6 +6,7 @@ import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.stash.core.ui.util.ArtSizeFloorInterceptor
 import com.stash.core.ui.util.ArtSizeMapper
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
@@ -21,6 +22,8 @@ import okio.Path.Companion.toOkioPath
  *  - Crossfade off globally — the hero composables do their own crossfade.
  *  - [ArtSizeMapper]: a cover drawn bigger than its stored URL (Now Playing,
  *    above all) asks its host for a big enough variant; rows are untouched.
+ *    [ArtSizeFloorInterceptor] keeps the stored URL when that variant turns
+ *    out smaller (a Last.fm original under its CDN's 770 rendering).
  */
 object CoilConfiguration {
     fun build(context: PlatformContext, okHttp: OkHttpClient): ImageLoader =
@@ -38,6 +41,7 @@ object CoilConfiguration {
             }
             .components {
                 add(ArtSizeMapper())
+                add(ArtSizeFloorInterceptor())
                 add(OkHttpNetworkFetcherFactory(callFactory = { okHttp }))
             }
             .crossfade(false) // hero does its own crossfade

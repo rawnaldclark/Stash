@@ -124,6 +124,24 @@ object ArtUrlSizer {
         }
     }
 
+    /**
+     * How many pixels [url] itself is known to deliver on its long side, for the one host where
+     * the bigger variant [forSize] picks can come back SMALLER: Last.fm. Its `770x0` is the CDN's
+     * own rendering, upscaled when the original is smaller (46% of a real library's covers), and
+     * `ar0` is that original, as small as 350px. When the original turns out smaller than this,
+     * the stored URL draws better (the CDN resamples it more cleanly than a phone stretches it),
+     * so `ArtSizeFloorInterceptor` draws that instead. Null for every other host: there, a bigger
+     * variant is never smaller than the stored one (Google and iTunes cap at the original, and
+     * Qobuz `_max`, Spotify's original, YouTube maxres are at least the stored tier).
+     */
+    fun storedPx(url: String?): Int? {
+        if (url.isNullOrBlank() || !url.startsWith("http")) return null
+        val host = url.substringAfter("://").substringBefore('/').lowercase()
+        if (!(host.endsWith("freetls.fastly.net") && "lastfm" in host)) return null
+        val token = LASTFM_PATH.find(url)?.groupValues?.get(2) ?: return null
+        return lastFmTokenPx(token)?.takeIf { it != Int.MAX_VALUE }
+    }
+
     /** A size digit-run as an Int; null when it overflows (a malformed URL, left untouched). */
     private fun String.px(): Int? = toIntOrNull()
 

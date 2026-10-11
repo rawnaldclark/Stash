@@ -1,5 +1,6 @@
 package com.stash.core.ui.util
 
+import coil3.Extras
 import coil3.map.Mapper
 import coil3.request.Options
 import coil3.size.Dimension
@@ -26,6 +27,7 @@ import com.stash.core.common.ArtUrlSizer
  */
 class ArtSizeMapper : Mapper<String, String> {
     override fun map(data: String, options: Options): String? {
+        if (options.extras[SkipSizing] == true) return null
         val px = targetPx(options.size) ?: return null
         val sized = ArtUrlSizer.forSize(data, px)
         // Null tells Coil "not mine": the data goes on unchanged.
@@ -33,6 +35,12 @@ class ArtSizeMapper : Mapper<String, String> {
     }
 
     companion object {
+        /**
+         * Set on a request to draw its URL exactly as given: [ArtSizeFloorInterceptor] uses it to
+         * fall back to the stored URL when the sized-up one turned out smaller.
+         */
+        val SkipSizing = Extras.Key(default = false)
+
         /**
          * The long side of [size] in pixels, or null when the request has no real target: an
          * original-size request (nothing to size to), or one with neither side known.
