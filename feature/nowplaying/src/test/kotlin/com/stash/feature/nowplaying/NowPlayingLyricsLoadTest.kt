@@ -1,30 +1,41 @@
 package com.stash.feature.nowplaying
 
 import android.content.Context
+import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
+import com.stash.core.common.Clock
+import com.stash.core.data.db.dao.LyricsDao
+import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.LyricsEntity
+import com.stash.core.data.prefs.LyricsPreference
+import com.stash.core.data.prefs.LyricsSourcePreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
+import com.stash.data.lyrics.CachedLyrics
 import com.stash.data.lyrics.LyricsRepository
+import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
+import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.data.lyrics.source.LyricsResult
+import com.stash.data.lyrics.source.LyricsSource
 import com.stash.feature.nowplaying.ui.LyricsViewState
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import androidx.lifecycle.viewModelScope
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -34,10 +45,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * When Now Playing looks lyrics up, and that it never looks the same song up twice: the cases
- * behind "lyrics load slowly" (owner report, 2026-10-11).
+ * When Now Playing looks lyrics up, and that it never looks the same song up (or stores it)
+ * twice: the cases behind "lyrics load slowly" (owner report, 2026-10-11) and its review.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class NowPlayingLyricsLoadTest {
@@ -67,8 +79,12 @@ class NowPlayingLyricsLoadTest {
     private val lyricsRepository: LyricsRepository = mockk(relaxed = true) {
         every { cached(any()) } returns null
     }
+    private val foreground = object : AppForeground { override val foreground = flowOf(true) }
 
-    private fun newViewModel(appForeground: AppForeground = AppForeground.Never) = NowPlayingViewModel(
+    private fun newViewModel(
+        appForeground: AppForeground = AppForeground.Never,
+        repository: LyricsRepository = lyricsRepository,
+    ) = NowPlayingViewModel(
         playerRepository = mockk<PlayerRepository>(relaxed = true) {
             every { this@mockk.playerState } returns this@NowPlayingLyricsLoadTest.playerState
             every { currentPosition } returns MutableStateFlow(0L)
@@ -78,7 +94,7 @@ class NowPlayingLyricsLoadTest {
             every { mirrorFailures } returns MutableSharedFlow()
         },
         losslessUpgrader = mockk(relaxed = true),
-        lyricsRepository = lyricsRepository,
+        lyricsRepository = repository,
         lyricsPreference = mockk(relaxed = true),
         nowPlayingPreference = mockk(relaxed = true),
         lyricsSidecarWriter = mockk(relaxed = true),
@@ -95,8 +111,13 @@ class NowPlayingLyricsLoadTest {
 
     private val hit = LyricsResult("lrclib", "one two", lrc, false, null, "1")
 
-    /** Lets the lyrics chain (which runs on Dispatchers.Default) settle in real time. */
+    /** Past the prefetch's dwell (virtual time: the ViewModel's Main is the test dispatcher). */
+    private val pastDwell = 2_000L
+
+    /** Lets work on Dispatchers.Default / IO settle in real time. */
     private suspend fun settle() = withContext(Dispatchers.Default) { delay(300) }
+
+    // ── opening lyrics ───────────────────────────────────────────────────────────────────────
 
     @Test fun `opening lyrics mode on a track with lyrics loaded doesn't look them up again`() = runTest(dispatcher) {
         val track = Track(id = 42L, title = "Nights", artist = "Frank Ocean", lyricsFetchedAt = 1L)
@@ -117,7 +138,7 @@ class NowPlayingLyricsLoadTest {
             assertTrue(vm.lyricsMode.value)
             cancelAndIgnoreRemainingEvents()
         }
-        coVerify(exactly = 0) { lyricsRepository.resolveAndStore(any(), any()) }
+        coVerify(exactly = 0) { lyricsRepository.resolveAndStore(any(), any(), any()) }
         coVerify(exactly = 0) { lyricsRepository.resolveTransient(any(), any()) }
     }
 
@@ -134,7 +155,7 @@ class NowPlayingLyricsLoadTest {
             cancelAndIgnoreRemainingEvents()
         }
         coVerify(exactly = 1) { lyricsRepository.resolveTransient(any(), any()) }
-        coVerify(exactly = 0) { lyricsRepository.resolveAndStore(any(), any()) }
+        coVerify(exactly = 0) { lyricsRepository.resolveAndStore(any(), any(), any()) }
     }
 
     @Test fun `when the stream is persisted its lyrics stay on screen`() = runTest(dispatcher) {
@@ -146,7 +167,7 @@ class NowPlayingLyricsLoadTest {
         every { lyricsRepository.observe(990_459L) } returns rowFlow
         every { lyricsRepository.observeFetchedAt(990_459L) } returns stampFlow
         // The repository fills the row from its memory of the stream (LyricsRepositoryCacheTest).
-        coEvery { lyricsRepository.resolveAndStore(any(), any()) } coAnswers {
+        coEvery { lyricsRepository.resolveAndStore(any(), any(), any()) } coAnswers {
             rowFlow.value = row(990_459L)
             stampFlow.value = 2L
             row(990_459L)
@@ -164,12 +185,12 @@ class NowPlayingLyricsLoadTest {
             cancelAndIgnoreRemainingEvents()
         }
         coVerify(exactly = 1) { lyricsRepository.resolveTransient(any(), any()) }
-        coVerify(exactly = 1) { lyricsRepository.resolveAndStore(match { it.trackId == 990_459L }, any()) }
+        coVerify(exactly = 1) { lyricsRepository.resolveAndStore(match { it.trackId == 990_459L }, any(), any()) }
     }
 
     @Test fun `a lookup already in memory shows without a Loading frame`() = runTest(dispatcher) {
         val stream = Track(id = 0L, title = "POP", artist = "Lil Uzi Vert", youtubeId = "J7JXgKfBqzM")
-        every { lyricsRepository.cached(any()) } returns com.stash.data.lyrics.CachedLyrics(hit)
+        every { lyricsRepository.cached(any()) } returns CachedLyrics(hit)
         playerState.value = PlayerState(currentTrack = stream)
         val vm = newViewModel()
 
@@ -182,46 +203,106 @@ class NowPlayingLyricsLoadTest {
         coVerify(exactly = 0) { lyricsRepository.resolveTransient(any(), any()) }
     }
 
-    @Test fun `in the foreground the playing track's lyrics are fetched before Now Playing opens`() = runTest(dispatcher) {
+    // ── the prefetch ─────────────────────────────────────────────────────────────────────────
+
+    @Test fun `in the foreground the playing track is prefetched after the dwell, before Now Playing opens`() = runTest(dispatcher) {
         val stream = Track(id = 0L, title = "POP", artist = "Lil Uzi Vert", youtubeId = "J7JXgKfBqzM")
-        coEvery { lyricsRepository.resolveTransient(any(), any()) } returns hit
         playerState.value = PlayerState(currentTrack = stream)
-        newViewModel(appForeground = object : AppForeground { override val foreground = flowOf(true) })
-        settle()
-        // Nobody collects lyricsViewState: this is the prefetch alone.
-        coVerify(exactly = 1) { lyricsRepository.resolveTransient(match { it.youtubeVideoId == "J7JXgKfBqzM" }, any()) }
+        newViewModel(appForeground = foreground)
+        verify(exactly = 0) { lyricsRepository.prefetch(isNull(inverse = true), any()) } // still dwelling
+        advanceTimeBy(pastDwell)
+        verify(exactly = 1) { lyricsRepository.prefetch(match { it.youtubeVideoId == "J7JXgKfBqzM" }, false) }
+    }
+
+    @Test fun `skipping through songs within the dwell prefetches only the one played`() = runTest(dispatcher) {
+        newViewModel(appForeground = foreground)
+        for ((i, yt) in listOf("a1", "b2", "c3").withIndex()) {
+            playerState.value = PlayerState(currentTrack = Track(id = 0L, title = "Song $i", artist = "Artist", youtubeId = yt))
+            advanceTimeBy(500) // a skip every half second
+        }
+        advanceTimeBy(pastDwell)
+        verify(exactly = 1) { lyricsRepository.prefetch(isNull(inverse = true), any()) }
+        verify(exactly = 1) { lyricsRepository.prefetch(match { it.youtubeVideoId == "c3" }, false) }
     }
 
     @Test fun `in the background nothing is prefetched`() = runTest(dispatcher) {
         val stream = Track(id = 0L, title = "POP", artist = "Lil Uzi Vert", youtubeId = "J7JXgKfBqzM")
         playerState.value = PlayerState(currentTrack = stream)
         newViewModel(appForeground = object : AppForeground { override val foreground = flowOf(false) })
-        settle()
-        coVerify(exactly = 0) { lyricsRepository.resolveTransient(any(), any()) }
-        coVerify(exactly = 0) { lyricsRepository.resolveAndStore(any(), any()) }
+        advanceTimeBy(pastDwell)
+        verify(exactly = 0) { lyricsRepository.prefetch(isNull(inverse = true), any()) }
     }
 
     @Test fun `a library track already stamped is not prefetched`() = runTest(dispatcher) {
         val track = Track(id = 42L, title = "Nights", artist = "Frank Ocean", lyricsFetchedAt = 1L)
         rowsById[42L] = flowOf(track)
         playerState.value = PlayerState(currentTrack = track)
-        newViewModel(appForeground = object : AppForeground { override val foreground = flowOf(true) })
-        settle()
-        coVerify(exactly = 0) { lyricsRepository.resolveAndStore(any(), any()) }
+        newViewModel(appForeground = foreground)
+        advanceTimeBy(pastDwell)
+        verify(exactly = 0) { lyricsRepository.prefetch(isNull(inverse = true), any()) }
     }
 
     @Test fun `a library track is never looked up as a stream while Room is still answering`() = runTest(dispatcher) {
         // Room answers a moment after the player moves on; until then the track's kind is unknown.
         val row = MutableSharedFlow<Track?>()
         rowsById[42L] = row
-        val track = Track(id = 42L, title = "Attention", artist = "Ataxia", youtubeId = "WH2oeGIx39M", lyricsFetchedAt = 1L)
+        val track = Track(id = 42L, title = "Attention", artist = "Ataxia", youtubeId = "WH2oeGIx39M", lyricsFetchedAt = null)
         playerState.value = PlayerState(currentTrack = track)
-        newViewModel(appForeground = object : AppForeground { override val foreground = flowOf(true) })
+        newViewModel(appForeground = foreground)
+        advanceTimeBy(pastDwell)
+        verify(exactly = 0) { lyricsRepository.prefetch(isNull(inverse = true), any()) }
+        row.emit(track) // stored, not yet stamped: a library prefetch, never a stream one
+        advanceTimeBy(pastDwell)
+        verify(exactly = 0) { lyricsRepository.prefetch(isNull(inverse = true), false) }
+        verify(exactly = 1) { lyricsRepository.prefetch(match { it.trackId == 42L }, true) }
+    }
+
+    @Test fun `a transient id equal to another row's id is not that row`() = runTest(dispatcher) {
+        // videoId.hashCode() happened to equal row 4242, a different recording.
+        rowsById[4242L] = flowOf(Track(id = 4242L, title = "Other", artist = "Someone", youtubeId = "otherVid"))
+        val stream = Track(id = 4242L, title = "POP", artist = "Lil Uzi Vert", youtubeId = "J7JXgKfBqzM")
+        playerState.value = PlayerState(currentTrack = stream)
+        val vm = newViewModel()
         settle()
-        coVerify(exactly = 0) { lyricsRepository.resolveTransient(any(), any()) }
-        row.emit(track) // stored, already stamped: nothing to look up at all
+        assertEquals("POP", vm.uiState.value.currentTrack?.title)
+        assertEquals(false, vm.uiState.value.currentTrackStored)
+    }
+
+    // ── S1: two ViewModels, one real repository ──────────────────────────────────────────────
+
+    @Test fun `the mini player's and Now Playing's ViewModels store a library track's lyrics once`() = runTest(dispatcher) {
+        val calls = AtomicInteger()
+        val source = object : LyricsSource {
+            override val id = "lrclib"
+            override val displayName = "LRCLIB"
+            override suspend fun resolve(query: LyricsQuery): LyricsResult? { calls.incrementAndGet(); return hit }
+        }
+        val stamp = MutableStateFlow<Long?>(null)
+        val trackDao: TrackDao = mockk(relaxed = true) {
+            every { observeLyricsFetchedAt(77L) } returns stamp
+            coEvery { setLyricsFetchedAt(77L, any()) } answers { stamp.value = secondArg() }
+        }
+        val lyricsDao: LyricsDao = mockk(relaxed = true) { coEvery { this@mockk.get(any()) } returns null }
+        val sidecar: LyricsSidecarWriter = mockk(relaxed = true)
+        val preference: LyricsPreference = mockk(relaxed = true) {
+            every { sourcePreference } returns flowOf(LyricsSourcePreference.APPLE_MUSIC)
+        }
+        val repository = LyricsRepository(
+            listOf(source), lyricsDao, trackDao, sidecar,
+            object : Clock { override fun now() = 1_700_000_000_000L }, preference,
+        )
+        val track = Track(id = 77L, title = "Ain't It Fun", artist = "Paramore", youtubeId = "4c0GH34IQpw")
+        rowsById[77L] = flowOf(track)
+        playerState.value = PlayerState(currentTrack = track)
+
+        newViewModel(appForeground = foreground, repository = repository) // the mini player's
+        newViewModel(appForeground = foreground, repository = repository) // Now Playing's
+        advanceTimeBy(pastDwell)
+        withContext(Dispatchers.Default) { repeat(40) { if (stamp.value != null) return@repeat; delay(50) } }
         settle()
-        coVerify(exactly = 0) { lyricsRepository.resolveTransient(any(), any()) }
-        coVerify(exactly = 0) { lyricsRepository.resolveAndStore(any(), any()) }
+
+        assertEquals(1, calls.get())
+        coVerify(exactly = 1) { lyricsDao.upsert(any()) }
+        coVerify(exactly = 1) { sidecar.write(77L, any()) }
     }
 }
