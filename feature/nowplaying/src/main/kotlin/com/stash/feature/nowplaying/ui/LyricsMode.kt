@@ -246,6 +246,32 @@ internal fun LyricsModeHeader(
 internal val CompactCoverSize = 64.dp
 
 /**
+ * Both Now Playing covers (the big art and the compact one) decode at this one size. The
+ * ambient palette samples whichever cover loads, and AndroidX Palette's swatches depend on the
+ * pixels it gets: a 64dp decode of In Rainbows found a red "vibrant" where the full-size one
+ * found yellow, so the accent flipped each time lyrics opened or closed. One size means one
+ * cache entry, one Bitmap, one palette (the ViewModel also skips a Bitmap it has sampled).
+ */
+private const val NP_ART_DECODE_PX = 1024
+
+/**
+ * The cover request both covers use. Remembered: an inline ImageRequest.Builder is a new object
+ * every recomposition, which makes Coil re-evaluate the request each time (and Now Playing
+ * recomposes on every 250ms position tick).
+ */
+@Composable
+internal fun rememberNpArtRequest(artModel: Any?): ImageRequest {
+    val context = LocalContext.current
+    return remember(context, artModel) {
+        ImageRequest.Builder(context)
+            .data(artModel)
+            .size(NP_ART_DECODE_PX)
+            .allowHardware(false) // Required for Palette bitmap extraction.
+            .build()
+    }
+}
+
+/**
  * The compact cover. It also feeds the ambient palette when the song changes while lyrics are
  * up (the big art, the palette's usual source, isn't composed then): [onBitmapLoaded] is the
  * screen's guarded hook, which skips a cover it has already sampled.
@@ -257,12 +283,9 @@ internal fun CompactCover(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
     val missingArtColor = MaterialTheme.colorScheme.surfaceVariant
     val missingArt = remember(missingArtColor) { ColorPainter(missingArtColor) }
-    val request = remember(context, artModel) {
-        ImageRequest.Builder(context).data(artModel).allowHardware(false).build()
-    }
+    val request = rememberNpArtRequest(artModel)
     AsyncImage(
         model = request,
         contentDescription = "Album art, back to the cover",

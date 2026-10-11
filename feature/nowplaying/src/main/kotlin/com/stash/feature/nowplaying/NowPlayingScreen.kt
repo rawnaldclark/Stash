@@ -1217,15 +1217,9 @@ private fun AlbumArtSection(
     // for an error unless told otherwise, and never retries a failed URL.
     val missingArtColor = MaterialTheme.colorScheme.surfaceVariant
     val missingArt = remember(missingArtColor) { ColorPainter(missingArtColor) }
-    // remember: an inline ImageRequest.Builder is a new object every
-    // recomposition, which makes Coil re-evaluate the request each time this
-    // recomposes (and this screen recomposes on every 250ms position tick).
-    val artRequest = remember(context, artModel) {
-        ImageRequest.Builder(context)
-            .data(artModel)
-            .allowHardware(false) // Required for Palette bitmap extraction.
-            .build()
-    }
+    // Shared with lyrics mode's compact cover: one fixed decode, so both covers
+    // hand the palette the same Bitmap (see rememberNpArtRequest).
+    val artRequest = com.stash.feature.nowplaying.ui.rememberNpArtRequest(artModel)
 
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // Glow behind the artwork.

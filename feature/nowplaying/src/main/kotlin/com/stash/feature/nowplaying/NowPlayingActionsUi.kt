@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -391,7 +392,7 @@ private fun PinEditor(
             text = if (full) {
                 "The top bar is full. Unpin one to make room."
             } else {
-                "Pin up to ${NowPlayingAction.MAX_PINS} actions beside ⋮. The rest stay in this menu."
+                "Pin up to ${NowPlayingAction.MAX_PINS} actions to the top bar. The rest stay in this menu."
             },
             style = MaterialTheme.typography.bodySmall,
             color = captionColor,
@@ -403,7 +404,7 @@ private fun PinEditor(
             if (pinned.isEmpty()) {
                 item(key = "empty") {
                     Text(
-                        text = "Nothing pinned: only ⋮ shows.",
+                        text = "Nothing pinned. The top bar keeps just the menu button.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.animateItem().padding(horizontal = 20.dp, vertical = 14.dp),
@@ -428,7 +429,8 @@ private fun PinEditor(
                     }
                 }
             }
-            item(key = "foot") { Spacer(Modifier.padding(bottom = 28.dp)) }
+            // Clear of the 3-button / gesture bar, so the last row can scroll fully into view.
+            item(key = "foot") { Spacer(Modifier.navigationBarsPadding().height(28.dp)) }
         }
     }
 }
