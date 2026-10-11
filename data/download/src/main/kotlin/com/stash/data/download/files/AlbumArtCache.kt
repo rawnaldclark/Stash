@@ -1,7 +1,9 @@
 package com.stash.data.download.files
 
 import android.util.Log
+import com.stash.core.common.ArtUrlSizer
 import com.stash.core.model.Track
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -16,12 +18,20 @@ import javax.inject.Singleton
  * [MetadataEmbedder] can attach them to downloaded audio files.
  *
  * Storage: [FileOrganizer.getAlbumArtDir] (= `cacheDir/albumart/`).
- * Filenames are SHA-1 over the canonicalised `albumArtUrl` (first 16
- * hex chars + `.jpg`), so two tracks on the same album resolve to the
- * same cache file regardless of the URL's size suffix. Network /
- * decode / missing-URL failures all return `null` — embedding proceeds
- * without art. We never block a download because the art server is
- * slow.
+ * Filenames are SHA-1 over the URL actually embedded (first 16 hex chars
+ * + `.jpg`), so two tracks on the same album resolve to the same cache
+ * file regardless of the URL's size suffix. Network / decode /
+ * missing-URL failures all return `null` — embedding proceeds without
+ * art. We never block a download because the art server is slow.
+ *
+ * **Size.** The embedded cover is the host's variant for [EMBED_PX]
+ * ([ArtUrlSizer.forSize]): YouTube Music `=w1200`, Qobuz `_max` instead
+ * of `_600`, Last.fm's original instead of `770x0`, Spotify's original,
+ * iTunes 1200. Originals bigger than that are shrunk to [EMBED_PX] by
+ * [EmbedArtScaler]. The stored URL is the floor: when the bigger variant
+ * fails for any reason, or comes back with fewer pixels than the stored
+ * one (a Last.fm original under its CDN's 770 rendering), the stored URL
+ * is embedded instead, as before.
  *
  * Lifecycle: the cache dir lives under `cacheDir/`, so Android may
  * evict files under storage pressure. If a cached file disappears
@@ -31,39 +41,67 @@ import javax.inject.Singleton
 class AlbumArtCache @Inject constructor(
     private val fileOrganizer: FileOrganizer,
     private val httpClient: OkHttpClient,
+    private val scaler: EmbedArtScaler,
 ) {
     /**
      * Returns a local JPEG file for [track]'s album cover. Returns
      * null when the URL is missing, the response is non-2xx, the
      * response Content-Type isn't an image, the file body is empty,
-     * or any IO/network error fires.
+     * or any IO/network error fires (for the bigger variant AND the
+     * stored URL).
      */
     suspend fun resolveArt(track: Track): File? = withContext(Dispatchers.IO) {
         val url = track.albumArtUrl?.takeIf { it.isNotBlank() } ?: return@withContext null
-        val canonical = canonicaliseUrl(url)
-        val cacheFile = File(fileOrganizer.getAlbumArtDir(), hashFilename(canonical))
+        val stored = canonicaliseUrl(url)
+        val embed = ArtUrlSizer.forSize(stored, EMBED_PX) ?: stored
+        val cacheFile = File(fileOrganizer.getAlbumArtDir(), hashFilename(embed))
 
         if (cacheFile.exists() && cacheFile.length() > 0) return@withContext cacheFile
 
+        val floorPx = ArtUrlSizer.storedPx(stored)
+        val sized = if (embed != stored) {
+            load(embed)?.takeIf { floorPx == null || it.longSidePx == 0 || it.longSidePx >= floorPx }
+        } else {
+            null
+        }
+        val fitted = sized ?: load(stored) ?: return@withContext null
+
         runCatching {
-            httpClient.newCall(Request.Builder().url(canonical).build()).execute().use { resp ->
-                if (!resp.isSuccessful) return@use null
-                val body = resp.body ?: return@use null
-                // Prefer the body's parsed Content-Type (matches real OkHttp
-                // behaviour); fall back to the header for completeness.
-                val contentType = body.contentType()?.toString()
-                    ?: resp.header("Content-Type").orEmpty()
-                if (!contentType.startsWith("image/")) return@use null
-                val bytes = body.bytes()
-                if (bytes.isEmpty()) return@use null
-                cacheFile.writeBytes(bytes)
-                cacheFile
-            }
+            cacheFile.writeBytes(fitted.bytes)
+            cacheFile
         }.getOrElse { e ->
-            Log.w(TAG, "art fetch failed for $canonical: ${e.message}")
+            Log.w(TAG, "art write failed for $embed: ${e.message}")
             cacheFile.delete()
             null
         }
+    }
+
+    /**
+     * The cover at [url], fitted within [EMBED_PX], or null when the fetch fails. Bytes the
+     * device can't decode are embedded as fetched (as before; size unknown, so 0).
+     */
+    private suspend fun load(url: String): EmbedArtScaler.Fitted? {
+        val bytes = fetch(url) ?: return null
+        return scaler.fit(bytes, EMBED_PX) ?: EmbedArtScaler.Fitted(bytes, longSidePx = 0)
+    }
+
+    /** The image bytes at [url], or null when it is not a non-empty image or the fetch fails. */
+    private fun fetch(url: String): ByteArray? = try {
+        httpClient.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+            if (!resp.isSuccessful) return@use null
+            val body = resp.body ?: return@use null
+            // Prefer the body's parsed Content-Type (matches real OkHttp
+            // behaviour); fall back to the header for completeness.
+            val contentType = body.contentType()?.toString()
+                ?: resp.header("Content-Type").orEmpty()
+            if (!contentType.startsWith("image/")) return@use null
+            body.bytes().takeIf { it.isNotEmpty() }
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "art fetch failed for $url: ${e.message}")
+        null
     }
 
     /**
@@ -91,7 +129,10 @@ class AlbumArtCache @Inject constructor(
         return "${hex.take(16)}.jpg"
     }
 
-    private companion object {
+    companion object {
+        /** Long side of the embedded cover: the usual full-size cover (Apple's, MusicBrainz's). */
+        const val EMBED_PX = 1200
+
         private const val TAG = "AlbumArtCache"
         private val YT_MUSIC_SIZE_SUFFIX = Regex("=w\\d+-h\\d+(?:-[a-z0-9]+)*")
 
