@@ -819,37 +819,40 @@ private fun LikedTab(
 
     val listState = rememberLazyListState()
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 0.dp),
-        ) {
-            // Only offer the sift when there's more than one origin to pick between.
-            if (sift.size > 2) {
-                item {
-                    com.stash.core.ui.components.CrispChipRow(
-                        chips = sift.map { it.first },
-                        selected = sift.firstOrNull { it.second == filter }?.first ?: "All",
-                        onSelect = { label -> onSelectSource(sift.first { it.first == label }.second) },
-                        modifier = Modifier.padding(vertical = 4.dp),
+        // The rows share one width reading and text measurer (TrackListItem's fit).
+        com.stash.core.ui.components.TrackRowFitScope {
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 0.dp),
+            ) {
+                // Only offer the sift when there's more than one origin to pick between.
+                if (sift.size > 2) {
+                    item {
+                        com.stash.core.ui.components.CrispChipRow(
+                            chips = sift.map { it.first },
+                            selected = sift.firstOrNull { it.second == filter }?.first ?: "All",
+                            onSelect = { label -> onSelectSource(sift.first { it.first == label }.second) },
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    }
+                }
+                if (tracks.isEmpty()) {
+                    item { EmptyTabMessage("No liked songs yet — tap the heart on a track to like it") }
+                }
+                items(tracks, key = { it.id }) { track ->
+                    TrackListItem(
+                        track = track,
+                        onClick = {
+                            if (selection.isActive) selection.toggle(track.id)
+                            else onTrackClick(track)
+                        },
+                        isPlaying = track.id == currentlyPlayingTrackId,
+                        onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                        selectionActive = selection.isActive,
+                        selected = selection.isSelected(track.id),
+                        onMoreClick = { selectedTrack = track },
                     )
                 }
-            }
-            if (tracks.isEmpty()) {
-                item { EmptyTabMessage("No liked songs yet — tap the heart on a track to like it") }
-            }
-            items(tracks, key = { it.id }) { track ->
-                TrackListItem(
-                    track = track,
-                    onClick = {
-                        if (selection.isActive) selection.toggle(track.id)
-                        else onTrackClick(track)
-                    },
-                    isPlaying = track.id == currentlyPlayingTrackId,
-                    onLongPress = { if (!selection.isActive) selection.enter(track.id) },
-                    selectionActive = selection.isActive,
-                    selected = selection.isSelected(track.id),
-                    onMoreClick = { selectedTrack = track },
-                )
             }
         }
         VerticalScrollbar(state = listState)
@@ -1546,27 +1549,30 @@ private fun TracksTab(
 
     val listState = rememberLazyListState()
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            // While selecting, the mini-player hides (Task 7) but the bottom
-            // selection bar takes its place — pad enough that the last row clears
-            // it in either state.
-            contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 0.dp),
-        ) {
-            item { header() }
-            items(tracks, key = { it.id }) { track ->
-                TrackListItem(
-                    track = track,
-                    onClick = {
-                        if (selection.isActive) selection.toggle(track.id)
-                        else onTrackClick(track)
-                    },
-                    isPlaying = track.id == currentlyPlayingTrackId,
-                    onLongPress = { if (!selection.isActive) selection.enter(track.id) },
-                    selectionActive = selection.isActive,
-                    selected = selection.isSelected(track.id),
-                    onMoreClick = { selectedTrack = track },
-                )
+        // The rows share one width reading and text measurer (TrackListItem's fit).
+        com.stash.core.ui.components.TrackRowFitScope {
+            LazyColumn(
+                state = listState,
+                // While selecting, the mini-player hides (Task 7) but the bottom
+                // selection bar takes its place — pad enough that the last row clears
+                // it in either state.
+                contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 0.dp),
+            ) {
+                item { header() }
+                items(tracks, key = { it.id }) { track ->
+                    TrackListItem(
+                        track = track,
+                        onClick = {
+                            if (selection.isActive) selection.toggle(track.id)
+                            else onTrackClick(track)
+                        },
+                        isPlaying = track.id == currentlyPlayingTrackId,
+                        onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                        selectionActive = selection.isActive,
+                        selected = selection.isSelected(track.id),
+                        onMoreClick = { selectedTrack = track },
+                    )
+                }
             }
         }
         VerticalScrollbar(state = listState)
