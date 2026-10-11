@@ -1,5 +1,30 @@
+@file:OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
+
 package com.stash.feature.nowplaying
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.BoundsTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalDensity
+import com.stash.core.data.prefs.NowPlayingAction
+import com.stash.feature.nowplaying.ui.CompactCover
+import com.stash.feature.nowplaying.ui.LyricsMenuButton
+import com.stash.feature.nowplaying.ui.LyricsModeHeader
+import com.stash.feature.nowplaying.ui.LyricsPane
+import com.stash.feature.nowplaying.ui.lyricsMenuItemsFor
+import com.stash.feature.nowplaying.ui.npIsLight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
@@ -22,20 +47,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Radio
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.DownloadDone
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -46,10 +60,8 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.StopCircle
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.automirrored.filled.Logout
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.common.primaryArtist
@@ -77,7 +89,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
@@ -103,32 +114,9 @@ import com.stash.core.ui.theme.LocalIsAmoledTheme
 import com.stash.feature.nowplaying.ui.AmbientBackground
 import com.stash.feature.nowplaying.ui.GlowingProgressBar
 import com.stash.feature.nowplaying.ui.LiveLyricsBar
-import com.stash.feature.nowplaying.ui.LyricsBottomSheet
+import com.stash.feature.nowplaying.ui.npAccent
+import com.stash.feature.nowplaying.ui.npInk
 import com.stash.feature.nowplaying.ui.QueueBottomSheet
-
-/** Light-ground ink for the pastel-wash Now Playing (the app's plum-black). */
-private val NpInkLight = Color(0xFF241C36)
-
-/**
- * Foreground ink for the Now Playing surface: white on the dark ambient,
- * plum-black on the light pastel wash. Reads the *resolved* theme background
- * (not the system setting) so manual/AMOLED overrides pick the right ink.
- */
-@Composable
-private fun npInk(): Color =
-    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color.White else NpInkLight
-
-/**
- * Album palettes can be too pale to hold contrast on the light wash — darken
- * toward ink until they do. Dark theme passes the raw palette through.
- */
-@Composable
-private fun npAccent(raw: Color): Color =
-    if (MaterialTheme.colorScheme.background.luminance() >= 0.5f && raw.luminance() > 0.55f) {
-        lerp(raw, NpInkLight, 0.35f)
-    } else {
-        raw
-    }
 
 /**
  * Full-screen Now Playing screen with premium visual design.
@@ -168,9 +156,17 @@ fun NowPlayingScreen(
             radioLock = false
         }
     }
-    val ambientAnimationEnabled = viewModel.ambientAnimationEnabled.collectAsStateWithLifecycle().value ?: return
-    // Read with the switch above (one DataStore), so a Classic user never sees a frame of Soft glow.
-    val ambientStyle = viewModel.ambientStyle.collectAsStateWithLifecycle().value ?: return
+    // Now Playing's own prefs, all from one DataStore: wait for the three together, so a Classic
+    // user never sees a frame of Soft glow and a customised row never shows a frame of the
+    // default pins. Subscribing to all three before returning keeps the waits from chaining a
+    // frame each.
+    val ambientAnimationEnabledPref = viewModel.ambientAnimationEnabled.collectAsStateWithLifecycle().value
+    val ambientStylePref = viewModel.ambientStyle.collectAsStateWithLifecycle().value
+    val pinsPref = viewModel.pinnedActions.collectAsStateWithLifecycle().value
+    if (ambientAnimationEnabledPref == null || ambientStylePref == null || pinsPref == null) return
+    val ambientAnimationEnabled: Boolean = ambientAnimationEnabledPref
+    val ambientStyle: com.stash.core.data.prefs.AmbientStyle = ambientStylePref
+    val pins: Set<NowPlayingAction> = pinsPref
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
     var showOptionsSheet by remember { mutableStateOf(false) }
@@ -303,11 +299,10 @@ fun NowPlayingScreen(
         )
     }
 
-    // Lyrics bottom sheet — opened by tapping the LiveLyricsBar pinned at
-    // the screen's bottom edge (`onShowLyrics`); the bar and the sheet share
-    // the one subscription collected just below.
-    val showLyrics by viewModel.lyricsSheetOpen.collectAsStateWithLifecycle()
-    // Collected unconditionally (not just while the sheet is open): the bar
+    // Lyrics mode — the lyrics take the art's place on the ambient (direction A). Opened by
+    // tapping the LiveLyricsBar or the Lyrics action; Dismiss, back or the cover close it.
+    val lyricsMode by viewModel.lyricsMode.collectAsStateWithLifecycle()
+    // Collected unconditionally (not just while lyrics are up): the bar
     // needs the state, and this subscription is what arms the ViewModel's
     // WhileSubscribed fetch trigger from screen-open onward. The screen
     // already recomposes every 250ms from uiState position ticks, so the
@@ -316,23 +311,53 @@ fun NowPlayingScreen(
     val lyricsPositionMs by viewModel.currentPositionMs.collectAsStateWithLifecycle()
     val liveLyricsEnabled by viewModel.liveLyricsBarEnabled.collectAsStateWithLifecycle()
     val lyricsSyncOffsetMs by viewModel.lyricsSyncOffsetMs.collectAsStateWithLifecycle()
-    if (showLyrics) {
-        LyricsBottomSheet(
-            state = lyricsState,
-            currentPositionMs = lyricsPositionMs,
-            liveLyricsEnabled = liveLyricsEnabled,
-            onLiveLyricsToggle = viewModel::setLiveLyricsBarEnabled,
-            isPlaying = uiState.isPlaying && !uiState.isBuffering,
-            playbackSpeed = playbackSpeed,
-            onSeek = { if (!isListener) viewModel.onLyricsLineSeek(it) }, // a listener follows the room
-            canSaveToFile = track?.isDownloaded == true,
-            savingToFile = exportingLyricsTrackId != null,
-            onSaveToFile = viewModel::exportLyricsForCurrentTrack,
-            onRetry = viewModel::onLyricsRetry,
-            onDismiss = viewModel::onDismissLyrics,
-            currentOffsetMs = lyricsSyncOffsetMs,
-            onOffsetChange = viewModel::setLyricsSyncOffsetMs,
-        )
+    val reading = lyricsMode && track != null
+    androidx.activity.compose.BackHandler(enabled = reading) { viewModel.onDismissLyrics() }
+
+    // The ambient palette's source is the art Coil loads. In lyrics mode the big art isn't
+    // composed, so the compact cover reports instead — but only a cover the big art hasn't
+    // already sampled (its smaller decode is a different Bitmap, which would re-run Palette).
+    var paletteArtModel by remember { mutableStateOf<Any?>(null) }
+    val artModel: Any? = track?.albumArtPath ?: track?.albumArtUrl
+
+    // -- Actions: where each shows (pinned row or ⋮ menu) and what it does --
+    val postToCommunity = com.stash.core.ui.components.LocalPostToCommunity.current
+    val actionCtx = ActionContext(inRoom = room != null, casting = casting, communityAvailable = postToCommunity != null)
+    val visualState = ActionVisualState(
+        radioActive = radioLabel != null,
+        radioTuning = radioTuning,
+        lyricsOpen = reading,
+        together = togetherState,
+        speed = playbackSpeed,
+        isDownloaded = track?.isDownloaded == true,
+    )
+    val visual: (NowPlayingAction) -> ActionVisual = { actionVisual(it, visualState) }
+    val onAction: (NowPlayingAction) -> Unit = { action ->
+        when (action) {
+            // Start a station seeded from this song, or stop the running one; taps while tuning wait.
+            NowPlayingAction.RADIO -> when {
+                radioTuning -> Unit
+                radioLabel != null -> viewModel.stopRadio()
+                else -> viewModel.startRadioFromCurrent()
+            }
+            NowPlayingAction.LYRICS -> viewModel.onToggleLyrics()
+            NowPlayingAction.QUEUE -> showQueue = true
+            // Start, or the Session sheet (invite, leave, end) once in a room.
+            NowPlayingAction.LISTEN_TOGETHER -> when (togetherState) {
+                is ListenTogetherState.InRoom -> showSession = true
+                is ListenTogetherState.Connecting -> Unit
+                ListenTogetherState.Idle -> showStartTogether = true
+            }
+            NowPlayingAction.SAVE_TO_PLAYLIST -> showSaveSheet = true
+            NowPlayingAction.SHARE -> viewModel.onShareCurrent()
+            NowPlayingAction.POST_TO_COMMUNITY ->
+                track?.let { t -> postToCommunity?.invoke(com.stash.core.model.community.PostTarget.Song(t)) }
+            // Resolves and opens the actual remote album page.
+            NowPlayingAction.VIEW_ALBUM -> viewModel.onViewAlbumTapped()
+            NowPlayingAction.PLAYBACK_SPEED -> showSpeedSheet = true
+            NowPlayingAction.DOWNLOAD -> viewModel.toggleDownloadForCurrentTrack()
+            NowPlayingAction.FLAG_WRONG_MATCH -> showWrongMatchDialog = true
+        }
     }
 
     // Save to playlist bottom sheet
@@ -590,228 +615,15 @@ fun NowPlayingScreen(
         // The raw navigation-bar inset (never consumed by the scaffold here), so the
         // controls sit above the gesture handle or the 3-button bar and do not move
         // while the screen slides away.
+        // The raw navigation-bar inset (never consumed by the scaffold here), so the
+        // controls sit above the gesture handle or the 3-button bar and do not move
+        // while the screen slides away.
         val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-        Column(modifier = Modifier.fillMaxSize().padding(bottom = navBarInset)) {
-            // #333 v2 — the slot system. No estimated heights, no thresholds:
-            // the title/progress/controls stack is FIXED and anchors to the
-            // bottom of the column (directly above the lyrics bar when it's
-            // present), while the album art lives in a weight(1f) slot that
-            // absorbs exactly whatever height this phone/scale/bar
-            // combination leaves over. The art sizes to its slot (capped by
-            // width and the 375dp design ceiling) and centers in it, so any
-            // slack splits evenly around the art instead of pooling anywhere.
-            // Every phone renders the same anatomy, scaled — nothing clips,
-            // nothing crowds, nothing pools.
-            NowPlayingBody(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .statusBarsPadding()
-                    .padding(horizontal = 24.dp),
-                top = {
-                // -- Top bar: dismiss, radio, more (options sheet) --
-                TopBar(
-                    onDismiss = onDismiss,
-                    onMoreClick = { showOptionsSheet = true },
-                    onQueueClick = { showQueue = true },
-                    hasTrack = uiState.hasTrack,
-                    isDownloading = isDownloadingCurrent,
-                    // Radio toggle: start a station seeded from this song, or stop
-                    // the active one. Lives in the TopBar icon row (no vertical
-                    // footprint); accented while a station is running.
-                    radioActive = radioLabel != null,
-                    radioTuning = radioTuning,
-                    radioLock = radioLock,
-                    onStartRadio = viewModel::startRadioFromCurrent,
-                    onStopRadio = viewModel::stopRadio,
-                    // No radio in a session, for host or listener: the room owns the queue.
-                    showRadio = room == null,
-                    // Nor the queue: the sheet would show the user's own queue, which the room set aside.
-                    showQueueButton = room == null,
-                    accentColor = npAccent(uiState.vibrantColor),
-                    // Cast and Listen Together exclude each other (cast spec §3).
-                    castButton = {
-                        if (room == null) {
-                            com.stash.feature.nowplaying.cast.CastButton(
-                                connection = castConnection,
-                                tint = npInk(),
-                                accentColor = npAccent(uiState.vibrantColor),
-                                onClick = { showCastSheet = true },
-                            )
-                        }
-                    },
-                )
-                if (room != null) {
-                    com.stash.feature.nowplaying.listen.SessionBar(
-                        room = room,
-                        onClick = { showSession = true },
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
 
-                },
-                art = {
-                // -- Album art: NowPlayingBody sizes this slot (a square) --
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    AlbumArtSection(
-                        albumArtUrl = track?.albumArtUrl,
-                        albumArtPath = track?.albumArtPath,
-                        accentColor = npAccent(uiState.vibrantColor),
-                        onBitmapLoaded = viewModel::onAlbumArtLoaded,
-                    )
-                    if (room != null) {
-                        // "Maya joined", "Rawn skipped": over the art, so the layout never shifts.
-                        com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
-                    }
-                }
-                },
-                stack = {
-                // -- Track info -- (tap the title/artist to open the artist
-                // profile; the trailing chevron signals it's actionable, and
-                // swaps to a spinner while the artist name is being resolved).
-                // The like heart floats at the right edge (relocated out of the
-                // crowded top icon row); symmetric horizontal padding keeps the
-                // title/artist block optically centred under the album art.
-                Box(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 40.dp)
-                        .then(
-                            if (track != null) {
-                                Modifier.clickable(enabled = !resolvingArtist) {
-                                    viewModel.onTrackInfoTapped()
-                                }
-                            } else {
-                                Modifier
-                            },
-                        ),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // A long title scrolls instead of ending in "…": every
-                        // character is worth more than an ellipsis here, and the
-                        // width the format badge used to take beside it now
-                        // belongs to the title — QualityLine below already says
-                        // FLAC and the bit depth, so the badge said it twice.
-                        Text(
-                            text = track?.title ?: "Not Playing",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = npInk(),
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Clip,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .basicMarquee(iterations = Int.MAX_VALUE),
-                        )
-                        if (track != null) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            if (resolvingArtist) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = npInk(),
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    contentDescription = "Open artist",
-                                    tint = npInk().copy(alpha = 0.6f),
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(StackRhythm.TitleToArtist))
-
-                    // Collapse collaboration credits to the lead act
-                    // ("Metro Boomin, Travis Scott" → "Metro Boomin"), and
-                    // remember the split — this Text recomposes with every
-                    // player-state change.
-                    val displayArtist = remember(track) { track?.artist?.primaryArtist() }
-                    Text(
-                        text = buildString {
-                            if (track != null && displayArtist != null) {
-                                append(displayArtist)
-                                if (track.album.isNotBlank()) {
-                                    append(" \u2022 ")
-                                    append(track.album)
-                                }
-                            }
-                        },
-                        fontSize = 15.sp,
-                        color = npInk().copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                    // Sleep timer — floated to the leading edge, mirroring the
-                    // Like heart's placement on the trailing edge. Accented
-                    // while a timer is armed so the state is visible at a
-                    // glance without opening the sheet.
-                    if (track != null) {
-                        val sleepTimerActive = sleepTimerState != SleepTimerController.State.Off
-                        androidx.compose.material3.IconButton(
-                            onClick = { showSleepTimerSheet = true },
-                            modifier = Modifier
-                                .align(Alignment.CenterStart)
-                                .size(26.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Bedtime,
-                                contentDescription = if (sleepTimerActive) "Sleep timer active" else "Set sleep timer",
-                                tint = if (sleepTimerActive) npAccent(uiState.vibrantColor) else npInk().copy(alpha = 0.7f),
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
-
-                    // Like heart — the sole action left inline, floated to the
-                    // trailing edge and vertically centred against the
-                    // title/artist block. Share/Queue/Save/Download/Flag all
-                    // moved into the "More" options sheet.
-                    if (track != null) {
-                        com.stash.core.ui.components.LikeButton(
-                            isLiked = uiState.currentTrack?.stashLikedAt != null,
-                            onTap = viewModel::onLikeTap,
-                            unlikedTint = npInk().copy(alpha = 0.7f),
-                            size = 26.dp,
-                            modifier = Modifier.align(Alignment.CenterEnd),
-                        )
-                    }
-                }   
-
-                // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
-                // Sized smaller than the artist/album line; degrades gracefully when
-                // some fields are missing (returns a partial line, not nothing).
-                // When the active MediaItem is sourced from an http(s) URI (Kennyy
-                // stream rather than a local file), a small wifi glyph prefixes
-                // the line so the user knows playback is using their connection.
-                if (track != null) {
-                    val qualityText = trackQualityText(track)
-                    if (qualityText != null) {
-                        Spacer(modifier = Modifier.height(StackRhythm.ArtistToQuality))
-                        QualityLine(
-                            qualityText = qualityText,
-                            isStreaming = uiState.isStreaming,
-                        )
-                    }
-                }
-
-                if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
-
-                Spacer(modifier = Modifier.height(StackRhythm.InfoToProgress))
-
+        // -- Progress + transport: one piece, shared by both modes. In lyrics mode it glides
+        // from under the title to the bottom edge (a shared element, see ModeBounds). --
+        val foot: @Composable (Modifier) -> Unit = { footModifier ->
+            Column(modifier = footModifier.fillMaxWidth()) {
                 // -- Progress bar --
                 GlowingProgressBar(
                     progress = uiState.progressFraction,
@@ -837,61 +649,264 @@ fun NowPlayingScreen(
 
                 // -- Playback controls -- the same row for host and listener, so a role change
                 // doesn't move anything; a listener's skip slots are simply empty.
-                run {
-                    PlaybackControls(
-                        isPlaying = uiState.isPlaying,
-                        isBuffering = uiState.isBuffering,
-                        shuffleEnabled = uiState.shuffleEnabled,
-                        repeatMode = uiState.repeatMode,
-                        accentColor = npAccent(uiState.vibrantColor),
-                        onPlayPauseClick = viewModel::onPlayPauseClick,
-                        onSkipNext = viewModel::onSkipNext,
-                        onSkipPrevious = viewModel::onSkipPrevious,
-                        onToggleShuffle = viewModel::onToggleShuffle,
-                        onCycleRepeatMode = viewModel::onCycleRepeatMode,
-                        // In a session: shuffle and repeat do nothing there, so React takes their place.
-                        onReact = if (room != null) together::react else null,
-                        canSkip = !isListener,
+                PlaybackControls(
+                    isPlaying = uiState.isPlaying,
+                    isBuffering = uiState.isBuffering,
+                    shuffleEnabled = uiState.shuffleEnabled,
+                    repeatMode = uiState.repeatMode,
+                    accentColor = npAccent(uiState.vibrantColor),
+                    onPlayPauseClick = viewModel::onPlayPauseClick,
+                    onSkipNext = viewModel::onSkipNext,
+                    onSkipPrevious = viewModel::onSkipPrevious,
+                    onToggleShuffle = viewModel::onToggleShuffle,
+                    onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                    // In a session: shuffle and repeat do nothing there, so React takes their place.
+                    onReact = if (room != null) together::react else null,
+                    canSkip = !isListener,
+                )
+            }
+        }
+
+        Column(modifier = Modifier.fillMaxSize().padding(bottom = navBarInset)) {
+            // -- Top row: dismiss, then cast, the pinned actions, ⋮ and (pinned) queue. It stays
+            // put while the art and the lyrics swap beneath it. --
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                NowPlayingTopBar(
+                    row = topRowActions(pins, actionCtx),
+                    visual = visual,
+                    hasTrack = uiState.hasTrack,
+                    isDownloading = isDownloadingCurrent,
+                    radioTuning = radioTuning,
+                    radioLock = radioLock,
+                    ink = npInk(),
+                    accent = npAccent(uiState.vibrantColor),
+                    // In lyrics mode Dismiss goes back to the art, like back and the cover.
+                    dismissDescription = if (reading) "Back to the cover" else "Dismiss",
+                    onDismiss = if (reading) viewModel::onDismissLyrics else onDismiss,
+                    onMoreClick = { showOptionsSheet = true },
+                    onAction = onAction,
+                    // Cast and Listen Together exclude each other (cast spec §3).
+                    castVisible = room == null && castConnection != com.stash.core.media.cast.CastConnection.Unavailable,
+                    castButton = {
+                        com.stash.feature.nowplaying.cast.CastButton(
+                            connection = castConnection,
+                            tint = npInk(),
+                            accentColor = npAccent(uiState.vibrantColor),
+                            onClick = { showCastSheet = true },
+                        )
+                    },
+                )
+                if (room != null) {
+                    com.stash.feature.nowplaying.listen.SessionBar(
+                        room = room,
+                        onClick = { showSession = true },
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
+            }
 
-                },
-            )
+            // The art view and the lyrics view swap here. The cover shrinks from the big art
+            // into the header (and grows back), the progress + transport glide between their
+            // two homes, and the rest crossfades, the lyrics side rising 8dp in a short stagger.
+            SharedTransitionLayout(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                AnimatedContent(
+                    targetState = reading,
+                    transitionSpec = {
+                        fadeIn(tween(MODE_FADE_IN_MS, delayMillis = MODE_FADE_IN_DELAY_MS))
+                            .togetherWith(fadeOut(tween(MODE_FADE_OUT_MS)))
+                            .using(SizeTransform(clip = false))
+                    },
+                    label = "np-mode",
+                ) { showLyrics ->
+                    val artShared = Modifier.sharedElement(
+                        sharedContentState = rememberSharedContentState(ART_SHARED_KEY),
+                        animatedVisibilityScope = this@AnimatedContent,
+                        boundsTransform = ModeBounds,
+                    )
+                    val footShared = Modifier.sharedElement(
+                        sharedContentState = rememberSharedContentState(FOOT_SHARED_KEY),
+                        animatedVisibilityScope = this@AnimatedContent,
+                        boundsTransform = ModeBounds,
+                    )
+                    if (!showLyrics) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // #333 v2 — the slot system. No estimated heights, no thresholds:
+                            // the title/progress/controls stack is FIXED and anchors to the
+                            // bottom of the column (directly above the lyrics bar when it's
+                            // present), while the album art lives in a weight(1f) slot that
+                            // absorbs exactly whatever height this phone/scale/bar
+                            // combination leaves over. The art sizes to its slot (capped by
+                            // width and the 375dp design ceiling) and centers in it, so any
+                            // slack splits evenly around the art instead of pooling anywhere.
+                            // Every phone renders the same anatomy, scaled — nothing clips,
+                            // nothing crowds, nothing pools.
+                            NowPlayingBody(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .padding(horizontal = 24.dp),
+                                art = {
+                                // -- Album art: NowPlayingBody sizes this slot (a square) --
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    AlbumArtSection(
+                                        albumArtUrl = track?.albumArtUrl,
+                                        albumArtPath = track?.albumArtPath,
+                                        accentColor = npAccent(uiState.vibrantColor),
+                                        onBitmapLoaded = { bitmap ->
+                                            paletteArtModel = artModel
+                                            viewModel.onAlbumArtLoaded(bitmap)
+                                        },
+                                        modifier = artShared,
+                                    )
+                                    if (room != null) {
+                                        // "Maya joined", "Rawn skipped": over the art, so the layout never shifts.
+                                        com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
+                                    }
+                                }
+                                },
+                                stack = {
+                                // -- Track info -- (tap the title/artist to open the artist
+                                // profile; the trailing chevron signals it's actionable, and
+                                // swaps to a spinner while the artist name is being resolved).
+                                // The like heart floats at the right edge (relocated out of the
+                                // crowded top icon row); symmetric horizontal padding keeps the
+                                // title/artist block optically centred under the album art.
+                                TrackInfoBlock(
+                                    track = track,
+                                    resolvingArtist = resolvingArtist,
+                                    onTrackInfoTapped = viewModel::onTrackInfoTapped,
+                                    sleepTimerActive = sleepTimerState != SleepTimerController.State.Off,
+                                    onSleepTimerClick = { showSleepTimerSheet = true },
+                                    accent = npAccent(uiState.vibrantColor),
+                                    isLiked = uiState.currentTrack?.stashLikedAt != null,
+                                    onLikeTap = viewModel::onLikeTap,
+                                )
 
-            // Live-lyrics bar — sits exactly where the MiniPlayer is on other
-            // screens (the scaffold hides MiniPlayer on this route), directly
-            // above the nav bar. Zero-height when Hidden, so the content
-            // column keeps the full screen for lyric-less tracks.
-            LiveLyricsBar(
-                state = lyricsState,
-                currentPositionMs = lyricsPositionMs,
-                accentColor = npAccent(uiState.vibrantColor),
-                liveEnabled = liveLyricsEnabled,
-                onTap = viewModel::onShowLyrics,
-                isPlaying = uiState.isPlaying && !uiState.isBuffering,
-                playbackSpeed = playbackSpeed,
-            )
+                                // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
+                                // Sized smaller than the artist/album line; degrades gracefully when
+                                // some fields are missing (returns a partial line, not nothing).
+                                // When the active MediaItem is sourced from an http(s) URI (Kennyy
+                                // stream rather than a local file), a small wifi glyph prefixes
+                                // the line so the user knows playback is using their connection.
+                                if (track != null) {
+                                    val qualityText = trackQualityText(track)
+                                    if (qualityText != null) {
+                                        Spacer(modifier = Modifier.height(StackRhythm.ArtistToQuality))
+                                        QualityLine(
+                                            qualityText = qualityText,
+                                            isStreaming = uiState.isStreaming,
+                                        )
+                                    }
+                                }
+
+                                if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
+
+                                Spacer(modifier = Modifier.height(StackRhythm.InfoToProgress))
+
+                                foot(footShared)
+                                },
+                            )
+
+                            // Live-lyrics bar — sits exactly where the MiniPlayer is on other
+                            // screens (the scaffold hides MiniPlayer on this route), directly
+                            // above the nav bar. Zero-height when Hidden, so the content
+                            // column keeps the full screen for lyric-less tracks.
+                            LiveLyricsBar(
+                                state = lyricsState,
+                                currentPositionMs = lyricsPositionMs,
+                                accentColor = npAccent(uiState.vibrantColor),
+                                liveEnabled = liveLyricsEnabled,
+                                onTap = viewModel::onShowLyrics,
+                                isPlaying = uiState.isPlaying && !uiState.isBuffering,
+                                playbackSpeed = playbackSpeed,
+                            )
+                        }
+                    } else {
+                        // -- Lyrics mode: the web's phone layout. A compact header, the lyrics
+                        // filling the middle, progress + transport at the bottom. --
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            val displayArtist = remember(track) { track?.artist?.primaryArtist().orEmpty() }
+                            LyricsModeHeader(
+                                cover = {
+                                    CompactCover(
+                                        artModel = artModel,
+                                        onBitmapLoaded = { bitmap ->
+                                            if (artModel != paletteArtModel) {
+                                                paletteArtModel = artModel
+                                                viewModel.onAlbumArtLoaded(bitmap)
+                                            }
+                                        },
+                                        onClick = viewModel::onDismissLyrics,
+                                        modifier = artShared,
+                                    )
+                                },
+                                title = track?.title.orEmpty(),
+                                artist = displayArtist,
+                                ink = npInk(),
+                                modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 8.dp),
+                                textModifier = Modifier.animateEnterExit(enter = riseIn(RISE_STAGGER_MS), exit = fadeOut(tween(MODE_FADE_OUT_MS))),
+                                actionsModifier = Modifier.animateEnterExit(enter = riseIn(RISE_STAGGER_MS * 2), exit = fadeOut(tween(MODE_FADE_OUT_MS))),
+                            ) {
+                                com.stash.core.ui.components.LikeButton(
+                                    isLiked = uiState.currentTrack?.stashLikedAt != null,
+                                    onTap = viewModel::onLikeTap,
+                                    unlikedTint = npInk().copy(alpha = 0.7f),
+                                    size = 26.dp,
+                                )
+                                LyricsMenuButton(
+                                    items = lyricsMenuItemsFor(lyricsState, lyricsSyncOffsetMs, canSaveToFile = track?.isDownloaded == true),
+                                    liveEnabled = liveLyricsEnabled,
+                                    onLiveToggle = viewModel::setLiveLyricsBarEnabled,
+                                    offsetMs = lyricsSyncOffsetMs ?: 0L,
+                                    onOffsetChange = viewModel::setLyricsSyncOffsetMs,
+                                    savingToFile = exportingLyricsTrackId != null,
+                                    onSaveToFile = viewModel::exportLyricsForCurrentTrack,
+                                    ink = npInk(),
+                                )
+                            }
+                            LyricsPane(
+                                state = lyricsState,
+                                currentPositionMs = lyricsPositionMs,
+                                isPlaying = uiState.isPlaying && !uiState.isBuffering,
+                                playbackSpeed = playbackSpeed,
+                                onSeek = { if (!isListener) viewModel.onLyricsLineSeek(it) }, // a listener follows the room
+                                onRetry = viewModel::onLyricsRetry,
+                                ink = npInk(),
+                                accent = npAccent(uiState.vibrantColor),
+                                light = npIsLight(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .padding(top = 4.dp)
+                                    .animateEnterExit(enter = riseIn(RISE_STAGGER_MS * 3), exit = fadeOut(tween(MODE_FADE_OUT_MS))),
+                            )
+                            foot(Modifier.padding(horizontal = 24.dp).then(footShared))
+                            Spacer(modifier = Modifier.height(LyricsFootBottom))
+                        }
+                    }
+                }
+            }
         }
         if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize())
     }
 
     if (showOptionsSheet && track != null) {
-        val postToCommunity = com.stash.core.ui.components.LocalPostToCommunity.current
         NowPlayingOptionsSheet(
-            isDownloaded = track.isDownloaded,
-            onSaveClick = { showSaveSheet = true },
-            onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
-            onShareClick = viewModel::onShareCurrent,
-            onPostToCommunity = postToCommunity?.let { post -> { post(com.stash.core.model.community.PostTarget.Song(track)) } },
-            onFlagWrongMatch = { showWrongMatchDialog = true },
-            onViewAlbum = viewModel::onViewAlbumTapped,
-            // The speaker decodes while casting, so speed is the phone's no longer.
-            showSpeed = room == null && !casting,
-            speed = playbackSpeed,
-            onSpeedClick = { showSpeedSheet = true },
-            together = togetherState,
-            onStartTogether = { showStartTogether = true },
-            onOpenSession = { showSession = true },
+            menu = menuActions(pins, actionCtx),
+            editable = editableActions(pins, actionCtx),
+            pins = pins,
+            visual = visual,
+            hiddenReason = { hiddenReason(it, actionCtx) },
+            accent = npAccent(uiState.vibrantColor),
+            onAction = { action -> onAction(action); showOptionsSheet = false },
+            onTogglePin = viewModel::onTogglePin,
+            onResetPins = viewModel::onResetPins,
             onDismiss = { showOptionsSheet = false },
             sheetState = optionsSheetState,
         )
@@ -928,9 +943,9 @@ private val GapBottomMin = 12.dp
 private const val ART_COMFORT = 0.75f
 
 /**
- * Now Playing's vertical rhythm: [top] (the icon row), a square [art] slot, and the
- * [stack] (title, artist, quality, progress, controls). The top and stack take their
- * natural heights; the art gets what is left after the three gaps, capped by the
+ * Now Playing's vertical rhythm under the top row: a square [art] slot and the
+ * [stack] (title, artist, quality, progress, controls). The stack takes its
+ * natural height; the art gets what is left after the three gaps, capped by the
  * width (so it lines up with the progress bar and the controls) and [ArtMax].
  * Any height still over (a tall phone) is split evenly above the art and below the
  * controls, so the whole group sits centred with its internal spacing unchanged.
@@ -940,24 +955,21 @@ private const val ART_COMFORT = 0.75f
 @Composable
 private fun NowPlayingBody(
     modifier: Modifier = Modifier,
-    top: @Composable () -> Unit,
     art: @Composable () -> Unit,
     stack: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     androidx.compose.ui.layout.Layout(
         contents = listOf(
-            { Column(horizontalAlignment = Alignment.CenterHorizontally) { top() } },
             art,
             { Column(horizontalAlignment = Alignment.CenterHorizontally, content = stack) },
         ),
         modifier = modifier,
-    ) { (topM, artM, stackM), constraints ->
+    ) { (artM, stackM), constraints ->
         val w = constraints.maxWidth
         val h = constraints.maxHeight
         val loose = constraints.copy(minWidth = w, maxWidth = w, minHeight = 0)
-        val topP = topM.first().measure(loose)
         val stackP = stackM.first().measure(loose)
-        val avail = (h - topP.height - stackP.height).coerceAtLeast(0)
+        val avail = (h - stackP.height).coerceAtLeast(0)
 
         val full = minOf(w, ArtMax.roundToPx())
         val nominal = GapTop.roundToPx() + GapArt.roundToPx() + GapBottom.roundToPx()
@@ -974,8 +986,7 @@ private fun NowPlayingBody(
 
         val artP = artM.first().measure(androidx.compose.ui.unit.Constraints.fixed(artSide, artSide))
         layout(w, h) {
-            topP.place(0, 0)
-            val artY = topP.height + gTop + slack / 2
+            val artY = gTop + slack / 2
             artP.place((w - artSide) / 2, artY)
             stackP.place(0, artY + artSide + gArt)
         }
@@ -1013,126 +1024,172 @@ private fun Modifier.holdHeightWhileLeaving(): Modifier {
 // Private composables
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Art ↔ lyrics transition
+// ---------------------------------------------------------------------------
+
+/** Shared-element keys: the cover (big art ↔ header cover) and the progress + transport. */
+private const val ART_SHARED_KEY = "np-art"
+private const val FOOT_SHARED_KEY = "np-foot"
+
+/** The views' crossfade: out quickly, in a beat later so the shared elements lead. */
+private const val MODE_FADE_OUT_MS = 150
+private const val MODE_FADE_IN_MS = 220
+private const val MODE_FADE_IN_DELAY_MS = 90
+
+/** The lyrics side's rise (the web's 8px over 320ms), staggered by this much per piece. */
+private const val RISE_MS = 320
+private const val RISE_STAGGER_MS = 50
+private val RiseDistance = 8.dp
+
+/** Space under the transport in lyrics mode, where the live-lyrics bar sits in the art view. */
+private val LyricsFootBottom = 20.dp
+
 /**
- * Top bar: dismiss, radio toggle, a "more" kebab that opens
- * [NowPlayingOptionsSheet] (the current track's actions), and a
- * dedicated Queue button pinned to the far-right edge.
- *
- * @param onDismiss    Callback when the down-arrow is tapped.
- * @param onMoreClick  Callback when the kebab (more actions) icon is tapped.
- * @param onQueueClick Callback when the far-right Queue icon is tapped.
- * @param hasTrack     Whether a track is currently loaded.
+ * How the shared cover and transport move: a soft spring (the web's 420ms cover spring),
+ * settling without a visible bounce.
+ */
+private val ModeBounds = BoundsTransform { _, _ ->
+    spring(dampingRatio = 0.9f, stiffness = 380f, visibilityThreshold = Rect.VisibilityThreshold)
+}
+
+/** Fade in while rising [RiseDistance], after [delayMs]. */
+@Composable
+private fun riseIn(delayMs: Int): EnterTransition {
+    val rise = with(LocalDensity.current) { RiseDistance.roundToPx() }
+    return fadeIn(tween(RISE_MS, delayMillis = delayMs, easing = FastOutSlowInEasing)) +
+        slideInVertically(tween(RISE_MS, delayMillis = delayMs, easing = FastOutSlowInEasing)) { rise }
+}
+
+/**
+ * Title, artist · album, the sleep timer (leading edge) and the like heart (trailing edge),
+ * under the big art. Tap the title/artist to open the artist profile; the trailing chevron
+ * signals it's actionable, and swaps to a spinner while the artist name is being resolved.
+ * Symmetric horizontal padding keeps the title/artist block optically centred under the art.
  */
 @Composable
-private fun TopBar(
-    onDismiss: () -> Unit,
-    onMoreClick: () -> Unit,
-    onQueueClick: () -> Unit,
-    hasTrack: Boolean,
-    isDownloading: Boolean,
-    radioActive: Boolean,
-    radioTuning: Boolean,
-    radioLock: Boolean,
-    onStartRadio: () -> Unit,
-    onStopRadio: () -> Unit,
-    showRadio: Boolean,
-    showQueueButton: Boolean,
-    accentColor: Color,
-    castButton: @Composable () -> Unit,
+private fun TrackInfoBlock(
+    track: com.stash.core.model.Track?,
+    resolvingArtist: Boolean,
+    onTrackInfoTapped: () -> Unit,
+    sleepTimerActive: Boolean,
+    onSleepTimerClick: () -> Unit,
+    accent: Color,
+    isLiked: Boolean,
+    onLikeTap: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onDismiss) {
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = "Dismiss",
-                tint = npInk(),
-                modifier = Modifier.size(28.dp),
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 40.dp)
+                .then(
+                    if (track != null) {
+                        Modifier.clickable(enabled = !resolvingArtist) { onTrackInfoTapped() }
+                    } else {
+                        Modifier
+                    },
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // A long title scrolls instead of ending in "…": every
+                // character is worth more than an ellipsis here, and the
+                // width the format badge used to take beside it now
+                // belongs to the title — QualityLine below already says
+                // FLAC and the bit depth, so the badge said it twice.
+                Text(
+                    text = track?.title ?: "Not Playing",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = npInk(),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .basicMarquee(iterations = Int.MAX_VALUE),
+                )
+                if (track != null) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    if (resolvingArtist) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = npInk(),
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Open artist",
+                            tint = npInk().copy(alpha = 0.6f),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(StackRhythm.TitleToArtist))
+
+            // Collapse collaboration credits to the lead act
+            // ("Metro Boomin, Travis Scott" → "Metro Boomin"), and
+            // remember the split — this Text recomposes with every
+            // player-state change.
+            val displayArtist = remember(track) { track?.artist?.primaryArtist() }
+            Text(
+                text = buildString {
+                    if (track != null && displayArtist != null) {
+                        append(displayArtist)
+                        if (track.album.isNotBlank()) {
+                            append(" • ")
+                            append(track.album)
+                        }
+                    }
+                },
+                fontSize = 15.sp,
+                color = npInk().copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        // Cast — left of Radio. Draws nothing where Cast isn't available.
-        if (hasTrack) castButton()
-
-        // Radio toggle — start a station from the current song, or stop the
-        // running one. Accent tint signals an active station; the radar sweep
-        // spins around the icon while the station is being built.
-        if (hasTrack && showRadio) {
-            Box(contentAlignment = Alignment.Center) {
-                com.stash.feature.nowplaying.ui.RadarSweep(
-                    tuning = radioTuning,
-                    lock = radioLock,
-                    color = accentColor,
-                    modifier = Modifier.matchParentSize(),
+        // Sleep timer — floated to the leading edge, mirroring the
+        // Like heart's placement on the trailing edge. Accented
+        // while a timer is armed so the state is visible at a
+        // glance without opening the sheet.
+        if (track != null) {
+            IconButton(
+                onClick = onSleepTimerClick,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .size(26.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Bedtime,
+                    contentDescription = if (sleepTimerActive) "Sleep timer active" else "Set sleep timer",
+                    tint = if (sleepTimerActive) accent else npInk().copy(alpha = 0.7f),
+                    modifier = Modifier.size(20.dp),
                 )
-                IconButton(
-                    onClick = {
-                        when {
-                            radioTuning -> Unit // ignore taps while tuning
-                            radioActive -> onStopRadio()
-                            else -> onStartRadio()
-                        }
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Radio,
-                        contentDescription = when {
-                            radioTuning -> "Tuning radio"
-                            radioActive -> "Stop radio"
-                            else -> "Start radio"
-                        },
-                        tint = if (radioActive || radioTuning) accentColor else npInk(),
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
             }
         }
 
-        // More actions — opens the options sheet (Save, Share, Speed, Download,
-        // Flag, View Album). While a download is in flight a spinner replaces
-        // the icon so it isn't a silent background job.
-        if (hasTrack) {
-            if (isDownloading) {
-                Box(
-                    modifier = Modifier.size(48.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        strokeWidth = 2.5.dp,
-                        color = npInk(),
-                    )
-                }
-            } else {
-                IconButton(onClick = onMoreClick) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More actions",
-                        tint = npInk(),
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-
-            // Queue — a permanent, dedicated control at the far-right edge
-            // (not buried in the options sheet); it's the one action users
-            // reach for constantly while a song is playing.
-            if (showQueueButton) {
-                IconButton(onClick = onQueueClick) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                        contentDescription = "Queue",
-                        tint = npInk(),
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
+        // Like heart — floated to the trailing edge and vertically centred
+        // against the title/artist block. The track's other actions live in
+        // the top row (pinned) or the ⋮ menu.
+        if (track != null) {
+            com.stash.core.ui.components.LikeButton(
+                isLiked = isLiked,
+                onTap = onLikeTap,
+                unlikedTint = npInk().copy(alpha = 0.7f),
+                size = 26.dp,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
         }
     }
 }
@@ -1150,6 +1207,7 @@ private fun AlbumArtSection(
     albumArtPath: String?,
     accentColor: Color,
     onBitmapLoaded: (android.graphics.Bitmap?) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val artModel = albumArtPath ?: albumArtUrl
@@ -1169,7 +1227,7 @@ private fun AlbumArtSection(
             .build()
     }
 
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // Glow behind the artwork.
         Box(
             modifier = Modifier
@@ -1414,142 +1472,6 @@ private fun QualityLine(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
-    }
-}
-
-/**
- * Premium track options bottom sheet, opened via the [TopBar]'s "more"
- * kebab icon. Consolidates the current track's actions. Queue
- * is NOT here — it has its own permanent icon at the TopBar's far right, next
- * to Dismiss and Radio.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun NowPlayingOptionsSheet(
-    isDownloaded: Boolean,
-    onSaveClick: () -> Unit,
-    onDownloadTap: () -> Unit,
-    onShareClick: () -> Unit,
-    onPostToCommunity: (() -> Unit)?,
-    onFlagWrongMatch: () -> Unit,
-    onViewAlbum: () -> Unit,
-    showSpeed: Boolean,
-    speed: Float,
-    onSpeedClick: () -> Unit,
-    together: ListenTogetherState,
-    onStartTogether: () -> Unit,
-    onOpenSession: () -> Unit,
-    onDismiss: () -> Unit,
-    sheetState: androidx.compose.material3.SheetState,
-    modifier: Modifier = Modifier,
-) {
-    val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = extendedColors.elevatedSurface,
-        modifier = modifier,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 36.dp),
-        ) {
-            Text(
-                text = "Track Options",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .padding(bottom = 20.dp)
-                    .align(Alignment.CenterHorizontally)
-            )
-
-            // Listen Together: Start, or the Session sheet (invite, leave, end) once in a room.
-            when (together) {
-                is ListenTogetherState.InRoom ->
-                    SheetOptionRow(icon = Icons.Default.Groups, label = "Listening together", onClick = { onOpenSession(); onDismiss() })
-                is ListenTogetherState.Connecting -> SheetOptionRow(icon = Icons.Default.Groups, label = "Connecting…", onClick = onDismiss)
-                ListenTogetherState.Idle -> SheetOptionRow(icon = Icons.Default.Groups, label = "Listen together", onClick = { onStartTogether(); onDismiss() })
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Save to Playlist
-            SheetOptionRow(
-                icon = Icons.Default.BookmarkBorder,
-                label = "Save to Playlist",
-                onClick = {
-                    onSaveClick()
-                    onDismiss()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Share song
-            SheetOptionRow(
-                icon = Icons.Default.Share,
-                label = "Share song",
-                onClick = {
-                    onShareClick()
-                    onDismiss()
-                }
-            )
-
-            // Post to Community (only while Community is on)
-            if (onPostToCommunity != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                SheetOptionRow(
-                    icon = Icons.Default.Public,
-                    label = "Post to Community",
-                    onClick = { onPostToCommunity(); onDismiss() },
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // View Album — resolves and opens the actual remote album page,
-            SheetOptionRow(
-                icon = Icons.Default.Album,
-                label = "View Album",
-                onClick = { onViewAlbum(); onDismiss() }
-            )
-
-            // Playback speed — opens the speed picker. Shows the speed when it isn't 1x.
-            // Not in a Listen Together session: the room keeps everyone in sync.
-            if (showSpeed) {
-                Spacer(modifier = Modifier.height(8.dp))
-                SheetOptionRow(
-                    icon = Icons.Default.Speed,
-                    label = if (speed == 1f) "Playback speed" else "Playback speed · ${formatSpeed(speed)}",
-                    onClick = { onSpeedClick(); onDismiss() },
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Download / Remove download
-            SheetOptionRow(
-                icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                label = if (isDownloaded) "Remove download" else "Download",
-                onClick = {
-                    onDownloadTap()
-                    onDismiss()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Flag as Wrong Match
-            SheetOptionRow(
-                icon = Icons.Default.Flag,
-                label = "Flag as Wrong Match",
-                onClick = {
-                    onFlagWrongMatch()
-                    onDismiss()
-                }
-            )
-        }
     }
 }
 

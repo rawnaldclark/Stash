@@ -1,239 +1,229 @@
 package com.stash.feature.nowplaying.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.data.lyrics.parser.LrcLine
-import com.stash.data.lyrics.parser.TtmlLyrics
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
 
-/**
- * v0.9.36 Task 12 — renderers for the lyrics sheet.
- *
- * The sheet wrapper ([LyricsBottomSheet]) dispatches into one of these
- * composables based on [LyricsViewState]. Kept separate from the sheet
- * so the synced renderer's auto-scroll + tap-to-seek behaviour can be
- * tested visually (and, in future, swapped for a different presentation
- * without touching the sheet wiring).
+/*
+ * Renderers for Now Playing's lyrics mode. [LyricsPane] picks one per [LyricsBody]: word-synced
+ * lines go to [LyricsSyllableRenderer], line-synced ones to [LyricsLineRenderer], unsynced text
+ * to [LyricsPlainRenderer]. They draw straight on the ambient, in [LyricsLook]'s inks.
  */
 
 /**
- * Auto-scrolling LRC renderer. Centers the current line, dims surrounding
- * lines, taps to seek. Pauses auto-scroll for 5 seconds after the user
- * drags the list — without that grace period the auto-scroll fights any
- * attempt to look ahead/behind the playing line.
- *
- * The "current line" is the latest line whose timestamp is `<= positionMs`,
- * computed via [derivedStateOf] so we only recompose when the index
- * actually flips (typical position ticks at 250ms produce a flip every
- * line — usually a few seconds — not every tick).
+ * How the lyrics look, resolved once per size and theme by [LyricsPane]: the web player's
+ * scale (Space Grotesk 700 at [fontSize], a 1.7em line pitch) in Now Playing's ink rather than
+ * colorScheme.onSurface.
  */
-@Composable
-fun LyricsSyncedRenderer(
-    lines: List<LrcLine>,
-    currentPositionMs: Long,
-    onLineTap: (Long) -> Unit,
-    modifier: Modifier = Modifier,
-    /** Non-null when word-synced TTML is available: renders per-syllable instead of per-line. */
-    syllables: TtmlLyrics? = null,
-    /** Playback state, so the word-synced clock stops extrapolating while paused/buffering. */
-    isPlaying: Boolean = true,
-    /** So the word-synced clock runs at the song's pace between position ticks. */
-    playbackSpeed: Float = 1f,
+@Immutable
+internal data class LyricsLook(
+    val fontSize: TextUnit,
+    /** A sung or live word. */
+    val bright: Color,
+    /** A word not reached yet. */
+    val dim: Color,
+    /** Full ink, for the interlude dots. */
+    val ink: Color,
+    val sidePadding: Dp,
+    /** Half the space between two lines (0.2em, so lines pitch at 1.7em). */
+    val lineGap: Dp,
+    /** Where the live line's top sits, from the top of the lyrics area. */
+    val anchor: Dp,
+    /** Room under the last line, so it too can rise to [anchor]. */
+    val bottomRoom: Dp,
 ) {
-    if (syllables != null) {
-        LyricsSyllableRenderer(syllables, currentPositionMs, onLineTap, modifier, isPlaying, playbackSpeed)
-    } else {
-        LyricsLineRenderer(lines, currentPositionMs, onLineTap, modifier)
-    }
+    /** The bold display line, scaled by [fit] (see [lyricLineFit]). */
+    fun lineStyle(fit: Float = 1f): TextStyle = TextStyle(
+        fontFamily = SpaceGrotesk,
+        fontWeight = FontWeight.Bold,
+        fontSize = fontSize * fit,
+        lineHeight = 1.3.em,
+    )
 }
 
+/**
+ * Line-synced lyrics: one bold line per LRC line, lit from its timestamp. Upcoming lines wait
+ * dim at 51%, the live one is fully lit, sung ones stay lit at 49.7% (the web's line states),
+ * and lines two or more away from the live one blur ([lyricBlurDp], API 31+ only: a no-op
+ * below). Tap a line to seek to it.
+ *
+ * The "current line" is the latest line whose timestamp is `<= positionMs`; it is recomputed
+ * per position tick (~250ms), a single O(n) scan.
+ */
 @Composable
-private fun LyricsLineRenderer(
+internal fun LyricsLineRenderer(
     lines: List<LrcLine>,
     currentPositionMs: Long,
     onLineTap: (Long) -> Unit,
+    look: LyricsLook,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
-    // BUG FIX (post-T12): the previous version used `remember(lines) { derivedStateOf {
-    //   lines.indexOfLast { it.timestampMs <= currentPositionMs }.coerceAtLeast(0)
-    // } }`. derivedStateOf only re-runs when a snapshot-tracked read changes —
-    // currentPositionMs is a plain Long parameter, not a Compose State, so the
-    // lambda captured the value at first composition and never updated when the
-    // parent re-emitted a new position. Result: currentIndex stuck at whatever
-    // line was current at sheet-open time (usually 0), and the highlight didn't
-    // track playback. remember(lines, currentPositionMs) { … } recomputes on
-    // every position tick (~250ms) — cheap (single O(n) scan over the line list)
-    // and reactive without needing derivedStateOf.
-    val currentIndex = remember(lines, currentPositionMs) {
-        currentLineIndex(lines, currentPositionMs)
-    }
-
-    // User-drag guard: any time the user manually scrolls, freeze the
-    // auto-scroll for 5 seconds so they can browse without the current
-    // line yanking them back. Tracked as a Long epoch-millis stamp so a
-    // subsequent currentIndex change inside the grace window short-
-    // circuits the animateScrollToItem call.
-    var lastUserScrollAtMs by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress) {
-            lastUserScrollAtMs = System.currentTimeMillis()
-        }
-    }
-
-    LaunchedEffect(currentIndex, lines) {
-        if (lines.isEmpty()) return@LaunchedEffect
-        if (System.currentTimeMillis() - lastUserScrollAtMs > USER_SCROLL_GRACE_MS) {
-            // Negative offset pulls the row up so the current line sits
-            // roughly in the upper third of the visible area — matches
-            // the Spotify-style "next-up" reading rhythm.
-            runCatching {
-                listState.animateScrollToItem(
-                    index = currentIndex.coerceAtMost(lines.lastIndex),
-                    scrollOffset = AUTO_SCROLL_OFFSET_PX,
-                )
-            }
-        }
-    }
+    // currentPositionMs is a plain parameter, not snapshot state: key the scan on it directly
+    // (a derivedStateOf here once froze on the value captured at first composition).
+    val currentIndex = remember(lines, currentPositionMs) { currentLineIndex(lines, currentPositionMs) }
+    val active = rememberUpdatedState(currentIndex)
+    FollowLiveLine(listState, active, lines.size)
 
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 24.dp),
+        contentPadding = PaddingValues(top = look.anchor, bottom = look.bottomRoom),
     ) {
         itemsIndexed(lines) { index, line ->
-            val current = index == currentIndex
-            // Spotify-style tiered dimming: current line full alpha + bold,
-            // ±1 from current ~0.55, anything further ~0.28. Smooth alpha
-            // animation so the highlight glides rather than snaps when
-            // playback advances to the next line.
-            val distance = abs(index - currentIndex)
-            val targetAlpha = when {
-                current -> 1.0f
-                distance == 1 -> 0.55f
-                else -> 0.28f
-            }
-            val animatedAlpha by animateFloatAsState(
-                targetValue = targetAlpha,
-                animationSpec = tween(durationMillis = 250),
-                label = "lyrics-alpha-$index",
+            val lit = index <= currentIndex
+            val color by animateColorAsState(if (lit) look.bright else look.dim, tween(LINE_STATE_MS), label = "line-ink")
+            val alpha by animateFloatAsState(
+                targetValue = when {
+                    index == currentIndex -> 1f
+                    index < currentIndex -> SUNG_ALPHA
+                    else -> UPCOMING_ALPHA
+                },
+                animationSpec = tween(LINE_STATE_MS),
+                label = "line-alpha",
             )
+            val blur by animateFloatAsState(
+                lyricBlurDp(abs(index - currentIndex), look.fontSize.value),
+                tween(BLUR_FADE_MS),
+                label = "line-blur",
+            )
+            val style = remember(line.text, look) { look.lineStyle(lyricLineFit(line.text)) }
             Text(
                 text = line.text,
-                style = if (current) {
-                    MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
-                } else {
-                    MaterialTheme.typography.titleLarge
-                },
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = animatedAlpha),
+                style = style,
+                color = color,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onLineTap(line.timestampMs) }
-                    .padding(vertical = 8.dp, horizontal = 24.dp),
+                    .graphicsLayer { this.alpha = alpha }
+                    .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                        onLineTap(line.timestampMs)
+                    }
+                    .padding(horizontal = look.sidePadding, vertical = look.lineGap),
             )
         }
     }
 }
 
 /**
- * Plain-text fallback for tracks without an LRC body. Scrollable so the
- * full body is reachable even on short sheet heights.
+ * Unsynced lyrics: the whole text in a calm scroll (the web's 16/1.7 display face, a size up
+ * for a phone held at arm's length), lit, no highlight to follow.
  */
 @Composable
-fun LyricsPlainRenderer(text: String, modifier: Modifier = Modifier) {
-    val scroll = rememberScrollState()
+internal fun LyricsPlainRenderer(text: String, look: LyricsLook, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurface,
+        style = TextStyle(
+            fontFamily = SpaceGrotesk,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = PLAIN_FONT,
+            lineHeight = 1.7.em,
+        ),
+        color = look.bright,
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(scroll)
-            .padding(horizontal = 24.dp, vertical = 24.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(start = look.sidePadding, end = look.sidePadding, top = 8.dp, bottom = LYRICS_FADE_BOTTOM),
     )
 }
 
-/** Loading state — spinner with a short caption. */
+/**
+ * Keeps the live line at [LyricsLook.anchor], gliding there over 400ms on the web's
+ * cubic-bezier(.4, 0, .2, 1) when the line changes.
+ *
+ * A finger on the list lets the user read ahead or back: following pauses while they drag and
+ * for [USER_SCROLL_GRACE_MS] after they let go, then the list glides back to the live line on
+ * its own, even when the line hasn't changed meanwhile. Only real drags count: our own scroll
+ * also sets isScrollInProgress, so the drag interactions are what's watched.
+ */
 @Composable
-internal fun CenteredSpinner(label: String, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(16.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+internal fun FollowLiveLine(listState: LazyListState, activeIndex: State<Int>, itemCount: Int) {
+    var dragging by remember { mutableStateOf(false) }
+    var lastDragEndAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is DragInteraction.Start -> dragging = true
+                is DragInteraction.Stop, is DragInteraction.Cancel -> {
+                    dragging = false
+                    lastDragEndAt = System.currentTimeMillis()
+                }
+            }
+        }
+    }
+    LaunchedEffect(listState, itemCount) {
+        if (itemCount == 0) return@LaunchedEffect
+        var placed = false
+        snapshotFlow { Triple(activeIndex.value, dragging, lastDragEndAt) }.collectLatest { (index, drag, endAt) ->
+            if (drag) return@collectLatest
+            val target = index.coerceIn(0, itemCount - 1)
+            // Opening onto a song already playing: start at the live line, don't scroll there.
+            if (!placed) {
+                placed = true
+                listState.scrollToItem(target)
+                return@collectLatest
+            }
+            val wait = endAt + USER_SCROLL_GRACE_MS - System.currentTimeMillis()
+            if (wait > 0) delay(wait)
+            runCatching { listState.glideTo(target) }
         }
     }
 }
 
 /**
- * Generic "nothing to render here" placard for [LyricsViewState.None],
- * [LyricsViewState.Instrumental], and [LyricsViewState.Error]. Optional
- * action button (typically "Retry") when [action] is non-null.
+ * Brings item [index] to the top of the content area (the anchor, given the list's top padding).
+ * Item offsets are measured from the end of that padding, so a visible item is [offset] away.
  */
-@Composable
-internal fun CenteredPlacard(
-    label: String,
-    modifier: Modifier = Modifier,
-    action: String? = null,
-    onAction: () -> Unit = {},
-) {
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(horizontal = 32.dp),
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            if (action != null) {
-                Spacer(Modifier.height(16.dp))
-                OutlinedButton(onClick = onAction) {
-                    Text(action)
-                }
-            }
-        }
+private suspend fun LazyListState.glideTo(index: Int) {
+    val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+    if (item == null) {
+        animateScrollToItem(index)
+    } else if (item.offset != 0) {
+        animateScrollBy(item.offset.toFloat(), tween(FOLLOW_MS, easing = FastOutSlowInEasing))
     }
 }
 
@@ -243,22 +233,34 @@ internal fun CenteredPlacard(
  * `-1` to `0` so the first line shows early and the index can never go out
  * of bounds — for non-empty input. On an EMPTY list this still returns 0,
  * which is not a valid index: callers must `getOrNull`/guard for empty.
- * Single source of truth shared by [LyricsSyncedRenderer] and
- * [LiveLyricsBar] — the bar and the sheet must never disagree on the line.
+ * Single source of truth shared by [LyricsLineRenderer] and
+ * [LiveLyricsBar] — the bar and the lyrics view must never disagree on the line.
  */
 internal fun currentLineIndex(lines: List<LrcLine>, positionMs: Long): Int =
     lines.indexOfLast { it.timestampMs <= positionMs }.coerceAtLeast(0)
 
 /**
- * Auto-scroll grace window after a user drag. Long enough that a quick
- * "let me look at the next verse" pan doesn't immediately get snapped
- * back, short enough that a forgotten-about scroll doesn't strand the
- * highlight off-screen.
+ * Follow pauses this long after the user lets go of the list. Long enough that a quick "let me
+ * look at the next verse" pan isn't snapped back, short enough that a forgotten scroll doesn't
+ * strand the live line off-screen.
  */
 private const val USER_SCROLL_GRACE_MS = 5_000L
 
-/**
- * Item-scroll offset for the auto-scroll target. Negative pulls the
- * highlighted row above center so the upcoming line is visible.
- */
-private const val AUTO_SCROLL_OFFSET_PX = -200
+/** The web column's move to a new line. */
+private const val FOLLOW_MS = 400
+
+/** A line's state change (dim, live, sung). */
+internal const val LINE_STATE_MS = 300
+
+/** The distance-blur crossfade. */
+internal const val BLUR_FADE_MS = 150
+
+/** Line alpha by state, from the app's word renderer (which the web copied). */
+internal const val UPCOMING_ALPHA = 0.51f
+internal const val SUNG_ALPHA = 0.497f
+
+private val PLAIN_FONT = 18.sp
+
+/** The edge fades over the lyrics area: the web's 24px top, 120px bottom. */
+internal val LYRICS_FADE_TOP = 24.dp
+internal val LYRICS_FADE_BOTTOM = 120.dp
