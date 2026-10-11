@@ -116,7 +116,7 @@ class NowPlayingLyricsExportTest {
 
         viewModel.userMessages.test {
             viewModel.exportLyricsForCurrentTrack()
-            assertEquals("Couldn't fetch lyrics yet — try again from the lyrics sheet.", awaitItem())
+            assertEquals("Couldn't fetch lyrics yet — try again from the lyrics view.", awaitItem())
             coVerify(exactly = 0) { lyricsSidecarWriter.writeLrcSidecar(any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }

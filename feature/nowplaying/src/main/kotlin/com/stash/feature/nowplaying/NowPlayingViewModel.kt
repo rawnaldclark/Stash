@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.palette.graphics.Palette
 import com.stash.core.data.lossless.LosslessUpgrader
+import com.stash.core.data.prefs.NowPlayingAction
 import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
@@ -114,7 +115,7 @@ class NowPlayingViewModel @Inject constructor(
     /**
      * Live synced-line bar opt-in (default OFF — the ticking line can pull
      * the listener out of the music). Off, synced tracks still get the
-     * "View lyrics ♪" bar; the toggle lives in the lyrics sheet.
+     * "View lyrics ♪" bar; the toggle lives in the lyrics view's menu.
      */
     val liveLyricsBarEnabled: StateFlow<Boolean> = lyricsPreference.liveBarEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
@@ -132,6 +133,34 @@ class NowPlayingViewModel @Inject constructor(
         .map<com.stash.core.data.prefs.AmbientStyle, com.stash.core.data.prefs.AmbientStyle?> { it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * The actions pinned to the top row (edited from the ⋮ menu). Null until DataStore answers,
+     * like the ambient prefs above, so the screen never draws a frame of the default row for a
+     * user who changed it.
+     */
+    val pinnedActions: StateFlow<Set<NowPlayingAction>?> = nowPlayingPreference.pinnedActions
+        .map<Set<NowPlayingAction>, Set<NowPlayingAction>?> { it }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Pins or unpins [action]. Returns false (and changes nothing) when pinning would pass
+     * [NowPlayingAction.MAX_PINS]; the menu explains the cap instead.
+     */
+    fun onTogglePin(action: NowPlayingAction): Boolean {
+        val current = pinnedActions.value ?: return false
+        return when (val result = togglePin(current, action)) {
+            PinToggle.Full -> false
+            is PinToggle.Changed -> {
+                viewModelScope.launch { nowPlayingPreference.setPinnedActions(result.pins) }
+                true
+            }
+        }
+    }
+
+    /** Back to Radio · ⋮ · Queue. */
+    fun onResetPins() {
+        viewModelScope.launch { nowPlayingPreference.resetPinnedActions() }
+    }
 
     private val _userMessages = MutableSharedFlow<String>(
         // v0.9.18: bumped from 1 → 8. The Find-in-FLAC action emits TWO
@@ -378,12 +407,12 @@ class NowPlayingViewModel @Inject constructor(
     // ------------------------------------------------------------------
 
     /**
-     * Whether the lyrics sheet is currently open. Toggled by
-     * [onShowLyrics] / [onDismissLyrics]; the Compose layer collects
-     * this and conditionally renders [com.stash.feature.nowplaying.ui.LyricsBottomSheet].
+     * Whether Now Playing shows its lyrics mode (the full-screen lyrics over the ambient) instead
+     * of the big art. Toggled by [onShowLyrics] / [onDismissLyrics] / [onToggleLyrics]. It
+     * survives a song change on purpose: the next song's lyrics simply load in place.
      */
-    private val _lyricsSheetOpen = MutableStateFlow(false)
-    val lyricsSheetOpen: StateFlow<Boolean> = _lyricsSheetOpen.asStateFlow()
+    private val _lyricsMode = MutableStateFlow(false)
+    val lyricsMode: StateFlow<Boolean> = _lyricsMode.asStateFlow()
 
     /**
      * Transient lyrics state for streaming-mode tracks (id == 0L), which
@@ -972,7 +1001,7 @@ class NowPlayingViewModel @Inject constructor(
     // ------------------------------------------------------------------
 
     /**
-     * Open the lyrics sheet for the currently-playing track. Open-only since
+     * Switch Now Playing to its lyrics view for the current track. Open-only since
      * the live-lyrics bar: fetching is the lyricsViewState chain's
      * subscription-gated trigger's job (plus the sheet's Retry). The old
      * unconditional streaming re-fetch here reset shared state to Loading —
@@ -980,12 +1009,17 @@ class NowPlayingViewModel @Inject constructor(
      * the bar mid-tap.
      */
     fun onShowLyrics() {
-        _lyricsSheetOpen.value = true
+        _lyricsMode.value = true
     }
 
-    /** Close the lyrics sheet without affecting playback. */
+    /** Back to the big art, without affecting playback. */
     fun onDismissLyrics() {
-        _lyricsSheetOpen.value = false
+        _lyricsMode.value = false
+    }
+
+    /** The Lyrics action: in from the art, or back out when already reading. */
+    fun onToggleLyrics() {
+        _lyricsMode.value = !_lyricsMode.value
     }
 
     /**
@@ -1015,7 +1049,7 @@ class NowPlayingViewModel @Inject constructor(
                         // 0L = every source definitively answered "no lyrics"; distinct from a fetch
                         // that simply hasn't succeeded yet (stamp stays null on a source failure).
                         track.lyricsFetchedAt == 0L -> "No lyrics found for this track"
-                        else -> "Couldn't fetch lyrics yet — try again from the lyrics sheet"
+                        else -> "Couldn't fetch lyrics yet — try again from the lyrics view"
                     }
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) { "Couldn't save lyrics" }
