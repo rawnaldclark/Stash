@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker from "../src/index.js";
+import worker, { networkOf, networkTag } from "../src/index.js";
 
 const ACCESS_TOKEN = "test-access-token";
 const MPD = '<MPD><SegmentTemplate initialization="https://sp-ad-fa.audio.tidal.com/init.mp4?token=test" media="https://audio.tidal.com/$Number$" /></MPD>';
@@ -9,6 +9,8 @@ function fixture({ tidalResponse, account = liveAccount(), accounts = [account] 
   const manifests = new Map();
   const calls = [];
   const dbWrites = [];
+  const dailyQuotas = new Map();
+  const accountCaps = [];
   let nextAccount = 0;
   const env = {
     ACCESS_TOKEN,
@@ -21,19 +23,42 @@ function fixture({ tidalResponse, account = liveAccount(), accounts = [account] 
           args: [],
           bind(...args) { this.args = args; return this; },
           async first() {
-            if (sql.includes("hour_n=CASE") && sql.includes("RETURNING *")) return accounts[nextAccount++] || null;
+            if (sql.includes("hour_n=CASE") && sql.includes("RETURNING *")) {
+              accountCaps.push({ hourly: this.args[3], daily: this.args[4] });
+              return accounts[nextAccount++] || null;
+            }
             if (sql.includes("SELECT manifest_xml,init_url,expires_at")) return manifests.get(this.args[0]) || null;
             return null;
           },
           async run() {
             dbWrites.push({ sql, args: this.args });
+            if (sql.includes("INSERT INTO tidal_daily_quotas")) {
+              const [day, key] = this.args;
+              const mapKey = `${day}:${key}`;
+              dailyQuotas.set(mapKey, (dailyQuotas.get(mapKey) || 0) + 1);
+            }
             if (sql.includes("INSERT OR REPLACE INTO tidal_dash_manifests")) {
               const [trackId, manifestXml, initUrl, expiresAt] = this.args;
               manifests.set(trackId, { manifest_xml: manifestXml, init_url: initUrl, expires_at: expiresAt });
             }
             return { success: true };
           },
+          async all() {
+            if (sql.includes("FROM tidal_daily_quotas")) {
+              const [day, keysJson] = this.args;
+              const keys = JSON.parse(keysJson);
+              return { results: keys.flatMap((key) => {
+                const n = dailyQuotas.get(`${day}:${key}`) || 0;
+                return n ? [{ key, n }] : [];
+              }) };
+            }
+            return { results: [] };
+          },
         };
+      },
+      async batch(statements) {
+        for (const statement of statements) await statement.run();
+        return statements.map(() => ({ success: true }));
       },
     },
   };
@@ -44,7 +69,7 @@ function fixture({ tidalResponse, account = liveAccount(), accounts = [account] 
     return new Response(JSON.stringify({ items: [] }), { status: 200 });
   };
 
-  return { env, calls, manifests, fetchTidal, dbWrites };
+  return { env, calls, manifests, fetchTidal, dbWrites, dailyQuotas, accountCaps };
 }
 
 function liveAccount() {
@@ -63,11 +88,16 @@ async function withFetch(t, fetchImpl, action) {
   try { return await action(); } finally { globalThis.fetch = original; }
 }
 
-function authorizedRequest(path, method = "GET") {
+function authorizedRequest(path, method = "GET", extraHeaders = {}) {
   return new Request(`https://relay.example${path}`, {
     method,
-    headers: { "X-Access-Token": ACCESS_TOKEN },
+    headers: { "X-Access-Token": ACCESS_TOKEN, ...extraHeaders },
   });
+}
+
+function losslessResponse() {
+  return playbackInfo("LOSSLESS", "application/vnd.tidal.bts",
+    JSON.stringify({ mimeType: "audio/flac", codecs: "flac", urls: ["https://cdn.example/track.flac"] }));
 }
 
 function playbackInfo(audioQuality, manifestMimeType, payload) {
@@ -108,6 +138,74 @@ test("request limiter protects provider routes while health remains available", 
     const health = await worker.fetch(new Request("https://relay.example/health"), f.env);
     assert.equal(health.status, 200);
   });
+});
+
+test("request limiter keys IPv6 clients by their /56 network", async () => {
+  const f = fixture();
+  let limitKey;
+  f.env.REQUEST_RL = { limit: async ({ key }) => { limitKey = key; return { success: true }; } };
+  await withFetch(null, f.fetchTidal, async () => {
+    await worker.fetch(authorizedRequest("/search?q=test", "GET", { "CF-Connecting-IP": "2001:db8:abcd:12:3456::1" }), f.env);
+  });
+  assert.equal(limitKey, "2001:db8:abcd:0/56");
+});
+
+test("per-account cap defaults mirror Qobuz", async () => {
+  const f = fixture();
+  await withFetch(null, f.fetchTidal, async () => {
+    await worker.fetch(authorizedRequest("/search?q=test"), f.env);
+  });
+  assert.deepEqual(f.accountCaps[0], { hourly: 621, daily: 11000 });
+});
+
+test("global daily stream cap allows requests to the cap and blocks the next one", async () => {
+  const accounts = Array.from({ length: 4 }, (_, i) => ({ ...liveAccount(), id: `account-${i}` }));
+  const f = fixture({ accounts, tidalResponse: async () => losslessResponse() });
+  f.env.GLOBAL_DAILY_CAP = "2";
+  f.env.NETWORK_DAILY_CAP = "10";
+  f.env.IP_SALT = "test-salt";
+  const headers = { "CF-Connecting-IP": "192.0.2.15" };
+
+  await withFetch(null, f.fetchTidal, async () => {
+    assert.equal((await worker.fetch(authorizedRequest("/stream/td:321", "GET", headers), f.env)).status, 200);
+    assert.equal((await worker.fetch(authorizedRequest("/stream/td:322", "GET", headers), f.env)).status, 200);
+    const limited = await worker.fetch(authorizedRequest("/stream/td:323", "GET", headers), f.env);
+    assert.equal(limited.status, 503);
+    assert.deepEqual(await limited.json(), { error: "global_daily_cap" });
+  });
+
+  const day = new Date().toISOString().slice(0, 10);
+  const networkKey = `n:${networkTag(f.env, networkOf(headers["CF-Connecting-IP"]))}`;
+  assert.equal(f.dailyQuotas.get(`${day}:global`), 2);
+  assert.equal(f.dailyQuotas.get(`${day}:${networkKey}`), 2);
+});
+
+test("per-network daily cap is salted, shared across installs, and isolates other networks", async () => {
+  const accounts = Array.from({ length: 4 }, (_, i) => ({ ...liveAccount(), id: `account-${i}` }));
+  const f = fixture({ accounts, tidalResponse: async () => losslessResponse() });
+  f.env.GLOBAL_DAILY_CAP = "10";
+  f.env.NETWORK_DAILY_CAP = "1";
+  f.env.IP_SALT = "test-salt";
+  await withFetch(null, f.fetchTidal, async () => {
+    assert.equal((await worker.fetch(authorizedRequest("/stream/td:321", "GET", { "CF-Connecting-IP": "192.0.2.15" }), f.env)).status, 200);
+    const sameNetwork = await worker.fetch(authorizedRequest("/stream/td:322", "GET", { "CF-Connecting-IP": "192.0.2.15" }), f.env);
+    assert.equal(sameNetwork.status, 429);
+    assert.deepEqual(await sameNetwork.json(), { error: "network_daily_cap" });
+    assert.equal((await worker.fetch(authorizedRequest("/stream/td:323", "GET", { "CF-Connecting-IP": "192.0.2.16" }), f.env)).status, 200);
+  });
+  assert.equal([...f.dailyQuotas.keys()].filter((key) => key.endsWith(":global")).length, 1);
+  assert.equal([...f.dailyQuotas.values()].reduce((sum, n) => sum + n, 0), 4);
+});
+
+test("search spends an account slot but not global or network daily stream quota", async () => {
+  const f = fixture();
+  f.env.IP_SALT = "test-salt";
+  await withFetch(null, f.fetchTidal, async () => {
+    const response = await worker.fetch(authorizedRequest("/search?q=example", "GET", { "CF-Connecting-IP": "192.0.2.15" }), f.env);
+    assert.equal(response.status, 200);
+  });
+  assert.equal(f.accountCaps.length, 1);
+  assert.equal(f.dailyQuotas.size, 0);
 });
 
 test("search maps Tidal catalog entries to the relay contract", async () => {

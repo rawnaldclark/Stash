@@ -1,16 +1,25 @@
+import { createHmac } from "node:crypto";
+
 const API = "https://api.tidal.com/v1";
 const AUTH = "https://auth.tidal.com/v1/oauth2";
 const UA = "okhttp/5.3.2";
 const SCOPE = "r_usr+w_usr+w_sub";
 
 export default {
+  async scheduled(_event, env) {
+    const cutoff = new Date((now() - 7 * 86400) * 1000).toISOString().slice(0, 10);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM tidal_daily_quotas WHERE day < ?").bind(cutoff),
+      env.DB.prepare("DELETE FROM tidal_dash_manifests WHERE expires_at <= ?").bind(now()),
+    ]);
+  },
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method !== "GET" && request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
     try {
       if (url.pathname === "/health" && request.method === "GET") return json({ ok: true, provider: "tidal" });
       if (env.REQUEST_RL) {
-        const { success } = await env.REQUEST_RL.limit({ key: request.headers.get("CF-Connecting-IP") || "unknown" });
+        const { success } = await env.REQUEST_RL.limit({ key: networkOf(request.headers.get("CF-Connecting-IP")) });
         if (!success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
       }
       if (url.pathname === "/admin/device/start" && request.method === "POST") return startDeviceAuth(request, env);
@@ -23,7 +32,13 @@ export default {
       const streamMatch = path.match(/^\/stream\/(?:td:)?(\d+)$/);
       if (streamMatch && request.method === "GET") {
         if (!authorized(request, env.ACCESS_TOKEN)) return unauthorized();
-        return await stream(streamMatch[1], request, env);
+        const quota = await admitStream(request, env);
+        if (quota.denial) return quota.denial;
+        const response = await stream(streamMatch[1], request, env);
+        // Like Qobuz's answered-mint quota: successful streams and definitive
+        // track misses count once per caller request; upstream/account failures do not.
+        if (response.status === 200 || response.status === 404) await spendStream(request, env, quota);
+        return response;
       }
       const dashMatch = path.match(/^\/dash\/td\/(\d+)(?:\.mpd|\/init\.mp4)$/);
       if (dashMatch && request.method === "GET") return dash(request, dashMatch[1], env, url.pathname.endsWith("/init.mp4"));
@@ -267,13 +282,63 @@ async function playbackInfo(trackId, account, env, qualities = ["HI_RES_LOSSLESS
 async function takeAccount(env, excludeId = null) {
   const hour = new Date().toISOString().slice(0, 13);
   const day = new Date().toISOString().slice(0, 10);
-  const hourly = positive(env.TIDAL_ACCOUNT_HOURLY_CAP, 60);
-  const daily = positive(env.TIDAL_ACCOUNT_DAILY_CAP, 1000);
+  const hourly = positive(env.TIDAL_ACCOUNT_HOURLY_CAP, 621);
+  const daily = positive(env.TIDAL_ACCOUNT_DAILY_CAP, 11000);
   return await env.DB.prepare(`UPDATE tidal_accounts SET
       hour_n=CASE WHEN hour_key=?1 THEN hour_n+1 ELSE 1 END,hour_key=?1,
       day_n=CASE WHEN day_key=?2 THEN day_n+1 ELSE 1 END,day_key=?2,last_used_at=?3
     WHERE id=(SELECT id FROM tidal_accounts WHERE state='live' AND cooling_until<=?3 AND (hour_key!=?1 OR hour_n<?4) AND (day_key!=?2 OR day_n<?5) AND id IS NOT ?6 ORDER BY last_used_at,id LIMIT 1)
     RETURNING *`).bind(hour, day, now(), hourly, daily, excludeId).first();
+}
+
+async function admitStream(request, env) {
+  const day = new Date().toISOString().slice(0, 10);
+  const network = networkOf(request.headers.get("CF-Connecting-IP"));
+  const tag = networkTag(env, network);
+  const keys = ["global", ...(tag ? [`n:${tag}`] : [])];
+  const { results = [] } = await env.DB.prepare(
+    "SELECT key, n FROM tidal_daily_quotas WHERE day = ?1 AND key IN (SELECT value FROM json_each(?2))",
+  ).bind(day, JSON.stringify(keys)).all();
+  const used = Object.fromEntries(results.map((row) => [row.key, row.n]));
+  const globalCap = positive(env.GLOBAL_DAILY_CAP, 34667);
+  const networkCap = positive(env.NETWORK_DAILY_CAP, 2000);
+  if ((used.global || 0) >= globalCap) {
+    return { denial: json({ error: "global_daily_cap" }, 503, { "Retry-After": "600" }) };
+  }
+  if (tag && (used[`n:${tag}`] || 0) >= networkCap) {
+    return { denial: json({ error: "network_daily_cap" }, 429, { "Retry-After": "3600" }) };
+  }
+  return { day, tag };
+}
+
+async function spendStream(request, env, quota) {
+  const tag = quota.tag || networkTag(env, networkOf(request.headers.get("CF-Connecting-IP")));
+  const statements = [bumpDailyQuotaStmt(env.DB, quota.day, "global")];
+  if (tag) statements.push(bumpDailyQuotaStmt(env.DB, quota.day, `n:${tag}`));
+  await env.DB.batch(statements);
+}
+
+function bumpDailyQuotaStmt(db, day, key) {
+  return db.prepare(
+    "INSERT INTO tidal_daily_quotas (day, key, n) VALUES (?1, ?2, 1) ON CONFLICT(day, key) DO UPDATE SET n = n + 1",
+  ).bind(day, key);
+}
+
+export function networkOf(addr) {
+  if (!addr) return "?";
+  if (!addr.includes(":") || addr.includes(".")) return addr;
+  const [head, tail] = addr.toLowerCase().split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right];
+  const g = [0, 1, 2, 3].map((i) => parseInt(groups[i] || "0", 16) || 0);
+  return `${g[0].toString(16)}:${g[1].toString(16)}:${g[2].toString(16)}:${(g[3] >> 8).toString(16)}/56`;
+}
+
+export function networkTag(env, network) {
+  return env.IP_SALT && network !== "?"
+    ? createHmac("sha256", env.IP_SALT).update(network).digest("hex").slice(0, 16)
+    : null;
 }
 
 async function coolAccount(env, id, seconds) {

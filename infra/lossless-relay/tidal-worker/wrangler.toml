@@ -1,13 +1,16 @@
 name = "stash-tidal-relay"
 main = "src/index.js"
 compatibility_date = "2026-10-14"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 PUBLIC_HOST = ""
 TIDAL_CLIENT_ID = "fX2JxdmntZWK0ixT"
 TIDAL_COUNTRY_CODE = "US"
-TIDAL_ACCOUNT_HOURLY_CAP = "60"
-TIDAL_ACCOUNT_DAILY_CAP = "1000"
+TIDAL_ACCOUNT_HOURLY_CAP = "621"
+TIDAL_ACCOUNT_DAILY_CAP = "11000"
+GLOBAL_DAILY_CAP = "34667"
+NETWORK_DAILY_CAP = "2000"
 
 [[d1_databases]]
 binding = "DB"
@@ -15,12 +18,16 @@ database_name = "stash-tidal-relay"
 database_id = "20778a95-cf23-45e3-a1bb-977ca1256505"
 migrations_dir = "migrations"
 
-# Per-client IP request cap for provider/admin routes. Health probes stay exempt.
+# Per-network request cap for provider/admin routes (IPv4 address / IPv6 /56). Health is exempt.
 [[ratelimits]]
 name = "REQUEST_RL"
 namespace_id = "1002"
-simple = { limit = 60, period = 60 }
+simple = { limit = 40, period = 60 }
 
-# Set with Wrangler secrets (never vars): ACCESS_TOKEN, ADMIN_TOKEN, TIDAL_CLIENT_SECRET.
+[triggers]
+crons = ["17 * * * *"]
+
+# Set with Wrangler secrets (never vars): ACCESS_TOKEN, ADMIN_TOKEN, TIDAL_CLIENT_SECRET, IP_SALT.
 # TIDAL_CLIENT_SECRET is the shared Android client credential from the selected
 # community implementation, not a TIDAL Developer Portal app secret.
+# IP_SALT is a random private salt for storing only salted network hashes in D1.
