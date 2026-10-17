@@ -190,6 +190,57 @@ class LosslessRelayClientTest {
         assertThat(server.takeRequest().getHeader("X-Stash-Install")).isNotEmpty()
     }
 
+    // ── Clock skew: a 401 carrying the relay's time re-signs once ──────────────────────────
+
+    @Test fun `a 401 with X-Stash-Server-Time re-signs once with the relay's clock and keeps the offset`() = runTest {
+        relayKey.value = "k-secret"
+        now = 1_700_000_000_000L
+        val relayTs = 1_700_000_000L + 600 // the device is 10 minutes slow
+        server.enqueue(MockResponse().setResponseCode(401).setHeader("X-Stash-Server-Time", relayTs.toString()).setBody("""{"error":"bad_ts"}"""))
+        server.enqueue(MockResponse().setBody("""{"url":"https://cdn.example/f.flac?etsp=1","format_id":27}"""))
+        server.enqueue(MockResponse().setBody("""{"url":"https://cdn.example/g.flac?etsp=1","format_id":27}"""))
+
+        assertThat(client.mint(base, 42, 27)).isInstanceOf(RelayMint.Ok::class.java)
+        assertThat(client.isCooled(base)).isFalse()
+        assertThat(server.takeRequest().getHeader("X-Stash-Ts")).isEqualTo("1700000000")
+        val retry = server.takeRequest()
+        assertThat(retry.getHeader("X-Stash-Ts")).isEqualTo(relayTs.toString())
+        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec("k-secret".toByteArray(), "HmacSHA256")) }
+        val expected = mac.doFinal("$INSTALL_ID:42:27:$relayTs".toByteArray()).joinToString("") { "%02x".format(it) }
+        assertThat(retry.getHeader("X-Stash-Auth")).isEqualTo(expected)
+
+        // Later mints sign with the learned offset straight away: one request, no 401.
+        now += 5_000
+        assertThat(client.mint(base, 43, 27)).isInstanceOf(RelayMint.Ok::class.java)
+        assertThat(server.takeRequest().getHeader("X-Stash-Ts")).isEqualTo((relayTs + 5).toString())
+        assertThat(server.requestCount).isEqualTo(3)
+    }
+
+    @Test fun `a second 401 after the skew retry cools the base as today`() = runTest {
+        relayKey.value = "k-secret"
+        repeat(2) {
+            server.enqueue(MockResponse().setResponseCode(401).setHeader("X-Stash-Server-Time", (now / 1000 + 900).toString()))
+        }
+        assertThat(client.mint(base, 42, 27)).isEqualTo(RelayMint.Unavailable)
+        assertThat(server.requestCount).isEqualTo(2)
+        assertThat(client.isCooled(base)).isTrue()
+    }
+
+    @Test fun `a 401 without X-Stash-Server-Time is not retried`() = runTest {
+        relayKey.value = "k-secret"
+        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"bad_sig"}"""))
+        assertThat(client.mint(base, 42, 27)).isEqualTo(RelayMint.Unavailable)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(client.isCooled(base)).isTrue()
+    }
+
+    @Test fun `an unsigned mint ignores X-Stash-Server-Time`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(401).setHeader("X-Stash-Server-Time", (now / 1000 + 900).toString()))
+        assertThat(client.mint(base, 42, 27)).isEqualTo(RelayMint.Unavailable)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(client.isCooled(base)).isTrue()
+    }
+
     // ── Streams first: downloads are labelled, and a "paced" answer waits ──────────────────
 
     @Test fun `a stream sends no purpose, while a mint under LosslessDownloadPurpose says download`() = runTest {

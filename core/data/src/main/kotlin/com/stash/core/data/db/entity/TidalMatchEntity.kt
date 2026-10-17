@@ -13,9 +13,11 @@ import androidx.room.PrimaryKey
  *  - [tidalId] set (a confident `td:<n>` match): later lookups skip `/search` and ask
  *    `/stream` directly. Kept 30 days from [searchedAt].
  *  - [tidalId] null: `/search` had no confident lossless match. Kept 14 days.
- *  - [losslessMissAt] / [aacMissAt]: `/stream` answered 404 for that mode
- *    (`lossless_unavailable` / `not_available`). Each kept 14 days, separately, so a
- *    lossless miss never blocks the AAC lookup.
+ *  - [losslessMissAt] / [aacMissAt]: `/stream` answered 404 for that mode. Each kept
+ *    14 days, separately, so a lossless miss never blocks the AAC lookup. Only
+ *    `lossless_unavailable` earns the 14 days: any other 404 (`not_available`) is stamped
+ *    backdated by 14 days − 6 h, so the same 14-day check drops it after 6 h
+ *    (BitchordClient.stampMiss). These stamps are therefore not always the real time.
  *
  * Stream URLs are NEVER stored here: they expire within the hour.
  * Only definitive answers land here; a busy pool, a 5xx or an I/O error is never a miss.

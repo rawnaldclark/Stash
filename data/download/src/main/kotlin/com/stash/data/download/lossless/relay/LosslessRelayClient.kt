@@ -181,19 +181,27 @@ class LosslessRelayClient @Inject constructor(
             .addQueryParameter("track_id", trackId.toString())
             .addQueryParameter("format_id", formatId.toString())
             .build()
-        val req = Request.Builder().url(url)
-            .header("X-Stash-Version", PROTOCOL_VERSION)
-            .header("Accept", "application/json")
-            .also { if (download != null) it.header("X-Stash-Purpose", "download") }
-            .also { signIfKeyed(it, trackId, formatId) }
-            .get().build()
-        // The body read stays INSIDE the try: a relay that returns 200 headers and then
-        // stalls throws out of string(), and that must cool this base — not escape into
-        // the caller's breaker (QbdlxQobuzSource.callLimited trips qbdlx wholesale).
-        try {
-            httpClient.newCall(req).execute().use { r ->
+        /**
+         * One signed (when keyed) request and its outcome. Null only when [mayRetrySkew] and the
+         * relay refused the signature on its clock: the caller re-signs with the learned offset
+         * (the request is rebuilt because the signature covers the timestamp).
+         */
+        suspend fun attempt(mayRetrySkew: Boolean): RelayMint? {
+            val b = Request.Builder().url(url)
+                .header("X-Stash-Version", PROTOCOL_VERSION)
+                .header("Accept", "application/json")
+                .also { if (download != null) it.header("X-Stash-Purpose", "download") }
+            val signed = signIfKeyed(b, trackId, formatId)
+            val req = b.get().build()
+            return httpClient.newCall(req).execute().use { r ->
                 val body = r.body?.string().orEmpty()
                 when (r.code) {
+                    // A signed mint refused with the relay's time attached: our clock is off.
+                    // Adopt the offset and ask once more; a second 401 cools like any other.
+                    401 if signed && mayRetrySkew && adoptServerTime(r) -> {
+                        note(base, startedAt, "401 clock offset ${clockOffsetSec}s; re-signing")
+                        null
+                    }
                     200 -> {
                         val file = runCatching { json.decodeFromString<RelayFileResponse>(body) }.getOrNull()
                         // https only: a relay handing back a plaintext CDN URL is either
@@ -238,6 +246,13 @@ class LosslessRelayClient @Inject constructor(
                     }
                 }
             }
+        }
+        // The body read stays INSIDE the try: a relay that returns 200 headers and then
+        // stalls throws out of string(), and that must cool this base — not escape into
+        // the caller's breaker (QbdlxQobuzSource.callLimited trips qbdlx wholesale).
+        try {
+            // attempt(false) never answers null; the fallback only satisfies the type.
+            attempt(mayRetrySkew = true) ?: attempt(mayRetrySkew = false) ?: RelayMint.Unavailable
         } catch (e: IOException) {
             // Also covers a body that dies mid-read (callTimeout firing during string()) — that IS a sick relay.
             Log.w(TAG, "relay ${host(base)} unreachable (${e.javaClass.simpleName}) — cooling ${UNAVAILABLE_COOLDOWN_MS / 1000}s")
@@ -286,16 +301,38 @@ class LosslessRelayClient @Inject constructor(
      * rather than throwing: this runs BEFORE the HTTP try, and an exception here
      * would escape into QbdlxQobuzSource's breaker and trip qbdlx wholesale.
      *
-     * ponytail: the ±5 min window assumes an NTP-synced clock; add Date-header
-     * skew correction if relay 401s show up in the field.
+     * The ±5 min window assumes a synced clock. A device clock off by more would make
+     * every mint a 401 (read as a sick relay, forever), so the timestamp adds
+     * [clockOffsetSec], learned from a 401's `X-Stash-Server-Time` ([adoptServerTime]).
+     *
+     * Returns true when the request was signed.
      */
-    private suspend fun signIfKeyed(b: Request.Builder, trackId: Long, formatId: Int) {
-        val key = config.relayKey.value ?: return
+    private suspend fun signIfKeyed(b: Request.Builder, trackId: Long, formatId: Int): Boolean {
+        val key = config.relayKey.value ?: return false
         val install = runCatching { config.installId() }.getOrElse { UUID.randomUUID().toString() }
-        val ts = clock() / 1000
+        val ts = clock() / 1000 + clockOffsetSec
         val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key.toByteArray(), "HmacSHA256")) }
         val sig = mac.doFinal("$install:$trackId:$formatId:$ts".toByteArray()).joinToString("") { "%02x".format(it) }
         b.header("X-Stash-Install", install).header("X-Stash-Ts", ts.toString()).header("X-Stash-Auth", sig)
+        return true
+    }
+
+    /**
+     * Relay time minus device time, seconds; added to every signed timestamp. In memory only:
+     * a clock fixed while the app runs costs one more 401 + retry, and a restart starts at 0.
+     */
+    @Volatile private var clockOffsetSec: Long = 0L
+
+    /**
+     * On a 401 carrying `X-Stash-Server-Time` (epoch seconds, sent for signature / timestamp
+     * failures), record the device's offset from it. False when the header is absent or junk:
+     * the 401 is then handled exactly as before.
+     */
+    private fun adoptServerTime(r: okhttp3.Response): Boolean {
+        val server = r.header("X-Stash-Server-Time")?.trim()?.toLongOrNull()?.takeIf { it > 0 } ?: return false
+        clockOffsetSec = server - clock() / 1000
+        Log.i(TAG, "relay clock offset ${clockOffsetSec}s; re-signing")
+        return true
     }
 
     private fun cool(base: String, ms: Long) {
