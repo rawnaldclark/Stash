@@ -46,7 +46,7 @@ one place:
 - Alternative considered: a Durable Object per subject (strictly serialised counts). Not needed: a race can at most
   serve a couple of answers past 500, and D1 keeps the design to one table both Workers already know how to use.
 
-**Reset:** midnight UTC, one moment for everyone. The app and site show it in local time ("resets at 2:00 AM").
+**Reset (decided):** midnight UTC, one moment for everyone. The app and site show it in local time ("resets at 2:00 AM").
 
 ## Supporters: unlimited (decided: Ko-fi email claim)
 
@@ -62,8 +62,8 @@ Revive the June 2026 design (branch `feat/kofi-supporter-tier`: offline-signed E
 - **Sharing:** tokens are not device-locked (June decision: frictionless reinstall). To keep a posted token from
   becoming a free pass for everyone: a per-token soft cap (e.g. 5,000 lossless a day, far above any listener) and a
   revocation list (`tid` in KV) the relays check.
-- **Abuse caps still apply to supporters:** per-network, per-/48 and global caps are about protecting the pools,
-  not about the free tier. (Open question 3.)
+- **Abuse caps still apply to supporters (decided):** per-network, per-/48 and global caps protect the pools,
+  not the free tier; one listener never gets near 2,000 a day.
 
 ## At the limit (decided: fall back to lossy)
 
@@ -71,8 +71,11 @@ Revive the June 2026 design (branch `feat/kofi-supporter-tier`: offline-signed E
   `Retry-After` = seconds to the reset.
 - **App:** stores "lossless spent until resetsAt" and skips the Qobuz and Tidal lossless rungs entirely until then
   (no requests). Streaming falls to Tidal AAC 320 (the Tidal relay keeps serving `?aac=1` answers: AAC never counts),
-  then JioSaavn / YouTube. Downloads take the same lossy path; the existing FLAC-upgrade sweep upgrades them later.
-  The quality badge already shows AAC / lossy, so no silent downgrade.
+  then JioSaavn / YouTube. The quality badge already shows AAC / lossy, so no silent downgrade.
+- **Downloads (decided): follow the user's lossy-fallback setting.** With the fallback on (Tidal AAC / YouTube
+  fallback), downloads continue with the lossy copy and the existing FLAC-upgrade sweep replaces it with lossless
+  after the reset. With the fallback off, lossless downloads stop and stay queued until the reset; nothing lossy is
+  saved.
 - **Website:** the same fallback in the player's source order (lossless plugin → Tidal AAC → JioSaavn → YouTube).
 
 ## The counter in the UI
@@ -80,9 +83,9 @@ Revive the June 2026 design (branch `feat/kofi-supporter-tier`: offline-signed E
 - **Every lossless answer** carries `X-Stash-Lossless: <used>/<limit>` (or `<used>/unlimited`) and
   `X-Stash-Lossless-Reset: <epoch s>`; a new `GET /quota` on each relay returns the same as JSON for a cold start.
   The app keeps the latest value in memory and DataStore.
-- **App placement (proposal):** a small line in Settings → Audio & Quality ("Lossless today: 412 of 500 · resets
-  2:00 AM"), the same line in the Now Playing quality sheet, and a one-time snackbar at 450 and at 500 with the
-  supporter nudge ("Unlimited lossless for supporters: any amount on Ko-fi"). Supporters see "Unlimited (supporter)".
+- **App placement (decided):** a line in Settings → Audio & Quality ("Lossless today: 412 of 500 · resets
+  8:00 PM", in local time) and a one-time snackbar at 450 and at 500 with the supporter nudge ("Unlimited lossless
+  for supporters: any amount on Ko-fi"). Supporters see "Unlimited (supporter)". Not in Now Playing.
 - **Website (proposal):** the same line in the player's settings panel and under the quality badge in Now Playing.
 
 ## Build plan
@@ -101,10 +104,7 @@ which is today's Qobuz behaviour).
 
 ## Open questions for the owner
 
-1. **Reset time:** midnight UTC for everyone (proposed), or midnight in each user's local time?
-2. **Shared token cap:** is 5,000 lossless a day per supporter token a fine safety ceiling?
-3. **Supporters and the network cap:** should a supporter skip the per-network 2,000/day cap too? (Proposed: no;
-   it protects the pools and a single listener never gets near it.)
-4. **Where the counter shows in the app:** Settings + Now Playing sheet + two snackbars (proposed), or also somewhere
-   always visible (e.g. Home header)?
-5. **Downloads at the limit:** lossy now and upgrade later (proposed), or hold lossless downloads until the reset?
+1. **Shared token cap:** is 5,000 lossless a day per supporter token a fine safety ceiling? (Default if no answer.)
+
+Decided 2026-10-17: reset at midnight UTC; counter in Settings + snackbars at 450/500; downloads follow the lossy
+fallback setting; supporters keep the network caps.
