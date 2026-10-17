@@ -47,3 +47,17 @@ service = "stash-mailer"
 # per 1,000 supporters, and a write only when the list changed.
 [triggers]
 crons = ["17 4 * * *"]
+
+# The supporter claim (src/claim.js): a per-IP burst limit on POST /claim/email/start and /verify (keys are
+# "<route>:<hashed IP>"). The binding only counts over 10 or 60 seconds; the hourly limits (5 starts per IP,
+# 3 per email) are KV counters in ACCESS_KV (claimrl:*). Namespace 1004: 1001-1003 and 2010-2021 are taken
+# on this account.
+[[ratelimits]]
+name = "CLAIM_RL"
+namespace_id = "1004"
+simple = { limit = 10, period = 60 }
+
+# Secret: ENTITLEMENT_PRIVATE_KEY (the supporter claim, src/entitlement.js): standard base64 of the PKCS#8 DER
+# Ed25519 private key that signs supporter tokens. NOT committed. Without it /claim/email/start and /verify
+# answer 503. The matching public key is in README.md ("Supporter claim"). The claim also needs EMAIL_PEPPER,
+# MAILER and MAILER_TOKEN (above), and stash-mailer's POST /supporter-claim route.

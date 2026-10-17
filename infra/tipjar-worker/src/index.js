@@ -8,6 +8,10 @@
  *           Android app. Cached for 60s at the edge.
  *   GET /lossless.json and /lossless.json.sig → the signed lossless relay
  *           config, byte-for-byte from KV (see infra/lossless-relay).
+ *   POST /claim/email/start and /claim/email/verify → the supporter claim:
+ *           a Ko-fi donor proves their email and gets a signed supporter
+ *           token (src/claim.js, src/entitlement.js). Every other POST path
+ *           is still the Ko-fi webhook, as before.
  * And a daily cron (wrangler.toml) that rebuilds the supporter list.
  *
  * Storage: Cloudflare KV. Each supporter has a key of their own,
@@ -32,12 +36,16 @@
  */
 
 import { dedupeId, KEYS, KOFI_TXN_TTL_S, recordKofiSupport, sameSecret } from "./access.js";
+import { handleClaimStart, handleClaimVerify } from "./claim.js";
 import { addSupporter, LIST_KEY, rebuildSupporters, storedSupporter } from "./supporters.js";
 import { sendWelcome } from "./welcome.js";
 
 export default {
     async fetch(request, env, ctx) {
         if (request.method === "POST") {
+            const path = new URL(request.url).pathname;
+            if (path === "/claim/email/start") return handleClaimStart(request, env, ctx);
+            if (path === "/claim/email/verify") return handleClaimVerify(request, env);
             return handleKofiWebhook(request, env, ctx);
         }
         if (request.method === "GET") {

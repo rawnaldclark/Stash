@@ -260,6 +260,102 @@ early access, once, before launch:
 
 Re-running is safe: each entry is rewritten with the same hash.
 
+## Supporter claim
+
+A Ko-fi donor proves they own the email they donated with and gets an
+offline-signed **supporter token** (unlimited lossless; design:
+`docs/superpowers/specs/2026-10-17-lossless-daily-counter-design.md`,
+"Supporters"). Code: `src/claim.js`, `src/entitlement.js`. Every other
+POST path is still the Ko-fi webhook and every GET path the list, as before.
+
+| Request | Answers |
+| --- | --- |
+| `POST /claim/email/start` `{"email"}` | `202 {"ok":true}` for every valid address, donor or not; `400 {"error":"bad_email"}`; `400 {"error":"bad_request"}` (not a JSON object); `429 {"error":"rate_limited"}` + `Retry-After`; `503 {"error":"not_configured"}` |
+| `POST /claim/email/verify` `{"email","code"}` | `200 {"token"}` (the claim is deleted); `401 {"error":"bad_code"}`; `429 {"error":"too_many_tries"}` on the 5th wrong code (the claim is deleted); `410 {"error":"expired"}` (no pending claim); `400 bad_email / bad_request`; `429 rate_limited`; `503 not_configured` |
+
+- **Who counts as a donor:** an `access:<hash>` entry with `source: "kofi"`
+  (the webhook and the Ko-fi CSV import write it). The website's
+  `approved`, `manual` and `open` entries are early access, not donations,
+  and get the no-donation email. A donor added by hand on the admin page
+  can't claim until they donate (or are imported from the Ko-fi CSV).
+- **start never reveals donor status.** The answer is the same 202 either
+  way, and the lookup, the claim write and the email all happen after the
+  response (`waitUntil`). A donor's email holds a 6-digit code, valid 10
+  minutes; anyone else's says no donation was found for that address and
+  that any amount on Ko-fi (ko-fi.com/rawnald) unlocks unlimited lossless.
+  Exactly one email per accepted start.
+- **Pending claim:** `claim:<hash>` in `ACCESS_KV` =
+  `{codeHash, tries, exp}`, `codeHash` = SHA-256 hex of (code + email hash),
+  10-minute TTL. A new start replaces it. Codes are compared in constant time.
+- **Rate limits:** per IP 5 starts an hour and per email 3 an hour (KV
+  counters `claimrl:ip|email:<hash>:<hour>`, the IP keyed with
+  `EMAIL_PEPPER`, never stored raw), plus the `CLAIM_RL` binding
+  (`[[ratelimits]]`, namespace `1004`, 10 a minute per IP, on start and
+  verify). KV isn't atomic: a burst of parallel requests can slip a few past
+  an hourly limit; the binding bounds that.
+- **Logs** never carry the email (not even masked), the code, the IP or the token.
+
+### The token
+
+```
+payload = {"tier":"supporter","iat":<epoch seconds>,"tid":"<32 hex>","v":1}   (JSON.stringify, this key order)
+token   = b64url(UTF-8 payload) + "." + b64url(Ed25519 signature over the ASCII bytes of the first segment)
+```
+
+`b64url` is base64url without padding. No personal data: `tid` is 16
+random bytes. The relays and the app verify it with the public key.
+
+- Secret **`ENTITLEMENT_PRIVATE_KEY`**: standard base64 of the PKCS#8 DER
+  Ed25519 private key. Never committed. Without it start and verify answer 503.
+- **Production public key** (raw 32 bytes, standard base64):
+  `IbghbSB8gJcuHbpSEf8tRKfCwzBfB14eBPew3nVkQFQ=`
+
+Load the secret from a PKCS#8 PEM (`-----BEGIN PRIVATE KEY-----`) without
+the key touching a file in the repo or your shell history:
+
+```bash
+# PEM -> one line of base64 of the DER (the PEM body is exactly that), piped straight in:
+grep -v -- '-----' /path/outside/repo/entitlement-private.pem | tr -d '\r\n' | npx wrangler secret put ENTITLEMENT_PRIVATE_KEY
+# Check it matches the public key above before deploying:
+openssl pkey -in /path/outside/repo/entitlement-private.pem -pubout -outform DER | tail -c 32 | base64
+```
+
+### The mailer route it needs (stash-mailer)
+
+The emails are stash-mailer's templates, like the welcome, so the
+shared `MAILER_TOKEN` can't send arbitrary text. The tip jar calls:
+
+```
+POST https://stash-mailer/supporter-claim   Authorization: Bearer <MAILER_TOKEN>
+  {"email":"<addr>","kind":"code","code":"123456"}
+  {"email":"<addr>","kind":"no_donation"}
+-> 200 {"sent":true}   (anything else is logged as not sent)
+```
+
+**Deploy stash-mailer with this route first**; until then every claim
+email fails (start still answers 202). Suggested copy:
+
+- `code`: subject "Your Stash supporter code" (no code in the subject: it
+  shows on lock screens); body "Your Stash supporter code: 123456. Enter it
+  in the Stash app within 10 minutes. If you didn't ask for it, you can
+  ignore this email."
+- `no_donation`: subject "Stash supporter: no donation found"; body "We
+  couldn't find a Ko-fi donation for this email address. Any amount on
+  Ko-fi (https://ko-fi.com/rawnald) unlocks unlimited lossless. Donate with
+  this same address, then try again in the Stash app."
+
+Its own per-address limit should use a key apart from the welcome's.
+
+### Revoking a token
+
+See `scripts/revoke-token.md`: insert the token's `tid` into the
+`revoked_tokens` table of the `stash-quota` D1 database, which the relays
+check:
+
+```bash
+npx wrangler d1 execute stash-quota --remote --command "INSERT INTO revoked_tokens(tid,revoked_at,reason) VALUES('<tid>',strftime('%s','now'),'shared publicly')"
+```
+
 ## KV keys
 
 Every key the tip jar and the website use, in one place. `<hash>` is the
@@ -284,4 +380,6 @@ email hash above.
 | `meta:hashcheck` | tip jar webhook (when it changes), the import script | The hash of `hashcheck@stashfm.app`, to spot a pepper mismatch | Until replaced |
 | `code:<hash>:<browser>` | website | Up to 3 live sign-in codes one browser asked for (their HMACs and expiry times) and that browser's wrong tries so far; `<browser>` is its `stash_signin` cookie | 10 minutes after the newest code |
 | `sends:<hash>` | website | How many codes went to this email this hour | 1 hour |
+| `claim:<hash>` | tip jar, `POST /claim/email/start` | A pending supporter claim: `{codeHash, tries, exp}` (SHA-256 of code + hash, never the code) | 10 minutes, or until verified / 5 wrong codes |
+| `claimrl:ip:<iphash>:<hour>`, `claimrl:email:<hash>:<hour>` | tip jar, `POST /claim/email/start` | How many starts this IP (HMAC with `EMAIL_PEPPER`) or email made this hour | The hour, plus a minute |
 | `request:<hash>` | website | `{email, note, at}` (metadata `{at}`): an access request, the only place a raw email is kept | Until approved or denied, or 30 days |
