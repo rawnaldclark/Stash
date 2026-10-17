@@ -76,19 +76,6 @@ RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, cap
     return row ? row.label : null;
 }
 
-/**
- * Statement (not executed): hands back the hourly and daily slot selectAccount stamped on `label`, for a lookup
- * that must not count against the account caps (Qobuz's 404 for an id it doesn't know, see index.js). Only
- * while the stamp's hour/day is still current, never below 0. last_used_at stays, so the LRU still moves on.
- */
-export function refundAccountStmt(db, label, nowSec) {
-    return db.prepare(`
-UPDATE accounts SET
-  hour_n = CASE WHEN hour_key = ?2 AND hour_n > 0 THEN hour_n - 1 ELSE hour_n END,
-  day_n  = CASE WHEN day_key  = ?3 AND day_n  > 0 THEN day_n  - 1 ELSE day_n  END
-WHERE label = ?1`).bind(label, hourKey(nowSec), dayKey(nowSec));
-}
-
 /** Give every label in the secret a state row. INSERT OR IGNORE writes nothing for a known label. */
 export async function ensureAccounts(db, labels) {
     if (labels.length === 0) return;
@@ -111,12 +98,21 @@ export async function killAccount(db, label, reason) {
 /** A dead account is re-tried after this long: a misclassified kill self-heals, a real one costs one failed mint per window. */
 export const DEAD_RETRY_S = 6 * 3600;
 
-/** Hourly cron: drop mints past their etsp, quota rows older than yesterday, and give stale dead accounts another chance. */
+/**
+ * Kill reasons where Qobuz said outright that the account itself is revoked: never re-tried by prune.
+ * A blocked account answers every retry the same way, and each retry is one more call on it (2026-10-17
+ * audit). 401 and UserUnauthenticated stay re-triable: a token the operator replaces under the same label
+ * comes back on its own. Revive one by hand: UPDATE accounts SET state = 'live', dead_reason = '' WHERE label = ?.
+ */
+export const PERMANENT_DEAD_REASONS = ["USER_BLOCKED"];
+
+/** Hourly cron: drop mints past their etsp, quota rows older than a week, and give stale dead accounts another chance (not revoked ones). */
 export async function prune(db, nowSec) {
     await db.batch([
         db.prepare("DELETE FROM mints WHERE etsp < ?1").bind(nowSec),
         // A week back plus today: the caps only read today; the IP report reads the rest.
         db.prepare("DELETE FROM quota WHERE day < ?1").bind(dayKey(nowSec - QUOTA_KEEP_DAYS * 86400)),
-        db.prepare("UPDATE accounts SET state = 'live', dead_reason = '' WHERE state = 'dead' AND last_used_at < ?1").bind(nowSec - DEAD_RETRY_S),
+        db.prepare("UPDATE accounts SET state = 'live', dead_reason = '' WHERE state = 'dead' AND last_used_at < ?1 AND dead_reason NOT IN (SELECT value FROM json_each(?2))")
+            .bind(nowSec - DEAD_RETRY_S, JSON.stringify(PERMANENT_DEAD_REASONS)),
     ]);
 }

@@ -16,7 +16,9 @@ DOWNLOAD_PACE_HEADROOM_PCT = "13" # 10→13 (+30%) on 2026-10-03; streams first,
 # Per network (IPv4 address, IPv6 /56), added 2026-10-11 so a script rotating install ids can't take the whole
 # global cap. Both need the IP_SALT secret; without it they are off.
 NETWORK_DAILY_CAP = "2000"     # 4 installs' worth: a household or a carrier NAT still fits
-NETWORK_FREE_404_DAILY = "100" # Qobuz 404s (unknown ids) that spend no global or account budget; past it they count
+NETWORK_FREE_404_DAILY = "100" # Qobuz 404s (unknown ids) that spare the network cap (they still spend global + account); past it they count
+# An IPv6 caller is also capped by its /48 as a whole (one tunnel-broker /48 holds 256 /56s). Unset here on purpose:
+# NETWORK48_DAILY_CAP defaults to 4 × NETWORK_DAILY_CAP and NETWORK48_FREE_404_DAILY to 4 × NETWORK_FREE_404_DAILY.
 
 # Rotation state, mint cache, daily counters (spec §5.2: D1, not KV, because of KV's write limit).
 [[d1_databases]]

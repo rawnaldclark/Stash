@@ -6,7 +6,7 @@
  * never transits here (spec §4). The wire contract in spec §1-2 is enforced by
  * the shipped client, so every status below means exactly one thing to it:
  *   200 mint · 404 not available (ends the track) · 503 busy (base cools 60 s)
- *   anything else: base cools 5 min. Never 200 with an error body.
+ *   anything else: base cools 5 min. Never 200 with an error body. A 401 carries X-Stash-Server-Time.
  *
  * Endpoints:
  *   GET /v1/qobuz/file?track_id=&format_id=   signed (X-Stash-Install/-Ts/-Auth), X-Stash-Version: 1,
@@ -23,7 +23,7 @@ import { verifyMint } from "./auth.js";
 import { mintFromQobuz } from "./qobuz.js";
 import {
     getCached, putCachedStmt, readQuota, readQuotas, bumpQuotaStmt,
-    selectAccount, ensureAccounts, coolAccount, coolAccountStmt, refundAccountStmt, killAccount, prune, dayKey,
+    selectAccount, ensureAccounts, coolAccountStmt, killAccount, prune, dayKey,
 } from "./db.js";
 
 /** The lossless formats the client asks for (LosslessQualityTier → 6 / 7 / 27). Data Saver's 5 (MP3 320) is answered 404 below. */
@@ -85,7 +85,9 @@ async function mint(request, url, env, fetchImpl, nowSec) {
 
     const install = h("X-Stash-Install");
     const signed = verifyMint({ install, ts: h("X-Stash-Ts"), auth: h("X-Stash-Auth") }, trackId, formatId, nowSec, [env.RELAY_KEY, env.RELAY_KEY_PREV]);
-    if (!signed) return json({ error: "unauthorized" }, 401);
+    // The server's clock rides on the 401 so a device whose clock drifted past ±MAX_SKEW_S can correct its
+    // X-Stash-Ts and retry. It tells nothing a caller couldn't learn from the Date header; the window stays.
+    if (!signed) return json({ error: "unauthorized" }, 401, { "X-Stash-Server-Time": String(nowSec) });
 
     // Data Saver asks for format 5 (MP3 320). The relay serves lossless only, and the client's
     // router discards any relay format below 6 anyway, so a well-formed non-lossless format is
@@ -124,12 +126,18 @@ async function mint(request, url, env, fetchImpl, nowSec) {
         if (wait > 0) return json({ error: "paced" }, 429, { "Retry-After": String(wait) });
     }
     // The install's daily cap, then its network's: the install id is client-chosen, so a script that
-    // rotates it meets the network cap instead. Both counters, and the network's free-404 tally
-    // (spendStmts), come back in one read. No IP_SALT, no network tag: the network caps are off.
+    // rotates it meets the network cap instead. An IPv6 caller also meets its /48's aggregate cap
+    // (network48Of): one free tunnel-broker /48 holds 256 /56s, each with its own network cap.
+    // Every counter, and the free-404 tallies (spendStmts), come back in one read. No IP_SALT, no
+    // network tag: the network caps are off.
     const tag = ipTag(env, network);
-    const keys = { install: "i:" + install, network: tag && "n:" + tag, free404: tag && "nf:" + tag };
+    const tag48 = ipTag(env, network48Of(h("CF-Connecting-IP")));
+    const keys = {
+        install: "i:" + install, network: tag && "n:" + tag, free404: tag && "nf:" + tag,
+        network48: tag48 && "w:" + tag48, free404w: tag48 && "wf:" + tag48,
+    };
     const used = await readQuotas(env.DB, day, Object.values(keys).filter(Boolean));
-    if (used[keys.install] >= caps.install || (tag && used[keys.network] >= caps.network)) {
+    if (used[keys.install] >= caps.install || (tag && used[keys.network] >= caps.network) || (tag48 && used[keys.network48] >= caps.network48)) {
         return json({ error: "rate_limited" }, 429, { "Retry-After": "3600" });
     }
 
@@ -142,10 +150,11 @@ async function mint(request, url, env, fetchImpl, nowSec) {
         ensured.set(env.DB, accountSecretVersion);
     }
     let refusedBy = null; // an account that refused this track without naming the track
+    let noSecondOpinion = false; // refusedBy is set and no other account was free to cross-check it
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         const label = await selectAccount(env.DB, nowSec, caps, refusedBy, accounts.map((a) => a.label), caps.uncappedLabels, caps.noCooldownLabels);
         const account = accounts.find((a) => a.label === label);
-        if (!account) break; // nothing live under its caps → 503 below (or the 404 a refusal already earned)
+        if (!account) { noSecondOpinion = Boolean(refusedBy); break; } // nothing live under its caps → 503 below
         const r = await mintFromQobuz(fetchImpl, account, trackId, formatId, nowSec);
         // Country/colo: the Worker runs — and calls Qobuz from — the colo nearest the phone, so
         // if Qobuz applies rights by calling IP, refusals will follow the colo, not the account.
@@ -156,9 +165,10 @@ async function mint(request, url, env, fetchImpl, nowSec) {
             continue;
         }
         if (r.kind === "ok" || r.kind === "locked") {
-            const free404 = r.kind === "locked" && r.reason === "404" && Boolean(tag) && used[keys.free404] < caps.free404;
+            const free404 = r.kind === "locked" && r.reason === "404" && Boolean(tag) && used[keys.free404] < caps.free404
+                && (!tag48 || used[keys.free404w] < caps.free404w);
+            // A free 404 keeps the account slot selectAccount stamped: it was a real Qobuz call.
             const writes = spendStmts(env.DB, day, keys, tag, free404);
-            if (free404) writes.push(refundAccountStmt(env.DB, label, nowSec));
             if (r.kind === "ok" && refusedBy) {
                 // Another account served what refusedBy would not: the refusal was about that account.
                 // Cool it, never kill it (a per-track signal must not retire an account, 2026-09-05).
@@ -170,7 +180,18 @@ async function mint(request, url, env, fetchImpl, nowSec) {
             return r.kind === "ok" ? ok(r.url, r.formatId, r.bitDepth, r.sampleRateHz, "MISS") : json({ error: "not_available" }, 404);
         }
         if (r.kind === "dead") await killAccount(env.DB, label, r.reason);
-        else await coolAccount(env.DB, label, nowSec + TRANSIENT_COOL_S);
+        // A transient reached Qobuz and cools an account, so it costs the caller's network one unit
+        // (2026-10-17 audit: free, a network could keep the pool cooling at no cost to itself).
+        else await env.DB.batch([coolAccountStmt(env.DB, label, nowSec + TRANSIENT_COOL_S), ...networkStmts(env.DB, day, keys)]);
+    }
+    if (noSecondOpinion && accounts.length > 1) {
+        // The cross-check never ran: every other account was cooling, capped or dead. A 404 here is cached
+        // on the device as "not available" for good, so answer busy and let it ask again later. The
+        // refusal was a real Qobuz call, so it costs the network one unit, like a transient. (A one-account
+        // pool has no second opinion to wait for: its refusal stands, below.)
+        const charge = networkStmts(env.DB, day, keys);
+        if (charge.length) await env.DB.batch(charge); // none without IP_SALT, and D1 refuses an empty batch
+        return json({ error: "busy" }, 503, { "Retry-After": "60" });
     }
     if (refusedBy) {
         // The one refusal we got stands: answer it as before (404, quota spent) rather than 503.
@@ -198,19 +219,23 @@ export function pacedWaitSec(used, caps, nowSec) {
  * Normally it also spends the shared `global` cap and the network's `n:` cap.
  *
  * `free404`: Qobuz answered 404, i.e. it has never heard of the id, and the network still has some
- * of its daily allowance of those. Such a lookup bumps `nf:<network>` instead of `global` and `n:`,
- * and the caller hands the account's hourly/daily slot back (refundAccountStmt). Before 2026-10-11
- * every 404 spent the global cap: the relay key is public and any 1-12 digit id passes, so one
- * script asking for random ids could burn the day's whole pool and leave every real listener on
- * 503 until midnight UTC. Past the allowance a 404 counts like any other answer, so the network's
- * daily cap still bounds what one caller takes.
+ * of its daily allowance of those (`nf:`, and for IPv6 its /48's `wf:`). Such a lookup bumps those
+ * tallies instead of the network's `n:`/`w:` caps: honest clients ask for dead ids, and that must
+ * not eat their network's day. It still spends `global`, and keeps the account's hourly/daily slot,
+ * because it was a real Qobuz call (2026-10-17 audit: refunding both left 404 traffic bounded by
+ * nothing but the per-network allowance, so made-up ids hit Qobuz without limit, scaling with
+ * networks). Past the allowance a 404 counts like any other answer, so the network's daily cap still
+ * bounds what one caller takes.
  */
 function spendStmts(db, day, keys, tag, free404) {
-    const writes = [bumpQuotaStmt(db, day, keys.install, tag)];
-    if (free404) return [...writes, bumpQuotaStmt(db, day, keys.free404)];
-    writes.push(bumpQuotaStmt(db, day, "global"));
-    if (keys.network) writes.push(bumpQuotaStmt(db, day, keys.network));
-    return writes;
+    const writes = [bumpQuotaStmt(db, day, keys.install, tag), bumpQuotaStmt(db, day, "global")];
+    if (free404) return [...writes, ...[keys.free404, keys.free404w].filter(Boolean).map((k) => bumpQuotaStmt(db, day, k))];
+    return [...writes, ...networkStmts(db, day, keys)];
+}
+
+/** The caller's network counters: its `n:` cap and, for IPv6, its /48's `w:` aggregate. Empty without IP_SALT. */
+function networkStmts(db, day, keys) {
+    return [keys.network, keys.network48].filter(Boolean).map((k) => bumpQuotaStmt(db, day, k));
 }
 
 /**
@@ -234,24 +259,47 @@ export function networkOf(addr) {
 }
 
 /**
+ * The /48 an IPv6 caller's /56 sits in, for the aggregate `w:` cap, or null for IPv4 (and IPv4-mapped
+ * IPv6) and a missing address: an IPv4 caller has no /48 and is capped by its address alone. Same
+ * normalisation as networkOf, so every way of writing an address lands on one key.
+ */
+export function network48Of(addr) {
+    const net = networkOf(addr);
+    if (!net.endsWith("/56")) return null;
+    return net.split(":").slice(0, 3).join(":") + "/48";
+}
+
+/**
  * A short salted hash of the caller's network (networkOf) for the per-network caps and the abuse
  * report (many installs behind one network is how a scraper rotating install ids shows up), or null
  * when IP_SALT is unset, which turns the per-network caps off. The salt is a Worker secret, never the
  * relay key: that key is public, and with it the whole IPv4 space would reverse in minutes.
  */
 function ipTag(env, network) {
-    return env.IP_SALT && network !== "?" ? createHmac("sha256", env.IP_SALT).update(network).digest("hex").slice(0, 16) : null;
+    if (!env.IP_SALT) {
+        // Off by design (local dev), but in production it silently drops every network cap: say so once per isolate.
+        if (!warnedNoSalt) { warnedNoSalt = true; console.warn("IP_SALT not set: per-network caps are OFF"); }
+        return null;
+    }
+    return network && network !== "?" ? createHmac("sha256", env.IP_SALT).update(network).digest("hex").slice(0, 16) : null;
 }
+let warnedNoSalt = false;
 
 function vars(env) {
     const n = (v, d) => (Number.parseInt(v, 10) > 0 ? Number.parseInt(v, 10) : d);
-    return {
+    const c = {
         global: n(env.GLOBAL_DAILY_CAP, 600),
         install: n(env.INSTALL_DAILY_CAP, 100),
         // Per network (only with IP_SALT): a few installs' worth, so a household or a carrier NAT still fits.
         network: n(env.NETWORK_DAILY_CAP, 400),
-        // Qobuz 404s (ids it doesn't know) a network gets each day without spending the global or account caps.
+        // Qobuz 404s (ids it doesn't know) a network gets each day without spending its own network cap.
         free404: n(env.NETWORK_FREE_404_DAILY, 50),
+    };
+    return {
+        ...c,
+        // An IPv6 /48 together (256 /56s): four networks' worth, so a site with a few subnets still fits.
+        network48: n(env.NETWORK48_DAILY_CAP, 4 * c.network),
+        free404w: n(env.NETWORK48_FREE_404_DAILY, 4 * c.free404),
         hourly: n(env.ACCOUNT_HOURLY_CAP, 20),
         daily: n(env.ACCOUNT_DAILY_CAP, 200),
         // These account labels bypass only the per-account hourly/daily selection limits.
