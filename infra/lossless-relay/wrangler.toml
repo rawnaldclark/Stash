@@ -19,6 +19,16 @@ NETWORK_DAILY_CAP = "2000"     # 4 installs' worth: a household or a carrier NAT
 NETWORK_FREE_404_DAILY = "100" # Qobuz 404s (unknown ids) that spare the network cap (they still spend global + account); past it they count
 # An IPv6 caller is also capped by its /48 as a whole (one tunnel-broker /48 holds 256 /56s). Unset here on purpose:
 # NETWORK48_DAILY_CAP defaults to 4 × NETWORK_DAILY_CAP and NETWORK48_FREE_404_DAILY to 4 × NETWORK_FREE_404_DAILY.
+# The daily lossless counter shared with the Tidal relay (QUOTA_DB below): free lossless answers per install per
+# UTC day, Qobuz and Tidal together. Over it: 429 daily_lossless_cap. INSTALL_DAILY_CAP above stays as the
+# relay's own per-install cap and abuse telemetry.
+FREE_LOSSLESS_DAILY = "500"
+# Supporters (X-Stash-Entitlement token from the tip jar, src/quota.js): unlimited lossless, verified with this
+# Ed25519 public key (standard base64 of the raw 32 bytes; public by design, the private half is the tip jar's
+# secret). SUPPORTER_DAILY_CAP is the per-token safety ceiling: past it that day the token counts as free.
+# Supporters skip INSTALL_DAILY_CAP; the network, /48 and global caps still apply. Same values as the Tidal relay.
+ENTITLEMENT_PUBLIC_KEY = "IbghbSB8gJcuHbpSEf8tRKfCwzBfB14eBPew3nVkQFQ="
+SUPPORTER_DAILY_CAP = "5000"
 
 # Rotation state, mint cache, daily counters (spec §5.2: D1, not KV, because of KV's write limit).
 [[d1_databases]]
@@ -26,6 +36,14 @@ binding = "DB"
 database_name = "stash-relay"
 database_id = "b223d4c7-ba0a-41fa-948d-2a41d29dfdbb"   # printed by `npx wrangler d1 create stash-relay` (Task 9)
 migrations_dir = "migrations"
+
+# The shared daily lossless counter (src/quota.js), one database for both relays. Schema and its migrate
+# command: infra/lossless-quota/ (`--config infra/lossless-quota/wrangler.toml`). Unbound = counter off.
+[[d1_databases]]
+binding = "QUOTA_DB"
+database_name = "stash-quota"
+database_id = "f5c12428-cd59-4181-bbcf-9d368a11c495"
+migrations_dir = "../lossless-quota/migrations"
 
 # Per-IP cap in front of everything (spec §5.4). Counts every /v1/qobuz/file request, hits included.
 # Keyed per network (IPv4 address, IPv6 /56) since 2026-10-11, so rotating IPv6 addresses doesn't buy new buckets.

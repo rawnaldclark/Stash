@@ -34,3 +34,13 @@ test("rejects malformed or missing headers without throwing", () => {
     assert.equal(verifyMint({}, 42, 27, 1700000000, ["k-secret"]), false);
     assert.equal(verifyMint({ ...H, auth: H.auth.slice(0, 63) }, 42, 27, 1700000000, ["k-secret"]), false);
 });
+
+test("the quota signature is <install>:quota:<ts> with the mint's key and encoding (fixed vector for the app)", async () => {
+    const { verifyQuota, verifySigned } = await import("../src/auth.js");
+    const Q = { ...H, auth: "c9f00efc855cdc0349a1bcb6b5cedcdf78ec50c76570e5c9c250db26bcf2df9d" };
+    assert.equal(verifyQuota(Q, 1700000000, ["k-secret"]), true);
+    assert.equal(verifyQuota(Q, 1700000000, ["other", "k-secret"]), true);
+    assert.equal(verifyQuota(Q, 1700000301, ["k-secret"]), false);
+    assert.equal(verifyQuota(H, 1700000000, ["k-secret"]), false, "a mint signature is not a quota signature");
+    assert.equal(verifySigned(H, "42:27", 1700000000, ["k-secret"]), true, "verifyMint is verifySigned with <track>:<format>");
+});

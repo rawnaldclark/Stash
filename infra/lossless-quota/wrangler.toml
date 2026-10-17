@@ -1,0 +1,9 @@
+# Not a Worker: only the D1 binding, so the shared quota schema can be migrated on its own:
+#   npx wrangler d1 migrations apply stash-quota --remote --config infra/lossless-quota/wrangler.toml
+name = "stash-quota"
+
+[[d1_databases]]
+binding = "QUOTA_DB"
+database_name = "stash-quota"
+database_id = "f5c12428-cd59-4181-bbcf-9d368a11c495"
+migrations_dir = "migrations"

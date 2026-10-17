@@ -3,11 +3,13 @@ import { readFileSync, readdirSync } from "node:fs";
 
 /**
  * Just enough of D1's prepare/bind/first/all/run/batch over node:sqlite for the SQL in
- * src/db.js to run unchanged. Applies every migrations/*.sql, in order, to a fresh in-memory DB.
+ * src/db.js to run unchanged. Applies every migrations/*.sql, in order, to a fresh in-memory DB
+ * (`dir`: another migrations folder, e.g. the shared quota DB's, QUOTA_MIGRATIONS).
  */
-export function fakeD1() {
+export const QUOTA_MIGRATIONS = new URL("../../lossless-quota/migrations/", import.meta.url);
+
+export function fakeD1(dir = new URL("../migrations/", import.meta.url)) {
     const raw = new DatabaseSync(":memory:");
-    const dir = new URL("../migrations/", import.meta.url);
     for (const f of readdirSync(dir).filter((n) => n.endsWith(".sql")).sort()) raw.exec(readFileSync(new URL(f, dir), "utf8"));
     return {
         raw,
