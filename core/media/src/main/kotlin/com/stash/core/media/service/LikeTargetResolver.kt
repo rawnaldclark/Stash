@@ -5,6 +5,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.library.canonicalWordsForSave
 import com.stash.core.data.library.findReusableByWords
+import com.stash.core.model.isScannedTrackId
 import javax.inject.Inject
 
 /**
@@ -33,6 +34,10 @@ class LikeTargetResolver @Inject constructor(
         album: String,
         albumArtist: String,
     ): Long {
+        // An All Songs file has no row and must never get one (nor adopt a library song of the
+        // same name by its words): the caller's failure path rolls the heart back.
+        check(!isScannedTrackId(candidateId)) { "An All Songs file can't be liked" }
+
         // Real Room PK already? Cheap exit.
         if (candidateId > 0L && trackDao.getById(candidateId) != null) return candidateId
 

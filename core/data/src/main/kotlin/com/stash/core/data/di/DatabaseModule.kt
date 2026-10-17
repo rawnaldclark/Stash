@@ -125,4 +125,8 @@ object DatabaseModule {
 
     @Provides
     fun provideSharedMixDao(db: StashDatabase): com.stash.core.data.db.dao.SharedMixDao = db.sharedMixDao()
+
+    @Provides
+    fun provideScannedSongDao(db: StashDatabase): com.stash.core.data.db.dao.ScannedSongDao =
+        db.scannedSongDao()
 }

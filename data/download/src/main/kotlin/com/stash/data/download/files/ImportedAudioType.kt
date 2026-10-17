@@ -8,8 +8,11 @@ package com.stash.data.download.files
  * the content's own container type, as the media retriever reads it, decides
  * ([fromContent]); a file none of them identifies is refused. Whatever is
  * returned is always one of [EXTENSIONS].
+ *
+ * Public because All Songs (`feature/library`) lists the same playable types when it scans a
+ * folder, so a file it lists is one the player can play.
  */
-internal object ImportedAudioType {
+object ImportedAudioType {
 
     /**
      * Audio containers the import pipeline saves, all of which the player

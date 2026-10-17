@@ -257,6 +257,12 @@ interface PlayerRepository {
     suspend fun insertInQueue(index: Int, track: Track): Boolean = false
 
     /**
+     * Takes every queue entry whose track id is in [trackIds] out of the live queue (files deleted
+     * from All Songs). Playback moves on if the playing one is among them. Default: nothing to do.
+     */
+    fun evictFromQueue(trackIds: Set<Long>) = Unit
+
+    /**
      * Move the track at position [from] to position [to] within the playback queue.
      * Both indices refer to the current MediaController item list.
      */

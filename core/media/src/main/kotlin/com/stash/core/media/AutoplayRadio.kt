@@ -2,6 +2,7 @@ package com.stash.core.media
 
 import com.stash.core.model.PlayerState
 import com.stash.core.model.RepeatMode
+import com.stash.core.model.isScannedSong
 
 /**
  * Whether the player should seed a song radio from the current track right
@@ -23,6 +24,9 @@ internal fun shouldAutoplayRadio(
     if (!state.isPlaying) return false
     if (state.repeatMode != RepeatMode.OFF) return false
     val track = state.currentTrack ?: return false
+    // An All Songs file's tags may be missing ("Unknown Artist") or not match anything online;
+    // the queue just ends, as it does with the setting off.
+    if (track.isScannedSong) return false
     if (state.queue.isEmpty() || state.currentIndex != state.queue.lastIndex) return false
     return track.id != triedTrackId
 }

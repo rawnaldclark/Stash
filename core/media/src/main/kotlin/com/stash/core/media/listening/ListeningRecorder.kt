@@ -14,6 +14,7 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.media.mediaToWallMs
 import com.stash.core.media.wallToMediaMs
 import com.stash.core.model.RepeatMode
+import com.stash.core.model.isScannedSong
 import com.stash.core.model.Track
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -237,6 +238,9 @@ class ListeningRecorder @VisibleForTesting internal constructor(
      * track plays.
      */
     private fun schedulePendingFire(track: Track) {
+        // All Songs scans live outside `tracks`: no listen, skip, or scrobble for them. `pending` stays
+        // null, so the skip branch in the track-change collector never fires for them either.
+        if (track.isScannedSong) return
         val sessionStart = System.currentTimeMillis()
         val session = PendingFire(
             track = track,

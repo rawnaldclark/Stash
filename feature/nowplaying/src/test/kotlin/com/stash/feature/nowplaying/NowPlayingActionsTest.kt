@@ -252,4 +252,22 @@ class NowPlayingActionsTest {
         val used = slots * fit.slotDp + if (cast) CAST_SLOT_DP else 0f
         assertTrue("row needs $used dp of $width", used <= width + 0.001f)
     }
+
+
+    @Test fun `an All Songs file hides what needs a library row or an online identity, pinned or not`() {
+        val ctx = ActionContext(isScannedSong = true, communityAvailable = true, isDownloaded = true)
+        val pins = setOf(NowPlayingAction.DOWNLOAD, NowPlayingAction.SHARE, NowPlayingAction.RADIO, NowPlayingAction.QUEUE)
+        val shown = topRowActions(pins, ctx).leading + topRowActions(pins, ctx).trailing + menuActions(pins, ctx)
+        for (hidden in SCANNED_HIDDEN) {
+            assertTrue("$hidden must not show", hidden !in shown)
+            assertEquals("Not for songs from your folders", hiddenReason(hidden, ctx))
+        }
+        // What still works on a file: its lyrics, the queue, a radio from it, its speed.
+        assertTrue(NowPlayingAction.LYRICS in shown)
+        assertTrue(NowPlayingAction.QUEUE in shown)
+        assertTrue(NowPlayingAction.RADIO in shown)
+        assertTrue(NowPlayingAction.PLAYBACK_SPEED in shown)
+        // A library song keeps them all.
+        assertTrue(SCANNED_HIDDEN.all { isActionAvailable(it, ctx.copy(isScannedSong = false)) })
+    }
 }

@@ -1493,6 +1493,15 @@ class StashPlaybackService : MediaLibraryService() {
             return
         }
 
+        if (trackId != lastTrackId && com.stash.core.model.isScannedTrackId(trackId)) {
+            // An All Songs file can't be liked: no heart, so nothing to observe.
+            likeObserverJob?.cancel()
+            lastTrackId = trackId
+            lastIsLiked = false
+            pushLayout(session, player, false)
+            return
+        }
+
         if (trackId != lastTrackId) {
             likeObserverJob?.cancel()
             lastTrackId = trackId
@@ -1530,17 +1539,20 @@ class StashPlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private fun pushLayout(session: MediaSession, player: Player, isLiked: Boolean) {
         val together = if (::listenTogetherController.isInitialized) listenTogetherController.state.value else null
+        // An All Songs file is never liked (it has no library row), so it gets no heart.
+        val likeable = player.currentMediaItem?.mediaId?.toLongOrNull()
+            ?.let { com.stash.core.model.isScannedTrackId(it) } != true
         val buttons = mutableListOf<CommandButton>()
         when {
             // A listener's notification shows only Leave (spec §5); repeat does nothing in a one-song session.
             together is com.stash.core.media.listen.ListenTogetherState.InRoom && !together.isHost ->
                 buttons.add(buildLeaveSessionButton())
             together is com.stash.core.media.listen.ListenTogetherState.InRoom -> {
-                buttons.add(buildLikeButton(isLiked))
+                if (likeable) buttons.add(buildLikeButton(isLiked))
                 buttons.add(buildLeaveSessionButton())
             }
             else -> {
-                buttons.add(buildLikeButton(isLiked))
+                if (likeable) buttons.add(buildLikeButton(isLiked))
                 buttons.add(buildRepeatButton(player.repeatMode))
             }
         }
@@ -2445,7 +2457,11 @@ class StashPlaybackService : MediaLibraryService() {
                     val candidateId = mediaItem?.mediaId?.toLongOrNull()
                     val youtubeId = mediaMetadata?.extras?.getString(EXTRA_TRACK_YOUTUBE_ID)
 
-                    if (candidateId != null && mediaMetadata != null) {
+                    // An All Songs file is never liked: a stale heart (or a controller that
+                    // sends the command anyway) does nothing.
+                    if (candidateId != null && mediaMetadata != null &&
+                        !com.stash.core.model.isScannedTrackId(candidateId)
+                    ) {
                         // Optimistic update: toggle the local state and push the layout
                         // immediately so the UI feels snappy and avoids race conditions
                         // where multiple clicks see the same stale DB state.

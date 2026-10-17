@@ -11,6 +11,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.PlayerState
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.Track
+import com.stash.core.model.isScannedSong
 
 /** The two handoff documents built from one player state. */
 data class HandoffDocs(val now: StashNow, val queue: StashQueue)
@@ -30,7 +31,8 @@ object HandoffDocsBuilder {
         // No ISRC, Spotify or YouTube id (what the web can play from), and a file on this phone is its source: an imported local
         // file, or a download that carries none of those ids (sync-v1 §2.1).
         val noIds = song.isrc == null && song.spotifyId == null && song.refs.isNullOrEmpty()
-        val phoneOnly = noIds && (t.source == MusicSource.LOCAL || t.isDownloaded)
+        // An All Songs file is always phone-only: the web has nothing to play it from.
+        val phoneOnly = (noIds && (t.source == MusicSource.LOCAL || t.isDownloaded)) || t.isScannedSong
         return WireSong.of(song, phoneOnly)
     }
 

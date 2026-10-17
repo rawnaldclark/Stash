@@ -13,6 +13,7 @@ import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_Y
 import com.stash.core.media.service.toAutoMediaItem
 import com.stash.core.media.streaming.withRowOverride
 import com.stash.core.media.trackIdentity
+import com.stash.core.model.isScannedTrackId
 import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.share.toSharedTrackWithArt
@@ -90,6 +91,10 @@ class DefaultSessionCatalog @Inject constructor(
 
     override suspend fun sharedTrackFor(item: MediaItem): SharedTrack? = withContext(Dispatchers.IO) {
         val extras = item.mediaMetadata.extras
+        // An All Songs file is only on this phone and has no ids: the room would stream whatever
+        // its title and artist match, so it doesn't travel at all.
+        val rawId = item.mediaId.toLongOrNull() ?: extras?.getLong(EXTRA_TRACK_ID, 0L) ?: 0L
+        if (isScannedTrackId(rawId)) return@withContext null
         val id = item.mediaId.toLongOrNull()?.takeIf { it > 0 } ?: extras?.getLong(EXTRA_TRACK_ID, -1L)?.takeIf { it > 0 }
         id?.let { trackDao.getById(it) }?.let { row ->
             val shared = row.toDomain().toSharedTrackWithArt()

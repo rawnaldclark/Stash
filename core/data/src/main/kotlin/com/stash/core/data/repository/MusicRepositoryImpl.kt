@@ -25,6 +25,7 @@ import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
 import com.stash.core.data.sync.workers.constraintsForManualTrigger
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
+import com.stash.core.model.isScannedSong
 import com.stash.core.model.share.toTrack
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -489,6 +490,11 @@ class MusicRepositoryImpl @Inject constructor(
         trackDao.insert(track.toEntity())
 
     override suspend fun ensureTrackPersisted(track: Track): Long {
+        // An All Songs file is not a library song. Saving one would give it a stream-only row
+        // (or, by its words, adopt a library song of the same name), so a like, a download, a
+        // block or a playlist save would land on something else. Refused: callers already turn a
+        // throw into their "Couldn't ..." message.
+        check(!track.isScannedSong) { "An All Songs file is never saved to the library" }
         // Quick exit: real DB row already. Not for a synthetic stream id
         // (`videoId.hashCode().toLong()`, e.g. RadioStationGenerator): it is
         // positive half the time, and one equal to an unrelated row's id would
@@ -610,6 +616,8 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteTrack(track: Track): Boolean {
+        // An All Songs file is the user's own file outside Stash: never deleted from here.
+        if (track.isScannedSong) return false
         // Best-effort file deletion -- the file may already be gone.
         track.filePath?.let { deleteTrackAudio(track.id, it) }
         // Album art lives in the app cache (internal only) but route it

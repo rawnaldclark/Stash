@@ -44,7 +44,7 @@ data class LibraryUiState(
 )
 
 /** Tabs available in the library browser. LIKED sits between Songs and Playlists. */
-enum class LibraryTab { PLAYLISTS, TRACKS, LIKED, ARTISTS, ALBUMS }
+enum class LibraryTab { PLAYLISTS, TRACKS, LIKED, ARTISTS, ALBUMS, DEVICE }
 
 /** Source sift for the Liked subcategory: all likes, or one origin. */
 enum class LikedFilter { ALL, STASH, SPOTIFY, YOUTUBE }

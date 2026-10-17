@@ -1,5 +1,6 @@
 package com.stash.core.media.service
 
+import com.stash.core.model.scannedTrackId
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
@@ -93,5 +94,18 @@ class LikeTargetResolverTest {
     private companion object {
         const val VIDEO = "dQw4w9WgXcQ"
         val SYNTHETIC = VIDEO.hashCode().toLong()
+    }
+
+
+    /** An All Songs file has no row: liking it must neither insert one nor land on a same-named song. */
+    @Test(expected = IllegalStateException::class)
+    fun `a scanned song is refused`() = runTest {
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns
+            listOf(TrackEntity(id = 8L, title = "Song (Live)", artist = "B & A"))
+        try {
+            resolver.resolve(scannedTrackId(1L), youtubeId = null, title = "Song (Live)", artist = "B & A", album = "", albumArtist = "")
+        } finally {
+            coVerify(exactly = 0) { trackDao.insert(any()) }
+        }
     }
 }

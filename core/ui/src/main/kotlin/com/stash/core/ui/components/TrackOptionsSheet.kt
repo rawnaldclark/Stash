@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
+import com.stash.core.model.isScannedSong
 import com.stash.core.model.community.PostTarget
 import com.stash.core.ui.theme.StashTheme
 
@@ -82,6 +83,9 @@ fun TrackOptionsSheet(
 ) {
     val extendedColors = StashTheme.extendedColors
     val role = LocalListenTogetherRole.current
+    // An All Songs file is played where it is and is never saved, queued from a menu, shared,
+    // downloaded or deleted from Stash: those rows don't show for it.
+    val scanned = track.isScannedSong
 
     Column(
         modifier = Modifier
@@ -148,14 +152,16 @@ fun TrackOptionsSheet(
         Spacer(modifier = Modifier.height(8.dp))
 
         // -- Play Next option --
-        SheetOptionRow(
-            icon = Icons.Default.PlaylistPlay,
-            label = playNextLabel(role, "Play Next"),
-            onClick = { onPlayNext(track) },
-        )
+        if (!scanned) {
+            SheetOptionRow(
+                icon = Icons.Default.PlaylistPlay,
+                label = playNextLabel(role, "Play Next"),
+                onClick = { onPlayNext(track) },
+            )
+        }
 
         // -- Add to Queue option --
-        if (onAddToQueue != null && role == ListenTogetherRole.NONE) {
+        if (!scanned && onAddToQueue != null && role == ListenTogetherRole.NONE) {
             SheetOptionRow(
                 icon = Icons.Default.PlaylistAdd,
                 label = "Add to Queue",
@@ -173,18 +179,22 @@ fun TrackOptionsSheet(
         }
 
         // -- Save to Playlist option --
-        SheetOptionRow(
-            icon = Icons.Default.FavoriteBorder,
-            label = "Save to Playlist",
-            onClick = { onSaveToPlaylist(track) },
-        )
+        if (!scanned) {
+            SheetOptionRow(
+                icon = Icons.Default.FavoriteBorder,
+                label = "Save to Playlist",
+                onClick = { onSaveToPlaylist(track) },
+            )
+        }
 
         // -- Download / Remove Download option --
         // The two states are mutually exclusive: a track is either on disk
         // (offer Remove) or it's not (offer Download). Both callbacks are
         // optional so screens that don't wire them (e.g. Library detail
         // under Path A) can simply leave them null and the rows vanish.
-        if (track.isDownloaded && onRemoveDownload != null) {
+        if (scanned) {
+            // Neither: it isn't Stash's download to remove, and it is already on the phone.
+        } else if (track.isDownloaded && onRemoveDownload != null) {
             SheetOptionRow(
                 icon = Icons.Default.DownloadDone,
                 label = "Remove download",
@@ -199,7 +209,7 @@ fun TrackOptionsSheet(
         }
 
         // -- Share option --
-        if (onShare != null) {
+        if (!scanned && onShare != null) {
             SheetOptionRow(
                 icon = Icons.Default.Share,
                 label = "Share",
@@ -208,7 +218,7 @@ fun TrackOptionsSheet(
         }
 
         // -- Post to Community (only while Community is on) --
-        LocalPostToCommunity.current?.let { post ->
+        LocalPostToCommunity.current?.takeIf { !scanned }?.let { post ->
             SheetOptionRow(
                 icon = Icons.Default.Public,
                 label = "Post to Community",
@@ -226,7 +236,7 @@ fun TrackOptionsSheet(
         }
 
         // -- Delete option --
-        if (onDelete != null) {
+        if (!scanned && onDelete != null) {
             Spacer(modifier = Modifier.height(4.dp))
             SheetOptionRow(
                 icon = Icons.Default.Delete,

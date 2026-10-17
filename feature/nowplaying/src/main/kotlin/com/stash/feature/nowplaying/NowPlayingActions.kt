@@ -20,6 +20,21 @@ internal data class ActionContext(
     val isDownloaded: Boolean = false,
     /** This phone can Cast (Play Services present: the connection is anything but Unavailable). */
     val castSupported: Boolean = false,
+    /**
+     * The current track is an All Songs file: played where it is, never saved to the library,
+     * downloaded, flagged, shared or sent to a room (see [SCANNED_HIDDEN]).
+     */
+    val isScannedSong: Boolean = false,
+)
+
+/** What an All Songs file can't do: each needs a library row, an online identity, or both. */
+internal val SCANNED_HIDDEN: Set<NowPlayingAction> = setOf(
+    NowPlayingAction.LISTEN_TOGETHER,
+    NowPlayingAction.SAVE_TO_PLAYLIST,
+    NowPlayingAction.SHARE,
+    NowPlayingAction.POST_TO_COMMUNITY,
+    NowPlayingAction.DOWNLOAD,
+    NowPlayingAction.FLAG_WRONG_MATCH,
 )
 
 /**
@@ -28,7 +43,12 @@ internal data class ActionContext(
  * Community only while Community is on; Cast exactly where its automatic button showed (a
  * phone that can Cast, outside a Listen Together room: the two exclude each other).
  */
-internal fun isActionAvailable(action: NowPlayingAction, ctx: ActionContext): Boolean = when (action) {
+internal fun isActionAvailable(action: NowPlayingAction, ctx: ActionContext): Boolean = when {
+    ctx.isScannedSong && action in SCANNED_HIDDEN -> false
+    else -> isActionAvailableForAnySong(action, ctx)
+}
+
+private fun isActionAvailableForAnySong(action: NowPlayingAction, ctx: ActionContext): Boolean = when (action) {
     NowPlayingAction.CAST -> ctx.castSupported && !ctx.inRoom
     NowPlayingAction.RADIO, NowPlayingAction.QUEUE -> !ctx.inRoom
     NowPlayingAction.PLAYBACK_SPEED -> !ctx.inRoom && !ctx.casting
@@ -144,6 +164,7 @@ internal fun editableActions(pins: Set<NowPlayingAction>, ctx: ActionContext): L
 internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): String? = when {
     isActionAvailable(action, ctx) -> null
     ctx.inRoom && action != NowPlayingAction.POST_TO_COMMUNITY -> "Hidden while listening together"
+    ctx.isScannedSong && action in SCANNED_HIDDEN -> "Not for songs from your folders"
     action == NowPlayingAction.CAST -> "Cast isn't available on this phone"
     ctx.casting && action == NowPlayingAction.PLAYBACK_SPEED -> "Hidden while casting"
     else -> "Not available right now"

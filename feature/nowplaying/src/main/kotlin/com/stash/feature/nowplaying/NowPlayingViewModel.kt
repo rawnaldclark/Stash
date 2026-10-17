@@ -18,6 +18,8 @@ import com.stash.core.model.AlbumNavTarget
 import com.stash.core.model.RadioStartResult
 import com.stash.core.model.UpgradeResult
 import com.stash.core.model.isFlac
+import com.stash.core.model.SCANNED_UNKNOWN_ARTIST
+import com.stash.core.model.isScannedSong
 import com.stash.core.ui.components.PlaylistInfo
 import com.stash.core.model.Track
 import com.stash.data.lyrics.LyricsRepository
@@ -402,6 +404,11 @@ class NowPlayingViewModel @Inject constructor(
             _userMessages.tryEmit("Couldn't find this artist")
             return
         }
+        // The scanner's stand-in for a file with no artist tag isn't an artist to look up.
+        if (track.isScannedSong && name == SCANNED_UNKNOWN_ARTIST) {
+            _userMessages.tryEmit("This file has no artist tag.")
+            return
+        }
         _resolvingArtist.value = true
         viewModelScope.launch {
             try {
@@ -643,6 +650,9 @@ class NowPlayingViewModel @Inject constructor(
     private fun trackKey(track: Track?): Long? = when {
         track == null -> null
         track.id > 0L -> track.id
+        // An All Songs file has no YouTube id, so the fallback below would give every one the
+        // same key (0) and the last song's lyrics could land on the next. Its id is unique.
+        track.isScannedSong -> track.id
         else -> track.youtubeId.hashCode().toLong()
     }
 
@@ -1114,6 +1124,7 @@ class NowPlayingViewModel @Inject constructor(
 
     /** Open the share sheet for [track], fetching its full row for the link options. */
     fun onShareTrack(track: Track) {
+        if (track.isScannedSong) return // only on this phone: nothing a link could open
         viewModelScope.launch {
             _shareTrack.value = musicRepository.observeTrackById(track.id).firstOrNull() ?: track
         }
@@ -1121,6 +1132,8 @@ class NowPlayingViewModel @Inject constructor(
 
     /** Download or remove-download for any [track] (current track or a queue row). */
     fun toggleDownload(track: Track) {
+        // An All Songs file is on the phone already and isn't Stash's download to remove.
+        if (track.isScannedSong) return
         launchUserAction {
             if (track.isDownloaded) {
                 musicRepository.removeDownload(track.id)
@@ -1172,6 +1185,8 @@ class NowPlayingViewModel @Inject constructor(
     fun findInFlacForCurrentTrack() {
         val track = _uiState.value.currentTrack ?: return
         if (track.isFlac) return
+        // An All Songs file is the user's own file: never replaced by an online match.
+        if (track.isScannedSong) return
         launchUserAction {
             _userMessages.tryEmit("Looking for FLAC\u2026")
             val result = losslessUpgrader.upgradeToLossless(track)
@@ -1192,6 +1207,12 @@ class NowPlayingViewModel @Inject constructor(
     fun deleteCurrentTrack(alsoBlock: Boolean) {
         val state = _uiState.value
         val track = state.currentTrack ?: return
+        // An All Songs file isn't in the library: there is no row to delete or block, and its
+        // words must never pick a library song of the same name to delete instead.
+        if (track.isScannedSong) {
+            _userMessages.tryEmit("Songs from your folders can't be deleted or blocked here.")
+            return
+        }
         // A stream with no library row (transient id): both deletes were no-ops that still
         // toasted "Deleted…". Block persists it first so the block has an identity to keep;
         // a plain delete has nothing to remove, so it says so and leaves playback alone.
@@ -1482,6 +1503,7 @@ class NowPlayingViewModel @Inject constructor(
      */
     fun onLikeTap() {
         val track = _uiState.value.currentTrack ?: return
+        if (track.isScannedSong) return // no heart is shown for one; ensureTrackPersisted refuses it too
         val wasLiked = track.stashLikedAt != null
 
         // Optimistic UI: flip the state in our local map immediately.

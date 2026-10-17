@@ -1,5 +1,6 @@
 package com.stash.core.media
 
+import com.stash.core.model.scannedTrackId
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.model.PlayerState
 import com.stash.core.model.RepeatMode
@@ -50,5 +51,12 @@ class AutoplayRadioTest {
 
     @Test fun `an empty queue arms nothing`() {
         assertThat(shouldAutoplayRadio(true, false, false, PlayerState(), null)).isFalse()
+    }
+
+
+    @Test fun `an All Songs file never seeds a radio`() {
+        val file = Track(id = scannedTrackId(1L), title = "Track 01", artist = "Unknown Artist")
+        val s = PlayerState(currentTrack = file, queue = listOf(file), currentIndex = 0, isPlaying = true)
+        assertThat(shouldAutoplayRadio(true, false, false, s, null)).isFalse()
     }
 }

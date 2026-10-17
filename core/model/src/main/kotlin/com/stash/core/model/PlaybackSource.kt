@@ -13,6 +13,7 @@ sealed class PlaybackSource {
     data class Album(val name: String, val artist: String) : PlaybackSource()
     data class Radio(val label: String) : PlaybackSource()
     data object Search : PlaybackSource()
+    data object AllSongs : PlaybackSource()
 
     /**
      * A queue continued from a linked browser ("Pick up where you left off", link-sync spec §8.3): the other
@@ -31,6 +32,7 @@ sealed class PlaybackSource {
         is Album -> "ALBUM|$name|$artist"
         is Radio -> "RADIO|$label"
         is Search -> "SEARCH"
+        is AllSongs -> "ALL_SONGS"
         is Handoff -> "HANDOFF|$label"
         is Unknown -> "UNKNOWN"
     }
@@ -48,6 +50,7 @@ sealed class PlaybackSource {
             is Album -> name
             is Radio -> "$label Radio"
             is Search -> "Search"
+            is AllSongs -> "On this device"
             is Handoff -> label
             is Unknown -> ""
         }
@@ -67,6 +70,7 @@ sealed class PlaybackSource {
                 "ALBUM" -> Album(parts.getOrElse(1) { "" }, parts.getOrElse(2) { "" })
                 "RADIO" -> Radio(parts.getOrElse(1) { "" })
                 "SEARCH" -> Search
+                "ALL_SONGS" -> AllSongs
                 "HANDOFF" -> Handoff(parts.drop(1).joinToString("|"))
                 else -> Unknown
             }

@@ -134,6 +134,9 @@ import com.stash.core.ui.selection.SelectionState
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.common.extensions.pluralize
 import com.stash.core.ui.components.bottomChromePadding
+import com.stash.feature.library.allsongs.AllSongsViewModel
+import com.stash.feature.library.allsongs.OnThisDeviceSelectionBar
+import com.stash.feature.library.allsongs.OnThisDeviceTab
 
 /**
  * Library screen entry point. Injects the [LibraryViewModel] via Hilt
@@ -172,6 +175,11 @@ fun LibraryScreen(
     val likedTracks by viewModel.likedTracks.collectAsStateWithLifecycle()
     val likedFilter by viewModel.likedFilter.collectAsStateWithLifecycle()
     val likedSources by viewModel.likedSources.collectAsStateWithLifecycle()
+
+    // "On this device" (the folder scan): its own ViewModel, steered by this screen's search and sort.
+    val deviceViewModel: AllSongsViewModel = hiltViewModel()
+    LaunchedEffect(searchQuery) { deviceViewModel.setQuery(searchQuery) }
+    LaunchedEffect(state.sortOrder) { deviceViewModel.setSortOrder(state.sortOrder) }
 
     // Home's Liked card queued a focus before the tab switch: land on Liked.
     // The tab is ALSO handed to the content pager — on a cold restore the
@@ -249,6 +257,7 @@ fun LibraryScreen(
                 if (state.streamingMode) viewModel.shuffleVisible(state.tracks) else viewModel.shuffleLibrary()
             },
             onShuffleLiked = viewModel::shuffleLiked,
+            onShuffleDevice = deviceViewModel::shuffle,
             onTabSelected = viewModel::selectTab,
             onSearchQueryChanged = viewModel::setSearchQuery,
             onSortOrderChanged = viewModel::setSortOrder,
@@ -299,6 +308,14 @@ fun LibraryScreen(
             onOpenSync = onNavigateToSync,
             onOpenSearch = onNavigateToSearch,
             onOpenAccounts = onNavigateToAccounts,
+            deviceContent = {
+                OnThisDeviceTab(
+                    viewModel = deviceViewModel,
+                    selection = selection,
+                    alphabetical = state.sortOrder == SortOrder.ALPHABETICAL,
+                    onClearSearch = { viewModel.setSearchQuery("") },
+                )
+            },
         )
 
         // ── Selection chrome — meaningful on the Tracks and Liked tabs. Selection
@@ -382,6 +399,10 @@ fun LibraryScreen(
                 allIds = remember(activeSelectableTracks) { activeSelectableTracks.map { it.id } },
                 actions = selectionActions,
             )
+        }
+
+        if (state.activeTab == LibraryTab.DEVICE) {
+            OnThisDeviceSelectionBar(selection = selection, viewModel = deviceViewModel)
         }
 
         androidx.compose.material3.SnackbarHost(
@@ -548,6 +569,7 @@ private fun LibraryContent(
     importState: com.stash.data.download.files.LocalImportState,
     onShuffleLibrary: () -> Unit,
     onShuffleLiked: () -> Unit,
+    onShuffleDevice: () -> Unit,
     onTabSelected: (LibraryTab) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onSortOrderChanged: (SortOrder) -> Unit,
@@ -593,6 +615,8 @@ private fun LibraryContent(
     onOpenSync: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
     onOpenAccounts: () -> Unit = {},
+    /** The "On this device" page (the folder scan); see OnThisDeviceTab. */
+    deviceContent: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -649,10 +673,21 @@ private fun LibraryContent(
             // at: the liked list on the Liked tab (issue #402 — it used to
             // shuffle the whole library there), the whole library elsewhere.
             val likedTabActive = state.activeTab == LibraryTab.LIKED
-            IconButton(onClick = if (likedTabActive) onShuffleLiked else onShuffleLibrary) {
+            val deviceTabActive = state.activeTab == LibraryTab.DEVICE
+            IconButton(
+                onClick = when {
+                    likedTabActive -> onShuffleLiked
+                    deviceTabActive -> onShuffleDevice
+                    else -> onShuffleLibrary
+                },
+            ) {
                 Icon(
                     Icons.Filled.Shuffle,
-                    contentDescription = if (likedTabActive) "Shuffle liked songs" else "Shuffle library",
+                    contentDescription = when {
+                        likedTabActive -> "Shuffle liked songs"
+                        deviceTabActive -> "Shuffle songs on this device"
+                        else -> "Shuffle library"
+                    },
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -726,6 +761,7 @@ private fun LibraryContent(
             "Playlists" to LibraryTab.PLAYLISTS,
             "Artists" to LibraryTab.ARTISTS,
             "Albums" to LibraryTab.ALBUMS,
+            "On this device" to LibraryTab.DEVICE,
         )
         com.stash.core.ui.components.CrispChipRow(
             chips = chipTabs.map { it.first },
@@ -741,10 +777,12 @@ private fun LibraryContent(
             LibrarySortFilterSheet(
                 sortOrder = state.sortOrder,
                 sourceFilter = state.sourceFilter,
-                showDuration = state.activeTab == LibraryTab.TRACKS,
+                showDuration = state.activeTab == LibraryTab.TRACKS || state.activeTab == LibraryTab.DEVICE,
                 // The source filter narrows Songs only; offered elsewhere it looked broken.
                 showSourceFilter = state.activeTab == LibraryTab.TRACKS,
                 showAvailabilityFilter = state.streamingMode,
+                // Scanned songs have no play counts.
+                showMostPlayed = state.activeTab != LibraryTab.DEVICE,
                 onSortSelected = onSortOrderChanged,
                 onFilterSelected = onSourceFilterChanged,
                 onDismiss = { sortFilterOpen = false },
@@ -883,6 +921,7 @@ private fun LibraryContent(
                         onClearFilters = clearSearch,
                         alphabetical = alphabetical,
                     )
+                    LibraryTab.DEVICE -> deviceContent()
                 }
             }
         }

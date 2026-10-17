@@ -31,6 +31,9 @@ import com.stash.core.media.streaming.stashResolveUri
 import com.stash.core.model.PlayerState
 import com.stash.core.model.RadioStartResult
 import com.stash.core.model.RepeatMode
+import com.stash.core.model.isScannedSong
+import com.stash.core.model.isScannedTrackId
+import com.stash.core.model.scannedFileExtension
 import com.stash.core.model.Track
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_BIT_DEPTH
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_BITRATE
@@ -820,7 +823,10 @@ class PlayerRepositoryImpl @Inject constructor(
         // id: a song queued twice starts at the copy that was tapped.
         val startInPlayable = acceptedItems.indexOfFirst { it.first == safeStart }
         if (startInPlayable < 0) {
-            _userMessages.tryEmit("That song isn't available offline right now.")
+            _userMessages.tryEmit(
+                if (tracks[safeStart].isScannedSong) SCANNED_FILE_MISSING_MESSAGE
+                else "That song isn't available offline right now.",
+            )
             // Don't fall back to track 0 — bail rather than silently substitute.
             return
         }
@@ -1028,6 +1034,8 @@ class PlayerRepositoryImpl @Inject constructor(
         if (nextTimelineIndex !in 0 until controller.mediaItemCount) return
         val nextId = controller.getMediaItemAt(nextTimelineIndex)
             .mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
+        // An All Songs file plays from its file or not at all: nothing to resolve or swap in.
+        if (isScannedTrackId(nextId)) return
         val next = tracks.firstOrNull { it.id == nextId } ?: return
         val nextLocalPath = next.filePath
         val hasRecordedDownload = next.isDownloaded && !nextLocalPath.isNullOrBlank()
@@ -1686,6 +1694,12 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (hasUsableLocal) return true
 
+        // An All Songs file is never swapped for an online match: a missing one is just gone.
+        if (target.isScannedSong) {
+            if (reportUnavailable) _userMessages.tryEmit(SCANNED_FILE_MISSING_MESSAGE)
+            return false
+        }
+
         if (target.isUnavailableForDisplay || !connectivity.isConnected()) {
             if (reportUnavailable) {
                 _userMessages.tryEmit("That song isn't available offline right now.")
@@ -2032,6 +2046,7 @@ class PlayerRepositoryImpl @Inject constructor(
      * loads or plays.
      */
     private suspend fun insertIntoGhostQueue(index: Int, track: Track): Boolean {
+        if (track.isScannedSong) return false // the persisted queue never holds an All Songs file
         val ghost = _playerState.value
         if (ghost.queue.isEmpty()) return false
         val pos = index.coerceAtLeast(ghost.currentIndex + 1).coerceAtMost(ghost.queue.size)
@@ -2140,6 +2155,32 @@ class PlayerRepositoryImpl @Inject constructor(
         // A logical-only eviction fires no controller event — refresh the
         // published queue ourselves so the sheet drops the deleted track.
         if (!removedFromTimeline) updateState(controller)
+    }
+
+    override fun evictFromQueue(trackIds: Set<Long>) {
+        if (trackIds.isEmpty()) return
+        val controller = controllerDeferred ?: return
+        currentQueueTracks = currentQueueTracks.filterNot { it.id in trackIds }
+        fun hit(i: Int): Boolean {
+            val item = controller.getMediaItemAt(i)
+            val id = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: item.mediaId.toLongOrNull()
+            return id != null && id in trackIds
+        }
+        var removed = false
+        var i = controller.mediaItemCount - 1
+        while (i >= 0) {
+            if (hit(i)) {
+                var start = i
+                while (start > 0 && hit(start - 1)) start--
+                controller.removeMediaItems(start, i + 1) // a run at once: one command, not one per song
+                removed = true
+                i = start - 1
+            } else {
+                i--
+            }
+        }
+        // A logical-only eviction fires no controller event: refresh the published queue ourselves.
+        if (!removed) updateState(controller)
     }
 
     // ---- Streaming routing ----
@@ -2828,10 +2869,13 @@ class PlayerRepositoryImpl @Inject constructor(
         failedItem: MediaItem,
         failedIndex: Int,
     ): Boolean {
-        if (!connectivity.isConnected()) return false
-        if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) return false
+        // An All Songs file that fails is skipped like any other unplayable item; it is never
+        // retried as a stream, which would play whatever an online search guessed it to be.
         val failedId = failedItem.mediaMetadata.extras
             ?.getLong(EXTRA_TRACK_ID, -1L) ?: return false
+        if (isScannedTrackId(failedId)) return false
+        if (!connectivity.isConnected()) return false
+        if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) return false
         val mediaTrackId = failedItem.mediaId.toLongOrNull() ?: return false
         if (mediaTrackId != failedId) return false
         val track = currentQueueTracks.firstOrNull { it.id == failedId }
@@ -3234,7 +3278,9 @@ class PlayerRepositoryImpl @Inject constructor(
         // index switch, a pause edge (exact resume position), or ≥5s drift.
         val pauseEdge = lastObservedIsPlaying && !newState.isPlaying
         lastObservedIsPlaying = newState.isPlaying
-        if (track != null) {
+        // An All Songs file has no `tracks` row, so a resume could never find it: its position
+        // is not saved (the last library song's saved position stays).
+        if (track != null && !track.isScannedSong) {
             savePositionIfDue(track.id, newState.positionMs, newState.currentIndex, pauseEdge)
         }
 
@@ -3248,7 +3294,11 @@ class PlayerRepositoryImpl @Inject constructor(
         // #468 follow-up: with shuffle on, newState.queue is the shuffle WALK (what plays
         // next), not the queue. Persist the timeline order, or a restart would adopt one
         // shuffle as the unshuffled order and shuffle again on top of it.
-        val queueIds = if (shuffledDisplayIndices != null) cachedTimelineQueue.map { it.id } else newState.queue.map { it.id }
+        // All Songs files are left out of the saved queue (they have no `tracks` row to resume
+        // into); the library songs around them are kept, whatever the queue's source.
+        val queueIds = savableQueueIds(
+            if (shuffledDisplayIndices != null) cachedTimelineQueue.map { it.id } else newState.queue.map { it.id },
+        )
         if (queueIds != lastSavedQueueIds ||
             newState.isShuffleEnabled != lastSavedShuffle ||
             newState.repeatMode != lastSavedRepeatMode ||
@@ -3303,6 +3353,7 @@ class PlayerRepositoryImpl @Inject constructor(
         val controller = controllerDeferred?.takeIf { it.isConnected } ?: return
         val state = _playerState.value
         val track = state.currentTrack ?: return
+        if (track.isScannedSong) return
         savePositionIfDue(track.id, controller.currentPosition.coerceAtLeast(0), state.currentIndex, pauseEdge = false)
     }
 
@@ -3329,6 +3380,10 @@ class PlayerRepositoryImpl @Inject constructor(
         /** Refresh prefetch if cached URL has less than this margin remaining. */
         private const val PREFETCH_FRESH_THRESHOLD_MS = 60_000L
 
+        /** Shown when an All Songs file can't be played because it isn't where the scan found it. */
+        internal const val SCANNED_FILE_MISSING_MESSAGE =
+            "That file isn't there anymore. Rescan your folders in Library › On this device."
+
         /**
          * The Back button restarts a song played past this, as Media3's own seekToPrevious (the
          * notification, a headset, Android Auto) does with its default maxSeekToPreviousPosition.
@@ -3344,6 +3399,8 @@ class PlayerRepositoryImpl @Inject constructor(
      * resume, prefetch matching) keeps working unchanged.
      */
     private fun Track.toQueueMediaItem(): MediaItem {
+        // An All Songs file is local-only: if it has gone, the local-error policy skips it.
+        if (isScannedSong) return toMediaItem()
         val localPath = filePath
         if (isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
             return toMediaItem()
@@ -3366,6 +3423,10 @@ class PlayerRepositoryImpl @Inject constructor(
         val knownTooSmall = fileSizeBytes in 1 until StashConstants.MIN_PLAYABLE_LOCAL_BYTES
         val hasUsableLocal = hasRecordedDownload && !knownTooSmall &&
             (!validateLocalFile || filePathExistsOnDisk(localPath))
+
+        // An All Songs file plays from its file or not at all: never a stream placeholder,
+        // which would resolve an online match by its title and artist.
+        if (isScannedSong) return if (hasUsableLocal) toMediaItem() else null
 
         // Streaming is always allowed: a track without a usable file becomes a
         // stash-resolve:// placeholder unless it is confirmed unavailable.
@@ -3411,6 +3472,9 @@ class PlayerRepositoryImpl @Inject constructor(
                 // "Stream-only" means no local file (as AutoBrowse computes it): a
                 // downloaded row can still carry is_streamable=1 from how it was found.
                 putBoolean(EXTRA_TRACK_IS_STREAMABLE, isStreamable && filePath.isNullOrBlank())
+                // An All Songs file's format comes from its file name, which an opaque SAF
+                // document id (`msf:123`) doesn't carry, so it rides along for toTrack().
+                if (isScannedSong) putString(EXTRA_SCANNED_FILE_FORMAT, fileFormat)
             })
             .build()
 
@@ -3442,6 +3506,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // previews with videoId strings). This makes the Like button and
         // other actions visible in Now Playing for non-library content.
         val trackId = extras?.getLong(EXTRA_TRACK_ID) ?: mediaId.toLongOrNull() ?: 0L
+        if (isScannedTrackId(trackId)) return toScannedTrack(trackId)
 
         // Streaming tracks carry the Qobuz-reported format in extras so the
         // Now Playing screen can show "FLAC · 24-bit/96 kHz" instead of the
@@ -3554,3 +3619,37 @@ internal fun trackIdentity(title: String, artist: String): String {
     fun norm(s: String) = s.trim().lowercase().replace(Regex("\\s+"), " ")
     return norm(title) + "|" + norm(artist)
 }
+
+/** MediaMetadata extra: an All Songs file's format (its file extension), see [toScannedTrack]. */
+internal const val EXTRA_SCANNED_FILE_FORMAT = "stash_scanned_file_format"
+
+/**
+ * The [Track] Now Playing and the queue see for an All Songs file. The logical queue doesn't hold
+ * scanned ids (QueueDisplay only reads it for ids > 0), so this is the ONLY Track the rest of the
+ * app gets for one: it must say LOCAL + downloaded with its real file, or Now Playing shows "OPUS",
+ * offers Find in FLAC, and Play next / the handoff treat it as a stream to resolve.
+ */
+internal fun MediaItem.toScannedTrack(trackId: Long): Track {
+    val meta = mediaMetadata
+    val extras = meta.extras
+    val uri = (requestMetadata.mediaUri ?: localConfiguration?.uri)?.toString()
+    val format = extras?.getString(EXTRA_SCANNED_FILE_FORMAT)?.takeIf { it.isNotBlank() }
+        ?: uri?.let(::scannedFileExtension)
+        ?: "audio"
+    return Track(
+        id = trackId,
+        title = meta.title?.toString() ?: "",
+        artist = meta.artist?.toString() ?: "",
+        album = meta.albumTitle?.toString() ?: "",
+        albumArtUrl = meta.artworkUri?.toString(),
+        durationMs = extras?.getLong(EXTRA_TRACK_DURATION_MS, 0L) ?: 0L,
+        filePath = uri,
+        fileFormat = format,
+        source = com.stash.core.model.MusicSource.LOCAL,
+        isDownloaded = true,
+    )
+}
+
+/** The ids of a queue that a resume can find again: every All Songs file is left out. */
+internal fun savableQueueIds(ids: List<Long>): List<Long> =
+    if (ids.none(::isScannedTrackId)) ids else ids.filterNot(::isScannedTrackId)

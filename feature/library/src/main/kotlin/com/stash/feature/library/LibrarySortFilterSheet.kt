@@ -40,6 +40,8 @@ fun LibrarySortFilterSheet(
     showDuration: Boolean,
     /** The SHOW ONLY section: Songs only, the one tab the source filter narrows. */
     showSourceFilter: Boolean = true,
+    /** Off for lists that have no play counts (All Songs). */
+    showMostPlayed: Boolean = true,
     showAvailabilityFilter: Boolean = false,
     onSortSelected: (SortOrder) -> Unit,
     onFilterSelected: (SourceFilter) -> Unit,
@@ -49,7 +51,7 @@ fun LibrarySortFilterSheet(
     val sorts = buildList {
         add(SortOrder.RECENT to "Recently added")
         add(SortOrder.ALPHABETICAL to "A – Z")
-        add(SortOrder.MOST_PLAYED to "Most played")
+        if (showMostPlayed) add(SortOrder.MOST_PLAYED to "Most played")
         if (showDuration) add(SortOrder.DURATION to "Duration")
     }
     val filters = buildList {

@@ -108,6 +108,7 @@ import coil3.compose.AsyncImagePainter
 import coil3.toBitmap
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.isFlac
+import com.stash.core.model.isScannedSong
 import com.stash.core.ui.components.SaveToPlaylistSheet
 import com.stash.core.ui.components.SheetOptionRow
 import com.stash.core.ui.theme.LocalIsAmoledTheme
@@ -351,13 +352,15 @@ fun NowPlayingScreen(
     // Cast shows (pinned or as a ⋮ row) exactly where its button did: a phone with Play
     // Services, outside a Listen Together room (the two exclude each other, cast spec §3).
     val castSupported = castConnection != com.stash.core.media.cast.CastConnection.Unavailable
-    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported) {
+    val isScannedSong = track?.isScannedSong == true
+    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong) {
         ActionContext(
             inRoom = room != null,
             casting = casting,
             communityAvailable = postToCommunity != null,
             isDownloaded = isDownloaded,
             castSupported = castSupported,
+            isScannedSong = isScannedSong,
         )
     }
     val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName
@@ -1034,12 +1037,15 @@ fun NowPlayingScreen(
                                     buttonSize = 48.dp,
                                     iconSize = 22.dp,
                                 )
-                                com.stash.core.ui.components.LikeButton(
-                                    isLiked = headerLiked,
-                                    onTap = { viewModel.onLikeTap() },
-                                    unlikedTint = headerInk.copy(alpha = 0.7f),
-                                    size = 26.dp,
-                                )
+                                // An All Songs file can't be liked (no library row): no heart.
+                                if (uiState.currentTrack?.isScannedSong != true) {
+                                    com.stash.core.ui.components.LikeButton(
+                                        isLiked = headerLiked,
+                                        onTap = { viewModel.onLikeTap() },
+                                        unlikedTint = headerInk.copy(alpha = 0.7f),
+                                        size = 26.dp,
+                                    )
+                                }
                                 LyricsMenuButton(
                                     items = lyricsMenuItems,
                                     liveEnabled = liveLyricsEnabled,
@@ -1364,8 +1370,8 @@ private fun TrackInfoBlock(
 
         // Like heart — floated to the trailing edge and vertically centred
         // against the title/artist block. The track's other actions live in
-        // the top row (pinned) or the ⋮ menu.
-        if (track != null) {
+        // the top row (pinned) or the ⋮ menu. None for an All Songs file (no library row).
+        if (track != null && !track.isScannedSong) {
             com.stash.core.ui.components.LikeButton(
                 isLiked = isLiked,
                 onTap = onLikeTap,
