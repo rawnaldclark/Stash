@@ -1,4 +1,6 @@
 import { createHmac } from "node:crypto";
+import { verifySigned } from "./auth.js";
+import { readStanding, spendLossless, losslessHeaders, capAnswer, quotaBody, pruneUsage } from "./quota.js";
 
 const API = "https://api.tidal.com/v1";
 const AUTH = "https://auth.tidal.com/v1/oauth2";
@@ -22,6 +24,7 @@ export default {
       env.DB.prepare("DELETE FROM tidal_upstream_429_events WHERE occurred_at < ?").bind(now() - 30 * 86400),
       env.DB.prepare("DELETE FROM tidal_device_auth WHERE expires_at <= ?").bind(now()),
     ]);
+    await pruneUsage(env, now()); // the shared daily lossless counter; never throws
   },
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -39,17 +42,32 @@ export default {
         if (env.TIDAL_RELAY_PAUSED === "1") return paused();
         return await search(url, request, env);
       }
+      if (url.pathname === "/quota" && request.method === "GET") {
+        if (!authorized(request, env.ACCESS_TOKEN)) return unauthorized();
+        return await quotaRoute(request, env);
+      }
       const path = decodeURIComponent(url.pathname);
       const streamMatch = path.match(/^\/stream\/(?:td:)?(\d+)$/);
       if (streamMatch && request.method === "GET") {
         if (!authorized(request, env.ACCESS_TOKEN)) return unauthorized();
         if (env.TIDAL_RELAY_PAUSED === "1") return paused();
+        const caller = installOf(request, env, `td:${streamMatch[1]}`);
+        if (caller.denial) return caller.denial;
         const quota = await admitStream(request, env);
         if (quota.denial) return quota.denial;
-        const { response, upstream } = await stream(streamMatch[1], request, env, quota);
+        // The daily lossless counter, shared with the Qobuz relay. ?aac=only is never lossless: never capped or counted.
+        let aac = aacMode(url);
+        const standing = caller.subject && aac !== "only" ? await readStanding(request, env, caller.subject, now()) : null;
+        if (standing?.over) {
+          // Over the cap, ?aac=1 (the app's streaming path) still plays: Tidal's AAC, uncounted. Anything else is the 429.
+          if (aac !== "1") { const cap = capAnswer(standing, now()); return json(cap.body, cap.status, cap.headers); }
+          aac = "cap";
+        }
+        const { response, upstream } = await stream(streamMatch[1], request, env, quota, aac);
         // Like Qobuz's answered-mint quota: successful streams and definitive
         // track misses count once per caller request; upstream/account failures do not.
         if (response.status === 200 || response.status === 404) await spendStream(request, env, quota, upstream);
+        if (standing) await meterLossless(response, standing, aac === "cap");
         return response;
       }
       const dashMatch = path.match(/^\/dash\/td\/(\d+)(?:\.mpd|\/init\.mp4)$/);
@@ -228,9 +246,8 @@ function searchError() { return json({ error: "upstream_error" }, 502); }
  * @returns {{response: Response, upstream: boolean}} upstream = the answer cost Tidal a call
  * (a cache miss), the only kind the global daily cap is charged for.
  */
-async function stream(trackId, request, env, quota = {}) {
+async function stream(trackId, request, env, quota = {}, aac = aacMode(new URL(request.url))) {
   const url = new URL(request.url);
-  const aac = aacMode(url);
   const web = url.searchParams.get("web") === "1" ? "web" : "app";
   const key = `stream:${env.TIDAL_COUNTRY_CODE || "US"}:${trackId}:aac=${aac}:web=${web}`;
   const cached = await cachedJson(env, key);
@@ -238,7 +255,7 @@ async function stream(trackId, request, env, quota = {}) {
   if (quota.globalFull) return { response: globalCapped(), upstream: false };
   if (await softOpenBlocks(env)) return { response: busy(), upstream: false };
   if (!await upstreamAllowed(request, env)) return { response: busy(UPSTREAM_RL_RETRY_AFTER), upstream: false };
-  const response = await streamUncached(trackId, request, env);
+  const response = await streamUncached(trackId, request, env, aac);
   let body;
   try { body = await response.clone().json(); } catch { return { response, upstream: true }; }
   if (response.status === 404 && body.error === "lossless_unavailable") {
@@ -253,20 +270,23 @@ async function stream(trackId, request, env, quota = {}) {
   return { response, upstream: true };
 }
 
-/** ?aac as one of "", "1", "only": anything else is "", so callers cannot mint unbounded cache namespaces. */
+/**
+ * ?aac as one of "", "1", "only": anything else is "", so callers cannot mint unbounded cache namespaces.
+ * The relay itself adds a fourth mode, "cap": ?aac=1 past the daily lossless cap (AAC like "only", without hires).
+ */
 function aacMode(url) {
   const aac = url.searchParams.get("aac");
   return aac === "1" || aac === "only" ? aac : "";
 }
 
-async function streamUncached(trackId, request, env) {
+async function streamUncached(trackId, request, env, aac = aacMode(new URL(request.url))) {
   // ?aac=1: when no account can play the track losslessly, answer with Tidal's AAC
   // stream (labelled codec "aac") instead of lossless_unavailable. Opt-in so the
   // download path, which must never save AAC as FLAC, keeps the lossless-only answer.
   // ?aac=only (the web player): ask Tidal for its 320 kbps AAC straight away, for any
   // track. A browser can only play Tidal's progressive file; Hi-Res comes as DASH.
-  const aac = aacMode(new URL(request.url));
-  const aacOnly = aac === "only";
+  // "cap" (?aac=1 past the daily lossless cap) asks for AAC straight away too, but skips the web player's hires lookup.
+  const aacOnly = aac === "only" || aac === "cap";
   const allowAac = aac === "1" || aacOnly;
   // Upstream budget: one playbackinfo call per seat taken. A second seat is only tried
   // after a seat-level failure (failed refresh, Tidal 5xx), never for a
@@ -299,7 +319,7 @@ async function streamUncached(trackId, request, env) {
       continue;
     }
     const info = await data.json();
-    if (aacOnly) return aacInfo(info, await trackHires(trackId, env, request));
+    if (aacOnly) return aacInfo(info, aac === "only" ? await trackHires(trackId, env, request) : undefined);
     if (!["LOSSLESS", "HI_RES_LOSSLESS"].includes(info.audioQuality)) {
       // The normal answer for a CD-only track with this client, not a seat problem.
       return allowAac ? aacInfo(info) : json({ error: "lossless_unavailable" }, 404);
@@ -721,6 +741,61 @@ async function admitStream(request, env) {
     return { denial: json({ error: "network_daily_cap" }, 429, { "Retry-After": "3600" }) };
   }
   return { day, tag, globalFull: (used.global || 0) >= globalCap };
+}
+
+/**
+ * The verified install behind /stream and /quota. The app signs X-Stash-Install/-Ts/-Auth with the Qobuz
+ * relay's key (secrets RELAY_KEY / RELAY_KEY_PREV, same values) over "<install>:<middle>:<ts>".
+ * @returns {{subject: string}|{denial: Response}|{none: "legacy"|"no_key"}} legacy = no install headers at all
+ * (served uncounted, as before, unless REQUIRE_INSTALL=1); no_key = RELAY_KEY unset, so headers can't be
+ * checked and the counter is off. A bad or forged signature is always a 401 with X-Stash-Server-Time.
+ */
+function installOf(request, env, middle) {
+  const h = (name) => request.headers.get(name) || "";
+  const install = h("X-Stash-Install"), ts = h("X-Stash-Ts"), auth = h("X-Stash-Auth");
+  const requireInstall = env.REQUIRE_INSTALL === "1";
+  if (!install && !ts && !auth) return requireInstall ? { denial: installUnauthorized() } : { none: "legacy" };
+  if (!env.RELAY_KEY) {
+    if (requireInstall) return { denial: json({ error: "server_misconfigured", message: "RELAY_KEY not set" }, 500) };
+    // Lets the app ship the headers before the secret exists; the counter just stays off until it does.
+    if (!warnedNoRelayKey) { warnedNoRelayKey = true; console.warn("RELAY_KEY not set: install headers ignored, daily lossless counter OFF"); }
+    return { none: "no_key" };
+  }
+  if (!verifySigned({ install, ts, auth }, middle, now(), [env.RELAY_KEY, env.RELAY_KEY_PREV])) return { denial: installUnauthorized() };
+  return { subject: `i:${install}` };
+}
+let warnedNoRelayKey = false;
+
+/** Same body as the access-token 401; X-Stash-Server-Time (only here) tells the app it is the install signature, and lets a skewed clock correct itself. */
+function installUnauthorized() { return json({ error: "unauthorized" }, 401, { "X-Stash-Server-Time": String(now()) }); }
+
+/**
+ * After a /stream answer: a 200 with codec "flac" (progressive, DASH or edge, a relay cache hit included) costs
+ * one unit and carries the counter headers. AAC, 404s and errors are free. `fallback` (?aac=1 past the cap):
+ * the AAC answer carries the headers, uncounted, so the app sees it is spent.
+ */
+async function meterLossless(response, standing, fallback) {
+  if (response.status !== 200) return;
+  if (!fallback) {
+    const body = await response.clone().json().catch(() => ({}));
+    if (body.codec !== "flac") return;
+    await spendLossless(standing);
+  }
+  for (const [k, v] of Object.entries(losslessHeaders(standing))) response.headers.set(k, v);
+}
+
+/**
+ * GET /quota: where the install stands today, for the app's cold start. Signed over "<install>:quota:<ts>",
+ * behind REQUEST_RL like every route, never counted. 404 quota_off when the counter is off (no QUOTA_DB or no
+ * RELAY_KEY): the status an older relay without the route gives too.
+ */
+async function quotaRoute(request, env) {
+  const caller = installOf(request, env, "quota");
+  if (caller.denial) return caller.denial;
+  if (caller.none === "legacy") return installUnauthorized();
+  const standing = caller.subject ? await readStanding(request, env, caller.subject, now()) : null;
+  if (!standing) return json({ error: "quota_off" }, 404);
+  return json(quotaBody(standing), 200, losslessHeaders(standing));
 }
 
 function globalCapped() { return json({ error: "global_daily_cap" }, 503, { "Retry-After": "600" }); }

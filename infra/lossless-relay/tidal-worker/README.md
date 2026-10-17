@@ -7,12 +7,13 @@ Separate Cloudflare Worker implementing the Tidal subset of BitChord's relay con
 - `GET /health` → `{ "ok": true, "provider": "tidal" }`
 - `GET /search?q=...` with `X-Access-Token` → `{ "tracks": [{ "id": "td:<id>", ... }] }`
 - `GET /stream/td:<id>?client=media3` with `X-Access-Token` → progressive FLAC URL or a signed DASH MPD URL, with the BitChord response fields. Progressive answers (FLAC and AAC) add `expiresAt` (epoch seconds, from Tidal's signed URL) when it is readable; DASH answers carry their expiry as `exp` in the signed URL. `?aac` is one of `1`, `only` or absent; any other value is treated as absent.
+- `GET /quota` with `X-Access-Token` and the signed install headers (below) → today's daily lossless count.
 - Signed `GET /dash/td/<id>.mpd` and `GET /dash/td/<id>/init.mp4` URLs need no header; their HMAC signatures (keyed by the `DASH_SIGNING_KEY` secret, see Deployment) expire after one hour.
 - Admin-only `POST /admin/device/start`, then `POST /admin/device/poll` with `{ "user_code": "..." }` starts and completes the Tidal OAuth device flow. These require `X-Access-Token: <ADMIN_TOKEN>`.
 
 Tidal accounts are linked through the device flow; passwords and OAuth tokens are never printed. The pool rotates least-recently-used live accounts, with a 100 requests/hour cap during ramp, a later target of 250/hour, and 1,600/day per account. It applies cooldowns for transient failures and retires an account only when Tidal rejects its refresh token (see the 401 rule below). A lower-than-lossless answer is final (no cross-check on another account), and Tidal's `subStatus=4005` is a track/rights refusal (`not_available`) that never kills an account. When no account is available, search and stream return `503 busy`: `Retry-After: 300` when seats are capped or cooling, `Retry-After: 15` when seats are only waiting out their pacing gap.
 
-Protective limits mirror the Qobuz relay: 34,667 upstream-answered `/stream` requests/day shared across the pool, 2,000 answered streams/day per network, 2,000 uncached searches/day per network, 40 requests/60 seconds per network for provider/admin routes, and a 6/60 seconds per-network fair share of the seats. The network key is the IPv4 address or IPv6 `/56`, hashed with the private `IP_SALT`; raw IP addresses are not written to D1. `IP_SALT` is required for the daily network cap; without it only the shared global cap and request limiter apply. `/health` is exempt from the request limiter. There is no per-install daily cap: the Tidal app client sends only `X-Access-Token`, not an install identifier. Daily quotas (table `tidal_daily_quotas`, key per day):
+Protective limits mirror the Qobuz relay: 34,667 upstream-answered `/stream` requests/day shared across the pool, 2,000 answered streams/day per network, 2,000 uncached searches/day per network, 40 requests/60 seconds per network for provider/admin routes, and a 6/60 seconds per-network fair share of the seats. The network key is the IPv4 address or IPv6 `/56`, hashed with the private `IP_SALT`; raw IP addresses are not written to D1. `IP_SALT` is required for the daily network cap; without it only the shared global cap and request limiter apply. `/health` is exempt from the request limiter. Apart from the shared daily lossless counter below (which needs the signed install headers), there is no per-install cap: older Tidal app clients send only `X-Access-Token`. Daily quotas (table `tidal_daily_quotas`, key per day):
 
 - `s:<network>`: one unit per `/search` that reaches Tidal (cache miss and a seat taken), checked before a seat is taken; cache hits are free. Over `NETWORK_SEARCH_DAILY_CAP` (default 2,000): `429 {"error":"network_daily_cap"}`, `Retry-After: 3600`. It never touches the stream keys.
 - `n:<network>`: one unit per answered `/stream` (200 or definitive track-level 404), cache hit or not. Over `NETWORK_DAILY_CAP`: `429 {"error":"network_daily_cap"}`, `Retry-After: 3600`.
@@ -21,6 +22,67 @@ Protective limits mirror the Qobuz relay: 34,667 upstream-answered `/stream` req
 Upstream failures, busy answers and `no_account` spend no daily quota. Seat fair share: the whole pool makes about 12 upstream calls/minute (four seats, one call per 20 s each), while `REQUEST_RL` lets one network send 40 requests/minute, so the `UPSTREAM_RL` rate-limit binding (6/60 s, keyed like `REQUEST_RL`) is consulted only when a request is about to take a seat: a search or stream cache miss, and the `?aac=only` hires lookup. Over it, search and stream answer `503 {"error":"busy"}` with `Retry-After: 30`; the hires lookup is skipped instead (`hires` omitted). Without the binding the check is skipped. These daily counters reset at midnight UTC and are pruned hourly.
 
 Run `npm run tidal:login` to add a live account or `npm run tidal:login -- --reserve` to add an account held out of rotation. Promote a reserve in D1 with `UPDATE tidal_accounts SET state='live' WHERE id='<account_id>';`; move a live account back with `state='reserve'`. Reauthorization restores that account to the selected state. An operator can inspect pool health without exposing tokens using `SELECT id,state,hour_n,day_n,last_used_at,cooling_until,dead_reason FROM tidal_accounts;`.
+
+## Daily lossless counter (shared with the Qobuz relay)
+
+Design: `docs/superpowers/specs/2026-10-17-lossless-daily-counter-design.md`. Every install gets `FREE_LOSSLESS_DAILY`
+(default 500) lossless answers per UTC day, **Qobuz and Tidal together**: both relays count in one D1 database,
+`stash-quota` (binding `QUOTA_DB`, table `usage(day, subject, n)`, subject `i:<install id>`; schema and migrate command
+in `infra/lossless-quota/`, copied for the tests to `test/fixtures/quota_*.sql`: keep them equal). Code:
+`src/quota.js` (an identical copy of the Qobuz relay's) and `src/auth.js`.
+
+- **Install headers.** The app sends `X-Stash-Install` (its random install id, `[A-Za-z0-9-]{8,64}`), `X-Stash-Ts`
+  (epoch seconds) and `X-Stash-Auth` = `hex(HMAC-SHA256(RELAY_KEY, message))`, the key taken as its UTF-8 string,
+  exactly as the Qobuz relay's mint signature. Messages: `/stream/td:<id>` and `/stream/<id>` sign
+  `<install>:td:<id>:<ts>`; `/quota` signs `<install>:quota:<ts>`. `ts` must be within ±300 s. Verified with the
+  `RELAY_KEY` secret and, during a rotation, `RELAY_KEY_PREV`: the **same values as the Qobuz relay's**.
+- **401s.** A bad, partial or forged signature, or a skewed `ts`, is `401 {"error":"unauthorized"}` with
+  `X-Stash-Server-Time: <epoch s>` (the access-token 401 never carries that header). A request with **no** install
+  headers is served as before, uncounted, unless `REQUIRE_INSTALL="1"` (default `"0"`), which makes it a 401 too.
+  Without the `RELAY_KEY` secret the install headers are ignored and the counter is off (a warning per isolate);
+  with `REQUIRE_INSTALL="1"` and no key, `/stream` is a 500 `server_misconfigured`.
+- **Counts (one unit):** a `200` `/stream` answer with `codec: "flac"`: progressive, DASH or `?web=1` edge, a relay
+  response-cache hit included. **Never:** AAC answers (`?aac=1` falling back, `?aac=only`), 404s, errors, busy,
+  searches, `/quota`, `/dash`.
+- **At the limit:** `429 {"error":"daily_lossless_cap","used":500,"limit":500,"resetsAt":<epoch s>}` with
+  `Retry-After` = seconds to `resetsAt` (the next UTC midnight); no seat is taken. **Except `?aac=1`**: past the limit
+  it is answered with Tidal's AAC (asked for `HIGH`, like `?aac=only`, without the hires lookup; cache key
+  `aac=cap`), uncounted, with the counter headers, so streaming keeps playing lossy until the reset. `?aac=only` is
+  never capped or counted.
+- **Headers** on every counted answer, the over-cap AAC answer, the 429 and `/quota`: `X-Stash-Lossless:
+  <used>/<limit>` (`used` after this answer; `<used>/unlimited` for a supporter) and `X-Stash-Lossless-Reset: <epoch
+  s>`. JSON answers set no CORS headers, so there is no `Access-Control-Expose-Headers` to extend
+  (`LOSSLESS_HEADER_NAMES` in `src/quota.js` is ready if that changes).
+- **`GET /quota`** → `200 {"used":n,"limit":500,"resetsAt":T,"supporter":false}` (`limit: null` for a supporter)
+  with the headers. Needs `X-Access-Token` and the signed headers (missing ones: 401); behind `REQUEST_RL`; never
+  counted. `404 {"error":"quota_off"}` without `QUOTA_DB` or `RELAY_KEY` (an older deploy answers `not_found` 404).
+- **Supporters:** `/stream` and `/quota` may carry `X-Stash-Entitlement: <token>`, the token the tip jar issues to a
+  Ko-fi supporter: `base64url(UTF-8 JSON {"tier":"supporter","iat":<epoch s>,"tid":"<32 hex>","v":1})` `.`
+  `base64url(Ed25519 signature over the ASCII bytes of the first segment)`, both without padding. Verified with
+  WebCrypto against the var `ENTITLEMENT_PUBLIC_KEY` (standard base64 of the raw 32-byte public key; public, in
+  `wrangler.toml`, the same value as the Qobuz relay's). Only tier `supporter`, `v` 1, a 32-hex `tid` and an `iat` at
+  most 300 s ahead are accepted (no expiry); verified tokens are cached per isolate. A missing, malformed, wrongly
+  signed or revoked token is never an error: the request just gets the free quota. For a valid token the free limit
+  is skipped: headers read `<used>/unlimited` (`used` = the install's own count, which still counts every FLAC
+  answer) and `/quota` answers `{"supporter":true,"limit":null}`. The network, global and fair-share limits still
+  apply to supporters.
+- **Per-token ceiling:** every FLAC answer under a token also counts in `usage` as subject `t:<tid>`. At
+  `SUPPORTER_DAILY_CAP` (default 5000) that day the token is treated as absent: the install's free limit applies
+  again (headers `<used>/500`, then the 429 or `?aac=1`'s AAC). This keeps a posted token from being a free pass.
+- **Revocation:** table `revoked_tokens(tid, revoked_at, reason)` in `stash-quota` (migration
+  `infra/lossless-quota/migrations/0002_revoked_tokens.sql`, copied to `test/fixtures/quota_0002_revoked_tokens.sql`),
+  checked in the same D1 read as the install's count. Revoke (the tid is in the token's first segment, base64url
+  JSON; takes effect on the next request):
+
+  ```powershell
+  npx wrangler d1 execute stash-quota --remote --config infra/lossless-quota/wrangler.toml --command "INSERT INTO revoked_tokens (tid, revoked_at, reason) VALUES ('<32 hex tid>', unixepoch(), 'posted publicly')"
+  ```
+
+  Un-revoke: `DELETE FROM revoked_tokens WHERE tid = '<tid>'`. Apply migration 0002 before deploying this relay:
+  without the table a supporter's counter read fails and that request is served with the counter off.
+- **Safety:** no `QUOTA_DB` binding skips the counter (`QUOTA_DB not bound`, once per isolate); a D1 error on the
+  counter skips it for that request. The network, global and fair-share limits are unchanged and still apply. A race
+  can serve one or two past the limit. The hourly job prunes `usage` rows older than 7 days.
 
 ## Upstream budget
 
@@ -41,7 +103,7 @@ npx wrangler d1 create stash-tidal-relay
 npx wrangler d1 migrations apply stash-tidal-relay --remote
 ```
 
-Set a long random `ACCESS_TOKEN`, an unrelated private `ADMIN_TOKEN`, `TIDAL_CLIENT_SECRET`, random private `IP_SALT`, and a random `DASH_SIGNING_KEY` (at least 32 characters) as Wrangler secrets. `DASH_SIGNING_KEY` signs `/dash` links; `ACCESS_TOKEN` ships in every install, so until the key is set the relay falls back to signing with it and anyone could forge those links. Setting it voids links signed earlier, including DASH answers in the response cache (they expire within an hour; `DELETE FROM tidal_response_cache WHERE response_json LIKE '%/dash/td/%'` clears them at once). The Tidal client ID and secret come from the selected [BitChord community implementation](https://github.com/R1Blmmakan/music_addon/blob/main/.env.example), not the TIDAL Developer Portal. Keep these values out of `wrangler.toml` and source control. Apply D1 migrations with `npm run db:migrate`, then deploy and note the `workers.dev` origin, or configure a custom HTTPS hostname and set `PUBLIC_HOST` to that exact origin.
+Set a long random `ACCESS_TOKEN`, an unrelated private `ADMIN_TOKEN`, `TIDAL_CLIENT_SECRET`, random private `IP_SALT`, and a random `DASH_SIGNING_KEY` (at least 32 characters) as Wrangler secrets. For the daily lossless counter also set `RELAY_KEY` (and `RELAY_KEY_PREV` during a rotation) to the Qobuz relay's values, and apply the shared `stash-quota` migration from the repo root (`npx wrangler d1 migrations apply stash-quota --remote --config infra/lossless-quota/wrangler.toml`). `DASH_SIGNING_KEY` signs `/dash` links; `ACCESS_TOKEN` ships in every install, so until the key is set the relay falls back to signing with it and anyone could forge those links. Setting it voids links signed earlier, including DASH answers in the response cache (they expire within an hour; `DELETE FROM tidal_response_cache WHERE response_json LIKE '%/dash/td/%'` clears them at once). The Tidal client ID and secret come from the selected [BitChord community implementation](https://github.com/R1Blmmakan/music_addon/blob/main/.env.example), not the TIDAL Developer Portal. Keep these values out of `wrangler.toml` and source control. Apply D1 migrations with `npm run db:migrate`, then deploy and note the `workers.dev` origin, or configure a custom HTTPS hostname and set `PUBLIC_HOST` to that exact origin.
 
 After deploying, set `TIDAL_RELAY_URL` and `TIDAL_ADMIN_TOKEN` in a local shell and run `npm run tidal:login` (append `-- --reserve` to hold an account in reserve). The script prints the verification URL and code, waits while the user approves in Tidal, then polls until authorization completes. It never reads or prints a password or OAuth token. Then verify `/health`, `/search`, and `/stream` with the app access token. Publish `tidal_relay_url` and `tidal_relay_token` using the signed-config publisher only after those checks pass.
 

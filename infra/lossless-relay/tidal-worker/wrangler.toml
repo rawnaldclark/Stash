@@ -19,12 +19,31 @@ GLOBAL_DAILY_CAP = "34667"
 NETWORK_DAILY_CAP = "2000"
 NETWORK_SEARCH_DAILY_CAP = "2000" # uncached (upstream) searches per network per day; cache hits are free
 EDGE_BASE = "https://stash-tidal-edge.stashfm.deno.net" # tidal-edge on Deno Deploy (Tidal's CDN refuses Cloudflare); ?web=1 signs links for it with the EDGE_SECRET secret
+# The daily lossless counter shared with the Qobuz relay (QUOTA_DB below): free FLAC answers per verified install
+# per UTC day, Qobuz and Tidal together. Over it: 429 daily_lossless_cap (?aac=1 gets AAC instead).
+FREE_LOSSLESS_DAILY = "500"
+# Supporters (X-Stash-Entitlement token from the tip jar, src/quota.js): unlimited lossless, verified with this
+# Ed25519 public key (standard base64 of the raw 32 bytes; public by design, the private half is the tip jar's
+# secret). SUPPORTER_DAILY_CAP is the per-token safety ceiling: past it that day the token counts as free.
+# The network, global and fair-share limits still apply to supporters. Same values as the Qobuz relay.
+ENTITLEMENT_PUBLIC_KEY = "IbghbSB8gJcuHbpSEf8tRKfCwzBfB14eBPew3nVkQFQ="
+SUPPORTER_DAILY_CAP = "5000"
+REQUIRE_INSTALL = "0" # "1": /stream without X-Stash-Install/-Ts/-Auth is a 401 (flip once every app signs)
 
 [[d1_databases]]
 binding = "DB"
 database_name = "stash-tidal-relay"
 database_id = "20778a95-cf23-45e3-a1bb-977ca1256505"
 migrations_dir = "migrations"
+
+# The shared daily lossless counter (src/quota.js), one database for both relays. Its schema lives in
+# infra/lossless-quota/ (migrate with `--config infra/lossless-quota/wrangler.toml`, from the repo root);
+# test/fixtures/quota_*.sql are copies for the tests. Unbound = counter off.
+[[d1_databases]]
+binding = "QUOTA_DB"
+database_name = "stash-quota"
+database_id = "f5c12428-cd59-4181-bbcf-9d368a11c495"
+migrations_dir = "../../lossless-quota/migrations"
 
 # Per-network request cap for provider/admin routes (IPv4 address / IPv6 /56). Health is exempt.
 [[ratelimits]]
@@ -43,10 +62,14 @@ simple = { limit = 6, period = 60 }
 [triggers]
 crons = ["17 * * * *"]
 
-# Set with Wrangler secrets (never vars): ACCESS_TOKEN, ADMIN_TOKEN, TIDAL_CLIENT_SECRET, IP_SALT, DASH_SIGNING_KEY.
+# Set with Wrangler secrets (never vars): ACCESS_TOKEN, ADMIN_TOKEN, TIDAL_CLIENT_SECRET, IP_SALT, DASH_SIGNING_KEY,
+# RELAY_KEY, RELAY_KEY_PREV (optional).
 # TIDAL_CLIENT_SECRET is the shared Android client credential from the selected
 # community implementation, not a TIDAL Developer Portal app secret.
 # IP_SALT is a random private salt for storing only salted network hashes in D1.
 # DASH_SIGNING_KEY (optional, >= 32 random chars) signs /dash links. Without it they fall back to
 # ACCESS_TOKEN, which ships in every install, so anyone could forge them. Setting it voids links
 # signed earlier (they last at most an hour).
+# RELAY_KEY / RELAY_KEY_PREV: the SAME values as the Qobuz relay's secrets of that name (the app signs both relays
+# with one key). They verify the X-Stash-Install signature for the daily lossless counter; without RELAY_KEY the
+# install headers are ignored and the counter is off.
