@@ -57,7 +57,8 @@ class TidalLosslessSource internal constructor(
         // rate-limit token or a sweep slot.
         when (client.lookup(query, cacheOnly = true)) {
             TidalLookup.NoMatch, TidalLookup.Off -> return null
-            is TidalLookup.Busy -> {
+            // Spent: the day's lossless allowance; FLAC is back after the reset, so not a miss.
+            is TidalLookup.Busy, is TidalLookup.Spent -> {
                 purpose?.searchIncomplete = true
                 return null
             }
@@ -92,6 +93,11 @@ class TidalLosslessSource internal constructor(
             TidalLookup.Failed -> {
                 purpose?.searchIncomplete = true
                 rateLimiter.reportFailure(id)
+                return null
+            }
+            // The relay's cap answer: a healthy relay, so the breaker hears nothing.
+            is TidalLookup.Spent -> {
+                purpose?.searchIncomplete = true
                 return null
             }
         }

@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless.relay
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.data.download.lossless.quota.LosslessQuota
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,13 +19,15 @@ class LosslessRelayClientOutcomesTest {
     private lateinit var server: MockWebServer
     private lateinit var client: LosslessRelayClient
     private var now = 1_000_000L
+    private val quota = LosslessQuota.inMemory { now }
     private val config: LosslessConfigFetcher = mockk {
         every { relayKey } returns MutableStateFlow<String?>(null)
+        every { relays } returns MutableStateFlow(emptyList())
     }
 
     @Before fun setUp() {
         server = MockWebServer(); server.start()
-        client = LosslessRelayClient(OkHttpClient(), config).also { it.clock = { now } }
+        client = LosslessRelayClient(OkHttpClient(), RelaySigner(config, supporter()), quota).also { it.clock = { now } }
     }
 
     @After fun tearDown() = server.shutdown()

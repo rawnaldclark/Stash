@@ -2,6 +2,7 @@ package com.stash.data.download.lossless.qbdlx
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.LosslessRelayClient
 import com.stash.data.download.lossless.relay.RelayEntry
@@ -21,10 +22,42 @@ class QbdlxFileUrlRouterTest {
     private val configRelays = MutableStateFlow<List<RelayEntry>>(emptyList())
     private val config: LosslessConfigFetcher = mockk { every { relays } returns configRelays }
     private val prefs: LosslessSourcePreferences = mockk()
-    private val router = QbdlxFileUrlRouter(api, store, relay, config, prefs)
+    private var now = 1_000_000_000_000L
+    private val quota = LosslessQuota.inMemory { now }
+    private val router = QbdlxFileUrlRouter(api, store, relay, config, prefs, quota)
     private val login = QbdlxLoginCredential("byo", "798273057", "sec")
 
     private fun noLogin() { coEvery { store.loginCredential() } returns null; coEvery { store.loginLive() } returns false }
+
+    @Test fun `with the day's lossless allowance spent the config relays are not asked`() = runTest {
+        noLogin()
+        coEvery { prefs.customLosslessEndpointNow() } returns null
+        configRelays.value = listOf(RelayEntry("https://r1"))
+        quota.onHeaders("500/500", "${now / 1000 + 3600}")
+        assertThat(router.getFileUrl(42, 27)).isNull()
+        coVerify(exactly = 0) { relay.mint(any(), any(), any()) }
+    }
+
+    @Test fun `spent still asks the user's own endpoint`() = runTest {
+        noLogin()
+        coEvery { prefs.customLosslessEndpointNow() } returns "https://mine.example"
+        configRelays.value = listOf(RelayEntry("https://r1"))
+        quota.onHeaders("500/500", "${now / 1000 + 3600}")
+        every { relay.isCooled(any()) } returns false
+        coEvery { relay.mint("https://mine.example", 42, 27) } returns RelayMint.Ok("https://cdn/f?etsp=1", 27, 24, 96_000)
+        assertThat(router.getFileUrl(42, 27)).isInstanceOf(QbdlxResolveResult.Ok::class.java)
+        coVerify(exactly = 0) { relay.mint("https://r1", any(), any()) }
+    }
+
+    @Test fun `a Spent answer stops the walk since every config relay shares the count`() = runTest {
+        noLogin()
+        coEvery { prefs.customLosslessEndpointNow() } returns null
+        configRelays.value = listOf(RelayEntry("https://r1"), RelayEntry("https://r2", priority = 2))
+        every { relay.isCooled(any()) } returns false
+        coEvery { relay.mint("https://r1", 42, 27) } returns RelayMint.Spent
+        assertThat(router.getFileUrl(42, 27)).isNull()
+        coVerify(exactly = 0) { relay.mint("https://r2", any(), any()) }
+    }
 
     @Test fun `BYO signs locally and never touches a relay`() = runTest {
         coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true

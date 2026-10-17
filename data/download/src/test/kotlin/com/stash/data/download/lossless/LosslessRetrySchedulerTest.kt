@@ -5,6 +5,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
 import com.stash.data.download.lossless.qobuz.QobuzSource
+import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessRelayClient
 import io.mockk.slot
 import java.util.concurrent.TimeUnit
@@ -70,6 +71,9 @@ class LosslessRetrySchedulerTest {
         every { pacedEvents } returns this@LosslessRetrySchedulerTest.pacedEvents
     }
 
+    private var now = 1_000_000_000_000L
+    private val quota = LosslessQuota.inMemory { now }
+
     private fun newSubject(scope: kotlinx.coroutines.CoroutineScope): LosslessRetryScheduler {
         val subject = LosslessRetryScheduler(
             context = context,
@@ -77,6 +81,7 @@ class LosslessRetrySchedulerTest {
             qobuzSource = qobuzSource,
             rateLimiter = rateLimiter,
             relayClient = relayClient,
+            quota = quota,
         )
         subject.scope = scope
         subject.workManagerProvider = { workManager }
@@ -145,6 +150,29 @@ class LosslessRetrySchedulerTest {
                 any<OneTimeWorkRequest>(),
             )
         }
+    }
+
+    @Test
+    fun `a spent allowance books one sweep just after the reset, under its own name`() = runTest(UnconfinedTestDispatcher()) {
+        newSubject(backgroundScope)
+        val request = slot<OneTimeWorkRequest>()
+        every {
+            workManager.enqueueUniqueWork(LosslessRetryScheduler.RESET_WORK_NAME, ExistingWorkPolicy.KEEP, capture(request))
+        } returns mockk(relaxed = true)
+
+        val resetsAt = now / 1000 + 7200
+        quota.onHeaders("499/500", "$resetsAt")
+        quota.onHeaders("500/500", "$resetsAt")
+        quota.onCapBody("""{"error":"daily_lossless_cap","used":500,"limit":500,"resetsAt":$resetsAt}""", null)
+        advanceUntilIdle()
+
+        verify(exactly = 1) {
+            workManager.enqueueUniqueWork(LosslessRetryScheduler.RESET_WORK_NAME, ExistingWorkPolicy.KEEP, any<OneTimeWorkRequest>())
+        }
+        org.junit.Assert.assertEquals(
+            TimeUnit.SECONDS.toMillis(7200 + LosslessRetryScheduler.RESET_SLACK_SEC),
+            request.captured.workSpec.initialDelay,
+        )
     }
 
     @Test

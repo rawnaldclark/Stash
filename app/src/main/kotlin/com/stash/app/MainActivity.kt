@@ -42,6 +42,8 @@ import com.stash.core.ui.components.LocalListenTogetherRole
 import com.stash.core.ui.theme.LocalUiScaleMax
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
+import com.stash.data.download.lossless.quota.LosslessQuota
+import com.stash.data.download.lossless.quota.LosslessQuotaText
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
 import com.stash.core.data.social.LikeCoordinator
@@ -117,6 +119,10 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var likeCoordinator: LikeCoordinator
+
+    /** The daily lossless allowance: its once-a-day heads-ups (50 left, limit reached) show here. */
+    @Inject
+    lateinit var losslessQuota: LosslessQuota
 
     /**
      * What every song Share sheet's "Stash link" uses to make a short link (via [LocalCreateTrackLink]). Null on any
@@ -245,6 +251,7 @@ class MainActivity : ComponentActivity() {
             // open queue sheet collected: a SharedFlow with no subscriber drops what it emits,
             // so a song tapped offline from Library ("Couldn't play this track right now."),
             // "End of offline Mix" and the streaming halt did nothing visible anywhere else.
+            // The lossless-allowance heads-ups wait in their buffer while the app is away.
             LaunchedEffect(lifecycleOwner) {
                 lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     // The halt flow replays its last event (replay = 1): skip that one, or every
@@ -255,6 +262,9 @@ class MainActivity : ComponentActivity() {
                         halts.drop(halts.replayCache.size)
                             .map { "Streaming is failing — try a downloaded track or check your connection" },
                         likeCoordinator.mirrorFailures,
+                        losslessQuota.noticeEvents.map { n ->
+                            LosslessQuotaText.notice(n, LosslessQuotaText.resetTime(context, n.resetsAtMs))
+                        },
                     ).collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 }
             }

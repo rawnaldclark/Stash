@@ -99,6 +99,8 @@ fun SettingsAudioQualityScreen(
     val tidalAacFallback by viewModel.tidalAacFallback.collectAsStateWithLifecycle()
     val flacViewModel: FlacUpgradeViewModel = hiltViewModel()
     val autoFlacUpgrade by flacViewModel.autoEnabled.collectAsStateWithLifecycle()
+    val quotaViewModel: LosslessQuotaViewModel = hiltViewModel()
+    val losslessToday by quotaViewModel.line.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = "Audio & Quality", onBack = onBack, modifier = modifier) {
         // (a) Download tier — only when lossless OFF. The standalone yt-dlp
@@ -176,6 +178,19 @@ fun SettingsAudioQualityScreen(
                         // built in LosslessAvailability so this list and the
                         // resolver read the same predicates.
                         LosslessRoutingStatus(rows = losslessRouting)
+
+                        // The daily lossless allowance (500 free a day, shared by the relays).
+                        // Hidden when no relay is configured or nothing is known yet.
+                        losslessToday?.let { line ->
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = line,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        // Unlimited for Ko-fi supporters: the claim, or the relays' "supporter" status.
+                        SupporterSection()
 
                         // Direct Qobuz — direct www.qobuz.com Hi-Res FLAC, the
                         // primary lossless source. The badge shows when no

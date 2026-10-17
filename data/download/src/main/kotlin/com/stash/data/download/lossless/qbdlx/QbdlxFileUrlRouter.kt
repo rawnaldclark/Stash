@@ -2,6 +2,7 @@ package com.stash.data.download.lossless.qbdlx
 
 import android.util.Log
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.LosslessRelayClient
 import com.stash.data.download.lossless.relay.RelayMint
@@ -32,6 +33,7 @@ class QbdlxFileUrlRouter @Inject constructor(
     private val relayClient: LosslessRelayClient,
     private val config: LosslessConfigFetcher,
     private val prefs: LosslessSourcePreferences,
+    private val quota: LosslessQuota,
 ) {
     suspend fun getFileUrl(trackId: Long, formatId: Int): QbdlxResolveResult? {
         val login = credentialStore.loginCredential()
@@ -62,9 +64,11 @@ class QbdlxFileUrlRouter @Inject constructor(
             }
         }
 
+        // The day's lossless allowance spent: the config relays (which keep the shared count)
+        // are not asked at all until it resets. A user's own endpoint keeps no such count.
         val bases = buildList {
             prefs.customLosslessEndpointNow()?.let { add(it) }
-            config.relays.value.forEach { add(it.base) }
+            if (!quota.isSpent()) config.relays.value.forEach { add(it.base) }
         }.distinct()
         for (base in bases) {
             if (relayClient.isCooled(base)) continue
@@ -83,6 +87,8 @@ class QbdlxFileUrlRouter @Inject constructor(
                 // LosslessDownloadPurpose, which is how DownloadManager knows to defer rather
                 // than go lossy; another base (a user's own endpoint) may still serve it.
                 is RelayMint.Paced -> Unit
+                // Every config relay shares the count: none of them would mint today.
+                RelayMint.Spent -> return null
             }
         }
         return null

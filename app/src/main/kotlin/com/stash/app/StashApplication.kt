@@ -214,6 +214,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var losslessConfigFetcher: LosslessConfigFetcher
 
+    /** Reads the daily lossless allowance once on a cold start when the stored one is from a previous day. */
+    @Inject
+    lateinit var losslessQuotaRefresher: com.stash.data.download.lossless.quota.LosslessQuotaRefresher
+
     /**
      * Writes uncaught exceptions to `cacheDir/crashes/` so the user can
      * later share the latest report from Settings → Diagnostics. Installed
@@ -350,6 +354,7 @@ class StashApplication : Application(), Configuration.Provider {
             },
         )
         losslessConfigFetcher.start(applicationScope)
+        losslessQuotaRefresher.start(applicationScope)
         // A restore whose user picked a different library folder than the
         // backup's: it could not be written before the restart (the live
         // DataStore still held pre-restore values), so apply it now, through

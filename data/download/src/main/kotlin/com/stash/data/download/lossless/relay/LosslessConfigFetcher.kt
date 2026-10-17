@@ -40,8 +40,12 @@ import okhttp3.Request
 @Serializable
 data class RelayEntry(val base: String, val priority: Int = 1)
 
-/** The Tidal (BitChord) server delivered by the signed config: an https base and its optional token. */
-data class TidalRelay(val base: String, val token: String?)
+/**
+ * A Tidal (BitChord) server: an https base and its optional token. [userOwned] = the user's own
+ * server from Settings rather than the owner-hosted one from the signed config; only the
+ * owner's relay gets install headers and counts the daily lossless allowance.
+ */
+data class TidalRelay(val base: String, val token: String?, val userOwned: Boolean = false)
 
 @Serializable
 data class LosslessConfig(

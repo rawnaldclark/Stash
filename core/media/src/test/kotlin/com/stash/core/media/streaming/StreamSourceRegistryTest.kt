@@ -5,15 +5,18 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.quota.LosslessQuota
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.currentTime
@@ -483,6 +486,30 @@ class StreamSourceRegistryTest {
         assertThat(result).isNull()
         val r = log.recentResolves().single()
         assertThat(r.servedBy).isEqualTo("none (all missed)")
+    }
+
+    /**
+     * With the day's lossless allowance spent qbdlx skips the relays on purpose: its nulls
+     * must not add up to the Home "lossless looks down" banner. The same nulls on a normal day do.
+     */
+    @Test
+    fun `qbdlx nulls on a spent day are not counted toward the lossless-offline banner`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), any()) } returns stubStreamUrl("youtube")
+        var spent = true
+        val quota: LosslessQuota = mockk { every { isSpent() } answers { spent } }
+        val health = LosslessSourceHealth()
+        val registry = StreamSourceRegistry(
+            kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+            health, losslessPrefs, Dispatchers.IO, log, null, quota,
+        )
+        repeat(LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) { registry.resolve(stubTrack().copy(id = it + 1L)) }
+        assertThat(health.qbdlxLooksDown.first()).isFalse()
+
+        spent = false
+        repeat(LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) { registry.resolve(stubTrack().copy(id = it + 100L)) }
+        assertThat(health.qbdlxLooksDown.first()).isTrue()
     }
 
     @Test

@@ -41,6 +41,30 @@ class TidalLosslessSourceTest {
         trackId = "td:1",
     )
 
+    @Test fun `a spent day's allowance is an incomplete search with no token spent and no breaker report`() = runTest {
+        state()
+        coEvery { client.isConfigured() } returns true
+        coEvery { client.lookup(any(), any(), true) } returns TidalLookup.Spent(1_000L)
+        val purpose = LosslessDownloadPurpose()
+        assertThat(withContext(purpose) { source.resolve(query) }).isNull()
+        assertThat(purpose.searchIncomplete).isTrue()
+        assertThat(purpose.pacedRetryAfterSec).isNull()
+        coVerify(exactly = 0) { rateLimiter.acquire(any()) }
+        coVerify(exactly = 0) { client.lookup(any(), any(), false) }
+    }
+
+    @Test fun `the relay's cap answer reaches neither the breaker nor the miss path`() = runTest {
+        state()
+        coEvery { client.isConfigured() } returns true
+        coEvery { rateLimiter.acquire(id) } returns true
+        coEvery { client.lookup(query, false, false) } returns TidalLookup.Spent(1_000L)
+        val purpose = LosslessDownloadPurpose()
+        assertThat(withContext(purpose) { source.resolve(query) }).isNull()
+        assertThat(purpose.searchIncomplete).isTrue()
+        coVerify(exactly = 0) { rateLimiter.reportFailure(any()) }
+        coVerify(exactly = 0) { rateLimiter.reportRateLimited(any()) }
+    }
+
     @Test fun `not configured means disabled and no lookup`() = runTest {
         state()
         coEvery { client.isConfigured() } returns false

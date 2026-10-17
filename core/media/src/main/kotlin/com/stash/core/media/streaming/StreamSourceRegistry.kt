@@ -5,6 +5,7 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.quota.LosslessQuota
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -34,6 +35,9 @@ import javax.inject.Singleton
  *   1b. [TidalStreamResolver]  — Tidal lossless through the user's self-hosted
  *      BitChord server (progressive FLAC or a DASH MPD). Same gates as qbdlx;
  *      inert until a server is set in Settings.
+ *   While the day's lossless allowance is spent ([LosslessQuota]) both relay rungs ask
+ *   for no FLAC: qbdlx skips the relays (a user's own account still serves), and Tidal
+ *   asks for its 320 kbps AAC when "Tidal AAC when no FLAC" is on, else nothing.
  *   PARKED (2026-07-01, hosts down for us — commented out of the chain in
  *   [resolve], kept for re-enablement): [KennyyStreamResolver] (`kennyy.com.br`),
  *   [QobuzStreamResolver] (`qobuz.squid.wtf`).
@@ -74,6 +78,8 @@ class StreamSourceRegistry internal constructor(
     private val diagnosticsLog: PlaybackDiagnosticsLog = PlaybackDiagnosticsLog(),
     /** Tidal via the user's BitChord server; null in hand-built tests (rung absent). */
     private val tidal: TidalStreamResolver? = null,
+    /** The daily lossless allowance; null in hand-built tests (never spent). */
+    private val losslessQuota: LosslessQuota? = null,
 ) {
     @Inject
     constructor(
@@ -87,9 +93,10 @@ class StreamSourceRegistry internal constructor(
         losslessPrefs: LosslessSourcePreferences,
         diagnosticsLog: PlaybackDiagnosticsLog,
         tidal: TidalStreamResolver,
+        losslessQuota: LosslessQuota,
     ) : this(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
-        losslessSourceHealth, losslessPrefs, Dispatchers.IO, diagnosticsLog, tidal,
+        losslessSourceHealth, losslessPrefs, Dispatchers.IO, diagnosticsLog, tidal, losslessQuota,
     )
     /**
      * Try each resolver in priority order; return the first non-null
@@ -336,8 +343,14 @@ class StreamSourceRegistry internal constructor(
                     // Feed the Home lossless-offline banner signal: a qbdlx null here
                     // is a miss (dead credential OR catalog gap; the streak threshold
                     // tells them apart), a non-null is a serve that resets the streak.
+                    // Not while the day's lossless allowance is spent: qbdlx then skips the
+                    // relays on purpose (no request), and lossless is not "offline".
                     if (name == "qbdlx") {
-                        if (result != null) losslessSourceHealth.recordQbdlxServed() else losslessSourceHealth.recordQbdlxMiss()
+                        if (result != null) {
+                            losslessSourceHealth.recordQbdlxServed()
+                        } else if (losslessQuota?.isSpent() != true) {
+                            losslessSourceHealth.recordQbdlxMiss()
+                        }
                     }
                     if (result != null) {
                         // Diagnostic: which source actually served the stream. Helps

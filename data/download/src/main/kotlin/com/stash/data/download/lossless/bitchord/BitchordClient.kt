@@ -6,7 +6,9 @@ import com.stash.core.data.db.entity.TidalMatchEntity
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher
+import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.relay.RelaySigner
 import com.stash.data.download.lossless.relay.TidalRelay
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -102,6 +104,12 @@ sealed interface TidalLookup {
     data class Busy(val untilMs: Long) : TidalLookup
     /** A transient error (5xx, I/O, junk body). Not a miss and never cached. */
     data object Failed : TidalLookup
+    /**
+     * A lossless lookup while the day's lossless allowance is used up ([LosslessQuota]), or the
+     * relay's `429 daily_lossless_cap`: no FLAC from the owner's relay before [untilMs]. Not a
+     * miss, not busy (AAC lookups still go out), never cached.
+     */
+    data class Spent(val untilMs: Long) : TidalLookup
     /** Only from a `cacheOnly` lookup: the answer is not cached, the relay would have to be asked. */
     data object NeedsRelay : TidalLookup
     /** No server configured. */
@@ -131,6 +139,9 @@ sealed interface TidalLookup {
  *    path prefix (`https://host/<token>`, BitChord's own format) or it goes in
  *    `X-Access-Token`. The `/dash/` and `/audio/` URLs it hands back are HMAC-signed
  *    with an `exp` (1 h) and need no token.
+ *  - Install headers: a `/stream` to the owner's relay (the signed config's, never a user's own
+ *    server) is signed by [RelaySigner] over `td:<numeric id>`, the same key and install id as a
+ *    Qobuz mint, so both relays count one allowance. `/search` is not signed.
  *
  * Request budget: every `/search` and `/stream` spends quota on a small shared pool of
  * Tidal accounts, so answers are cached per song in Room ([TidalMatchDao]; matches 30 days,
@@ -147,6 +158,8 @@ class BitchordClient @Inject constructor(
     private val prefs: LosslessSourcePreferences,
     private val config: LosslessConfigFetcher,
     private val matchDao: TidalMatchDao,
+    private val signer: RelaySigner,
+    private val quota: LosslessQuota,
 ) {
     /**
      * Short timeouts: the server itself caps `/stream` at 7 s, and a self-hosted
@@ -179,7 +192,7 @@ class BitchordClient @Inject constructor(
      * runtime config ([LosslessConfigFetcher.tidalRelay]). Null = rung off.
      */
     private suspend fun server(): TidalRelay? {
-        prefs.bitchordEndpointNow()?.let { return TidalRelay(it, prefs.bitchordAccessTokenNow()) }
+        prefs.bitchordEndpointNow()?.let { return TidalRelay(it, prefs.bitchordAccessTokenNow(), userOwned = true) }
         return config.tidalRelay.first()
     }
 
@@ -216,9 +229,11 @@ class BitchordClient @Inject constructor(
      * Find [query] on Tidal through the relay, spending as little relay quota as possible:
      *  1. pool-busy circuit open → [TidalLookup.Busy], no request;
      *  2. a fresh cached miss for this mode → [TidalLookup.NoMatch], no request;
-     *  3. [cacheOnly] (speculative callers) → [TidalLookup.NeedsRelay], no request;
-     *  4. a fresh cached `td:` match → `/stream` only, no `/search`;
-     *  5. else `/search` + `/stream`, and the outcome is cached.
+     *  3. a lossless lookup on the owner's relay with the day's allowance spent →
+     *     [TidalLookup.Spent], no request (AAC lookups still go out: AAC never counts);
+     *  4. [cacheOnly] (speculative callers) → [TidalLookup.NeedsRelay], no request;
+     *  5. a fresh cached `td:` match → `/stream` only, no `/search`;
+     *  6. else `/search` + `/stream`, and the outcome is cached.
      * Concurrent identical lookups share one request.
      *
      * [allowAac]: streaming / AAC download only. CD-only tracks never come back lossless with
@@ -231,6 +246,7 @@ class BitchordClient @Inject constructor(
         if (now < busyUntilMs) return TidalLookup.Busy(busyUntilMs)
         val key = cacheKey(query)
         if (cachedMiss(readCache(key), allowAac, now)) return TidalLookup.NoMatch
+        if (!allowAac && quota.isSpent() && prefs.bitchordEndpointNow() == null) return TidalLookup.Spent(quota.resetsAtMs())
         if (cacheOnly) return TidalLookup.NeedsRelay
         val server = server() ?: return TidalLookup.Off
 
@@ -267,6 +283,7 @@ class BitchordClient @Inject constructor(
                     val body = when (val r = get(searchUrl, token)) {
                         is Reply.Ok -> r.body
                         is Reply.Busy -> return@withContext busy(r.untilMs)
+                        Reply.Spent -> return@withContext TidalLookup.Spent(quota.resetsAtMs())
                         else -> return@withContext TidalLookup.Failed
                     }
                     val tracks = json.decodeFromString<BitchordSearchResponse>(body).tracks
@@ -302,15 +319,19 @@ class BitchordClient @Inject constructor(
                     .addQueryParameter("artist", match.artist)
                     .apply { if (allowAac) addQueryParameter("aac", "1") }
                     .build()
-                when (val r = get(streamUrl, token)) {
+                // Only the owner's relay (from the signed config) verifies install headers; a
+                // user's own server never sees our install id.
+                val sign = if (!server.userOwned) "td:${id.removePrefix("td:")}" else null
+                when (val r = get(streamUrl, token, signPayload = sign)) {
                     is Reply.Ok -> {
                         val stream = toStream(json.decodeFromString<BitchordStreamResponse>(r.body), match, allowAac)
                         if (stream == null) {
                             stampMiss(match, allowAac)
                             TidalLookup.NoMatch
                         } else {
-                            // The relay prefers lossless, so an AAC answer means there is none.
-                            if (stream.codec == "aac") writeCache(match.copy(losslessMissAt = nowMs()))
+                            // The relay prefers lossless, so an AAC answer means there is none —
+                            // unless the day's allowance is spent: then AAC is all it would serve.
+                            if (stream.codec == "aac" && !quota.isSpent()) writeCache(match.copy(losslessMissAt = nowMs()))
                             TidalLookup.Found(stream)
                         }
                     }
@@ -321,6 +342,7 @@ class BitchordClient @Inject constructor(
                         TidalLookup.NoMatch
                     }
                     is Reply.Busy -> busy(r.untilMs)
+                    Reply.Spent -> TidalLookup.Spent(quota.resetsAtMs())
                     is Reply.Error -> TidalLookup.Failed
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -443,42 +465,79 @@ class BitchordClient @Inject constructor(
         data class NotFound(val definitive: Boolean) : Reply
         /** 503 (no pooled account free) or 429 (slow down): back off until [untilMs] (from Retry-After). */
         data class Busy(val untilMs: Long) : Reply
+        /** 429 `daily_lossless_cap`: the day's lossless allowance is used up. Never a miss, never busy. */
+        data object Spent : Reply
         /** Anything else (5xx, other 4xx): transient, never cached as a miss. */
         data class Error(val code: Int) : Reply
     }
 
-    private fun get(url: HttpUrl, token: String?): Reply {
-        val req = Request.Builder().url(url).get()
-            .header("Accept", "application/json")
-            .apply { if (token != null) header("X-Access-Token", token) }
-            .build()
-        httpClient.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) {
-                // Code only: the path may carry the access token as its prefix.
-                Log.d(TAG, "HTTP ${r.code}")
-                val now = nowMs()
-                return when (r.code) {
-                    404 -> Reply.NotFound(definitive = errorCode(r) == "lossless_unavailable")
-                    // The relay says how long: 15 s when only seat pacing blocks, 30 s for its
-                    // per-network limiter, 300 / 600 s when capped or paused. A flat 5 min turned
-                    // a 15 s pacing blip into a device-wide Tidal blackout.
-                    503 -> Reply.Busy(now + retryAfterMs(r, BUSY_MIN_RETRY_AFTER_MS, BUSY_MAX_RETRY_AFTER_MS))
-                    // network_daily_cap answers Retry-After 3600, hence the 1 h ceiling.
-                    429 -> Reply.Busy(now + retryAfterMs(r, MIN_RETRY_AFTER_MS, MAX_RETRY_AFTER_MS))
-                    else -> Reply.Error(r.code)
+    /**
+     * One GET. With [signPayload] (a `/stream` to the owner's relay) the request carries the
+     * install headers ([RelaySigner], message `<install>:td:<numeric id>:<ts>`) and a stored
+     * supporter token; a 401 that names the relay's time re-signs once on that clock, like a
+     * Qobuz mint.
+     */
+    private suspend fun get(url: HttpUrl, token: String?, signPayload: String? = null): Reply {
+        var mayRetrySkew = true
+        while (true) {
+            val b = Request.Builder().url(url).get()
+                .header("Accept", "application/json")
+                .apply { if (token != null) header("X-Access-Token", token) }
+            val signed = signPayload != null && signer.sign(b, signPayload, nowMs())
+            if (signPayload != null) signer.entitle(b)
+            val reply = httpClient.newCall(b.build()).execute().use { r ->
+                if (r.code == 401 && signed && mayRetrySkew && signer.adoptServerTime(r, nowMs())) {
+                    null
+                } else {
+                    reply(r)
                 }
             }
-            val body = r.body ?: throw IOException("empty body")
-            if (body.contentLength() > MAX_BODY_BYTES) throw IOException("body too large")
-            return Reply.Ok(body.string())
+            if (reply != null) return reply
+            mayRetrySkew = false
         }
+    }
+
+    /** Sorts one relay response into a [Reply]. */
+    private fun reply(r: okhttp3.Response): Reply {
+        // Every answer may carry the day's lossless count.
+        quota.onResponse(r)
+        if (!r.isSuccessful) {
+            // Code only: the path may carry the access token as its prefix.
+            Log.d(TAG, "HTTP ${r.code}")
+            val now = nowMs()
+            return when (r.code) {
+                404 -> Reply.NotFound(definitive = errorCode(r) == "lossless_unavailable")
+                // The relay says how long: 15 s when only seat pacing blocks, 30 s for its
+                // per-network limiter, 300 / 600 s when capped or paused. A flat 5 min turned
+                // a 15 s pacing blip into a device-wide Tidal blackout.
+                503 -> Reply.Busy(now + retryAfterMs(r, BUSY_MIN_RETRY_AFTER_MS, BUSY_MAX_RETRY_AFTER_MS))
+                // The daily lossless cap is this install's allowance, not a busy pool: AAC and
+                // other installs' traffic are unaffected, so it must not open the busy circuit.
+                429 -> if (boundedBody(r)?.let { quota.onCapBody(it, r.header("Retry-After")?.trim()?.toLongOrNull()) } == true) {
+                    Reply.Spent
+                } else {
+                    // network_daily_cap answers Retry-After 3600, hence the 1 h ceiling.
+                    Reply.Busy(now + retryAfterMs(r, MIN_RETRY_AFTER_MS, MAX_RETRY_AFTER_MS))
+                }
+                else -> Reply.Error(r.code)
+            }
+        }
+        val body = r.body ?: throw IOException("empty body")
+        if (body.contentLength() > MAX_BODY_BYTES) throw IOException("body too large")
+        return Reply.Ok(body.string())
     }
 
     /** The `error` code of a non-2xx JSON body, or null when absent, oversized or unparseable. */
     private fun errorCode(r: okhttp3.Response): String? = runCatching {
+        val text = boundedBody(r) ?: return null
+        json.decodeFromString<BitchordErrorResponse>(text).error.takeIf { it.isNotEmpty() }
+    }.getOrNull()
+
+    /** A non-2xx body as text, or null when absent, oversized or unreadable. */
+    private fun boundedBody(r: okhttp3.Response): String? = runCatching {
         val body = r.body ?: return null
         if (body.contentLength() > MAX_BODY_BYTES) return null
-        json.decodeFromString<BitchordErrorResponse>(body.string()).error.takeIf { it.isNotEmpty() }
+        body.string()
     }.getOrNull()
 
     /** Retry-After (seconds) clamped to [[min], [max]]; absent or junk (an HTTP-date too) → [BUSY_BACKOFF_MS]. */

@@ -2,6 +2,7 @@ package com.stash.data.download.lossless
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
+import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.LosslessRelayClient
 import com.stash.data.download.lossless.relay.RelayEntry
@@ -25,12 +26,27 @@ class LosslessAvailabilityTest {
     private val config: LosslessConfigFetcher = mockk { every { relays } returns configRelays }
     private val prefs: LosslessSourcePreferences = mockk { every { customLosslessEndpoint } returns custom }
     private val relayClient: LosslessRelayClient = mockk()
-    private val a = LosslessAvailability(store, config, prefs, relayClient)
+    private var now = 1_000_000_000_000L
+    private val quota = LosslessQuota.inMemory { now }
+    private val a = LosslessAvailability(store, config, prefs, relayClient, quota)
 
     private fun stubNow(loginLive: Boolean = false, customNow: String? = null, cooled: Set<String> = emptySet()) {
         coEvery { store.loginLive() } returns loginLive
         coEvery { prefs.customLosslessEndpointNow() } returns customNow
         every { relayClient.isCooled(any()) } answers { firstArg<String>() in cooled }
+    }
+
+    @Test fun `a spent day's allowance leaves the config relays out of fileUrlAvailableNow, not a live login`() = runTest {
+        configRelays.value = listOf(RelayEntry("https://r1"))
+        stubNow()
+        assertThat(a.fileUrlAvailableNow()).isTrue()
+        quota.onHeaders("500/500", "${now / 1000 + 3600}")
+        assertThat(a.fileUrlAvailableNow()).isFalse()
+        stubNow(loginLive = true)
+        assertThat(a.fileUrlAvailableNow()).isTrue()
+        now += 3_600_000 // the reset
+        stubNow()
+        assertThat(a.fileUrlAvailableNow()).isTrue()
     }
 
     @Test fun `nothing configured - every predicate false`() = runTest {

@@ -5,6 +5,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.stash.data.download.lossless.qobuz.QobuzSource
+import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessRelayClient
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
@@ -17,7 +18,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 
 /**
@@ -34,6 +37,10 @@ import kotlinx.coroutines.flow.onEach
  *  4. [LosslessRelayClient.pacedEvents]: the relay asked a download to wait
  *     (streams first). Enqueued with that wait as its initial delay; the
  *     worker then retries on WorkManager's backoff while the pool stays paced.
+ *  5. [LosslessQuota]: the day's lossless allowance ran out. Downloads with
+ *     the lossy fallback off wait for FLAC, so a sweep is booked for just after
+ *     the reset, under its own unique name ([RESET_WORK_NAME]) so an earlier
+ *     sweep already queued cannot swallow it.
  *
  * No periodic polling — these signals cover every state transition
  * that matters. Worker is enqueued under a unique work name with
@@ -55,6 +62,7 @@ class LosslessRetryScheduler @Inject constructor(
     qobuzSource: QobuzSource,
     rateLimiter: AggregatorRateLimiter,
     private val relayClient: LosslessRelayClient,
+    private val quota: LosslessQuota,
 ) {
 
     /**
@@ -133,20 +141,32 @@ class LosslessRetryScheduler @Inject constructor(
         relayClient.pacedEvents
             .onEach { waitSec -> enqueue(initialDelaySec = waitSec) }
             .launchIn(scope)
+
+        // 5. The day's lossless allowance ran out: one sweep just after the reset. KEEP on its
+        // own name, so later answers the same day (each re-reports "spent") book nothing new.
+        quota.state
+            .map { a -> a?.takeIf { it.exhausted }?.resetsAtSec }
+            .distinctUntilChanged()
+            .filterNotNull()
+            .onEach { resetsAtSec ->
+                val waitSec = (resetsAtSec - quota.nowSec()).coerceAtLeast(0) + RESET_SLACK_SEC
+                enqueue(initialDelaySec = waitSec, name = RESET_WORK_NAME)
+            }
+            .launchIn(scope)
     }
 
-    private fun enqueue(initialDelaySec: Long = 0) {
+    private fun enqueue(initialDelaySec: Long = 0, name: String = LosslessRetryWorker.UNIQUE_WORK_NAME) {
         val request = OneTimeWorkRequestBuilder<LosslessRetryWorker>()
             .setInitialDelay(initialDelaySec, TimeUnit.SECONDS)
             .build()
         workManagerProvider().enqueueUniqueWork(
-            LosslessRetryWorker.UNIQUE_WORK_NAME,
+            name,
             ExistingWorkPolicy.KEEP,
             request,
         )
     }
 
-    private companion object {
+    internal companion object {
         /**
          * Debounce window for cookie pastes. Long enough to coalesce a
          * programmatic clear-then-set sequence (most DataStore writes
@@ -155,5 +175,11 @@ class LosslessRetryScheduler @Inject constructor(
          * firing.
          */
         const val COOKIE_DEBOUNCE_MS = 1_000L
+
+        /** The reset sweep's unique work name (see trigger 5). */
+        const val RESET_WORK_NAME = "lossless-retry-reset"
+
+        /** Past the reset, so the relays' day has turned over on their clock too. */
+        const val RESET_SLACK_SEC = 120L
     }
 }
