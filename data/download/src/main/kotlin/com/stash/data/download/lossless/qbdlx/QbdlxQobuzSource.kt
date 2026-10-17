@@ -163,6 +163,7 @@ class QbdlxQobuzSource @Inject constructor(
             candDurationSec = candidate.duration,
             candStreamable = candidate.streamable,
             candVersion = candidate.version,
+            candAlbum = candidate.album?.title,
         )
 
     /**

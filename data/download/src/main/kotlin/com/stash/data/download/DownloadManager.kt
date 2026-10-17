@@ -14,6 +14,7 @@ import com.stash.data.download.BuildConfig
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
+import com.stash.data.download.lossless.forLibrarySource
 import com.stash.data.download.lyrics.LyricsFetchTrigger
 import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.jiosaavn.toJioSaavnKbps
@@ -568,7 +569,7 @@ class DownloadManager @Inject constructor(
             durationMs = track.durationMs.takeIf { it > 0 },
             explicit = track.explicit,
             trackId = track.id,
-        )
+        ).forLibrarySource(track.source)
 
         val match = try {
             // The Download quality picker sets the JioSaavn variant too.
@@ -593,7 +594,7 @@ class DownloadManager @Inject constructor(
             durationMs = track.durationMs.takeIf { it > 0 },
             explicit = track.explicit,
             trackId = track.id,
-        )
+        ).forLibrarySource(track.source)
         val match = try {
             tidalAacResolver.resolve(query)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -709,7 +710,7 @@ class DownloadManager @Inject constructor(
             explicit = track.explicit,
             spotifyUri = track.spotifyUri,
             trackId = track.id,
-        )
+        ).forLibrarySource(track.source)
 
         // Bounded failover loop: the duration backstop can reject a degraded
         // source's preview-stub and record it degraded, after which the

@@ -10,6 +10,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.model.DownloadStatus
+import com.stash.data.download.lossless.forLibrarySource
 import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
 import kotlinx.coroutines.withContext
 import dagger.assisted.Assisted
@@ -99,7 +100,7 @@ class LosslessRetryWorker @AssistedInject constructor(
                         isrc = track.isrc,
                         durationMs = track.durationMs.takeIf { it > 0 },
                         spotifyUri = track.spotifyUri,
-                    ),
+                    ).forLibrarySource(track.source),
                 ) }
             }.getOrNull()
             if (match != null) {

@@ -26,7 +26,7 @@ data class QbdlxTrack(
 )
 
 @Serializable data class QbdlxPerformer(val name: String = "")
-@Serializable data class QbdlxAlbum(val image: QbdlxImage? = null)
+@Serializable data class QbdlxAlbum(val image: QbdlxImage? = null, val title: String? = null)
 @Serializable data class QbdlxImage(val large: String? = null, val small: String? = null, val thumbnail: String? = null)
 
 // ── track/getFileUrl ───────────────────────────────────────────────────

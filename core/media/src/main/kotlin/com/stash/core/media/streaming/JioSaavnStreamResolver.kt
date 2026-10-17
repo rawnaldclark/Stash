@@ -3,6 +3,7 @@ package com.stash.core.media.streaming
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.lossless.TrackQuery
+import com.stash.data.download.lossless.forLibrarySource
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.withTimeoutOrNull
@@ -25,7 +26,7 @@ class JioSaavnStreamResolver @Inject constructor(
                     album = track.album.takeIf { it.isNotBlank() },
                     durationMs = track.durationMs.takeIf { it > 0 },
                     explicit = track.explicit,
-                ),
+                ).forLibrarySource(track.source),
                 // Save Data streams JioSaavn's lowest variant, as it does YouTube's
                 // lowest audio. Read through the policy so a flip clears cached URLs.
                 kbps = if (qualityPolicy.saveData()) 96 else 320,

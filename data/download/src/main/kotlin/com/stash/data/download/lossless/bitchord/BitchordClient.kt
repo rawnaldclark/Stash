@@ -403,6 +403,7 @@ class BitchordClient @Inject constructor(
             candIsrc = t.isrc,
             candDurationSec = t.duration,
             candStreamable = true,
+            candAlbum = t.album.takeIf { it.isNotBlank() },
         )
 
     /** One relay answer, sorted by what the caller must do about it. */

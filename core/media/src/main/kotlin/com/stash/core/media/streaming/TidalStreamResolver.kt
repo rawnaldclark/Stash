@@ -4,6 +4,7 @@ import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.bitchord.BitchordClient
+import com.stash.data.download.lossless.forLibrarySource
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -46,7 +47,7 @@ class TidalStreamResolver @Inject constructor(
         album = album.takeIf { it.isNotBlank() },
         isrc = isrc?.takeIf { it.isNotBlank() },
         durationMs = durationMs,
-    )
+    ).forLibrarySource(source)
 
     suspend fun resolve(track: TrackEntity): StreamUrl? {
         if (!client.isConfigured()) return null
