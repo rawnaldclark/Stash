@@ -10,10 +10,10 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Dns
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.IOException
-import java.io.InterruptedIOException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
@@ -37,7 +37,8 @@ import kotlin.math.abs
  * `apple-music/cache/{id}` is asked first. It is fast either way, and it is how a slow first
  * lookup turns into lyrics on the next try.
  *
- * Skip window: after [SKIP_AFTER_TIMEOUTS] live lookups in a row time out, or on any HTTP 429,
+ * Skip window: after [SKIP_AFTER_TIMEOUTS] live lookups in a row fail at the transport level
+ * (time out, or a TLS/connect error), or on any HTTP 429,
  * the live call is skipped for [SKIP_WINDOW_MS] and [resolve] throws [AppleSkippedException], so the
  * chain moves straight on to LRCLIB (and, being a failure rather than a miss, the track stays
  * retryable). The cache is still asked during the window. Any live response resets the count.
@@ -49,20 +50,26 @@ class AppleTtmlLyricsSource(
     private val lyricsBaseUrl: String = DEFAULT_LYRICS_BASE_URL,
     private val searchBaseUrl: String = DEFAULT_SEARCH_BASE_URL,
     private val clock: Clock = SystemClock(),
+    /** [LyricsDns] in the app; tests pass [Dns.SYSTEM] so they never reach Cloudflare. */
+    lyricsDns: Dns = LyricsDns(),
 ) : LyricsSource {
 
     override val id = SOURCE_ID
     override val displayName = "Apple Music (word-synced)"
 
     private val userAgent = "Stash/$appVersionName (Android)"
-    private val interactiveHttp = client.newBuilder().callTimeout(INTERACTIVE_TIMEOUT_S, TimeUnit.SECONDS).build()
-    private val backgroundHttp = client.newBuilder().callTimeout(BACKGROUND_TIMEOUT_S, TimeUnit.SECONDS).build()
+    private val interactiveHttp = client.newBuilder()
+        .dns(lyricsDns)
+        .callTimeout(INTERACTIVE_TIMEOUT_S, TimeUnit.SECONDS).build()
+    private val backgroundHttp = client.newBuilder()
+        .dns(lyricsDns)
+        .callTimeout(BACKGROUND_TIMEOUT_S, TimeUnit.SECONDS).build()
 
     private var consecutiveTimeouts = 0
     private var skipUntilMs = 0L
 
     /** Thrown while the skip window is open: a failure, so the source walk moves on and retries later. */
-    class AppleSkippedException : IOException("Apple lyrics skipped: the service keeps timing out or rate-limiting")
+    class AppleSkippedException : IOException("Apple lyrics skipped: the service keeps failing or rate-limiting")
 
     override suspend fun resolve(query: LyricsQuery): LyricsResult? = withContext(Dispatchers.IO) {
         val songId = try {
@@ -164,7 +171,9 @@ class AppleTtmlLyricsSource(
         } catch (e: HttpStatusException) {
             if (e.code == 429) openSkipWindow()
             throw e
-        } catch (e: InterruptedIOException) {   // OkHttp's callTimeout and socket timeouts
+        } catch (e: IOException) {
+            // Any transport failure, not only timeouts (InterruptedIOException): a TLS or connect error
+            // fails fast, and without counting it the background worker kept retrying a dead host.
             val n = synchronized(this) { ++consecutiveTimeouts }
             if (n >= SKIP_AFTER_TIMEOUTS) openSkipWindow()
             throw e

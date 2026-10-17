@@ -4,6 +4,7 @@ import com.stash.core.common.Clock
 import java.io.InterruptedIOException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import okhttp3.Dns
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
@@ -32,6 +33,7 @@ class AppleTtmlLyricsSourceTest {
     private lateinit var server: MockWebServer
     private var cacheHit = false
     private var liveTimesOut = false
+    private var liveTlsFails = false
     private var liveCalls = 0
     private var now = 0L
     private lateinit var source: AppleTtmlLyricsSource
@@ -53,11 +55,12 @@ class AppleTtmlLyricsSourceTest {
             if (chain.request().url.encodedPath.startsWith("/apple-music/lyrics")) {
                 liveCalls++
                 if (liveTimesOut) throw InterruptedIOException("timeout")
+                if (liveTlsFails) throw javax.net.ssl.SSLException("Unable to parse TLS packet header")
             }
             chain.proceed(chain.request())
         }).build()
         val base = server.url("/").toString()
-        source = AppleTtmlLyricsSource(client, "test", base, base, object : Clock { override fun now() = now })
+        source = AppleTtmlLyricsSource(client, "test", base, base, object : Clock { override fun now() = now }, lyricsDns = Dns.SYSTEM)
     }
 
     @After fun tearDown() { server.shutdown() }
@@ -94,6 +97,18 @@ class AppleTtmlLyricsSourceTest {
         liveTimesOut = false
         assertNotNull(source.resolve(query()))
         assertEquals(4, liveCalls)
+    }
+
+    @Test fun `three fast TLS failures open the skip window too, not only timeouts`() = runTest {
+        // The PR #605 network: a rewritten DNS answer made every handshake fail at once with an
+        // SSLException, which never counted, so the background worker kept hammering the host.
+        liveTlsFails = true
+        repeat(AppleTtmlLyricsSource.SKIP_AFTER_TIMEOUTS) {
+            assertThrows(javax.net.ssl.SSLException::class.java) { runBlocking { source.resolve(query()) } }
+        }
+        val callsBefore = liveCalls
+        assertThrows(AppleTtmlLyricsSource.AppleSkippedException::class.java) { runBlocking { source.resolve(query()) } }
+        assertEquals(callsBefore, liveCalls)
     }
 
     @Test fun `a success resets the timeout count`() = runTest {
