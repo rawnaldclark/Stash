@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.geometry.CornerRadius
@@ -217,6 +218,22 @@ object StashTabMotion {
 
     /** The picked tab's name rising in (`.tab.on .lbl`): cubic-bezier(.3, 1.4, .5, 1). */
     val LabelEase: Easing = CubicBezierEasing(0.3f, 1.4f, 0.5f, 1f)
+
+    /** Frames a tab move waits before it starts; see [awaitNavigationFrames]. */
+    const val NAVIGATION_SETTLE_FRAMES = 2
+
+    /**
+     * Waits out the frames in which a tab switch composes and lays out the destination screen.
+     *
+     * Measured on the Pixel 5: the frame after a tab tap spends up to ~150 ms measuring the new
+     * screen (a long list's first layout). Compose animations run on frame time, so a move that
+     * starts in the frame before that hitch jumps ~150 ms ahead when it lands, and the first half of
+     * the pill's stretch is never seen. Starting two frames later (about 22 ms with no hitch) plays
+     * the whole move after it instead.
+     */
+    suspend fun awaitNavigationFrames() {
+        repeat(NAVIGATION_SETTLE_FRAMES) { withFrameNanos { } }
+    }
 }
 
 private val CssEase = StashTabMotion.CssEase
@@ -322,6 +339,7 @@ internal class TabGlyphMotion(
             snapTo(selected)
             return
         }
+        if (selected != wasSelected) StashTabMotion.awaitNavigationFrames()
         run(on = selected, includeColour = true, restartOneShot = selected && !wasSelected)
     }
 
@@ -331,6 +349,8 @@ internal class TabGlyphMotion(
      */
     suspend fun replay(animate: Boolean) {
         if (!animate) return
+        // A re-tap pops the tab back to its root, which composes that screen: the same hitch.
+        StashTabMotion.awaitNavigationFrames()
         coroutineScope {
             val retreat = launch { run(on = false, includeColour = false, restartOneShot = false) }
             // Scaled like every Compose animation, so the system's animator duration scale slows it too.

@@ -29,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -293,6 +294,8 @@ private fun RowScope.TabItem(
             lift.snapTo(v); labelIn.snapTo(v); labelAlpha.snapTo(v)
             return@LaunchedEffect
         }
+        // Skip nothing of the move to the frame that lays out the new screen.
+        StashTabMotion.awaitNavigationFrames()
         coroutineScope {
             launch { lift.animateTo(v, tween(LIFT_MS, easing = StashTabMotion.LiftEase)) }
             if (selected) {
@@ -383,8 +386,11 @@ private class PillState {
     val left = Animatable(0f)
     val right = Animatable(0f)
 
-    /** Whether the edges have been placed on a tab yet (nothing is drawn before). */
-    var placed = false
+    /**
+     * Whether the edges have been placed on a tab yet (nothing is drawn before). Snapshot state:
+     * the draw reads it first, so the placement must invalidate that draw.
+     */
+    var placed by mutableStateOf(false)
         private set
 
     private var lastBarWidth = 0f
@@ -408,6 +414,7 @@ private class PillState {
             placed = true
             return
         }
+        StashTabMotion.awaitNavigationFrames()
         val springs = LiquidPill.springsFor(target.right, right.value)
         coroutineScope {
             launch { left.animateTo(target.left, springs.left.toSpec()) }
