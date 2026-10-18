@@ -11,6 +11,7 @@ import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
 import com.stash.core.data.listening.ListeningDay
 import com.stash.core.data.listening.ListeningDayBackfill
+import com.stash.core.data.listening.ListeningHistoryPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.mediaToWallMs
@@ -24,7 +25,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicBoolean
@@ -61,6 +65,11 @@ import javax.inject.Singleton
  *     recorded. That time is written to `listened_ms` when the session ends
  *     (next song, a repeat-one restart, stop) and on every pause. If the app
  *     dies mid-song it stays NULL, and totals fall back to the song's length.
+ *   - While history is paused (Settings › Library & Storage › Listening history,
+ *     [ListeningHistoryPreference]) nothing is recorded: no listen, no skip, and no
+ *     now-playing to Last.fm or ListenBrainz. A song already counting when the
+ *     pause is turned on doesn't count either; a song started while paused doesn't
+ *     start counting when history is turned back on mid-song.
  */
 @Singleton
 class ListeningRecorder @VisibleForTesting internal constructor(
@@ -77,6 +86,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
     /** Stamps the local day on listens from before v59 (ListeningDayBackfill.run). */
     private val backfillListeningDays: suspend () -> Unit = {},
+    /** History paused ([ListeningHistoryPreference.paused]): record nothing while true. */
+    private val historyPaused: Flow<Boolean> = flowOf(false),
 ) {
 
     @Inject
@@ -88,6 +99,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         scrobbler: LastFmScrobbler,
         listenSinks: ListenSinkCoordinator,
         listeningDayBackfill: ListeningDayBackfill,
+        listeningHistoryPreference: ListeningHistoryPreference,
     ) : this(
         playerRepository = playerRepository,
         musicRepository = musicRepository,
@@ -98,6 +110,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         // One thread at a time: the track and play-state collectors both read and write `pending`.
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)),
         backfillListeningDays = { listeningDayBackfill.run() },
+        historyPaused = listeningHistoryPreference.paused,
     )
 
     /**
@@ -134,9 +147,26 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
     private var pending: PendingFire? = null
 
+    /**
+     * The last value of [historyPaused]. Read before the collectors start (see [start]), then kept
+     * current by its own collector; every read and write runs on the recorder's single thread.
+     */
+    @Volatile
+    private var paused = false
+
     /** Must be called exactly once from Application.onCreate. */
     fun start() {
         scope.launch {
+            // Before any song is looked at: a launch straight into playback while paused must not count.
+            paused = try {
+                historyPaused.first()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to read whether history is paused", e)
+                false
+            }
+            scope.launch { historyPaused.collect { paused = it } }
             try {
                 listeningEventDao.backfillMissingTrackStats()
             } catch (e: CancellationException) {
@@ -285,6 +315,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         // All Songs scans live outside `tracks`: no listen, skip, or scrobble for them. `pending` stays
         // null, so the skip branch in the track-change collector never fires for them either.
         if (track.isScannedSong) return
+        // History paused: no session, so no now-playing, no listen and no skip for this song.
+        if (paused) return
         val sessionStart = System.currentTimeMillis()
         val session = PendingFire(
             track = track,
@@ -418,6 +450,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
      * although its plays were.
      */
     private suspend fun recordSkip(track: Track, positionMs: Long) {
+        if (paused) return // paused while this song played: it leaves no trace
         try {
             val persistedTrackId = musicRepository.ensureTrackPersisted(track)
             trackSkipEventDao.insert(
@@ -439,6 +472,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         val track = session.track
         val nowPlaying = playerRepository.playerState.value.currentTrack?.id
         if (nowPlaying != track.id || !session.claimed.compareAndSet(false, true)) return
+        if (paused) return // paused while this song was counting: it doesn't count
         try {
             val persistedTrackId = musicRepository.ensureTrackPersisted(track)
             val completedAt = System.currentTimeMillis()
