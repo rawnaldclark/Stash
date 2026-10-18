@@ -79,16 +79,17 @@ import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
 /*
  * The glass mini player, a port of the web player's phone mini player (stash-web
  * player/src/lib/ui/MiniPlayer.svelte, shell.css `.mini*`): a 60dp frosted card floating 8dp above
- * the tab bar with 8dp side margins and a 12dp radius; cover 44 (r6) | title / artist | queue 36 |
+ * the floating tab bar with its 12dp side margins and a 16dp radius, so the two stack as a pair; cover 44 (r6) | title / artist | queue 36 |
  * play 40 (filled with the album's vibrant colour, its ink on top) | next 36, 10dp apart; a 2dp
  * progress line in the vibrant colour along the top edge. The colours come from the app-wide album
  * colour (LocalAlbumChrome), so they follow the song from any screen, Now Playing open or not.
  */
 
-/** shell.css `.mini`: height 60, radius 12, 8 px from the tab bar and the sides. */
+/** shell.css `.mini`: height 60, 8 px above the tab bar; the floating bar's 12 px sides and radius 16. */
 private val MiniHeight = 60.dp
-private val MiniShape = RoundedCornerShape(12.dp)
+private val MiniShape = RoundedCornerShape(16.dp)
 val MiniPlayerMargin = 8.dp
+private val MiniPlayerSideMargin = 12.dp
 
 /** box-shadow: 0 16px 32px -12px rgb(0 0 0 / .5). */
 private val MiniShadow = Shadow(
@@ -153,7 +154,7 @@ fun MiniPlayer(
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = MiniPlayerMargin)
+                .padding(start = MiniPlayerSideMargin, end = MiniPlayerSideMargin, bottom = MiniPlayerMargin)
                 .pressScale(press)
                 .dropShadow(MiniShape, MiniShadow)
                 .chromeGlass(MiniShape)
