@@ -56,6 +56,13 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class CommunityRoute(val mine: Boolean = false)
 @Serializable data class CommunityPostRoute(val postId: String)
 
+/**
+ * History (Pick 3). [day] = an epoch-day to open on (a later Stats "busiest day" tap), or
+ * [com.stash.feature.listening.history.HistoryViewModel.NO_DAY] for the newest listens. The
+ * ViewModel reads it by this name.
+ */
+@Serializable data class ListeningHistoryRoute(val day: Long = -1L)
+
 @Serializable
 data class SearchArtistRoute(
     val artistId: String,

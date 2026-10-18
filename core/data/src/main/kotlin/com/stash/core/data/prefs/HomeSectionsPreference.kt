@@ -34,7 +34,14 @@ enum class HomeSection(val key: String) {
     MOOD_DECADES("mood_decades"),
 
     /** Stash Community (spec 2026-09-26 §3). Has its own switch, off by default: see [HomeSectionsPreference.communityOn]. */
-    COMMUNITY("community");
+    COMMUNITY("community"),
+
+    /**
+     * "Your listening" (Pick 3, owner decision 2026-10-18: listening lives on Home only): Recently
+     * played and the doors into History and, later, Top songs, Stats and Your Year. Last, so an
+     * update appends it under the user's own arrangement; Home renders it only once there's a listen.
+     */
+    YOUR_LISTENING("your_listening");
 
     companion object {
         fun fromKey(key: String): HomeSection? = entries.firstOrNull { it.key == key }

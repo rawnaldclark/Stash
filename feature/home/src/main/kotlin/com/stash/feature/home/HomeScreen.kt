@@ -175,6 +175,8 @@ fun HomeScreen(
     onShareMix: (Long) -> Unit = {},
     /** Community's section, from feature/community; the app fills it (spec 2026-09-26 §3). */
     communitySection: @Composable () -> Unit = {},
+    /** "Your listening", from feature/listening; renders nothing until there's a listen. */
+    yourListeningSection: @Composable () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     // Long-pressed Stash mix whose action sheet is open (null = closed).
@@ -722,6 +724,7 @@ fun HomeScreen(
                     }
                 }
                 HomeSection.COMMUNITY -> item(key = "section_community") { communitySection() }
+                HomeSection.YOUR_LISTENING -> item(key = "section_your_listening") { yourListeningSection() }
             }
         }
 
