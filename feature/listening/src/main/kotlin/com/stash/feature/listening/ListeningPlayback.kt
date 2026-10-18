@@ -85,3 +85,28 @@ internal fun dayQueue(listens: List<HistoryRow>, startEventId: Long?, startedAt:
     }
     return DayQueue(tracks, start ?: if (startEventId != null && startedAt != null) nearest else 0)
 }
+
+/**
+ * A tap in History as a queue: the list as it reads on screen ([listed], newest first), playing
+ * from the tapped row ([tappedIndex]) down through the earlier listens, the way a tap in any list
+ * plays on to the songs below it. [before] rows above the tap stay queued so Previous works, at
+ * most [after] below it. A song heard several times in a row (repeat-one) is queued once.
+ */
+internal fun listQueue(listed: List<HistoryRow>, tappedIndex: Int, before: Int = 50, after: Int = 500): DayQueue {
+    if (listed.isEmpty()) return DayQueue(emptyList(), 0)
+    val tapped = tappedIndex.coerceIn(0, listed.lastIndex)
+    val from = (tapped - before).coerceAtLeast(0)
+    val to = minOf(listed.lastIndex, tapped + after)
+    val tracks = ArrayList<Track>(to - from + 1)
+    var start = 0
+    var lastTrackId: Long? = null
+    for (i in from..to) {
+        val row = listed[i]
+        if (row.track.id != lastTrackId) {
+            tracks += row.track.toDomain()
+            lastTrackId = row.track.id
+        }
+        if (i == tapped) start = tracks.lastIndex
+    }
+    return DayQueue(tracks, start)
+}

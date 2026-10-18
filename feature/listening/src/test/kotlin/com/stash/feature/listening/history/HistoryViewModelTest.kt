@@ -267,10 +267,10 @@ class HistoryViewModelTest {
 
     // ── Playing ──────────────────────────────────────────────────────
 
-    @Test fun `tapping a listen replays its day from that song, in the order it was heard`() = runTest {
+    @Test fun `tapping a listen plays on down the list, into the days before`() = runTest {
         val fake = FakeHistory()
-        val a = fake.track(1); val b = fake.track(2); val c = fake.track(3)
-        fake.add(a, TODAY - 1, 50) // another day: not queued
+        val a = fake.track(1); val b = fake.track(2); val c = fake.track(3); val d = fake.track(4)
+        fake.add(d, TODAY - 1, 50)
         fake.add(a, TODAY, 60)
         fake.add(b, TODAY, 65)
         fake.add(b, TODAY, 70) // repeat-one: once
@@ -284,10 +284,48 @@ class HistoryViewModelTest {
         coEvery { player.setQueue(capture(queue), capture(start), capture(source)) } returns Unit
 
         vm.play(tapped); advanceUntilIdle()
-        assertThat(queue.captured.map { it.id }).containsExactly(1L, 2L, 3L, 1L).inOrder()
-        assertThat(start.captured).isEqualTo(2)
-        assertThat(source.captured).isInstanceOf(PlaybackSource.Listening::class.java)
-        assertThat((source.captured as PlaybackSource.Listening).label).startsWith("History · ")
+        // As the list reads, newest first: the row above stays for Previous.
+        assertThat(queue.captured.map { it.id }).containsExactly(1L, 3L, 2L, 1L, 4L).inOrder()
+        assertThat(start.captured).isEqualTo(1)
+        assertThat((source.captured as PlaybackSource.Listening).label).isEqualTo("History")
+    }
+
+    @Test fun `the last song of a day still has a queue after it`() = runTest {
+        // The owner's Oct 2: the top row of a day was its last song and played alone.
+        val fake = FakeHistory()
+        val first = fake.add(fake.track(1), TODAY - 2, 600)
+        fake.add(fake.track(2), TODAY - 2, 610)
+        val last = fake.add(fake.track(3), TODAY - 2, 620)
+        fake.add(fake.track(4), TODAY - 3, 600)
+        val vm = viewModel(fake.repository())
+        advanceUntilIdle()
+        val queue = slot<List<Track>>()
+        val start = slot<Int>()
+        coEvery { player.setQueue(capture(queue), capture(start), any()) } returns Unit
+
+        vm.play(last); advanceUntilIdle()
+        assertThat(queue.captured.map { it.id }).containsExactly(3L, 2L, 1L, 4L).inOrder()
+        assertThat(start.captured).isEqualTo(0)
+
+        vm.play(first); advanceUntilIdle()
+        assertThat(queue.captured[start.captured].id).isEqualTo(1L)
+        assertThat(queue.captured.drop(start.captured + 1).map { it.id }).containsExactly(4L)
+    }
+
+    @Test fun `a tap near the end of the loaded rows reads on so the queue doesn't stop there`() = runTest {
+        val fake = FakeHistory().apply { fill(days = 30, perDay = 20) } // 600 listens, 200 loaded
+        val vm = viewModel(fake.repository())
+        advanceUntilIdle()
+        val loaded = vm.state.value.days.flatMap { it.rows }
+        assertThat(loaded).hasSize(200)
+        val queue = slot<List<Track>>()
+        val start = slot<Int>()
+        coEvery { player.setQueue(capture(queue), capture(start), any()) } returns Unit
+
+        vm.play(loaded.last()); advanceUntilIdle()
+        assertThat(queue.captured.size - start.captured - 1).isAtLeast(50)
+        // Only the queue grew: the list on screen is as it was.
+        assertThat(vm.state.value.days.sumOf { it.rows.size }).isEqualTo(200)
     }
 
     @Test fun `offline, a tapped song that isn't downloaded says so instead of playing`() = runTest {

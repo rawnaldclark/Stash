@@ -20,6 +20,7 @@ import com.stash.feature.listening.DAY_NEEDS_CONNECTION
 import com.stash.feature.listening.ListeningLabels
 import com.stash.feature.listening.PlayPlan
 import com.stash.feature.listening.dayQueue
+import com.stash.feature.listening.listQueue
 import com.stash.feature.listening.planPlay
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -283,8 +284,43 @@ class HistoryViewModel @VisibleForTesting internal constructor(
 
     // ── Playing ──────────────────────────────────────────────────────
 
-    /** Plays the tapped listen's song and queues the rest of that day, in the order it was heard. */
-    fun play(row: HistoryRow) = playDayFrom(row.event.day, row.event.id, row.event.startedAt)
+    /**
+     * Plays the tapped listen's song and queues the list below it, the earlier listens, across days
+     * (a day's last song used to queue nothing after it). Tapped near the end of what's loaded, the
+     * next older listens are read first so the queue doesn't end early.
+     */
+    fun play(row: HistoryRow) {
+        val index = rows.indexOfFirst { it.event.id == row.event.id }
+        if (index < 0) {
+            // Gone from the list since it was drawn: its day from the nearest listen.
+            playDayFrom(row.event.day, row.event.id, row.event.startedAt)
+            return
+        }
+        val listed = rows.toList()
+        val cursor = olderCursor.takeIf { hasOlder }
+        val query = appliedQuery
+        viewModelScope.launch {
+            var queueRows = listed
+            if (cursor != null && listed.size - index <= QUEUE_READ_AHEAD) {
+                // Best effort: if this read fails the loaded rows still play.
+                val more = try {
+                    history.historyPage(cursor, query, QUEUE_READ_AHEAD).rows
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "History read-ahead for the queue failed", e)
+                    emptyList()
+                }
+                val seen = listed.mapTo(HashSet()) { it.event.id }
+                queueRows = listed + more.filter { seen.add(it.event.id) }
+            }
+            val queue = listQueue(queueRows, index)
+            when (val plan = planPlay(queue.tracks, queue.startIndex, connectivityMonitor.isConnected(), tapped = true)) {
+                is PlayPlan.Play -> playerRepository.setQueue(plan.tracks, plan.startIndex, PlaybackSource.Listening("History"))
+                is PlayPlan.Blocked -> _messages.tryEmit(plan.message)
+            }
+        }
+    }
 
     /** Header overflow › Play this day: the day from its first song. */
     fun playDay(day: Long) = playDayFrom(day, null, null)
@@ -517,6 +553,9 @@ class HistoryViewModel @VisibleForTesting internal constructor(
         /** Nav argument: the day to open on (epoch-day), [NO_DAY] for the newest. */
         const val ARG_DAY = "day"
         const val NO_DAY = -1L
+
+        /** A tap this close to the end of the loaded rows reads this many older ones for its queue. */
+        const val QUEUE_READ_AHEAD = 100
 
         /** Search waits this long after the last keystroke (a no-match search reads everything). */
         const val SEARCH_DEBOUNCE_MS = 250L
