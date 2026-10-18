@@ -81,8 +81,12 @@ sealed class ListeningRange(
         }
 
     companion object {
-        /** The fixed ranges in chip order (Custom is picked separately). */
-        val PRESETS: List<ListeningRange> = listOf(Today, Days7, Days30, Months3, Months6, Months12, AllTime)
+        /**
+         * The fixed ranges in chip order (Custom is picked separately). Lazy: the subclasses'
+         * instances don't exist yet while this companion initializes with the sealed class, so an
+         * eager list would hold nulls.
+         */
+        val PRESETS: List<ListeningRange> by lazy { listOf(Today, Days7, Days30, Months3, Months6, Months12, AllTime) }
 
         /** The range saved as [key], or null when the key is unknown or malformed. */
         fun fromKey(key: String?): ListeningRange? {

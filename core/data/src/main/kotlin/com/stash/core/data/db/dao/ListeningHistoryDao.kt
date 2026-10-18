@@ -1,6 +1,5 @@
 package com.stash.core.data.db.dao
 
-import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Embedded
 import androidx.room.Query
@@ -12,24 +11,104 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.listening.ListeningDay
 import kotlinx.coroutines.flow.Flow
 
-/*
- * SQL shared by every query below, so History, Top songs, Stats and Your Year agree on what a day
- * is. Room folds these constants into the query text at compile time.
+/**
+ * The read queries of [ListeningHistoryDao], as constants so `ListeningHistoryQueryPlanTest` can run
+ * EXPLAIN QUERY PLAN on exactly the SQL Room runs.
  *
- * DAY: a listen's local day (v59). A row written before v59 that ListeningDayBackfill hasn't
- * reached yet falls back to its UTC day.
- *
- * IN_DAYS: "the listen's day is in [:fromDay, :toDay]", written so SQLite can still use an index:
- * a range on `local_day` (index local_day, track_id) OR, for the unstamped rows, the same days as
- * a `started_at` range. `COALESCE(...) BETWEEN` would read every row.
+ * The fragments are shared by every query, so History, Top songs, Stats and Your Year agree on what
+ * a day is:
+ *  - DAY: a listen's local day (v59). A row written before v59 that ListeningDayBackfill hasn't
+ *    reached yet falls back to its UTC day.
+ *  - IN_DAYS: "the listen's day is in [:fromDay, :toDay]", written so SQLite can use an index: a
+ *    range on `local_day` (index local_day, track_id) OR, for unstamped rows, the same days as a
+ *    `started_at` range. `COALESCE(...) BETWEEN` would read every row.
+ *  - LISTENED: the real listening time, else the song's length (owner decision 5), else 0.
  */
-private const val DAY = "COALESCE(le.local_day, le.started_at / 86400000)"
-private const val IN_DAYS =
-    "(le.local_day BETWEEN :fromDay AND :toDay OR (le.local_day IS NULL " +
-        "AND le.started_at >= :fromDay * 86400000 AND le.started_at < (:toDay + 1) * 86400000))"
+internal object ListeningHistorySql {
+    const val DAY = "COALESCE(le.local_day, le.started_at / 86400000)"
+    const val IN_DAYS =
+        "(le.local_day BETWEEN :fromDay AND :toDay OR (le.local_day IS NULL " +
+            "AND le.started_at >= :fromDay * 86400000 AND le.started_at < (:toDay + 1) * 86400000))"
 
-/** The song length a listen counts for when its real listening time is unknown (decision 5). */
-private const val LISTENED = "COALESCE(le.listened_ms, t.duration_ms, 0)"
+    const val LISTENED = "COALESCE(le.listened_ms, t.duration_ms, 0)"
+
+    const val HISTORY_PAGE =
+        """
+        SELECT le.* FROM listening_events le
+        INNER JOIN tracks t ON t.id = le.track_id
+        WHERE le.started_at <= :beforeStartedAt
+          AND (le.started_at < :beforeStartedAt OR le.id < :beforeId)
+          AND (:pattern IS NULL
+               OR t.title LIKE :pattern ESCAPE '\'
+               OR t.artist LIKE :pattern ESCAPE '\'
+               OR t.album LIKE :pattern ESCAPE '\')
+        ORDER BY le.started_at DESC, le.id DESC
+        LIMIT :limit
+        """
+
+    const val DAY_COUNTS =
+        "SELECT " + DAY + " AS day, COUNT(*) AS plays, SUM(" + LISTENED + ") AS listenedMs " +
+            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
+            "WHERE " + IN_DAYS + " GROUP BY day ORDER BY day"
+
+    const val TOP_TRACKS =
+        "SELECT t.*, COUNT(*) AS plays, MAX(le.started_at) AS lastPlayedAt " +
+            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
+            "WHERE " + IN_DAYS + " GROUP BY le.track_id " +
+            "ORDER BY plays DESC, lastPlayedAt DESC, le.track_id ASC LIMIT :limit"
+
+    const val TOP_ARTISTS =
+        "SELECT t.artist AS artist, COUNT(*) AS plays, COUNT(DISTINCT le.track_id) AS songs, " +
+            "MAX(le.started_at) AS lastPlayedAt, t.album_art_url AS albumArtUrl, t.album_art_path AS albumArtPath " +
+            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
+            "WHERE " + IN_DAYS + " GROUP BY LOWER(t.artist) " +
+            "ORDER BY plays DESC, lastPlayedAt DESC, LOWER(t.artist) ASC LIMIT :limit"
+
+    const val TOP_ALBUMS =
+        "SELECT t.album AS album, COALESCE(NULLIF(t.album_artist, ''), t.artist) AS artist, " +
+            "COUNT(*) AS plays, COUNT(DISTINCT le.track_id) AS songs, MAX(le.started_at) AS lastPlayedAt, " +
+            "t.album_art_url AS albumArtUrl, t.album_art_path AS albumArtPath " +
+            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
+            "WHERE " + IN_DAYS + " AND t.album != '' " +
+            "GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist)) " +
+            "ORDER BY plays DESC, lastPlayedAt DESC LIMIT :limit"
+
+    const val TOTALS =
+        "SELECT COUNT(*) AS plays, COUNT(DISTINCT le.track_id) AS songs, " +
+            "COUNT(DISTINCT LOWER(t.artist)) AS artists, COUNT(DISTINCT " + DAY + ") AS days, " +
+            "COALESCE(SUM(" + LISTENED + "), 0) AS listenedMs, " +
+            "COALESCE(SUM(le.listened_ms IS NULL), 0) AS estimatedPlays " +
+            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id WHERE " + IN_DAYS
+
+    const val HOUR_HISTOGRAM =
+        "SELECT COALESCE(le.local_minute, (le.started_at % 86400000) / 60000) / 60 AS hour, COUNT(*) AS plays " +
+            "FROM listening_events le WHERE " + IN_DAYS + " GROUP BY hour ORDER BY hour"
+
+    const val NEW_TRACKS =
+        "SELECT t.*, COUNT(*) AS plays, MAX(le.started_at) AS lastPlayedAt " +
+            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
+            "WHERE " + IN_DAYS + " AND NOT EXISTS (SELECT 1 FROM listening_events e2 " +
+            "WHERE e2.track_id = le.track_id AND COALESCE(e2.local_day, e2.started_at / 86400000) < :fromDay) " +
+            "GROUP BY le.track_id ORDER BY plays DESC, lastPlayedAt DESC, le.track_id ASC LIMIT :limit"
+
+    const val COUNT_NEW_TRACKS =
+        "SELECT COUNT(*) FROM (SELECT le.track_id FROM listening_events le " +
+            "WHERE " + IN_DAYS + " AND NOT EXISTS (SELECT 1 FROM listening_events e2 " +
+            "WHERE e2.track_id = le.track_id AND COALESCE(e2.local_day, e2.started_at / 86400000) < :fromDay) " +
+            "GROUP BY le.track_id)"
+
+    const val OBSESSION =
+        "SELECT t.*, " + DAY + " AS day, COUNT(*) AS plays " +
+            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
+            "WHERE " + IN_DAYS + " GROUP BY day, le.track_id ORDER BY plays DESC, day DESC, le.track_id ASC LIMIT 1"
+
+    const val FIRST_LISTEN_DAY =
+        "SELECT " + DAY + " FROM listening_events le ORDER BY le.started_at ASC LIMIT 1"
+
+    const val YEARS =
+        "SELECT DISTINCT CAST(strftime('%Y', " + DAY + " * 86400, 'unixepoch') AS INTEGER) AS year " +
+            "FROM listening_events le ORDER BY year DESC"
+}
 
 /**
  * Reads (and privacy deletes) for the "Your listening" surfaces: History, Top songs, Stats and Your
@@ -61,42 +140,20 @@ interface ListeningHistoryDao {
      * (build it with [likePattern]), or null for no filter.
      */
     @Transaction
-    @Query(
-        """
-        SELECT le.* FROM listening_events le
-        INNER JOIN tracks t ON t.id = le.track_id
-        WHERE le.started_at <= :beforeStartedAt
-          AND (le.started_at < :beforeStartedAt OR le.id < :beforeId)
-          AND (:pattern IS NULL
-               OR t.title LIKE :pattern ESCAPE '\'
-               OR t.artist LIKE :pattern ESCAPE '\'
-               OR t.album LIKE :pattern ESCAPE '\')
-        ORDER BY le.started_at DESC, le.id DESC
-        LIMIT :limit
-        """,
-    )
+    @Query(ListeningHistorySql.HISTORY_PAGE)
     suspend fun historyPage(beforeStartedAt: Long, beforeId: Long, pattern: String?, limit: Int): List<HistoryRow>
 
     /**
      * Listens and listening time per day in [fromDay]..[toDay], oldest day first; days without a
      * listen are absent. Feeds day headers, the calendar, heatmap, chart, streaks and busiest day.
      */
-    @Query(
-        "SELECT " + DAY + " AS day, COUNT(*) AS plays, SUM(" + LISTENED + ") AS listenedMs " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " GROUP BY day ORDER BY day",
-    )
+    @Query(ListeningHistorySql.DAY_COUNTS)
     fun observeDayCounts(fromDay: Long, toDay: Long): Flow<List<DayCount>>
 
     // ── Top ───────────────────────────────────────────────────────────
 
     /** Most-listened songs in the range; ties go to the one heard last, then the older row. */
-    @Query(
-        "SELECT t.*, COUNT(*) AS plays, MAX(le.started_at) AS lastPlayedAt " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " GROUP BY le.track_id " +
-            "ORDER BY plays DESC, lastPlayedAt DESC, le.track_id ASC LIMIT :limit",
-    )
+    @Query(ListeningHistorySql.TOP_TRACKS)
     fun observeTopTracks(fromDay: Long, toDay: Long, limit: Int = 100): Flow<List<TopTrackRow>>
 
     /**
@@ -104,28 +161,14 @@ interface ListeningHistoryDao {
      * (the same rule as [ListeningEventDao.getTopArtistsSince]). The name and cover come from the
      * artist's most recent listen in the range (SQLite takes bare columns from the MAX() row).
      */
-    @Query(
-        "SELECT t.artist AS artist, COUNT(*) AS plays, COUNT(DISTINCT le.track_id) AS songs, " +
-            "MAX(le.started_at) AS lastPlayedAt, t.album_art_url AS albumArtUrl, t.album_art_path AS albumArtPath " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " GROUP BY LOWER(t.artist) " +
-            "ORDER BY plays DESC, lastPlayedAt DESC, LOWER(t.artist) ASC LIMIT :limit",
-    )
+    @Query(ListeningHistorySql.TOP_ARTISTS)
     fun observeTopArtists(fromDay: Long, toDay: Long, limit: Int = 100): Flow<List<TopArtistRow>>
 
     /**
      * Most-listened albums in the range: one per (album, album artist or else artist), ignoring
      * case; songs without an album are left out.
      */
-    @Query(
-        "SELECT t.album AS album, COALESCE(NULLIF(t.album_artist, ''), t.artist) AS artist, " +
-            "COUNT(*) AS plays, COUNT(DISTINCT le.track_id) AS songs, MAX(le.started_at) AS lastPlayedAt, " +
-            "t.album_art_url AS albumArtUrl, t.album_art_path AS albumArtPath " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " AND t.album != '' " +
-            "GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist)) " +
-            "ORDER BY plays DESC, lastPlayedAt DESC LIMIT :limit",
-    )
+    @Query(ListeningHistorySql.TOP_ALBUMS)
     fun observeTopAlbums(fromDay: Long, toDay: Long, limit: Int = 100): Flow<List<TopAlbumRow>>
 
     // ── Stats ─────────────────────────────────────────────────────────
@@ -134,23 +177,14 @@ interface ListeningHistoryDao {
      * Totals for the range. Listening time is the real time where known, else the song's length;
      * [ListeningTotals.estimatedPlays] says how many listens were estimated that way.
      */
-    @Query(
-        "SELECT COUNT(*) AS plays, COUNT(DISTINCT le.track_id) AS songs, " +
-            "COUNT(DISTINCT LOWER(t.artist)) AS artists, COUNT(DISTINCT " + DAY + ") AS days, " +
-            "COALESCE(SUM(" + LISTENED + "), 0) AS listenedMs, " +
-            "COALESCE(SUM(le.listened_ms IS NULL), 0) AS estimatedPlays " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id WHERE " + IN_DAYS,
-    )
+    @Query(ListeningHistorySql.TOTALS)
     fun observeTotals(fromDay: Long, toDay: Long): Flow<ListeningTotals>
 
     /**
      * Listens per hour of the listener's day (0..23) in the range, hours without a listen absent.
      * A row not yet stamped counts at its UTC hour until the backfill reaches it.
      */
-    @Query(
-        "SELECT COALESCE(le.local_minute, (le.started_at % 86400000) / 60000) / 60 AS hour, COUNT(*) AS plays " +
-            "FROM listening_events le WHERE " + IN_DAYS + " GROUP BY hour ORDER BY hour",
-    )
+    @Query(ListeningHistorySql.HOUR_HISTOGRAM)
     fun observeHourHistogram(fromDay: Long, toDay: Long): Flow<List<HourCount>>
 
     // ── Your Year ─────────────────────────────────────────────────────
@@ -159,41 +193,23 @@ interface ListeningHistoryDao {
      * Songs first ever heard in the range (no listen on an earlier day), most listened first: the
      * year's discoveries.
      */
-    @Query(
-        "SELECT t.*, COUNT(*) AS plays, MAX(le.started_at) AS lastPlayedAt " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " AND NOT EXISTS (SELECT 1 FROM listening_events e2 " +
-            "WHERE e2.track_id = le.track_id AND COALESCE(e2.local_day, e2.started_at / 86400000) < :fromDay) " +
-            "GROUP BY le.track_id ORDER BY plays DESC, lastPlayedAt DESC, le.track_id ASC LIMIT :limit",
-    )
+    @Query(ListeningHistorySql.NEW_TRACKS)
     suspend fun newTracksIn(fromDay: Long, toDay: Long, limit: Int = 100): List<TopTrackRow>
 
     /** How many songs were first ever heard in the range (see [newTracksIn]). */
-    @Query(
-        "SELECT COUNT(*) FROM (SELECT le.track_id FROM listening_events le " +
-            "WHERE " + IN_DAYS + " AND NOT EXISTS (SELECT 1 FROM listening_events e2 " +
-            "WHERE e2.track_id = le.track_id AND COALESCE(e2.local_day, e2.started_at / 86400000) < :fromDay) " +
-            "GROUP BY le.track_id)",
-    )
+    @Query(ListeningHistorySql.COUNT_NEW_TRACKS)
     suspend fun countNewTracksIn(fromDay: Long, toDay: Long): Int
 
     /** The song played most times in one day within the range (latest such day on a tie), or null. */
-    @Query(
-        "SELECT t.*, " + DAY + " AS day, COUNT(*) AS plays " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " GROUP BY day, le.track_id ORDER BY plays DESC, day DESC, le.track_id ASC LIMIT 1",
-    )
+    @Query(ListeningHistorySql.OBSESSION)
     suspend fun obsession(fromDay: Long, toDay: Long): ObsessionRow?
 
     /** The day of the earliest listen (by start time, read off the started_at index), or null. */
-    @Query("SELECT " + DAY + " FROM listening_events le ORDER BY le.started_at ASC LIMIT 1")
+    @Query(ListeningHistorySql.FIRST_LISTEN_DAY)
     suspend fun firstListenDay(): Long?
 
     /** Every calendar year with a listen, newest first (an epoch-day * 86400 is that date at UTC midnight). */
-    @Query(
-        "SELECT DISTINCT CAST(strftime('%Y', " + DAY + " * 86400, 'unixepoch') AS INTEGER) AS year " +
-            "FROM listening_events le ORDER BY year DESC",
-    )
+    @Query(ListeningHistorySql.YEARS)
     suspend fun yearsWithListens(): List<Int>
 
     // ── Privacy deletes ───────────────────────────────────────────────
@@ -268,7 +284,7 @@ interface ListeningHistoryDao {
     @Query("SELECT track_id FROM listening_events WHERE id = :eventId")
     suspend fun trackIdOfEvent(eventId: Long): Long?
 
-    @Query("SELECT DISTINCT le.track_id FROM listening_events le WHERE " + IN_DAYS)
+    @Query("SELECT DISTINCT le.track_id FROM listening_events le WHERE " + ListeningHistorySql.IN_DAYS)
     suspend fun trackIdsBetween(fromDay: Long, toDay: Long): List<Long>
 
     @Query("SELECT DISTINCT track_id FROM listening_events")
@@ -277,7 +293,7 @@ interface ListeningHistoryDao {
     @Query("DELETE FROM listening_events WHERE id = :eventId")
     suspend fun deleteEventRaw(eventId: Long): Int
 
-    @Query("DELETE FROM listening_events WHERE id IN (SELECT le.id FROM listening_events le WHERE " + IN_DAYS + ")")
+    @Query("DELETE FROM listening_events WHERE id IN (SELECT le.id FROM listening_events le WHERE " + ListeningHistorySql.IN_DAYS + ")")
     suspend fun deleteBetweenRaw(fromDay: Long, toDay: Long): Int
 
     @Query("DELETE FROM listening_events")
