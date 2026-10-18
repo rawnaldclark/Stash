@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -361,11 +362,14 @@ private fun RowScope.TabItem(
                     scaleY = press.value
                 },
         )
-        // The name, clipped to its own line so it rises in from below.
+        // The name, clipped to its own line so it rises in from below. Measured unbounded and
+        // centred on the tab: at the largest display and font sizes a tab is narrower than
+        // "Settings", which may spill into its neighbour (whose own name is hidden).
         Box(
             Modifier
                 .align(Alignment.TopCenter)
                 .offset(y = StackTop + IconSize + LabelGap)
+                .wrapContentWidth(align = Alignment.CenterHorizontally, unbounded = true)
                 .graphicsLayer {
                     translationY = RestDrop.toPx() * (1f - lift.value)
                     clip = true
@@ -380,6 +384,7 @@ private fun RowScope.TabItem(
                     style = LabelStyle,
                     color = ink,
                     maxLines = 1,
+                    softWrap = false,
                     modifier = Modifier
                         .clearAndSetSemantics { }
                         .graphicsLayer {
