@@ -78,6 +78,7 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
         .distinctUntilChanged()
         .flatMapLatest { today -> history.observeDayCounts(DayRange(today, today)) }
         .map { counts -> counts.sumOf { it.plays } }
+        .distinctUntilChanged()
 
     val state: StateFlow<YourListeningState?> = combine(
         history.observeRecentTracks(),

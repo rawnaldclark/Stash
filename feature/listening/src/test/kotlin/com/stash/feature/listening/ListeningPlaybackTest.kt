@@ -48,4 +48,18 @@ class ListeningPlaybackTest {
         assertThat(dayQueue(rows, null).startIndex).isEqualTo(0)
         assertThat(dayQueue(rows, rows[3].event.id).startIndex).isEqualTo(2)
     }
+
+    @Test fun `a tapped listen removed meanwhile starts the queue at the nearest one`() {
+        val fake = FakeHistory()
+        val a = fake.track(1); val b = fake.track(2); val c = fake.track(3)
+        val first = fake.add(a, TODAY, 10)
+        val gone = fake.add(b, TODAY, 20)
+        val last = fake.add(c, TODAY, 40)
+        // The day as read now, without the tapped listen (minute 20); minute 10 is nearer than 40.
+        val q = dayQueue(listOf(first, last), gone.event.id, gone.event.startedAt)
+        assertThat(q.tracks.map { it.id }).containsExactly(1L, 3L).inOrder()
+        assertThat(q.startIndex).isEqualTo(0)
+        val q2 = dayQueue(listOf(first, last), gone.event.id, gone.event.startedAt + 15 * 60_000L)
+        assertThat(q2.startIndex).isEqualTo(1)
+    }
 }

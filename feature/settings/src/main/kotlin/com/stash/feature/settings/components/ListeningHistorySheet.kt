@@ -141,7 +141,7 @@ fun ListeningHistorySheet(
 
     if (pickingRange) {
         ClearRangePicker(
-            counts = counts,
+            counts = counts.copy(today = viewModel.today()),
             onPicked = { from, to ->
                 pickingRange = false
                 confirm = ClearRequest.Range(from, to)

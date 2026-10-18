@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -49,7 +50,9 @@ class ListeningHistorySettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** Collected by the sheet only: an all-time read, not worth running behind the settings list. */
-    val counts: StateFlow<ListeningHistoryCounts> = history.observeDayCounts(DayRange(0, history.today() + 1))
+    val counts: StateFlow<ListeningHistoryCounts> = history.observeDayCounts(DayRange(0, history.today() + DAYS_AHEAD))
+        // The read also re-runs on unrelated `tracks` writes: only a real change goes on.
+        .distinctUntilChanged()
         .map { days -> ListeningHistoryCounts(days.associate { it.day to it.plays }, history.today()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ListeningHistoryCounts(today = history.today()))
 
@@ -57,6 +60,9 @@ class ListeningHistorySettingsViewModel @Inject constructor(
 
     /** One-off results for a toast. */
     val messages: SharedFlow<String> = _messages.asSharedFlow()
+
+    /** Today, read now: the range picker's last selectable day, right after midnight too. */
+    fun today(): Long = history.today()
 
     fun setPaused(paused: Boolean) {
         viewModelScope.launch { preference.setPaused(paused) }
@@ -87,5 +93,10 @@ class ListeningHistorySettingsViewModel @Inject constructor(
                 },
             )
         }
+    }
+
+    private companion object {
+        /** How far past today the counts read, so they stay right as days go by. */
+        const val DAYS_AHEAD = 3_650L
     }
 }

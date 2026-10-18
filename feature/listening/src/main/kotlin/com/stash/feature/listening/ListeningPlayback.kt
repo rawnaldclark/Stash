@@ -60,11 +60,14 @@ internal data class DayQueue(val tracks: List<Track>, val startIndex: Int)
  * [listens] (one day, oldest first) as the queue that replays the day: in the order the songs
  * were heard, a song heard several times in a row (repeat-one) once. [startEventId] = the listen
  * the user tapped: the queue starts there and plays on through what came after it that day; null
- * starts at the day's first song.
+ * starts at the day's first song. If that listen is gone (removed since the list was drawn), the
+ * queue starts at the listen nearest [startedAt], the tapped row's start time.
  */
-internal fun dayQueue(listens: List<HistoryRow>, startEventId: Long?): DayQueue {
+internal fun dayQueue(listens: List<HistoryRow>, startEventId: Long?, startedAt: Long? = null): DayQueue {
     val tracks = ArrayList<Track>(listens.size)
-    var start = 0
+    var start: Int? = null
+    var nearest = 0
+    var nearestGap = Long.MAX_VALUE
     var lastTrackId: Long? = null
     for (row in listens) {
         if (row.track.id != lastTrackId) {
@@ -72,6 +75,13 @@ internal fun dayQueue(listens: List<HistoryRow>, startEventId: Long?): DayQueue 
             lastTrackId = row.track.id
         }
         if (row.event.id == startEventId) start = tracks.lastIndex
+        if (startedAt != null) {
+            val gap = kotlin.math.abs(row.event.startedAt - startedAt)
+            if (gap < nearestGap) {
+                nearestGap = gap
+                nearest = tracks.lastIndex
+            }
+        }
     }
-    return DayQueue(tracks, start)
+    return DayQueue(tracks, start ?: if (startEventId != null && startedAt != null) nearest else 0)
 }
