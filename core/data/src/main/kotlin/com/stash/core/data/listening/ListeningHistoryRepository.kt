@@ -72,6 +72,30 @@ class ListeningHistoryRepository @VisibleForTesting internal constructor(
         return HistoryPage(rows, next)
     }
 
+    /**
+     * The History page just newer than [cursor], newest first like [historyPage] (read oldest
+     * first, then reversed). [HistoryPage.next] is the cursor for the page after that, newer
+     * still, or null when this reached the newest listen.
+     */
+    suspend fun historyPageNewer(cursor: HistoryCursor, query: String? = null, limit: Int = PAGE_SIZE): HistoryPage {
+        require(limit > 0) { "limit must be positive" }
+        val rows = dao.historyPageNewer(
+            afterStartedAt = cursor.startedAt,
+            afterId = cursor.eventId,
+            pattern = ListeningHistoryDao.likePattern(query),
+            limit = limit,
+        )
+        val next = if (rows.size < limit) null else rows.last().event.let { HistoryCursor(it.startedAt, it.id) }
+        return HistoryPage(rows.asReversed().toList(), next)
+    }
+
+    /** Every listen on [day], oldest first, each with its song. */
+    suspend fun listensOn(day: Long): List<HistoryRow> = dao.listensOnDays(day, day)
+
+    /** Home's "Recently played": the last [limit] songs heard, newest first, each once. */
+    fun observeRecentTracks(limit: Int = RECENT_LIMIT): Flow<List<TopTrackRow>> =
+        dao.observeRecentTracks(limit, RECENT_WINDOW)
+
     // ── Live aggregates ──────────────────────────────────────────────
 
     fun observeDayCounts(range: DayRange): Flow<List<DayCount>> = dao.observeDayCounts(range.fromDay, range.toDay)
@@ -117,5 +141,11 @@ class ListeningHistoryRepository @VisibleForTesting internal constructor(
 
         /** Top lists stop here. */
         const val TOP_LIMIT = 100
+
+        /** Songs on Home's "Recently played" rail. */
+        const val RECENT_LIMIT = 12
+
+        /** How many of the newest listens "Recently played" looks through for its songs. */
+        const val RECENT_WINDOW = 300
     }
 }

@@ -131,6 +131,42 @@ internal object ListeningHistorySql {
     const val FIRST_LISTEN_DAY =
         "SELECT " + DAY + " FROM listening_events le ORDER BY le.started_at ASC LIMIT 1"
 
+    /**
+     * History the other way: listens strictly newer than the cursor, oldest first. Used after a
+     * calendar jump (the list starts on an older day and fills upwards as the user scrolls up) and
+     * to put new listens on top while History is open.
+     */
+    const val HISTORY_PAGE_NEWER =
+        """
+        SELECT le.* FROM listening_events le
+        INNER JOIN tracks t ON t.id = le.track_id
+        WHERE le.started_at >= :afterStartedAt
+          AND (le.started_at > :afterStartedAt OR le.id > :afterId)
+          AND (:pattern IS NULL
+               OR t.title LIKE :pattern ESCAPE '\'
+               OR t.artist LIKE :pattern ESCAPE '\'
+               OR t.album LIKE :pattern ESCAPE '\')
+        ORDER BY le.started_at ASC, le.id ASC
+        LIMIT :limit
+        """
+
+    /** Every listen on the days [:fromDay, :toDay], oldest first ("Play this day"). */
+    const val LISTENS_ON_DAYS =
+        "SELECT le.* FROM listening_events le WHERE " + IN_DAYS + " ORDER BY le.started_at ASC, le.id ASC"
+
+    /**
+     * The songs of the newest :window listens, most recent first, one row per song: Home's
+     * "Recently played". Reads the newest rows off the started_at index and groups only those, so
+     * it costs the same at 100 listens as at 100k; a song repeated through the whole window simply
+     * leaves the rail shorter. `plays` is the song's listens within the window.
+     */
+    const val RECENT_TRACKS =
+        "SELECT t.*, r.plays AS plays, r.lastAt AS lastPlayedAt " +
+            "FROM (SELECT w.track_id AS tid, COUNT(*) AS plays, MAX(w.started_at) AS lastAt " +
+            "FROM (SELECT track_id, started_at FROM listening_events ORDER BY started_at DESC LIMIT :window) w " +
+            "GROUP BY w.track_id) r " +
+            "INNER JOIN tracks t ON t.id = r.tid ORDER BY r.lastAt DESC, r.tid ASC LIMIT :limit"
+
     const val YEARS =
         "SELECT DISTINCT CAST(strftime('%Y', d * 86400, 'unixepoch') AS INTEGER) AS year " +
             "FROM (SELECT DISTINCT COALESCE(local_day, started_at / 86400000) AS d FROM listening_events) " +
@@ -230,6 +266,26 @@ interface ListeningHistoryDao {
     /** The song played most times in one day within the range (latest such day on a tie), or null. */
     @Query(ListeningHistorySql.OBSESSION)
     suspend fun obsession(fromDay: Long, toDay: Long): ObsessionRow?
+
+    /**
+     * One History page newer than the cursor, oldest first (see [ListeningHistorySql.HISTORY_PAGE_NEWER]):
+     * the rows with `(started_at, id)` strictly after `(afterStartedAt, afterId)`.
+     */
+    @Transaction
+    @Query(ListeningHistorySql.HISTORY_PAGE_NEWER)
+    suspend fun historyPageNewer(afterStartedAt: Long, afterId: Long, pattern: String?, limit: Int): List<HistoryRow>
+
+    /** Every listen on [fromDay]..[toDay] with its song, oldest first. */
+    @Transaction
+    @Query(ListeningHistorySql.LISTENS_ON_DAYS)
+    suspend fun listensOnDays(fromDay: Long, toDay: Long): List<HistoryRow>
+
+    /**
+     * The songs heard most recently, newest first, each once, from the newest [window] listens
+     * (see [ListeningHistorySql.RECENT_TRACKS]). Re-emits on every new or removed listen.
+     */
+    @Query(ListeningHistorySql.RECENT_TRACKS)
+    fun observeRecentTracks(limit: Int, window: Int): Flow<List<TopTrackRow>>
 
     /** The day of the earliest listen (by start time, read off the started_at index), or null. */
     @Query(ListeningHistorySql.FIRST_LISTEN_DAY)
