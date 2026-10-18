@@ -137,6 +137,7 @@ class HistoryViewModel @VisibleForTesting internal constructor(
     private var generation = 0
     private var olderJob: Job? = null
     private var newerJob: Job? = null
+    private var syncJob: Job? = null
 
     init {
         val startDay = savedStateHandle.get<Long>(ARG_DAY)?.takeIf { it != NO_DAY }
@@ -348,20 +349,59 @@ class HistoryViewModel @VisibleForTesting internal constructor(
     }
 
     /**
-     * The history changed under the list (a listen recorded, a day cleared in Settings): days no
-     * longer in it leave the list, and a list showing the newest listens gets the new ones on top.
+     * The history changed under the list. Days no longer in it leave the list; a list showing the
+     * newest listens gets new ones on top; and when a loaded day's rows no longer add up to its
+     * count (plays from the web mirror or a library file land in the past, not on top), the loaded
+     * stretch is read again in place. Keys don't change, so the list stays where the user is.
      */
     private fun onHistoryChanged(counts: Map<Long, DayCount>) {
         if (_state.value.loading) return
-        if (rows.isNotEmpty()) {
-            if (dropDays { it !in counts }) publish()
-        }
-        when {
+        if (rows.isNotEmpty() && dropDays { it !in counts }) publish()
+        if (rows.isEmpty()) {
             // The first listen arrived while History was open (a search with no match stays as it is).
-            rows.isEmpty() && counts.isNotEmpty() && !hasOlder && appliedQuery.isBlank() ->
-                viewModelScope.launch { restart(appliedQuery) }
-            !hasNewer -> loadNewer()
+            if (counts.isNotEmpty() && !hasOlder && appliedQuery.isBlank()) viewModelScope.launch { restart(appliedQuery) }
+            return
         }
+        syncJob?.cancel()
+        syncJob = viewModelScope.launch {
+            if (!hasNewer) {
+                loadNewer()
+                newerJob?.join()
+            }
+            // A search's rows can't be checked against whole-day counts.
+            if (appliedQuery.isBlank() && loadedDaysDisagree(_state.value.dayCounts)) reloadWindow()
+        }
+    }
+
+    /**
+     * True when a day whose listens are all loaded holds a different number of rows than its count.
+     * The oldest loaded day may continue on the next page, and the newest on the page above.
+     */
+    private fun loadedDaysDisagree(counts: Map<Long, DayCount>): Boolean {
+        if (rows.isEmpty()) return false
+        val newest = rows.first().event.day
+        val oldest = rows.last().event.day
+        return rows.groupingBy { it.event.day }.eachCount().any { (day, n) ->
+            (day != oldest || !hasOlder) && (day != newest || !hasNewer) && counts[day]?.plays != n
+        }
+    }
+
+    /** Reads the loaded stretch again, from its newest row down, as many rows as it held. */
+    private suspend fun reloadWindow() {
+        val top = rows.firstOrNull() ?: return
+        generation++
+        olderJob?.cancel(); newerJob?.cancel()
+        val gen = generation
+        // Just above the top row, so the read includes it.
+        val cursor = HistoryCursor(top.event.startedAt, top.event.id + 1)
+        val limit = rows.size.coerceIn(ListeningHistoryRepository.PAGE_SIZE, MAX_WINDOW_RELOAD)
+        val page = runCatchingLoad { history.historyPage(cursor, appliedQuery, limit) } ?: return
+        if (gen != generation) return
+        rows.clear(); rowIds.clear()
+        appendOlder(page.rows)
+        olderCursor = page.next
+        hasOlder = page.next != null
+        publish()
     }
 
     /** Removes every loaded row whose day matches; true when any went. */
@@ -399,6 +439,9 @@ class HistoryViewModel @VisibleForTesting internal constructor(
 
         /** Search waits this long after the last keystroke (a no-match search reads everything). */
         const val SEARCH_DEBOUNCE_MS = 250L
+
+        /** At most this many rows are read again when the loaded stretch is refreshed in place. */
+        const val MAX_WINDOW_RELOAD = 2_000
 
         /** Consecutive rows of the same day as one group each. */
         internal fun groupByDay(rows: List<HistoryRow>): List<HistoryDay> {

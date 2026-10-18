@@ -102,6 +102,21 @@ class ListeningLabelsTest {
         assertThat(indexOfDay(days, Long.MAX_VALUE, leading = 1)).isEqualTo(0)
     }
 
+    @Test fun `a key's index matches the list's order, leading cards included`() {
+        val rows = List(3) { stubRow() }
+        val state = com.stash.feature.listening.history.HistoryUiState(
+            days = listOf(HistoryDay(TODAY, "a", rows.take(2)), HistoryDay(TODAY - 1, "b", rows.drop(2))),
+            paused = true,
+            loading = false,
+            dayCounts = mapOf(TODAY to com.stash.core.data.db.dao.DayCount(TODAY, 2, 0)),
+        )
+        assertThat(com.stash.feature.listening.history.indexOfKey(state, "paused")).isEqualTo(0)
+        assertThat(com.stash.feature.listening.history.indexOfKey(state, "a")).isEqualTo(1)
+        assertThat(com.stash.feature.listening.history.indexOfKey(state, "e${rows[1].event.id}")).isEqualTo(3)
+        assertThat(com.stash.feature.listening.history.indexOfKey(state, "b")).isEqualTo(4)
+        assertThat(com.stash.feature.listening.history.indexOfKey(state, "gone")).isNull()
+    }
+
     private val fake = FakeHistory()
     private fun stubRow() = fake.add(fake.track(1), TODAY, 0)
 }

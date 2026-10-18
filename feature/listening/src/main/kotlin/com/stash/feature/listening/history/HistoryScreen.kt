@@ -81,7 +81,9 @@ import com.stash.core.ui.components.TrackRowFitScope
 import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.listening.ListeningLabels
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** How close to an end of the loaded list the next page starts loading. */
 private const val PREFETCH_ROWS = 30
@@ -131,17 +133,30 @@ fun HistoryScreen(
         }
     }
     // Paging: the next older page near the end, the next newer one near the top after a jump.
+    // Keyed on the item count too, so a page that still leaves the list near its end asks again.
     LaunchedEffect(listState) {
         snapshotFlow {
             val info = listState.layoutInfo
-            (info.visibleItemsInfo.lastOrNull()?.index ?: -1) >= info.totalItemsCount - PREFETCH_ROWS
-        }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) viewModel.loadOlder() }
+            ((info.visibleItemsInfo.lastOrNull()?.index ?: -1) >= info.totalItemsCount - PREFETCH_ROWS) to info.totalItemsCount
+        }.collect { (nearEnd, _) -> if (nearEnd) viewModel.loadOlder() }
     }
     LaunchedEffect(listState) {
         snapshotFlow {
-            listState.firstVisibleItemIndex < PREFETCH_ROWS && viewModel.state.value.hasNewer &&
+            val near = listState.firstVisibleItemIndex < PREFETCH_ROWS && state.hasNewer &&
                 listState.layoutInfo.totalItemsCount > 0
-        }.distinctUntilChanged().collect { nearTop -> if (nearTop) viewModel.loadNewer() }
+            near to listState.layoutInfo.totalItemsCount
+        }.collectLatest { (nearTop, _) ->
+            if (!nearTop) return@collectLatest
+            // Keep the row on screen where it is while newer listens go in above it. Compose
+            // anchors by key on its own, except at the very top, where a jump leaves the list.
+            val anchorKey = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key
+            val anchorOffset = listState.firstVisibleItemScrollOffset
+            val before = viewModel.state.value.days
+            viewModel.loadNewer()
+            val after = withTimeoutOrNull(10_000) { viewModel.state.first { it.days !== before } } ?: return@collectLatest
+            val index = anchorKey?.let { indexOfKey(after, it) } ?: return@collectLatest
+            if (index != listState.firstVisibleItemIndex) listState.scrollToItem(index, anchorOffset)
+        }
     }
     // A listen that lands while the newest ones are on screen shows on top instead of above it.
     val newestId = state.days.firstOrNull()?.rows?.firstOrNull()?.event?.id
@@ -216,7 +231,8 @@ fun HistoryScreen(
                 if (state.hasNewer) {
                     BackToToday(
                         onClick = viewModel::backToLatest,
-                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+                        // Below the sticky day header, never over it.
+                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 64.dp),
                     )
                 }
             }
@@ -305,6 +321,27 @@ fun HistoryScreen(
     }
 }
 
+/**
+ * The list index of the item with [key] in [state]'s list (the same items, in the same order, as
+ * the LazyColumn below), or null when it's gone.
+ */
+internal fun indexOfKey(state: HistoryUiState, key: Any): Int? {
+    var index = 0
+    for (lead in listOfNotNull("paused".takeIf { state.paused }, "cold".takeIf { state.coldStart }, "nomatch".takeIf { state.noMatches })) {
+        if (lead == key) return index
+        index++
+    }
+    for (group in state.days) {
+        if (group.key == key) return index
+        index++
+        for (row in group.rows) {
+            if ("e${row.event.id}" == key) return index
+            index++
+        }
+    }
+    return null
+}
+
 /** Index of the header of the first listed day on or before [day] ([Long.MAX_VALUE] = the top). */
 internal fun indexOfDay(days: List<HistoryDay>, day: Long, leading: Int): Int {
     if (day == Long.MAX_VALUE) return 0
@@ -389,10 +426,11 @@ private fun DayHeader(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f),
                 )
+            } else {
+                Spacer(Modifier.weight(1f))
             }
-            Spacer(Modifier.weight(1f))
             Box {
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(

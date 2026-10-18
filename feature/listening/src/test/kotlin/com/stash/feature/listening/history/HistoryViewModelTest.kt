@@ -154,6 +154,18 @@ class HistoryViewModelTest {
         assertThat(vm.state.value.days.first().rows).hasSize(4)
     }
 
+    @Test fun `plays that land in the past while History is open (the web mirror) join their days`() = runTest {
+        val fake = FakeHistory().apply { fill(days = 5, perDay = 2) }
+        val vm = viewModel(fake.repository())
+        advanceUntilIdle()
+        val mirrored = fake.add(fake.track(9), TODAY - 2, minute = 30, origin = "web-device")
+        advanceUntilIdle()
+        val day = vm.state.value.days.first { it.day == TODAY - 2 }
+        assertThat(day.rows.map { it.event.id }).contains(mirrored.event.id)
+        assertThat(day.rows).hasSize(3)
+        assertThat(vm.state.value.days.flatMap { it.rows }.map { it.event.id }).containsNoDuplicates()
+    }
+
     // ── Search ───────────────────────────────────────────────────────
 
     @Test fun `search waits 250 ms after the last keystroke and runs once`() = runTest {
