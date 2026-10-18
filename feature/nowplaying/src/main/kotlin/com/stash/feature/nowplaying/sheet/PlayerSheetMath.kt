@@ -192,8 +192,11 @@ object PlayerSheetMath {
     /** The tab bar slides away by this fraction of its height, gone by 60 %. */
     fun tabBarHide(p: Float): Float = ramp(p, 0f, 0.6f)
 
-    /** And fades out faster, gone by 35 %, so it never shows through the system's buttons below it. */
-    fun tabBarAlpha(p: Float): Float = 1f - ramp(p, 0f, 0.35f)
+    /**
+     * And fades out much faster, gone by 12 %: about when its labels would reach the system's
+     * 3-button bar below it (measured on a Pixel 5), so they never show through it.
+     */
+    fun tabBarAlpha(p: Float): Float = 1f - ramp(p, 0f, 0.12f)
 
     /** The glass blur is off while the sheet is anywhere but MINI (a moving backdrop costs a blur a frame). */
     fun blurEnabled(p: Float): Boolean = abs(p) < BLUR_OFF_ABOVE

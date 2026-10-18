@@ -377,7 +377,7 @@ fun StashScaffold(
 
                     // The tab bar slides away as the player opens (gone by 60 %) and comes back as
                     // it closes: a layer move with the finger, never a re-layout. It fades out faster
-                    // than it slides (gone by 35 %), so it never shows through the system's 3-button
+                    // than it slides (gone by 12 %), so it never shows through the system's 3-button
                     // bar on its way down.
                     StashBottomBar(
                         currentRoute = currentRoute,

@@ -179,8 +179,8 @@ class PlayerSheetMathTest {
     @Test
     fun `the tab bar is gone (fully faded) well before it has slid out`() {
         assertEquals(1f, PlayerSheetMath.tabBarAlpha(0f), 0f)
-        assertEquals(0f, PlayerSheetMath.tabBarAlpha(0.35f), 0f)
-        assertTrue(PlayerSheetMath.tabBarHide(0.35f) < 1f)
+        assertEquals(0f, PlayerSheetMath.tabBarAlpha(0.12f), 0f)
+        assertTrue(PlayerSheetMath.tabBarHide(0.12f) < 0.25f)
     }
 
     @Test
