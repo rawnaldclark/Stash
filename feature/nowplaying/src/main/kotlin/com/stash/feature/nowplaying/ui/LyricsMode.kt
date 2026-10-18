@@ -69,11 +69,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.size.Precision
-import coil3.toBitmap
 import com.stash.core.ui.theme.SpaceGrotesk
 import java.util.Locale
 import kotlin.math.roundToLong
@@ -104,7 +102,8 @@ internal fun LyricsPane(
     onSeek: (Long) -> Unit,
     onRetry: () -> Unit,
     ink: Color,
-    accent: Color,
+    /** The album's text colour, read only where it's drawn ("Try again"), so a crossfade never recomposes the pane. */
+    accent: () -> Color,
     light: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -178,7 +177,7 @@ private fun LyricsMessage(
     text: String,
     look: LyricsLook,
     quiet: Boolean = false,
-    accent: Color = Color.Unspecified,
+    accent: () -> Color = { Color.Unspecified },
     onRetry: (() -> Unit)? = null,
 ) {
     Column(
@@ -193,7 +192,7 @@ private fun LyricsMessage(
         )
         if (onRetry != null) {
             TextButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp)) {
-                Text("Try again", style = MaterialTheme.typography.labelLarge, color = accent)
+                Text("Try again", style = MaterialTheme.typography.labelLarge, color = accent())
             }
         }
     }
@@ -305,15 +304,10 @@ internal fun rememberNpArtRequest(artModel: Any?): ImageRequest {
     }
 }
 
-/**
- * The compact cover. It also feeds the ambient palette when the song changes while lyrics are
- * up (the big art, the palette's usual source, isn't composed then): [onBitmapLoaded] is the
- * screen's guarded hook, which skips a cover it has already sampled.
- */
+/** The compact cover in the lyrics header (the same decode as the big art); a tap goes back to it. */
 @Composable
 internal fun CompactCover(
     artModel: Any?,
-    onBitmapLoaded: (android.graphics.Bitmap?) -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -326,9 +320,6 @@ internal fun CompactCover(
         contentScale = ContentScale.Crop,
         error = missingArt,
         fallback = missingArt,
-        onSuccess = { s: AsyncImagePainter.State.Success ->
-            onBitmapLoaded(runCatching { s.result.image.toBitmap() }.getOrNull())
-        },
         modifier = modifier
             .size(CompactCoverSize)
             .clip(RoundedCornerShape(8.dp))

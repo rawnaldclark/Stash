@@ -4,16 +4,10 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.util.Log
-import coil3.SingletonImageLoader
-import coil3.request.ImageRequest
-import coil3.request.SuccessResult
-import coil3.request.allowHardware
-import coil3.size.Size
-import coil3.toBitmap
 import com.stash.core.media.PlayerRepository
 import com.stash.core.ui.ambient.AlbumColors
 import com.stash.core.ui.ambient.AmbientPalette
-import com.stash.core.ui.ambient.ambientPaletteFromBitmap
+import com.stash.core.ui.ambient.PaletteCache
 import com.stash.core.ui.ambient.retryingLoad
 import com.stash.core.ui.ambient.tintedWhilePlaying
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -35,7 +29,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -46,7 +39,8 @@ import javax.inject.Singleton
  * colour from any screen. The scaffold publishes it through `ProvideAlbumChrome`.
  *
  * While a new cover is being read the previous palette stays (no flash of the default); a song with
- * no cover, or a greyscale one, gets the Stash-purple default. A cover that fails to load (offline,
+ * no cover gets the Stash-purple default, a black-and-white one a neutral grey. Covers are read
+ * through the shared [PaletteCache], so a cover heard before costs nothing. A cover that fails to load (offline,
  * a tunnel at the song change) shows the default and is read again a few times, each only after
  * the network comes back or a play/pause, so the chrome catches up without polling. Work runs only
  * while the UI collects [colors] (5 s grace across a configuration change); the last value is kept.
@@ -68,7 +62,7 @@ class AlbumColorSource @Inject constructor(
                 flowOf(AmbientPalette.Default)
             } else {
                 retryingLoad(
-                    load = { paletteOf(model) },
+                    load = { PaletteCache.load(context, model) },
                     fallback = AmbientPalette.Default,
                     signals = retrySignals(),
                     backoffMs = RETRY_BACKOFF_MS,
@@ -116,39 +110,8 @@ class AlbumColorSource @Inject constructor(
         awaitClose { runCatching { cm.unregisterNetworkCallback(cb) } }
     }
 
-    /**
-     * Decodes [model] small and in software (pixels must be readable) through the app's Coil
-     * loader, so a cover already on disk or in memory costs no network, then derives the palette.
-     * Null when the cover couldn't be read (worth a retry); a readable but colourless cover is the
-     * default palette, not a failure.
-     */
-    private suspend fun paletteOf(model: String): AmbientPalette? {
-        val request = ImageRequest.Builder(context)
-            .data(model)
-            .size(Size(DECODE_PX, DECODE_PX))
-            .allowHardware(false)
-            .build()
-        return try {
-            val result = SingletonImageLoader.get(context).execute(request)
-            if (result !is SuccessResult) return null
-            val bitmap = result.image.toBitmap()
-            withContext(Dispatchers.Default) { ambientPaletteFromBitmap(bitmap, key = "art:$model") }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "album colour: couldn't read the cover", e)
-            null
-        }
-    }
-
     private companion object {
         const val TAG = "AlbumColorSource"
-
-        /**
-         * Decode size before the filtered scale to the web's 32x32: big enough that the scale
-         * averages neighbouring pixels (as the browser's canvas draw does), small enough to be cheap.
-         */
-        const val DECODE_PX = 128
         const val STOP_TIMEOUT_MS = 5_000L
 
         /** Up to three more reads of a failed cover, each after a signal and this long. */

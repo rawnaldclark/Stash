@@ -80,9 +80,10 @@ import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
  * The glass mini player, a port of the web player's phone mini player (stash-web
  * player/src/lib/ui/MiniPlayer.svelte, shell.css `.mini*`): a 60dp frosted card floating 8dp above
  * the tab bar with 8dp side margins and a 12dp radius; cover 44 (r6) | title / artist | queue 36 |
- * play 40 (filled with the album's vibrant colour, its ink on top) | next 36, 10dp apart; a 2dp
- * progress line in the vibrant colour along the top edge. The colours come from the app-wide album
- * colour (LocalAlbumChrome), so they follow the song from any screen, Now Playing open or not.
+ * play 40 (filled with the album's accent, its onAccent ink on top) | next 36, 10dp apart; a 2dp
+ * progress line in the accent along the top edge. The colours come from the app-wide album colour
+ * (LocalAlbumChrome), so they follow the song from any screen, Now Playing open or not, and are the
+ * very colours Now Playing's play button wears: opening the player never shifts the shade.
  */
 
 /** shell.css `.mini`: height 60, radius 12, 8 px from the tab bar and the sides. */
@@ -176,7 +177,7 @@ fun MiniPlayer(
                     .height(2.dp)
                     .drawBehind {
                         val fraction = progressFraction(position.value, uiState.durationMs)
-                        drawRect(color = chrome.vib, size = Size(size.width * fraction, size.height))
+                        drawRect(color = chrome.accent, size = Size(size.width * fraction, size.height))
                     },
             )
 
@@ -325,13 +326,13 @@ fun MiniPlayer(
                                 .size(40.dp)
                                 .pressScale(playPress)
                                 .clip(CircleShape)
-                                .drawBehind { drawRect(chrome.vib) }
-                                .indication(playPress, ripple(color = chrome.onVib)),
+                                .drawBehind { drawRect(chrome.accent) }
+                                .indication(playPress, ripple(color = chrome.onAccent)),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (loading) {
                                 CircularProgressIndicator(
-                                    color = chrome.onVib,
+                                    color = chrome.onAccent,
                                     strokeWidth = 2.dp,
                                     modifier = Modifier.size(20.dp),
                                 )
@@ -339,7 +340,7 @@ fun MiniPlayer(
                                 Icon(
                                     imageVector = if (wantsToPlay) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = null,
-                                    tint = chrome.onVib,
+                                    tint = chrome.onAccent,
                                     modifier = Modifier.size(24.dp),
                                 )
                             }

@@ -5,13 +5,11 @@ import com.stash.core.ui.theme.StashBackground
 import com.stash.core.ui.theme.StashBackgroundLight
 import com.stash.core.ui.theme.StashSurface
 import com.stash.core.ui.theme.StashSurfaceLight
-import kotlin.math.pow
-import kotlin.math.roundToInt
 
 /*
- * The wordmark's one ink, a port of stash-web player/src/lib/ui/palette.ts (`WORDMARK`, `wordmarkInk`,
- * `contrast`, `mixHex`, `relLum`). Idle or paused it is the plain ink (white on dark, the light
- * wordmark's aubergine on light); while a song plays it is the plain ink mixed 60 % toward the song's
+ * The wordmark's one ink, a port of stash-web player/src/lib/ui/palette.ts (`WORDMARK`, `wordmarkInk`;
+ * its `contrast`, `mixHex` and `relLum` live in ColorMath.kt). Idle or paused it is the plain ink
+ * (white on dark, the light wordmark's aubergine on light); while a song plays it is the plain ink mixed 60 % toward the song's
  * mood colour (textDark, or the light scheme's textLight), stepped back toward the plain ink in 0.05
  * steps until it holds 4.5:1 on every ground it can sit on.
  */
@@ -36,33 +34,6 @@ private const val WORDMARK_TINT_STEP = 0.05
 
 /** WCAG AA for the wordmark against each ground. */
 private const val WORDMARK_MIN_CONTRAST = 4.5
-
-/** An 8-bit sRGB channel, as the web's hex strings carry it. */
-private fun Float.channel(): Int = (this * 255).roundToInt().coerceIn(0, 255)
-
-/** palette.ts relLum: WCAG relative luminance of the colour's 8-bit sRGB value. */
-private fun relativeLuminance(c: Color): Double {
-    fun lin(ch: Int): Double {
-        val v = ch / 255.0
-        return if (v <= 0.03928) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
-    }
-    return 0.2126 * lin(c.red.channel()) + 0.7152 * lin(c.green.channel()) + 0.0722 * lin(c.blue.channel())
-}
-
-/** WCAG contrast ratio of two colours, 1..21, in either order (palette.ts `contrast`). */
-fun contrastRatio(a: Color, b: Color): Double {
-    val la = relativeLuminance(a)
-    val lb = relativeLuminance(b)
-    val hi = maxOf(la, lb)
-    val lo = minOf(la, lb)
-    return (hi + 0.05) / (lo + 0.05)
-}
-
-/** palette.ts mixHex: [a] moved [t] of the way to [b], per 8-bit channel, rounded. */
-private fun mix8(a: Color, b: Color, t: Double): Color {
-    fun ch(x: Float, y: Float) = (x.channel() * (1 - t) + y.channel() * t).roundToInt()
-    return Color(red = ch(a.red, b.red), green = ch(a.green, b.green), blue = ch(a.blue, b.blue))
-}
 
 /**
  * The wordmark's ink for [palette] (null = no song playing: the plain ink).

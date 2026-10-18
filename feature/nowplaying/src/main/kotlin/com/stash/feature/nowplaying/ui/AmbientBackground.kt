@@ -1,6 +1,5 @@
 package com.stash.feature.nowplaying.ui
 
-import android.provider.Settings
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -13,10 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
@@ -25,9 +22,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalContext
-import com.stash.core.ui.ambient.AmbientPalette
-import com.stash.core.ui.ambient.forScheme
+import com.stash.core.ui.ambient.AlbumChrome
+import com.stash.core.ui.ambient.LocalAlbumChrome
+import com.stash.core.ui.ambient.rememberReducedMotion
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -37,7 +34,9 @@ import kotlin.math.sqrt
  * stash-web player/src/lib/styles/fullscreen.css (`.fs-amb`, `.orb`, `.o1`–`.o3`,
  * `@keyframes orbit`, `.fs-amb::after`, the `fs-fade` entrance) with its tokens from
  * player/src/lib/styles/tokens.css (`--fs-base`, `--orb-a/b/c`, `--orbit-1/2/3`,
- * the 800 ms `--np-*` colour transition) and the colours from palette.ts (AmbientPalette.kt).
+ * the 800 ms `--np-*` colour transition) and the colours from palette.ts (AmbientPalette.kt), read
+ * from the app-wide album chrome (LocalAlbumChrome): the same palette, and the same crossfade, the
+ * mini player wears.
  *
  * Geometry, in the web's `--os` unit (1 % of the shorter side):
  *  - three orbs, each a soft disc: `radial-gradient(circle closest-side, c 0%, c 30%, transparent)`,
@@ -51,9 +50,10 @@ import kotlin.math.sqrt
  * on any API level. Rotation is a graphicsLayer property on a recorded layer: the compositor turns
  * it every frame without recomposition or re-recording the drawing (the web's compositor
  * `transform: rotate`). Colour changes crossfade over 800 ms FastOutSlowIn in sRGB, as the CSS
- * transition of the registered colours does. With animations off (the Android analogue of
- * prefers-reduced-motion) the orbs stand still at their start angles, the colour fade takes
- * 200 ms and the entrance fade is skipped.
+ * transition of the registered colours does; that crossfade is the album chrome's, read here at
+ * draw time, so it redraws the orbs without recomposing anything. With animations off (the Android
+ * analogue of prefers-reduced-motion) the orbs stand still at their start angles, the colour fade
+ * takes 200 ms and the entrance fade is skipped.
  */
 
 /** --fs-base: AmbientBackground BaseDark. */
@@ -62,8 +62,6 @@ private val BaseDark = Color(0xFF06060C)
 /** --fs-base on light: lavender paper. */
 private val BaseLight = Color(0xFFF4F1FA)
 
-private const val CROSSFADE_MS = 800 // --dur-colour / the --np-* transition
-private const val CROSSFADE_REDUCED_MS = 200 // prefers-reduced-motion: transition-duration 200ms
 private const val ENTRANCE_MS = 300 // .fs-amb { animation: fs-fade 300ms var(--ease-standard) }
 
 private class Orb(val diameterOs: Float, val startDeg: Float, val periodMs: Int, val darkAlpha: Float, val lightAlpha: Float)
@@ -78,82 +76,22 @@ private val Orbs = listOf(
 /** The orbs' centre sits this far right of the screen centre before rotation. */
 private const val ORBIT_OFFSET_OS = 18f
 
-/** Linear interpolation in (unpremultiplied) sRGB, as a CSS transition of a legacy colour. */
-private fun mixSrgb(a: Color, b: Color, t: Float): Color = Color(
-    red = a.red + (b.red - a.red) * t,
-    green = a.green + (b.green - a.green) * t,
-    blue = a.blue + (b.blue - a.blue) * t,
-    alpha = a.alpha + (b.alpha - a.alpha) * t,
-)
-
-/** The system "animator duration scale" set to off (Remove animations): the reduced-motion case. */
-@Composable
-private fun rememberReducedMotion(): Boolean {
-    val resolver = LocalContext.current.contentResolver
-    return remember(resolver) {
-        try {
-            Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-        } catch (_: Exception) {
-            false
-        }
-    }
-}
-
-/**
- * The palette the ambient last showed, kept for the process: Now Playing gets a new
- * ViewModel each time it opens, and until it has read the cover the ambient starts
- * from these colours (as the web player's palette outlives its views) rather than
- * flashing the default purple. Null until the first cover of the process is read;
- * then the orbs fade in from nothing instead of from the default.
- */
-private var lastPalette: AmbientPalette? = null
-
 /**
  * Full-bleed album-colour ambient behind Now Playing. See the file comment for the web source.
  *
- * @param palette    The cover's palette (AmbientPalette, derived as the web's palette.ts does);
- *   null while the cover is still being read (the last palette shown stays).
- * @param lightMode  Lavender paper with the light palette lift and lighter orbs.
+ * @param lightMode  Lavender paper with lighter orbs (the chrome's colours are already lifted for it).
  * @param amoledMode Pure black ground (the web's data-black); the orbs still turn over it.
+ * @param colors     The album colours: the app-wide chrome. Its dom / vib / mut are read at draw
+ *   time, so the song change's crossfade only redraws the orbs.
  */
 @Composable
 fun AmbientBackground(
-    palette: AmbientPalette?,
     lightMode: Boolean = false,
     amoledMode: Boolean = false,
     modifier: Modifier = Modifier,
+    colors: AlbumChrome = LocalAlbumChrome.current,
 ) {
     val reduceMotion = rememberReducedMotion()
-    val raw = palette ?: lastPalette ?: AmbientPalette.Default
-    // Nothing known yet (the first open of the process, cover still loading): the
-    // orbs wait, then fade in with the first palette over the colour-fade time.
-    val orbsIn = remember { Animatable(if (palette == null && lastPalette == null) 0f else 1f) }
-    LaunchedEffect(palette != null) {
-        if (palette != null) orbsIn.animateTo(1f, tween(CROSSFADE_MS, easing = FastOutSlowInEasing))
-    }
-    androidx.compose.runtime.SideEffect { if (palette != null) lastPalette = palette }
-    val target = remember(raw, lightMode) { raw.forScheme(lightMode) }
-
-    // Colour crossfade: from the colours on screen now to the new target.
-    var from by remember { mutableStateOf(target) }
-    var to by remember { mutableStateOf(target) }
-    val mix = remember { Animatable(1f) }
-    LaunchedEffect(target) {
-        if (target == to) return@LaunchedEffect
-        val t = mix.value
-        from = AmbientPalette(
-            dom = mixSrgb(from.dom, to.dom, t),
-            vib = mixSrgb(from.vib, to.vib, t),
-            mut = mixSrgb(from.mut, to.mut, t),
-            key = "mix",
-        )
-        to = target
-        mix.snapTo(0f)
-        mix.animateTo(
-            1f,
-            tween(if (reduceMotion) CROSSFADE_REDUCED_MS else CROSSFADE_MS, easing = FastOutSlowInEasing),
-        )
-    }
 
     // Entrance: the ambient fades in over 300 ms when Now Playing opens.
     val entrance = remember { Animatable(if (reduceMotion) 1f else 0f) }
@@ -187,7 +125,7 @@ fun AmbientBackground(
             .graphicsLayer { alpha = entrance.value }
             .drawBehind { drawRect(base) },
     ) {
-        Box(modifier = Modifier.matchParentSize().graphicsLayer { alpha = orbsIn.value }) {
+        Box(modifier = Modifier.matchParentSize()) {
             Orbs.forEachIndexed { i, orb ->
                 val angle = angles[i]
                 Box(
@@ -207,11 +145,10 @@ fun AmbientBackground(
                             // The side is 2 x (18 + r) os, so the os unit comes back out of it.
                             val os = size.width / (2 * (ORBIT_OFFSET_OS + orb.diameterOs / 2))
                             val r = orb.diameterOs / 2 * os
-                            val t = mix.value
                             val raw = when (i) {
-                                0 -> mixSrgb(from.dom, to.dom, t)
-                                1 -> mixSrgb(from.vib, to.vib, t)
-                                else -> mixSrgb(from.mut, to.mut, t)
+                                0 -> colors.dom
+                                1 -> colors.vib
+                                else -> colors.mut
                             }
                             val c = raw.copy(alpha = if (lightMode) orb.lightAlpha else orb.darkAlpha)
                             val centre = Offset(size.width / 2 + ORBIT_OFFSET_OS * os, size.height / 2)
@@ -234,7 +171,7 @@ fun AmbientBackground(
                 modifier = Modifier
                     .matchParentSize()
                     .drawBehind {
-                        val vib = mixSrgb(from.vib, to.vib, mix.value).copy(alpha = 0.12f)
+                        val vib = colors.vib.copy(alpha = 0.12f)
                         // CSS gradient line for 135deg: through the centre towards bottom-right,
                         // length |w sin a| + |h cos a| = (w + h) / sqrt 2.
                         val half = (size.width + size.height) / sqrt(2f) / 2f

@@ -1,11 +1,8 @@
 package com.stash.feature.nowplaying
 
 import android.content.Context
-import android.graphics.Bitmap
-import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.palette.graphics.Palette
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.prefs.NowPlayingAction
 import com.stash.core.data.prefs.NowPlayingPreference
@@ -65,7 +62,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** One-shot target for navigating from Now Playing to an artist profile. */
@@ -1542,72 +1538,6 @@ class NowPlayingViewModel @Inject constructor(
                 )
                 // Roll back: clear the optimistic flip so UI reflects truth.
                 optimisticLikeState.update { it - trackKey }
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Palette Color Extraction
-    // ------------------------------------------------------------------
-
-    private var ambientPaletteSeq = 0
-
-    /**
-     * The web player's palette (palette.ts loadPalette): the cover drawn into 32x32, then the
-     * hue-bucket vote; a greyscale or unreadable cover keeps the Stash-purple default.
-     */
-    private fun ambientPaletteOf(bitmap: Bitmap, key: String): com.stash.core.ui.ambient.AmbientPalette =
-        com.stash.core.ui.ambient.ambientPaletteFromBitmap(bitmap, key)
-
-    /** Last bitmap run through Palette — dedup key for [onAlbumArtLoaded]. */
-    private var lastPaletteBitmap: Bitmap? = null
-
-    /**
-     * Called when the album art [Bitmap] has been loaded (e.g. via Coil).
-     *
-     * Extracts dominant, vibrant, and muted colors on [Dispatchers.Default]
-     * so the main thread is never blocked by the Palette computation.
-     *
-     * Passing `null` resets colors to their defaults.
-     */
-    fun onAlbumArtLoaded(bitmap: Bitmap?) {
-        // Same-bitmap dedup: Coil re-fires onState Success when the image
-        // composable re-enters composition (sheet open/close, config change)
-        // with the same cached bitmap — re-running Palette.generate() then
-        // is pure waste. Identity comparison is right: a new track's art is
-        // always a new Bitmap instance.
-        if (bitmap != null && bitmap === lastPaletteBitmap) return
-        lastPaletteBitmap = bitmap
-        if (bitmap == null) {
-            _uiState.update {
-                it.copy(
-                    dominantColor = Color(0xFF6750A4),
-                    vibrantColor = Color(0xFF8E24AA),
-                    mutedColor = Color(0xFF37474F),
-                    ambientPalette = com.stash.core.ui.ambient.AmbientPalette.Default,
-                )
-            }
-            return
-        }
-        val ambientKey = "art${++ambientPaletteSeq}"
-
-        viewModelScope.launch {
-            val (colors, ambient) = withContext(Dispatchers.Default) {
-                val palette = Palette.from(bitmap).generate()
-                Triple(
-                    Color(palette.getDominantColor(0xFF6750A4.toInt())),
-                    Color(palette.getVibrantColor(0xFF8E24AA.toInt())),
-                    Color(palette.getMutedColor(0xFF37474F.toInt())),
-                ) to ambientPaletteOf(bitmap, ambientKey)
-            }
-            val (dominant, vibrant, muted) = colors
-            _uiState.update {
-                it.copy(
-                    dominantColor = dominant,
-                    vibrantColor = vibrant,
-                    mutedColor = muted,
-                    ambientPalette = ambient,
-                )
             }
         }
     }

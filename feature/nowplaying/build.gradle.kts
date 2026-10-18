@@ -29,7 +29,6 @@ dependencies {
     // track → artist-profile navigation.
     implementation(project(":data:ytmusic"))
     implementation(libs.work.runtime.ktx)
-    implementation(libs.palette.ktx)
     implementation(libs.coil.compose)
     implementation(libs.compose.material.icons.extended)
     // AppForeground: the lyrics prefetch runs only while Stash is in the foreground.

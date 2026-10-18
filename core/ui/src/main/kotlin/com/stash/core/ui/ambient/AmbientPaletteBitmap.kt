@@ -6,8 +6,9 @@ import android.graphics.Bitmap
 private const val PALETTE_SAMPLE_PX = 32
 
 /**
- * The web player's palette (palette.ts loadPalette) from a decoded cover: drawn into 32x32 (filtered),
- * then the hue-bucket vote of [ambientPaletteFromPixels]. A greyscale or unreadable cover (including a
+ * The cover's palette (palette.ts loadPalette plus the app's neutral rule) from a decoded cover:
+ * drawn into 32x32 (filtered), then [readCoverPalette]. A colourful cover gives its colour, a
+ * colourless one the neutral grey; an image with nothing readable in it (fully transparent, or a
  * hardware bitmap, whose pixels can't be read) gives [AmbientPalette.Default]. CPU work: call it off
  * the main thread.
  */
@@ -17,7 +18,7 @@ fun ambientPaletteFromBitmap(bitmap: Bitmap, key: String): AmbientPalette =
         val px = IntArray(PALETTE_SAMPLE_PX * PALETTE_SAMPLE_PX)
         small.getPixels(px, 0, PALETTE_SAMPLE_PX, 0, 0, PALETTE_SAMPLE_PX, PALETTE_SAMPLE_PX)
         if (small !== bitmap) small.recycle()
-        ambientPaletteFromPixels(px, key) ?: AmbientPalette.Default
+        readCoverPalette(px, key) ?: AmbientPalette.Default
     } catch (_: Exception) {
         AmbientPalette.Default
     }

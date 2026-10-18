@@ -69,7 +69,7 @@ fun PlayerQueueSheet(
             queue = uiState.queue,
             currentIndex = uiState.currentIndex,
             // The song's text ink: Now Playing's accent, contrast-safe on the sheet in both themes.
-            accentColor = LocalAlbumChrome.current.accentText,
+            accentColor = LocalAlbumChrome.current.ink,
             source = uiState.source,
             isShuffleEnabled = uiState.shuffleEnabled,
             onDismiss = onDismiss,
