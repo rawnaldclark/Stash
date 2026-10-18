@@ -13,6 +13,7 @@ import com.stash.core.data.listening.ListeningHistoryRepository
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -25,6 +26,15 @@ internal class FakeHistory(val today: Long = TODAY) {
     private val rows = ArrayList<HistoryRow>()
     private val version = MutableStateFlow(0)
     private var nextId = 1L
+
+    /** While set, historyPage waits for it (to hold a read in flight). */
+    var pageGate: CompletableDeferred<Unit>? = null
+
+    /** While set, historyPageNewer waits for it. */
+    var newerGate: CompletableDeferred<Unit>? = null
+
+    /** The next historyPage call throws (a failed read). */
+    var failNextPage = false
 
     /** Every historyPage / historyPageNewer call, as (cursor, query). */
     val pageCalls = ArrayList<Pair<HistoryCursor?, String?>>()
@@ -99,8 +109,18 @@ internal class FakeHistory(val today: Long = TODAY) {
     /** The repository the ViewModels see, answering from this fake. */
     fun repository(): ListeningHistoryRepository = mockk<ListeningHistoryRepository>().also { repo ->
         every { repo.today() } returns today
-        coEvery { repo.historyPage(any(), any(), any()) } answers { page(firstArg(), secondArg(), thirdArg()) }
-        coEvery { repo.historyPageNewer(any(), any(), any()) } answers { newer(firstArg(), secondArg(), thirdArg()) }
+        coEvery { repo.historyPage(any(), any(), any()) } coAnswers {
+            pageGate?.await()
+            if (failNextPage) {
+                failNextPage = false
+                throw IllegalStateException("read failed")
+            }
+            page(firstArg(), secondArg(), thirdArg())
+        }
+        coEvery { repo.historyPageNewer(any(), any(), any()) } coAnswers {
+            newerGate?.await()
+            newer(firstArg(), secondArg(), thirdArg())
+        }
         every { repo.observeDayCounts(any()) } answers {
             val range = firstArg<DayRange>()
             version.map { dayCounts().filter { it.day in range } } as Flow<List<DayCount>>
