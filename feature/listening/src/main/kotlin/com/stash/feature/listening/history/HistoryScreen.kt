@@ -81,6 +81,10 @@ import com.stash.core.ui.components.TrackRowFitScope
 import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.listening.ListeningLabels
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
@@ -101,6 +105,7 @@ fun HistoryScreen(
     viewModel: HistoryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val nowPlayingId by viewModel.nowPlayingTrackId.collectAsStateWithLifecycle()
     val playlists by viewModel.userPlaylists.collectAsStateWithLifecycle(initialValue = emptyList())
     val context = LocalContext.current
     val use24Hour = remember(context) { DateFormat.is24HourFormat(context) }
@@ -127,9 +132,20 @@ fun HistoryScreen(
     LaunchedEffect(viewModel) {
         viewModel.scrollToDay.collect { day ->
             val s = viewModel.state.value
-            // Items above the first day header.
-            val lead = (if (s.paused) 1 else 0) + (if (s.coldStart) 1 else 0) + (if (s.noMatches) 1 else 0)
-            listState.scrollToItem(indexOfDay(s.days, day, lead))
+            listState.scrollToItem(indexOfDay(s.days, day, leadingKeys(s).size))
+        }
+    }
+    // "Today" moves on at midnight and when the screen comes back after a while.
+    LifecycleResumeEffect(viewModel) {
+        viewModel.refreshToday()
+        onPauseOrDispose {}
+    }
+    LaunchedEffect(viewModel) {
+        while (true) {
+            val now = java.time.ZonedDateTime.now()
+            val midnight = now.toLocalDate().plusDays(1).atStartOfDay(now.zone)
+            delay(java.time.Duration.between(now, midnight).toMillis() + 1_000)
+            viewModel.refreshToday()
         }
     }
     // Paging: the next older page near the end, the next newer one near the top after a jump.
@@ -149,7 +165,10 @@ fun HistoryScreen(
             if (!nearTop) return@collectLatest
             // Keep the row on screen where it is while newer listens go in above it. Compose
             // anchors by key on its own, except at the very top, where a jump leaves the list.
-            val anchorKey = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key
+            // The anchor is the item at firstVisibleItemIndex (the offset belongs to it), not the
+            // first item laid out, which is often the pinned sticky header from further up.
+            val first = listState.firstVisibleItemIndex
+            val anchorKey = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == first }?.key
             val anchorOffset = listState.firstVisibleItemScrollOffset
             val before = viewModel.state.value.days
             viewModel.loadNewer()
@@ -191,7 +210,7 @@ fun HistoryScreen(
                         if (state.paused) {
                             item(key = "paused") { PausedCard(onResume = viewModel::resumeHistory) }
                         }
-                        if (state.coldStart) {
+                        if (state.showColdStart) {
                             item(key = "cold") { ColdStartCard() }
                         }
                         if (state.noMatches) {
@@ -217,6 +236,7 @@ fun HistoryScreen(
                                 val time = ListeningLabels.timeOfDay(row.event.localMinute, row.event.startedAt, use24Hour)
                                 TrackListItem(
                                     track = track,
+                                    isPlaying = track.id == nowPlayingId,
                                     onClick = { viewModel.play(row) },
                                     onLongPress = { optionsFor = row },
                                     trailingText = ListeningLabels.rowTrailing(time, ListeningLabels.origin(row.event.originDevice)),
@@ -224,7 +244,9 @@ fun HistoryScreen(
                             }
                         }
                         if (state.hasOlder) {
-                            item(key = "more", contentType = "more") { LoadingMore() }
+                            item(key = "more", contentType = "more") {
+                                if (state.olderFailed) LoadMoreFailed(onRetry = viewModel::retryOlder) else LoadingMore()
+                            }
                         }
                     }
                 }
@@ -327,7 +349,7 @@ fun HistoryScreen(
  */
 internal fun indexOfKey(state: HistoryUiState, key: Any): Int? {
     var index = 0
-    for (lead in listOfNotNull("paused".takeIf { state.paused }, "cold".takeIf { state.coldStart }, "nomatch".takeIf { state.noMatches })) {
+    for (lead in leadingKeys(state)) {
         if (lead == key) return index
         index++
     }
@@ -341,6 +363,13 @@ internal fun indexOfKey(state: HistoryUiState, key: Any): Int? {
     }
     return null
 }
+
+/** The keys of the cards above the first day header, in list order. */
+internal fun leadingKeys(state: HistoryUiState): List<String> = listOfNotNull(
+    "paused".takeIf { state.paused },
+    "cold".takeIf { state.showColdStart },
+    "nomatch".takeIf { state.noMatches },
+)
 
 /** Index of the header of the first listed day on or before [day] ([Long.MAX_VALUE] = the top). */
 internal fun indexOfDay(days: List<HistoryDay>, day: Long, leading: Int): Int {
@@ -397,7 +426,12 @@ private fun DayHeader(
 ) {
     val colors = StashTheme.extendedColors
     var menuOpen by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .semantics { heading() },
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -533,6 +567,23 @@ private fun NoMatches(query: String) {
         textAlign = TextAlign.Center,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 48.dp),
     )
+}
+
+/** An older page failed: say so, and offer to try again. */
+@Composable
+private fun LoadMoreFailed(onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Couldn't load older listens",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onRetry) { Text("Retry") }
+    }
 }
 
 @Composable
