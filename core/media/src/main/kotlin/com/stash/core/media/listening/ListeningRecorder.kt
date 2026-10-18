@@ -374,7 +374,6 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         val eventId = session.eventId ?: return
         try {
             listeningEventDao.setListenedMs(eventId, session.listenedMs)
-            Log.i(TAG, "LDTMP listened_ms=${session.listenedMs} event=$eventId ended=${session.ended}")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -458,7 +457,6 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     // listened_ms stays NULL until the session ends: the song is still playing.
                 ),
             )
-            Log.i(TAG, "LDTMP recorded event=${session.eventId} day=${stamp.day} minute=${stamp.minute}")
             // The song changed while the row was being written: its time is final already.
             if (session.ended) writeListenedMs(session)
             // Push the new listen to the generic sinks (ListenBrainz).
