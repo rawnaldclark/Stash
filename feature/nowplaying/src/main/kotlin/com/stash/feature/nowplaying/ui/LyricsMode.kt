@@ -254,18 +254,16 @@ private val HeaderArtistStyle = TextStyle(fontSize = 14.sp)
 internal val CompactCoverSize = 64.dp
 
 /**
- * Both Now Playing covers (the big art and the compact one) decode at one size. The
- * ambient palette samples whichever cover loads, and AndroidX Palette's swatches depend on the
- * pixels it gets: a 64dp decode of In Rainbows found a red "vibrant" where the full-size one
- * found yellow, so the accent flipped each time lyrics opened or closed. One size means one
- * cache entry, one Bitmap, one palette (the ViewModel also skips a Bitmap it has sampled).
- * INEXACT precision caps the decode at that size without upscaling smaller art; the request,
+ * Both Now Playing covers (the big art and the compact one) decode at one size: one cache
+ * entry, one Bitmap, so opening or closing lyrics never decodes the cover again. (The album
+ * colours no longer come from these bitmaps: Now Playing wears the app-wide palette, read once
+ * per cover by PaletteCache.) INEXACT precision caps the decode at that size without upscaling smaller art; the request,
  * and so the cache key, is still identical for both.
  *
  * The size is the screen's short side: the big cover spans the width less its margins, so this
  * always covers it (Pixel 5: 1080 for a 948px cover; Pixel 6 Pro: 1440 for a ~1270px cover,
  * which a fixed 1024 decode stretched 1.24x). The short side, so rotating doesn't change the
- * request (and with it the palette). Capped, so a tablet or an unfolded foldable doesn't hold a
+ * request. Capped, so a tablet or an unfolded foldable doesn't hold a
  * 2000px+ bitmap: 1440x1440 ARGB is 8 MB, one shared Bitmap. The app's ArtSizeInterceptor reads
  * this size to pick the cover URL variant, so it also decides whether Qobuz `_max`, Spotify's
  * original etc. are fetched.
@@ -283,8 +281,7 @@ private const val NP_ART_MAX_DECODE_PX = 1440
  * String model maps to a Uri keyed by its toString, and the mini player sets no transformations
  * or key extras), which is exactly what a String key here builds. A miss (local-file art, or a
  * cover the mini player sized up because it is under ~110px) just means no placeholder, as today.
- * The swap is instant (crossfade is off) and the palette still samples only the final bitmap
- * (onSuccess).
+ * The swap is instant (crossfade is off).
  */
 @Composable
 internal fun rememberNpArtRequest(artModel: Any?): ImageRequest {
@@ -299,7 +296,9 @@ internal fun rememberNpArtRequest(artModel: Any?): ImageRequest {
             .placeholderMemoryCacheKey(artModel as? String)
             .size(decodePx)
             .precision(Precision.INEXACT)
-            .allowHardware(false) // Required for Palette bitmap extraction.
+            // Software, as when Now Playing sampled its palette from this bitmap. Nothing reads
+            // its pixels any more, so a hardware bitmap would do: a separate, measured change.
+            .allowHardware(false)
             .build()
     }
 }

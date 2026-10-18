@@ -88,7 +88,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.ColorPainter
@@ -126,7 +125,8 @@ import com.stash.feature.nowplaying.ui.hasPreviousInQueue
  * Full-screen Now Playing screen with premium visual design.
  *
  * Displays album art with ambient background, playback controls, progress bar,
- * and track information. Colors are extracted from album art via Palette API.
+ * and track information. The album colours are the app-wide ones (LocalAlbumChrome), the same
+ * the mini player wears.
  * The ambient ground + inks follow the app theme: near-black with drifting
  * art-derived orbs in dark, the same orbs as a pastel wash over lavender
  * paper in light.
@@ -792,28 +792,28 @@ fun NowPlayingScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 WithAlbumChrome { topChrome ->
-                NowPlayingTopBar(
-                    fit = rowFit,
-                    visualState = visualState,
-                    hasTrack = uiState.hasTrack,
-                    isDownloading = isDownloadingCurrent,
-                    radioLock = radioLock,
-                    ink = npInk(),
-                    accent = topChrome.accent,
-                    // In lyrics mode Dismiss goes back to the art, like back and the cover.
-                    dismissDescription = if (reading) "Back to the cover" else "Dismiss",
-                    onDismiss = if (reading) viewModel::onDismissLyrics else onDismiss,
-                    onMoreClick = { showOptionsSheet = true },
-                    onAction = onPinnedAction,
-                    castButton = {
-                        com.stash.feature.nowplaying.cast.CastButton(
-                            connection = castConnection,
-                            tint = npInk(),
-                            accentColor = topChrome.accent,
-                            onClick = { showCastSheet = true },
-                        )
-                    },
-                )
+                    NowPlayingTopBar(
+                        fit = rowFit,
+                        visualState = visualState,
+                        hasTrack = uiState.hasTrack,
+                        isDownloading = isDownloadingCurrent,
+                        radioLock = radioLock,
+                        ink = npInk(),
+                        accent = topChrome.accent,
+                        // In lyrics mode Dismiss goes back to the art, like back and the cover.
+                        dismissDescription = if (reading) "Back to the cover" else "Dismiss",
+                        onDismiss = if (reading) viewModel::onDismissLyrics else onDismiss,
+                        onMoreClick = { showOptionsSheet = true },
+                        onAction = onPinnedAction,
+                        castButton = {
+                            com.stash.feature.nowplaying.cast.CastButton(
+                                connection = castConnection,
+                                tint = npInk(),
+                                accentColor = topChrome.accent,
+                                onClick = { showCastSheet = true },
+                            )
+                        },
+                    )
                 }
                 if (room != null) {
                     com.stash.feature.nowplaying.listen.SessionBar(
@@ -903,16 +903,16 @@ fun NowPlayingScreen(
                                 // crowded top icon row); symmetric horizontal padding keeps the
                                 // title/artist block optically centred under the album art.
                                 WithAlbumChrome { infoChrome ->
-                                TrackInfoBlock(
-                                    track = track,
-                                    resolvingArtist = resolvingArtist,
-                                    onTrackInfoTapped = viewModel::onTrackInfoTapped,
-                                    sleepTimerState = sleepTimerState,
-                                    onSleepTimerClick = { showSleepTimerSheet = true },
-                                    accent = infoChrome.accent,
-                                    isLiked = uiState.currentTrack?.stashLikedAt != null,
-                                    onLikeTap = viewModel::onLikeTap,
-                                )
+                                    TrackInfoBlock(
+                                        track = track,
+                                        resolvingArtist = resolvingArtist,
+                                        onTrackInfoTapped = viewModel::onTrackInfoTapped,
+                                        sleepTimerState = sleepTimerState,
+                                        onSleepTimerClick = { showSleepTimerSheet = true },
+                                        accent = infoChrome.accent,
+                                        isLiked = uiState.currentTrack?.stashLikedAt != null,
+                                        onLikeTap = viewModel::onLikeTap,
+                                    )
                                 }
 
                                 // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
@@ -963,15 +963,15 @@ fun NowPlayingScreen(
                             // above the nav bar. Zero-height when Hidden, so the content
                             // column keeps the full screen for lyric-less tracks.
                             WithAlbumChrome { barChrome ->
-                            LiveLyricsBar(
-                                state = lyricsState,
-                                currentPositionMs = { lyricsPosition.value },
-                                accentColor = barChrome.ink,
-                                liveEnabled = liveLyricsEnabled,
-                                onTap = viewModel::onShowLyrics,
-                                isPlaying = uiState.isPlaying && !uiState.isBuffering,
-                                playbackSpeed = playbackSpeed,
-                            )
+                                LiveLyricsBar(
+                                    state = lyricsState,
+                                    currentPositionMs = { lyricsPosition.value },
+                                    accentColor = barChrome.ink,
+                                    liveEnabled = liveLyricsEnabled,
+                                    onTap = viewModel::onShowLyrics,
+                                    isPlaying = uiState.isPlaying && !uiState.isBuffering,
+                                    playbackSpeed = playbackSpeed,
+                                )
                             }
                         }
                     } else {
@@ -1489,10 +1489,9 @@ private fun PlaybackControls(
             modifier = Modifier
                 .size(64.dp)
                 .clip(CircleShape)
-                .drawBehind {
-                    val accent = chrome.accent
-                    drawRect(Brush.linearGradient(listOf(accent, accent.copy(alpha = 0.7f))))
-                },
+                // A solid accent, exactly the mini player's play button (it used to fade to 70 %
+                // over the ambient, which read as a darker shade when the player opened).
+                .drawBehind { drawRect(chrome.accent) },
         ) {
             // On the accent-gradient circle, not the ambient ground: the accent's own ink (white,
             // or near-black on a pale accent), the mini player's play button's ink too.
