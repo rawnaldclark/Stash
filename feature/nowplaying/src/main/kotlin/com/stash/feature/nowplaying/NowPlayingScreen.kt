@@ -1997,8 +1997,8 @@ private fun SheetAmbient(sheet: PlayerSheetState?, content: @Composable (Modifie
 
 /**
  * The title's endless marquee, only while the player sheet shows Now Playing: parked under the
- * mini player (composed but not placed) the marquee's frame loop kept running, about 17 % of a
- * core on a Pixel 5 for nothing. It starts again from the title's beginning on each opening.
+ * mini player (composed but not placed) the marquee's frame loop kept running with nothing on
+ * screen. It starts again from the title's beginning on each opening.
  */
 @Composable
 private fun Modifier.marqueeWhileShown(sheet: PlayerSheetState?): Modifier {
