@@ -113,9 +113,13 @@ data class ListeningEventEntity(
     /**
      * v59: how long the song actually played in this listen, in real (wall-clock) milliseconds,
      * pauses and buffering excluded. Written by [com.stash.core.media.listening.ListeningRecorder]
-     * when the listen ends (next song, a repeat-one restart, a pause, stop). NULL = unknown: a row
-     * from before v59, a play from another device, or the app died before the listen ended. Totals
-     * then fall back to the song's length.
+     * when the listen ends (next song, a repeat-one restart, stop), and also on a pause so the time
+     * survives the app being killed while paused. NULL = unknown: a row from before v59, a play from
+     * another device, or the app died before any write. Totals then fall back to the song's length.
+     *
+     * If the app dies after a pause and the song played on, the value is the time up to that pause:
+     * a lower bound, never invented. It is never below the time the listen took to count (half the
+     * song, 30 s..4 min, at 1x), because nothing is written before then.
      */
     @ColumnInfo(name = "listened_ms")
     val listenedMs: Long? = null,
