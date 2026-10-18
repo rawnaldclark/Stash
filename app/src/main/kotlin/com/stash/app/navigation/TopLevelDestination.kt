@@ -1,24 +1,15 @@
 package com.stash.app.navigation
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LibraryMusic
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.stash.core.ui.icons.StashNavIcons
 import kotlinx.serialization.Serializable
 
 enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon: ImageVector, val label: String, val route: Any) {
-    HOME(Icons.Filled.Home, Icons.Outlined.Home, "Home", HomeRoute),
-    LIBRARY(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic, "Library", LibraryRoute),
-    SEARCH(Icons.Filled.Search, Icons.Outlined.Search, "Search", SearchRoute),
-    SYNC(Icons.Filled.Sync, Icons.Outlined.Sync, "Sync", SyncRoute),
-    SETTINGS(Icons.Filled.Settings, Icons.Outlined.Settings, "Settings", SettingsRoute),
+    // One Iconsax "Broken" glyph per tab for both states, as in Namida; the bar tints it.
+    HOME(StashNavIcons.Home, StashNavIcons.Home, "Home", HomeRoute),
+    LIBRARY(StashNavIcons.Library, StashNavIcons.Library, "Library", LibraryRoute),
+    SEARCH(StashNavIcons.Search, StashNavIcons.Search, "Search", SearchRoute),
+    SYNC(StashNavIcons.Sync, StashNavIcons.Sync, "Sync", SyncRoute),
+    SETTINGS(StashNavIcons.Settings, StashNavIcons.Settings, "Settings", SettingsRoute),
 }
 
 @Serializable data object HomeRoute
