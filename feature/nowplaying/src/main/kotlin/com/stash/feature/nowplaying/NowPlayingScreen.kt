@@ -976,6 +976,7 @@ fun NowPlayingScreen(
                                     onSleepTimerClick = { showSleepTimerSheet = true },
                                     isLiked = uiState.currentTrack?.stashLikedAt != null,
                                     onLikeTap = viewModel::onLikeTap,
+                                    sheet = sheet,
                                 )
 
                                 // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
@@ -1297,6 +1298,7 @@ private fun TrackInfoBlock(
     onSleepTimerClick: () -> Unit,
     isLiked: Boolean,
     onLikeTap: () -> Unit,
+    sheet: PlayerSheetState? = null,
 ) {
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1333,7 +1335,7 @@ private fun TrackInfoBlock(
                     textAlign = TextAlign.Center,
                     modifier = Modifier
                         .weight(1f, fill = false)
-                        .basicMarquee(iterations = Int.MAX_VALUE),
+                        .marqueeWhileShown(sheet),
                 )
                 if (track != null) {
                     Spacer(modifier = Modifier.width(6.dp))
@@ -1991,4 +1993,15 @@ private fun SheetAmbient(sheet: PlayerSheetState?, content: @Composable (Modifie
             .fillMaxSize()
             .graphicsLayer { alpha = PlayerSheetMath.ambientAlpha(sheet.progress) },
     )
+}
+
+/**
+ * The title's endless marquee, only while the player sheet shows Now Playing: parked under the
+ * mini player (composed but not placed) the marquee's frame loop kept running, about 17 % of a
+ * core on a Pixel 5 for nothing. It starts again from the title's beginning on each opening.
+ */
+@Composable
+private fun Modifier.marqueeWhileShown(sheet: PlayerSheetState?): Modifier {
+    val shown by remember(sheet) { androidx.compose.runtime.derivedStateOf { sheet == null || sheet.progress > 0f } }
+    return if (shown) basicMarquee(iterations = Int.MAX_VALUE) else this
 }
